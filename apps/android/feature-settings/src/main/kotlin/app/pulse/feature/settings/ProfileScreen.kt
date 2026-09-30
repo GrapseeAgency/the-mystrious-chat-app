@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -23,30 +21,22 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -62,22 +52,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.pulse.ui.EmberGlassButton
+import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseAvatar
+import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulseMonoFamily
-import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
-import app.pulse.ui.isPulseDarkTheme
+import app.pulse.ui.emberBackdrop
+import app.pulse.ui.emberGlass
 import app.pulse.ui.update.LiveUpdater
 import app.pulse.ui.update.UpdaterDetail
-import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 
 private val FX_OPTIONS = listOf(
@@ -92,20 +87,25 @@ private val FX_OPTIONS = listOf(
 private val SWATCHES = listOf("#10B981", "#14B8A6", "#8B5CF6", "#F59E0B", "#FB7185", "#0EA5E9")
 
 /**
- * Profile tab — identity management (the native onboarding parity surface),
- * appearance (dark override + ambient FX picker — the WebGL modes reborn as
+ * Profile tab - identity management (the native onboarding parity surface),
+ * appearance (dark override + ambient FX picker - the WebGL modes reborn as
  * AGSL shaders), motion respect, and honest about-notes.
+ *
+ * EMB: the surface sits on the warm ember backdrop - glass kebab chrome up
+ * top (hosting the existing profile actions), a centered 96dp identity
+ * avatar with the ember presence dot, one row of three stat cards, and an
+ * ember account card. Every loader, handler and dialog is untouched.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     onEditProfile: () -> Unit = {},
     onOpenBlocked: () -> Unit = {},
-    // R16 — web profile-tab.tsx:497-508 "Saved messages" row → the real
+    // R16 - web profile-tab.tsx:497-508 "Saved messages" row -> the real
     // starred library (MainActivity routes this to the existing "saved" nav
-    // destination — fetch / search / unsave / jump-to-message).
+    // destination - fetch / search / unsave / jump-to-message).
     onOpenSaved: () -> Unit = {},
-    // R6 — M3: the durable sign-out — the app-level SessionViewModel
+    // R6 - M3: the durable sign-out - the app-level SessionViewModel
     // clears prefs + the encrypted session vault (ProfileViewModel's old
     // half-forget did NOT delete the vault, so the identity resurrected on
     // the next launch). MainActivity wires this to session.forgetViewer().
@@ -120,13 +120,14 @@ fun ProfileScreen(
     val reduced by viewModel.reducedMotion.collectAsStateWithLifecycle()
 
     var identitySheet by remember { mutableStateOf(false) }
-    // R6 — M3: the forget confirmation (iOS IdentityPickerSheet "Forget this
-    // viewer" semantics — destructive, so it asks first).
+    var kebabMenu by remember { mutableStateOf(false) }
+    // R6 - M3: the forget confirmation (iOS IdentityPickerSheet "Forget this
+    // viewer" semantics - destructive, so it asks first).
     var forgetConfirm by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    // R16 — web profile-tab.tsx:169 `iAmOnline` (onlineIds.has(me.id)) + the
+    // R16 - web profile-tab.tsx:169 `iAmOnline` (onlineIds.has(me.id)) + the
     // full viewer row (name/handle/bio/color/status fields ride the SAME
     // users list the IdentitySheet already loads).
     val onlineIds by viewModel.onlineIds.collectAsStateWithLifecycle()
@@ -137,156 +138,142 @@ fun ProfileScreen(
     Column(
         Modifier
             .fillMaxSize()
+            .emberBackdrop()
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp),
     ) {
-        Spacer(Modifier.height(12.dp))
-        Text("Profile", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
 
-        Spacer(Modifier.height(16.dp))
-
-        // ── R35 Neo hero (web profile-tab.tsx:329-467): flat identity cover
-        // with a static scanline texture + signal edge, then the overlapping
-        // ringed avatar. Zero carnival blobs, zero blur, no animation, and
-        // reduce-motion needs no special case (everything here is static).
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(112.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(heroGradient(viewer?.color)),
-        ) {
-            // Static top sheen (web :333-336 linear wash, fades by 60%).
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.White.copy(alpha = 0.16f),
-                            0.6f to Color.Transparent,
-                        ),
-                    ),
-            )
-            // The scanline texture: 1px lines every 3dp, white 5%
-            // (web .scan-fx::after repeating-linear-gradient). Cheap Canvas.
-            androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
-                val step = 3.dp.toPx()
-                val line = 1.dp.toPx()
-                var y = 0f
-                while (y < size.height) {
-                    drawRect(
-                        color = Color.White.copy(alpha = 0.05f),
-                        topLeft = androidx.compose.ui.geometry.Offset(0f, y),
-                        size = androidx.compose.ui.geometry.Size(size.width, line),
+        // EMB top chrome: this tab is a root destination with no back stack,
+        // so there is no back control; the kebab glass button hosts the
+        // EXISTING profile actions (edit / saved / identity switch).
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Box {
+                EmberGlassButton(
+                    icon = PulseIcons.KebabVertical,
+                    label = "More actions",
+                    onClick = { kebabMenu = true },
+                )
+                DropdownMenu(
+                    expanded = kebabMenu,
+                    onDismissRequest = { kebabMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Edit profile", color = Color.White) },
+                        onClick = {
+                            kebabMenu = false
+                            onEditProfile()
+                        },
                     )
-                    y += step
+                    DropdownMenuItem(
+                        text = { Text("Saved messages", color = Color.White) },
+                        onClick = {
+                            kebabMenu = false
+                            onOpenSaved()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Switch identity", color = Color.White) },
+                        onClick = {
+                            kebabMenu = false
+                            identitySheet = true
+                        },
+                    )
                 }
             }
-            // The signal line: hairline bright edge grounding the cover (:337-341).
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                Color.Transparent,
-                                Color.White.copy(alpha = 0.8f),
-                                Color.Transparent,
-                            ),
-                        ),
-                    ),
-            )
         }
 
-        // Overlapping avatar with the slim identity ring (web :346-359):
-        // 84dp avatar, 44dp overlap, 2.5dp gradient ring + 2.5dp surface gap.
-        val neoDark = isPulseDarkTheme()
-        Box(
-            Modifier
-                .offset(y = (-44).dp)
-                .size(94.dp),
-            contentAlignment = Alignment.Center,
+        Spacer(Modifier.height(2.dp))
+
+        // EMB identity block: centered 96dp avatar; the presence dot rides
+        // bottom-right with a 2.5dp BackdropBase ground ring (the old emerald
+        // dot inside PulseAvatar is bypassed so the ring melts into the
+        // ember ground).
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(96.dp)) {
+                PulseAvatar(
+                    name = viewerName ?: "You",
+                    colorHex = viewer?.color,
+                    size = 96.dp,
+                )
+                if (iAmOnline) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(17.dp)
+                            .clip(CircleShape)
+                            .background(EmberPalette.BackdropBase)
+                            .padding(2.5.dp)
+                            .clip(CircleShape)
+                            .background(EmberPalette.Online),
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+
+        // Name 20sp bold centered, with the quiet verified seal (same a11y
+        // label as before) now tinted ember online.
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier
-                    .size(94.dp)
-                    .clip(CircleShape)
-                    .background(Brush.linearGradient(heroColors(viewer?.color))),
-            )
-            Box(
-                Modifier
-                    .size(89.dp)
-                    .clip(CircleShape)
-                    .background(if (neoDark) PulsePalette.NeoSurface else Color.White),
-            )
-            PulseAvatar(
-                name = viewerName ?: "You",
-                colorHex = viewer?.color,
-                size = 84.dp,
-                online = iAmOnline,
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Name 22sp bold, -0.02em tracking, with the quiet verified seal
-        // tinted accent (web :362-375 PulseSeal).
-        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = viewerName ?: "No identity",
-                fontSize = 22.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.44).sp,
+                color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
             )
             if (viewerId != null) {
                 Spacer(Modifier.width(6.dp))
                 Icon(
-                    Icons.Filled.Verified,
+                    PulseIcons.Check,
                     contentDescription = "Registered member",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp),
+                    tint = EmberPalette.Online,
+                    modifier = Modifier.size(15.dp),
                 )
             }
         }
 
         Spacer(Modifier.height(8.dp))
 
-        // @handle: tap to copy (or set), mono type inside a glass pill
-        // (web :384-407 .glass-pill .stat-mono).
-        Box(
-            Modifier
-                .clip(RoundedCornerShape(999.dp))
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
-                .border(1.dp, PulsePalette.Hairline, RoundedCornerShape(999.dp))
-                .clickable {
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    if (handle == null) {
-                        onEditProfile()
-                    } else {
-                        copyText(context, "Pulse handle", "@$handle", "Handle copied")
+        // The mono handle chip, centered: tap to copy (or set). 13sp white
+        // 55% per the Ember reference (web .stat-mono handle line).
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(EmberPalette.ChipFill)
+                    .border(1.dp, EmberPalette.Hairline, RoundedCornerShape(999.dp))
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        if (handle == null) {
+                            onEditProfile()
+                        } else {
+                            copyText(context, "Pulse handle", "@$handle", "Handle copied")
+                        }
                     }
-                }
-                .padding(horizontal = 12.dp, vertical = 7.dp),
-        ) {
-            Text(
-                text = if (handle != null) "@$handle" else "Set your handle",
-                fontFamily = PulseMonoFamily,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = if (handle != null) "@$handle" else "Set your handle",
+                    fontFamily = PulseMonoFamily,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White.copy(alpha = 0.55f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
 
-        // Status line + bio, 13sp (web :410-433). The status glyph/text are
-        // the user's own wire values, displayed verbatim, never decorated.
+        // Status line + bio, 13sp, centered on the ember ground. The status
+        // glyph/text are the user's own wire values, displayed verbatim.
         if (viewerId != null) {
             val statusLine = listOfNotNull(
                 viewer?.statusEmoji?.takeIf { it.isNotBlank() },
@@ -297,86 +284,97 @@ fun ProfileScreen(
                     statusLine,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = Color.White.copy(alpha = 0.70f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 10.dp),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
                 )
             }
             Text(
                 text = viewer?.bio?.takeIf { it.isNotBlank() } ?: "No bio yet",
                 fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color.White.copy(alpha = 0.55f),
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 6.dp),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
             )
         }
 
         Spacer(Modifier.height(16.dp))
 
-        // Quick actions: one signal pill, one ghost pill (web :436-467).
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.primary)
-                    .clickable {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onEditProfile()
+        // Quick actions: the ember gradient edit pill + the glass share pill
+        // (same handlers as before; ink on the gradient for contrast).
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Brush.linearGradient(EmberPalette.Gradient))
+                        .clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onEditProfile()
+                        }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            PulseIcons.Pencil,
+                            contentDescription = null,
+                            tint = Color(0xFF1C1410),
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Edit profile",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1C1410),
+                        )
                     }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Edit,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Edit profile",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
                 }
-            }
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
-                    .border(1.dp, PulsePalette.Hairline, RoundedCornerShape(999.dp))
-                    .clickable {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        shareProfile(context, viewerId, state.users)
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(EmberPalette.GlassFill)
+                        .border(1.dp, EmberPalette.GlassBorder, RoundedCornerShape(999.dp))
+                        .clickable {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            shareProfile(context, viewerId, state.users)
+                        }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            PulseIcons.PaperPlane,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Share",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                        )
                     }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Share,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Share",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
                 }
             }
         }
 
-        // ── ONE flat stats row: mono numerals + hairline dividers, no heavy
-        // cards, no counters (web profile-tab.tsx:471-489). Same loaders as
-        // before (GET /api/users/{id}/stats + the wallet source); the Coins
-        // cell stays tappable-to-retry when the wallet errored (the old
-        // wallet card's affordance, folded into the instrument row).
+        // EMB: ONE row of three equal stat cards, fed by the SAME loaders as
+        // before (GET /api/users/{id}/stats + the wallet source). The Coins
+        // card stays tappable-to-retry when the wallet errored.
         if (viewerId != null) {
             LaunchedEffect(viewerId) {
                 viewModel.loadStats()
@@ -385,71 +383,55 @@ fun ProfileScreen(
             val statsState by viewModel.stats.collectAsStateWithLifecycle()
             val stats = statsState.stats
             val coins by viewModel.wallet.collectAsStateWithLifecycle()
-            Spacer(Modifier.height(24.dp))
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = if (neoDark) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.55f),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (neoDark) PulsePalette.Hairline else Color(0x99E4E4E7),
-                ),
-                modifier = Modifier.fillMaxWidth(),
+            Spacer(Modifier.height(20.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    ProfileStatCell(
-                        label = "Messages",
-                        value = stats?.messages?.toString() ?: if (statsState.loading) "·" else "-",
-                        modifier = Modifier.weight(1f),
-                    )
-                    StatDivider()
-                    ProfileStatCell(
-                        label = "Rooms",
-                        value = stats?.chats?.toString() ?: if (statsState.loading) "·" else "-",
-                        modifier = Modifier.weight(1f),
-                    )
-                    StatDivider()
-                    ProfileStatCell(
-                        label = "Coins",
-                        value = coins.coins?.toString() ?: if (coins.loading) "·" else "-",
-                        accent = true,
-                        onTap = if (coins.error) viewModel::loadWallet else null,
-                        modifier = Modifier.weight(1f),
-                    )
-                    StatDivider()
-                    ProfileStatCell(
-                        label = "Since",
-                        value = stats?.joinedAtIso?.let { memberSinceShort(it) }
-                            ?: if (statsState.loading) "·" else "-",
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+                ProfileStatCard(
+                    label = "Messages",
+                    value = stats?.messages?.toString() ?: if (statsState.loading) "·" else "-",
+                    modifier = Modifier.weight(1f),
+                )
+                ProfileStatCard(
+                    label = "Rooms",
+                    value = stats?.chats?.toString() ?: if (statsState.loading) "·" else "-",
+                    modifier = Modifier.weight(1f),
+                )
+                ProfileStatCard(
+                    label = "Coins",
+                    value = coins.coins?.toString() ?: if (coins.loading) "·" else "-",
+                    onTap = if (coins.error) viewModel::loadWallet else null,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
 
-        // ── Quiet hairline card: Saved messages + Copy account ID + identity
-        // switch + Sign out (web :493-524 Saved/Account sections, one card).
-        // Every previous entry point keeps working; blocked accounts live in
-        // Settings privacy, same as the web.
-        Spacer(Modifier.height(24.dp))
-        QuietCard {
+        // EMB account card: Saved messages + Copy account ID + identity
+        // switch + Sign out (web :493-524 Saved/Account sections). Every
+        // previous entry point keeps working; the destructive row still
+        // opens the forget confirmation. Blocked accounts live in Settings
+        // privacy, same as the web.
+        Spacer(Modifier.height(20.dp))
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .emberGlass(RoundedCornerShape(16.dp)),
+        ) {
             if (viewerId != null) {
-                QuietRow(
-                    icon = Icons.Filled.Star,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    title = "Saved messages",
-                    subtitle = "Long-press any message in a chat, then Save",
+                AccountRow(
+                    icon = PulseIcons.Bookmark,
+                    label = "Saved messages",
                     onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onOpenSaved()
                     },
                 )
-                QuietDivider()
+                AccountDivider()
             }
-            QuietRow(
-                icon = Icons.Filled.ContentCopy,
-                iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
-                title = "Copy account ID",
-                subtitle = viewerId ?: "Pick an identity to copy its ID",
+            AccountRow(
+                icon = PulseIcons.Copy,
+                label = "Copy account ID",
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     if (viewerId != null) {
@@ -457,35 +439,32 @@ fun ProfileScreen(
                     }
                 },
             )
-            QuietDivider()
-            QuietRow(
-                icon = Icons.Filled.SwapHoriz,
-                iconTint = if (viewerId == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                title = if (viewerId == null) "Choose identity" else "Switch identity",
-                subtitle = if (viewerId == null) "Pick who you are to light up Pulse" else "Choose or create who you are on this device",
+            AccountDivider()
+            AccountRow(
+                icon = PulseIcons.Users,
+                label = if (viewerId == null) "Choose identity" else "Switch identity",
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     identitySheet = true
                 },
             )
             if (viewerId != null) {
-                QuietDivider()
+                AccountDivider()
                 // R6 - M3: the destructive confirm still gates the real forget.
-                QuietRow(
-                    icon = Icons.Filled.Logout,
-                    iconTint = MaterialTheme.colorScheme.error,
-                    title = "Sign out",
-                    subtitle = "Clears the identity + stored session on this device",
+                AccountRow(
+                    icon = PulseIcons.Logout,
+                    label = "Sign out",
                     destructive = true,
+                    showChevron = false,
                     onClick = { forgetConfirm = true },
                 )
             }
         }
 
-        SectionHeader(Icons.Filled.Palette, "Appearance")
+        SectionHeader(PulseIcons.Sparkle, "Appearance")
         SettingCard {
             Column {
-                Text("Mode", style = MaterialTheme.typography.titleSmall)
+                Text("Mode", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                 Spacer(Modifier.height(8.dp))
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     listOf("system" to "Auto", "light" to "Light", "dark" to "Dark").forEachIndexed { index, (value, label) ->
@@ -493,15 +472,16 @@ fun ProfileScreen(
                             selected = dark == value,
                             onClick = { viewModel.setDarkOverride(value) },
                             shape = SegmentedButtonDefaults.itemShape(index = index, count = 3),
+                            colors = emberSegmentedColors(),
                         ) { Text(label) }
                     }
                 }
                 Spacer(Modifier.height(14.dp))
-                Text("Ambient field (native shaders)", style = MaterialTheme.typography.titleSmall)
+                Text("Ambient field (native shaders)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                 Text(
                     "aurora · caustics · mesh · stars · liquid — the web's WebGL modes ported to AGSL",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.5f),
                 )
                 Spacer(Modifier.height(8.dp))
                 FlowRowCompat {
@@ -509,7 +489,7 @@ fun ProfileScreen(
                         val selected = fxMode == id
                         Surface(
                             shape = RoundedCornerShape(999.dp),
-                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            color = if (selected) EmberPalette.Deep else EmberPalette.ChipFill,
                             modifier = Modifier
                                 .padding(end = 8.dp, bottom = 8.dp)
                                 .clip(RoundedCornerShape(999.dp))
@@ -517,8 +497,9 @@ fun ProfileScreen(
                         ) {
                             Text(
                                 label,
-                                color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.labelLarge,
+                                color = if (selected) Color(0xFF1C1410) else Color.White.copy(alpha = 0.55f),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                             )
                         }
@@ -528,75 +509,80 @@ fun ProfileScreen(
         }
 
         Spacer(Modifier.height(14.dp))
-        SectionHeader(Icons.Filled.Bolt, "Motion")
+        SectionHeader(PulseIcons.Waveform, "Motion")
         SettingCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Reduce motion", style = MaterialTheme.typography.titleSmall)
+                    Text("Reduce motion", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                     Text(
                         "Static ambient frame, no particle bursts",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.5f),
                     )
                 }
-                Switch(checked = reduced, onCheckedChange = { viewModel.setReducedMotion(it) })
+                Switch(
+                    checked = reduced,
+                    onCheckedChange = { viewModel.setReducedMotion(it) },
+                    colors = emberSwitchColors(),
+                )
             }
         }
 
         Spacer(Modifier.height(14.dp))
-        SectionHeader(Icons.Filled.Info, "About")
+        SectionHeader(PulseIcons.Info, "About")
         SettingCard {
             Column {
                 Text(
                     "Pulse ${LiveUpdater.installedVersionLabel(context) ?: "?"}",
-                    style = MaterialTheme.typography.titleSmall,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Kotlin · Compose · Hilt · Room · Ktor · Socket.IO — rebuilt natively against the same live gateway as the web app.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.5f),
                 )
             }
         }
 
         Spacer(Modifier.height(14.dp))
-        SectionHeader(Icons.Filled.SystemUpdate, "App updates")
+        SectionHeader(PulseIcons.Radio, "App updates")
         SettingCard {
             Column {
                 UpdaterDetail()
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Quiet check on every launch · byte-range resume · integrity-gated before install",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.5f),
                 )
                 TextButton(onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     scope.launch { LiveUpdater.syncFrom(context, force = true) }
                 }) {
-                    Text("Check for updates", color = MaterialTheme.colorScheme.primary)
+                    Text("Check for updates", color = EmberPalette.Amber)
                 }
             }
         }
 
         Spacer(Modifier.height(14.dp))
-        SectionHeader(Icons.Filled.Wifi, "Connection")
+        SectionHeader(PulseIcons.Globe, "Connection")
         SettingCard {
             val savedBase by viewModel.serverBase.collectAsStateWithLifecycle()
             val probe by viewModel.probe.collectAsStateWithLifecycle()
             var serverField by remember(savedBase) { mutableStateOf(savedBase ?: "") }
             Column {
-                Text("Server address", style = MaterialTheme.typography.titleSmall)
+                Text("Server address", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                 Text(
                     if (savedBase.isNullOrBlank()) {
                         "Not set — Pulse runs offline-first. Paste your Pulse web origin (the https:// address of this app's server) to go live."
                     } else {
                         "REST + realtime point at:\n$savedBase"
                     },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.5f),
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -604,6 +590,11 @@ fun ProfileScreen(
                     onValueChange = { serverField = it },
                     singleLine = true,
                     placeholder = { Text("https://your-pulse-server") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = EmberPalette.Amber,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.25f),
+                        cursorColor = EmberPalette.Amber,
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(4.dp))
@@ -611,35 +602,35 @@ fun ProfileScreen(
                     TextButton(onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         viewModel.probeServer(serverField)
-                    }) { Text("Test", color = MaterialTheme.colorScheme.primary) }
+                    }) { Text("Test", color = EmberPalette.Amber) }
                     TextButton(onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         viewModel.setServerBase(serverField.trim().takeIf { it.isNotBlank() })
-                    }) { Text("Save & use", color = MaterialTheme.colorScheme.primary) }
+                    }) { Text("Save & use", color = EmberPalette.Amber) }
                     if (!savedBase.isNullOrBlank()) {
                         TextButton(onClick = {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             serverField = ""
                             viewModel.setServerBase(null)
-                        }) { Text("Go offline", color = MaterialTheme.colorScheme.error) }
+                        }) { Text("Go offline", color = EmberPalette.Signal) }
                     }
                 }
                 when {
                     probe.running -> Text(
                         "Testing $serverField/api/users …",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.5f),
                     )
                     // R35 Neo: plain verdict text replaces the old glyph prefixes.
                     probe.ok == true -> Text(
                         "Reachable: ${probe.detail}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 12.sp,
+                        color = EmberPalette.Online,
                     )
                     probe.ok == false -> Text(
                         "Not reachable: ${probe.detail}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = PulsePalette.Amber,
+                        fontSize = 12.sp,
+                        color = EmberPalette.Signal,
                     )
                 }
             }
@@ -648,7 +639,7 @@ fun ProfileScreen(
         Spacer(Modifier.height(28.dp))
     }
 
-    // R6 — M3: the destructive confirm before the real forget.
+    // R6 - M3: the destructive confirm before the real forget.
     if (forgetConfirm) {
         AlertDialog(
             onDismissRequest = { forgetConfirm = false },
@@ -731,13 +722,13 @@ private fun IdentitySheet(
                                     Text(user.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
                                     if (user.verified) {
                                         Spacer(Modifier.width(4.dp))
-                                        Icon(Icons.Filled.Verified, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(13.dp))
+                                        Icon(PulseIcons.Check, contentDescription = null, tint = EmberPalette.Online, modifier = Modifier.size(13.dp))
                                     }
                                 }
                                 Text("@${user.handle.ifBlank { user.name.lowercase().replace(" ", "_") }}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             if (selected) {
-                                Text("You", style = MaterialTheme.typography.labelSmall, color = PulsePalette.Emerald, fontWeight = FontWeight.Bold)
+                                Text("You", style = MaterialTheme.typography.labelSmall, color = EmberPalette.Online, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -782,9 +773,9 @@ private fun IdentitySheet(
 }
 
 /**
- * R6 — BE8: profile share via the OS share sheet (web profile-tab.tsx:258-278
- * `shareProfile` parity): "Find me on Pulse — @handle". No handle yet → the
- * web's honest info toast; a failed chooser → "Could not share right now".
+ * R6 - BE8: profile share via the OS share sheet (web profile-tab.tsx:258-278
+ * `shareProfile` parity): "Find me on Pulse - @handle". No handle yet -> the
+ * web's honest info toast; a failed chooser -> "Could not share right now".
  */
 internal fun shareProfile(
     context: android.content.Context,
@@ -809,39 +800,8 @@ internal fun shareProfile(
 }
 
 /**
- * R16 — web gradientFor (pulse-utils.ts:42-45 + AVATAR_GRADIENTS :31-40):
- * the profile hero cover derives from the identity color. Accepts BOTH the
- * web color NAMES (emerald/rose/amber/violet/teal/orange/pink/cyan) and the
- * raw hex the native onboarding creates (#10B981 …). Fallback: web default
- * emerald. The deep end darkens the start color (web's `-400 → -600` pair).
- */
-internal fun heroGradient(color: String?): Brush {
-    return Brush.linearGradient(heroColors(color))
-}
-
-/**
- * R35 Neo: the identity gradient as a color pair, shared by the hero cover
- * and the avatar identity ring so both read as one signal beam.
- */
-internal fun heroColors(color: String?): List<Color> {
-    val start = when (color?.trim()?.lowercase()) {
-        "teal" -> Color(0xFF2DD4BF)
-        "rose" -> Color(0xFFFB7185)
-        "amber" -> Color(0xFFFBBF24)
-        "violet" -> Color(0xFFA78BFA)
-        "orange" -> Color(0xFFFB923C)
-        "pink" -> Color(0xFFF472B6)
-        "cyan" -> Color(0xFF22D3EE)
-        "emerald" -> Color(0xFF34D399)
-        else -> PulsePalette.parse(color) ?: Color(0xFF34D399)
-    }
-    val deep = Color(start.red * 0.62f, start.green * 0.68f, start.blue * 0.72f)
-    return listOf(start, deep)
-}
-
-/**
- * R16 — clipboard helper for the profile tap-to-copy affordances (web
- * profile-tab.tsx copyHandle :243-255 / copyId :233-241 — same toasts).
+ * R16 - clipboard helper for the profile tap-to-copy affordances (web
+ * profile-tab.tsx copyHandle :243-255 / copyId :233-241 - same toasts).
  */
 internal fun copyText(context: android.content.Context, label: String, text: String, toast: String) {
     runCatching {
@@ -855,142 +815,140 @@ internal fun copyText(context: android.content.Context, label: String, text: Str
 }
 
 @Composable
-private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+private fun SectionHeader(icon: ImageVector, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+        Icon(icon, contentDescription = null, tint = EmberPalette.Amber, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(8.dp))
-        Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.55f))
     }
 }
 
 /**
- * R35 Neo: one flat stat cell of the profile stats row (web StatTile):
- * mono numeral + small dim label, hairline-divided by [StatDivider].
- * [onTap] keeps the old wallet card's retry affordance on the Coins cell.
+ * EMB: one equal stat card of the profile stats row - white 5% glass card,
+ * 64dp tall, 11sp white 50% label on top, 16sp bold white value below.
+ * [onTap] keeps the old wallet card's retry affordance on the Coins card.
  */
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.ProfileStatCell(
+private fun ProfileStatCard(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
-    accent: Boolean = false,
     onTap: (() -> Unit)? = null,
 ) {
     Column(
         modifier
-            .clip(RoundedCornerShape(12.dp))
+            .height(64.dp)
+            .emberGlass(RoundedCornerShape(16.dp))
             .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier)
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .padding(horizontal = 10.dp),
+        verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            value,
-            fontFamily = PulseMonoFamily,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            label,
+            fontSize = 11.sp,
+            color = Color.White.copy(alpha = 0.5f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            label,
-            fontSize = 10.5.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            value,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
-/** Hairline vertical divider between the flat stat cells. */
+/** EMB hairline divider between account card rows. */
 @Composable
-private fun StatDivider() {
-    Box(
-        Modifier
-            .width(1.dp)
-            .height(30.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+private fun AccountDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 14.dp),
+        color = EmberPalette.Hairline,
     )
 }
 
-/** R35 Neo quiet card: flat hairline panel, no heavy surface/tonal build. */
+/**
+ * EMB account card row: 52dp tall, 20dp PulseIcon white 80%, 14sp white
+ * label, trailing chevron white 30% (the destructive row drops the chevron
+ * and wears the ember signal red).
+ */
 @Composable
-private fun QuietCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, PulsePalette.Hairline),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(vertical = 4.dp), content = content)
-    }
-}
-
-/** One quiet row inside [QuietCard] (web ChevronRow: icon + title + hint). */
-@Composable
-private fun QuietRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    iconTint: Color,
-    title: String,
-    subtitle: String,
+private fun AccountRow(
+    icon: ImageVector,
+    label: String,
     destructive: Boolean = false,
+    showChevron: Boolean = true,
     onClick: () -> Unit,
 ) {
     Row(
         Modifier
             .fillMaxWidth()
+            .height(52.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (destructive) EmberPalette.Signal else Color.White.copy(alpha = 0.8f),
+            modifier = Modifier.size(20.dp),
+        )
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        Text(
+            label,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (destructive) EmberPalette.Signal else Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (showChevron) {
+            Icon(
+                PulseIcons.ChevronRight,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.3f),
+                modifier = Modifier.size(18.dp),
             )
         }
     }
 }
 
-/** Hairline divider between quiet rows. */
+/** EMB setting card: the ember glass panel (white 5% fill + hairline). */
 @Composable
-private fun QuietDivider() {
-    androidx.compose.material3.HorizontalDivider(
-        modifier = Modifier.padding(horizontal = 16.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+private fun SettingCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .emberGlass(RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        content = content,
     )
 }
 
-/**
- * R14 gap 7a — the web profile-tab memberSinceShort ("Sep 2025", month short
- * + year): null when the stats row carries no joinedAt timestamp.
- */
-internal fun memberSinceShort(iso: String): String? = runCatching {
-    val parsed = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(iso.take(19))
-        ?: java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(iso.take(10))
-    parsed?.let { java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.US).format(it) }
-}.getOrNull()
-
+/** EMB: segmented pickers ride the ember signal instead of the mint accent. */
 @Composable
-private fun SettingCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
-    Surface(
-        // R35 Neo: 24dp card radius + hairline border (locked spec).
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, PulsePalette.Hairline),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp), content = content)
-    }
-}
+private fun emberSegmentedColors() = SegmentedButtonDefaults.colors(
+    activeContainerColor = EmberPalette.Deep,
+    activeContentColor = Color(0xFF1C1410),
+    inactiveContainerColor = Color.Transparent,
+    inactiveContentColor = Color.White.copy(alpha = 0.55f),
+)
+
+/** EMB: switches wear the ember signal, not the mint accent. */
+@Composable
+private fun emberSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = Color.White,
+    checkedTrackColor = EmberPalette.Deep,
+    checkedBorderColor = EmberPalette.Deep,
+    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+    uncheckedTrackColor = EmberPalette.ChipFill,
+    uncheckedBorderColor = Color.White.copy(alpha = 0.25f),
+)
 
 /** FlowRow without the ExperimentalLayoutApi opt-in churn at call sites. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)

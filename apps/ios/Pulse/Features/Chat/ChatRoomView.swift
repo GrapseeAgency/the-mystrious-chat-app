@@ -37,7 +37,10 @@ struct ChatRoomView: View {
         }
         .navigationTitle(roomTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        // EMB-I - the header chrome melts into the ember ground (the same
+        // #1C1410 92% surface as the dock and composer), never a mint tint.
+        .toolbarBackground(PulseTheme.emberChrome.opacity(0.92), for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .onAppear {
             if viewModel == nil {
                 viewModel = RoomViewModel(conversation: conversation, session: session, initialJumpMessageId: jumpMessageId)
@@ -82,17 +85,17 @@ struct UnreadDividerRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Rectangle()
-                .fill(PulseTheme.emerald.opacity(0.4))
+                .fill(PulseTheme.emberGlowTop.opacity(0.4))
                 .frame(height: 1)
             Text("UNREAD")
                 .font(.system(size: 10, weight: .bold))
                 .kerning(1.6)
-                .foregroundStyle(PulseTheme.emerald)
+                .foregroundStyle(PulseTheme.emberGlowTop)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
-                .background(Capsule().fill(PulseTheme.emerald.opacity(0.10)))
+                .background(Capsule().fill(PulseTheme.emberGlowTop.opacity(0.10)))
             Rectangle()
-                .fill(PulseTheme.emerald.opacity(0.4))
+                .fill(PulseTheme.emberGlowTop.opacity(0.4))
                 .frame(height: 1)
         }
         .accessibilityElement(children: .ignore)
@@ -178,10 +181,10 @@ private struct RoomMessageRow: View {
                 memberNames: memberNames,
                 onReactionChip: onWhoReacted,
                 onDoubleTapHeart: {
-                    // R47 — double-tap bubble → ❤️ quick reaction (web
+                    // R47 — double-tap bubble fires the heart quick reaction (web
                     // chat-room.tsx:7265-7268 onDoubleClick parity). The SAME
                     // react path the 6-quick-reactions context menu uses; the
-                    // hearts burst rides the VM react (❤️ → .hearts fire).
+                    // hearts burst rides the VM react path.
                     viewModel.react(message, emoji: "❤️", session: session)
                 },
                 isClusterHead: cluster.head,
@@ -437,7 +440,7 @@ private struct RoomContent: View {
         case "amber": return Color(red: 0.96, green: 0.62, blue: 0.04)
         case "violet": return Color(red: 0.55, green: 0.36, blue: 0.97)
         case "teal": return Color(red: 0.08, green: 0.72, blue: 0.65)
-        default: return PulseTheme.emerald
+        default: return PulseTheme.emberGlowTop
         }
     }
 
@@ -498,6 +501,11 @@ private struct RoomContent: View {
             chatBodyPart20
             chatBodyPart21
         }
+        // EMB-I - the room is an ember surface: the subtree scheme pins
+        // dark so every adaptive token resolves onto the warm ground, and
+        // the tint goes white so toolbar chrome renders white (spec).
+        .environment(\.colorScheme, .dark)
+        .tint(.white)
     }
 
     @ViewBuilder
@@ -535,7 +543,7 @@ private struct RoomContent: View {
                 HStack(spacing: 6) {
                     Image(systemName: "timer")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(PulseTheme.emerald)
+                        .foregroundStyle(PulseTheme.emberGlowTop)
                     Text("Disappearing · \(GroupInfoView.ttlLabel(conversation.ttlSeconds))")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(PulseTheme.textSecondary)
@@ -543,7 +551,7 @@ private struct RoomContent: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 5)
-                .background(PulseTheme.emerald.opacity(0.08))
+                .background(PulseTheme.emberGlowTop.opacity(0.08))
                 .accessibilityLabel("Disappearing messages enabled")
             }
     }
@@ -659,12 +667,18 @@ private struct RoomContent: View {
 
     private var chatBodyStyled0: some View {
         chatBodyStyled_view
-        .background(alignment: .top) {
-            // Wave 8 — prefs wallpaper behind the whole room (web chat-room
-            // layered wallpaper parity; 'none' keeps the plain wash).
-            wallpaperWash
+            // EMB-I - the ember ground under everything: sunset gradient
+            // plus the warm radial glow behind the header. A user-picked
+            // wallpaper still layers on top of it (Wave 8 behavior kept).
+            .background(alignment: .top) {
+                ZStack {
+                    Rectangle()
+                        .fill(PulseTheme.emberBackdrop)
+                    EmberRadialGlow()
+                    wallpaperWash
+                }
                 .ignoresSafeArea()
-        }
+            }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 // W5-f — the voice room entry (VR-1): mic tints active while
@@ -781,7 +795,7 @@ private struct RoomContent: View {
                         safetyOpen = true
                     } label: {
                         Image(systemName: safetyBadges.isVerified(partner.id) ? "checkmark.shield.fill" : "shield.lefthalf.filled")
-                            .foregroundStyle(safetyBadges.isVerified(partner.id) ? PulseTheme.emerald : PulseTheme.textSecondary)
+                            .foregroundStyle(safetyBadges.isVerified(partner.id) ? PulseTheme.emberGlowTop : PulseTheme.textSecondary)
                             .overlay(alignment: .topTrailing) {
                                 if !safetyBadges.isVerified(partner.id) {
                                     Circle()
@@ -852,7 +866,7 @@ private struct RoomContent: View {
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 4)
                                     .frame(minWidth: 16, minHeight: 16)
-                                    .background(Capsule().fill(PulseTheme.emerald500))
+                                    .background(Capsule().fill(PulseTheme.emberGlowBottom))
                                     .offset(x: 8, y: -4)
                             }
                         }
@@ -1320,7 +1334,7 @@ private struct RoomContent: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .background(index == 0 ? PulseTheme.emerald500.opacity(0.10) : Color.clear)
+                .background(index == 0 ? PulseTheme.emberGlowBottom.opacity(0.10) : Color.clear)
                 .accessibilityLabel("Mention \(member.name)")
             }
         }
@@ -1364,7 +1378,7 @@ private struct RoomContent: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(hit.sender?.name ?? "Message")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(PulseTheme.emerald)
+                                .foregroundStyle(PulseTheme.emberGlowTop)
                             HighlightedSnippet(content: hit.content, query: searchQuery)
                                 .lineLimit(2)
                         }
@@ -1431,7 +1445,7 @@ private struct RoomContent: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(pin.sender?.name ?? "Pinned")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(PulseTheme.emerald)
+                            .foregroundStyle(PulseTheme.emberGlowTop)
                         Text(pin.content.isEmpty ? "Media message" : pin.content)
                             .font(.subheadline)
                             .foregroundStyle(.primary)
@@ -1536,7 +1550,7 @@ private struct RoomContent: View {
                             TypingDotsView()
                             Text(typersText)
                                 .font(.footnote)
-                                .foregroundStyle(PulseTheme.emerald)
+                                .foregroundStyle(PulseTheme.emberGlowTop)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16)
@@ -1613,15 +1627,15 @@ private struct RoomContent: View {
                             .padding(.horizontal, 4)
                             .frame(minWidth: 18, minHeight: 18)
                             .background(Circle().fill(.white))
-                            .foregroundStyle(PulseTheme.emerald)
+                            .foregroundStyle(PulseTheme.emberGlowTop)
                     }
                 }
                 .padding(.leading, 12)
                 .padding(.trailing, 14)
                 .padding(.vertical, 8)
                 .foregroundStyle(.white)
-                .background(Capsule().fill(PulseTheme.emerald))
-                .shadow(color: PulseTheme.emerald.opacity(0.35), radius: 8, y: 3)
+                .background(Capsule().fill(PulseTheme.emberGlowTop))
+                .shadow(color: PulseTheme.emberGlowTop.opacity(0.35), radius: 8, y: 3)
             }
             .buttonStyle(PulseButtonStyle())
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -1664,7 +1678,7 @@ private struct RoomContent: View {
                                 .font(.system(size: 11, weight: .semibold))
                         }
                         .buttonStyle(.plain)
-                        .tint(PulseTheme.emerald)
+                        .tint(PulseTheme.emberGlowTop)
                         .accessibilityLabel("Copy recap")
                     }
                     Button {
@@ -1722,9 +1736,9 @@ private struct RoomContent: View {
             VStack(spacing: 10) {
                 Image(systemName: "eye.slash")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(PulseTheme.emerald)
+                    .foregroundStyle(PulseTheme.emberGlowTop)
                     .frame(width: 44, height: 44)
-                    .background(Circle().fill(PulseTheme.emerald.opacity(0.12)))
+                    .background(Circle().fill(PulseTheme.emberGlowTop.opacity(0.12)))
                 Text("Screen security is on")
                     .font(.subheadline.weight(.semibold))
                 Text("Messages are hidden while Pulse is not focused")
@@ -1856,7 +1870,7 @@ private struct RoomContent: View {
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(PulseTheme.emerald)
+                        .foregroundStyle(PulseTheme.emberGlowTop)
                     Text("Only admins can post")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(PulseTheme.textSecondary)
@@ -1899,7 +1913,7 @@ private struct RoomContent: View {
         HStack(spacing: 6) {
             Image(systemName: "gauge")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(PulseTheme.emerald)
+                .foregroundStyle(PulseTheme.emberGlowTop)
             Text("Slow mode — you can send again in \(PulseFormat.countdown(viewModel.slowModeRemainingSeconds))")
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(PulseTheme.textSecondary)
@@ -1926,7 +1940,7 @@ private struct RoomContent: View {
         HStack(spacing: 6) {
             Image(systemName: "theatermasks.fill")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(PulseTheme.emerald)
+                .foregroundStyle(PulseTheme.emberGlowTop)
             Text("Incognito on — next message hides your name")
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(PulseTheme.textSecondary)
@@ -1946,8 +1960,8 @@ private struct RoomContent: View {
         .padding(.vertical, 6)
         .background(
             Capsule()
-                .fill(PulseTheme.emerald.opacity(0.12))
-                .overlay(Capsule().strokeBorder(PulseTheme.emerald.opacity(0.35), lineWidth: 1)),
+                .fill(PulseTheme.emberGlowTop.opacity(0.12))
+                .overlay(Capsule().strokeBorder(PulseTheme.emberGlowTop.opacity(0.35), lineWidth: 1)),
         )
         .padding(.horizontal, 14)
         .padding(.bottom, 6)
@@ -1961,7 +1975,7 @@ private struct RoomContent: View {
         HStack(spacing: 6) {
             Image(systemName: "bubble.left.and.bubble.right.fill")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(PulseTheme.emerald)
+                .foregroundStyle(PulseTheme.emberGlowTop)
             Text("Filing to #\(name)")
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(PulseTheme.textSecondary)
@@ -1983,8 +1997,8 @@ private struct RoomContent: View {
         .padding(.vertical, 6)
         .background(
             Capsule()
-                .fill(PulseTheme.emerald.opacity(0.12))
-                .overlay(Capsule().strokeBorder(PulseTheme.emerald.opacity(0.35), lineWidth: 1)),
+                .fill(PulseTheme.emberGlowTop.opacity(0.12))
+                .overlay(Capsule().strokeBorder(PulseTheme.emberGlowTop.opacity(0.35), lineWidth: 1)),
         )
         .padding(.horizontal, 14)
         .padding(.bottom, 6)
@@ -2066,48 +2080,81 @@ private struct RoomContent: View {
                         },
                     )
                 } else {
+                    // EMB-I composer row: dark plus-circle (attach), the
+                    // 52pt ember capsule (smile, text field, camera) and the
+                    // always-mounted voice/send slot on the right.
                     attachMenu
 
-                    TextField(
-                        viewModel.editingTarget != nil ? "Edit message" : "Message",
-                        text: $viewModel.draft,
-                        axis: .vertical,
-                    )
-                    .lineLimit(1...5)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(Capsule().fill(Color(.secondarySystemBackground)))
-                    .focused($composerFocused)
-                    .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
-                    .disabled(viewModel.staged != nil)
-                    // R2-D — the composer is VISIBLY locked while the
-                    // slow-mode window runs (web send/mic disabled parity).
-                    .disabled(viewModel.isSlowModeLocked)
-                    .opacity(viewModel.isSlowModeLocked ? 0.55 : 1)
-                    .overlay(alignment: .leading) {
-                        if viewModel.isSlowModeLocked {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(PulseTheme.textTertiary)
-                                .padding(.leading, 16)
-                                .transition(.opacity)
+                    HStack(spacing: 8) {
+                        // R5-A Item 1 - Smile button opens the EXISTING
+                        // emoji popover trigger.
+                        Button {
+                            PulseHaptics.tap()
+                            emojiPickerOpen = true
+                        } label: {
+                            Image(systemName: "face.smiling")
+                                .font(.system(size: 22, weight: .medium))
+                                .foregroundStyle(Color.white.opacity(0.80))
+                                .frame(width: 30, height: 44)
+                                .contentShape(Rectangle())
                         }
-                    }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Insert emoji")
 
-                    // R5-A Item 1 — Smile button (web composer row parity: the
-                    // emoji popover sits between the input and the mic/send).
-                    Button {
-                        PulseHaptics.tap()
-                        emojiPickerOpen = true
-                    } label: {
-                        Image(systemName: "face.smiling")
-                            .font(.system(size: 22))
-                            .foregroundStyle(Color.secondary)
-                            .frame(width: 30, height: 42)
-                            .contentShape(Rectangle())
+                        TextField(
+                            viewModel.editingTarget != nil ? "Edit message" : "Type here",
+                            text: $viewModel.draft,
+                            axis: .vertical,
+                            prompt: Text(viewModel.editingTarget != nil ? "Edit message" : "Type here")
+                                .foregroundColor(Color.white.opacity(0.40)),
+                        )
+                        .lineLimit(1...5)
+                        .foregroundStyle(.white)
+                        .padding(.vertical, 9)
+                        .focused($composerFocused)
+                        .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
+                        .disabled(viewModel.staged != nil)
+                        // R2-D - the composer is VISIBLY locked while the
+                        // slow-mode window runs (web send/mic disabled parity).
+                        .disabled(viewModel.isSlowModeLocked)
+                        .opacity(viewModel.isSlowModeLocked ? 0.55 : 1)
+                        .overlay(alignment: .leading) {
+                            if viewModel.isSlowModeLocked {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Color.white.opacity(0.40))
+                                    .padding(.leading, 16)
+                                    .transition(.opacity)
+                            }
+                        }
+
+                        // EMB-I - camera shortcut inside the capsule; it
+                        // rides the EXISTING D30 camera capture flow.
+                        Button {
+                            CameraPicker.requestAccess { granted in
+                                DispatchQueue.main.async {
+                                    if granted {
+                                        showCamera = true
+                                    } else {
+                                        cameraDenied = true
+                                    }
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "camera")
+                                .font(.system(size: 20, weight: .medium))
+                                .foregroundStyle(Color.white.opacity(0.80))
+                                .frame(width: 30, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Camera")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Insert emoji")
+                    .padding(.leading, 10)
+                    .padding(.trailing, 8)
+                    .frame(minHeight: 52)
+                    .background(Capsule().fill(PulseTheme.emberChrome.opacity(0.92)))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
                 }
 
                 voiceSendSlot
@@ -2121,24 +2168,29 @@ private struct RoomContent: View {
             .background(.ultraThinMaterial)
     }
 
-    /// D31 — the ALWAYS-MOUNTED trailing composer slot. One Image node whose
-    /// glyph/style swap by state keeps view identity (and the in-flight press
-    /// gesture) alive across idle → recording:
-    ///   • blank draft → mic: press-and-hold records; release sends; slide
-    ///     left past 80pt arms cancel ("Release to cancel" in the bar).
-    ///   • recording → send arrow: release sends; a quick tap also sends (the
-    ///     post-grant case where the TCC prompt swallowed the finger lift).
-    ///   • draft text / staged / editing → plain send (tap, prior behavior).
-    /// ONE gesture (DragGesture minimumDistance 0) owns the slot — a competing
-    /// TapGesture would never win recognition, so taps route through onEnded.
+    /// D31 - the ALWAYS-MOUNTED trailing composer slot. EMB-I visuals: the
+    /// send state is the 48pt ember-gradient circle with a white paperplane
+    /// (or arrow while recording); the voice-idle state is a dark circle
+    /// with a white mic. State machine + gesture are untouched.
     private var voiceSendSlot: some View {
         ZStack {
-            Image(systemName: viewModel.isRecording || !viewModel.canStartVoiceRecording ? "arrow.up.circle.fill" : "mic.circle.fill")
-                .font(.system(size: 32))
-                .foregroundStyle(slotStyle)
+            Image(systemName: viewModel.isRecording
+                ? "arrow.up"
+                : (viewModel.canStartVoiceRecording ? "mic.fill" : "paperplane.fill"))
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(
+                    Circle().fill(
+                        viewModel.canStartVoiceRecording && !viewModel.isRecording
+                            ? AnyShapeStyle(Color.white.opacity(0.08))
+                            : AnyShapeStyle(PulseTheme.emberSignalGradient),
+                    ),
+                )
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
                 .gesture(holdGesture)
             if viewModel.sendingVoice && !viewModel.isRecording {
-                ProgressView().tint(PulseTheme.emerald)
+                ProgressView().tint(.white)
             }
         }
         .accessibilityLabel(
@@ -2146,14 +2198,6 @@ private struct RoomContent: View {
                 ? "Release to send voice note — slide left to cancel"
                 : (viewModel.canStartVoiceRecording ? "Record voice note" : "Send"),
         )
-    }
-
-    private var slotStyle: AnyShapeStyle {
-        if viewModel.isRecording { return AnyShapeStyle(PulseTheme.gradient(named: "emerald")) }
-        if viewModel.canStartVoiceRecording { return AnyShapeStyle(PulseTheme.emerald) }
-        return viewModel.canSend
-            ? AnyShapeStyle(PulseTheme.gradient(named: "emerald"))
-            : AnyShapeStyle(Color.secondary.opacity(0.4))
     }
 
     /// D31 press-and-hold recorder gesture — minimumDistance 0 so a plain
@@ -2362,9 +2406,14 @@ private struct RoomContent: View {
                 }
             }
         } label: {
-            Image(systemName: viewModel.staged == nil ? "plus.circle.fill" : "minus.circle.fill")
-                .font(.system(size: 26))
-                .foregroundStyle(.secondary)
+            // EMB-I - the attach trigger is a 48pt dark circle with a white
+            // plus (same Menu, same actions).
+            Image(systemName: viewModel.staged == nil ? "plus" : "minus")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(Circle().fill(Color.white.opacity(0.08)))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
         }
         .disabled(viewModel.editingTarget != nil)
         .accessibilityLabel("Attach")
@@ -2400,9 +2449,9 @@ private struct RoomContent: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 12.5, weight: .bold))
-                        .foregroundStyle(PulseTheme.emerald)
+                        .foregroundStyle(PulseTheme.emberGlowTop)
                         .frame(width: 30, height: 30)
-                        .background(Capsule().fill(PulseTheme.emerald.opacity(0.10)))
+                        .background(Capsule().fill(PulseTheme.emberGlowTop.opacity(0.10)))
                 }
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Manage quick phrases")
@@ -2469,7 +2518,7 @@ private struct RoomContent: View {
                 case .file:
                     Image(systemName: "paperclip.circle.fill")
                         .font(.system(size: 30))
-                        .foregroundStyle(PulseTheme.emerald)
+                        .foregroundStyle(PulseTheme.emberGlowTop)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(staged.kind == .image ? "Photo" : (staged.fileName ?? "Document"))
@@ -2503,7 +2552,7 @@ private struct RoomContent: View {
                     ),
                 )
                 .font(.caption)
-                .tint(PulseTheme.emerald)
+                .tint(PulseTheme.emberGlowTop)
             }
         }
         .padding(.horizontal, 14)
@@ -2516,11 +2565,11 @@ private struct RoomContent: View {
         HStack(spacing: 8) {
             Image(systemName: "arrowshape.turn.up.left.fill")
                 .font(.footnote)
-                .foregroundStyle(PulseTheme.emerald)
+                .foregroundStyle(PulseTheme.emberGlowTop)
             VStack(alignment: .leading, spacing: 1) {
                 Text(reply.sender?.name ?? "Reply")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(PulseTheme.emerald)
+                    .foregroundStyle(PulseTheme.emberGlowTop)
                 Text(reply.content)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -2656,7 +2705,7 @@ private struct MessageInfoSheet: View {
             }
             Spacer()
             Image(systemName: seen ? "checkmark.circle.fill" : "checkmark.circle")
-                .foregroundStyle(seen ? PulseTheme.emerald : PulseTheme.textTertiary)
+                .foregroundStyle(seen ? PulseTheme.emberGlowTop : PulseTheme.textTertiary)
         }
     }
 }
@@ -2724,7 +2773,7 @@ struct BubbleView: View {
     // R3-A item 4 — tap a reaction chip → who-reacted roster sheet (web
     // chat-room.tsx ReactionChip tap → reactionInfo parity). nil = decorative.
     var onReactionChip: ((WireChatMessage, String) -> Void)? = nil
-    // R47 — double-tap bubble → ❤️ quick reaction (web chat-room.tsx:7265-7268
+    // R47 — double-tap bubble fires the heart quick reaction (web chat-room.tsx:7265-7268
     // onDoubleClick parity). nil = gesture NOT attached (threads stay nil;
     // the hearts burst rides the VM react path, not here).
     var onDoubleTapHeart: (() -> Void)? = nil
@@ -2794,14 +2843,15 @@ struct BubbleView: View {
         message.viewOnce == true && !mine && message.viewedAt != nil
     }
 
-    /// Wave 8 — the corner token drives every radius; the "tail" corner
-    /// (bottom-trailing for the viewer, bottom-leading for the peer) stays
-    /// the asymmetric 6 exactly like the web's rounded-br-md.
+    /// Wave 8 - the corner token drives every radius. EMB-I moves the
+    /// asymmetric 6 to the TOP corner of a cluster head (incoming = top
+    /// leading, outgoing = top trailing); non-head rows stay fully rounded.
     private var bubbleShape: UnevenRoundedRectangle {
         let r = bubbleRadius.cornerRadius
+        let head = isClusterHead
         return mine
-            ? UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r, bottomTrailingRadius: 6, topTrailingRadius: r)
-            : UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: 6, bottomTrailingRadius: r, topTrailingRadius: r)
+            ? UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r, bottomTrailingRadius: r, topTrailingRadius: head ? 6 : r)
+            : UnevenRoundedRectangle(topLeadingRadius: head ? 6 : r, bottomLeadingRadius: r, bottomTrailingRadius: r, topTrailingRadius: r)
     }
 
     var body: some View {
@@ -2813,12 +2863,13 @@ struct BubbleView: View {
                 // R7 — sender name renders on HEAD rows of incoming group
                 // messages only (web chat-room.tsx:7289 head gate; the little
                 // color dot is the row's avatar stand-in — gated with it).
+                // EMB-I - sender name 12pt ember glow (#FFB86B).
                 if groupChat && !mine, isClusterHead, let sender = message.sender {
                     HStack(spacing: 5) {
                         Circle().fill(PulseTheme.color(named: sender.color)).frame(width: 6, height: 6)
                         Text(sender.name)
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(PulseTheme.emberGlowTop)
                     }
                     .padding(.horizontal, 4)
                 }
@@ -2838,9 +2889,9 @@ struct BubbleView: View {
                     if swipeX != 0 {
                         Image(systemName: mine ? "arrowshape.turn.up.right.fill" : "arrowshape.turn.up.left.fill")
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(PulseTheme.emerald)
+                            .foregroundStyle(PulseTheme.emberGlowTop)
                             .padding(7)
-                            .background(Circle().fill(PulseTheme.emerald.opacity(0.12)))
+                            .background(Circle().fill(PulseTheme.emberGlowTop.opacity(0.12)))
                             .opacity(min(CGFloat(1), max(CGFloat(0), (swipeToward - 4) / 24)))
                             .allowsHitTesting(false)
                     }
@@ -2853,7 +2904,7 @@ struct BubbleView: View {
                     } label: {
                         Label("\(replyCount) \(replyCount == 1 ? "reply" : "replies")", systemImage: "arrow.turn.down.right")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(PulseTheme.emerald)
+                            .foregroundStyle(PulseTheme.emberGlowTop)
                     }
                     .buttonStyle(PulseButtonStyle())
                     .padding(.trailing, 6)
@@ -2862,12 +2913,12 @@ struct BubbleView: View {
                 if mine && seen {
                     Text("Seen")
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(PulseTheme.emerald)
+                        .foregroundStyle(PulseTheme.emberGlowTop)
                         .padding(.trailing, 6)
                 } else if mine && !isPending && onLongPressActions {
                     Text("Sent")
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.white.opacity(0.40))
                         .padding(.trailing, 6)
                 }
             }
@@ -2881,9 +2932,9 @@ struct BubbleView: View {
             }
 
             if isDeleted {
-                Label("Message deleted", systemImage: "trash.fill")
+                Label("Message deleted", systemImage: "trash")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.50))
             } else {
                 content
                 // Wave 2 link preview — under the text, suppressed on poll
@@ -2900,19 +2951,21 @@ struct BubbleView: View {
             }
 
             HStack(spacing: 5) {
+                // EMB-I - 10pt white 40% timestamp inside the bubble tail.
                 Text(PulseFormat.clockTime(message.createdAt))
-                    .font(.caption2)
-                    .foregroundStyle(mine ? Color.white.opacity(0.8) : .secondary)
+                    .font(.system(size: 10))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.white.opacity(0.40))
                 if isPending {
                     // Queued offline — still in the outbox, clock = not sent yet.
                     Image(systemName: "clock")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(mine ? Color.white.opacity(0.85) : PulseTheme.amber)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.45))
                 }
                 if message.pinnedAt != nil {
                     Image(systemName: "pin.fill")
-                        .font(.caption2)
-                        .foregroundStyle(mine ? Color.white.opacity(0.85) : PulseTheme.amber)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.white.opacity(0.45))
                 }
             }
         }
@@ -3089,10 +3142,10 @@ struct BubbleView: View {
                             .resizable()
                             .scaledToFill()
                             .frame(maxWidth: 240, maxHeight: 240)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     case .empty:
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(.quaternary)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
                             .frame(width: 200, height: 140)
                             .overlay(ProgressView())
                     case .failure:
@@ -3123,10 +3176,10 @@ struct BubbleView: View {
                     AsyncImage(url: url) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.quaternary)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.white.opacity(0.08))
                     }
                     .frame(width: 200, height: 200)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     // Blur the IMAGE only (spec) — the overlay stays crisp.
                     .blur(radius: 24)
                 } else {
@@ -3205,7 +3258,7 @@ struct BubbleView: View {
     private var voiceChip: some View {
         HStack(spacing: 6) {
             Image(systemName: "waveform")
-                .foregroundStyle(mine ? Color.white : PulseTheme.emerald)
+                .foregroundStyle(mine ? Color.white : PulseTheme.emberGlowTop)
             // Deterministic waveform bars from the message id (native mirror
             // of the web voice bubble, no emoji chrome).
             HStack(spacing: 2) {
@@ -3213,7 +3266,7 @@ struct BubbleView: View {
                     let seed = abs(message.id.hashValue)
                     let height = CGFloat(5 + (seed * (index + 7)) % 15)
                     Capsule()
-                        .fill(mine ? Color.white.opacity(0.85) : PulseTheme.emerald.opacity(0.7))
+                        .fill(mine ? Color.white.opacity(0.85) : PulseTheme.emberGlowTop.opacity(0.7))
                         .frame(width: 2.5, height: height)
                 }
             }
@@ -3234,7 +3287,7 @@ struct BubbleView: View {
         HStack(alignment: .top, spacing: 5) {
             Image(systemName: "globe")
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(mine ? Color.white.opacity(0.85) : PulseTheme.emerald)
+                .foregroundStyle(mine ? Color.white.opacity(0.85) : PulseTheme.emberGlowTop)
             VStack(alignment: .leading, spacing: 1) {
                 Text(translation.text)
                     .font(.footnote.italic())
@@ -3248,7 +3301,7 @@ struct BubbleView: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 9).fill(mine ? Color.white.opacity(0.14) : PulseTheme.emerald.opacity(0.06)))
+        .background(RoundedRectangle(cornerRadius: 9).fill(mine ? Color.white.opacity(0.14) : PulseTheme.emberGlowTop.opacity(0.06)))
     }
 
     // ── R1-W2B F-MD-07 — location card ───────────────────────
@@ -3267,27 +3320,27 @@ struct BubbleView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(mine ? Color.white.opacity(0.18) : PulseTheme.emerald.opacity(0.10))
+                            .fill(mine ? Color.white.opacity(0.18) : PulseTheme.emberGlowTop.opacity(0.10))
                         // Graticule grid — the pin's spot comes from the real
                         // coordinates (equirectangular projection, web parity).
                         VStack(spacing: 18) {
                             ForEach(0..<4, id: \.self) { _ in
                                 Rectangle()
-                                    .fill((mine ? Color.white : PulseTheme.emerald).opacity(0.16))
+                                    .fill((mine ? Color.white : PulseTheme.emberGlowTop).opacity(0.16))
                                     .frame(height: 1)
                             }
                         }
                         HStack(spacing: 26) {
                             ForEach(0..<5, id: \.self) { _ in
                                 Rectangle()
-                                    .fill((mine ? Color.white : PulseTheme.emerald).opacity(0.16))
+                                    .fill((mine ? Color.white : PulseTheme.emberGlowTop).opacity(0.16))
                                     .frame(width: 1)
                             }
                         }
                         VStack(spacing: 3) {
                             Image(systemName: "mappin.circle.fill")
                                 .font(.system(size: 30))
-                                .foregroundStyle(mine ? Color.white : PulseTheme.emerald)
+                                .foregroundStyle(mine ? Color.white : PulseTheme.emberGlowTop)
                         }
                     }
                     .frame(width: 216, height: 116)
@@ -3313,13 +3366,11 @@ struct BubbleView: View {
     }
 
     private var bubbleFill: some ShapeStyle {
+        // EMB-I bubbles: outgoing #17110D, incoming #2E2824 (flat, no mint).
         if mine {
-            return AnyShapeStyle(LinearGradient(
-                colors: [PulseTheme.emerald, PulseTheme.emeraldDeep],
-                startPoint: .topLeading, endPoint: .bottomTrailing,
-            ))
+            return AnyShapeStyle(PulseTheme.emberBubbleOutgoing)
         }
-        return AnyShapeStyle(Color(.secondarySystemBackground))
+        return AnyShapeStyle(PulseTheme.emberBubbleIncoming)
     }
 
     @ViewBuilder
@@ -3327,16 +3378,16 @@ struct BubbleView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(reply.senderName)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(mine ? Color.white : PulseTheme.emerald)
+                .foregroundStyle(mine ? Color.white : PulseTheme.emberGlowTop)
             Text(reply.deleted == true ? "Deleted message" : reply.content)
                 .font(.caption)
-                .foregroundStyle(mine ? Color.white.opacity(0.85) : .secondary)
+                .foregroundStyle(Color.white.opacity(0.70))
                 .lineLimit(2)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 9).fill(mine ? Color.white.opacity(0.16) : Color.primary.opacity(0.05)))
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.08)))
     }
 
     private var reactions: [WireReactionGroup] { message.reactions ?? [] }
@@ -3357,12 +3408,17 @@ struct BubbleView: View {
                         if group.count > 1 {
                             Text("\(group.count)")
                                 .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color.white.opacity(0.55))
                         }
                     }
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(.thinMaterial))
+                    // EMB-I - glass circle chips: white 10% + white 12% ring.
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.10))
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1)),
+                    )
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -3470,8 +3526,8 @@ struct PulseBubbleBody: View {
             break
         case .mention:
             piece.inlinePresentationIntent = .stronglyEmphasized
-            piece.foregroundColor = PulseTheme.emeraldDeep
-            piece.backgroundColor = PulseTheme.emerald.opacity(0.20)
+            piece.foregroundColor = .white
+            piece.backgroundColor = PulseTheme.emberGlowBottom.opacity(0.24)
         case .url:
             // Web renderPlain :6876-6891 — href https://-prefixes www.,
             // underline, text-white on my bubbles / emerald-700 light and
@@ -3479,7 +3535,7 @@ struct PulseBubbleBody: View {
             // promote to a URL degrades to styled text (honest, no crash).
             piece.link = Self.linkURL(for: run.text)
             piece.underlineStyle = .single
-            piece.foregroundColor = mine ? Color.white : PulseTheme.bubbleLink
+            piece.foregroundColor = mine ? Color.white : PulseTheme.emberGlowTop
         }
         return piece
     }
@@ -5639,19 +5695,19 @@ struct ConvThemeSheet: View {
                     .frame(height: 54)
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(selected ? PulseTheme.emerald : PulseTheme.hairlineStrong, lineWidth: selected ? 2 : 1),
+                            .strokeBorder(selected ? PulseTheme.emberGlowTop : PulseTheme.hairlineStrong, lineWidth: selected ? 2 : 1),
                     )
                     .overlay(alignment: .topTrailing) {
                         if isOverride {
                             Circle()
-                                .fill(PulseTheme.emerald)
+                                .fill(PulseTheme.emberGlowTop)
                                 .frame(width: 6, height: 6)
                                 .padding(4)
                         }
                     }
                 Text(token.rawValue.capitalized)
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(selected ? PulseTheme.emerald : PulseTheme.textSecondary)
+                    .foregroundStyle(selected ? PulseTheme.emberGlowTop : PulseTheme.textSecondary)
             }
         }
         .buttonStyle(PulseButtonStyle())

@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -27,9 +28,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.InsertDriveFile
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -490,7 +488,7 @@ internal fun FileBubble(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.InsertDriveFile, contentDescription = "Document", tint = contentColor, modifier = Modifier.size(20.dp))
+                Icon(PulseIcons.File, contentDescription = "Document", tint = contentColor, modifier = Modifier.size(20.dp))
             }
             Column(Modifier.weight(1f, fill = false).widthIn(min = 120.dp)) {
                 Text(
@@ -511,7 +509,7 @@ internal fun FileBubble(
                         )
                     }
                     Icon(
-                        Icons.Outlined.Download,
+                        PulseIcons.Download,
                         contentDescription = if (downloading) "Downloading" else "Download",
                         tint = if (downloading) PulsePalette.Amber else contentColor.copy(alpha = 0.6f),
                         modifier = Modifier.size(12.dp),

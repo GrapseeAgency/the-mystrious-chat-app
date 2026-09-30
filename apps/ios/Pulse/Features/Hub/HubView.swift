@@ -402,7 +402,12 @@ struct HubView: View {
                 }
                 .padding(.horizontal, 18)
             }
-            .background(Color(.systemBackground))
+            .background(
+                // PULSE EMBER (EMB-I): sunset ground, subtree pinned dark.
+                Rectangle().fill(PulseTheme.emberBackdrop).ignoresSafeArea()
+            )
+            .environment(\.colorScheme, .dark)
+            .tint(.white)
         }
         .overlay(alignment: .bottom) {
             if let toast = vm.toast {
@@ -597,7 +602,7 @@ private struct HubLedgerList: View {
                     Spacer()
                     Text("\((entry.amount ?? 0) >= 0 ? "+" : "")\(entry.amount ?? 0) \(entry.asset ?? "PC")")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle((entry.amount ?? 0) >= 0 ? PulseTheme.emerald : Color.red)
+                        .foregroundStyle((entry.amount ?? 0) >= 0 ? PulseTheme.emberGlowBottom : Color.red)
                 }
             }
         }
@@ -788,7 +793,7 @@ private struct HubMarketSheet: View {
                         if listing.status == "sold" {
                             Text("SOLD").font(.caption).foregroundStyle(.secondary)
                         } else if listing.mine == true {
-                            Text("Yours").font(.caption).foregroundStyle(PulseTheme.emerald)
+                            Text("Yours").font(.caption).foregroundStyle(PulseTheme.emberGlowBottom)
                         } else if confirmBuy == listing.id {
                             Button("No") { confirmBuy = nil }.buttonStyle(.borderless)
                             Button("Buy") { vm.buy(listing); confirmBuy = nil }
@@ -877,7 +882,7 @@ private struct HubAppsList: View {
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(.white)
                             .frame(width: 34, height: 34)
-                            .background(PulseTheme.emerald, in: Circle())
+                            .background(PulseTheme.emberGlowBottom, in: Circle())
                         VStack(alignment: .leading, spacing: 1) {
                             Text(app.name).font(.subheadline)
                             Text("\(installs[String(app.n)]?.installs ?? 0) connected")
@@ -888,7 +893,7 @@ private struct HubAppsList: View {
                         if installs[String(app.n)]?.installed == true {
                             Text("connected")
                                 .font(.caption2.weight(.semibold))
-                                .foregroundStyle(PulseTheme.emerald)
+                                .foregroundStyle(PulseTheme.emberGlowBottom)
                         }
                     }
                     .contentShape(Rectangle())
@@ -907,7 +912,7 @@ private struct HubAppsList: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background {
-                Capsule().fill(category == slug ? PulseTheme.emerald.opacity(0.25) : Color(uiColor: .secondarySystemBackground))
+                Capsule().fill(category == slug ? PulseTheme.emberGlowBottom.opacity(0.25) : Color(uiColor: .secondarySystemBackground))
             }
             .onTapGesture { category = slug }
     }
@@ -1009,7 +1014,7 @@ private struct HubAppDetailSheet: View {
                         .background(Capsule().fill(Color(uiColor: .secondarySystemBackground)))
                 }
             }
-            .foregroundStyle(tab == id ? PulseTheme.emerald : Color.secondary)
+            .foregroundStyle(tab == id ? PulseTheme.emberGlowBottom : Color.secondary)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
@@ -1017,7 +1022,7 @@ private struct HubAppDetailSheet: View {
         .overlay(alignment: .bottom) {
             if tab == id {
                 Capsule()
-                    .fill(PulseTheme.emerald)
+                    .fill(PulseTheme.emberGlowBottom)
                     .frame(width: 44, height: 2.5)
                     .offset(y: 1)
             }
@@ -1034,7 +1039,7 @@ private struct HubAppDetailSheet: View {
             .font(.title3.weight(.bold))
             .foregroundStyle(.white)
             .frame(width: 48, height: 48)
-            .background(PulseTheme.emerald, in: Circle())
+            .background(PulseTheme.emberGlowBottom, in: Circle())
     }
 
     /// Web InstallerStack (:102-125) — up to 6 most-recent installer
@@ -1089,7 +1094,7 @@ private struct HubAppDetailSheet: View {
                     Text("\(installs)")
                         .font(.system(size: 24, weight: .black, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(PulseTheme.emerald)
+                        .foregroundStyle(PulseTheme.emberGlowBottom)
                         .contentTransition(.numericText())
                         .animation(.default, value: installs)
                     Text("member\(installs == 1 ? "" : "s") connected")
@@ -1120,9 +1125,9 @@ private struct HubAppDetailSheet: View {
             .padding(.vertical, 11)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(installed ? PulseTheme.emerald.opacity(0.12) : PulseTheme.emerald),
+                    .fill(installed ? PulseTheme.emberGlowBottom.opacity(0.12) : PulseTheme.emberGlowBottom),
             )
-            .foregroundStyle(installed ? PulseTheme.emerald : Color.white)
+            .foregroundStyle(installed ? PulseTheme.emberGlowBottom : Color.white)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(installed ? "Disconnect from \(currentApp.name)" : "Connect to \(currentApp.name)")
@@ -1180,7 +1185,7 @@ private struct HubAppDetailSheet: View {
                     // Web: "Connected on {formatDay}" (per-viewer truth).
                     Text("Connected on \(PulseFormat.hubDayStamp(stamp))")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(PulseTheme.emerald)
+                        .foregroundStyle(PulseTheme.emberGlowBottom)
                 }
                 HStack(spacing: 8) {
                     connectButton
@@ -1209,7 +1214,7 @@ private struct HubAppDetailSheet: View {
             Text(label)
                 .font(.system(size: 11, weight: .semibold))
                 .textCase(.uppercase)
-                .foregroundStyle(accent ? PulseTheme.emerald : Color.secondary)
+                .foregroundStyle(accent ? PulseTheme.emberGlowBottom : Color.secondary)
             Text(value)
                 .font(.system(size: 13.5, weight: .medium))
         }
@@ -1252,7 +1257,7 @@ private struct HubAppDetailSheet: View {
                                         .font(.system(size: 17, weight: .bold))
                                         .foregroundStyle(.white)
                                         .frame(width: 40, height: 40)
-                                        .background(PulseTheme.emerald, in: Circle())
+                                        .background(PulseTheme.emberGlowBottom, in: Circle())
                                     Text(relatedApp.name)
                                         .font(.system(size: 11.5, weight: .bold))
                                         .foregroundStyle(PulseTheme.titleOnPanel)
@@ -1308,7 +1313,7 @@ private struct HubAppDetailSheet: View {
                             .font(.system(size: 13, weight: .bold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
-                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(PulseTheme.emerald))
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(PulseTheme.emberGlowBottom))
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
@@ -1337,8 +1342,8 @@ private struct HubAppDetailSheet: View {
                             .font(.system(size: 10, weight: .bold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
-                            .background(Capsule().fill(state.joined == true ? PulseTheme.emerald.opacity(0.12) : Color(uiColor: .secondarySystemBackground)))
-                            .foregroundStyle(state.joined == true ? PulseTheme.emerald : Color.secondary)
+                            .background(Capsule().fill(state.joined == true ? PulseTheme.emberGlowBottom.opacity(0.12) : Color(uiColor: .secondarySystemBackground)))
+                            .foregroundStyle(state.joined == true ? PulseTheme.emberGlowBottom : Color.secondary)
                     }
                     communityButton
                 }
@@ -1373,7 +1378,7 @@ private struct HubAppDetailSheet: View {
                             if member.role == "admin" {
                                 Label("Admin", systemImage: "crown.fill")
                                     .font(.system(size: 9.5, weight: .bold))
-                                    .foregroundStyle(PulseTheme.emerald)
+                                    .foregroundStyle(PulseTheme.emberGlowBottom)
                             }
                         }
                         .padding(.horizontal, 12)
@@ -1401,7 +1406,7 @@ private struct HubAppDetailSheet: View {
                     .font(.headline.weight(.bold))
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
-                    .background(PulseTheme.emerald, in: Circle())
+                    .background(PulseTheme.emberGlowBottom, in: Circle())
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Your connection")
                         .font(.system(size: 13, weight: .bold))
@@ -1418,9 +1423,9 @@ private struct HubAppDetailSheet: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
                         .background(
-                            Capsule().fill(installed ? PulseTheme.emerald.opacity(0.12) : PulseTheme.emerald),
+                            Capsule().fill(installed ? PulseTheme.emberGlowBottom.opacity(0.12) : PulseTheme.emberGlowBottom),
                         )
-                        .foregroundStyle(installed ? PulseTheme.emerald : Color.white)
+                        .foregroundStyle(installed ? PulseTheme.emberGlowBottom : Color.white)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(installed ? "Disconnect from \(currentApp.name)" : "Connect to \(currentApp.name)")
@@ -1469,7 +1474,7 @@ private struct HubAppDetailSheet: View {
                         Text("\(installs)")
                             .font(.system(size: 12, weight: .black, design: .rounded))
                             .monospacedDigit()
-                            .foregroundStyle(PulseTheme.emerald)
+                            .foregroundStyle(PulseTheme.emberGlowBottom)
                             .contentTransition(.numericText())
                             .animation(.default, value: installs)
                     }

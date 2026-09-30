@@ -51,6 +51,13 @@ struct CallsHistoryView: View {
                     .listStyle(.insetGrouped)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(
+                // PULSE EMBER (EMB-I): sunset ground, subtree pinned dark.
+                Rectangle().fill(PulseTheme.emberBackdrop).ignoresSafeArea()
+            )
+            .environment(\.colorScheme, .dark)
+            .tint(.white)
             .navigationTitle("Calls")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -118,11 +125,11 @@ private struct CallHistoryRow: View {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(PulseTheme.emerald.opacity(0.14))
+                        .fill(PulseTheme.emberOnline.opacity(0.14))
                         .frame(width: 40, height: 40)
                     Text(initials)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(PulseTheme.emerald)
+                        .foregroundStyle(PulseTheme.emberOnline)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.peerName)
@@ -153,9 +160,9 @@ private struct CallHistoryRow: View {
                         } else {
                             Image(systemName: "phone.arrow.up.right.fill")
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(PulseTheme.emerald)
+                                .foregroundStyle(PulseTheme.emberOnline)
                                 .frame(width: 34, height: 34)
-                                .background(Circle().fill(PulseTheme.emerald.opacity(0.12)))
+                                .background(Circle().fill(PulseTheme.emberOnline.opacity(0.12)))
                         }
                     }
                     .buttonStyle(.plain)
@@ -208,7 +215,7 @@ private struct CallHistoryRow: View {
 
     private var tint: Color {
         switch row.status {
-        case "completed": return PulseTheme.emerald
+        case "completed": return PulseTheme.emberOnline
         default: return Color(red: 0.88, green: 0.11, blue: 0.28)
         }
     }

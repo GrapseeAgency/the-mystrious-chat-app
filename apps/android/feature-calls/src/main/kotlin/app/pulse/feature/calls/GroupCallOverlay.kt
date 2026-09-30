@@ -1,5 +1,6 @@
 package app.pulse.feature.calls
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,15 +22,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.CallEnd
-import androidx.compose.material.icons.filled.FlipCameraAndroid
-import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -126,7 +118,7 @@ fun GroupCallOverlay(vm: GroupCallViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Filled.Groups,
+                        PulseIcons.Users,
                         contentDescription = null,
                         tint = Color(0xCCFFFFFF),
                         modifier = Modifier.size(14.dp),
@@ -167,21 +159,21 @@ fun GroupCallOverlay(vm: GroupCallViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     GroupCallButton(
-                        icon = if (snapshot.micEnabled) Icons.Filled.Mic else Icons.Filled.MicOff,
+                        icon = if (snapshot.micEnabled) PulseIcons.Mic else PulseIcons.MicOff,
                         description = if (snapshot.micEnabled) "Mute mic" else "Unmute mic",
                         container = if (snapshot.micEnabled) Color(0x26FFFFFF) else Color.White,
                         tint = if (snapshot.micEnabled) Color.White else Color.Black,
                     ) { vm.toggleMic() }
                     Spacer(Modifier.width(18.dp))
                     GroupCallButton(
-                        icon = Icons.Filled.CallEnd,
+                        icon = PulseIcons.PhoneDown,
                         description = "Leave call",
                         container = Color(0xFFEF4444),
                         size = 64.dp,
                     ) { vm.leaveCall() }
                     Spacer(Modifier.width(18.dp))
                     GroupCallButton(
-                        icon = if (snapshot.cameraEnabled) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
+                        icon = if (snapshot.cameraEnabled) PulseIcons.Video else PulseIcons.VideoSlash,
                         description = if (snapshot.cameraEnabled) "Turn camera off" else "Turn camera on",
                         container = if (snapshot.cameraEnabled) Color(0x26FFFFFF) else Color.White,
                         tint = if (snapshot.cameraEnabled) Color.White else Color.Black,
@@ -206,7 +198,7 @@ fun GroupCallOverlay(vm: GroupCallViewModel) {
                     .background(Color(0x26FFFFFF), CircleShape)
                     .semantics { contentDescription = "Switch camera" },
             ) {
-                Icon(Icons.Filled.FlipCameraAndroid, contentDescription = null, tint = Color.White)
+                Icon(PulseIcons.FlipCamera, contentDescription = null, tint = Color.White)
             }
         }
     }
@@ -326,7 +318,7 @@ private fun ParticipantTile(
             )
             if (micMuted) {
                 Icon(
-                    Icons.Filled.MicOff,
+                    PulseIcons.MicOff,
                     contentDescription = "Mic muted",
                     tint = Color(0xFFFDA4AF),
                     modifier = Modifier.size(14.dp),
@@ -468,7 +460,7 @@ private fun BannerRow(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Filled.Call,
+                PulseIcons.Phone,
                 contentDescription = null,
                 tint = PulsePalette.Emerald,
                 modifier = Modifier.size(18.dp),

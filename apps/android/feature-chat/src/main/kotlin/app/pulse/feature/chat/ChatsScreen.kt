@@ -49,43 +49,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.AlternateEmail
-import androidx.compose.material.icons.filled.BrightnessAuto
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Create
-import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DoneAll
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.HourglassEmpty
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.NotificationsOff
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Radio
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Unarchive
-import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.NotificationsOff
-import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -142,11 +113,15 @@ import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.StoryCell
 import app.pulse.feature.chat.R
+import app.pulse.ui.EmberPalette
+import app.pulse.ui.EmberGlassButton
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseGlass
+import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulseMonoFamily
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.emberBackdrop
 import app.pulse.ui.isPulseDarkTheme
 import app.pulse.ui.pulseGlass
 import app.pulse.ui.shimmer
@@ -165,6 +140,13 @@ private val Zinc600 = Color(0xFF52525B)
 private val Amber500 = Color(0xFFF59E0B)
 private val Amber600 = Color(0xFFD97706)
 private val Rose400 = Color(0xFFFB7185)
+
+// ── EMB-A ember text tokens (dark language) ──
+private val EmberText = Color.White
+private val EmberText80 = Color.White.copy(alpha = 0.80f)
+private val EmberText55 = Color.White.copy(alpha = 0.55f)
+private val EmberText45 = Color.White.copy(alpha = 0.45f)
+private val EmberText40 = Color.White.copy(alpha = 0.40f)
 private val Emerald400 = Color(0xFF34D399)
 private val Emerald500 = PulsePalette.Emerald
 private val Emerald600 = Color(0xFF059669)
@@ -358,7 +340,12 @@ fun ChatsScreen(
     // the app under edge-to-edge — the dock lifts by the same amount.
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    Box(Modifier.fillMaxSize()) {
+    // EMB-A: the home tab sits on the warm sunset-blur backdrop (dark mode).
+    Box(
+        Modifier
+            .fillMaxSize()
+            .then(if (dark) Modifier.emberBackdrop() else Modifier.background(MaterialTheme.colorScheme.background)),
+    ) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             if (search) {
                 SearchHeader(
@@ -503,7 +490,7 @@ fun ChatsScreen(
                         }
                         item(key = "pill-mentions") {
                             EntryPill(
-                                icon = Icons.Filled.AlternateEmail,
+                                icon = PulseIcons.AtSign,
                                 label = "Mentions",
                                 badge = mentionCount.takeIf { it > 0 },
                                 trailing = if (mentionCount == 1) "1 mention" else "$mentionCount mentions",
@@ -513,7 +500,7 @@ fun ChatsScreen(
                         }
                         item(key = "pill-channels") {
                             EntryPill(
-                                icon = Icons.Filled.Radio,
+                                icon = PulseIcons.Radio,
                                 label = "Channels",
                                 badge = null,
                                 trailing = if (channelCount == 1) "1 channel" else "$channelCount channels",
@@ -523,7 +510,7 @@ fun ChatsScreen(
                         }
                         item(key = "pill-archived") {
                             EntryPill(
-                                icon = Icons.Filled.Archive,
+                                icon = PulseIcons.Archive,
                                 label = "Archived",
                                 badge = archivedUnread.takeIf { it > 0 },
                                 trailing = if (archivedRows.size == 1) "1 chat" else "${archivedRows.size} chats",
@@ -777,7 +764,7 @@ fun ArchivedScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(PulseIcons.ChevronLeft, contentDescription = "Back")
                 }
                 Column {
                     Text(
@@ -896,88 +883,81 @@ private fun HomeHeader(
     Column(
         Modifier
             .fillMaxWidth()
-            .border(0.5.dp, if (dark) Color.White.copy(alpha = 0.08f) else Color(0xFFE4E4E7)),
+            .border(0.5.dp, if (dark) EmberPalette.Hairline else Color(0xFFE4E4E7)),
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier
-                    .clip(CircleShape)
-                    .clickable(onClick = onAvatar),
-            ) {
-                PulseAvatar(name = viewerName ?: "Me", colorHex = viewerColor, size = 36.dp)
-            }
+            // EMB-A: the big display title; avatar/profile stays on the dock tab.
+            Text(
+                "Chats",
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.6).sp,
+                color = if (dark) EmberText else MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f),
+            )
+            // EMB-A glass cluster: search, new chat, kebab (menu absorbs the
+            // calls + theme actions that used to be header icon buttons).
+            var headerMenuOpen by remember { mutableStateOf(false) }
+            val glassTint = if (dark) EmberText else MaterialTheme.colorScheme.onBackground
+            EmberGlassButton(
+                icon = PulseIcons.Search,
+                label = "Search chats and messages",
+                onClick = onSearch,
+                tint = glassTint,
+            )
             Spacer(Modifier.width(8.dp))
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Pulse",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.2).sp,
-                    color = MaterialTheme.colorScheme.onBackground,
+            EmberGlassButton(
+                icon = PulseIcons.Pencil,
+                label = "New chat",
+                onClick = onCompose,
+                tint = glassTint,
+            )
+            Spacer(Modifier.width(8.dp))
+            Box {
+                EmberGlassButton(
+                    icon = PulseIcons.KebabVertical,
+                    label = "More options",
+                    onClick = { headerMenuOpen = true },
+                    tint = glassTint,
                 )
-                Spacer(Modifier.width(6.dp))
-                Box(
-                    Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(Emerald400, Emerald600))),
-                )
+                DropdownMenu(
+                    expanded = headerMenuOpen,
+                    onDismissRequest = { headerMenuOpen = false },
+                    shape = RoundedCornerShape(16.dp),
+                    containerColor = if (dark) Color(0xFF241A13) else Color.White,
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Calls", fontSize = 14.sp) },
+                        leadingIcon = { Icon(PulseIcons.Phone, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            headerMenuOpen = false
+                            onCalls()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (dark) "Light theme" else "Dark theme", fontSize = 14.sp) },
+                        leadingIcon = {
+                            Icon(
+                                if (dark) PulseIcons.Sun else PulseIcons.Moon,
+                                contentDescription = "Toggle theme (system cycles on press)",
+                                tint = if (dark) EmberPalette.Amber else Emerald600,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                        onClick = {
+                            headerMenuOpen = false
+                            onTheme()
+                        },
+                    )
+                }
             }
-            HeaderIconButton(Icons.Filled.Phone, "Open calls", onCalls)
-            HeaderIconButton(Icons.Filled.Create, "New chat", onCompose)
-            ThemeToggleButton(onToggle = onTheme)
         }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp)
-                .padding(bottom = 10.dp)
-                .height(40.dp)
-                .pulseGlass(dark, RoundedCornerShape(50))
-                .clickable(onClick = onSearch),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.Search,
-                    contentDescription = null,
-                    tint = Zinc400,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(10.dp))
-                Text("Search chats and messages", fontSize = 14.sp, color = Zinc400)
-            }
-        }
-    }
-}
-
-/** System → light → dark cycle, icon mirrors the current state (web parity). */
-@Composable
-private fun ThemeToggleButton(onToggle: () -> Unit) {
-    val darkOverride = when (isPulseDarkTheme()) {
-        true -> "dark"
-        false -> "light"
-    }
-    IconButton(onClick = onToggle, modifier = Modifier.size(40.dp)) {
-        Icon(
-            imageVector = when (darkOverride) {
-                "dark" -> Icons.Filled.DarkMode
-                else -> Icons.Filled.LightMode
-            },
-            contentDescription = "Toggle theme (system cycles on press)",
-            tint = Zinc500,
-            modifier = Modifier.size(20.dp),
-        )
-    }
-}
-
-@Composable
-private fun HeaderIconButton(icon: ImageVector, label: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
-        Icon(icon, contentDescription = label, tint = Zinc500, modifier = Modifier.size(20.dp))
+        // EMB-A: the header search pill is gone — search lives in the glass
+        // button; the title row keeps the same rhythm without the duplicate.
+        Spacer(Modifier.height(4.dp))
     }
 }
 
@@ -996,39 +976,56 @@ private fun SearchHeader(
     LaunchedEffect(fieldFocused) { onFocusChange(fieldFocused) }
     val halo by animateFloatAsState(if (focused && query.isNotEmpty()) 1f else 0f, label = "searchHalo")
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.weight(1f).height(40.dp)) {
+        Box(Modifier.weight(1f).height(44.dp)) {
+            // EMB-A glass pill: white 8% fill, white 12% border, radius 24.
             Box(
                 Modifier
                     .fillMaxSize()
-                    .pulseGlass(dark, RoundedCornerShape(50)),
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(if (dark) Color.White.copy(alpha = 0.08f) else Color.White)
+                    .border(1.dp, if (dark) Color.White.copy(alpha = 0.12f) else Color(0xFFE4E4E7), RoundedCornerShape(24.dp)),
             )
             if (halo > 0.01f) {
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .clip(RoundedCornerShape(50))
-                        .border(2.dp, Emerald500.copy(alpha = 0.5f * halo), RoundedCornerShape(50))
-                        .background(Emerald500.copy(alpha = 0.10f * halo)),
+                        .clip(RoundedCornerShape(24.dp))
+                        .border(2.dp, EmberPalette.Amber.copy(alpha = 0.5f * halo), RoundedCornerShape(24.dp))
+                        .background(EmberPalette.Amber.copy(alpha = 0.08f * halo)),
                 )
             }
             OutlinedTextField(
                 value = query,
                 onValueChange = onQuery,
-                placeholder = { Text("Search chats and messages…", fontSize = 14.sp, color = Zinc400) },
+                placeholder = {
+                    Text(
+                        "Search chats and messages…",
+                        fontSize = 14.sp,
+                        color = if (dark) EmberText40 else Zinc400,
+                    )
+                },
                 singleLine = true,
-                textStyle = TextStyle(fontSize = 14.sp, color = MaterialTheme.colorScheme.onBackground),
+                textStyle = TextStyle(
+                    fontSize = 14.sp,
+                    color = if (dark) EmberText else MaterialTheme.colorScheme.onBackground,
+                ),
                 leadingIcon = {
-                    Icon(Icons.Filled.Search, contentDescription = null, tint = Zinc400, modifier = Modifier.size(16.dp))
+                    Icon(
+                        PulseIcons.Search,
+                        contentDescription = null,
+                        tint = if (dark) EmberText45 else Zinc400,
+                        modifier = Modifier.size(18.dp),
+                    )
                 },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Color.Transparent,
                     unfocusedBorderColor = Color.Transparent,
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
-                    cursorColor = Emerald500,
+                    cursorColor = EmberPalette.Amber,
                 ),
                 interactionSource = interaction,
                 modifier = Modifier.fillMaxSize(),
@@ -1040,19 +1037,24 @@ private fun SearchHeader(
                         .padding(end = 10.dp)
                         .size(24.dp)
                         .clip(CircleShape)
-                        .background(if (dark) Color(0xFF3F3F46) else Zinc300)
+                        .background(if (dark) Color.White.copy(alpha = 0.14f) else Zinc300)
                         .clickable(onClick = onClear),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Filled.Close, contentDescription = "Clear search", tint = Zinc600, modifier = Modifier.size(14.dp))
+                    Icon(
+                        PulseIcons.X,
+                        contentDescription = "Clear search",
+                        tint = if (dark) EmberText80 else Zinc600,
+                        modifier = Modifier.size(13.dp),
+                    )
                 }
             }
         }
         IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
             Icon(
-                Icons.Filled.Close,
+                PulseIcons.X,
                 contentDescription = "Close search",
-                tint = if (halo > 0.5f) Emerald600 else Zinc500,
+                tint = if (halo > 0.5f) EmberPalette.Amber else (if (dark) EmberText45 else Zinc500),
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -1295,7 +1297,7 @@ private fun FolderRail(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Filled.CreateNewFolder,
+                PulseIcons.Folder,
                 contentDescription = "Manage chat folders",
                 tint = Zinc500,
                 modifier = Modifier.size(18.dp),
@@ -1365,7 +1367,7 @@ private fun NoteToSelfCard(exists: Boolean, onOpen: () -> Unit, onCreate: () -> 
                 .background(Brush.linearGradient(listOf(Emerald400, Teal600))),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Filled.EditNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
+            Icon(PulseIcons.Pencil, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
         }
         Column(Modifier.weight(1f)) {
             Text(
@@ -1387,7 +1389,7 @@ private fun NoteToSelfCard(exists: Boolean, onOpen: () -> Unit, onCreate: () -> 
         if (exists) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Emerald600)
-                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Emerald600, modifier = Modifier.size(14.dp))
+                Icon(PulseIcons.ChevronRight, contentDescription = null, tint = Emerald600, modifier = Modifier.size(14.dp))
             }
         } else {
             Text(
@@ -1442,7 +1444,7 @@ private fun EntryPill(
         }
         Spacer(Modifier.weight(1f))
         Text(trailing, fontSize = 12.sp, color = Zinc400)
-        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Zinc400, modifier = Modifier.size(14.dp))
+        Icon(PulseIcons.ChevronRight, contentDescription = null, tint = Zinc400, modifier = Modifier.size(14.dp))
     }
 }
 
@@ -1543,7 +1545,7 @@ private fun ConversationRowItem(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             SwipeChip(
-                icon = if (conversation.isPinned) Icons.Outlined.PushPin else Icons.Filled.PushPin,
+                icon = if (conversation.isPinned) PulseIcons.Pin else PulseIcons.Pin,
                 tint = if (conversation.isPinned) Amber500 else Emerald600,
                 label = if (conversation.isPinned) "Unpin" else "Pin",
                 dark = dark,
@@ -1554,7 +1556,7 @@ private fun ConversationRowItem(
                 },
             )
             SwipeChip(
-                icon = if (inArchived || conversation.isArchived) Icons.Filled.Unarchive else Icons.Outlined.Archive,
+                icon = if (inArchived || conversation.isArchived) PulseIcons.Archive else PulseIcons.Archive,
                 tint = if (inArchived || conversation.isArchived) Amber500 else Zinc500,
                 label = if (inArchived || conversation.isArchived) "Unarchive" else "Archive",
                 dark = dark,
@@ -1640,7 +1642,7 @@ private fun ConversationRowItem(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (selected) {
-                            Icon(Icons.Filled.Check, contentDescription = "Selected", tint = Color.White, modifier = Modifier.size(16.dp))
+                            Icon(PulseIcons.Check, contentDescription = "Selected", tint = Color.White, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -1651,7 +1653,7 @@ private fun ConversationRowItem(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (conversation.isPinned) {
                         Icon(
-                            Icons.Filled.PushPin,
+                            PulseIcons.Pin,
                             contentDescription = "Pinned",
                             tint = Emerald500,
                             modifier = Modifier.size(12.dp),
@@ -1670,11 +1672,11 @@ private fun ConversationRowItem(
                     Spacer(Modifier.weight(1f))
                     // streak chips — priority: at-risk > live > lost (never two)
                     if (conversation.streakAtRiskCount > 0) {
-                        StreakChip(icon = Icons.Filled.HourglassEmpty, text = "ends tonight", amber = true)
+                        StreakChip(icon = PulseIcons.Clock, text = "ends tonight", amber = true)
                     } else if (conversation.streakCount > 0) {
-                        StreakChip(icon = Icons.Filled.LocalFireDepartment, text = "${conversation.streakCount}", amber = true)
+                        StreakChip(icon = PulseIcons.Flame, text = "${conversation.streakCount}", amber = true)
                     } else if (conversation.streakLost) {
-                        StreakChip(icon = Icons.Filled.LocalFireDepartment, text = "streak lost", amber = false)
+                        StreakChip(icon = PulseIcons.Flame, text = "streak lost", amber = false)
                     }
                     Spacer(Modifier.width(6.dp))
                     Text(
@@ -1691,7 +1693,7 @@ private fun ConversationRowItem(
                     when {
                         typing -> TypingDots()
                         conversation.myDraft != null -> {
-                            Icon(Icons.Filled.Edit, contentDescription = null, tint = Amber500, modifier = Modifier.size(12.dp))
+                            Icon(PulseIcons.Pencil, contentDescription = null, tint = Amber500, modifier = Modifier.size(12.dp))
                             Spacer(Modifier.width(4.dp))
                             Text("Draft:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Amber600)
                             Spacer(Modifier.width(4.dp))
@@ -1831,7 +1833,7 @@ private fun MutedChip(hasUnread: Boolean, unread: Int) {
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Icon(
-            Icons.Outlined.NotificationsOff,
+            PulseIcons.BellOff,
             contentDescription = "Muted",
             tint = if (hasUnread) (if (dark) Color(0xFFD4D4D8) else Zinc600) else Zinc400,
             modifier = Modifier.size(12.dp),
@@ -1969,10 +1971,10 @@ private fun MultiSelectBar(
             color = if (dark) Color(0xFFD4D4D8) else Zinc600,
             modifier = Modifier.padding(horizontal = 6.dp),
         )
-        BarAction(Icons.Filled.Archive, "Archive selected chats", onArchive)
-        BarAction(Icons.Filled.NotificationsOff, "Mute selected chats for 8 hours", onMute8h)
-        BarAction(Icons.Filled.DoneAll, "Mark selected chats read", onMarkRead)
-        BarAction(Icons.Filled.Close, "Exit multi-select", onExit, tint = Zinc400)
+        BarAction(PulseIcons.Archive, "Archive selected chats", onArchive)
+        BarAction(PulseIcons.BellOff, "Mute selected chats for 8 hours", onMute8h)
+        BarAction(PulseIcons.Checks, "Mark selected chats read", onMarkRead)
+        BarAction(PulseIcons.X, "Exit multi-select", onExit, tint = Zinc400)
     }
 }
 
@@ -2016,19 +2018,19 @@ private fun ConversationActionSheet(
                 )
             }
         }
-        SheetAction(if (conversation.isPinned) Icons.Outlined.PushPin else Icons.Filled.PushPin, if (conversation.isPinned) "Unpin" else "Pin to top", onPin)
+        SheetAction(if (conversation.isPinned) PulseIcons.Pin else PulseIcons.Pin, if (conversation.isPinned) "Unpin" else "Pin to top", onPin)
         SheetAction(
-            if (conversation.isArchived) Icons.Filled.Unarchive else Icons.Outlined.Archive,
+            if (conversation.isArchived) PulseIcons.Archive else PulseIcons.Archive,
             if (conversation.isArchived) "Unarchive" else "Archive",
             onArchive,
         )
-        SheetAction(Icons.Filled.DoneAll, if (conversation.myManualUnread) "Mark as read" else "Mark as unread", onMarkUnread)
-        SheetAction(Icons.Filled.NotificationsOff, "Mute for 8 hours") { onMute("8h") }
-        SheetAction(Icons.Filled.NotificationsOff, "Mute for 1 week") { onMute("1w") }
-        SheetAction(Icons.Filled.NotificationsOff, "Mute always") { onMute("always") }
-        if (conversation.isMuted) SheetAction(Icons.Filled.NotificationsOff, "Unmute") { onMute(null) }
-        SheetAction(Icons.Filled.FileDownload, "Export as .txt", onExport)
-        SheetAction(Icons.Filled.Delete, "Clear my messages", onClear)
+        SheetAction(PulseIcons.Checks, if (conversation.myManualUnread) "Mark as read" else "Mark as unread", onMarkUnread)
+        SheetAction(PulseIcons.BellOff, "Mute for 8 hours") { onMute("8h") }
+        SheetAction(PulseIcons.BellOff, "Mute for 1 week") { onMute("1w") }
+        SheetAction(PulseIcons.BellOff, "Mute always") { onMute("always") }
+        if (conversation.isMuted) SheetAction(PulseIcons.BellOff, "Unmute") { onMute(null) }
+        SheetAction(PulseIcons.Download, "Export as .txt", onExport)
+        SheetAction(PulseIcons.Trash, "Clear my messages", onClear)
         Spacer(Modifier.height(28.dp))
     }
 }
@@ -2088,14 +2090,14 @@ private fun SearchResults(
                 Text("ACTIONS", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.8.sp, color = Zinc400)
             }
             SpotlightActionRow(
-                icon = Icons.Filled.Create,
+                icon = PulseIcons.Pencil,
                 label = "New chat",
                 hint = "Pick someone to message",
                 tint = Emerald600,
                 onClick = onNewChat,
             )
             SpotlightActionRow(
-                icon = Icons.Filled.LocalFireDepartment,
+                icon = PulseIcons.Flame,
                 label = if (checkinPending) "Checking in…" else "Check in to Hub",
                 hint = "Daily Pulse Coins reward",
                 tint = Emerald600,
@@ -2103,7 +2105,7 @@ private fun SearchResults(
                 onClick = onCheckin,
             )
             SpotlightActionRow(
-                icon = if (darkSurface) Icons.Filled.LightMode else Icons.Filled.DarkMode,
+                icon = if (darkSurface) PulseIcons.Sun else PulseIcons.Moon,
                 label = if (darkSurface) "Switch to light theme" else "Switch to dark theme",
                 hint = "Appearance",
                 tint = Emerald600,
@@ -2135,7 +2137,7 @@ private fun SearchResults(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Icon(Icons.Filled.History, contentDescription = null, tint = Zinc400, modifier = Modifier.size(18.dp))
+                    Icon(PulseIcons.Clock, contentDescription = null, tint = Zinc400, modifier = Modifier.size(18.dp))
                     Text(recent, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -2186,7 +2188,7 @@ private fun SearchResults(
                 Modifier.fillMaxWidth().padding(top = 96.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(Icons.Filled.Search, contentDescription = null, tint = Zinc400, modifier = Modifier.size(32.dp))
+                Icon(PulseIcons.Search, contentDescription = null, tint = Zinc400, modifier = Modifier.size(32.dp))
                 Spacer(Modifier.height(8.dp))
                 Text("No matches", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Zinc500)
                 Text(
@@ -2237,7 +2239,7 @@ private fun SpotlightActionRow(
             Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Text(hint, fontSize = 11.5.sp, color = Zinc400)
         }
-        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Zinc400, modifier = Modifier.size(16.dp))
+        Icon(PulseIcons.ChevronRight, contentDescription = null, tint = Zinc400, modifier = Modifier.size(16.dp))
     }
 }
 
@@ -2291,7 +2293,7 @@ private fun SearchHitRow(hit: MessageHit, query: String, onOpen: () -> Unit) {
                         .border(2.dp, MaterialTheme.colorScheme.background, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Filled.Group, contentDescription = "Group", tint = Zinc500, modifier = Modifier.size(9.dp))
+                    Icon(PulseIcons.Users, contentDescription = "Group", tint = Zinc500, modifier = Modifier.size(9.dp))
                 }
             }
         }
@@ -2428,7 +2430,7 @@ private fun EmptyStateCard(
                     ) {
                         if (showArrow) {
                             Icon(
-                                Icons.AutoMirrored.Filled.ArrowForward,
+                                PulseIcons.ArrowRight,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
                             )

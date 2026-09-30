@@ -1,5 +1,6 @@
 package app.pulse.feature.calls
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -14,9 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -140,7 +138,7 @@ fun AddContactScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(PulseIcons.ChevronLeft, contentDescription = "Back")
             }
             Column {
                 Text("Add contact", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
@@ -219,7 +217,7 @@ fun AddContactScreen(
                             CircularProgressIndicator(Modifier.height(20.dp).width(20.dp))
                         } else {
                             Button(onClick = { viewModel.message(user) { conversation -> onOpenRoom(conversation.id) } }) {
-                                Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, Modifier.height(16.dp))
+                                Icon(PulseIcons.ChatBubble, contentDescription = null, Modifier.height(16.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("Message")
                             }

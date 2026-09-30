@@ -37,29 +37,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Accessibility
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Radar
-import androidx.compose.material.icons.filled.VerifiedUser
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -78,6 +55,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -105,8 +86,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import app.pulse.ui.PulseAvatar
+import app.pulse.ui.EmberPalette
+import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.PulseWallpaper
+import app.pulse.ui.emberBackdrop
+import app.pulse.ui.emberGlass
 import app.pulse.ui.update.LiveUpdater
 import app.pulse.ui.update.UpdaterDetail
 
@@ -114,15 +99,15 @@ import app.pulse.ui.update.UpdaterDetail
 private data class SectionDef(val id: String, val label: String, val caption: String, val icon: ImageVector)
 
 private val SECTIONS = listOf(
-    SectionDef("account", "Account", "Profile, handle and session", Icons.Filled.AccountCircle),
-    SectionDef("appearance", "Appearance", "Theme languages, color mode, navigation", Icons.Filled.Palette),
-    SectionDef("chat", "Chat", "Wallpaper, bubbles, drafts and outbox", Icons.Filled.Forum),
-    SectionDef("notifications", "Notifications", "Sound, previews, quiet hours", Icons.Filled.Notifications),
-    SectionDef("privacy", "Privacy & Security", "Read receipts and presence", Icons.Filled.VerifiedUser),
-    SectionDef("realtime", "Real-time & Voice", "Live connection and voice rooms", Icons.Filled.Radar),
-    SectionDef("accessibility", "Accessibility", "Motion and haptic feedback", Icons.Filled.Accessibility),
-    SectionDef("data", "Data & Storage", "Footprint, local data, install", Icons.Filled.Storage),
-    SectionDef("about", "About", "Version and project", Icons.Filled.Info),
+    SectionDef("account", "Account", "Profile, handle and session", PulseIcons.Person),
+    SectionDef("appearance", "Appearance", "Theme languages, color mode, navigation", PulseIcons.Sparkle),
+    SectionDef("chat", "Chat", "Wallpaper, bubbles, drafts and outbox", PulseIcons.ChatBubble),
+    SectionDef("notifications", "Notifications", "Sound, previews, quiet hours", PulseIcons.Bell),
+    SectionDef("privacy", "Privacy & Security", "Read receipts and presence", PulseIcons.Lock),
+    SectionDef("realtime", "Real-time & Voice", "Live connection and voice rooms", PulseIcons.Radio),
+    SectionDef("accessibility", "Accessibility", "Motion and haptic feedback", PulseIcons.Waveform),
+    SectionDef("data", "Data & Storage", "Footprint, local data, install", PulseIcons.Archive),
+    SectionDef("about", "About", "Version and project", PulseIcons.Info),
 )
 
 private val GROUPS: List<Pair<String, List<String>>> = listOf(
@@ -198,14 +183,23 @@ fun SettingsRootScreen(
         "about" to "v${versionName ?: "?"}",
     )
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .emberBackdrop(),
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = { Text("Settings", fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(PulseIcons.ChevronLeft, contentDescription = "Back")
                     }
                 },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    navigationIconContentColor = Color.White,
+                    titleContentColor = Color.White,
+                ),
             )
         },
     ) { pad ->
@@ -220,7 +214,7 @@ fun SettingsRootScreen(
             if (prefsOffline) {
                 Text(
                     "Offline — changes stay on this device until Pulse reconnects.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color.White.copy(alpha = 0.5f),
                     fontSize = 12.sp,
                     modifier = Modifier.padding(vertical = 6.dp),
                 )
@@ -230,14 +224,15 @@ fun SettingsRootScreen(
                     label,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color.White.copy(alpha = 0.5f),
                     modifier = Modifier
                         .padding(top = 14.dp, bottom = 6.dp)
                         .semantics { heading() },
                 )
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    color = Color.Transparent,
+                    modifier = Modifier.emberGlass(RoundedCornerShape(16.dp)),
                 ) {
                     Column {
                         ids.forEachIndexed { index, id ->
@@ -249,34 +244,32 @@ fun SettingsRootScreen(
                                     .padding(horizontal = 14.dp, vertical = 13.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                // R35 Neo - section icon tile: the accent signal
-                                // sits on a 12%-alpha accent tile (the web's
-                                // color-mix accent 12% row tiles), not a bare icon.
-                                Box(
-                                    Modifier
-                                        .size(32.dp)
-                                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        def.icon,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
+                                // EMB: plain hand-drawn icon at white 80% - the
+                                // accent tile is gone, the registry is intact.
+                                Icon(
+                                    def.icon,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(20.dp),
+                                )
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(def.label, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                    Text(def.label, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)
                                     Text(
                                         hints[def.id] ?: def.caption,
                                         fontSize = 11.5.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = Color.White.copy(alpha = 0.5f),
                                     )
                                 }
+                                Spacer(Modifier.width(8.dp))
+                                Icon(
+                                    PulseIcons.ChevronRight,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(18.dp),
+                                )
                             }
-                            if (index != ids.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            if (index != ids.lastIndex) HorizontalDivider(color = EmberPalette.Hairline)
                         }
                     }
                 }
@@ -285,7 +278,7 @@ fun SettingsRootScreen(
             Text(
                 "Pulse v${versionName ?: "?"} — every control here is live.",
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color.White.copy(alpha = 0.5f),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 10.dp),
@@ -300,14 +293,23 @@ fun SettingsRootScreen(
 @Composable
 private fun SectionScaffold(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .emberBackdrop(),
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
                 title = { Text(title, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(PulseIcons.ChevronLeft, contentDescription = "Back")
                     }
                 },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    navigationIconContentColor = Color.White,
+                    titleContentColor = Color.White,
+                ),
             )
         },
     ) { pad ->
@@ -330,28 +332,53 @@ private fun RowToggle(title: String, subtitle: String?, checked: Boolean, onChan
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)
             if (subtitle != null) {
-                Text(subtitle, fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(subtitle, fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
             }
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = emberSwitchColors(),
+        )
     }
 }
 
 @Composable
 private fun SegPicker(label: String, options: List<Pair<String, String>>, value: String, onPick: (String) -> Unit) {
-    Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
+    Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         options.forEachIndexed { index, (id, name) ->
             SegmentedButton(
                 selected = value == id,
                 onClick = { onPick(id) },
                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                colors = emberSegmentedColors(),
             ) { Text(name, fontSize = 12.5.sp, maxLines = 1) }
         }
     }
 }
+
+/** EMB: segmented pickers ride the ember signal instead of the mint accent. */
+@Composable
+private fun emberSegmentedColors() = SegmentedButtonDefaults.colors(
+    activeContainerColor = EmberPalette.Deep,
+    activeContentColor = Color(0xFF1C1410),
+    inactiveContainerColor = Color.Transparent,
+    inactiveContentColor = Color.White.copy(alpha = 0.55f),
+)
+
+/** EMB: switches wear the ember signal, not the mint accent. */
+@Composable
+private fun emberSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = Color.White,
+    checkedTrackColor = EmberPalette.Deep,
+    checkedBorderColor = EmberPalette.Deep,
+    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+    uncheckedTrackColor = EmberPalette.ChipFill,
+    uncheckedBorderColor = Color.White.copy(alpha = 0.25f),
+)
 
 // ── Account ──────────────────────────────────────────────────
 
@@ -364,9 +391,11 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
     val haptics = LocalHapticFeedback.current
     SectionScaffold("Account", onBack) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.padding(vertical = 8.dp),
+            modifier = Modifier
+                .padding(vertical = 8.dp)
+                .emberGlass(RoundedCornerShape(16.dp)),
         ) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 PulseAvatar(name = profile?.name ?: viewerName ?: "?", colorHex = profile?.color, size = 44.dp)
@@ -381,7 +410,7 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                             Spacer(Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(999.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                color = EmberPalette.ChipFill,
                             ) {
                                 Text(glyph, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                             }
@@ -390,7 +419,7 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                     Text(
                         profile?.handle?.let { "@$it" } ?: "No handle yet",
                         fontSize = 12.5.sp,
-                        color = PulsePalette.Emerald,
+                        color = EmberPalette.Online,
                     )
                     // R16 — the web statusLine (settings-screen.tsx:777-780 +
                     // :816-818): status glyph+text when set, else the bio line.
@@ -404,7 +433,7 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                         Text(
                             statusLine,
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = Color.White.copy(alpha = 0.5f),
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             modifier = Modifier.padding(top = 1.dp),
@@ -415,7 +444,7 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                             Text(
                                 "Member since $formatted",
                                 fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = Color.White.copy(alpha = 0.5f),
                                 modifier = Modifier.padding(top = 2.dp),
                             )
                         }
@@ -435,11 +464,11 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                 .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.ContentCopy, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Icon(PulseIcons.Copy, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("Copy user ID", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-                Text("Share this with tools that troubleshoot your account.", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Share this with tools that troubleshoot your account.", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
             }
         }
         Row(
@@ -449,7 +478,7 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                 .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Icon(PulseIcons.Pencil, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(12.dp))
             Text("Edit profile", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
         }
@@ -460,25 +489,25 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
             Modifier.fillMaxWidth().padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Icon(PulseIcons.Person, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("Session scope", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
                 Text(
                     "Signed in on this device only (encrypted session vault) — other devices keep their own sessions.",
                     fontSize = 11.5.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color.White.copy(alpha = 0.5f),
                 )
             }
             Surface(
                 shape = RoundedCornerShape(999.dp),
-                color = if (viewerId != null) PulsePalette.Emerald.copy(alpha = 0.14f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.10f),
+                color = if (viewerId != null) EmberPalette.Online.copy(alpha = 0.14f) else EmberPalette.ChipFill,
             ) {
                 Text(
                     if (viewerId != null) "Active" else "None",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (viewerId != null) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (viewerId != null) EmberPalette.Online else Color.White.copy(alpha = 0.5f),
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                 )
             }
@@ -542,13 +571,14 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
         // R2-C item 3 — the design-language picker (web ui-theme.ts five
         // languages; value strings ride the SAME `pulse.uiTheme.v2` key the
         // web persists, so a native pick and a web pick stay in step locally).
-        Text("Design language", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+        Text("Design language", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             UI_THEME_ROW_1.forEachIndexed { index, (id, name) ->
                 SegmentedButton(
                     selected = uiThemeMeta.id == id,
                     onClick = { viewModel.setUiTheme(id) },
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = UI_THEME_ROW_1.size),
+                    colors = emberSegmentedColors(),
                 ) { Text(name, fontSize = 12.5.sp, maxLines = 1) }
             }
         }
@@ -559,13 +589,14 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
                     selected = uiThemeMeta.id == id,
                     onClick = { viewModel.setUiTheme(id) },
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = UI_THEME_ROW_2.size),
+                    colors = emberSegmentedColors(),
                 ) { Text(name, fontSize = 12.5.sp, maxLines = 1) }
             }
         }
         Text(
             uiThemeMeta.label + " — " + uiThemeMeta.detail,
             fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Color.White.copy(alpha = 0.5f),
             modifier = Modifier.padding(top = 4.dp),
         )
         // R4-B item 3 / R14 — the navigation-architecture picker (web
@@ -577,7 +608,7 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
             "Navigation style",
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Color.White.copy(alpha = 0.5f),
             modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
         )
         NAV_STYLE_CARDS.chunked(2).forEach { row ->
@@ -591,10 +622,10 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
                         Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                            .background(EmberPalette.ChipFill)
                             .border(
                                 if (selected) 2.dp else 1.dp,
-                                if (selected) PulsePalette.Emerald else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                                if (selected) EmberPalette.Amber else EmberPalette.GlassBorder,
                                 RoundedCornerShape(14.dp),
                             )
                             .clickable {
@@ -611,7 +642,7 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
                             label,
                             fontSize = 12.5.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (selected) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurface,
+                            color = if (selected) EmberPalette.Online else Color.White,
                             maxLines = 1,
                         )
                         Spacer(Modifier.height(2.dp))
@@ -619,7 +650,7 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
                             hint,
                             fontSize = 10.sp,
                             lineHeight = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = Color.White.copy(alpha = 0.5f),
                             maxLines = 2,
                         )
                     }
@@ -628,7 +659,7 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
             }
         }
         SegPicker("Color mode", listOf("system" to "System", "dark" to "Dark", "light" to "Light"), darkOverride, viewModel::setDarkOverride)
-        Text("Wallpaper", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
+        Text("Wallpaper", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             WALLPAPERS.forEach { (id, name) ->
                 val selected = prefs.wallpaper == id
@@ -637,23 +668,24 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
                         Modifier
                             .size(46.dp)
                             .clip(CircleShape)
-                            .background(PulseWallpaper.brush(id) ?: Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface, MaterialTheme.colorScheme.surface)))
-                            .then(if (selected) Modifier.border(2.dp, PulsePalette.Emerald, CircleShape) else Modifier),
+                            .background(PulseWallpaper.brush(id) ?: Brush.verticalGradient(listOf(EmberPalette.BubbleOut, EmberPalette.BubbleOut)))
+                            .then(if (selected) Modifier.border(2.dp, EmberPalette.Online, CircleShape) else Modifier),
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(name, fontSize = 10.5.sp, color = if (selected) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(name, fontSize = 10.5.sp, color = if (selected) EmberPalette.Online else Color.White.copy(alpha = 0.5f))
                 }
             }
         }
         // R2-A item 11 — the FULL six-mode set (web WEBGL_MODES: off · aurora ·
         // caustics · mesh · stars · liquid); two 3-wide rows keep the labels legible.
-        Text("Ambient FX", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
+        Text("Ambient FX", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             FX_MODE_ROW_1.forEachIndexed { index, (id, name) ->
                 SegmentedButton(
                     selected = fxMode == id,
                     onClick = { viewModel.setFxMode(id) },
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = FX_MODE_ROW_1.size),
+                    colors = emberSegmentedColors(),
                 ) { Text(name, fontSize = 12.5.sp, maxLines = 1) }
             }
         }
@@ -664,6 +696,7 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
                     selected = fxMode == id,
                     onClick = { viewModel.setFxMode(id) },
                     shape = SegmentedButtonDefaults.itemShape(index = index, count = FX_MODE_ROW_2.size),
+                    colors = emberSegmentedColors(),
                 ) { Text(name, fontSize = 12.5.sp, maxLines = 1) }
             }
         }
@@ -701,10 +734,10 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
             prefs.density ?: "cozy",
             viewModel::setDensity,
         )
-        Text("Drafts & Outbox", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
-        Text("Drafts live on this device; outbox messages flush when Pulse reconnects.", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Drafts & Outbox", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
+        Text("Drafts live on this device; outbox messages flush when Pulse reconnects.", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
         if (drafts.isEmpty() && outbox.isEmpty()) {
-            Text("Nothing queued — all clear.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp))
+            Text("Nothing queued — all clear.", fontSize = 13.sp, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 12.dp))
         }
         if (drafts.isNotEmpty()) {
             Text("Drafts · ${drafts.size}", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
@@ -713,16 +746,16 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                 TextButton(onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     viewModel.clearDrafts()
-                }) { Text("Clear all drafts") }
+                }) { Text("Clear all drafts", color = EmberPalette.Amber) }
             }
             drafts.forEach { draft ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(draft.title, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                        Text(draft.text, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        Text(draft.text, fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), maxLines = 1)
                     }
                     IconButton(onClick = { viewModel.deleteDraft(draft.conversationId) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete draft in ${draft.title}", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        Icon(PulseIcons.Trash, contentDescription = "Delete draft in ${draft.title}", tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -734,16 +767,16 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                 TextButton(onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     viewModel.clearOutbox()
-                }) { Text("Clear all") }
+                }) { Text("Clear all", color = EmberPalette.Amber) }
             }
             outbox.forEach { row ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(row.title, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                        Text("${row.content} · attempt ${row.attempts}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        Text("${row.content} · attempt ${row.attempts}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), maxLines = 1)
                     }
                     IconButton(onClick = { viewModel.deleteOutboxEntry(row.clientId) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Discard queued message", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        Icon(PulseIcons.Trash, contentDescription = "Discard queued message", tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -774,7 +807,7 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
         RowToggle("Show message previews", "Message text in notification-style toasts.", prefs.notifPreviews == true, viewModel::setNotifPreviews)
         RowToggle("Play a soft pop", "Per-account pop sound for incoming messages.", prefs.notifSound == true, viewModel::setNotifSound)
         RowToggle("Vibrate", "Where the device supports it.", prefs.notifVibrate == true, viewModel::setNotifVibrate)
-        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = EmberPalette.Hairline)
         RowToggle("Quiet hours", "Silence pings and haptics inside the window.", quietOn, viewModel::setQuietHoursOn)
         if (quietOn) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(vertical = 6.dp)) {
@@ -784,10 +817,10 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
             Text(
                 if (quietNow) "Quiet hours are active right now." else "Quiet hours are set but not active right now.",
                 fontSize = 12.sp,
-                color = if (quietNow) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (quietNow) EmberPalette.Online else Color.White.copy(alpha = 0.5f),
             )
         }
-        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = EmberPalette.Hairline)
         // R9 — honest device state (web parity: settings-screen.tsx Remote-push
         // toggle row; iOS parity: SettingsView status row). Device state, not a
         // preference — an unarmed build says Off instead of pretending.
@@ -795,8 +828,8 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
         // R14 gap 2 — the "Preview alert" test row (web settings-screen.tsx
         // Test group :1258-1275): plays the REAL incoming ding through
         // IncomingAttention — honoring soundOn, haptics and quiet hours.
-        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-        Text("Test", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
+        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = EmberPalette.Hairline)
+        Text("Test", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 6.dp))
         Button(
             // R14 gap 2 — the REAL :app IncomingAttention path through the
             // domain seam (feature modules cannot see app-module code).
@@ -804,15 +837,19 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
             enabled = !quietNow,
             modifier = Modifier.fillMaxWidth().height(44.dp),
             shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = EmberPalette.Deep,
+                contentColor = Color(0xFF1C1410),
+            ),
         ) {
-            Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(PulseIcons.Bell, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
             Text("Preview alert", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
         Text(
             "Plays the real incoming ding and fires a haptic buzz, honoring the toggles above.",
             fontSize = 11.5.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Color.White.copy(alpha = 0.5f),
             modifier = Modifier.padding(top = 6.dp),
         )
         Spacer(Modifier.height(20.dp))
@@ -838,20 +875,20 @@ private fun RemotePushStatusRow(
     ) {
         Column(Modifier.weight(1f)) {
             Text("Remote push", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-            Text(note, fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(note, fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
         }
         Text(
             badge,
             fontSize = 12.5.sp,
             fontWeight = FontWeight.SemiBold,
-            color = if (on) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (on) EmberPalette.Online else Color.White.copy(alpha = 0.5f),
         )
         if (status.armed) {
             Text(
                 "Re-check",
                 fontSize = 12.5.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = PulsePalette.Emerald,
+                color = EmberPalette.Online,
                 modifier = Modifier
                     .padding(start = 12.dp)
                     .clickable(onClick = onResync),
@@ -875,9 +912,16 @@ private fun OutlinedField(label: String, value: String, onChange: (String) -> Un
         supportingText = {
             Text(
                 if (valid) "HH:MM" else "Use HH:MM — e.g. 22:00",
-                color = if (Regex("^\\d{1,2}:\\d{2}$").matches(value)) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                color = if (Regex("^\\d{1,2}:\\d{2}$").matches(value)) Color.White.copy(alpha = 0.5f) else EmberPalette.Signal,
             )
         },
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = EmberPalette.Amber,
+            unfocusedBorderColor = Color.White.copy(alpha = 0.25f),
+            cursorColor = EmberPalette.Amber,
+            focusedLabelColor = EmberPalette.Amber,
+            unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
+        ),
         singleLine = true,
         modifier = modifier,
     )
@@ -896,7 +940,7 @@ fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: Set
         RowToggle("Last seen & online", "Everyone can see when you were last active. Server-enforced.", prefs.lastSeenVisible == true, viewModel::setLastSeenVisible)
         RowToggle("Read receipts", "Send and request read receipts.", prefs.readReceipts == true, viewModel::setReadReceipts)
         RowToggle("Typing indicator", "Broadcast when you type. Server-enforced.", prefs.typingVisible == true, viewModel::setTypingVisible)
-        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = EmberPalette.Hairline)
         // R10-a — biometric App lock (device-local). Turning it ON runs ONE
         // confirmation BiometricPrompt right here: only a device that can
         // actually verify keeps the flag — anything else is an honest revert.
@@ -916,7 +960,7 @@ fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: Set
                 else -> confirmAppLock(activity) { viewModel.setAppLockEnabled(true) }
             }
         }
-        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = EmberPalette.Hairline)
         Row(
             Modifier
                 .fillMaxWidth()
@@ -924,12 +968,18 @@ fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: Set
                 .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.Block, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Icon(PulseIcons.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("Blocked accounts", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-                Text("Blocked accounts cannot message you in direct chats.", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Blocked accounts cannot message you in direct chats.", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
             }
+            Icon(
+                PulseIcons.ChevronRight,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.3f),
+                modifier = Modifier.size(18.dp),
+            )
         }
         Spacer(Modifier.height(20.dp))
     }
@@ -950,20 +1000,22 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
     LaunchedEffect(Unit) { viewModel.probeGateway() }
     SectionScaffold("Real-time & Voice", onBack) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.padding(vertical = 8.dp),
+            modifier = Modifier
+                .padding(vertical = 8.dp)
+                .emberGlass(RoundedCornerShape(16.dp)),
         ) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Wifi, contentDescription = null, tint = if (connected) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    Icon(PulseIcons.Radio, contentDescription = null, tint = if (connected) EmberPalette.Online else Color.White.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(if (connected) "Realtime connected" else "Realtime offline — polling fallback", fontSize = 13.5.sp)
                 }
-                Text("Gateway · ${viewModel.gatewayHost}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                Text("Gateway · ${viewModel.gatewayHost}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                HorizontalDivider(color = EmberPalette.Hairline)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Radar, contentDescription = null, tint = if (probe.ok == true) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    Icon(PulseIcons.Radio, contentDescription = null, tint = if (probe.ok == true) EmberPalette.Online else Color.White.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text(
@@ -976,11 +1028,11 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                             fontSize = 13.sp,
                         )
                         if (probe.ok == false) {
-                            Text("Voice rooms and live typing need the gateway.", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Voice rooms and live typing need the gateway.", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
                         }
                     }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { viewModel.probeGateway() }, enabled = !probe.running) { Text("Test") }
+                    TextButton(onClick = { viewModel.probeGateway() }, enabled = !probe.running) { Text("Test", color = EmberPalette.Amber) }
                 }
             }
         }
@@ -994,9 +1046,9 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                Icons.Filled.Group,
+                PulseIcons.Users,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = Color.White.copy(alpha = 0.5f),
                 modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(12.dp))
@@ -1005,19 +1057,19 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                 Text(
                     "Live presence snapshot from the socket server.",
                     fontSize = 11.5.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color.White.copy(alpha = 0.5f),
                 )
             }
             Surface(
                 shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f),
+                color = EmberPalette.ChipFill,
             ) {
                 Text(
                     "$onlineCount",
                     Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color.White.copy(alpha = 0.5f),
                 )
             }
         }
@@ -1030,9 +1082,9 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                if (deviceOnline) Icons.Filled.Wifi else Icons.Filled.CloudOff,
+                if (deviceOnline) PulseIcons.Radio else PulseIcons.Globe,
                 contentDescription = null,
-                tint = if (deviceOnline) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = if (deviceOnline) EmberPalette.Online else Color.White.copy(alpha = 0.5f),
                 modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(12.dp))
@@ -1042,19 +1094,19 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                     if (deviceOnline) "This device is online — delivery is instant."
                     else "This device is offline — messages wait in the queue.",
                     fontSize = 11.5.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color.White.copy(alpha = 0.5f),
                 )
             }
             Surface(
                 shape = RoundedCornerShape(999.dp),
-                color = if (deviceOnline) PulsePalette.Emerald.copy(alpha = 0.12f) else MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
+                color = if (deviceOnline) EmberPalette.Online.copy(alpha = 0.12f) else EmberPalette.Signal.copy(alpha = 0.10f),
             ) {
                 Text(
                     if (deviceOnline) "Online" else "Offline",
                     Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (deviceOnline) PulsePalette.Emerald else MaterialTheme.colorScheme.error,
+                    color = if (deviceOnline) EmberPalette.Online else EmberPalette.Signal,
                 )
             }
         }
@@ -1067,9 +1119,9 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                Icons.Filled.Mic,
+                PulseIcons.Mic,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = Color.White.copy(alpha = 0.5f),
                 modifier = Modifier.size(18.dp),
             )
             Spacer(Modifier.width(12.dp))
@@ -1078,7 +1130,7 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                 Text(
                     "Studio capture with echo cancellation, noise suppression and auto gain. Quality presets are not configurable yet.",
                     fontSize = 11.5.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color.White.copy(alpha = 0.5f),
                 )
             }
         }
@@ -1137,9 +1189,11 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
         // — the same stats route the user page consumes, evaluated for the
         // VIEWER. Loading skeletons + honest failure with a retry. ──
         Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.padding(vertical = 8.dp),
+            modifier = Modifier
+                .padding(vertical = 8.dp)
+                .emberGlass(RoundedCornerShape(16.dp)),
         ) {
             Column(Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1148,7 +1202,7 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                         Text(
                             "Live counts straight from the Pulse database.",
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = Color.White.copy(alpha = 0.5f),
                         )
                     }
                     IconButton(
@@ -1156,9 +1210,9 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                         modifier = Modifier.semantics { contentDescription = "Refresh stats" },
                     ) {
                         Icon(
-                            Icons.Filled.Refresh,
+                            PulseIcons.Refresh,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = Color.White.copy(alpha = 0.5f),
                             modifier = Modifier.size(18.dp),
                         )
                     }
@@ -1170,12 +1224,12 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                         Text(
                             fs.error ?: "Couldn't load your stats.",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.error,
+                            color = EmberPalette.Signal,
                         )
                         TextButton(onClick = { viewModel.refreshFootprintStats() }) {
-                            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Icon(PulseIcons.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Try again")
+                            Text("Try again", color = EmberPalette.Amber)
                         }
                     }
                     else -> {
@@ -1199,7 +1253,7 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                                                     .weight(1f)
                                                     .height(64.dp)
                                                     .clip(RoundedCornerShape(14.dp))
-                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                                                    .background(EmberPalette.ChipFill),
                                             )
                                         }
                                     }
@@ -1215,7 +1269,7 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                                                     .weight(1f)
                                                     .clip(RoundedCornerShape(14.dp))
                                                     .semantics { contentDescription = "$label: $value" },
-                                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                                                color = EmberPalette.GlassFill,
                                             ) {
                                                 Column(Modifier.padding(10.dp)) {
                                                     Text(
@@ -1226,7 +1280,7 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                                                     Text(
                                                         label,
                                                         fontSize = 11.sp,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        color = Color.White.copy(alpha = 0.5f),
                                                     )
                                                 }
                                             }
@@ -1241,38 +1295,41 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
             }
         }
         Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.padding(vertical = 8.dp),
+            modifier = Modifier
+                .padding(vertical = 8.dp)
+                .emberGlass(RoundedCornerShape(16.dp)),
         ) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Footprint · ${formatBytes(footprint.totalBytes)}", fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
-                Text("Database · ${formatBytes(footprint.databaseBytes)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Image cache · ${formatBytes(footprint.imageCacheBytes)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Database · ${formatBytes(footprint.databaseBytes)}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                Text("Image cache · ${formatBytes(footprint.imageCacheBytes)}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
             }
         }
         TextButton(onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             viewModel.clearImageCache { Toast.makeText(context, "Image cache cleared", Toast.LENGTH_SHORT).show() }
         }) { Text("Clear image cache") }
-        Text("App updates", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+        Text("App updates", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
         Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.emberGlass(RoundedCornerShape(16.dp)),
         ) {
             Column(Modifier.padding(14.dp)) {
                 UpdaterDetail()
                 TextButton(onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     scope.launch { LiveUpdater.syncFrom(context, force = true) }
-                }) { Text("Check for updates", color = PulsePalette.Emerald) }
+                }) { Text("Check for updates", color = EmberPalette.Online) }
             }
         }
         // R14 gap 6 — "The Hub" explore row (web settings-screen.tsx:1676-1686):
         // lands on the Hub tab through the shell's switchTab (which pops the
         // settings back stack to the start destination — the sheet closes).
         if (onOpenHub != null) {
-            Text("Explore", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+            Text("Explore", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -1280,17 +1337,17 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                     .padding(vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                Icon(PulseIcons.Info, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("The Hub", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-                    Text("Wallet · Tasks · Market · Swap · Apps · Logs", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Wallet · Tasks · Market · Swap · Apps · Logs", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
                 }
                 Text(
                     "Open",
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = PulsePalette.Emerald,
+                    color = EmberPalette.Online,
                 )
             }
         }
@@ -1331,15 +1388,17 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
     val connected by viewModel.connected.collectAsStateWithLifecycle()
     SectionScaffold("About", onBack) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.padding(vertical = 8.dp),
+            modifier = Modifier
+                .padding(vertical = 8.dp)
+                .emberGlass(RoundedCornerShape(16.dp)),
         ) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Pulse", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text("Real-time chat with a built-in economy", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("versionName ${pm.versionName} · versionCode ${pm.longVersionCode}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Native Android build — Kotlin + Compose.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Real-time chat with a built-in economy", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                Text("versionName ${pm.versionName} · versionCode ${pm.longVersionCode}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                Text("Native Android build — Kotlin + Compose.", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
             }
         }
         AboutInfoRow("Version", "${pm.versionName} · Stable")
@@ -1357,11 +1416,11 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
                 .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Icon(PulseIcons.Globe, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("GitHub repository", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-                Text("GrapseeAgency/the-mystrious-chat-app", fontSize = 11.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("GrapseeAgency/the-mystrious-chat-app", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
             }
         }
         // R14 gap 3 — the footer (web settings-screen.tsx:1755-1763).
@@ -1369,12 +1428,12 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
             Modifier.fillMaxWidth().padding(top = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(Icons.Filled.Favorite, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
+            Icon(PulseIcons.Star, contentDescription = null, tint = EmberPalette.Online, modifier = Modifier.size(16.dp))
             Text("Made with Pulse", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
             Text(
                 "Version ${pm.versionName} · chats, hub economy and settings sync live",
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color.White.copy(alpha = 0.5f),
             )
         }
         Spacer(Modifier.height(20.dp))
@@ -1388,13 +1447,13 @@ private fun AboutInfoRow(label: String, value: String, live: Boolean = false) {
         Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+        Icon(PulseIcons.Info, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(12.dp))
         Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(88.dp))
         Text(
             value,
             fontSize = 12.sp,
-            color = if (live) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (live) EmberPalette.Online else Color.White.copy(alpha = 0.5f),
             fontWeight = if (live) FontWeight.SemiBold else FontWeight.Normal,
         )
     }

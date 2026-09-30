@@ -20,7 +20,8 @@ struct StoryComposerView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.035, green: 0.035, blue: 0.043).ignoresSafeArea()
+            // PULSE EMBER (EMB-I): the sunset ground behind the composer.
+            Rectangle().fill(PulseTheme.emberBackdrop).ignoresSafeArea()
 
             VStack(spacing: 12) {
                 header

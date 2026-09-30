@@ -68,7 +68,11 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                PulseTheme.pageWash
+                // PULSE EMBER (EMB-I): the sunset ground under the whole
+                // sheet; the content subtree pins dark so every adaptive
+                // token resolves onto the ember surface.
+                Rectangle()
+                    .fill(PulseTheme.emberBackdrop)
                     .ignoresSafeArea()
 
                 ScrollView {
@@ -87,7 +91,9 @@ struct SettingsView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 28)
                 }
+                .environment(\.colorScheme, .dark)
             }
+            .tint(.white)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -136,25 +142,25 @@ struct SettingsView: View {
                     HStack(spacing: 6) {
                         Text(prefs.viewer?.name ?? "Signed out")
                             .font(.system(size: 15.5, weight: .bold))
-                            .foregroundStyle(PulseTheme.titleOnPanel)
+                            .foregroundStyle(.white)
                             .lineLimit(1)
                         if prefs.viewer != nil {
                             Text("You")
                                 .font(.system(size: 9.5, weight: .bold))
                                 .tracking(0.5)
-                                .foregroundStyle(PulseTheme.accent)
+                                .foregroundStyle(PulseTheme.emberGlowTop)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(PulseTheme.accent.opacity(0.12)))
+                                .background(Capsule().fill(PulseTheme.emberGlowTop.opacity(0.12)))
                         }
                     }
                     Text(prefs.viewer?.username.map { "@\($0)" } ?? "No handle yet")
                         .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.white.opacity(0.55))
                     if let statusLine, !statusLine.isEmpty {
                         Text(statusLine)
                             .font(.system(size: 12))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color.white.opacity(0.40))
                             .lineLimit(1)
                     }
                     // R14 5-b — the member-since line (web AccountSection card
@@ -167,7 +173,7 @@ struct SettingsView: View {
                             .font(.system(size: 11, weight: .medium))
                             .tracking(0.4)
                             .textCase(.uppercase)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color.white.opacity(0.40))
                             .lineLimit(1)
                     }
                 }
@@ -186,14 +192,14 @@ struct SettingsView: View {
             // User ID — UIPasteboard copy with an inline confirmation
             // (the app toast lives under the sheet, so it shows here).
             HStack(spacing: 10) {
-                neoTileIcon("number")
+                emberTileIcon("number")
                 VStack(alignment: .leading, spacing: 1) {
                     Text("User ID")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(PulseTheme.titleOnPanel)
+                        .foregroundStyle(.white)
                     Text(prefs.viewer?.id ?? "—")
                         .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.white.opacity(0.55))
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -203,10 +209,10 @@ struct SettingsView: View {
                 } label: {
                     Label(copiedUserId ? "Copied" : "Copy", systemImage: copiedUserId ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(copiedUserId ? PulseTheme.emerald : PulseTheme.accent)
+                        .foregroundStyle(copiedUserId ? PulseTheme.emberOnline : PulseTheme.emberGlowTop)
                         .padding(.horizontal, 12)
                         .frame(minHeight: 32)
-                        .background(Capsule().fill(PulseTheme.accent.opacity(0.10)))
+                        .background(Capsule().fill(PulseTheme.emberGlowTop.opacity(0.10)))
                 }
                 .buttonStyle(.plain)
                 .disabled(prefs.viewer == nil)
@@ -283,7 +289,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Light / dark")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Picker("Color mode", selection: Binding(
                     get: { prefs.appearance },
                     set: { prefs.setAppearance($0) },
@@ -293,7 +299,7 @@ struct SettingsView: View {
                     Text("System").tag("system")
                 }
                 .pickerStyle(.segmented)
-                .tint(PulseTheme.emerald)
+                .tint(.white)
             }
             .padding(.vertical, 4)
 
@@ -303,10 +309,10 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Design language")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Text("One of five locked looks — \(PulseUiTheme.meta(for: prefs.uiTheme).detail)")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                     ForEach(PulseUiTheme.allMeta(), id: \.id) { themeMeta in
@@ -325,10 +331,10 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Navigation style")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Text("How the app's dock is laid out — currently \(prefs.navStyle.label).")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2), spacing: 10) {
                     ForEach(PulseNavStyle.allCases, id: \.self) { style in
@@ -341,10 +347,10 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Chat wallpaper")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Text("Background behind every chat room — currently \(prefs.wallpaper.label).")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 HStack(spacing: 10) {
                     ForEach(PulseWallpaper.allCases, id: \.self) { token in
                         wallpaperSwatch(token)
@@ -368,21 +374,21 @@ struct SettingsView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .strokeBorder(
-                                    selected ? PulseTheme.emerald : (systemScheme == .dark ? Color.white.opacity(0.14) : PulseTheme.zinc(200)),
+                                    selected ? PulseTheme.emberGlowTop : Color.white.opacity(0.14),
                                     lineWidth: selected ? 2 : 1,
                                 ),
                         )
                     if selected {
                         Image(systemName: "checkmark")
                             .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(PulseTheme.emerald600)
+                            .foregroundStyle(.white)
                     }
                 }
                 .frame(height: 44)
                 .frame(maxWidth: .infinity)
                 Text(token.label)
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(selected ? PulseTheme.emerald : .secondary)
+                    .foregroundStyle(selected ? PulseTheme.emberGlowTop : Color.white.opacity(0.55))
             }
         }
         .buttonStyle(.plain)
@@ -415,7 +421,7 @@ struct SettingsView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(
-                                    selected ? PulseTheme.emerald : (systemScheme == .dark ? Color.white.opacity(0.14) : PulseTheme.zinc(200)),
+                                    selected ? PulseTheme.emberGlowTop : Color.white.opacity(0.14),
                                     lineWidth: selected ? 2 : 1,
                                 ),
                         )
@@ -428,7 +434,7 @@ struct SettingsView: View {
                 }
                 Text(themeMeta.label)
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(selected ? PulseTheme.emerald : .secondary)
+                    .foregroundStyle(selected ? PulseTheme.emberGlowTop : Color.white.opacity(0.55))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -451,22 +457,22 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: style.pickerIcon)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(selected ? PulseTheme.emerald : .secondary)
+                        .foregroundStyle(selected ? PulseTheme.emberGlowTop : Color.white.opacity(0.55))
                     Text(style.label)
                         .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(selected ? PulseTheme.emerald : PulseTheme.titleOnPanel)
+                        .foregroundStyle(selected ? PulseTheme.emberGlowTop : .white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                     Spacer(minLength: 0)
                     if selected {
                         Image(systemName: "checkmark")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(PulseTheme.emerald)
+                            .foregroundStyle(PulseTheme.emberGlowTop)
                     }
                 }
                 Text(style.hint)
                     .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 10)
@@ -474,12 +480,12 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selected ? PulseTheme.emerald.opacity(0.08) : PulseTheme.chipFill.opacity(0.5)),
+                    .fill(selected ? PulseTheme.emberGlowTop.opacity(0.08) : Color.white.opacity(0.05)),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
-                        selected ? PulseTheme.emerald : (systemScheme == .dark ? Color.white.opacity(0.14) : PulseTheme.zinc(200)),
+                        selected ? PulseTheme.emberGlowTop : Color.white.opacity(0.10),
                         lineWidth: selected ? 2 : 1,
                     ),
             )
@@ -496,7 +502,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Bubble corners")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Picker("Bubble corner radius", selection: Binding(
                     get: { prefs.bubbleRadius },
                     set: { prefs.setBubbleRadius($0) },
@@ -506,14 +512,14 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .tint(PulseTheme.emerald)
+                .tint(.white)
             }
             .padding(.vertical, 4)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Message density")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Picker("Message density", selection: Binding(
                     get: { prefs.density },
                     set: { prefs.setDensity($0) },
@@ -523,14 +529,14 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .tint(PulseTheme.emerald)
+                .tint(.white)
             }
             .padding(.vertical, 4)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Default list filter")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Picker("Default filter", selection: Binding(
                     get: { prefs.chatsFilter },
                     set: { prefs.setChatsFilter($0) },
@@ -540,7 +546,7 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .tint(PulseTheme.emerald)
+                .tint(.white)
             }
             .padding(.vertical, 4)
 
@@ -593,7 +599,7 @@ struct SettingsView: View {
                         Text("From")
                             .font(.system(size: 10.5, weight: .bold))
                             .tracking(0.8)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color.white.opacity(0.40))
                         DatePicker("Quiet hours start", selection: quietStartBinding, displayedComponents: .hourAndMinute)
                             .labelsHidden()
                     }
@@ -601,7 +607,7 @@ struct SettingsView: View {
                         Text("Until")
                             .font(.system(size: 10.5, weight: .bold))
                             .tracking(0.8)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Color.white.opacity(0.40))
                         DatePicker("Quiet hours end", selection: quietEndBinding, displayedComponents: .hourAndMinute)
                             .labelsHidden()
                     }
@@ -613,7 +619,7 @@ struct SettingsView: View {
                 )
                 Text("\(prefs.quietStart) → \(prefs.quietEnd) — overnight windows are supported.")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
             }
 
             Divider().padding(.vertical, 4)
@@ -628,14 +634,14 @@ struct SettingsView: View {
             } label: {
                 Label("Preview alert", systemImage: "play")
                     .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(PulseTheme.accent)
+                    .foregroundStyle(PulseTheme.emberGlowTop)
                     .frame(maxWidth: .infinity, minHeight: 42)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PulseTheme.accent.opacity(0.10)))
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PulseTheme.emberGlowTop.opacity(0.10)))
             }
             .buttonStyle(.plain)
             Text("Plays the incoming pop and fires a buzz, honoring the toggles above and quiet hours.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
 
             // 3-d — REMOTE push (R8-web transport parity): the honest
             // registration state. The rows above are all in-app surfaces;
@@ -648,30 +654,30 @@ struct SettingsView: View {
                 PulsePushNotifications.activate()
             } label: {
                 HStack(spacing: 10) {
-                    neoTileIcon("antenna.radiowaves.left.and.right")
+                    emberTileIcon("antenna.radiowaves.left.and.right")
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 6) {
                             Text("Remote push")
-                                .font(.system(size: 14.5, weight: .medium))
-                                .foregroundStyle(PulseTheme.titleOnPanel)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.white)
                             Text(pushCenter.statusLabel)
                                 .font(.system(size: 10.5, weight: .bold))
                                 .tracking(0.6)
                                 .textCase(.uppercase)
-                                .foregroundStyle(pushCenter.status == .registered ? PulseTheme.emerald : PulseTheme.textSecondary)
+                                .foregroundStyle(pushCenter.status == .registered ? PulseTheme.emberOnline : Color.white.opacity(0.55))
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(PulseTheme.emerald.opacity(0.10)))
+                                .background(Capsule().fill(PulseTheme.emberOnline.opacity(0.10)))
                         }
                         Text(pushCenter.statusNote)
                             .font(.system(size: 11.5))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.white.opacity(0.55))
                             .multilineTextAlignment(.leading)
                     }
                     Spacer()
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.white.opacity(0.55))
                 }
                 .frame(minHeight: 40)
                 .contentShape(Rectangle())
@@ -739,7 +745,7 @@ struct SettingsView: View {
             }
             Text("App lock guards this device only — it never syncs to your account.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
 
             Divider().padding(.vertical, 4)
 
@@ -754,7 +760,7 @@ struct SettingsView: View {
 
             Text("These sync to your Pulse account and are enforced server-side — hidden last-seen also hides your online status, hidden typing ends the relay before it reaches anyone, and blocked accounts cannot DM you.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
         }
     }
 
@@ -788,7 +794,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Server address")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 TextField("https://your-pulse-server", text: $serverField)
                     .textFieldStyle(.roundedBorder)
                     .keyboardType(.URL)
@@ -797,17 +803,17 @@ struct SettingsView: View {
                     .font(.system(size: 14, design: .monospaced))
                 Text("Paste the origin of your Pulse web server. Applied on next launch; Test probes it right away.")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 HStack(spacing: 18) {
                     Button("Test") { probe(hostOverride: serverField) }
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(PulseTheme.accent)
+                        .foregroundStyle(PulseTheme.emberGlowTop)
                         .disabled(probing)
                     Button("Save") {
                         PulseEndpoints.configuredBase = serverField.isEmpty ? nil : serverField
                     }
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(PulseTheme.accent)
+                    .foregroundStyle(PulseTheme.emberGlowTop)
                     if PulseEndpoints.configuredBase != nil {
                         Button("Go offline", role: .destructive) {
                             PulseEndpoints.configuredBase = nil
@@ -828,17 +834,17 @@ struct SettingsView: View {
                     } else {
                         Image(systemName: "dot.radiowaves.left.and.right")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(PulseTheme.accent)
+                            .foregroundStyle(PulseTheme.emberGlowTop)
                     }
                     Text(probing ? "Probing gateway…" : "Check gateway now")
                         .font(.system(size: 14.5, weight: .semibold))
-                        .foregroundStyle(PulseTheme.accent)
+                        .foregroundStyle(PulseTheme.emberGlowTop)
                     Spacer()
                     if let probeResult {
                         switch probeResult {
                         case .ok:
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(PulseTheme.emerald)
+                                .foregroundStyle(PulseTheme.emberOnline)
                         case .fail:
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.orange)
@@ -855,7 +861,7 @@ struct SettingsView: View {
             if let probeResult {
                 Text(probeText)
                     .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .transition(.opacity)
             }
@@ -867,7 +873,7 @@ struct SettingsView: View {
             )
             Text("Studio capture with echo cancellation, noise suppression and auto gain. Quality presets are not configurable yet.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
         }
     }
 
@@ -895,7 +901,7 @@ struct SettingsView: View {
                 ? "Your OS asks apps to reduce motion — motion is reduced regardless of the toggle."
                 : "When the OS Reduce Motion setting is on, motion is reduced regardless of the toggle above.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
             toggleRow(icon: "iphone.radiowaves.left.and.right", title: "Haptics", description: "Vibration on taps, sends and incoming alerts.", isOn: prefs.hapticsOn) {
                 prefs.setHapticsOn($0)
             }
@@ -924,21 +930,21 @@ struct SettingsView: View {
         VStack(spacing: 3) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(PulseTheme.accent)
+                .foregroundStyle(PulseTheme.emberGlowTop)
             Text("\(value ?? 0)")
                 .font(.system(size: 17, weight: .black, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(PulseTheme.titleOnPanel)
+                .foregroundStyle(.white)
             Text(label)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, minHeight: 74)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemBackground).opacity(0.55)),
+                .fill(Color.white.opacity(0.05)),
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label): \(value ?? 0)")
@@ -947,14 +953,14 @@ struct SettingsView: View {
     @ViewBuilder
     private var footprintSection: some View {
         HStack(spacing: 10) {
-            neoTileIcon("chart.bar.xaxis")
+            emberTileIcon("chart.bar.xaxis")
             VStack(alignment: .leading, spacing: 0) {
                 Text("Your footprint")
                     .font(.system(size: 14.5, weight: .semibold))
-                    .foregroundStyle(PulseTheme.titleOnPanel)
+                    .foregroundStyle(.white)
                 Text("Straight from the Pulse database.")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
             }
             Spacer()
             Button {
@@ -963,7 +969,7 @@ struct SettingsView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .rotationEffect(.degrees(footprintLoading ? 360 : 0))
                     .animation(footprintLoading ? .linear(duration: 0.9).repeatForever(autoreverses: false) : .default, value: footprintLoading)
                     .frame(width: 30, height: 30)
@@ -976,7 +982,7 @@ struct SettingsView: View {
         if session.viewer == nil && prefs.viewer == nil {
             Text("Sign in to see your stats.")
                 .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
         } else if footprintLoading && footprintStats == nil {
             // Loading — six honest placeholder tiles (web Skeleton grid).
             HStack(spacing: 0) {
@@ -985,14 +991,14 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity)
                 Text("Counting your messages, photos, voice notes, chats, groups and days…")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if footprintFailed && footprintStats == nil {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Couldn't load your stats.")
                     .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                 Button {
                     Task { await loadFootprintStats() }
                 } label: {
@@ -1029,7 +1035,7 @@ struct SettingsView: View {
             )
             Text("The offline store (GRDB/SQLite) keeps conversations, drafts, the outbox, call history and stories readable without a network.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
 
             Divider().padding(.vertical, 4)
 
@@ -1054,7 +1060,7 @@ struct SettingsView: View {
             settingsRow(icon: "arrow.triangle.2.circlepath", label: "Updates", value: "App Store pipeline")
             Text("iOS updates ship through the App Store pipeline — in-place live updates are the Android build's superpower. This screen always shows the exact installed version below.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
 
             // R14 5-b — the Hub link row (web "Explore" group,
             // settings-screen.tsx :1676-1686). Dismisses this sheet and
@@ -1094,29 +1100,29 @@ struct SettingsView: View {
             HStack(spacing: 12) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 20))
-                    .foregroundStyle(PulseTheme.onAccent)
+                    .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
                     .background(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(PulseTheme.brandGradient),
+                            .fill(PulseTheme.emberSignalGradient),
                     )
-                    .shadow(color: PulseTheme.emerald500.opacity(0.25), radius: 6, y: 3)
+                    .shadow(color: PulseTheme.emberGlowBottom.opacity(0.25), radius: 6, y: 3)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Pulse")
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(PulseTheme.titleOnPanel)
+                        .foregroundStyle(.white)
                     Text("Real-time chat with a built-in economy")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.white.opacity(0.55))
                         .lineLimit(2)
                 }
                 Spacer()
                 Text("v\(version)")
                     .font(.system(size: 10.5, weight: .bold))
-                    .foregroundStyle(PulseTheme.accent)
+                    .foregroundStyle(PulseTheme.emberGlowTop)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(Capsule().fill(PulseTheme.accent.opacity(0.12)))
+                    .background(Capsule().fill(PulseTheme.emberGlowTop.opacity(0.12)))
             }
             .padding(.vertical, 2)
             .accessibilityElement(children: .combine)
@@ -1155,13 +1161,13 @@ struct SettingsView: View {
             VStack(spacing: 4) {
                 Image(systemName: "heart.fill")
                     .font(.system(size: 13))
-                    .foregroundStyle(PulseTheme.emerald)
+                    .foregroundStyle(PulseTheme.emberOnline)
                 Text("Made with Pulse")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(PulseTheme.titleOnPanel)
+                    .foregroundStyle(.white)
                 Text("Version \(version) · chats, hub economy and settings sync live")
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
@@ -1192,10 +1198,10 @@ struct SettingsView: View {
             // R17 Neo — accent-tinted section tile (web IconTile: accent 12%
             // rounded square + accent glyph) beside the section label.
             HStack(spacing: 8) {
-                neoTileIcon(icon)
+                emberTileIcon(icon)
                 Text(title)
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(PulseTheme.accent)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .textCase(.uppercase)
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -1207,7 +1213,7 @@ struct SettingsView: View {
             if let note = prefs.lastSyncNote {
                 Label(note, systemImage: "icloud.slash")
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(PulseTheme.amber)
+                    .foregroundStyle(PulseTheme.emberOnline)
                     .padding(.top, 2)
             }
         }
@@ -1217,42 +1223,32 @@ struct SettingsView: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// R17 Neo — accent-tinted row icon tile (web IconTile: accent 12%
-    /// rounded square, accent glyph) shared by every row primitive.
-    private func neoTileIcon(_ name: String) -> some View {
+    /// PULSE EMBER (EMB-I) - the row glyph: a plain white 80% symbol (the
+    /// old accent tile is gone), shared by every row primitive.
+    private func emberTileIcon(_ name: String) -> some View {
         Image(systemName: name)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(PulseTheme.accent)
-            .frame(width: 26, height: 26)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(PulseTheme.accent.opacity(0.12)))
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(Color.white.opacity(0.80))
+            .frame(width: 24)
     }
 
     private var cardPanel: some View {
-        // R17 Neo — cards 24pt (was 18), carbon surface + white-8% hairline
-        // in dark; light keeps the frosted material.
-        RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(systemScheme == .dark
-                ? AnyShapeStyle(PulseTheme.neoSurface)
-                : AnyShapeStyle(.ultraThinMaterial))
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(systemScheme == .dark
-                        ? PulseTheme.neoHairline
-                        : PulseTheme.zinc(200).opacity(0.7), lineWidth: 1),
-            )
-            .shadow(color: .black.opacity(0.08), radius: 12, y: 5)
+        // PULSE EMBER (EMB-I) - section card: white 5% fill, 16pt radius,
+        // no rim (the ember card language from the reference screens).
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.white.opacity(0.05))
     }
 
     private func settingsRow(icon: String, label: String, value: String) -> some View {
         HStack(spacing: 10) {
-            neoTileIcon(icon)
+            emberTileIcon(icon)
             Text(label)
-                .font(.system(size: 14.5, weight: .medium))
-                .foregroundStyle(PulseTheme.titleOnPanel)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white)
             Spacer()
             Text(value)
                 .font(.system(size: 13.5, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -1266,23 +1262,23 @@ struct SettingsView: View {
     /// used inside buttons so the whole row stays tappable.
     private func settingsLinkRow(icon: String, label: String, caption: String, value: String) -> some View {
         HStack(spacing: 10) {
-            neoTileIcon(icon)
+            emberTileIcon(icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(label)
-                    .font(.system(size: 14.5, weight: .medium))
-                    .foregroundStyle(PulseTheme.titleOnPanel)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
                 Text(caption)
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .multilineTextAlignment(.leading)
             }
             Spacer()
             Text(value)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.white.opacity(0.55))
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.white.opacity(0.30))
         }
         .frame(minHeight: 44)
         .contentShape(Rectangle())
@@ -1298,14 +1294,14 @@ struct SettingsView: View {
         onChange: @escaping (Bool) -> Void,
     ) -> some View {
         HStack(spacing: 10) {
-            neoTileIcon(icon)
+            emberTileIcon(icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.system(size: 14.5, weight: .medium))
-                    .foregroundStyle(PulseTheme.titleOnPanel)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
                 Text(description)
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .multilineTextAlignment(.leading)
             }
             Spacer()
@@ -1314,7 +1310,7 @@ struct SettingsView: View {
                 onChange(newValue)
             }))
             .labelsHidden()
-            .tint(PulseTheme.emerald)
+            .tint(.white)
             .fixedSize()
         }
         .frame(minHeight: 44)
@@ -1325,23 +1321,23 @@ struct SettingsView: View {
 
     private func actionRow(icon: String, title: String, caption: String, actionLabel: String, disabled: Bool) -> some View {
         HStack(spacing: 10) {
-            neoTileIcon(icon)
+            emberTileIcon(icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.system(size: 14.5, weight: .medium))
-                    .foregroundStyle(PulseTheme.titleOnPanel)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
                 Text(caption)
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .multilineTextAlignment(.leading)
             }
             Spacer()
             Text(actionLabel)
                 .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(disabled ? Color.secondary : PulseTheme.accent)
+                .foregroundStyle(disabled ? Color.secondary : PulseTheme.emberGlowTop)
                 .padding(.horizontal, 12)
                 .frame(minHeight: 32)
-                .background(Capsule().fill(PulseTheme.accent.opacity(disabled ? 0.04 : 0.10)))
+                .background(Capsule().fill(PulseTheme.emberGlowTop.opacity(disabled ? 0.04 : 0.10)))
         }
         .frame(minHeight: 44)
         .contentShape(Rectangle())

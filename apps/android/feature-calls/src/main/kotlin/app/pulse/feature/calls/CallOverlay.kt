@@ -1,5 +1,6 @@
 package app.pulse.feature.calls
 
+import app.pulse.ui.PulseIcons
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -17,16 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CallEnd
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.FlipCameraAndroid
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -162,14 +153,14 @@ fun CallOverlay(vm: CallViewModel) {
                     ) {
                         // Decline
                         CallButton(
-                            icon = Icons.Filled.CallEnd,
+                            icon = PulseIcons.PhoneDown,
                             description = "Decline call",
                             container = Color(0xFFE11D48),
                         ) { vm.decline() }
                         // Accept — the mic permission must be live to answer;
                         // video offers prompt the camera too (single prompt).
                         CallButton(
-                            icon = Icons.Filled.Call,
+                            icon = PulseIcons.Phone,
                             description = "Accept call",
                             container = Color(0xFF10B981),
                         ) {
@@ -189,7 +180,7 @@ fun CallOverlay(vm: CallViewModel) {
 
                 CallState.ENDED -> {
                     CallButton(
-                        icon = Icons.Filled.CallEnd,
+                        icon = PulseIcons.PhoneDown,
                         description = "Dismiss",
                         container = Color(0xFF3F3F46),
                     ) { vm.dismiss() }
@@ -208,13 +199,13 @@ fun CallOverlay(vm: CallViewModel) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             CallButton(
-                                icon = if (cameraEnabled) Icons.Filled.Videocam else Icons.Filled.VideocamOff,
+                                icon = if (cameraEnabled) PulseIcons.Video else PulseIcons.VideoSlash,
                                 description = if (cameraEnabled) "Turn camera off" else "Turn camera on",
                                 container = if (cameraEnabled) Color(0xFF3F3F46) else Color.White,
                                 tint = if (cameraEnabled) Color.White else Color.Black,
                             ) { vm.toggleVideo() }
                             CallButton(
-                                icon = Icons.Filled.FlipCameraAndroid,
+                                icon = PulseIcons.FlipCamera,
                                 description = "Switch camera",
                                 container = Color(0xFF3F3F46),
                             ) { vm.switchCamera() }
@@ -229,13 +220,13 @@ fun CallOverlay(vm: CallViewModel) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         CallButton(
-                            icon = if (micMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                            icon = if (micMuted) PulseIcons.MicOff else PulseIcons.Mic,
                             description = if (micMuted) "Unmute microphone" else "Mute microphone",
                             container = if (micMuted) Color.White else Color(0xFF3F3F46),
                             tint = if (micMuted) Color.Black else Color.White,
                         ) { vm.toggleMute() }
                         CallButton(
-                            icon = Icons.Filled.CallEnd,
+                            icon = PulseIcons.PhoneDown,
                             description = "End call",
                             container = Color(0xFFE11D48),
                         ) {
@@ -248,7 +239,7 @@ fun CallOverlay(vm: CallViewModel) {
                             }
                         }
                         CallButton(
-                            icon = if (speakerOn) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff,
+                            icon = if (speakerOn) PulseIcons.VolumeUp else PulseIcons.VolumeOff,
                             description = if (speakerOn) "Switch to earpiece" else "Switch to speaker",
                             container = if (speakerOn) Color.White else Color(0xFF3F3F46),
                             tint = if (speakerOn) Color.Black else Color.White,

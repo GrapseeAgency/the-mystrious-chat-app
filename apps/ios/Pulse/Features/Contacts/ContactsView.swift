@@ -35,6 +35,12 @@ struct ContactsView: View {
                     list
                 }
             }
+            .background(
+                // PULSE EMBER (EMB-I): sunset ground, subtree pinned dark.
+                Rectangle().fill(PulseTheme.emberBackdrop).ignoresSafeArea()
+            )
+            .environment(\.colorScheme, .dark)
+            .tint(.white)
             .navigationTitle("Contacts")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -206,13 +212,13 @@ struct ContactsView: View {
                     Text(letter)
                         .font(.system(size: 9, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(activeLetter == letter ? PulseTheme.emerald : Color.secondary)
+                        .foregroundStyle(activeLetter == letter ? PulseTheme.emberOnline : Color.secondary)
                         .frame(width: 20, height: 17)
                         .background {
                             // The active letter's emerald bubble (web
                             // layoutId="contacts-rail-bubble" analog).
                             if activeLetter == letter {
-                                Capsule().fill(PulseTheme.emerald.opacity(0.18))
+                                Capsule().fill(PulseTheme.emberOnline.opacity(0.18))
                             }
                         }
                         .contentShape(Rectangle())
@@ -286,14 +292,14 @@ struct ContactsView: View {
             } label: {
                 Label("Call", systemImage: "phone.fill")
             }
-            .tint(PulseTheme.emerald)
+            .tint(.white)
             // Wave R1-W2D — real video call entry (wire kind 'video').
             Button {
                 viewModel.callVideo(user, session: session)
             } label: {
                 Label("Video", systemImage: "video.fill")
             }
-            .tint(PulseTheme.emerald)
+            .tint(.white)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
@@ -339,16 +345,16 @@ private struct ContactRow: View {
                         // pair's safety number is marked verified).
                         Image(systemName: "checkmark.seal.fill")
                             .font(.caption)
-                            .foregroundStyle(PulseTheme.emerald)
+                            .foregroundStyle(PulseTheme.emberOnline)
                             .accessibilityLabel("Verified")
                     }
                     if isViewer {
                         Text("You")
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(PulseTheme.emerald)
+                            .foregroundStyle(PulseTheme.emberOnline)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(PulseTheme.emerald.opacity(0.14)))
+                            .background(Capsule().fill(PulseTheme.emberOnline.opacity(0.14)))
                     }
                 }
                 Text(subtitle)
@@ -373,7 +379,7 @@ private struct ContactRow: View {
                         .font(.footnote.weight(.semibold))
                 }
             }
-            .tint(PulseTheme.emerald)
+            .tint(.white)
             .buttonStyle(.bordered)
             .disabled(isViewer)
         }

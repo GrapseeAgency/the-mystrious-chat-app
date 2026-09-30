@@ -1,5 +1,6 @@
 package app.pulse.feature.voice.ui
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -20,9 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -76,7 +74,7 @@ fun SpaceScreen(
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close space")
+                Icon(PulseIcons.ChevronLeft, contentDescription = "Close space")
             }
             Spacer(Modifier.width(6.dp))
             Column(Modifier.weight(1f)) {
@@ -133,7 +131,7 @@ fun SpaceScreen(
                         onClick = vm::retrySpace,
                         modifier = Modifier.height(48.dp).semantics { contentDescription = "Try the space again" },
                     ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = null, Modifier.size(18.dp))
+                        Icon(PulseIcons.Refresh, contentDescription = null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Try again")
                     }

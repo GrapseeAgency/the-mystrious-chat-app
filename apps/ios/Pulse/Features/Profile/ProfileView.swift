@@ -1,14 +1,15 @@
 import SwiftUI
 import UIKit
 
-/// Profile — R17 Neo mirror of the web R35 profile-tab: a slim flat
-/// identity cover with a scanline texture (zero carnival blobs), an
-/// overlapping 84pt avatar on a 2.5pt identity ring, mono @handle chip,
-/// one flat stats instrument row, and quiet hairline cards for Saved /
-/// Copy account ID / Sign out. Everything below the account card is the
+/// Profile - PULSE EMBER (EMB-I) mirror of the reference profile screen:
+/// the sunset ground with glass chrome, a centered 96pt avatar with the
+/// amber presence dot, one row of three stat cards (existing stats +
+/// wallet loaders only), and a quiet account card (Saved / Copy ID /
+/// Switch identity / Sign out). Everything below the account card is the
 /// iOS-native appearance/motion/about surface, restyled onto the same
-/// card language. All settings persist via PulsePrefs; all data stays
-/// real (GET /api/hub/wallet, GET /api/users/{id}/stats).
+/// ember card language. All settings persist via PulsePrefs; all data
+/// stays real (GET /api/hub/wallet, GET /api/users/{id}/stats). Every
+/// action, sheet and endpoint from the previous build is byte-preserved.
 struct ProfileView: View {
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
@@ -27,22 +28,28 @@ struct ProfileView: View {
     // same endpoint the Settings footprint + user pages call).
     @State private var stats: WireUserStats?
     @State private var statsFailed = false
-    // R14 5-b — the @handle chip's copy confirmation (web handleCopied).
+    // The @handle chip's copy confirmation (web handleCopied).
     @State private var handleCopied = false
-    // R17 Neo — the account card: copy-ID confirmation + sign-out dialog.
+    // The account card: copy-ID confirmation + sign-out dialog.
     @State private var idCopied = false
     @State private var signOutArmed = false
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                PulseTheme.neoPage
+                // PULSE EMBER (EMB-I): sunset ground; the content subtree
+                // pins dark so adaptive tokens resolve onto it.
+                Rectangle()
+                    .fill(PulseTheme.emberBackdrop)
                     .ignoresSafeArea()
 
                 ScrollView {
                     VStack(spacing: 14) {
-                        heroBlock
+                        profileTopChrome
+                        identityBlock
+                        statusBioBlock
                         statsRow
+                        actionCapsules
                         savedCard
                         accountCard
                         walletCard
@@ -55,9 +62,9 @@ struct ProfileView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 28)
                 }
+                .environment(\.colorScheme, .dark)
             }
-            .navigationTitle("Profile")
-            .navigationBarTitleDisplayMode(.large)
+            .toolbar(.hidden, for: .navigationBar)
         }
         .sheet(isPresented: $identitySheet) {
             IdentityPickerSheet(mode: .switcher, session: session, prefs: prefs) {}
@@ -81,111 +88,90 @@ struct ProfileView: View {
         }
     }
 
-    // ── hero (web profile-tab R35 hero: flat cover, no orbs) ────────────
+    // ── top chrome (EMB-I) ───────────────────────────────────
 
-    /// Flat identity cover (112pt) + overlapping avatar block. The cover is
-    /// the member-color gradient with a cheap capped scanline texture and a
-    /// 2pt signal line grounding its bottom edge; the avatar starts 44pt
-    /// above the cover's bottom edge (web -mt-11).
-    private var heroBlock: some View {
-        ZStack(alignment: .top) {
-            heroCover
-                .accessibilityHidden(true)
-
-            VStack(spacing: 10) {
-                identityRing
-                nameRow
-                handleChip
-                statusBioBlock
-                actionCapsules
+    /// Glass ellipsis hosting the screen's existing actions (Edit profile,
+    /// Saved messages, Switch identity). The reference's back chevron is a
+    /// pushed-page affordance; this tab is a root with no back stack, so
+    /// only the honest controls render.
+    private var profileTopChrome: some View {
+        HStack(spacing: 10) {
+            Spacer()
+            Menu {
+                Button {
+                    PulseHaptics.tap()
+                    editProfileOpen = true
+                } label: {
+                    Label("Edit profile", systemImage: "pencil")
+                }
+                Button {
+                    PulseHaptics.tap()
+                    savedOpen = true
+                } label: {
+                    Label("Saved messages", systemImage: "bookmark")
+                }
+                Button {
+                    PulseHaptics.tap()
+                    identitySheet = true
+                } label: {
+                    Label("Switch identity", systemImage: "person.2")
+                }
+            } label: {
+                EmberGlassCircleIcon(systemImage: "ellipsis")
             }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 68)
+            .accessibilityLabel("More options")
         }
     }
 
-    private var heroCover: some View {
-        ZStack {
-            LinearGradient(
-                colors: [PulseTheme.color(named: prefs.viewer?.color ?? "emerald"), PulseTheme.emeraldDeep],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing,
-            )
-            scanlines
-            LinearGradient(
-                colors: [Color.white.opacity(0.16), Color.clear],
-                startPoint: .top,
-                endPoint: .bottom,
-            )
-            LinearGradient(
-                colors: [Color.clear, Color.white.opacity(0.8), Color.clear],
-                startPoint: .leading,
-                endPoint: .trailing,
-            )
-            .frame(height: 2)
-            .frame(maxHeight: .infinity, alignment: .bottom)
+    // ── identity (web reference profile: centered column) ────
+
+    /// Centered 96pt avatar with the amber presence dot, bold name, and
+    /// the handle line at 13pt white 55%.
+    private var identityBlock: some View {
+        VStack(spacing: 8) {
+            avatarBadge
+            HStack(spacing: 6) {
+                Text(prefs.viewer?.name ?? "No identity")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                // Quiet trust mark (web PulseSeal), ember tint.
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(PulseTheme.emberGlowTop)
+                    .accessibilityLabel("Registered member")
+            }
+            handleLine
         }
-        .frame(height: 112)
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.top, 4)
     }
 
-    /// Scanline texture — capped rows of 1pt rects at low opacity (cheap,
-    /// static; the web equivalent is the .scan-fx overlay).
-    private var scanlines: some View {
-        VStack(spacing: 7) {
-            ForEach(0..<14, id: \.self) { _ in
-                Rectangle()
-                    .fill(Color.white.opacity(0.05))
-                    .frame(height: 1)
+    /// 96pt avatar; online renders the #FF9F0A dot ringed in the ground.
+    private var avatarBadge: some View {
+        PulseAvatar(
+            name: prefs.viewer?.name ?? "You",
+            color: PulseTheme.color(named: prefs.viewer?.color),
+            photoURL: PulseTheme.photoURL(prefs.viewer?.avatar),
+            online: session.isOnline(prefs.viewer?.id ?? ""),
+            size: 96,
+        )
+        .overlay(alignment: .bottomTrailing) {
+            if session.isOnline(prefs.viewer?.id ?? "") {
+                Circle()
+                    .fill(PulseTheme.emberOnline)
+                    .frame(width: 18, height: 18)
+                    .overlay(Circle().strokeBorder(PulseTheme.emberDotRing, lineWidth: 3))
+                    .offset(x: 2, y: 2)
+                    .accessibilityHidden(true)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .accessibilityLabel(session.isOnline(prefs.viewer?.id ?? "") ? "Online" : "Offline")
     }
 
-    /// 84pt avatar on a 2.5pt member-color ring over a surface bezel
-    /// (web: p-[2.5px] gradient ring + p-[2.5px] #0d1211 inner ring).
-    private var identityRing: some View {
-        ZStack {
-            Circle()
-                .fill(LinearGradient(
-                    colors: [PulseTheme.color(named: prefs.viewer?.color ?? "emerald"), PulseTheme.emeraldDeep],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing,
-                ))
-            Circle()
-                .fill(PulseTheme.neoCard)
-                .padding(2.5)
-            PulseAvatar(
-                name: prefs.viewer?.name ?? "You",
-                color: PulseTheme.color(named: prefs.viewer?.color),
-                photoURL: PulseTheme.photoURL(prefs.viewer?.avatar),
-                online: session.isOnline(prefs.viewer?.id ?? ""),
-                size: 84,
-            )
-            .padding(5)
-        }
-        .frame(width: 94, height: 94)
-        .shadow(color: Color.black.opacity(0.22), radius: 10, y: 5)
-    }
-
-    private var nameRow: some View {
-        HStack(spacing: 6) {
-            Text(prefs.viewer?.name ?? "No identity")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(PulseTheme.titleOnPanel)
-                .lineLimit(1)
-            // R17 — quiet trust mark (web PulseSeal tinted accent).
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 15))
-                .foregroundStyle(PulseTheme.accent)
-                .accessibilityLabel("Registered member")
-        }
-    }
-
-    /// Mono @handle chip on ultraThinMaterial — tap to copy (web copyHandle
-    /// :243-251); no handle → opens the editor.
-    private var handleChip: some View {
+    /// @handle when it exists (tap to copy - the chip behavior moved into
+    /// the label itself), otherwise the honest placeholder.
+    private var handleLine: some View {
         Button {
             copyHandle()
         } label: {
@@ -193,20 +179,20 @@ struct ProfileView: View {
                 Image(systemName: handleCopied ? "checkmark" : "at")
                     .font(.system(size: 11, weight: .bold))
                 Text(handleCopied ? "Copied" : (prefs.viewer?.username.map { "@\($0)" } ?? "Set your handle"))
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .lineLimit(1)
             }
-            .foregroundStyle(PulseTheme.accent)
+            .foregroundStyle(Color.white.opacity(0.55))
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Capsule().fill(.ultraThinMaterial))
-            .overlay(Capsule().strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.white.opacity(0.06)))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(handleCopied ? "Handle copied" : "Copy handle")
     }
 
-    /// Status + bio at 13pt (web status line + bio block).
+    /// Status + bio at 13pt (existing prefs values verbatim).
     private var statusBioBlock: some View {
         VStack(spacing: 6) {
             if let emoji = prefs.viewerStatusEmoji, !emoji.isEmpty {
@@ -216,107 +202,55 @@ struct ProfileView: View {
                     if let text = prefs.viewerStatusText, !text.isEmpty {
                         Text(text)
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(PulseTheme.textPrimary)
+                            .foregroundStyle(Color.white.opacity(0.85))
                             .lineLimit(1)
                     }
                 }
             } else if let text = prefs.viewerStatusText, !text.isEmpty {
                 Text(text)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(PulseTheme.textPrimary)
+                    .foregroundStyle(Color.white.opacity(0.85))
                     .lineLimit(1)
             }
             Text(prefs.viewerAbout?.isEmpty == false ? prefs.viewerAbout! : "No bio yet")
                 .font(.system(size: 13))
-                .foregroundStyle(prefs.viewerAbout?.isEmpty == false ? PulseTheme.textSecondary : PulseTheme.neoMuted)
+                .foregroundStyle(prefs.viewerAbout?.isEmpty == false ? Color.white.opacity(0.55) : Color.white.opacity(0.40))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 12)
     }
 
-    /// Quick actions — one signal, one ghost (web: filled accent "Edit
-    /// profile" capsule + glass "Share" capsule). Share rides the existing
-    /// ShareLink deep-link message; no handle → honest inert ghost.
-    private var actionCapsules: some View {
-        HStack(spacing: 10) {
-            Button {
-                editProfileOpen = true
-            } label: {
-                Label("Edit profile", systemImage: "pencil")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(PulseTheme.onAccent)
-                    .padding(.horizontal, 16)
-                    .frame(height: 38)
-                    .background(Capsule().fill(PulseTheme.accent))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Edit profile")
+    // ── stats (one row of three ember cards) ─────────────────
 
-            if let handle = prefs.viewer?.username, !handle.isEmpty {
-                ShareLink(item: Self.shareMessage(handle: handle, userId: prefs.viewer?.id)) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(PulseTheme.titleOnPanel)
-                        .padding(.horizontal, 16)
-                        .frame(height: 38)
-                        .background(Capsule().fill(.ultraThinMaterial))
-                        .overlay(Capsule().strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
-                }
-                .accessibilityLabel("Share profile, find me on Pulse at \(handle)")
-            } else {
-                Label("Claim a @handle to share", systemImage: "square.and.arrow.up")
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(PulseTheme.neoMuted)
-                    .padding(.horizontal, 16)
-                    .frame(height: 38)
-                    .background(Capsule().fill(.ultraThinMaterial))
-                    .overlay(Capsule().strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
-            }
-        }
-    }
-
-    // ── stats (web R35: one flat instrument row, mono numerals) ─────────
-
-    /// Messages / Rooms / Coins / Since — real data only; failures render
-    /// the honest em dash, loads render the quiet interpunct.
+    /// Messages / Chats / Coins - real data only, the SAME loaders as
+    /// before (GET /api/users/{id}/stats + GET /api/hub/wallet); failures
+    /// render the honest dash, loads render the quiet interpunct.
     private var statsRow: some View {
-        HStack(spacing: 0) {
-            statCell(value: statsValueText, label: "Messages")
-            statDivider
-            statCell(value: roomsValueText, label: "Rooms")
-            statDivider
-            statCell(value: coinsValueText, label: "Coins", accent: true)
-            statDivider
-            statCell(value: memberSinceShort ?? "—", label: "Since", small: true)
+        HStack(spacing: 10) {
+            statCard(label: "Messages", value: statsValueText)
+            statCard(label: "Chats", value: roomsValueText)
+            statCard(label: "Coins", value: coinsValueText)
         }
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(PulseTheme.neoCard))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
     }
 
-    private var statDivider: some View {
-        Rectangle()
-            .fill(PulseTheme.neoHairline)
-            .frame(width: 1, height: 26)
-    }
-
-    private func statCell(value: String, label: String, small: Bool = false, accent: Bool = false) -> some View {
-        VStack(spacing: 3) {
+    private func statCard(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.50))
+                .lineLimit(1)
             Text(value)
-                .font(.system(size: small ? 11 : 15, weight: .semibold, design: .monospaced))
-                .foregroundStyle(accent ? PulseTheme.accent : PulseTheme.titleOnPanel)
+                .font(.system(size: 16, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(PulseTheme.neoMuted)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 2)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.05)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label): \(value)")
     }
@@ -339,31 +273,50 @@ struct ProfileView: View {
         }
     }
 
-    /// The short member-since stamp (web memberSinceShort parity) — the
-    /// stats joinedAt (server-derived createdAt), month-year format
-    /// (web formatMemberSince, pulse-utils.ts :280-283); omitted when unknown.
-    private var memberSinceShort: String? {
-        guard let joined = stats?.joinedAt else { return nil }
-        let text = PulseFormat.monthYear(joined)
-        return text.isEmpty ? nil : text
-    }
+    /// Quick actions - one signal, one ghost. Share rides the existing
+    /// ShareLink deep-link message; no handle → honest inert ghost.
+    private var actionCapsules: some View {
+        HStack(spacing: 10) {
+            Button {
+                editProfileOpen = true
+            } label: {
+                Label("Edit profile", systemImage: "pencil")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .frame(height: 38)
+                    .background(Capsule().fill(PulseTheme.emberSignalGradient))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Edit profile")
 
-    private func loadStats() async {
-        guard let viewerId = session.viewer?.id else {
-            statsFailed = true
-            return
-        }
-        do {
-            stats = try await session.api.userStats(viewerId)
-        } catch {
-            statsFailed = true
+            if let handle = prefs.viewer?.username, !handle.isEmpty {
+                ShareLink(item: Self.shareMessage(handle: handle, userId: prefs.viewer?.id)) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .frame(height: 38)
+                        .background(Capsule().fill(Color.white.opacity(0.08)))
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                }
+                .accessibilityLabel("Share profile, find me on Pulse at \(handle)")
+            } else {
+                Label("Claim a @handle to share", systemImage: "square.and.arrow.up")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.40))
+                    .padding(.horizontal, 16)
+                    .frame(height: 38)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            }
         }
     }
 
     // ── data loads (unchanged behavior) ──────────────────────
 
-    /// R14 5-b — the @handle chip tap → clipboard + haptic (web copyHandle
-    /// :243-251). No handle → opens the editor (web opens the handle sheet).
+    /// The @handle tap → clipboard + haptic (web copyHandle). No handle →
+    /// opens the editor (web opens the handle sheet).
     private func copyHandle() {
         guard let handle = prefs.viewer?.username, !handle.isEmpty else {
             editProfileOpen = true
@@ -378,7 +331,7 @@ struct ProfileView: View {
         }
     }
 
-    /// R17 — account ID tap → clipboard + haptic (web copyId :510-529).
+    /// Account ID tap → clipboard + haptic (web copyId parity).
     private func copyAccountId() {
         guard let id = prefs.viewer?.id, !id.isEmpty else { return }
         UIPasteboard.general.string = id
@@ -390,13 +343,25 @@ struct ProfileView: View {
         }
     }
 
-    /// R17 — sign out, mirroring the IdentityPickerSheet forget flow:
-    /// session teardown first, then setViewer(nil) which wipes the stored
-    /// viewer + identity-bound token; RootView flips to onboarding.
+    /// Sign out, mirroring the IdentityPickerSheet forget flow: session
+    /// teardown first, then setViewer(nil) which wipes the stored viewer +
+    /// identity-bound token; RootView flips to onboarding.
     private func signOut() {
         PulseHaptics.tap()
         session.stop()
         prefs.setViewer(nil)
+    }
+
+    private func loadStats() async {
+        guard let viewerId = session.viewer?.id else {
+            statsFailed = true
+            return
+        }
+        do {
+            stats = try await session.api.userStats(viewerId)
+        } catch {
+            statsFailed = true
+        }
     }
 
     private func loadWallet() async {
@@ -414,68 +379,58 @@ struct ProfileView: View {
         }
     }
 
-    // ── cards ────────────────────────────────────────────────
+    // ── account card ─────────────────────────────────────────
 
-    /// R17 — Saved messages in a quiet hairline card (web ProfileSection
-    /// "Saved" → ChevronRow).
+    /// Saved messages in a quiet ember card (web ProfileSection "Saved").
     private var savedCard: some View {
-        VStack(spacing: 0) {
-            Button {
-                savedOpen = true
-            } label: {
-                HStack(spacing: 12) {
-                    neoRowIcon("star.fill")
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Saved messages")
-                            .font(.system(size: 14.5, weight: .medium))
-                            .foregroundStyle(PulseTheme.titleOnPanel)
-                        Text("Long-press any message in a chat, then Save")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(PulseTheme.neoMuted)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(PulseTheme.neoMuted)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .contentShape(Rectangle())
+        Button {
+            savedOpen = true
+        } label: {
+            HStack(spacing: 12) {
+                emberRowIcon("star.fill")
+                Text("Saved messages")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.white)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.30))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Saved messages")
+            .padding(.horizontal, 14)
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
         }
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(PulseTheme.neoCard))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
+        .buttonStyle(.plain)
+        .accessibilityLabel("Saved messages")
+        .emberCard()
     }
 
-    /// R17 — the account card (web ProfileSection "Account"): Copy account
-    /// ID, Switch identity (the iOS-native switcher), Sign out. Rows split
-    /// by hairlines, no heavy chrome.
+    /// Copy account ID / Switch identity / Sign out - 52pt rows, white 80%
+    /// symbols, existing actions byte-preserved.
     private var accountCard: some View {
         VStack(spacing: 0) {
             Button {
                 copyAccountId()
             } label: {
                 HStack(spacing: 12) {
-                    neoRowIcon("touchid")
+                    emberRowIcon("touchid")
                     VStack(alignment: .leading, spacing: 1) {
                         Text(idCopied ? "Account ID copied" : "Copy account ID")
-                            .font(.system(size: 14.5, weight: .medium))
-                            .foregroundStyle(PulseTheme.titleOnPanel)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.white)
                         Text(prefs.viewer?.id ?? "")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(PulseTheme.neoMuted)
+                            .foregroundStyle(Color.white.opacity(0.40))
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
                     Spacer()
                     Image(systemName: idCopied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(idCopied ? PulseTheme.accent : PulseTheme.neoMuted)
+                        .foregroundStyle(idCopied ? PulseTheme.emberGlowTop : Color.white.opacity(0.30))
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 11)
+                .frame(minHeight: 52)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -487,17 +442,17 @@ struct ProfileView: View {
                 identitySheet = true
             } label: {
                 HStack(spacing: 12) {
-                    neoRowIcon("person.2.fill")
+                    emberRowIcon("person.2")
                     Text("Switch identity")
-                        .font(.system(size: 14.5, weight: .medium))
-                        .foregroundStyle(PulseTheme.titleOnPanel)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(PulseTheme.neoMuted)
+                        .foregroundStyle(Color.white.opacity(0.30))
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 11)
+                .frame(minHeight: 52)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -510,29 +465,27 @@ struct ProfileView: View {
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(PulseTheme.neoDestructive)
-                        .frame(width: 30, height: 30)
-                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(PulseTheme.neoDestructive.opacity(0.12)))
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(PulseTheme.emberRed)
+                        .frame(width: 24)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Sign out")
-                            .font(.system(size: 14.5, weight: .medium))
-                            .foregroundStyle(PulseTheme.neoDestructive)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(PulseTheme.emberRed)
                         Text("Return to the welcome screen. Nothing is deleted.")
                             .font(.system(size: 11.5))
-                            .foregroundStyle(PulseTheme.neoMuted)
+                            .foregroundStyle(Color.white.opacity(0.40))
                     }
                     Spacer()
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 11)
+                .frame(minHeight: 52)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Sign out")
         }
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(PulseTheme.neoCard))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.05)))
         .confirmationDialog(
             "Sign out?",
             isPresented: $signOutArmed,
@@ -550,7 +503,7 @@ struct ProfileView: View {
     /// Wallet row (unchanged behavior: honest phases, tap-to-retry on fail).
     private var walletCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            neoCardHeader("Wallet")
+            emberCardHeader("Wallet")
             Button {
                 // A failed fetch is honest — tap retries (web refetch parity).
                 guard walletPhase == .failed else { return }
@@ -558,22 +511,22 @@ struct ProfileView: View {
                 Task { await loadWallet() }
             } label: {
                 HStack(spacing: 12) {
-                    neoRowIcon("bitcoinsign.circle.fill")
+                    emberRowIcon("bitcoinsign.circle")
                     Text("Coin balance")
-                        .font(.system(size: 14.5, weight: .medium))
-                        .foregroundStyle(PulseTheme.titleOnPanel)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
                     Spacer()
                     switch walletPhase {
                     case .loading:
-                        ProgressView().controlSize(.small)
+                        ProgressView().controlSize(.small).tint(.white)
                     case .failed:
                         Text("—")
                             .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(PulseTheme.neoMuted)
+                            .foregroundStyle(Color.white.opacity(0.40))
                     case .loaded:
                         Text("\(walletCoins)")
-                            .font(.system(size: 13, weight: .bold, design: .monospaced))
-                            .foregroundStyle(PulseTheme.titleOnPanel)
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.white)
                     }
                 }
                 .contentShape(Rectangle())
@@ -584,48 +537,46 @@ struct ProfileView: View {
                 : "Coin balance loading")
             Text("Earn coins from check-ins and tasks, spend them in the Hub.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(PulseTheme.neoMuted)
+                .foregroundStyle(Color.white.opacity(0.40))
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(PulseTheme.neoCard))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
+        .emberCard()
     }
 
     /// F-CP-09 — the viewer's status emoji + text, live from prefs.
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            neoCardHeader("Status")
+            emberCardHeader("Status")
             if let emoji = prefs.viewerStatusEmoji, !emoji.isEmpty {
                 HStack(spacing: 8) {
                     Text(pulseStatusGlyphDisplay(emoji))
                         .font(.system(size: 18))
                     Text(prefs.viewerStatusText ?? "")
                         .font(.system(size: 13))
-                        .foregroundStyle(PulseTheme.textSecondary)
+                        .foregroundStyle(Color.white.opacity(0.55))
                         .lineLimit(1)
                 }
             } else if let text = prefs.viewerStatusText, !text.isEmpty {
                 Text(text)
                     .font(.system(size: 13))
-                    .foregroundStyle(PulseTheme.textSecondary)
+                    .foregroundStyle(Color.white.opacity(0.55))
             } else {
                 Text("No status set")
                     .font(.system(size: 13))
-                    .foregroundStyle(PulseTheme.neoMuted)
+                    .foregroundStyle(Color.white.opacity(0.40))
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(PulseTheme.neoCard))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
+        .emberCard()
     }
 
     /// Appearance — mode picker + the ambient FX strip (unchanged behavior;
     /// the previews are the real Metal/Canvas modes).
     private var appearanceCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            neoCardHeader("Appearance")
+            emberCardHeader("Appearance")
             Picker("Mode", selection: Binding(
                 get: { prefs.appearance },
                 set: { prefs.setAppearance($0) },
@@ -639,10 +590,10 @@ struct ProfileView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Ambient field")
                     .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(PulseTheme.titleOnPanel)
+                    .foregroundStyle(.white)
                 Text("The web's WebGL modes, rebuilt with Metal + Canvas — same palette, same physics.")
                     .font(.system(size: 11.5))
-                    .foregroundStyle(PulseTheme.neoMuted)
+                    .foregroundStyle(Color.white.opacity(0.40))
                     .fixedSize(horizontal: false, vertical: true)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
@@ -656,8 +607,7 @@ struct ProfileView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(PulseTheme.neoCard))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
+        .emberCard()
     }
 
     private func ambientCard(_ mode: AmbientMode) -> some View {
@@ -671,11 +621,11 @@ struct ProfileView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(selected ? PulseTheme.accent : PulseTheme.neoHairline, lineWidth: selected ? 2.5 : 1),
+                            .strokeBorder(selected ? PulseTheme.emberGlowTop : Color.white.opacity(0.10), lineWidth: selected ? 2.5 : 1),
                     )
                 Text(mode.label)
                     .font(.caption.weight(selected ? .bold : .medium))
-                    .foregroundStyle(selected ? PulseTheme.accent : PulseTheme.neoMuted)
+                    .foregroundStyle(selected ? PulseTheme.emberGlowTop : Color.white.opacity(0.40))
             }
         }
         .buttonStyle(PulseButtonStyle())
@@ -684,63 +634,70 @@ struct ProfileView: View {
     /// Motion note (unchanged copy — Reduce Motion is honored system-wide).
     private var motionCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            neoCardHeader("Motion")
+            emberCardHeader("Motion")
             Label("Respects system Reduce Motion", systemImage: "figure.mind.and.body")
                 .font(.system(size: 12.5))
-                .foregroundStyle(PulseTheme.textSecondary)
+                .foregroundStyle(Color.white.opacity(0.55))
             Text("Particles, springs and the ambient loop all render a single static frame when Reduce Motion is on.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(PulseTheme.neoMuted)
+                .foregroundStyle(Color.white.opacity(0.40))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(PulseTheme.neoCard))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
+        .emberCard()
     }
 
     private var aboutCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            neoCardHeader("About")
-            LabeledContent("Version", value: "1.0.0-native")
-                .font(.system(size: 13))
-            LabeledContent("Stack", value: "SwiftUI · GRDB · Socket.IO")
-                .font(.system(size: 13))
+            emberCardHeader("About")
+            aboutLine(label: "Version", value: "1.0.0-native")
+            aboutLine(label: "Stack", value: "SwiftUI · GRDB · Socket.IO")
             Text("Rebuilt natively against the same live gateway as the web app — chats, rooms, reactions, typing and presence are real.")
                 .font(.system(size: 11.5))
-                .foregroundStyle(PulseTheme.neoMuted)
+                .foregroundStyle(Color.white.opacity(0.40))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(PulseTheme.neoCard))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(PulseTheme.neoHairline, lineWidth: 1))
+        .emberCard()
     }
 
-    // ── Neo card primitives ──────────────────────────────────
+    private func aboutLine(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.80))
+            Spacer()
+            Text(value)
+                .font(.system(size: 13))
+                .foregroundStyle(Color.white.opacity(0.55))
+        }
+    }
+
+    // ── ember card primitives (EMB-I) ────────────────────────
 
     /// Small uppercase card header (web ProfileSection title).
-    private func neoCardHeader(_ title: String) -> some View {
+    private func emberCardHeader(_ title: String) -> some View {
         Text(title.uppercased())
             .font(.system(size: 11.5, weight: .bold))
-            .foregroundStyle(PulseTheme.neoMuted)
+            .foregroundStyle(Color.white.opacity(0.45))
             .tracking(0.8)
     }
 
-    /// Accent-tinted icon tile (web IconTile: accent 12% bg, accent glyph).
-    private func neoRowIcon(_ name: String) -> some View {
+    /// Quiet row glyph - white at 80%, no accent tile (ember language).
+    private func emberRowIcon(_ name: String) -> some View {
         Image(systemName: name)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(PulseTheme.accent)
-            .frame(width: 30, height: 30)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(PulseTheme.accent.opacity(0.12)))
+            .font(.system(size: 20, weight: .medium))
+            .foregroundStyle(Color.white.opacity(0.80))
+            .frame(width: 24)
     }
 
     private var cardSeparator: some View {
         Rectangle()
-            .fill(PulseTheme.neoHairline)
+            .fill(Color.white.opacity(0.08))
             .frame(height: 1)
-            .padding(.leading, 56)
+            .padding(.leading, 50)
     }
 
     /// R47 — the shared text: verbatim web copy (profile-tab.tsx:270) plus

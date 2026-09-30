@@ -89,9 +89,8 @@ struct PulseNavBadge: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .frame(minWidth: 20, minHeight: 20)
-                    .background(Capsule().fill(PulseTheme.brandGradient))
-                    .overlay(Capsule().strokeBorder(dark ? PulseTheme.zinc(900) : .white, lineWidth: 2))
-                    .shadow(color: PulseTheme.emerald500.opacity(0.65), radius: 6, y: 2)
+                    .background(Capsule().fill(PulseTheme.emberRed))
+                    .overlay(Capsule().strokeBorder(PulseTheme.emberDotRing, lineWidth: 2))
                     .scaleEffect(popScale)
                     .accessibilityLabel("\(count) unread chats")
             }
@@ -155,7 +154,7 @@ struct PulseNavMoreMenu: View {
         } label: {
             Label(label, systemImage: icon)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(PulseTheme.titleOnPanel)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
                 .contentShape(Rectangle())
         }
@@ -176,11 +175,11 @@ struct PulseNavMenuPanel: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(dark ? PulseTheme.zinc(900).opacity(0.72) : Color.white.opacity(0.78)),
+                    .fill(PulseTheme.emberChrome.opacity(0.96)),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1),
             )
             .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
     }
@@ -280,17 +279,16 @@ struct FloatingTopDock: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
-            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
             .frame(maxWidth: .infinity, minHeight: 52)
             .background {
                 if isActive {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(PulseTheme.dockPillGradient)
+                        .fill(Color.white.opacity(0.12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .strokeBorder(PulseTheme.emerald500.opacity(0.30), lineWidth: 1),
+                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
                         )
-                        .shadow(color: PulseTheme.emerald500.opacity(0.55), radius: 10, y: 6)
                 }
             }
             .contentShape(Rectangle())
@@ -336,11 +334,11 @@ struct FloatingTopDock: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(context.dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70)),
+                    .fill(PulseTheme.emberChrome.opacity(0.92)),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1),
             )
             .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 16, y: 8)
     }
@@ -398,15 +396,14 @@ struct PillNavDock: View {
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? Color.white : PulseTheme.textSecondary)
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
             .frame(maxWidth: .infinity, minHeight: 44)
             .background {
                 if isActive {
                     // The sliding fill — matchedGeometryEffect ≙ the web's
                     // layoutId "nav-pill-fill" (:596).
                     Capsule()
-                        .fill(PulseTheme.brandGradient)
-                        .shadow(color: PulseTheme.emerald500.opacity(0.7), radius: 9, y: 6)
+                        .fill(Color.white.opacity(0.12))
                         .matchedGeometryEffect(id: "pulse-nav-pill-fill", in: fillNamespace)
                 }
             }
@@ -438,11 +435,11 @@ struct PillNavDock: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 Capsule()
-                    .fill(context.dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70)),
+                    .fill(PulseTheme.emberChrome.opacity(0.92)),
             )
             .overlay(
                 Capsule()
-                    .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1),
             )
             .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 16, y: 8)
     }
@@ -473,10 +470,10 @@ struct BottomBarDock: View {
             // strip (web pb-[env(safe-area-inset-bottom)] parity).
             Rectangle()
                 .fill(.ultraThinMaterial)
-                .overlay(Rectangle().fill(context.dark ? PulseTheme.zinc(950).opacity(0.85) : Color.white.opacity(0.85)))
+                .overlay(Rectangle().fill(PulseTheme.emberChrome.opacity(0.96)))
                 .overlay(alignment: .top) {
                     Rectangle()
-                        .fill(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.80))
+                        .fill(Color.white.opacity(0.10))
                         .frame(height: 0.5)
                 }
                 .ignoresSafeArea(edges: .bottom)
@@ -510,13 +507,13 @@ struct BottomBarDock: View {
                     .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) {
                 if isActive {
                     // web "nav-bottombar-dot" (:649-653) — top-center tick.
                     Capsule()
-                        .fill(PulseTheme.accent)
+                        .fill(PulseTheme.emberGlowBottom)
                         .frame(width: 32, height: 3)
                         .offset(y: -3)
                 }
@@ -573,10 +570,10 @@ struct TabBarDock: View {
         .background {
             Rectangle()
                 .fill(.ultraThinMaterial)
-                .overlay(Rectangle().fill(context.dark ? PulseTheme.zinc(950).opacity(0.80) : Color.white.opacity(0.80)))
+                .overlay(Rectangle().fill(PulseTheme.emberChrome.opacity(0.96)))
                 .overlay(alignment: .top) {
                     Rectangle()
-                        .fill(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70))
+                        .fill(Color.white.opacity(0.10))
                         .frame(height: 0.5)
                 }
                 .ignoresSafeArea(edges: .bottom)
@@ -610,17 +607,17 @@ struct TabBarDock: View {
                     .font(.system(size: 10, weight: isActive ? .semibold : .medium))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 if isActive {
                     // web "nav-tabbar-squircle" (:690-694) — inset-x-3
                     // inset-y-1 rounded-2xl emerald-500/15 + inset ring.
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(PulseTheme.emerald500.opacity(context.dark ? 0.10 : 0.15))
+                        .fill(Color.white.opacity(0.10))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(PulseTheme.emerald500.opacity(0.25), lineWidth: 1),
+                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
                         )
                 }
             }
@@ -704,18 +701,18 @@ struct FloatingTabBarDock: View {
                     .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
             .frame(maxWidth: .infinity, minHeight: 54)
             .background {
                 if isActive {
                     // web "nav-ftab-card" (:750-755) — elevated card.
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(context.dark ? PulseTheme.zinc(800) : Color.white)
+                        .fill(Color.white.opacity(0.12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .strokeBorder(PulseTheme.emerald500.opacity(0.30), lineWidth: 1),
+                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
                         )
-                        .shadow(color: PulseTheme.emerald500.opacity(0.45), radius: 12, y: 8)
+                        
                 }
             }
             .contentShape(Rectangle())
@@ -753,11 +750,11 @@ struct FloatingTabBarDock: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(context.dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70)),
+                    .fill(PulseTheme.emberChrome.opacity(0.92)),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1),
             )
             .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 16, y: 8)
     }
@@ -778,8 +775,8 @@ struct RailDock: View {
                 .font(.system(size: 14, weight: .black))
                 .foregroundStyle(.white)
                 .frame(width: 36, height: 36)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(PulseTheme.brandGradient))
-                .shadow(color: PulseTheme.emerald500.opacity(0.7), radius: 8, y: 4)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.12)))
+                
                 .padding(.bottom, 10)
                 .accessibilityHidden(true)
 
@@ -814,10 +811,10 @@ struct RailDock: View {
         .background {
             Rectangle()
                 .fill(.ultraThinMaterial)
-                .overlay(Rectangle().fill(context.dark ? PulseTheme.zinc(950).opacity(0.60) : Color.white.opacity(0.60)))
+                .overlay(Rectangle().fill(PulseTheme.emberChrome.opacity(0.94)))
                 .overlay(alignment: .trailing) {
                     Rectangle()
-                        .fill(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70))
+                        .fill(Color.white.opacity(0.10))
                         .frame(width: 0.5)
                 }
                 .ignoresSafeArea()
@@ -843,20 +840,20 @@ struct RailDock: View {
                     .font(.system(size: 9, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
             .frame(width: 56)
             .padding(.vertical, 10)
             .background {
                 if isActive {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(PulseTheme.emerald500.opacity(0.10))
+                        .fill(Color.white.opacity(0.10))
                 }
             }
             .overlay(alignment: .leading) {
                 if isActive {
                     // web "nav-rail-bar" (:905-909) — left edge indicator.
                     Capsule()
-                        .fill(PulseTheme.accent)
+                        .fill(PulseTheme.emberGlowBottom)
                         .frame(width: 4, height: 28)
                         .offset(x: -10)
                 }
@@ -942,7 +939,7 @@ struct IslandDock: View {
         HStack(spacing: 8) {
             Image(systemName: activeItem.filled)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(PulseTheme.accent)
+                .foregroundStyle(Color.white)
                 .overlay(alignment: .topTrailing) {
                     if activeItem.tab == PulseNavDestinations.chats.tab {
                         PulseNavBadge(count: context.unread, dark: context.dark, reduceMotion: context.reduceMotion)
@@ -991,16 +988,16 @@ struct IslandDock: View {
                     .foregroundStyle(PulseTheme.titleOnPanel)
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
             .frame(maxWidth: .infinity, minHeight: 46)
             .background {
                 if isActive {
                     // web "nav-island-pill" (:986-990).
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(PulseTheme.emerald500.opacity(0.18))
+                        .fill(Color.white.opacity(0.14))
                         .overlay(
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .strokeBorder(PulseTheme.emerald500.opacity(0.30), lineWidth: 1),
+                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
                         )
                 }
             }
@@ -1037,11 +1034,11 @@ struct IslandDock: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 Capsule()
-                    .fill(context.dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70)),
+                    .fill(PulseTheme.emberChrome.opacity(0.92)),
             )
             .overlay(
                 Capsule()
-                    .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1),
             )
             .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 16, y: 8)
     }
@@ -1101,10 +1098,10 @@ struct FloatingDockDock: View {
                     }
                 Text(item.label)
                     .font(.system(size: 9.5, weight: isActive ? .bold : .medium))
-                    .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textTertiary)
+                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
             .frame(minWidth: 48)
             .contentShape(Rectangle())
         }
@@ -1133,11 +1130,11 @@ struct FloatingDockDock: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(context.dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70)),
+                    .fill(PulseTheme.emberChrome.opacity(0.92)),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1),
             )
             .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 16, y: 8)
     }
@@ -1158,7 +1155,7 @@ struct CommandBarDock: View {
                 .font(.system(size: 12, weight: .black))
                 .foregroundStyle(.white)
                 .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(PulseTheme.brandGradient))
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(0.12)))
                 .padding(.trailing, 6)
                 .accessibilityHidden(true)
 
@@ -1180,10 +1177,10 @@ struct CommandBarDock: View {
         .background {
             Rectangle()
                 .fill(.ultraThinMaterial)
-                .overlay(Rectangle().fill(context.dark ? PulseTheme.zinc(950).opacity(0.80) : Color.white.opacity(0.80)))
+                .overlay(Rectangle().fill(PulseTheme.emberChrome.opacity(0.96)))
                 .overlay(alignment: .bottom) {
                     Rectangle()
-                        .fill(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70))
+                        .fill(Color.white.opacity(0.10))
                         .frame(height: 0.5)
                 }
                 .ignoresSafeArea(edges: .top)
@@ -1199,12 +1196,12 @@ struct CommandBarDock: View {
         } label: {
             Text(item.label)
                 .font(.system(size: 12, weight: isActive ? .bold : .medium))
-                .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+                .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
                 .padding(.horizontal, 10)
                 .frame(minHeight: 36)
                 .background {
                     if isActive {
-                        Capsule().fill(PulseTheme.emerald500.opacity(0.14))
+                        Capsule().fill(Color.white.opacity(0.12))
                     }
                 }
                 .overlay(alignment: .topTrailing) {
@@ -1309,7 +1306,7 @@ struct RadialDock: View {
                     .font(.system(size: 9, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
             .frame(width: 58, height: 46)
             .contentShape(Rectangle())
         }
@@ -1355,8 +1352,8 @@ struct RadialDock: View {
             .foregroundStyle(.white)
             .frame(height: 54)
             .padding(.horizontal, 20)
-            .background(Capsule().fill(PulseTheme.brandGradient))
-            .shadow(color: PulseTheme.emerald500.opacity(0.65), radius: 12, y: 6)
+            .background(Capsule().fill(Color.white.opacity(0.12)))
+            
         }
         .buttonStyle(PulseButtonStyle())
         .accessibilityLabel(expanded ? "Close navigation" : "Navigation — \(activeItem.label), tap to fan out")
@@ -1399,9 +1396,9 @@ struct GestureDock: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(PulseTheme.textSecondary)
             Capsule()
-                .fill(PulseTheme.brandGradient)
+                .fill(Color.white.opacity(0.12))
                 .frame(width: 96, height: 6)
-                .shadow(color: PulseTheme.emerald500.opacity(0.6), radius: 5, y: 2)
+                
                 .frame(width: 220, height: 34, alignment: .center)
                 .contentShape(Rectangle())
                 // Drag the pill left/right → prev/next tab (web :1116-1147);
@@ -1433,11 +1430,11 @@ struct GestureDock: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(context.dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70)),
+                        .fill(PulseTheme.emberChrome.opacity(0.92)),
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1),
                 )
                 .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 12, y: 6)
         }
@@ -1482,11 +1479,11 @@ struct GestureDock: View {
             HStack(spacing: 10) {
                 Image(systemName: isActive ? item.filled : item.icon)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
                     .frame(width: 22)
                 Text(item.label)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.titleOnPanel)
+                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
                 Spacer()
                 if item.tab == PulseNavDestinations.chats.tab {
                     PulseNavBadge(count: context.unread, dark: context.dark, reduceMotion: context.reduceMotion)
@@ -1564,12 +1561,12 @@ struct ContextualDock: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
-            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
+            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
             .frame(maxWidth: .infinity, minHeight: 50)
             .background {
                 if isActive {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(PulseTheme.emerald500.opacity(0.12))
+                        .fill(Color.white.opacity(0.12))
                 }
             }
             .contentShape(Rectangle())
@@ -1603,9 +1600,8 @@ struct ContextualDock: View {
             .frame(width: 64, height: 50)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(PulseTheme.brandGradient),
+                    .fill(Color.white.opacity(0.12)),
             )
-            .shadow(color: PulseTheme.emerald500.opacity(0.65), radius: 10, y: 5)
         }
         .buttonStyle(PulseButtonStyle())
         .padding(.leading, 2)
@@ -1617,11 +1613,11 @@ struct ContextualDock: View {
             .fill(.ultraThinMaterial)
             .overlay(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(context.dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70)),
+                    .fill(PulseTheme.emberChrome.opacity(0.92)),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .strokeBorder(context.dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1),
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1),
             )
             .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 16, y: 8)
     }

@@ -26,8 +26,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
+
+import app.pulse.ui.EmberPalette
+import app.pulse.ui.PulseIcons
+import app.pulse.ui.emberBackdrop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -500,7 +502,7 @@ fun HubScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .emberBackdrop()
             .statusBarsPadding(),
     ) {
         Column(
@@ -524,7 +526,7 @@ fun HubScreen(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(20.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF123A2C), Color(0xFF0C2B21))))
+                    .background(Brush.linearGradient(listOf(EmberPalette.BackdropMid, EmberPalette.BackdropBase)))
                     .padding(16.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -573,7 +575,7 @@ fun HubScreen(
                                 Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                                    .background(EmberPalette.ChipFill)
                                     .clickable { surface = tile.surface }
                                     .padding(14.dp),
                             ) {
@@ -730,7 +732,7 @@ private fun LedgerBody(ledger: List<LedgerEntryDto>) {
             }
             Text(
                 "${if (e.amount >= 0) "+" else ""}${e.amount} ${e.asset}",
-                color = if (e.amount >= 0) PulsePalette.Emerald else MaterialTheme.colorScheme.error,
+                color = if (e.amount >= 0) EmberPalette.Online else EmberPalette.Signal,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
             )
@@ -758,7 +760,7 @@ private fun TransferSheet(vm: HubViewModel, onDismiss: () -> Unit) {
             OutlinedTextField(value = note, onValueChange = { note = it.take(140) }, label = { Text("Note (optional)") }, modifier = Modifier.fillMaxWidth())
             error?.let {
                 Spacer(Modifier.height(6.dp))
-                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                Text(it, color = EmberPalette.Signal, fontSize = 13.sp)
             }
             Spacer(Modifier.height(10.dp))
             Button(
@@ -805,7 +807,7 @@ private fun SwapSheet(vm: HubViewModel, onDismiss: () -> Unit) {
             OutlinedTextField(value = amount, onValueChange = { amount = it.filter(Char::isDigit).take(6) }, label = { Text("Amount PC") }, modifier = Modifier.fillMaxWidth())
             error?.let {
                 Spacer(Modifier.height(6.dp))
-                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                Text(it, color = EmberPalette.Signal, fontSize = 13.sp)
             }
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -879,9 +881,9 @@ private fun TasksSheet(vm: HubViewModel, onDismiss: () -> Unit) {
                             modifier = Modifier.size(28.dp),
                         ) {
                             Icon(
-                                Icons.Filled.Close,
+                                PulseIcons.X,
                                 contentDescription = "Delete task",
-                                tint = MaterialTheme.colorScheme.error,
+                                tint = EmberPalette.Signal,
                                 modifier = Modifier.size(15.dp),
                             )
                         }
@@ -920,7 +922,7 @@ private fun MarketSheet(vm: HubViewModel, onDismiss: () -> Unit) {
                 OutlinedTextField(value = price, onValueChange = { price = it.filter(Char::isDigit).take(6) }, label = { Text("Price PC") }, modifier = Modifier.fillMaxWidth())
                 error?.let {
                     Spacer(Modifier.height(6.dp))
-                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                    Text(it, color = EmberPalette.Signal, fontSize = 13.sp)
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(
@@ -953,7 +955,7 @@ private fun MarketSheet(vm: HubViewModel, onDismiss: () -> Unit) {
                     }
                     when {
                         l.status == "sold" -> Text("SOLD", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                        l.mine -> Text("Yours", color = PulsePalette.Emerald, fontSize = 12.sp)
+                        l.mine -> Text("Yours", color = EmberPalette.Online, fontSize = 12.sp)
                         confirmBuy == l.id -> Row {
                             TextButton(onClick = { confirmBuy = null }) { Text("No") }
                             Button(onClick = { vm.buy(l); confirmBuy = null }) { Text("Buy") }
@@ -976,7 +978,7 @@ private fun LogsBody(logs: List<HubLogDto>) {
     logs.forEach { l ->
         Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
             Box(
-                Modifier.size(8.dp).clip(CircleShape).background(PulsePalette.Emerald).align(Alignment.CenterVertically),
+                Modifier.size(8.dp).clip(CircleShape).background(EmberPalette.Online).align(Alignment.CenterVertically),
             )
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
@@ -1054,7 +1056,7 @@ private fun AppsSheet(
                     Column(
                         Modifier
                             .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            .background(EmberPalette.ChipFill)
                             .clickable { expanded = app }
                             .padding(10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1063,13 +1065,13 @@ private fun AppsSheet(
                             Modifier
                                 .size(38.dp)
                                 .clip(CircleShape)
-                                .background(Brush.linearGradient(listOf(PulsePalette.Emerald, Color(0xFF0B3B2C)))),
+                                .background(Brush.linearGradient(listOf(EmberPalette.Deep, EmberPalette.BackdropMid))),
                             contentAlignment = Alignment.Center,
                         ) { Text(app.name.take(1), color = Color.White, fontWeight = FontWeight.Bold) }
                         Spacer(Modifier.height(4.dp))
                         Text(app.name, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                         if (installed) {
-                            Text("connected", fontSize = 10.sp, color = PulsePalette.Emerald)
+                            Text("connected", fontSize = 10.sp, color = EmberPalette.Online)
                         }
                     }
                 }
@@ -1100,10 +1102,10 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
         label,
         Modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(if (selected) PulsePalette.Emerald else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .background(if (selected) EmberPalette.Deep else EmberPalette.ChipFill)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
-        color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+        color = if (selected) Color(0xFF1C1410) else MaterialTheme.colorScheme.onSurface,
         fontSize = 12.sp,
     )
 }

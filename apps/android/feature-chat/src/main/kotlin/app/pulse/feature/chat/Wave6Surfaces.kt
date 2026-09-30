@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -19,9 +20,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -119,7 +117,7 @@ fun MentionsScreen(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+            IconButton(onClick = onBack) { Icon(PulseIcons.ChevronLeft, contentDescription = "Back") }
             Column {
                 Text("Mentions", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                 Text(
@@ -129,7 +127,7 @@ fun MentionsScreen(
                 )
             }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = viewModel::refresh) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
+            IconButton(onClick = viewModel::refresh) { Icon(PulseIcons.Refresh, contentDescription = "Refresh") }
         }
 
         when {
@@ -320,7 +318,7 @@ fun ChannelsScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                IconButton(onClick = onBack) { Icon(PulseIcons.ChevronLeft, contentDescription = "Back") }
                 Column(Modifier.weight(1f)) {
                     Text("Channels", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                     Text(

@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,10 +28,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -305,9 +302,9 @@ fun ThreadScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(PulseIcons.ChevronLeft, contentDescription = "Back")
                 }
-                Icon(Icons.Filled.Forum, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(20.dp))
+                Icon(PulseIcons.ChatBubble, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -347,7 +344,7 @@ fun ThreadScreen(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Icon(
-                                    Icons.Filled.Forum,
+                                    PulseIcons.ChatBubble,
                                     contentDescription = "Thread root",
                                     tint = PulsePalette.Emerald,
                                     modifier = Modifier.size(12.dp),
@@ -480,7 +477,7 @@ fun ThreadScreen(
                         ),
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.Send,
+                        PulseIcons.PaperPlane,
                         contentDescription = "Send reply",
                         tint = if (canSend) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),

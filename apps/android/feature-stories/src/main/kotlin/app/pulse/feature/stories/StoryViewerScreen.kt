@@ -22,10 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -53,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.core.PulseEndpoints
+import app.pulse.ui.EmberPalette
+import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulsePalette
 import java.time.Instant
@@ -60,7 +58,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-private val StageBlack = Color(0xFF000000)
+private val StageBlack = EmberPalette.BackdropBase
 private val BarTrack = Color.White.copy(alpha = 0.32f)
 
 /** {gateway}/api/uploads/{path} — the image-story source (spec §wire). Shared with the composer. */
@@ -306,7 +304,7 @@ fun StoryViewerScreen(
                 storiesVm.resetViewers()
             },
             // R35 Neo - elevated carbon sheet fill (locked token #0d1211).
-            containerColor = PulsePalette.NeoSurface,
+            containerColor = EmberPalette.BubbleOut,
         ) {
             Text(
                 "Viewers · ${viewers.size}",
@@ -387,7 +385,7 @@ private fun ViewerHeader(
                 modifier = Modifier.padding(end = 10.dp),
             )
             HeaderIconButton(onClick = onConfirmDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "Delete status", tint = Color(0xFFFB7185), modifier = Modifier.size(20.dp))
+                Icon(PulseIcons.Trash, contentDescription = "Delete status", tint = EmberPalette.Signal, modifier = Modifier.size(20.dp))
             }
             HeaderIconButton(onClick = onCancelDelete) {
                 Text("Keep", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -396,7 +394,7 @@ private fun ViewerHeader(
             if (mine) {
                 Box(contentAlignment = Alignment.Center) {
                     HeaderIconButton(onClick = onOpenViewers) {
-                        Icon(Icons.Filled.RemoveRedEye, contentDescription = "Viewers", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(PulseIcons.Eye, contentDescription = "Viewers", tint = Color.White, modifier = Modifier.size(20.dp))
                     }
                     if (viewCount > 0) {
                         Text(
@@ -413,11 +411,11 @@ private fun ViewerHeader(
                     }
                 }
                 HeaderIconButton(onClick = onAskDelete) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete status", tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(PulseIcons.Trash, contentDescription = "Delete status", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
             }
             HeaderIconButton(onClick = onClose) {
-                Icon(Icons.Filled.Close, contentDescription = "Close stories", tint = Color.White, modifier = Modifier.size(22.dp))
+                Icon(PulseIcons.X, contentDescription = "Close stories", tint = Color.White, modifier = Modifier.size(22.dp))
             }
         }
     }

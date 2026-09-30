@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
@@ -30,10 +31,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -534,14 +531,14 @@ private fun PipExpandedPane(
                 }
                 IconButton(onClick = onMinimize, modifier = Modifier.size(36.dp)) {
                     Icon(
-                        Icons.Filled.KeyboardArrowDown,
+                        PulseIcons.ChevronDown,
                         contentDescription = "Minimize mini chat",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
                     Icon(
-                        Icons.Filled.Close,
+                        PulseIcons.X,
                         contentDescription = "Close mini chat",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -661,7 +658,7 @@ private fun PipExpandedPane(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Filled.Send,
+                        PulseIcons.PaperPlane,
                         contentDescription = "Send message",
                         tint = Color.White,
                         modifier = Modifier.size(16.dp),
@@ -737,7 +734,7 @@ private fun PipStackPill(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Filled.Close,
+                PulseIcons.X,
                 contentDescription = "Close $title mini chat",
                 tint = if (dark) Color(0xFFD4D4D8) else Color(0xFF71717A),
                 modifier = Modifier.size(11.dp),

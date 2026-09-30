@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -56,57 +57,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
 // R6 — M5: the DM dead-end notice icon (web chat-room Ban).
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Draw
-import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.Event
-import androidx.compose.material.icons.filled.Redeem
-import androidx.compose.material.icons.filled.SportsEsports
-import androidx.compose.material.icons.filled.ViewKanban
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.EmojiEmotions
-import androidx.compose.material.icons.filled.EventRepeat
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.PhotoCamera
 // R1-W2I F-PI-03 — pop-out mini chat menu icon (web PictureInPicture2).
-import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material3.Button
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Poll
-import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.ScheduleSend
-import androidx.compose.material.icons.filled.SentimentSatisfied
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Topic
-import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -158,6 +111,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -178,9 +132,13 @@ import app.pulse.domain.model.LinkPreviewInfo
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.domain.model.Topic
+import app.pulse.ui.EmberGlassButton
+import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseAvatar
+import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.emberBackdrop
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -188,7 +146,7 @@ import kotlinx.coroutines.launch
 /**
  * Chat room — the native rebuild of the web conversation surface, now on the
  * Wave 1 messaging engine ([ChatRoomViewModel]): paginated timeline with day
- * separators, tick states (queued clock → sent ✓ → seen ✓✓), the full message
+ * separators, tick states (queued clock, sent tick, seen double tick), the full message
  * action surface, pinned banner, room search + jump, staged media sends and
  * the honest offline strip. Threads open [ThreadScreen] via onOpenThread.
  */
@@ -247,7 +205,7 @@ fun ChatRoomScreen(
     val transcribingIds by viewModel.transcribingIds.collectAsStateWithLifecycle()
     // Wave 8 — prefs-driven room rendering (bubble corners, density, wallpaper)
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
-    val bubbleCorner = when (prefs.bubbleRadius) { "md" -> 10.dp; "pill" -> 26.dp; else -> 16.dp }
+    val bubbleCorner = when (prefs.bubbleRadius) { "md" -> 14.dp; "pill" -> 26.dp; else -> 20.dp }
     val densityGap = if (prefs.density == "compact") 3.dp else 6.dp
     val channelRole by viewModel.channelRole.collectAsStateWithLifecycle()
     val safety by viewModel.safety.collectAsStateWithLifecycle()
@@ -735,6 +693,7 @@ fun ChatRoomScreen(
     Column(
         Modifier
             .fillMaxSize()
+            .emberBackdrop(withGlow = true)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding(),
@@ -921,7 +880,7 @@ fun ChatRoomScreen(
                                 } else {
                                     null
                                 },
-                                // R6 — M6 — double-tap bubble → ❤️ toggle + hearts
+                                // R6 — M6 — double-tap bubble toggles the heart reaction + heart burst
                                 // burst (web chat-room.tsx:7265-7268 + :7389-7394:
                                 // particles only when the tap ADDS the reaction).
                                 onDoubleClick = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
@@ -1014,8 +973,7 @@ fun ChatRoomScreen(
             ) {
                 Surface(
                     shape = RoundedCornerShape(999.dp),
-                    color = PulsePalette.Emerald,
-                    contentColor = Color.White,
+                    color = Color.Transparent,
                     shadowElevation = 6.dp,
                     modifier = Modifier.semantics {
                         contentDescription = if (missedCount.intValue > 0) {
@@ -1025,8 +983,11 @@ fun ChatRoomScreen(
                         }
                     },
                 ) {
+                    // EMB: the jump pill rides the ember gradient.
                     Row(
                         Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Brush.linearGradient(EmberPalette.Gradient))
                             .clickable {
                                 missedCount.intValue = 0
                                 listScope.launch { listState.animateScrollToItem(0) }
@@ -1034,11 +995,12 @@ fun ChatRoomScreen(
                             .padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("New messages", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("New messages", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF1C1410))
                         Spacer(Modifier.width(4.dp))
                         Icon(
-                            Icons.Filled.KeyboardArrowDown,
+                            PulseIcons.ChevronDown,
                             contentDescription = null,
+                            tint = Color(0xFF1C1410),
                             modifier = Modifier.size(14.dp),
                         )
                         if (missedCount.intValue > 0) {
@@ -1054,7 +1016,7 @@ fun ChatRoomScreen(
                                     if (missedCount.intValue > 99) "99+" else "${missedCount.intValue}",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = PulsePalette.Emerald,
+                                    color = Color(0xFF7A4E33),
                                 )
                             }
                         }
@@ -1076,7 +1038,7 @@ fun ChatRoomScreen(
                         verticalArrangement = Arrangement.Center,
                     ) {
                         Icon(
-                            Icons.Filled.Shield,
+                            PulseIcons.Shield,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(30.dp),
@@ -1133,7 +1095,7 @@ fun ChatRoomScreen(
                 ) {
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Outlined.Schedule,
+                            PulseIcons.Clock,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp),
@@ -1182,7 +1144,8 @@ fun ChatRoomScreen(
         ) {
             state.replyTo?.let { reply ->
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    color = EmberPalette.CardFill,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, EmberPalette.Hairline),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 14.dp, vertical = 4.dp)
@@ -1191,14 +1154,14 @@ fun ChatRoomScreen(
                     shape = RoundedCornerShape(14.dp),
                 ) {
                     Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
+                        Icon(PulseIcons.Reply, contentDescription = null, tint = EmberPalette.SenderName, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(reply.authorName, style = MaterialTheme.typography.labelMedium, color = PulsePalette.Emerald, fontWeight = FontWeight.SemiBold)
-                            Text(reply.body, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(reply.authorName, style = MaterialTheme.typography.labelMedium, color = EmberPalette.SenderName, fontWeight = FontWeight.SemiBold)
+                            Text(reply.body, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.55f))
                         }
                         IconButton(onClick = { viewModel.setReplyTo(null) }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Cancel reply", modifier = Modifier.size(16.dp))
+                            Icon(PulseIcons.X, contentDescription = "Cancel reply", modifier = Modifier.size(16.dp), tint = Color.White.copy(alpha = 0.55f))
                         }
                     }
                 }
@@ -1213,19 +1176,20 @@ fun ChatRoomScreen(
         ) {
             state.editing?.let { editing ->
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    color = EmberPalette.CardFill,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, EmberPalette.Hairline),
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
                     shape = RoundedCornerShape(14.dp),
                 ) {
                     Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.InsertDriveFile, contentDescription = null, tint = PulsePalette.Amber, modifier = Modifier.size(15.dp))
+                        Icon(PulseIcons.Pencil, contentDescription = null, tint = EmberPalette.Amber, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Editing message", style = MaterialTheme.typography.labelMedium, color = PulsePalette.Amber, fontWeight = FontWeight.SemiBold)
-                            Text(editing.body, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("Editing message", style = MaterialTheme.typography.labelMedium, color = EmberPalette.Amber, fontWeight = FontWeight.SemiBold)
+                            Text(editing.body, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.55f))
                         }
                         IconButton(onClick = viewModel::cancelEdit) {
-                            Icon(Icons.Filled.Close, contentDescription = "Cancel edit", modifier = Modifier.size(16.dp))
+                            Icon(PulseIcons.X, contentDescription = "Cancel edit", modifier = Modifier.size(16.dp), tint = Color.White.copy(alpha = 0.55f))
                         }
                     }
                 }
@@ -1235,7 +1199,7 @@ fun ChatRoomScreen(
         // Offline honesty strip (spec row 7) — text queues, media won't.
         AnimatedVisibility(visible = state.connected == false) {
             Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+                color = EmberPalette.CardFill,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
@@ -1244,15 +1208,15 @@ fun ChatRoomScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(
-                        Icons.Outlined.Schedule,
+                        PulseIcons.Clock,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = Color.White.copy(alpha = 0.55f),
                         modifier = Modifier.size(13.dp),
                     )
                     Text(
                         "Offline — messages will queue",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color.White.copy(alpha = 0.55f),
                     )
                 }
             }
@@ -1273,7 +1237,8 @@ fun ChatRoomScreen(
             exit = fadeOut() + scaleOut(targetScale = 0.96f, animationSpec = tween(120)),
         ) {
             Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                color = EmberPalette.CardFill,
+                border = androidx.compose.foundation.BorderStroke(1.dp, EmberPalette.Hairline),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -1286,19 +1251,19 @@ fun ChatRoomScreen(
                             Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .background(PulsePalette.Violet.copy(alpha = 0.14f)),
+                                .background(Color.White.copy(alpha = 0.10f)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                Icons.Filled.AutoAwesome,
+                                PulseIcons.Sparkle,
                                 contentDescription = null,
-                                tint = PulsePalette.Violet,
+                                tint = EmberPalette.SenderName,
                                 modifier = Modifier.size(15.dp),
                             )
                         }
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("AI recap", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("AI recap", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                             Text(
                                 when {
                                     recapLoading -> "Summarizing the latest messages"
@@ -1306,7 +1271,7 @@ fun ChatRoomScreen(
                                     else -> ""
                                 },
                                 fontSize = 10.5.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = Color.White.copy(alpha = 0.45f),
                             )
                         }
                         if (recap != null && !recapLoading) {
@@ -1314,11 +1279,11 @@ fun ChatRoomScreen(
                                 clipboard.setText(AnnotatedString(recap?.text.orEmpty()))
                                 viewModel.notify("Recap copied")
                             }) {
-                                Text("Copy", fontSize = 11.sp, color = PulsePalette.Emerald, fontWeight = FontWeight.Bold)
+                                Text("Copy", fontSize = 11.sp, color = EmberPalette.Amber, fontWeight = FontWeight.Bold)
                             }
                         }
                         IconButton(onClick = viewModel::consumeRecap) {
-                            Icon(Icons.Filled.Close, contentDescription = "Dismiss recap", modifier = Modifier.size(14.dp))
+                            Icon(PulseIcons.X, contentDescription = "Dismiss recap", modifier = Modifier.size(14.dp), tint = Color.White.copy(alpha = 0.55f))
                         }
                     }
                     if (recap != null && !recapLoading) {
@@ -1326,7 +1291,7 @@ fun ChatRoomScreen(
                             recap?.text.orEmpty(),
                             fontSize = 12.5.sp,
                             lineHeight = 18.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = Color.White.copy(alpha = 0.85f),
                         )
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1335,7 +1300,7 @@ fun ChatRoomScreen(
                             Text(
                                 "Reading the room…",
                                 fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = Color.White.copy(alpha = 0.45f),
                             )
                         }
                     }
@@ -1410,7 +1375,7 @@ fun ChatRoomScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            Icons.Filled.Speed,
+                            PulseIcons.Gauge,
                             contentDescription = null,
                             tint = PulsePalette.Emerald,
                             modifier = Modifier.size(14.dp),
@@ -1454,7 +1419,7 @@ fun ChatRoomScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            Icons.Filled.Schedule,
+                            PulseIcons.Clock,
                             contentDescription = null,
                             tint = PulsePalette.Amber,
                             modifier = Modifier.size(14.dp),
@@ -1490,7 +1455,7 @@ fun ChatRoomScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            Icons.Filled.VisibilityOff,
+                            PulseIcons.EyeOff,
                             contentDescription = null,
                             tint = PulsePalette.Emerald,
                             modifier = Modifier.size(14.dp),
@@ -1504,7 +1469,7 @@ fun ChatRoomScreen(
                         )
                         IconButton(onClick = viewModel::toggleIncognito) {
                             Icon(
-                                Icons.Filled.Close,
+                                PulseIcons.X,
                                 contentDescription = "Turn off incognito",
                                 tint = PulsePalette.Emerald,
                                 modifier = Modifier.size(14.dp),
@@ -1565,7 +1530,7 @@ fun ChatRoomScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            Icons.Filled.Topic,
+                            PulseIcons.Hash,
                             contentDescription = null,
                             tint = PulsePalette.Emerald,
                             modifier = Modifier.size(14.dp),
@@ -1582,7 +1547,7 @@ fun ChatRoomScreen(
                         )
                         IconButton(onClick = { viewModel.setActiveTopic(null) }) {
                             Icon(
-                                Icons.Filled.Close,
+                                PulseIcons.X,
                                 contentDescription = "Stop filing to this topic — back to General",
                                 tint = PulsePalette.Emerald,
                                 modifier = Modifier.size(14.dp),
@@ -1606,7 +1571,7 @@ fun ChatRoomScreen(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Filled.Block, contentDescription = null, tint = PulsePalette.Rose)
+                    Icon(PulseIcons.Ban, contentDescription = null, tint = PulsePalette.Rose)
                     Spacer(Modifier.width(10.dp))
                     Text(
                         "You can no longer message this account",
@@ -1621,12 +1586,12 @@ fun ChatRoomScreen(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(PulseIcons.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(10.dp))
                     Text("Only admins can post", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        } else Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+        } else Surface(color = Color.Transparent) {
             // D31 hold-to-record — the RIGHT slot is ALWAYS mounted (same node
             // across idle → recording) so the press gesture survives the state
             // change: hold the mic to record, release to send, slide LEFT past
@@ -1646,7 +1611,8 @@ fun ChatRoomScreen(
                             onCancel = viewModel::cancelRecording,
                         )
                     } else {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                        // EMB composer: [incognito] [ pill: smile | field | camera ] [attach] [mic/send]
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             // R3-B item 4 — the incognito arming toggle (web anonNext;
                             // GROUPS only — the server clamps anon off on DMs).
                             if (conversation?.isGroupish == true) {
@@ -1667,73 +1633,89 @@ fun ChatRoomScreen(
                                         },
                                 ) {
                                     Icon(
-                                        if (anonNext) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        if (anonNext) PulseIcons.EyeOff else PulseIcons.Eye,
                                         contentDescription = null,
-                                        tint = if (anonNext) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        tint = if (anonNext) EmberPalette.Online else Color.White.copy(alpha = 0.55f),
                                         modifier = Modifier.size(20.dp),
                                     )
                                 }
                             }
-                            IconButton(
-                                onClick = {
-                                    if (state.staged == null && state.editing == null) attachOpen = true
-                                },
-                                modifier = Modifier.clip(CircleShape),
-                            ) {
-                                Icon(Icons.Filled.Add, contentDescription = "Attach", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            BasicTextField(
-                                value = draft,
-                                onValueChange = {
-                                    draft = it
-                                    viewModel.onDraftChanged(it)
-                                },
-                                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                                cursorBrush = SolidColor(PulsePalette.Emerald),
-                                modifier = Modifier
+                            // EMB: the 52dp glass pill — PillFill, white 8% border, radius 26.
+                            Row(
+                                Modifier
                                     .weight(1f)
-                                    .focusRequester(composerFocus)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(22.dp))
-                                    .padding(horizontal = 16.dp, vertical = 11.dp),
-                                decorationBox = { inner ->
-                                    Box {
-                                        if (draft.isEmpty()) {
-                                            Text(
-                                                if (state.editing != null) "Edit your message" else "Message",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                            )
-                                        }
-                                        inner()
+                                    .heightIn(min = 52.dp)
+                                    .clip(RoundedCornerShape(26.dp))
+                                    .background(EmberPalette.PillFill)
+                                    .border(1.dp, EmberPalette.Hairline, RoundedCornerShape(26.dp))
+                                    .padding(horizontal = 2.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                // R5-B ITEM 1 — the smile button (web chat-room.tsx:5384-5390):
+                                // opens the draft-append emoji popup, never sends.
+                                Box {
+                                    IconButton(
+                                        onClick = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            emojiOpen = !emojiOpen
+                                        },
+                                        modifier = Modifier.clip(CircleShape),
+                                    ) {
+                                        Icon(
+                                            PulseIcons.Smile,
+                                            contentDescription = "Insert emoji",
+                                            tint = Color.White.copy(alpha = 0.55f),
+                                            modifier = Modifier.size(22.dp),
+                                        )
                                     }
-                                },
-                            )
-                            // R5-B ITEM 1 — the smile button (web chat-room.tsx:5384-5390):
-                            // opens the draft-append emoji popup, never sends.
-                            Box {
-                                IconButton(
-                                    onClick = {
-                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        emojiOpen = !emojiOpen
+                                    if (emojiOpen) {
+                                        EmojiPickerPopup(
+                                            onPick = { emoji ->
+                                                // Append at cursor end + keep the composer
+                                                // focused (web: setInput(prev + emoji) → refocus).
+                                                draft += emoji
+                                                viewModel.onDraftChanged(draft)
+                                                composerFocus.requestFocus()
+                                            },
+                                            onDismiss = { emojiOpen = false },
+                                        )
+                                    }
+                                }
+                                BasicTextField(
+                                    value = draft,
+                                    onValueChange = {
+                                        draft = it
+                                        viewModel.onDraftChanged(it)
                                     },
+                                    textStyle = TextStyle(fontSize = 15.sp, color = Color.White),
+                                    cursorBrush = SolidColor(EmberPalette.Amber),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .focusRequester(composerFocus)
+                                        .padding(horizontal = 4.dp, vertical = 14.dp),
+                                    decorationBox = { inner ->
+                                        Box {
+                                            if (draft.isEmpty()) {
+                                                Text(
+                                                    if (state.editing != null) "Edit your message" else "Type here",
+                                                    fontSize = 15.sp,
+                                                    color = Color.White.copy(alpha = 0.40f),
+                                                )
+                                            }
+                                            inner()
+                                        }
+                                    },
+                                )
+                                // D30 camera glyph — the EXISTING capture trigger.
+                                IconButton(
+                                    onClick = onCameraCapture,
                                     modifier = Modifier.clip(CircleShape),
                                 ) {
                                     Icon(
-                                        Icons.Filled.SentimentSatisfied,
-                                        contentDescription = "Insert emoji",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                if (emojiOpen) {
-                                    EmojiPickerPopup(
-                                        onPick = { emoji ->
-                                            // Append at cursor end + keep the composer
-                                            // focused (web: setInput(prev + emoji) → refocus).
-                                            draft += emoji
-                                            viewModel.onDraftChanged(draft)
-                                            composerFocus.requestFocus()
-                                        },
-                                        onDismiss = { emojiOpen = false },
+                                        PulseIcons.Camera,
+                                        contentDescription = "Take a photo",
+                                        tint = Color.White.copy(alpha = 0.55f),
+                                        modifier = Modifier.size(22.dp),
                                     )
                                 }
                             }
@@ -1741,6 +1723,26 @@ fun ChatRoomScreen(
                     }
                 }
                 Spacer(Modifier.width(6.dp))
+                // EMB: the attach trigger as a 48dp dark-ink circle (same gate as before).
+                if (!recording) {
+                    IconButton(
+                        onClick = {
+                            if (state.staged == null && state.editing == null) attachOpen = true
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(EmberPalette.FabFill),
+                    ) {
+                        Icon(
+                            PulseIcons.Plus,
+                            contentDescription = "Attach",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
+                }
                 val canSend = draft.isNotBlank() && !slowBlocked
                 val slotMic = !canSend && state.editing == null && state.staged == null && !sendingVoice && !recording
                 HoldRecordSlot(
@@ -2332,21 +2334,18 @@ internal fun buildTimelineRows(
 
 @Composable
 private fun DaySeparator(label: String, modifier: Modifier = Modifier) {
+    // EMB: plain centered hairline text, no chip (spec item 6).
     Box(modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
         Text(
             label,
             fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .clip(RoundedCornerShape(999.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                .padding(horizontal = 12.dp, vertical = 4.dp),
+            fontWeight = FontWeight.Medium,
+            color = Color.White.copy(alpha = 0.40f),
         )
     }
 }
 
-/** R2-A item 4 — the emerald unread divider (web chat-room.tsx UnreadDivider). */
+/** R2-A item 4 — the unread divider (web chat-room.tsx UnreadDivider). */
 @Composable
 private fun UnreadDivider(modifier: Modifier = Modifier) {
     Row(
@@ -2359,24 +2358,20 @@ private fun UnreadDivider(modifier: Modifier = Modifier) {
             Modifier
                 .weight(1f)
                 .height(1.dp)
-                .background(PulsePalette.Emerald.copy(alpha = 0.45f)),
+                .background(EmberPalette.GlassBorder),
         )
         Text(
             "Unread messages",
             fontSize = 10.5.sp,
             fontWeight = FontWeight.Bold,
-            color = PulsePalette.Emerald,
-            modifier = Modifier
-                .padding(horizontal = 10.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(PulsePalette.Emerald.copy(alpha = 0.12f))
-                .padding(horizontal = 10.dp, vertical = 3.dp),
+            color = EmberPalette.Signal,
+            modifier = Modifier.padding(horizontal = 10.dp),
         )
         Box(
             Modifier
                 .weight(1f)
                 .height(1.dp)
-                .background(PulsePalette.Emerald.copy(alpha = 0.45f)),
+                .background(EmberPalette.GlassBorder),
         )
     }
 }
@@ -2384,8 +2379,10 @@ private fun UnreadDivider(modifier: Modifier = Modifier) {
 @Composable
 private fun PinnedBanner(pin: Message, onJump: () -> Unit, onOpenAll: () -> Unit) {
     Surface(
-        color = PulsePalette.Amber.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = EmberPalette.CardFill,
+        border = androidx.compose.foundation.BorderStroke(1.dp, EmberPalette.Hairline),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
     ) {
         Row(
             Modifier
@@ -2395,9 +2392,9 @@ private fun PinnedBanner(pin: Message, onJump: () -> Unit, onOpenAll: () -> Unit
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                Icons.Filled.PushPin,
+                PulseIcons.Pin,
                 contentDescription = "Pinned message",
-                tint = PulsePalette.Amber,
+                tint = EmberPalette.Amber,
                 modifier = Modifier.size(14.dp),
             )
             Spacer(Modifier.width(8.dp))
@@ -2406,22 +2403,22 @@ private fun PinnedBanner(pin: Message, onJump: () -> Unit, onOpenAll: () -> Unit
                     pin.authorName,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = PulsePalette.Amber,
+                    color = EmberPalette.Amber,
                     maxLines = 1,
                 )
                 Text(
                     pin.body.ifBlank { if (pin.imagePath != null) "Photo" else "Document — ${pin.fileName ?: "file"}" },
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = Color.White.copy(alpha = 0.70f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
             IconButton(onClick = onOpenAll, modifier = Modifier.size(30.dp)) {
                 Icon(
-                    Icons.Filled.Search,
+                    PulseIcons.Search,
                     contentDescription = "All pinned messages",
-                    tint = PulsePalette.Amber,
+                    tint = EmberPalette.Amber,
                     modifier = Modifier.size(16.dp),
                 )
             }
@@ -2439,14 +2436,19 @@ private fun RoomSearchBar(
     onClose: () -> Unit,
     onOpenHit: (Message) -> Unit,
 ) {
-    Surface(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f)) {
+    Surface(
+        color = EmberPalette.CardFill,
+        border = androidx.compose.foundation.BorderStroke(1.dp, EmberPalette.Hairline),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+    ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
             BasicField(
                 value = query,
                 onValueChange = onQueryChange,
                 placeholder = "Search this conversation…",
                 leading = {
-                    Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    Icon(PulseIcons.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.45f), modifier = Modifier.size(16.dp))
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -2462,13 +2464,13 @@ private fun RoomSearchBar(
                         else -> "${results.size} ${if (results.size == 1) "match" else "matches"}"
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = Color.White.copy(alpha = 0.45f),
                     modifier = Modifier.weight(1f),
                 )
                 Text(
                     "Close",
                     style = MaterialTheme.typography.labelMedium,
-                    color = PulsePalette.Emerald,
+                    color = EmberPalette.Amber,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -2501,6 +2503,7 @@ private fun RoomSearchBar(
                                         hit.authorName,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
+                                        color = Color.White,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f, fill = false),
@@ -2509,7 +2512,7 @@ private fun RoomSearchBar(
                                     Text(
                                         PulseTime.dayChip(hit.createdAt) + " · " + PulseTime.clock(hit.createdAt),
                                         fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = Color.White.copy(alpha = 0.40f),
                                     )
                                 }
                                 Text(
@@ -2518,7 +2521,7 @@ private fun RoomSearchBar(
                                         query,
                                     ),
                                     fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = Color.White.copy(alpha = 0.55f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -2563,22 +2566,22 @@ private fun AttachSheet(
     onIncognito: (() -> Unit)?,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
-        SheetAction(Icons.Filled.Image, "Photo", onPhoto)
+        SheetAction(PulseIcons.ImageIcon, "Photo", onPhoto)
         // D30 — take a full-resolution shot with the system camera app; the
         // file flows through the same ≤1280px JPEG upload path as "Photo".
-        SheetAction(Icons.Filled.PhotoCamera, "Camera", onCamera)
-        SheetAction(Icons.Filled.InsertDriveFile, "Document", onDocument)
+        SheetAction(PulseIcons.Camera, "Camera", onCamera)
+        SheetAction(PulseIcons.File, "Document", onDocument)
         // R1-W2F F-MD-07 — wire kind whitelist carries "location" with the
         // payload blob {lat,lng,label} (web/iOS parity).
-        SheetAction(Icons.Filled.Place, "Location", onLocation, tint = PulsePalette.Emerald)
-        SheetAction(Icons.Filled.Poll, "Poll", onPoll, tint = PulsePalette.Emerald)
+        SheetAction(PulseIcons.MapPin, "Location", onLocation, tint = PulsePalette.Emerald)
+        SheetAction(PulseIcons.Poll, "Poll", onPoll, tint = PulsePalette.Emerald)
         // ── Wave 7 palette (web chat-room.tsx:2519-2634 order) ──
-        SheetAction(Icons.Filled.Draw, "Whiteboard", onWhiteboard)
-        SheetAction(Icons.Filled.Redeem, "Red packet", onRedPacket)
-        SheetAction(Icons.Filled.Event, "Events", onEvents)
-        SheetAction(Icons.Filled.SportsEsports, "Game", onGame)
-        SheetAction(Icons.Filled.EmojiEvents, "Tournament", onTournament)
-        SheetAction(Icons.Filled.ViewKanban, "Kanban", onKanban)
+        SheetAction(PulseIcons.Pencil, "Whiteboard", onWhiteboard)
+        SheetAction(PulseIcons.Gift, "Red packet", onRedPacket)
+        SheetAction(PulseIcons.Calendar, "Events", onEvents)
+        SheetAction(PulseIcons.Gamepad, "Game", onGame)
+        SheetAction(PulseIcons.Trophy, "Tournament", onTournament)
+        SheetAction(PulseIcons.Columns, "Kanban", onKanban)
 
         // ── R4-B item 2 — Express (web tray group verbatim label) ──
         Text(
@@ -2616,7 +2619,7 @@ private fun AttachSheet(
                             horizontalArrangement = Arrangement.Center,
                         ) {
                             Icon(
-                                Icons.Filled.AutoAwesome,
+                                PulseIcons.Sparkle,
                                 contentDescription = null,
                                 tint = PulsePalette.Violet,
                                 modifier = Modifier.size(13.dp),
@@ -2634,12 +2637,12 @@ private fun AttachSheet(
                 }
             }
         }
-        SheetAction(Icons.Filled.AutoAwesome, "Effects", onToggleEffects, tint = PulsePalette.Violet)
-        SheetAction(Icons.Filled.EmojiEmotions, "Stickers", onStickers)
-        SheetAction(Icons.Filled.ScheduleSend, "Schedule send", onScheduleSend)
-        SheetAction(Icons.Filled.EventRepeat, "Scheduled sends", onScheduledSends)
+        SheetAction(PulseIcons.Sparkle, "Effects", onToggleEffects, tint = PulsePalette.Violet)
+        SheetAction(PulseIcons.Smile, "Stickers", onStickers)
+        SheetAction(PulseIcons.PaperPlane, "Schedule send", onScheduleSend)
+        SheetAction(PulseIcons.Calendar, "Scheduled sends", onScheduledSends)
         if (onIncognito != null) {
-            SheetAction(Icons.Filled.VisibilityOff, "Incognito", onIncognito, tint = PulsePalette.Emerald)
+            SheetAction(PulseIcons.EyeOff, "Incognito", onIncognito, tint = PulsePalette.Emerald)
         }
         Spacer(Modifier.height(28.dp))
     }
@@ -2701,7 +2704,7 @@ internal fun ConvThemeSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 26.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Palette, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(18.dp))
+                Icon(PulseIcons.Palette, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Chat theme", fontSize = 17.sp, fontWeight = FontWeight.Bold)
             }
@@ -2754,7 +2757,7 @@ internal fun ConvThemeSheet(
                             contentAlignment = Alignment.Center,
                         ) {
                             if (selected) {
-                                Icon(Icons.Filled.Check, contentDescription = "Selected", tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
+                                Icon(PulseIcons.Check, contentDescription = "Selected", tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
                             }
                         }
                         Spacer(Modifier.height(4.dp))
@@ -2783,7 +2786,7 @@ internal fun ConvThemeSheet(
                         .clickable { onPickTint(null) },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Filled.Close, contentDescription = "No tint", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+                    Icon(PulseIcons.X, contentDescription = "No tint", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
                 }
                 ConvTheme.TINTS.forEach { tint ->
                     val selected = current?.tint == tint
@@ -2797,7 +2800,7 @@ internal fun ConvThemeSheet(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (selected) {
-                            Icon(Icons.Filled.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                            Icon(PulseIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
                         }
                     }
                 }
@@ -2814,7 +2817,7 @@ internal fun ConvThemeSheet(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Filled.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
+                    Icon(PulseIcons.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
                         "Reset to default",
@@ -2843,7 +2846,8 @@ private fun StagedMediaCard(
     onRemove: () -> Unit,
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+        color = EmberPalette.CardFill,
+        border = androidx.compose.foundation.BorderStroke(1.dp, EmberPalette.Hairline),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
         shape = RoundedCornerShape(14.dp),
     ) {
@@ -2862,10 +2866,10 @@ private fun StagedMediaCard(
                         Modifier
                             .size(52.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(MaterialTheme.colorScheme.surface),
+                            .background(Color.White.copy(alpha = 0.08f)),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Filled.InsertDriveFile, contentDescription = "Document", tint = PulsePalette.Emerald, modifier = Modifier.size(24.dp))
+                        Icon(PulseIcons.Paperclip, contentDescription = "Document", tint = EmberPalette.Amber, modifier = Modifier.size(24.dp))
                     }
                 }
                 Column(Modifier.weight(1f)) {
@@ -2893,7 +2897,7 @@ private fun StagedMediaCard(
                             Text(
                                 "Retry",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = PulsePalette.Emerald,
+                                color = EmberPalette.Amber,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
@@ -2902,12 +2906,12 @@ private fun StagedMediaCard(
                             )
                         }
                         staged.uploading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.6.dp, color = PulsePalette.Emerald)
+                            CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.6.dp, color = EmberPalette.Amber)
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 "Uploading…",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = Color.White.copy(alpha = 0.45f),
                             )
                         }
                         staged.uploadedPath != null -> {
@@ -2915,13 +2919,13 @@ private fun StagedMediaCard(
                             Text(
                                 if (size.isEmpty()) "Ready to send" else "Ready to send · $size",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = PulsePalette.Emerald,
+                                color = EmberPalette.Online,
                             )
                         }
                     }
                 }
                 IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Filled.Close, contentDescription = "Remove attachment", modifier = Modifier.size(15.dp))
+                    Icon(PulseIcons.X, contentDescription = "Remove attachment", modifier = Modifier.size(15.dp), tint = Color.White.copy(alpha = 0.55f))
                 }
             }
             // Wave 2 view-once send toggle — IMAGE kind only (the wire
@@ -2951,15 +2955,15 @@ private fun StagedMediaCard(
                 Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BasicTextField(
                     value = caption,
                     onValueChange = onCaptionChange,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-                    cursorBrush = SolidColor(PulsePalette.Emerald),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                    cursorBrush = SolidColor(EmberPalette.Amber),
                     modifier = Modifier.weight(1f),
                     decorationBox = { inner ->
                         Box {
@@ -2967,7 +2971,7 @@ private fun StagedMediaCard(
                                 Text(
                                     "Add a caption…",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = Color.White.copy(alpha = 0.40f),
                                 )
                             }
                             inner()
@@ -3016,18 +3020,22 @@ private fun RoomHeader(
     onStartGroupVoice: (() -> Unit)? = null,
     onStartGroupVideo: (() -> Unit)? = null,
 ) {
-    Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+    Surface(color = Color.Transparent) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = if (searchOpen) "Close search" else "Back")
-            }
+            // EMB: glass chrome on the ember ground (same handlers as before).
+            EmberGlassButton(
+                icon = PulseIcons.ChevronLeft,
+                label = if (searchOpen) "Close search" else "Back",
+                onClick = onBack,
+            )
+            Spacer(Modifier.width(6.dp))
             PulseAvatar(
                 name = conversation?.title ?: "…",
                 colorHex = conversation?.accentColor,
-                size = 40.dp,
+                size = 36.dp,
                 isGroup = conversation?.isGroupish == true,
             )
             Spacer(Modifier.width(10.dp))
@@ -3035,15 +3043,16 @@ private fun RoomHeader(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         conversation?.title ?: "…",
-                        style = MaterialTheme.typography.titleMedium,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (conversation != null && !conversation.isGroupish) {
                         if (peerVerified == true) {
                             Spacer(Modifier.width(4.dp))
-                            Icon(Icons.Filled.Verified, contentDescription = "Verified", tint = PulsePalette.Emerald, modifier = Modifier.size(14.dp))
+                            Icon(PulseIcons.BadgeCheck, contentDescription = "Verified", tint = EmberPalette.Online, modifier = Modifier.size(14.dp))
                         } else if (peerVerified == false) {
                             Spacer(Modifier.width(4.dp))
                             Box(
@@ -3057,11 +3066,19 @@ private fun RoomHeader(
                 }
                 AnimatedContentCompat(partnerTypingName != null) { typing ->
                     if (typing) {
+                        // EMB: the typing state breathes (animated alpha on the word).
+                        val typingAlpha by rememberInfiniteTransition(label = "typingPulse").animateFloat(
+                            initialValue = 0.35f,
+                            targetValue = 1f,
+                            animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+                            label = "typingAlpha",
+                        )
                         Text(
                             "${partnerTypingName.orEmpty()} is typing",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = PulsePalette.Emerald,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.55f),
+                            modifier = Modifier.alpha(typingAlpha),
                         )
                     } else {
                         Text(
@@ -3070,19 +3087,19 @@ private fun RoomHeader(
                                 conversation.isGroupish -> "${conversation.memberNames.size} members"
                                 else -> "online"
                             },
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.55f),
                         )
                     }
                 }
                 // Wave 6 — DM safety-number entry (web chat-room ShieldCheck).
                 if (onOpenSafety != null) {
-                    IconButton(onClick = onOpenSafety) {
+                    IconButton(onClick = onOpenSafety, modifier = Modifier.size(28.dp)) {
                         Icon(
-                            Icons.Filled.Shield,
+                            PulseIcons.Shield,
                             contentDescription = "Safety number",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
+                            tint = Color.White.copy(alpha = 0.55f),
+                            modifier = Modifier.size(16.dp),
                         )
                     }
                 }
@@ -3092,98 +3109,74 @@ private fun RoomHeader(
             if (voiceJoined) {
                 Surface(
                     shape = RoundedCornerShape(999.dp),
-                    color = PulsePalette.Emerald.copy(alpha = 0.14f),
-                    contentColor = PulsePalette.Emerald,
+                    color = EmberPalette.Online.copy(alpha = 0.14f),
+                    contentColor = EmberPalette.Online,
                     modifier = Modifier.semantics { contentDescription = "Voice room live with $voiceLiveCount people" },
                 ) {
                     Row(
                         Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Filled.GraphicEq, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Icon(PulseIcons.Waveform, contentDescription = null, modifier = Modifier.size(12.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Voice · $voiceLiveCount live", fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     }
                 }
                 Spacer(Modifier.width(2.dp))
             }
-            IconButton(
+            EmberGlassButton(
+                icon = PulseIcons.Waveform,
+                label = if (voiceJoined) "Open the live voice room" else "Open voice room",
                 onClick = onOpenVoiceRoom,
+                tint = if (voiceJoined) EmberPalette.Online else Color.White,
                 modifier = Modifier.semantics {
-                    contentDescription = if (voiceJoined) "Open the live voice room" else "Open voice room"
                     stateDescription = if (voiceJoined) "In voice room" else "Not in voice room"
                 },
-            ) {
-                Icon(
-                    Icons.Filled.GraphicEq,
-                    contentDescription = null,
-                    tint = if (voiceJoined) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            )
             // R8 Task 3-c — group voice/video call buttons (web chat-room
             // header parity, aria "Start group voice/video call").
             if (onStartGroupVoice != null) {
-                IconButton(
+                EmberGlassButton(
+                    icon = PulseIcons.Phone,
+                    label = "Start group voice call",
                     onClick = onStartGroupVoice,
-                    modifier = Modifier.semantics { contentDescription = "Start group voice call" },
-                ) {
-                    Icon(
-                        Icons.Filled.Call,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            if (onStartGroupVideo != null) {
-                IconButton(
-                    onClick = onStartGroupVideo,
-                    modifier = Modifier.semantics { contentDescription = "Start group video call" },
-                ) {
-                    Icon(
-                        Icons.Filled.Videocam,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            onOpenLeaderboard?.let {
-                IconButton(onClick = it) {
-                    Icon(
-                        Icons.Filled.EmojiEvents,
-                        contentDescription = "Leaderboard",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            IconButton(onClick = onToggleSearch) {
-                Icon(
-                    if (searchOpen) Icons.Filled.Close else Icons.Filled.Search,
-                    contentDescription = if (searchOpen) "Close search" else "Search in conversation",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (onStartGroupVideo != null) {
+                EmberGlassButton(
+                    icon = PulseIcons.Video,
+                    label = "Start group video call",
+                    onClick = onStartGroupVideo,
+                )
+            }
+            onOpenLeaderboard?.let {
+                EmberGlassButton(
+                    icon = PulseIcons.Star,
+                    label = "Leaderboard",
+                    onClick = it,
+                )
+            }
+            EmberGlassButton(
+                icon = if (searchOpen) PulseIcons.X else PulseIcons.Search,
+                label = if (searchOpen) "Close search" else "Search in conversation",
+                onClick = onToggleSearch,
+            )
             // R6 — BE7 — reminders (web chat-room header BellRing/Schedule
             // parity): opens the existing RemindersSheet; the emerald badge
             // shows the upcoming (unfired) count when non-zero.
             Box {
-                IconButton(onClick = onOpenReminders) {
-                    Icon(
-                        Icons.Filled.EventRepeat,
-                        contentDescription = if (remindersCount > 0) {
-                            "Reminders — $remindersCount upcoming"
-                        } else {
-                            "Reminders"
-                        },
-                        tint = if (remindersCount > 0) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                EmberGlassButton(
+                    icon = PulseIcons.Bell,
+                    label = if (remindersCount > 0) "Reminders — $remindersCount upcoming" else "Reminders",
+                    onClick = onOpenReminders,
+                )
                 if (remindersCount > 0) {
                     Box(
                         Modifier
                             .align(Alignment.TopEnd)
-                            .padding(top = 6.dp, end = 6.dp)
+                            .padding(top = 4.dp, end = 2.dp)
                             .clip(CircleShape)
-                            .background(PulsePalette.Emerald)
+                            .background(EmberPalette.Signal)
                             .padding(horizontal = 4.dp, vertical = 1.dp),
                     ) {
                         Text(
@@ -3200,13 +3193,11 @@ private fun RoomHeader(
             // future room actions slot in below.
             var roomMenuOpen by remember { mutableStateOf(false) }
             Box {
-                IconButton(onClick = { roomMenuOpen = true }) {
-                    Icon(
-                        Icons.Filled.MoreVert,
-                        contentDescription = "Room menu",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                EmberGlassButton(
+                    icon = PulseIcons.KebabVertical,
+                    label = "Room menu",
+                    onClick = { roomMenuOpen = true },
+                )
                 DropdownMenu(expanded = roomMenuOpen, onDismissRequest = { roomMenuOpen = false }) {
                     // R2-A item 6/7/8/9 — room info (automations, webhooks,
                     // screen security, photo) — groups/channels only.
@@ -3214,7 +3205,7 @@ private fun RoomHeader(
                         DropdownMenuItem(
                             text = { Text("Room info") },
                             leadingIcon = {
-                                Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(PulseIcons.Info, contentDescription = null, modifier = Modifier.size(18.dp))
                             },
                             onClick = {
                                 roomMenuOpen = false
@@ -3226,7 +3217,7 @@ private fun RoomHeader(
                     DropdownMenuItem(
                         text = { Text(if (recapBusy) "Summarizing…" else "AI recap") },
                         leadingIcon = {
-                            Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp), tint = PulsePalette.Violet)
+                            Icon(PulseIcons.Sparkle, contentDescription = null, modifier = Modifier.size(18.dp), tint = PulsePalette.Violet)
                         },
                         enabled = !recapBusy,
                         onClick = {
@@ -3237,7 +3228,7 @@ private fun RoomHeader(
                     DropdownMenuItem(
                         text = { Text("Chat theme") },
                         leadingIcon = {
-                            Icon(Icons.Filled.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(PulseIcons.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
                         },
                         onClick = {
                             roomMenuOpen = false
@@ -3250,7 +3241,7 @@ private fun RoomHeader(
                         text = { Text(if (pipActive) "Close mini chat window" else "Open mini chat window") },
                         leadingIcon = {
                             Icon(
-                                Icons.Filled.PictureInPictureAlt,
+                                PulseIcons.PiP,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
                                 tint = if (pipActive) PulsePalette.Emerald else LocalContentColor.current,
@@ -3275,7 +3266,7 @@ private fun RoomHeader(
                         },
                         leadingIcon = {
                             Icon(
-                                Icons.Filled.Schedule,
+                                PulseIcons.Clock,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
                                 tint = if (scheduledCount > 0) PulsePalette.Amber else LocalContentColor.current,
@@ -3341,7 +3332,7 @@ private fun MessageRow(
     onTournamentFinish: (String) -> Unit = {},
     // D27 — long-press a reaction chip → who-reacted sheet (null = inert).
     onWhoReacted: ((String) -> Unit)? = null,
-    // R6 — M6 — double-tap the bubble → ❤️ quick reaction (null = inert).
+    // R6 — M6 — double-tap the bubble fires the heart quick reaction (null = inert).
     onDoubleClick: (() -> Unit)? = null,
     // R7 item 1 — cluster position (web chat-room.tsx:1376-1393): the sender
     // label renders ONLY on head rows; non-head rows tuck up tight.
@@ -3358,13 +3349,17 @@ private fun MessageRow(
 
     Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
         if (system) {
+            // EMB: system rows are centered 11sp white 40% on the backdrop.
             Box(
-                Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(message.body, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    message.body,
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.40f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
             }
             return@Column
         }
@@ -3391,8 +3386,8 @@ private fun MessageRow(
                 Spacer(Modifier.width(5.dp))
                 Text(
                     if (anonMasked) message.anonAlias.orEmpty() else message.authorName,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    color = EmberPalette.SenderName,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -3425,14 +3420,15 @@ private fun MessageRow(
                         }
                         .size(24.dp)
                         .clip(CircleShape)
-                        .background(PulsePalette.Emerald.copy(alpha = 0.10f)),
+                        .background(Color.White.copy(alpha = 0.10f))
+                        .border(1.dp, EmberPalette.Hairline, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.Reply,
+                        PulseIcons.Reply,
                         contentDescription = null,
-                        tint = PulsePalette.Emerald,
-                        modifier = Modifier.size(16.dp),
+                        tint = Color.White.copy(alpha = 0.70f),
+                        modifier = Modifier.size(14.dp),
                     )
                 }
             }
@@ -3621,7 +3617,7 @@ private fun MessageRow(
                     flashing = flashing,
                     onLongPress = onLongPress,
                     onQuoteClick = onQuoteClick,
-                    // R6 — M6 — the ❤️ double-tap rides the text bubble.
+                    // R6 — M6 — the heart double-tap rides the text bubble.
                     onDoubleClick = onDoubleClick,
                     voicePlayer = voicePlayer,
                     onTranscribe = onTranscribe,
@@ -3631,8 +3627,9 @@ private fun MessageRow(
                     translatedText = translatedText,
                     // R3-B item 2 — the roster that drives @mention highlight.
                     memberNames = conversation?.memberNames.orEmpty(),
-                    modifier = Modifier.widthIn(max = 300.dp),
                     bubbleCornerDp = bubbleCornerDp,
+                    // R7 item 1 — the grouped-first bubble tucks its top corner.
+                    head = head,
                 )
             }
             }
@@ -3650,7 +3647,8 @@ private fun MessageRow(
                         val popped by animateFloatAsState(1f, animationSpec = PulseMotion.bouncy(), label = "react")
                         Surface(
                             shape = RoundedCornerShape(999.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                            color = Color.White.copy(alpha = 0.10f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, EmberPalette.Hairline),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(999.dp))
                                 .combinedClickable(
@@ -3665,7 +3663,7 @@ private fun MessageRow(
                                 Text(emoji, fontSize = 12.sp)
                                 if (list.size > 1) {
                                     Spacer(Modifier.width(3.dp))
-                                    Text("${list.size}", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("${list.size}", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.60f))
                                 }
                             }
                         }
@@ -3677,7 +3675,8 @@ private fun MessageRow(
         if (replyCount > 0 && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
             Surface(
                 shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                color = Color.White.copy(alpha = 0.08f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, EmberPalette.Hairline),
                 modifier = Modifier
                     .padding(top = 2.dp)
                     .clip(RoundedCornerShape(999.dp))
@@ -3689,9 +3688,9 @@ private fun MessageRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.Reply,
+                        PulseIcons.Reply,
                         contentDescription = null,
-                        tint = PulsePalette.Emerald,
+                        tint = EmberPalette.SenderName,
                         modifier = Modifier
                             .size(12.dp)
                             .alpha(0.9f),
@@ -3700,13 +3699,13 @@ private fun MessageRow(
                         "$replyCount ${if (replyCount == 1) "reply" else "replies"}",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = PulsePalette.Emerald,
+                        color = Color.White.copy(alpha = 0.65f),
                     )
                 }
             }
         }
 
-        // Tick line on the LAST own message — queued clock → ✓ sent → ✓✓ seen.
+        // Tick line on the LAST own message: queued clock, sent tick, seen double tick.
         if (mine && isLastMine) {
             if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                 // Queued in the outbox — a clock, never a false "Seen".
@@ -3715,7 +3714,7 @@ private fun MessageRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        Icons.Outlined.Schedule,
+                        PulseIcons.Clock,
                         contentDescription = "Queued",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(12.dp),
@@ -3746,7 +3745,7 @@ private fun MessageRow(
                         )
                     } else {
                         Icon(
-                            Icons.Filled.Check,
+                            PulseIcons.Check,
                             contentDescription = "Sent",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(12.dp),
@@ -3778,7 +3777,7 @@ private fun MediaWithQuote(
             Row(
                 Modifier
                     .clip(RoundedCornerShape(9.dp))
-                    .background(if (mine) Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                    .background(Color.White.copy(alpha = 0.08f))
                     .clickable { onQuoteClick(quoteId) }
                     .padding(horizontal = 8.dp, vertical = 5.dp),
             ) {
@@ -3786,13 +3785,13 @@ private fun MediaWithQuote(
                     Text(
                         quoteAuthor ?: "Reply",
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (mine) Color.White else PulsePalette.Emerald,
+                        color = EmberPalette.SenderName,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         quoteBody,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (mine) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color.White.copy(alpha = 0.55f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -3811,7 +3810,7 @@ internal fun Bubble(
     flashing: Boolean,
     onLongPress: (() -> Unit)?,
     onQuoteClick: ((String) -> Unit)?,
-    // R6 — M6: double-tap → ❤️ toggle (text bubbles; media bubbles keep their
+    // R6 — M6: double-tap toggles the heart reaction (text bubbles; media bubbles keep their
     // own open-on-tap, matching the web interactive gate `!isImage && !isFile`).
     onDoubleClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -3823,19 +3822,35 @@ internal fun Bubble(
     translatedText: String? = null,
     // R3-B item 2 — the room roster; @Name tokens render as mention chips.
     memberNames: List<String> = emptyList(),
-    bubbleCornerDp: androidx.compose.ui.unit.Dp = 16.dp,
+    bubbleCornerDp: androidx.compose.ui.unit.Dp = 20.dp,
+    // R7 item 1 — cluster head: the grouped-first bubble tucks its near-sender
+    // top corner to 6dp (ember bubble shape, spec item 3).
+    head: Boolean = true,
 ) {
+    // EMB: 20dp bubble radius; the grouped-first row pulls the top corner on
+    // its own side to 6dp (incoming top-left, outgoing top-right).
     val shape = if (mine) {
-        RoundedCornerShape(topStart = bubbleCornerDp, topEnd = bubbleCornerDp, bottomStart = bubbleCornerDp, bottomEnd = 6.dp)
+        RoundedCornerShape(
+            topStart = bubbleCornerDp,
+            topEnd = if (head) 6.dp else bubbleCornerDp,
+            bottomStart = bubbleCornerDp,
+            bottomEnd = bubbleCornerDp,
+        )
     } else {
-        RoundedCornerShape(topStart = bubbleCornerDp, topEnd = bubbleCornerDp, bottomStart = 6.dp, bottomEnd = bubbleCornerDp)
+        RoundedCornerShape(
+            topStart = if (head) 6.dp else bubbleCornerDp,
+            topEnd = bubbleCornerDp,
+            bottomStart = bubbleCornerDp,
+            bottomEnd = bubbleCornerDp,
+        )
     }
+    // EMB: flat ink bubble fills (BubbleOut outgoing / BubbleIn incoming).
     val background: Brush = if (mine) {
-        Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep))
+        SolidColor(EmberPalette.BubbleOut)
     } else {
-        SolidColor(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
+        SolidColor(EmberPalette.BubbleIn)
     }
-    val contentColor = if (mine) Color.White else MaterialTheme.colorScheme.onSurface
+    val contentColor = Color.White
     val flashAlpha by animateFloatAsState(
         targetValue = if (flashing) 1f else 0f,
         animationSpec = tween(220),
@@ -3846,9 +3861,12 @@ internal fun Bubble(
         shape = shape,
         color = Color.Transparent,
         modifier = modifier
+            // EMB: max width 78% of the timeline, content hugs its own side.
+            .fillMaxWidth(0.78f)
+            .wrapContentWidth(if (mine) Alignment.End else Alignment.Start)
             .border(2.dp, PulsePalette.Amber.copy(alpha = flashAlpha), shape)
             .then(
-                // R6 — M6: double-tap toggles the ❤️ quick reaction (web
+                // R6 — M6: double-tap toggles the heart quick reaction (web
                 // chat-room.tsx:7265-7268) — long-press keeps opening the
                 // action sheet, single tap stays inert exactly as before.
                 if (onLongPress != null || onDoubleClick != null) {
@@ -3875,7 +3893,7 @@ internal fun Bubble(
                 Row(
                     Modifier
                         .clip(RoundedCornerShape(9.dp))
-                        .background(if (mine) Color.White.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                        .background(Color.White.copy(alpha = 0.10f))
                         .clickable(enabled = onQuoteClick != null) { onQuoteClick?.invoke(quoteId) }
                         .padding(horizontal = 8.dp, vertical = 5.dp),
                 ) {
@@ -3883,13 +3901,13 @@ internal fun Bubble(
                         Text(
                             message.replyToAuthor ?: "Reply",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (mine) Color.White else PulsePalette.Emerald,
+                            color = EmberPalette.SenderName,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
                             replyBody,
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (mine) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = Color.White.copy(alpha = 0.55f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -3915,7 +3933,7 @@ internal fun Bubble(
                 VoiceBubbleStatic(message, contentColor)
             } else when (message.kind) {
                 Message.Kind.IMAGE -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Image, contentDescription = null, tint = contentColor, modifier = Modifier.size(18.dp))
+                    Icon(PulseIcons.ImageIcon, contentDescription = null, tint = contentColor, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Photo", color = contentColor, style = MaterialTheme.typography.bodyMedium)
                 }
@@ -3980,39 +3998,47 @@ internal fun Bubble(
             }
 
             Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            // EMB: the meta line sits bottom-end INSIDE the bubble, 10sp white 40%.
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
                 if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                     // Pending outbox bubble — clock marker replaces the clock text.
                     Icon(
-                        Icons.Outlined.Schedule,
+                        PulseIcons.Clock,
                         contentDescription = "Queued",
-                        tint = if (mine) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(11.dp),
+                        tint = Color.White.copy(alpha = 0.40f),
+                        modifier = Modifier.size(10.dp),
                     )
                 } else {
                     Text(
                         PulseTime.clock(message.createdAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (mine) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.40f),
                     )
                 }
                 if (message.editedAt != null) {
+                    Spacer(Modifier.width(4.dp))
                     Text(
                         "edited",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (mine) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.40f),
                     )
                 }
                 if (message.viaAutomation) {
+                    Spacer(Modifier.width(4.dp))
                     Text(
                         "Automation",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (mine) Color.White.copy(alpha = 0.85f) else PulsePalette.Violet,
+                        fontSize = 10.sp,
+                        color = EmberPalette.SenderName,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
                 if (message.pinnedAt != null) {
-                    Icon(Icons.Filled.PushPin, contentDescription = "Pinned", tint = if (mine) Color.White.copy(alpha = 0.85f) else PulsePalette.Amber, modifier = Modifier.size(11.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Icon(PulseIcons.Pin, contentDescription = "Pinned", tint = Color.White.copy(alpha = 0.40f), modifier = Modifier.size(10.dp))
                 }
             }
         }
@@ -4026,10 +4052,7 @@ internal fun TombstoneBubble() {
     Surface(shape = shape, color = Color.Transparent) {
         Box(
             Modifier
-                .background(
-                    SolidColor(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
-                    shape,
-                )
+                .background(SolidColor(EmberPalette.BubbleIn), shape)
                 .padding(horizontal = 13.dp, vertical = 9.dp),
         ) {
             Text(
@@ -4037,7 +4060,7 @@ internal fun TombstoneBubble() {
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                 ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color.White.copy(alpha = 0.40f),
             )
         }
     }
@@ -4047,7 +4070,7 @@ internal fun TombstoneBubble() {
 @Composable
 private fun VoiceBubbleStatic(message: Message, contentColor: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Filled.GraphicEq, contentDescription = "Voice message", tint = contentColor, modifier = Modifier.size(18.dp))
+        Icon(PulseIcons.Waveform, contentDescription = "Voice message", tint = contentColor, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
             // D31 — the exact web voiceBars LCG (same bars as web/iOS per id).
@@ -4117,7 +4140,7 @@ private fun VoiceBubble(
                     CircularProgressIndicator(modifier = Modifier.size(15.dp), strokeWidth = 2.dp, color = contentColor)
                 } else {
                     Icon(
-                        if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        if (playing) PulseIcons.Pause else PulseIcons.Play,
                         contentDescription = if (playing) "Pause" else "Play voice message",
                         tint = contentColor,
                         modifier = Modifier.size(20.dp),
@@ -4263,7 +4286,7 @@ private fun HoldRecordSlot(
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -4290,9 +4313,10 @@ private fun HoldRecordSlot(
             .clip(CircleShape)
             .background(
                 when {
-                    recording -> Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep))
-                    canSend -> Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep))
-                    else -> SolidColor(MaterialTheme.colorScheme.surfaceVariant)
+                    // EMB: active states ride the ember gradient; idle is dark ink.
+                    recording -> Brush.linearGradient(EmberPalette.Gradient)
+                    canSend -> Brush.linearGradient(EmberPalette.Gradient)
+                    else -> SolidColor(EmberPalette.FabFill)
                 },
                 CircleShape,
             )
@@ -4305,21 +4329,21 @@ private fun HoldRecordSlot(
                 color = Color.White,
             )
             recording -> Icon(
-                Icons.AutoMirrored.Filled.Send,
+                PulseIcons.PaperPlane,
                 contentDescription = "Release to send the voice note",
                 tint = Color.White,
                 modifier = Modifier.size(20.dp),
             )
             micVisible -> Icon(
-                Icons.Filled.Mic,
+                PulseIcons.Mic,
                 contentDescription = "Hold to record a voice note — slide left to cancel",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.4f),
+                tint = Color.White.copy(alpha = if (enabled) 0.85f else 0.35f),
                 modifier = Modifier.size(20.dp),
             )
             else -> Icon(
-                Icons.AutoMirrored.Filled.Send,
+                PulseIcons.PaperPlane,
                 contentDescription = "Send",
-                tint = if (canSend) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = Color.White,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -4327,7 +4351,7 @@ private fun HoldRecordSlot(
 }
 
 /**
- * The left section while recording: cancel ✕, pulsing red dot, m:ss timer,
+ * The left section while recording: cancel button, pulsing red dot, m:ss timer,
  * LIVE waveform bars (one per 100ms amplitude sample, deterministic from the
  * mic readings — no random) and the release hint. Replaces only the composer
  * text; the right slot [HoldRecordSlot] stays mounted for the release.
@@ -4349,7 +4373,7 @@ private fun RecordBarContent(
             enabled = !sending,
             modifier = Modifier.clip(CircleShape),
         ) {
-            Icon(Icons.Filled.Close, contentDescription = "Cancel recording", tint = PulsePalette.Rose)
+            Icon(PulseIcons.X, contentDescription = "Cancel recording", tint = PulsePalette.Rose)
         }
         Spacer(Modifier.width(4.dp))
         // Red pulsing dot — infinite alpha breathing.
@@ -4457,7 +4481,7 @@ private fun PermissionExplainer(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                Icons.Filled.Lock,
+                PulseIcons.Lock,
                 contentDescription = null,
                 tint = PulsePalette.Amber,
                 modifier = Modifier.size(16.dp),
@@ -4473,7 +4497,7 @@ private fun PermissionExplainer(
                 Text("Open Settings", style = MaterialTheme.typography.labelMedium)
             }
             IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Filled.Close, contentDescription = "Dismiss", modifier = Modifier.size(14.dp))
+                Icon(PulseIcons.X, contentDescription = "Dismiss", modifier = Modifier.size(14.dp))
             }
         }
     }
@@ -4531,7 +4555,7 @@ internal fun PollCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Filled.Poll,
+                    PulseIcons.Poll,
                     contentDescription = null,
                     tint = if (mine) Color.White else PulsePalette.Emerald,
                     modifier = Modifier.size(14.dp),
@@ -4595,7 +4619,7 @@ internal fun PollCard(
                         )
                         if (isPick) {
                             Icon(
-                                Icons.Filled.Check,
+                                PulseIcons.Check,
                                 contentDescription = "Your pick",
                                 tint = if (mine) Color.White else PulsePalette.Emerald,
                                 modifier = Modifier
@@ -4704,7 +4728,7 @@ private fun LinkPreviewCard(
         Spacer(Modifier.height(3.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                Icons.Filled.Link,
+                PulseIcons.Link,
                 contentDescription = null,
                 tint = if (mine) Color.White.copy(alpha = 0.7f) else PulsePalette.Emerald,
                 modifier = Modifier.size(11.dp),
@@ -4931,7 +4955,7 @@ private fun SafetyNumberSheetHost(
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 30.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Filled.Shield,
+                    PulseIcons.Shield,
                     contentDescription = null,
                     tint = if (safety.state?.verified == true) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
                 )

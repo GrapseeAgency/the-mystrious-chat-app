@@ -1,5 +1,6 @@
 package app.pulse.feature.voice.ui
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,14 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.PanTool
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -82,7 +75,7 @@ fun StageScreen(
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close stage")
+                Icon(PulseIcons.ChevronLeft, contentDescription = "Close stage")
             }
             Spacer(Modifier.width(6.dp))
             Column(Modifier.weight(1f)) {
@@ -191,7 +184,7 @@ private fun StageRoster(
                 onClick = vm::claimHost,
                 modifier = Modifier.fillMaxWidth().height(48.dp).semantics { contentDescription = "Claim the empty host seat" },
             ) {
-                Icon(Icons.Filled.Star, contentDescription = null, Modifier.size(18.dp), tint = PulsePalette.Amber)
+                Icon(PulseIcons.Star, contentDescription = null, Modifier.size(18.dp), tint = PulsePalette.Amber)
                 Spacer(Modifier.width(8.dp))
                 Text("Claim host")
             }
@@ -204,7 +197,7 @@ private fun StageRoster(
                 tileColor = PulsePalette.Amber,
                 leading = {
                     Icon(
-                        Icons.Filled.Star,
+                        PulseIcons.Star,
                         contentDescription = "Host",
                         tint = PulsePalette.Amber,
                         modifier = Modifier.size(18.dp),
@@ -224,7 +217,7 @@ private fun StageRoster(
                             onClick = { vm.demote(speaker.id) },
                             modifier = Modifier.size(40.dp).semantics { contentDescription = "Move ${speaker.name} to listeners" },
                         ) {
-                            Icon(Icons.Filled.MicOff, contentDescription = null, tint = PulsePalette.Rose, modifier = Modifier.size(18.dp))
+                            Icon(PulseIcons.MicOff, contentDescription = null, tint = PulsePalette.Rose, modifier = Modifier.size(18.dp))
                         }
                     }
                 } else {
@@ -249,7 +242,7 @@ private fun StageRoster(
                 tileColor = PulsePalette.Violet,
                 leading = {
                     Icon(
-                        Icons.Filled.PanTool,
+                        PulseIcons.Hand,
                         contentDescription = "Raised hand",
                         tint = PulsePalette.Violet,
                         modifier = Modifier.size(18.dp),
@@ -262,13 +255,13 @@ private fun StageRoster(
                                 onClick = { vm.approveHand(hand.id) },
                                 modifier = Modifier.size(40.dp).semantics { contentDescription = "Approve ${hand.name} as speaker" },
                             ) {
-                                Icon(Icons.Filled.Check, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(18.dp))
+                                Icon(PulseIcons.Check, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(18.dp))
                             }
                             IconButton(
                                 onClick = { vm.demote(hand.id) },
                                 modifier = Modifier.size(40.dp).semantics { contentDescription = "Dismiss ${hand.name}'s hand" },
                             ) {
-                                Icon(Icons.Filled.Close, contentDescription = null, tint = PulsePalette.Rose, modifier = Modifier.size(18.dp))
+                                Icon(PulseIcons.X, contentDescription = null, tint = PulsePalette.Rose, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
@@ -335,7 +328,7 @@ private fun StageControls(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Filled.GraphicEq, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                    Icon(PulseIcons.Waveform, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
                 }
             }
 
@@ -348,7 +341,7 @@ private fun StageControls(
                     },
                 ) {
                     Icon(
-                        Icons.Filled.PanTool,
+                        PulseIcons.Hand,
                         contentDescription = null,
                         Modifier.size(18.dp),
                         tint = if (state.handRaised) PulsePalette.Violet else MaterialTheme.colorScheme.onSurfaceVariant,

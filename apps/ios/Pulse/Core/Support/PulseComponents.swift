@@ -36,7 +36,7 @@ public struct PulseAvatar: View {
         .clipShape(Circle())
         .overlay(
             Circle()
-                .strokeBorder(online ? PulseTheme.emerald : Color.clear, lineWidth: 2.5)
+                .strokeBorder(online ? PulseTheme.emberOnline : Color.clear, lineWidth: 2.5)
                 .animation(.pulse(.pulseBouncy, reduceMotion: PulseMotion.reduceMotion), value: online)
         )
     }
@@ -65,7 +65,7 @@ public struct TypingDotsView: View {
         HStack(spacing: 3) {
             ForEach(0..<3, id: \.self) { index in
                 Circle()
-                    .fill(Color.secondary)
+                    .fill(PulseTheme.emberOnline)
                     .frame(width: 5, height: 5)
                     .offset(y: animating ? -2.5 : 1.5)
                     .animation(
@@ -80,7 +80,7 @@ public struct TypingDotsView: View {
     }
 }
 
-/// Emerald unread capsule — bouncy scale-in like the web badge.
+/// Ember unread capsule - bouncy scale-in like the web badge.
 public struct UnreadBadge: View {
     public let count: Int
 
@@ -94,12 +94,13 @@ public struct UnreadBadge: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(Capsule().fill(PulseTheme.emerald))
+            .background(Capsule().fill(PulseTheme.emberRed))
             .transition(.scale(scale: 0.4).combined(with: .opacity))
     }
 }
 
 /// Centered capsule for system messages (joined, day separators).
+/// Ember: 11pt white 40% on a white 8% glass capsule.
 public struct CapsuleLabel: View {
     public let text: String
 
@@ -109,11 +110,11 @@ public struct CapsuleLabel: View {
 
     public var body: some View {
         Text(text)
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(.secondary)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Color.white.opacity(0.40))
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(Capsule().fill(.ultraThinMaterial))
+            .background(Capsule().fill(Color.white.opacity(0.08)))
     }
 }
 
@@ -204,11 +205,11 @@ struct RowSkeletonView: View {
     }
 
     private var shimmerFill: Color {
-        PulseTheme.zinc(200).opacity(shimmering ? 0.45 : 0.9)
+        Color.white.opacity(shimmering ? 0.08 : 0.16)
     }
 }
 
-/// Pulsing emerald presence halo behind online DM avatars (web PresenceGlow).
+/// Pulsing ember presence halo behind online DM avatars (web PresenceGlow).
 struct PresenceHalo: View {
     @State private var pulsing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -217,14 +218,14 @@ struct PresenceHalo: View {
         Group {
             if reduceMotion {
                 Circle()
-                    .strokeBorder(PulseTheme.emerald400.opacity(0.5), lineWidth: 2)
+                    .strokeBorder(PulseTheme.emberOnline.opacity(0.5), lineWidth: 2)
                     .padding(-3)
             } else {
                 Circle()
-                    .strokeBorder(PulseTheme.emerald400.opacity(pulsing ? 0.18 : 0.60), lineWidth: 2)
+                    .strokeBorder(PulseTheme.emberOnline.opacity(pulsing ? 0.18 : 0.60), lineWidth: 2)
                     .padding(-3)
                     .scaleEffect(pulsing ? 1.14 : 1.0)
-                    .shadow(color: PulseTheme.emerald500.opacity(0.35), radius: 7)
+                    .shadow(color: PulseTheme.emberGlowBottom.opacity(0.35), radius: 7)
                     .onAppear {
                         withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
                             pulsing = true
@@ -250,19 +251,18 @@ struct StreakHeatRing: View {
     }
 }
 
-/// Row unread capsule — 18pt emerald pill, white 2pt ring, "99+" cap.
+/// Row unread badge - 20pt ember-red circle, white 12pt bold count.
 struct RowUnreadBadge: View {
     let count: Int
 
     var body: some View {
         Text(count > 99 ? "99+" : "\(count)")
-            .font(.system(size: 10, weight: .bold))
+            .font(.system(size: 12, weight: .bold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 6)
-            .frame(minWidth: 18, minHeight: 18)
-            .background(Capsule().fill(PulseTheme.emerald500))
-            .overlay(Capsule().strokeBorder(PulseTheme.badgeRing, lineWidth: 2))
-            .shadow(color: PulseTheme.emerald600.opacity(0.40), radius: 2, y: 1)
+            .padding(.horizontal, 5)
+            .frame(minWidth: 20, minHeight: 20)
+            .background(Circle().fill(PulseTheme.emberRed))
+            .overlay(Circle().strokeBorder(PulseTheme.emberDotRing, lineWidth: 2))
     }
 }
 
@@ -281,23 +281,23 @@ struct MutedChip: View {
             }
         }
         .font(.system(size: 10, weight: .bold))
-        .foregroundStyle(unreadCount > 0 ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+        .foregroundStyle(Color.white.opacity(unreadCount > 0 ? 0.85 : 0.35))
         .padding(.horizontal, 6)
         .frame(height: 18)
         .background {
             if unreadCount > 0 {
-                Capsule().fill(PulseTheme.chipFill)
+                Capsule().fill(Color.white.opacity(0.08))
             }
         }
         .overlay {
             if unreadCount > 0 {
-                Capsule().strokeBorder(PulseTheme.badgeRing, lineWidth: 2)
+                Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
             }
         }
     }
 }
 
-/// Tiny uppercase section header with an emerald count chip + hairline.
+/// Tiny uppercase section header with a quiet count chip + hairline.
 struct SectionHeader: View {
     let label: String
     var count: Int = 0
@@ -307,17 +307,17 @@ struct SectionHeader: View {
             Text(label)
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(0.8)
-                .foregroundStyle(PulseTheme.textTertiary)
+                .foregroundStyle(Color.white.opacity(0.40))
             if count > 0 {
                 Text(count > 99 ? "99+" : "\(count)")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(PulseTheme.accent)
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .padding(.horizontal, 6)
                     .frame(minWidth: 16, minHeight: 16)
-                    .background(Capsule().fill(PulseTheme.emerald500.opacity(0.15)))
+                    .background(Capsule().fill(Color.white.opacity(0.10)))
             }
             Rectangle()
-                .fill(PulseTheme.hairlineSoft)
+                .fill(Color.white.opacity(0.10))
                 .frame(height: 1)
         }
         .padding(.horizontal, 12)
@@ -375,11 +375,13 @@ struct RowAvatar: View {
         .overlay(clipShape.stroke(rimGradient, lineWidth: 1))
         .overlay(alignment: .bottomTrailing) {
             if showPresence {
-                let dot = max(9, round(size * 0.26))
+                // Ember presence dot: amber at 11pt on row-scale avatars,
+                // ringed in the backdrop ground so it reads on any fill.
+                let dot: CGFloat = size >= 52 ? 11 : max(8, round(size * 0.22))
                 Circle()
-                    .fill(online ? PulseTheme.emerald500 : PulseTheme.presenceOffline)
+                    .fill(online ? PulseTheme.emberOnline : PulseTheme.presenceOffline)
                     .frame(width: dot, height: dot)
-                    .overlay(Circle().strokeBorder(PulseTheme.badgeRing, lineWidth: 2))
+                    .overlay(Circle().strokeBorder(PulseTheme.emberDotRing, lineWidth: size >= 52 ? 2.5 : 2))
                     .offset(x: 1, y: 1)
             }
         }
@@ -411,9 +413,11 @@ struct RowAvatar: View {
     }
 }
 
-/// One cell of the stories row — 56pt ring with an animated conic sweep for
-/// unseen status, static zinc ring for seen/none, and the emerald plus badge
-/// on "My status" when no live story exists.
+/// One cell of the stories rail (PULSE EMBER, EMB-I):
+///   • "You" tile (no live story) = 56pt circle, white 8% fill, white plus.
+///   • story cards = 64x88pt rounded-14 thumbnails via the existing avatar
+///     pipeline, 2pt ring: ember sweep (#FFB86B to #FF7A3D) when unseen,
+///     quiet white when seen. Name sits below at 11pt white.
 struct StoryRingCell: View {
     let name: String
     let color: String?
@@ -421,65 +425,99 @@ struct StoryRingCell: View {
     let plus: Bool
     let label: String
     let onPress: () -> Void
+    /// Avatar path (existing pipeline) for the card fill.
+    var photoPath: String? = nil
+    /// Latest story image path - wins over the avatar when present.
+    var thumbnailPath: String? = nil
 
     enum Ring { case unseen, seen, none }
 
-    @State private var spinning = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private let cellSize: CGFloat = 56
-    private var innerSize: CGFloat { cellSize - 5 }
+    private let cardSize = CGSize(width: 64, height: 88)
+    private let youTileSize: CGFloat = 56
 
     var body: some View {
         Button(action: onPress) {
-            VStack(spacing: 4) {
-                ZStack {
-                    if ring == .unseen {
-                        Circle()
-                            .fill(PulseTheme.storyRingGradient)
-                            .rotationEffect(.degrees(spinning ? 360 : 0))
-                            .onAppear {
-                                guard !reduceMotion else { return }
-                                withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) {
-                                    spinning = true
-                                }
-                            }
-                    } else {
-                        Circle()
-                            .fill(ring == .seen ? PulseTheme.ringSeen : PulseTheme.ringNone)
-                    }
-                    Circle()
-                        .fill(PulseTheme.badgeRing)
-                        .padding(2.5)
-                    RowAvatar(
-                        name: name,
-                        colorName: color,
-                        photoPath: nil,
-                        size: innerSize,
-                        avatarShape: .circle,
-                    )
-                }
-                .frame(width: cellSize, height: cellSize)
-                .overlay(alignment: .bottomTrailing) {
-                    if plus {
-                        Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 20, height: 20)
-                            .background(Circle().fill(PulseTheme.emerald500))
-                            .overlay(Circle().strokeBorder(PulseTheme.badgeRing, lineWidth: 2))
-                            .offset(x: 2, y: 2)
-                    }
+            VStack(spacing: 5) {
+                if ring == .none {
+                    youTile
+                } else {
+                    storyCard
                 }
                 Text(label)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(PulseTheme.textSecondary)
+                    .foregroundStyle(Color.white.opacity(0.90))
                     .lineLimit(1)
-                    .frame(width: 64)
+                    .frame(width: 68)
             }
         }
         .buttonStyle(PulseButtonStyle())
         .accessibilityLabel(ring == .unseen ? "\(label) — new status" : label)
+    }
+
+    /// The "You" cell - white 8% circle with a centered plus glyph.
+    private var youTile: some View {
+        ZStack {
+            Circle()
+                .fill(Color.white.opacity(0.08))
+            Circle()
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(.white)
+        }
+        .frame(width: youTileSize, height: youTileSize)
+    }
+
+    /// The story card - 64x88 rounded 14, ring sweep when unseen.
+    private var storyCard: some View {
+        thumbnail
+            .frame(width: cardSize.width, height: cardSize.height)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(ring == .unseen ? AnyShapeStyle(PulseTheme.emberSignalGradient) : AnyShapeStyle(Color.white.opacity(0.22)), lineWidth: 2),
+            )
+            .overlay(alignment: .bottomTrailing) {
+                if plus {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(PulseTheme.emberGlowBottom))
+                        .overlay(Circle().strokeBorder(PulseTheme.emberDotRing, lineWidth: 2))
+                        .offset(x: 3, y: 3)
+                }
+            }
+    }
+
+    /// Fill: newest story image, else the avatar, else gradient initials.
+    private var thumbnail: some View {
+        ZStack {
+            if let url = PulseTheme.photoURL(thumbnailPath ?? photoPath) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        initialsLayer
+                    }
+                }
+            } else {
+                initialsLayer
+            }
+            LinearGradient(
+                colors: [Color.clear, Color.black.opacity(0.35)],
+                startPoint: .center, endPoint: .bottom,
+            )
+        }
+    }
+
+    private var initialsLayer: some View {
+        ZStack {
+            PulseTheme.gradient(named: color)
+            Text(PulseFormat.initials(of: name))
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+        }
     }
 }
 

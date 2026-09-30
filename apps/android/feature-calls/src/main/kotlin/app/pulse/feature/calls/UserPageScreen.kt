@@ -20,11 +20,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,7 +59,10 @@ import app.pulse.domain.model.UserProfile
 import app.pulse.domain.model.UserStats
 import app.pulse.domain.model.Conversation
 import app.pulse.ui.PulseAvatar
+import app.pulse.ui.EmberPalette
+import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.emberBackdrop
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -223,7 +222,7 @@ fun UserPageScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .emberBackdrop()
             .statusBarsPadding()
             .verticalScroll(rememberScrollState()),
     ) {
@@ -232,7 +231,7 @@ fun UserPageScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(PulseIcons.ChevronLeft, contentDescription = "Back", tint = Color.White)
             }
             Text("Profile", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
@@ -344,15 +343,15 @@ fun UserPageScreen(
                     color = if (state.blocked) {
                         MaterialTheme.colorScheme.surfaceVariant
                     } else {
-                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+                        EmberPalette.Signal.copy(alpha = 0.12f)
                     },
                 ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Block, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Icon(PulseIcons.Lock, contentDescription = null, tint = EmberPalette.Signal)
                         Spacer(Modifier.width(10.dp))
                         Text(
                             (if (state.blocked) "Unblock " else "Block ") + profile.firstName,
-                            color = MaterialTheme.colorScheme.error,
+                            color = EmberPalette.Signal,
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
@@ -363,7 +362,7 @@ fun UserPageScreen(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                 ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Flag, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                        Icon(PulseIcons.Flag, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
                         Spacer(Modifier.width(10.dp))
                         Text("Report " + profile.firstName, fontWeight = FontWeight.SemiBold)
                     }

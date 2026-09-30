@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,10 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.Redeem
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -116,7 +113,7 @@ fun RedPacketCard(
                 .background(Color(0x33FFFFFF)),
         ) {
             Icon(
-                Icons.Filled.Redeem,
+                PulseIcons.Gift,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(22.dp),
@@ -376,7 +373,7 @@ fun TicTacToeCard(
                         color = PulsePalette.Emerald,
                     )
                 } else {
-                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(PulseIcons.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                 }
                 Spacer(Modifier.width(8.dp))
                 Text("Rematch", fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -420,7 +417,7 @@ fun TournamentCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                Icons.Filled.EmojiEvents,
+                PulseIcons.Trophy,
                 contentDescription = null,
                 tint = Color(0xFFF5D90A),
                 modifier = Modifier.size(18.dp),

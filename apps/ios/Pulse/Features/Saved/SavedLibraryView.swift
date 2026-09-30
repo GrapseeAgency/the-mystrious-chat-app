@@ -28,7 +28,12 @@ struct SavedLibraryView: View {
                 Divider()
                 content
             }
-            .background(PulseTheme.pageWash.ignoresSafeArea())
+            .background(
+                // PULSE EMBER (EMB-I): sunset ground, subtree pinned dark.
+                Rectangle().fill(PulseTheme.emberBackdrop).ignoresSafeArea()
+            )
+            .environment(\.colorScheme, .dark)
+            .tint(.white)
             .navigationTitle("Saved")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -167,7 +172,7 @@ struct SavedLibraryView: View {
                 HStack(spacing: 6) {
                     Text(rowTitle(item))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(PulseTheme.emerald)
+                        .foregroundStyle(PulseTheme.emberOnline)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Text(PulseFormat.listStamp(item.savedAt))

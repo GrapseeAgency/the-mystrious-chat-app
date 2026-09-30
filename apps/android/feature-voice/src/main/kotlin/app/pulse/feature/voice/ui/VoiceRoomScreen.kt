@@ -1,5 +1,6 @@
 package app.pulse.feature.voice.ui
 
+import app.pulse.ui.PulseIcons
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -21,12 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -87,7 +82,7 @@ fun VoiceRoomScreen(
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close voice room")
+                Icon(PulseIcons.ChevronLeft, contentDescription = "Close voice room")
             }
             Spacer(Modifier.width(6.dp))
             Column(Modifier.weight(1f)) {
@@ -131,7 +126,7 @@ fun VoiceRoomScreen(
                                 .height(48.dp)
                                 .semantics { contentDescription = "Join the voice room" },
                         ) {
-                            Icon(Icons.Filled.GraphicEq, contentDescription = null, Modifier.size(18.dp))
+                            Icon(PulseIcons.Waveform, contentDescription = null, Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Join voice room")
                         }
@@ -311,7 +306,7 @@ private fun ControlsRow(
                 },
         ) {
             Icon(
-                if (state.micMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                if (state.micMuted) PulseIcons.MicOff else PulseIcons.Mic,
                 contentDescription = null,
                 tint = if (state.micMuted) PulsePalette.Rose else MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -369,7 +364,7 @@ private fun PttButton(
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                Icons.Filled.GraphicEq,
+                PulseIcons.Waveform,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(28.dp),
@@ -422,7 +417,7 @@ private fun ErrorPanel(message: String, onRetry: () -> Unit, modifier: Modifier 
             onClick = onRetry,
             modifier = Modifier.height(48.dp).semantics { contentDescription = "Try again" },
         ) {
-            Icon(Icons.Filled.Refresh, contentDescription = null, Modifier.size(18.dp))
+            Icon(PulseIcons.Refresh, contentDescription = null, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text("Try again")
         }

@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,27 +23,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Campaign
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.NotificationsOff
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.PersonRemove
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -610,7 +590,7 @@ fun GroupInfoScreen(
                 title = { Text(if (isDm) "Chat info" else "Group info", fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(PulseIcons.ChevronLeft, contentDescription = "Back")
                     }
                 },
             )
@@ -699,7 +679,7 @@ fun GroupInfoScreen(
                                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 } else {
                                     Icon(
-                                        Icons.Filled.PhotoCamera,
+                                        PulseIcons.Camera,
                                         contentDescription = if (conversation?.avatar != null) "Edit group photo" else "Add group photo",
                                     )
                                 }
@@ -707,7 +687,7 @@ fun GroupInfoScreen(
                         }
                         if (!isDm && isAdmin) {
                             IconButton(onClick = { renameOpen = true }) {
-                                Icon(Icons.Filled.Edit, contentDescription = "Rename group")
+                                Icon(PulseIcons.Pencil, contentDescription = "Rename group")
                             }
                         }
                     }
@@ -720,7 +700,7 @@ fun GroupInfoScreen(
                 Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.VisibilityOff, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Icon(PulseIcons.EyeOff, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
                                 Text("Screen security", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -762,7 +742,7 @@ fun GroupInfoScreen(
                 Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            if (isMuted) Icons.Filled.NotificationsOff else Icons.Filled.Notifications,
+                            if (isMuted) PulseIcons.BellOff else PulseIcons.Bell,
                             contentDescription = null,
                             tint = if (isMuted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp),
@@ -802,7 +782,7 @@ fun GroupInfoScreen(
                             Modifier.fillMaxWidth().clickable { themeOpen = true }.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Filled.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Icon(PulseIcons.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
                                 Text("Chat theme", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -812,7 +792,7 @@ fun GroupInfoScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp).rotate(180f), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(PulseIcons.ChevronLeft, contentDescription = null, modifier = Modifier.size(16.dp).rotate(180f), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -824,13 +804,13 @@ fun GroupInfoScreen(
                     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
                         Column(Modifier.fillMaxWidth().padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                Icon(PulseIcons.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text("Invite link", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                                 Spacer(Modifier.weight(1f))
                                 if (meta?.inviteCode != null) {
                                     TextButton(onClick = { viewModel.createInvite(regenerate = true) }) {
-                                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Icon(PulseIcons.Sparkle, contentDescription = null, modifier = Modifier.size(14.dp))
                                         Spacer(Modifier.width(4.dp))
                                         Text("Regenerate", fontSize = 12.sp)
                                     }
@@ -862,7 +842,7 @@ fun GroupInfoScreen(
                                             clipboard.setText(AnnotatedString("pulse://invite/$code"))
                                             scope.launch { snackbar.showSnackbar("Invite link copied", withDismissAction = false) }
                                         }) {
-                                            Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                                            Icon(PulseIcons.Copy, contentDescription = null, modifier = Modifier.size(14.dp))
                                             Spacer(Modifier.width(4.dp))
                                             Text("Copy", fontSize = 12.sp)
                                         }
@@ -879,7 +859,7 @@ fun GroupInfoScreen(
                 Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Timer, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Icon(PulseIcons.Clock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Disappearing messages", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         }
@@ -904,7 +884,7 @@ fun GroupInfoScreen(
                                         )
                                     },
                                     leadingIcon = if (active) {
-                                        { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                        { Icon(PulseIcons.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
                                     } else null,
                                 )
                             }
@@ -919,7 +899,7 @@ fun GroupInfoScreen(
                     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
                         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Campaign, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                Icon(PulseIcons.Megaphone, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text("Announcement mode", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -929,7 +909,7 @@ fun GroupInfoScreen(
                             }
                             HorizontalDivider()
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                Icon(PulseIcons.Clock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text("Slow mode", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -951,7 +931,7 @@ fun GroupInfoScreen(
                                             )
                                         },
                                         leadingIcon = if (active) {
-                                            { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                            { Icon(PulseIcons.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
                                         } else null,
                                     )
                                 }
@@ -992,7 +972,7 @@ fun GroupInfoScreen(
             if (!isDm) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                        Icon(Icons.Filled.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        Icon(PulseIcons.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Members · ${conversation?.memberIds?.size ?: 0}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         Spacer(Modifier.weight(1f))
@@ -1001,7 +981,7 @@ fun GroupInfoScreen(
                                 viewModel.loadDirectory()
                                 addMembersOpen = true
                             }) {
-                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Icon(PulseIcons.Plus, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("Add", fontSize = 12.sp)
                             }
@@ -1017,11 +997,11 @@ fun GroupInfoScreen(
                             onValueChange = { memberFilter = it },
                             singleLine = true,
                             placeholder = { Text("Search members", fontSize = 13.sp) },
-                            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            leadingIcon = { Icon(PulseIcons.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
                             trailingIcon = {
                                 if (memberFilter.isNotEmpty()) {
                                     IconButton(onClick = { memberFilter = "" }) {
-                                        Icon(Icons.Filled.Close, contentDescription = "Clear member search", modifier = Modifier.size(14.dp))
+                                        Icon(PulseIcons.X, contentDescription = "Clear member search", modifier = Modifier.size(14.dp))
                                     }
                                 }
                             },
@@ -1059,7 +1039,7 @@ fun GroupInfoScreen(
                                 }
                                 IconButton(onClick = { kickTarget = member }) {
                                     Icon(
-                                        Icons.Filled.PersonRemove,
+                                        PulseIcons.PersonRemove,
                                         contentDescription = "Remove ${member.name}",
                                         tint = MaterialTheme.colorScheme.error,
                                         modifier = Modifier.size(18.dp),
@@ -1082,7 +1062,7 @@ fun GroupInfoScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Icon(Icons.Filled.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(PulseIcons.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Leave group")
                     }

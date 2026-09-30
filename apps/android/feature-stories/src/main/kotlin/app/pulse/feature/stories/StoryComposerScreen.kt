@@ -1,5 +1,6 @@
 package app.pulse.feature.stories
 
+import app.pulse.ui.PulseIcons
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -28,10 +29,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddAPhoto
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -196,7 +193,7 @@ fun StoryComposerScreen(
                         .clickable(onClick = onClose),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close composer", tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(PulseIcons.X, contentDescription = "Close composer", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Text(
@@ -232,10 +229,10 @@ fun StoryComposerScreen(
                     .background(Zinc800)
                     .padding(4.dp),
             ) {
-                ModePill("Text", Icons.Filled.Edit, cs.mode == ComposerState.Mode.TEXT) {
+                ModePill("Text", PulseIcons.Pencil, cs.mode == ComposerState.Mode.TEXT) {
                     cs = cs.withMode(ComposerState.Mode.TEXT)
                 }
-                ModePill("Photo", Icons.Filled.AddAPhoto, cs.mode == ComposerState.Mode.PHOTO) {
+                ModePill("Photo", PulseIcons.Camera, cs.mode == ComposerState.Mode.PHOTO) {
                     cs = cs.withMode(ComposerState.Mode.PHOTO)
                     photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }

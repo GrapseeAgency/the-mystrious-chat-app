@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -29,16 +30,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.LocationOff
-import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.outlined.SentimentSatisfied
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -547,7 +538,7 @@ internal fun ScheduleSheet(
                     Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     if (selected == index) {
                         Icon(
-                            Icons.Filled.Check,
+                            PulseIcons.Check,
                             contentDescription = null,
                             tint = PulsePalette.Emerald,
                             modifier = Modifier.size(18.dp),
@@ -604,7 +595,7 @@ internal fun ScheduledSendsSheet(
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Icon(
-                    Icons.Filled.Schedule,
+                    PulseIcons.Clock,
                     contentDescription = null,
                     tint = PulsePalette.Amber,
                     modifier = Modifier.size(15.dp),
@@ -667,7 +658,7 @@ internal fun ScheduledSendsSheet(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    if (refused) Icons.Filled.Block else Icons.Filled.Schedule,
+                                    if (refused) PulseIcons.Ban else PulseIcons.Clock,
                                     contentDescription = null,
                                     tint = if (refused) MaterialTheme.colorScheme.error else PulsePalette.Amber,
                                     modifier = Modifier.size(14.dp),
@@ -698,7 +689,7 @@ internal fun ScheduledSendsSheet(
                                         },
                                 ) {
                                     Icon(
-                                        Icons.Filled.Delete,
+                                        PulseIcons.Trash,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(15.dp),
@@ -819,7 +810,7 @@ internal fun QuickPhrasesRail(
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 Icon(
-                    Icons.Filled.Add,
+                    PulseIcons.Plus,
                     contentDescription = null,
                     tint = PulsePalette.Emerald,
                     modifier = Modifier.size(13.dp),
@@ -873,7 +864,7 @@ internal fun QuickPhrasesRail(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    Icons.Filled.Add,
+                    PulseIcons.Plus,
                     contentDescription = null,
                     tint = PulsePalette.Emerald,
                     modifier = Modifier.size(15.dp),
@@ -898,7 +889,7 @@ internal fun PhrasesSheet(
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Outlined.SentimentSatisfied,
+                    PulseIcons.Smile,
                     contentDescription = null,
                     tint = PulsePalette.Emerald,
                     modifier = Modifier.size(18.dp),
@@ -983,7 +974,7 @@ internal fun PhrasesSheet(
                             modifier = Modifier.size(32.dp),
                         ) {
                             Icon(
-                                Icons.Filled.Delete,
+                                PulseIcons.Trash,
                                 contentDescription = "Delete phrase",
                                 tint = PulsePalette.Rose,
                                 modifier = Modifier.size(17.dp),
@@ -1080,7 +1071,7 @@ internal fun LocationPinBubble(
                     .background(if (mine) Color.White.copy(alpha = 0.2f) else PulsePalette.Emerald.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.LocationOn, contentDescription = "Location pin", tint = accent, modifier = Modifier.size(19.dp))
+                Icon(PulseIcons.MapPin, contentDescription = "Location pin", tint = accent, modifier = Modifier.size(19.dp))
             }
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
@@ -1102,7 +1093,7 @@ internal fun LocationPinBubble(
             }
             Spacer(Modifier.width(8.dp))
             Icon(
-                Icons.Filled.OpenInNew,
+                PulseIcons.ArrowUpRight,
                 contentDescription = "Open in maps",
                 tint = accent,
                 modifier = Modifier.size(15.dp),
@@ -1134,7 +1125,7 @@ internal fun LocationShareSheet(
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 26.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Filled.LocationOn,
+                    PulseIcons.MapPin,
                     contentDescription = null,
                     tint = PulsePalette.Emerald,
                     modifier = Modifier.size(18.dp),
@@ -1147,7 +1138,7 @@ internal fun LocationShareSheet(
                 // Permission denied — honest explainer + Settings hand-off.
                 denied -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Icon(
-                        Icons.Filled.LocationOff,
+                        PulseIcons.MapPinSlash,
                         contentDescription = null,
                         tint = PulsePalette.Rose,
                         modifier = Modifier.size(30.dp),
@@ -1170,7 +1161,7 @@ internal fun LocationShareSheet(
                 // No provider / fix refused — retry re-runs the one-shot read.
                 fix.failed && !ready -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Icon(
-                        Icons.Filled.LocationOff,
+                        PulseIcons.MapPinSlash,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(30.dp),
@@ -1202,7 +1193,7 @@ internal fun LocationShareSheet(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Filled.LocationOn,
+                            PulseIcons.MapPin,
                             contentDescription = null,
                             tint = PulsePalette.Emerald,
                             modifier = Modifier.size(17.dp),

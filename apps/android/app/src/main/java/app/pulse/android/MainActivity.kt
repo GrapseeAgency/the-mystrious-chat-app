@@ -45,24 +45,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -157,6 +139,8 @@ import app.pulse.feature.stories.StoryComposerScreen
 import app.pulse.feature.stories.StoryViewerScreen
 import app.pulse.feature.voice.ui.VoiceRoomsOverlay
 import app.pulse.feature.voice.vm.VoiceRoomsViewModel
+import app.pulse.ui.EmberPalette
+import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.PulseTheme
@@ -183,9 +167,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-private val DockEmerald600 = Color(0xFF2BE8A6) // R35 Neo - neon mint active signal
-private val DockTeal600 = Color(0xFF0D9488)
-private val DockInactiveDark = Color(0xFF8CA398) // R35 Neo - dimmed text token
+// EMB-A: the dock signal pair is now the ember gradient (amber -> deep);
+// the names keep their historical slot so every nav style inherits the swap.
+private val DockEmerald600 = Color(0xFFFFB86B)
+private val DockTeal600 = Color(0xFFFF7A3D)
+// EMB-A: inactive chrome is white 45% on the warm backdrop.
+private val DockInactiveDark = Color.White.copy(alpha = 0.45f)
 private val DockInactiveLight = Color(0xFF71717A)
 
 /** Canonical tab order — drives dock layout + direction-aware transitions. */
@@ -199,12 +186,12 @@ private data class DockTab(
     val carriesUnread: Boolean = false,
 )
 
-/** Registry parity with web NAV_ITEMS (nav-router.ts) - R35 Neo filled icon voice. */
+/** Registry parity with web NAV_ITEMS (nav-router.ts) - EMB-A PulseIcons voice. */
 private val DOCK_TABS = listOf(
-    DockTab("chats", "Chats", Icons.Filled.ChatBubble, Icons.Outlined.ChatBubbleOutline, carriesUnread = true),
-    DockTab("hub", "Hub", Icons.Filled.Public, Icons.Outlined.Public),
-    DockTab("contacts", "Contacts", Icons.Filled.Group, Icons.Outlined.Group),
-    DockTab("profile", "Profile", Icons.Filled.AccountCircle, Icons.Outlined.AccountCircle),
+    DockTab("chats", "Chats", PulseIcons.ChatBubble, PulseIcons.ChatBubble, carriesUnread = true),
+    DockTab("hub", "Hub", PulseIcons.Globe, PulseIcons.Globe),
+    DockTab("contacts", "Contacts", PulseIcons.Users, PulseIcons.Users),
+    DockTab("profile", "Profile", PulseIcons.Person, PulseIcons.Person),
 )
 
 /**
@@ -663,7 +650,7 @@ private fun PulseShell(
     // + the snackbar host clear the dock through this one channel (web
     // pb-[env(safe-area-inset-bottom)+Npx] per architecture).
     val dockSpace = when (navStyle) {
-        PulseNavStyle.CAPSULE -> 108.dp + navBottom
+        PulseNavStyle.CAPSULE -> 92.dp + navBottom
         PulseNavStyle.FLOATING_TOP -> navBottom + 12.dp
         PulseNavStyle.FLOATING_DOCK -> 108.dp + navBottom
         PulseNavStyle.PILL -> 104.dp + navBottom
@@ -798,6 +785,7 @@ private fun PulseShell(
                 }
             }
             composable("hub") {
+                PulseTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
                     app.pulse.feature.hub.HubScreen(
                         viewerName = viewerName ?: "",
@@ -806,6 +794,7 @@ private fun PulseShell(
                 }
             }
             composable("contacts") {
+                PulseTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
                     ContactsScreen(
                         onOpenRoom = { id -> navController.navigate("room/$id") },
@@ -839,6 +828,7 @@ private fun PulseShell(
                 }
             }
             composable("calls") {
+                PulseTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
                     CallsView(
                         onBack = { navController.popBackStack() },
@@ -876,6 +866,7 @@ private fun PulseShell(
                 }
             }
             composable("profile") {
+                PulseTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
                     ProfileScreen(
                         onEditProfile = { navController.navigate("profile/edit") },
@@ -895,6 +886,7 @@ private fun PulseShell(
                 "user/{id}",
                 arguments = listOf(navArgument("id") { type = NavType.StringType }),
             ) { entry ->
+                PulseTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize()) {
                     UserPageScreen(
                         userId = entry.arguments?.getString("id").orEmpty(),
@@ -923,6 +915,7 @@ private fun PulseShell(
             }
             // Wave 8 — the full Settings root + nine sections.
             composable("settings") {
+                PulseTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize()) {
                     SettingsRootScreen(
                         onBack = { navController.popBackStack() },
@@ -935,6 +928,7 @@ private fun PulseShell(
                 "settings/{section}",
                 arguments = listOf(navArgument("section") { type = NavType.StringType }),
             ) { entry ->
+                PulseTheme(darkTheme = true) {
                 when (entry.arguments?.getString("section")) {
                     "account" -> Box(Modifier.fillMaxSize()) {
                         AccountSection(
@@ -995,6 +989,7 @@ private fun PulseShell(
                     },
                 ),
             ) { entry ->
+                PulseTheme(darkTheme = true) {
                 val conversationId = entry.arguments?.getString("conversationId").orEmpty()
                 // R8 Task 3-c — the OPEN conversation is the group-call probe
                 // target + outsider-banner gate (web openConversationId parity);
@@ -1034,6 +1029,7 @@ private fun PulseShell(
                     navArgument("rootId") { type = NavType.StringType },
                 ),
             ) {
+                PulseTheme(darkTheme = true) {
                 ThreadScreen(
                     viewerId = viewerId,
                     onBack = { navController.popBackStack() },
@@ -1051,6 +1047,7 @@ private fun PulseShell(
             // Wave 2 — the dock "Saved" menu item now lands on the real library
             // (fetch → Room cache → search → unsave → jump-to-message rows).
             composable("saved") {
+                PulseTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
                     SavedLibraryScreen(
                         onBack = { navController.popBackStack() },
@@ -1074,6 +1071,7 @@ private fun PulseShell(
                     },
                 ),
             ) { entry ->
+                PulseTheme(darkTheme = true) {
                 val storiesVm: StoriesViewModel = hiltViewModel()
                 LaunchedEffect(Unit) { storiesVm.boot() }
                 StoryViewerScreen(
@@ -1090,7 +1088,18 @@ private fun PulseShell(
                     storiesVm = storiesVm,
                 )
             }
-            }
+            
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                }}}}}}}}}}}}
         }
     }
 
@@ -1364,7 +1373,11 @@ private fun tabExit(fromRoute: String?, toRoute: String?): ExitTransition {
         fadeOut(tween(220, easing = pulseEaseOut))
 }
 
-// ── the Floating Capsule dock (web default nav, spec §12) ─────────────
+// ── the Floating Ember pill dock (Task EMB-A; web default nav slot) ───
+// One warm pill: 64dp capsule #1C1410 at 92%, hairline border, corner 32,
+// 4 tabs + the More glass button, floating 14dp above the nav bar, with a
+// separate 56dp glass FAB for compose on the right. All handlers, badges
+// and routes are the pre-existing ones (structure unchanged, chrome new).
 
 @Composable
 private fun CapsuleDock(
@@ -1384,115 +1397,79 @@ private fun CapsuleDock(
     moreMenuOpen: Boolean,
     onMoreMenuChange: (Boolean) -> Unit,
 ) {
-    Box(
+    Row(
         modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 12.dp)
-            .padding(bottom = 10.dp),
+            .padding(horizontal = 14.dp)
+            .padding(bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        BoxWithConstraints {
-            val pad = 6.dp
-            val gap = 4.dp
-            val composeW = 46.dp
-            // children: chats · hub · compose · contacts · profile · more
-            val slotW = (maxWidth - pad * 2 - composeW - 40.dp - gap * 5) / 4
-            val tabIndex = TAB_ROUTES.indexOf(active).coerceAtLeast(0)
-            val pillX = pad +
-                (slotW + gap) * tabIndex +
-                (if (tabIndex >= 2) composeW + gap else 0.dp)
-            val pillXAnim by animateDpAsState(
-                targetValue = pillX,
-                animationSpec = PulseMotion.snappy(),
-                label = "dockPill",
-            )
-
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .pulseGlass(dark, RoundedCornerShape(28.dp)),
+        // the pill — content minus the FAB
+        Box(
+            Modifier
+                .weight(1f)
+                .height(64.dp)
+                .clip(RoundedCornerShape(32.dp))
+                .background(EmberPalette.PillFill)
+                .border(1.dp, EmberPalette.Hairline, RoundedCornerShape(32.dp))
+                .padding(horizontal = 8.dp),
+        ) {
+            Row(
+                Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                // active pill — slides between tab slots (web layoutId pill)
-                Box(
-                    Modifier
-                        .offset(x = pillXAnim, y = pad)
-                        .size(width = slotW, height = 56.dp)
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    PulsePalette.Emerald.copy(alpha = if (dark) 0.16f else 0.20f),
-                                    PulsePalette.Emerald.copy(alpha = if (dark) 0.05f else 0.06f),
-                                ),
-                            ),
-                        )
-                        .border(
-                            1.dp,
-                            PulsePalette.Emerald.copy(alpha = if (dark) 0.25f else 0.30f),
-                            RoundedCornerShape(22.dp),
-                        ),
+                DockTabButton(
+                    tab = DOCK_TABS[0],
+                    active = active == "chats",
+                    unread = unread,
+                    dark = dark,
+                    reducedMotion = reducedMotion,
+                    modifier = Modifier.weight(1f),
+                    onSelect = { onSelect("chats") },
                 )
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(pad),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    DockTabButton(
-                        tab = DOCK_TABS[0],
-                        active = active == "chats",
-                        unread = unread,
-                        dark = dark,
-                        reducedMotion = reducedMotion,
-                        modifier = Modifier.weight(1f),
-                        onSelect = { onSelect("chats") },
-                    )
-                    Spacer(Modifier.width(gap))
-                    DockTabButton(
-                        tab = DOCK_TABS[1],
-                        active = active == "hub",
-                        unread = 0,
-                        dark = dark,
-                        reducedMotion = reducedMotion,
-                        modifier = Modifier.weight(1f),
-                        onSelect = { onSelect("hub") },
-                    )
-                    Spacer(Modifier.width(gap))
-                    ComposeDockButton(onCompose)
-                    Spacer(Modifier.width(gap))
-                    DockTabButton(
-                        tab = DOCK_TABS[2],
-                        active = active == "contacts",
-                        unread = 0,
-                        dark = dark,
-                        reducedMotion = reducedMotion,
-                        modifier = Modifier.weight(1f),
-                        onSelect = { onSelect("contacts") },
-                    )
-                    Spacer(Modifier.width(gap))
-                    DockTabButton(
-                        tab = DOCK_TABS[3],
-                        active = active == "profile",
-                        unread = 0,
-                        dark = dark,
-                        reducedMotion = reducedMotion,
-                        modifier = Modifier.weight(1f),
-                        onSelect = { onSelect("profile") },
-                    )
-                    Spacer(Modifier.width(gap))
-                    MoreDockButton(
-                        dark = dark,
-                        open = moreMenuOpen,
-                        onOpenChange = onMoreMenuChange,
-                        onSearch = onSearch,
-                        onSaved = onSaved,
-                        onStories = onStories,
-                        onSettings = onSettings,
-                        onDeferred = onDeferred,
-                    )
-                }
+                DockTabButton(
+                    tab = DOCK_TABS[1],
+                    active = active == "hub",
+                    unread = 0,
+                    dark = dark,
+                    reducedMotion = reducedMotion,
+                    modifier = Modifier.weight(1f),
+                    onSelect = { onSelect("hub") },
+                )
+                DockTabButton(
+                    tab = DOCK_TABS[2],
+                    active = active == "contacts",
+                    unread = 0,
+                    dark = dark,
+                    reducedMotion = reducedMotion,
+                    modifier = Modifier.weight(1f),
+                    onSelect = { onSelect("contacts") },
+                )
+                DockTabButton(
+                    tab = DOCK_TABS[3],
+                    active = active == "profile",
+                    unread = 0,
+                    dark = dark,
+                    reducedMotion = reducedMotion,
+                    modifier = Modifier.weight(1f),
+                    onSelect = { onSelect("profile") },
+                )
+                MoreDockButton(
+                    dark = dark,
+                    open = moreMenuOpen,
+                    onOpenChange = onMoreMenuChange,
+                    onSearch = onSearch,
+                    onSaved = onSaved,
+                    onStories = onStories,
+                    onSettings = onSettings,
+                    onDeferred = onDeferred,
+                )
             }
         }
+        // separate 56dp circular FAB — the existing new-chat action
+        ComposeDockButton(onCompose, size = 56.dp)
     }
 }
 
@@ -1519,7 +1496,7 @@ private fun DockTabButton(
             rotate.snapTo(0f)
         }
     }
-    val activeTint = DockEmerald600
+    val activeTint = if (dark) Color.White else DockEmerald600
     val inactiveTint = if (dark) DockInactiveDark else DockInactiveLight
     Box(
         modifier
@@ -1534,7 +1511,7 @@ private fun DockTabButton(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = if (active) tab.activeIcon else tab.inactiveIcon,
+                    imageVector = tab.activeIcon,
                     contentDescription = tab.label,
                     tint = if (active) activeTint else inactiveTint,
                     modifier = Modifier
@@ -1543,14 +1520,24 @@ private fun DockTabButton(
                             rotationZ = rotate.value
                             scaleX = if (active) 1.08f else 1f
                             scaleY = if (active) 1.08f else 1f
-                            translationY = if (active) -1.dp.toPx() else 0f
                         },
                 )
                 if (tab.carriesUnread && unread > 0) {
                     DockUnreadBadge(unread, dark)
                 }
             }
-            Spacer(Modifier.height(3.dp))
+            // the active signal: a 4dp #FF453A circle 3dp under the icon
+            // (slot reserved so the label never shifts between states)
+            Box(Modifier.height(7.dp), contentAlignment = Alignment.Center) {
+                if (active && dark) {
+                    Box(
+                        Modifier
+                            .size(4.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFF453A)),
+                    )
+                }
+            }
             Text(
                 tab.label,
                 fontSize = 10.sp,
@@ -1573,8 +1560,8 @@ private fun DockUnreadBadge(count: Int, dark: Boolean) {
         modifier = Modifier
             .offset(x = 10.dp, y = (-6).dp)
             .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.Teal)))
-            .border(2.dp, if (dark) Color(0xFF18181B) else Color.White, CircleShape)
+            .background(Color(0xFFFF453A))
+            .border(2.dp, if (dark) Color(0xFF1C1410) else Color.White, CircleShape)
             .padding(horizontal = 5.dp, vertical = 1.dp),
     )
 }
@@ -1586,14 +1573,16 @@ private fun ComposeDockButton(onCompose: () -> Unit, size: Dp = 46.dp) {
         Modifier
             .size(size)
             .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(DockEmerald600, DockTeal600)))
+            // EMB-A glass FAB: white 10% fill + white 12% border (spec).
+            .background(Color.White.copy(alpha = 0.10f))
+            .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
             .clickable {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 onCompose()
             },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Filled.Add, contentDescription = "New chat", tint = Color.White, modifier = Modifier.size(if (size >= 44.dp) 20.dp else 17.dp))
+        Icon(PulseIcons.Plus, contentDescription = "New chat", tint = Color.White, modifier = Modifier.size(if (size >= 44.dp) 22.dp else 18.dp))
     }
 }
 
@@ -1621,7 +1610,7 @@ private fun MoreDockButton(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Filled.MoreHoriz,
+                PulseIcons.KebabHorizontal,
                 contentDescription = "More options",
                 tint = if (dark) DockInactiveDark else DockInactiveLight,
                 modifier = Modifier.size(20.dp),
@@ -1631,11 +1620,12 @@ private fun MoreDockButton(
             expanded = open,
             onDismissRequest = { onOpenChange(false) },
             shape = RoundedCornerShape(16.dp),
-            containerColor = if (dark) Color(0xFF1C1C1F) else Color.White,
+            // EMB-A: warm ink menu.
+            containerColor = if (dark) Color(0xFF241A13) else Color.White,
         ) {
             DropdownMenuItem(
                 text = { Text("Settings", fontSize = 14.sp) },
-                leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null, tint = DockEmerald600) },
+                leadingIcon = { Icon(PulseIcons.Gear, contentDescription = null, tint = DockEmerald600) },
                 onClick = {
                     onOpenChange(false)
                     onSettings()
@@ -1643,7 +1633,7 @@ private fun MoreDockButton(
             )
             DropdownMenuItem(
                 text = { Text("Search", fontSize = 14.sp) },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = DockEmerald600) },
+                leadingIcon = { Icon(PulseIcons.Search, contentDescription = null, tint = DockEmerald600) },
                 onClick = {
                     onOpenChange(false)
                     onSearch()
@@ -1651,7 +1641,7 @@ private fun MoreDockButton(
             )
             DropdownMenuItem(
                 text = { Text("Saved", fontSize = 14.sp) },
-                leadingIcon = { Icon(Icons.Filled.Bookmark, contentDescription = null, tint = DockEmerald600) },
+                leadingIcon = { Icon(PulseIcons.Bookmark, contentDescription = null, tint = DockEmerald600) },
                 onClick = {
                     onOpenChange(false)
                     onSaved()
@@ -1659,7 +1649,7 @@ private fun MoreDockButton(
             )
             DropdownMenuItem(
                 text = { Text("Stories", fontSize = 14.sp) },
-                leadingIcon = { Icon(Icons.Filled.AutoStories, contentDescription = null, tint = DockEmerald600) },
+                leadingIcon = { Icon(PulseIcons.Sparkle, contentDescription = null, tint = DockEmerald600) },
                 onClick = {
                     onOpenChange(false)
                     onStories()
@@ -2384,7 +2374,7 @@ private fun IslandDock(
                     Spacer(Modifier.width(8.dp))
                     Text(activeTab.label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (dark) Color(0xFFE4E4E7) else Color(0xFF27272A))
                     Spacer(Modifier.width(6.dp))
-                    Icon(Icons.Filled.DragHandle, contentDescription = null, tint = if (dark) DockInactiveDark else DockInactiveLight, modifier = Modifier.size(16.dp))
+                    Icon(PulseIcons.Grip, contentDescription = null, tint = if (dark) DockInactiveDark else DockInactiveLight, modifier = Modifier.size(16.dp))
                 } else {
                     // expanded: 5 slots + More (web island-open, compose added
                     // for the shared 5-slot contract)
@@ -2607,7 +2597,7 @@ private fun CommandBarDock(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.Search, contentDescription = "Search", tint = dockInactiveTint(dark), modifier = Modifier.size(19.dp))
+                Icon(PulseIcons.Search, contentDescription = "Search", tint = dockInactiveTint(dark), modifier = Modifier.size(19.dp))
             }
             Box(
                 Modifier
@@ -2619,7 +2609,7 @@ private fun CommandBarDock(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = dockInactiveTint(dark), modifier = Modifier.size(19.dp))
+                Icon(PulseIcons.Gear, contentDescription = "Settings", tint = dockInactiveTint(dark), modifier = Modifier.size(19.dp))
             }
             MoreDockButton(
                 dark = dark,
@@ -2729,7 +2719,7 @@ private fun RadialDock(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    if (open) Icons.Filled.Close else Icons.Filled.Add,
+                    if (open) PulseIcons.X else PulseIcons.Plus,
                     contentDescription = if (open) "Close navigation" else "Open navigation",
                     tint = Color.White,
                     modifier = Modifier.size(22.dp),
@@ -2816,7 +2806,7 @@ private fun GestureDock(
                 )
                 if (activeTab.carriesUnread && unread > 0) DockUnreadBadge(unread, dark)
             }
-            Icon(Icons.Filled.DragHandle, contentDescription = "Drag to switch tabs", tint = dockInactiveTint(dark), modifier = Modifier.size(18.dp))
+            Icon(PulseIcons.Grip, contentDescription = "Drag to switch tabs", tint = dockInactiveTint(dark), modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -2838,10 +2828,10 @@ private fun ContextualDockDock(
     // web ContextualDock: the trailing action adapts to the active tab
     // (nav-router.tsx:1193-1240 — New chat / Search / New group / Settings).
     val (chipLabel, chipIcon, chipAction) = when (active) {
-        "chats" -> Triple("New chat", Icons.Filled.Add, actions.onCompose)
-        "hub" -> Triple("Search", Icons.Filled.Search, actions.onSearch)
-        "contacts" -> Triple("New group", Icons.Filled.Group, actions.onCompose)
-        else -> Triple("Settings", Icons.Filled.Settings, actions.onSettings)
+        "chats" -> Triple("New chat", PulseIcons.Plus, actions.onCompose)
+        "hub" -> Triple("Search", PulseIcons.Search, actions.onSearch)
+        "contacts" -> Triple("New group", PulseIcons.Users, actions.onCompose)
+        else -> Triple("Settings", PulseIcons.Gear, actions.onSettings)
     }
     Box(
         modifier
@@ -2946,7 +2936,7 @@ private fun AppLockGate(
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                Icons.Filled.Lock,
+                PulseIcons.Lock,
                 contentDescription = "Pulse is locked",
                 tint = PulsePalette.Emerald,
                 modifier = Modifier.size(44.dp),

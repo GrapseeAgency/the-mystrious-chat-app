@@ -22,13 +22,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Verified
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,8 +61,9 @@ import app.pulse.ui.PulsePalette
 import app.pulse.domain.model.User
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Videocam
+import app.pulse.ui.EmberPalette
+import app.pulse.ui.PulseIcons
+import app.pulse.ui.emberBackdrop
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 
@@ -134,7 +128,7 @@ fun ContactsScreen(
         it.name.contains(filter, true) || it.handle.contains(filter, true)
     }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().emberBackdrop().statusBarsPadding()) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
             Text("Contacts", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(
@@ -154,9 +148,9 @@ fun ContactsScreen(
             Spacer(Modifier.height(8.dp))
             Row {
                 TextButton(onClick = onOpenAdd) {
-                    Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(15.dp), tint = PulsePalette.Emerald)
+                    Icon(PulseIcons.Person, contentDescription = null, modifier = Modifier.size(15.dp), tint = EmberPalette.Online)
                     Spacer(Modifier.width(6.dp))
-                    Text("Add contact", color = PulsePalette.Emerald)
+                    Text("Add contact", color = EmberPalette.Online)
                 }
             }
         }
@@ -164,17 +158,17 @@ fun ContactsScreen(
         when {
             state.error != null && users.isEmpty() -> Text(
                 state.error ?: "",
-                color = MaterialTheme.colorScheme.error,
+                color = EmberPalette.Signal,
                 modifier = Modifier.padding(20.dp),
             )
             state.loading && users.isEmpty() -> Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 repeat(6) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)))
+                        Box(Modifier.size(44.dp).clip(CircleShape).background(EmberPalette.ChipFill))
                         Spacer(Modifier.width(12.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Box(Modifier.size(width = 120.dp, height = 12.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)))
-                            Box(Modifier.size(width = 80.dp, height = 10.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)))
+                            Box(Modifier.size(width = 120.dp, height = 12.dp).clip(RoundedCornerShape(6.dp)).background(EmberPalette.ChipFill))
+                            Box(Modifier.size(width = 80.dp, height = 10.dp).clip(RoundedCornerShape(6.dp)).background(EmberPalette.ChipFill))
                         }
                     }
                 }
@@ -286,19 +280,19 @@ fun ContactsScreen(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
             )
-            SheetRow(icon = Icons.AutoMirrored.Filled.Chat, label = "Open chat") {
+            SheetRow(icon = PulseIcons.ChatBubble, label = "Open chat") {
                 safetyTarget = null
                 viewModel.openDm(target)
             }
-            SheetRow(icon = Icons.Filled.Person, label = "View profile") {
+            SheetRow(icon = PulseIcons.Person, label = "View profile") {
                 safetyTarget = null
                 onOpenUser(target.id)
             }
-            SheetRow(icon = Icons.Filled.Block, label = "Block", tint = MaterialTheme.colorScheme.error) {
+            SheetRow(icon = PulseIcons.Lock, label = "Block", tint = EmberPalette.Signal) {
                 safetyTarget = null
                 viewModel.block(target)
             }
-            SheetRow(icon = Icons.Filled.Flag, label = "Report", tint = MaterialTheme.colorScheme.error) {
+            SheetRow(icon = PulseIcons.Flag, label = "Report", tint = EmberPalette.Signal) {
                 safetyTarget = null
                 reportTarget = target
             }
@@ -365,7 +359,7 @@ private fun ContactRow(
                     Text(user.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     if (user.verified) {
                         Spacer(Modifier.width(4.dp))
-                        Icon(Icons.Filled.Verified, contentDescription = "Verified", tint = PulsePalette.Emerald, modifier = Modifier.size(13.dp))
+                        Icon(PulseIcons.Check, contentDescription = "Verified", tint = EmberPalette.Online, modifier = Modifier.size(13.dp))
                     }
                 }
                 Text(
@@ -375,30 +369,30 @@ private fun ContactRow(
                 )
             }
             TextButton(onClick = onMessage) {
-                Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, modifier = Modifier.size(16.dp), tint = PulsePalette.Emerald)
+                Icon(PulseIcons.ChatBubble, contentDescription = null, modifier = Modifier.size(16.dp), tint = EmberPalette.Online)
                 Spacer(Modifier.width(6.dp))
-                Text("Chat", color = PulsePalette.Emerald)
+                Text("Chat", color = EmberPalette.Online)
             }
             IconButton(onClick = onCall) {
                 Icon(
-                    Icons.Filled.Phone,
+                    PulseIcons.Phone,
                     contentDescription = "Call ${user.name}",
-                    tint = PulsePalette.Emerald,
+                    tint = EmberPalette.Online,
                     modifier = Modifier.size(18.dp),
                 )
             }
             // Wave R1-W2D — video call entry (wire kind 'video').
             IconButton(onClick = onVideoCall) {
                 Icon(
-                    Icons.Filled.Videocam,
+                    PulseIcons.Video,
                     contentDescription = "Video call ${user.name}",
-                    tint = PulsePalette.Emerald,
+                    tint = EmberPalette.Online,
                     modifier = Modifier.size(18.dp),
                 )
             }
             Box {
                 IconButton(onClick = { menuOpen = true; haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                    Icon(PulseIcons.KebabVertical, contentDescription = "More")
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("Open chat") }, onClick = { menuOpen = false; onMessage() })
@@ -486,7 +480,7 @@ private fun IndexRail(
                 letter,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (active) PulsePalette.Emerald else MaterialTheme.colorScheme.outline,
+                color = if (active) EmberPalette.Online else EmberPalette.GlassBorder,
                 modifier = Modifier
                     .padding(vertical = 0.5.dp)
                     .semantics {

@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,9 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -311,7 +309,7 @@ fun KanbanSheet(
                         }
                         if (card.createdById == viewerId || isAdmin) {
                             Icon(
-                                Icons.Filled.Close,
+                                PulseIcons.X,
                                 contentDescription = "Delete card",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
@@ -612,7 +610,7 @@ fun EventsSheet(
                         Text(e.title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (e.createdById == viewerId || isAdmin) {
                             Icon(
-                                Icons.Filled.Close,
+                                PulseIcons.X,
                                 contentDescription = "Delete event",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
@@ -789,7 +787,7 @@ fun RemindersSheet(
                     }
                     if (r.firedAt == null) {
                         Icon(
-                            Icons.Filled.Check,
+                            PulseIcons.Check,
                             contentDescription = "Resolve reminder",
                             tint = PulsePalette.Emerald,
                             modifier = Modifier
@@ -799,7 +797,7 @@ fun RemindersSheet(
                         )
                     }
                     Icon(
-                        Icons.Filled.Close,
+                        PulseIcons.X,
                         contentDescription = "Delete reminder",
                         tint = MaterialTheme.colorScheme.error,
                         modifier = Modifier

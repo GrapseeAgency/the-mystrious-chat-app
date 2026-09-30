@@ -345,6 +345,131 @@ extension PulseTheme {
     static func photoURL(_ path: String?) -> URL? {
         photoURL(path, base: PulseEndpoints.gatewayURL)
     }
+
+    // ── PULSE EMBER (EMB-I) ──────────────────────────────────
+    // The Ember design ground: warm sunset-blur backdrop, glass circle
+    // chrome, ember signal accents. Deliberately NOT adaptive constants -
+    // every Ember screen pins the dark look in both color schemes.
+    /// Backdrop stops, top to bottom: warm brown, mid brown, near-black.
+    static var emberBackdrop: LinearGradient {
+        LinearGradient(
+            colors: [
+                PulseUiThemeColor(hex: "#5C4030").color,
+                PulseUiThemeColor(hex: "#33241B").color,
+                PulseUiThemeColor(hex: "#150F0B").color,
+            ],
+            startPoint: .top, endPoint: .bottom,
+        )
+    }
+    /// Warm radial glow behind room headers (#7A4E33, rendered at 35%).
+    static let emberGlowColor = PulseUiThemeColor(hex: "#7A4E33").color
+    /// Chrome surface (dock pill, composer field, dark circles).
+    static let emberChrome = PulseUiThemeColor(hex: "#1C1410").color
+    /// Bubble fills: incoming #2E2824, outgoing #17110D.
+    static let emberBubbleIncoming = PulseUiThemeColor(hex: "#2E2824").color
+    static let emberBubbleOutgoing = PulseUiThemeColor(hex: "#17110D").color
+    /// The Ember signal pair (send button, story rings, primary moments).
+    static let emberGlowTop = PulseUiThemeColor(hex: "#FFB86B").color
+    static let emberGlowBottom = PulseUiThemeColor(hex: "#FF7A3D").color
+    static var emberSignalGradient: LinearGradient {
+        LinearGradient(
+            colors: [emberGlowTop, emberGlowBottom],
+            startPoint: .topLeading, endPoint: .bottomTrailing,
+        )
+    }
+    /// System-semantic ember tints: destructive red + presence amber.
+    static let emberRed = PulseUiThemeColor(hex: "#FF453A").color
+    static let emberOnline = PulseUiThemeColor(hex: "#FF9F0A").color
+    /// Ring color for dots/badges floating on the ember ground.
+    static let emberDotRing = PulseUiThemeColor(hex: "#1C1410").color
+}
+
+// ─────────────────────────────────────────────────────────────
+// PULSE EMBER (EMB-I) - shared backdrop + chrome primitives.
+// Ember screens mount `.emberScreen()` as their base layer; the subtree
+// color scheme is pinned dark so every adaptive token inside resolves
+// onto the ember ground (the Ember look is scheme-independent on purpose).
+// ─────────────────────────────────────────────────────────────
+
+/// Warm radial glow behind room headers: #7A4E33 at 35% fading out by
+/// 40% of the container height. Pinned to the top edge, never hit-testable.
+struct EmberRadialGlow: View {
+    var body: some View {
+        GeometryReader { proxy in
+            RadialGradient(
+                colors: [PulseTheme.emberGlowColor.opacity(0.35), Color.clear],
+                center: UnitPoint(x: 0.5, y: 0.0),
+                startRadius: 0,
+                endRadius: max(proxy.size.width, proxy.size.height * 0.9) * 0.62,
+            )
+            .frame(height: proxy.size.height * 0.4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// The label half of the glass circle chrome - also usable inside toolbar
+/// items and Menu labels.
+struct EmberGlassCircleIcon: View {
+    let systemImage: String
+    var size: CGFloat = 40
+    var iconSize: CGFloat = 16
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: iconSize, weight: .medium))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(Circle().fill(Color.white.opacity(0.09)))
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            .contentShape(Circle())
+    }
+}
+
+/// Glass circle chrome button (40-44pt): white 9% fill, white 12% ring,
+/// white SF Symbol at medium weight. Back/search/camera/ellipsis/video/
+/// phone in headers ride THIS.
+struct EmberGlassCircleButton: View {
+    let systemImage: String
+    var size: CGFloat = 40
+    var iconSize: CGFloat = 16
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            EmberGlassCircleIcon(systemImage: systemImage, size: size, iconSize: iconSize)
+        }
+        .buttonStyle(PulseButtonStyle())
+    }
+}
+
+extension View {
+    /// PULSE EMBER card surface: white 5% fill at a 16pt continuous radius
+    /// (the reference profile/settings card language).
+    func emberCard(radius: CGFloat = 16) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+        )
+    }
+
+    /// PULSE EMBER screen base: the sunset gradient under the content plus
+    /// the optional header glow, with the subtree scheme pinned dark so all
+    /// adaptive tokens resolve onto the ember ground.
+    func emberScreen(headerGlow: Bool = false) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(PulseTheme.emberBackdrop)
+                .ignoresSafeArea()
+            if headerGlow {
+                EmberRadialGlow()
+                    .ignoresSafeArea()
+            }
+            self
+        }
+        .environment(\.colorScheme, .dark)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────

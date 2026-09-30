@@ -19,11 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -52,7 +47,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import app.pulse.domain.model.SavedItem
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.ui.EmberPalette
+import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.emberBackdrop
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.LocalDate
@@ -167,23 +165,25 @@ fun SavedLibraryScreen(
     Column(
         Modifier
             .fillMaxSize()
+            .emberBackdrop()
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
-        Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+        Surface(color = Color.Transparent) {
             Column(Modifier.fillMaxWidth()) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(PulseIcons.ChevronLeft, contentDescription = "Back", tint = Color.White)
                     }
                     Column(Modifier.weight(1f)) {
                         Text(
                             "Saved",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
                         )
                         Text(
                             if (state.items.isEmpty()) "Your kept messages" else "${state.items.size} ${if (state.items.size == 1) "message" else "messages"}",
@@ -197,7 +197,7 @@ fun SavedLibraryScreen(
                     onValueChange = viewModel::setQuery,
                     placeholder = "Search saved messages…",
                     leading = {
-                        Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        Icon(PulseIcons.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.55f), modifier = Modifier.size(16.dp))
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -211,7 +211,7 @@ fun SavedLibraryScreen(
             when {
                 state.loading && state.items.isEmpty() -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = PulsePalette.Emerald)
+                        CircularProgressIndicator(color = EmberPalette.Amber)
                     }
                 }
                 state.error != null && state.items.isEmpty() -> {
@@ -250,9 +250,9 @@ fun SavedLibraryScreen(
                         verticalArrangement = Arrangement.Center,
                     ) {
                         Icon(
-                            Icons.Filled.Star,
+                            PulseIcons.Star,
                             contentDescription = null,
-                            tint = PulsePalette.Amber,
+                            tint = EmberPalette.Amber,
                             modifier = Modifier.size(42.dp),
                         )
                         Spacer(Modifier.height(10.dp))
@@ -379,9 +379,9 @@ private fun SavedRow(
             }
             IconButton(onClick = onUnsave, modifier = Modifier.size(34.dp)) {
                 Icon(
-                    Icons.Filled.Delete,
+                    PulseIcons.Trash,
                     contentDescription = "Unsave",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    tint = Color.White.copy(alpha = 0.55f),
                     modifier = Modifier.size(17.dp),
                 )
             }

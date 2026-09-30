@@ -97,9 +97,16 @@ struct ChatsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .top) {
-                PulseTheme.pageWash
+                // PULSE EMBER (EMB-I): the warm sunset ground sits under the
+                // whole tab. The scheme pins dark on the CONTENT subtree
+                // only, so the sheets mounted on the stack keep their own
+                // environment while every list row resolves onto ember.
+                Rectangle()
+                    .fill(PulseTheme.emberBackdrop)
                     .ignoresSafeArea()
+
                 content
+                    .environment(\.colorScheme, .dark)
             }
             .safeAreaInset(edge: .top, spacing: 0) { topChrome }
             .navigationBarHidden(true)
@@ -310,12 +317,15 @@ struct ChatsView: View {
                 )
             }
         }
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(PulseTheme.hairlinePanel)
-                .frame(height: 1)
-        }
+        .background(
+            // Ember header scrim - the chrome melts into the backdrop
+            // instead of a material slab (EMB-I).
+            LinearGradient(
+                colors: [PulseTheme.emberChrome.opacity(0.60), PulseTheme.emberChrome.opacity(0.0)],
+                startPoint: .top, endPoint: .bottom,
+            )
+            .ignoresSafeArea()
+        )
     }
 
     // ── scroll area states (priority order per spec §7) ──────
@@ -731,82 +741,72 @@ private struct ChatsHeaderBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button(action: onGoProfile) {
-                    RowAvatar(
-                        name: session.viewer?.name ?? "You",
-                        colorName: session.viewer?.color,
-                        photoPath: session.viewer?.avatar,
-                        size: 36,
-                    )
-                }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("Open my profile")
+            // PULSE EMBER header (EMB-I): large white title left, glass
+            // circle cluster right (search, camera = new chat, ellipsis =
+            // the same actions the old chrome hosted). Zero emoji.
+            HStack(spacing: 10) {
+                Text("Chats")
+                    .font(.system(size: 30, weight: .bold))
+                    .tracking(-0.6)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                HStack(spacing: 6) {
-                    Text("Pulse")
-                        .font(.system(size: 20, weight: .bold, design: .default))
-                        .tracking(-0.3)
-                        .foregroundStyle(PulseTheme.titleOnWash)
-                    Circle()
-                        .fill(PulseTheme.emeraldGradient)
-                        .frame(width: 6, height: 6)
+                EmberGlassCircleButton(systemImage: "magnifyingglass") {
+                    onStartSearch()
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 4)
+                .accessibilityLabel("Start searching")
 
-                Button(action: onPhone) {
-                    Image(systemName: "phone")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .frame(width: 40, height: 40)
-                        .background(Circle().fill(Color.clear))
-                        .contentShape(Circle())
+                EmberGlassCircleButton(systemImage: "camera") {
+                    onCompose()
                 }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("Open calls")
-
-                Button(action: onCompose) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .frame(width: 40, height: 40)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("New chat")
 
-                Button(action: { prefs.cycleAppearance() }) {
-                    Image(systemName: appearanceIcon)
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .frame(width: 40, height: 40)
-                        .contentShape(Circle())
+                Menu {
+                    Button {
+                        PulseHaptics.tap()
+                        onGoProfile()
+                    } label: {
+                        Label("Open my profile", systemImage: "person")
+                    }
+                    Button {
+                        PulseHaptics.tap()
+                        onPhone()
+                    } label: {
+                        Label("Calls", systemImage: "phone")
+                    }
+                    Button {
+                        PulseHaptics.tap()
+                        prefs.cycleAppearance()
+                    } label: {
+                        Label("Appearance: \(appearanceName)", systemImage: appearanceIcon)
+                    }
+                } label: {
+                    EmberGlassCircleIcon(systemImage: "ellipsis")
                 }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("Appearance: \(appearanceName)")
+                .accessibilityLabel("More options")
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .padding(.top, 10)
             .padding(.bottom, 10)
 
+            // Search field - glass pill on the ember ground.
             Button(action: onStartSearch) {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 15))
-                        .foregroundStyle(PulseTheme.textTertiary)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.40))
                     Text("Search chats and messages")
                         .font(.system(size: 14))
-                        .foregroundStyle(PulseTheme.textTertiary)
+                        .foregroundStyle(Color.white.opacity(0.40))
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 40)
-                .background(Capsule().fill(PulseTheme.glassFill))
-                .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
             }
             .buttonStyle(PulseButtonStyle())
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .padding(.bottom, 10)
             .accessibilityLabel("Start searching")
         }
@@ -856,17 +856,17 @@ private struct SearchHeaderBar: View {
         HStack(spacing: 8) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 15))
-                    .foregroundStyle(PulseTheme.textTertiary)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.40))
                 TextField(
-                    "Search chats and messages…",
+                    "Search chats and messages",
                     text: Binding(
                         get: { query },
                         set: { onQueryChange($0) },
                     ),
                 )
                 .font(.system(size: 14))
-                .foregroundStyle(PulseTheme.titleOnWash)
+                .foregroundStyle(.white)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .focused($keyFocus)
@@ -880,9 +880,9 @@ private struct SearchHeaderBar: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(PulseTheme.textPrimary)
+                            .foregroundStyle(.white)
                             .frame(width: 24, height: 24)
-                            .background(Circle().fill(PulseTheme.zinc(300).opacity(0.7)))
+                            .background(Circle().fill(Color.white.opacity(0.14)))
                     }
                     .buttonStyle(PulseButtonStyle())
                     .accessibilityLabel("Clear search")
@@ -893,13 +893,13 @@ private struct SearchHeaderBar: View {
             .padding(.trailing, 10)
             .frame(height: 40)
             .frame(maxWidth: .infinity)
-            .background(Capsule().fill(PulseTheme.glassFill))
-            .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
+            .background(Capsule().fill(Color.white.opacity(0.08)))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
             .overlay {
                 if hot {
                     Capsule()
-                        .strokeBorder(PulseTheme.accent.opacity(0.5), lineWidth: 2)
-                        .shadow(color: PulseTheme.emerald500.opacity(0.25), radius: 10)
+                        .strokeBorder(PulseTheme.emberGlowBottom.opacity(0.6), lineWidth: 2)
+                        .shadow(color: PulseTheme.emberGlowBottom.opacity(0.30), radius: 10)
                 }
             }
             .animation(.pulse(.pulseSoft, reduceMotion: reduceMotion), value: hot)
@@ -908,7 +908,7 @@ private struct SearchHeaderBar: View {
             Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(hot ? PulseTheme.accent : PulseTheme.textSecondary)
+                    .foregroundStyle(hot ? PulseTheme.emberGlowTop : Color.white.opacity(0.60))
                     .frame(width: 40, height: 40)
                     .contentShape(Circle())
             }
@@ -950,21 +950,23 @@ private struct FilterChipsRow: View {
                 if key == .unread && unreadTotal > 0 && !active {
                     Text(unreadTotal > 99 ? "99+" : "\(unreadTotal)")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(PulseTheme.accent)
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 4)
                         .frame(minWidth: 15, minHeight: 15)
-                        .background(Capsule().fill(PulseTheme.emerald500.opacity(0.20)))
+                        .background(Capsule().fill(PulseTheme.emberRed))
                 }
                 Text(label)
             }
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(active ? Color.white : PulseTheme.textSecondary)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(active ? Color.black : Color.white.opacity(0.65))
             .padding(.horizontal, 12)
-            .frame(height: 28)
+            .frame(height: 32)
             .background(
-                Capsule().fill(active ? PulseTheme.emerald500 : PulseTheme.chipFill),
+                Capsule().fill(active ? Color.white : Color.white.opacity(0.08)),
             )
-            .shadow(color: active ? PulseTheme.emerald600.opacity(0.25) : .clear, radius: 3, y: 1)
+            .overlay(
+                Capsule().strokeBorder(Color.white.opacity(active ? 0.0 : 0.10), lineWidth: 1),
+            )
         }
         .buttonStyle(PulseButtonStyle())
         .accessibilityLabel("\(label) filter")
@@ -988,6 +990,8 @@ private struct StoriesRowView: View {
                         ring: myStoryGroup != nil ? .unseen : .none,
                         plus: true, // D1: "+" stays reachable even while a story is live
                         label: "My status",
+                        photoPath: viewer?.avatar,
+                        thumbnailPath: myStoryGroup.flatMap(latestImageStory),
                         onPress: {
                             onPress(myStoryGroup?.user?.id) // live → viewer; none → composer
                         },
@@ -1000,6 +1004,8 @@ private struct StoriesRowView: View {
                                 ring: group.allSeen == true ? .seen : .unseen,
                                 plus: false,
                                 label: user.name,
+                                photoPath: user.avatar,
+                                thumbnailPath: latestImageStory(group),
                                 onPress: { onPress(user.id) },
                             )
                         }
@@ -1007,14 +1013,15 @@ private struct StoriesRowView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 6)
-                .padding(.bottom, 8)
+                .padding(.bottom, 10)
             }
         }
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(PulseTheme.hairlineSoft)
-                .frame(height: 1)
-        }
+    }
+
+    // EMB-I - newest image-story path for the card fill (existing wire
+    // shape only, no new endpoint): the first image story in the group.
+    private func latestImageStory(_ group: WireStoryGroup) -> String? {
+        group.stories?.first(where: { $0.imagePath != nil })?.imagePath
     }
 
     // R1-W2G — the ring partition lives in PulseStoryRing (StoryEngine.swift),
@@ -1050,10 +1057,10 @@ private struct FolderRailView: View {
                 Button(action: onManage) {
                     Image(systemName: "folder.badge.plus")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(PulseTheme.textSecondary)
+                        .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
-                        .background(Circle().fill(PulseTheme.glassFill))
-                        .overlay(Circle().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
                 }
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Manage chat folders")
@@ -1078,23 +1085,22 @@ private struct FolderRailView: View {
                 if count > 0 {
                     Text(count > 99 ? "99+" : "\(count)")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(active ? .white : PulseTheme.accent)
+                        .foregroundStyle(active ? Color.black : .white)
                         .padding(.horizontal, 4)
                         .frame(minWidth: 15, minHeight: 15)
                         .background(
-                            Capsule().fill(active ? Color.white.opacity(0.25) : PulseTheme.emerald500.opacity(0.20)),
+                            Capsule().fill(active ? Color.black.opacity(0.18) : PulseTheme.emberRed),
                         )
                 }
             }
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(active ? Color.white : PulseTheme.textPrimary)
+            .foregroundStyle(active ? Color.black : Color.white.opacity(0.65))
             .padding(.horizontal, 16)
-            .frame(height: 44)
+            .frame(height: 40)
             .background(
-                Capsule().fill(active ? PulseTheme.emerald500 : Color.clear)
-                    .background(Capsule().fill(PulseTheme.glassFill)),
+                Capsule().fill(active ? Color.white : Color.white.opacity(0.08)),
             )
-            .overlay(Capsule().strokeBorder(active ? Color.clear : PulseTheme.hairlineStrong, lineWidth: 1))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(active ? 0.0 : 0.10), lineWidth: 1))
         }
         .buttonStyle(PulseButtonStyle())
         .accessibilityLabel(id == nil ? "All chats" : "Folder \(label)")
@@ -1118,7 +1124,7 @@ private struct NoteToSelfCard: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(PulseTheme.brandGradient)
+                        .fill(PulseTheme.emberSignalGradient)
                     Image(systemName: "book.closed.fill")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
@@ -1131,30 +1137,30 @@ private struct NoteToSelfCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .frame(width: 36, height: 36)
-                .shadow(color: PulseTheme.emerald600.opacity(0.30), radius: 3, y: 1)
+                .shadow(color: PulseTheme.emberGlowBottom.opacity(0.30), radius: 3, y: 1)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Note to Self")
                         .font(.system(size: 14, weight: .semibold))
                         .tracking(-0.2)
-                        .foregroundStyle(PulseTheme.titleOnWash)
+                        .foregroundStyle(.white)
                     Text("Your private space — notes, links, ideas")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(PulseTheme.textSecondary)
+                        .foregroundStyle(Color.white.opacity(0.55))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 if creating {
                     ProgressView()
                         .controlSize(.small)
-                        .tint(PulseTheme.accent)
+                        .tint(.white)
                 } else if exists {
                     HStack(spacing: 1) {
                         Text("Open")
                         Image(systemName: "chevron.right")
                     }
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(PulseTheme.accent)
+                    .foregroundStyle(PulseTheme.emberGlowTop)
                 } else {
                     HStack(spacing: 1) {
                         Text("Create")
@@ -1163,19 +1169,19 @@ private struct NoteToSelfCard: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(.init(top: 4, leading: 8, bottom: 4, trailing: 5))
-                    .background(Capsule().fill(PulseTheme.emerald500))
-                    .shadow(color: PulseTheme.emerald600.opacity(0.30), radius: 3, y: 1)
+                    .background(Capsule().fill(PulseTheme.emberGlowBottom))
+                    .shadow(color: PulseTheme.emberGlowBottom.opacity(0.30), radius: 3, y: 1)
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.ultraThinMaterial),
+                    .fill(Color.white.opacity(0.05)),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1),
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
             )
         }
         .buttonStyle(PulseButtonStyle())
@@ -1199,34 +1205,34 @@ private struct EntryPill: View {
             HStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(PulseTheme.accent)
+                    .foregroundStyle(Color.white.opacity(0.80))
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(PulseTheme.titleOnPanel)
+                    .foregroundStyle(.white)
                 if badgeCount > 0 {
                     Text(badgeCount > 99 ? "99+" : "\(badgeCount)")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 5)
                         .frame(minWidth: 17, minHeight: 17)
-                        .background(Capsule().fill(PulseTheme.emerald500))
+                        .background(Capsule().fill(PulseTheme.emberRed))
                 }
                 Spacer(minLength: 0)
                 HStack(spacing: 2) {
                     Text(trailing)
                         .font(.system(size: 12))
-                        .foregroundStyle(PulseTheme.textTertiary)
+                        .foregroundStyle(Color.white.opacity(0.40))
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(PulseTheme.textTertiary)
+                        .foregroundStyle(Color.white.opacity(0.30))
                 }
             }
             .padding(.horizontal, 14)
             .frame(height: 44)
             .background(
                 Capsule()
-                    .fill(.ultraThinMaterial)
-                    .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)),
+                    .fill(Color.white.opacity(0.05))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1)),
             )
         }
         .buttonStyle(PulseButtonStyle())
@@ -1274,9 +1280,9 @@ private struct ConversationRow: View {
                     .offset(x: swipeOffset)
             }
             Rectangle()
-                .fill(PulseTheme.hairlineSoft)
+                .fill(Color.white.opacity(0.08))
                 .frame(height: 1)
-                .padding(.leading, 64)
+                .padding(.leading, 76)
         }
         .padding(.horizontal, 8)
         .opacity(entered ? 1 : 0)
@@ -1301,7 +1307,7 @@ private struct ConversationRow: View {
         HStack(spacing: 6) {
             SwipeActionChip(
                 icon: row.isPinned ? "pin.slash" : "pin",
-                iconTint: row.isPinned ? PulseTheme.amber500 : PulseTheme.accent,
+                iconTint: row.isPinned ? PulseTheme.amber500 : PulseTheme.emberGlowTop,
                 label: row.isPinned ? "Unpin" : "Pin",
                 action: {
                     closeSwipe()
@@ -1310,7 +1316,7 @@ private struct ConversationRow: View {
             )
             SwipeActionChip(
                 icon: row.isArchived ? "archivebox" : "archivebox",
-                iconTint: row.isArchived ? PulseTheme.amber500 : PulseTheme.textSecondary,
+                iconTint: row.isArchived ? PulseTheme.amber500 : Color.white.opacity(0.80),
                 label: row.isArchived ? "Unarchive" : "Archive",
                 action: {
                     closeSwipe()
@@ -1365,15 +1371,8 @@ private struct ConversationRow: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(row.isPinned ? PulseTheme.pinnedWash : PulseTheme.rowFill)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PulseTheme.rowFill)),
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(PulseTheme.rowRim, lineWidth: 1),
-            )
+            // EMB-I - rows sit straight on the ember ground: no card fill,
+            // no rim. The press overlay stays for tactile feedback.
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(RowPressStyle(selectMode: selectMode))
@@ -1393,7 +1392,7 @@ private struct ConversationRow: View {
         .accessibilityLabel("\(row.name), \(row.time), \(row.previewText)")
     }
 
-    // avatar 48pt — presence halo + heat ring + presence dot / squircle group
+    // avatar 56pt circle - ember presence dot / heat ring (EMB-I)
     private var avatarBlock: some View {
         ZStack {
             if !row.isGroup && row.online {
@@ -1406,7 +1405,7 @@ private struct ConversationRow: View {
                 name: row.isGroup ? row.groupTitle : (row.dmName ?? row.name),
                 colorName: row.isGroup ? nil : (row.dmColor ?? "emerald"),
                 photoPath: row.photo,
-                size: 48,
+                size: 56,
                 groupID: row.isGroup ? row.id : nil,
                 avatarShape: row.isGroup ? .squircle : .circle,
                 showPresence: !row.isGroup,
@@ -1417,7 +1416,7 @@ private struct ConversationRow: View {
                     .transition(.scale(scale: 0.4).combined(with: .opacity))
             }
         }
-        .frame(width: 48, height: 48)
+        .frame(width: 56, height: 56)
         .animation(.pulse(.pulseBouncy, reduceMotion: reduceMotion), value: selectMode)
     }
 
@@ -1426,18 +1425,19 @@ private struct ConversationRow: View {
             if row.isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(PulseTheme.emerald500)
+                    .foregroundStyle(Color.white.opacity(0.35))
             }
             Text(row.name)
-                .font(.system(size: 15, weight: row.hasUnread ? .semibold : .medium))
+                .font(.system(size: 16, weight: row.hasUnread ? .semibold : .medium))
                 .tracking(-0.2)
-                .foregroundStyle(row.hasUnread ? PulseTheme.titleOnWash : PulseTheme.titleOnPanel)
+                .foregroundStyle(.white)
                 .lineLimit(1)
             Spacer(minLength: 8)
             streakChip
             Text(row.time)
-                .font(.system(size: 11, weight: row.hasUnread ? .semibold : .regular))
-                .foregroundStyle(row.hasUnread ? PulseTheme.accent : PulseTheme.textTertiary)
+                .font(.system(size: 12, weight: row.hasUnread ? .semibold : .regular))
+                .monospacedDigit()
+                .foregroundStyle(row.hasUnread ? PulseTheme.emberGlowTop : Color.white.opacity(0.45))
         }
     }
 
@@ -1468,27 +1468,27 @@ private struct ConversationRow: View {
             HStack(spacing: 6) {
                 RowTypingDots()
                 Text("typing…")
-                    .font(.system(size: 13, weight: .medium).italic())
-                    .foregroundStyle(PulseTheme.accent)
+                    .font(.system(size: 14, weight: .medium).italic())
+                    .foregroundStyle(PulseTheme.emberGlowTop)
             }
             .lineLimit(1)
         } else if let draft = row.draft, !draft.isEmpty {
             HStack(spacing: 4) {
                 Image(systemName: "pencil")
                     .font(.system(size: 11))
-                    .foregroundStyle(PulseTheme.amber500)
+                    .foregroundStyle(PulseTheme.emberGlowTop)
                 Text("Draft:")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(PulseTheme.amber600)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(PulseTheme.emberGlowTop)
                 Text(draft)
-                    .font(.system(size: 13).italic())
-                    .foregroundStyle(PulseTheme.textSecondary)
+                    .font(.system(size: 14).italic())
+                    .foregroundStyle(Color.white.opacity(0.55))
                     .lineLimit(1)
             }
         } else {
-            (Text(row.previewPrefix) + Text(row.previewText).italic(row.previewDeleted))
-                .font(.system(size: 13, weight: row.hasUnread ? .medium : .regular))
-                .foregroundStyle(PulseTheme.textSecondary)
+            (Text(row.previewPrefix).foregroundColor(Color.white.opacity(0.45))
+                + Text(row.previewText).foregroundColor(Color.white.opacity(0.55)).italic(row.previewDeleted))
+                .font(.system(size: 14, weight: row.hasUnread ? .medium : .regular))
                 .lineLimit(1)
         }
     }
@@ -1502,9 +1502,9 @@ private struct ConversationRow: View {
                     .animation(.pulse(.pulseBouncy, reduceMotion: reduceMotion), value: unreadCount)
             } else {
                 Circle()
-                    .fill(PulseTheme.emerald500)
+                    .fill(PulseTheme.emberRed)
                     .frame(width: 12, height: 12)
-                    .overlay(Circle().strokeBorder(PulseTheme.badgeRing, lineWidth: 2))
+                    .overlay(Circle().strokeBorder(PulseTheme.emberDotRing, lineWidth: 2))
                     .padding(.horizontal, 3)
                     .accessibilityLabel("Marked as unread")
                     .animation(.pulse(.pulseBouncy, reduceMotion: reduceMotion), value: row.manualUnread)
@@ -1549,7 +1549,7 @@ struct RowTypingDots: View {
         HStack(spacing: 3) {
             ForEach(0..<3, id: \.self) { index in
                 Circle()
-                    .fill(PulseTheme.emerald500)
+                    .fill(PulseTheme.emberOnline)
                     .frame(width: 3.5, height: 3.5)
                     .offset(y: animating ? -2.5 : 0)
                     .opacity(animating ? 1 : 0.45)
@@ -1614,11 +1614,11 @@ private struct SwipeActionChip: View {
             .frame(width: 48, height: 48)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.ultraThinMaterial),
+                    .fill(Color.white.opacity(0.10)),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1),
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1),
             )
         }
         .buttonStyle(PulseButtonStyle())
@@ -1633,7 +1633,7 @@ private struct SelectCheckmark: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(selected ? PulseTheme.emerald500 : PulseTheme.zinc(900).opacity(0.35))
+                .fill(selected ? PulseTheme.emberGlowBottom : PulseTheme.emberChrome.opacity(0.60))
                 .overlay(
                     Circle().strokeBorder(
                         selected ? Color.white.opacity(0.70) : Color.white.opacity(0.60),
@@ -1687,10 +1687,10 @@ private struct MultiSelectBar: View {
         .padding(6)
         .background(
             Capsule()
-                .fill(.ultraThinMaterial)
-                .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)),
+                .fill(PulseTheme.emberChrome.opacity(0.96))
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1)),
         )
-        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+        .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
     }
@@ -1894,7 +1894,7 @@ private struct ChatsSkeletonView: View {
     }
 }
 
-/// Empty state — deep glass card, emerald glow, EmptyChats illustration.
+/// Empty state - ember glass card, warm glow, EmptyChats illustration.
 private struct EmptyChatsCard: View {
     let onSayHi: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1906,7 +1906,7 @@ private struct EmptyChatsCard: View {
                 Circle()
                     .fill(
                         RadialGradient(
-                            colors: [PulseTheme.emerald500.opacity(0.28), .clear],
+                            colors: [PulseTheme.emberGlowBottom.opacity(0.28), .clear],
                             center: .center, startRadius: 0, endRadius: 80,
                         ),
                     )
@@ -1923,12 +1923,12 @@ private struct EmptyChatsCard: View {
                             RoundedRectangle(cornerRadius: 24, style: .continuous)
                                 .strokeBorder(Color.white.opacity(0.5), lineWidth: 1),
                         )
-                        .shadow(color: PulseTheme.zinc(200).opacity(0.7), radius: 8, y: 4)
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
                     VStack(spacing: 4) {
                         Text("No conversations yet")
                             .font(.system(size: 16, weight: .semibold))
                             .tracking(-0.2)
-                            .foregroundStyle(PulseTheme.titleOnPanel)
+                            .foregroundStyle(.white)
                         Text("Your next great chat is one tap away. Find someone and break the ice.")
                             .font(.system(size: 13))
                             .foregroundStyle(PulseTheme.textSecondary)
@@ -1941,11 +1941,10 @@ private struct EmptyChatsCard: View {
                             Image(systemName: "arrow.right")
                         }
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(PulseTheme.accent)
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 20)
                         .frame(height: 40)
-                        .background(Capsule().fill(.ultraThinMaterial))
-                        .overlay(Capsule().strokeBorder(PulseTheme.accent.opacity(0.4), lineWidth: 1))
+                        .background(Capsule().fill(PulseTheme.emberSignalGradient))
                     }
                     .buttonStyle(PulseButtonStyle())
                     .accessibilityLabel("Say hi to someone — open contacts")
@@ -1957,11 +1956,11 @@ private struct EmptyChatsCard: View {
         .frame(maxWidth: 300)
         .background(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial),
+                .fill(Color.white.opacity(0.05)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1),
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
         )
         .opacity(entered ? 1 : 0)
         .offset(y: entered ? 0 : 14)
@@ -1994,11 +1993,11 @@ private struct ErrorCard: View {
             Button(action: onRetry) {
                 Text("Retry")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(PulseTheme.accent)
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 24)
                     .frame(height: 40)
-                    .background(Capsule().fill(.ultraThinMaterial))
-                    .overlay(Capsule().strokeBorder(PulseTheme.accent.opacity(0.4), lineWidth: 1))
+                    .background(Capsule().fill(Color.white.opacity(0.10)))
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
             }
             .buttonStyle(PulseButtonStyle())
         }
@@ -2007,11 +2006,11 @@ private struct ErrorCard: View {
         .padding(.vertical, 32)
         .background(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.ultraThinMaterial),
+                .fill(Color.white.opacity(0.05)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1),
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
         )
         .padding(.top, 40)
     }

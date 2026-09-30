@@ -17,12 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.CallMade
-import androidx.compose.material.icons.filled.CallMissed
-import androidx.compose.material.icons.filled.CallReceived
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,7 +46,10 @@ import app.pulse.domain.model.CallLogEntry
 import app.pulse.domain.model.CallState
 import app.pulse.domain.model.CallStatus
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.ui.EmberPalette
+import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.emberBackdrop
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.delay
@@ -157,7 +154,7 @@ fun CallsView(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .emberBackdrop(),
     ) {
         Row(
             modifier = Modifier
@@ -166,9 +163,9 @@ fun CallsView(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(PulseIcons.ChevronLeft, contentDescription = "Back", tint = Color.White)
             }
-            Text("Calls", style = MaterialTheme.typography.titleLarge)
+            Text("Calls", style = MaterialTheme.typography.titleLarge, color = Color.White)
             Spacer(Modifier.weight(1f))
         }
 
@@ -232,7 +229,7 @@ private fun CallRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
+            .background(EmberPalette.ChipFill)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp)
             .semantics { contentDescription = "Call from ${row.peer?.name ?: "unknown"}: $label" },
@@ -241,7 +238,7 @@ private fun CallRow(
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                .background(EmberPalette.ChipFill, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -283,20 +280,20 @@ private fun CallRow(
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
                         strokeWidth = 2.dp,
-                        color = PulsePalette.Emerald,
+                        color = EmberPalette.Online,
                     )
                 }
             } else {
                 Box(
                     modifier = Modifier
                         .size(34.dp)
-                        .background(PulsePalette.Emerald, CircleShape)
+                        .background(EmberPalette.Online, CircleShape)
                         .clickable(onClick = onRedial)
                         .semantics { contentDescription = "Redial ${row.peer?.name ?: "unknown"}" },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.Filled.Call,
+                        PulseIcons.Phone,
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(16.dp),
@@ -305,7 +302,7 @@ private fun CallRow(
             }
         } else {
             Icon(
-                Icons.Filled.Call,
+                PulseIcons.Phone,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp),
@@ -319,16 +316,16 @@ internal fun rowPresentation(row: CallLogEntry): Triple<androidx.compose.ui.grap
     val durationLabel = if (row.durationSec > 0) formatDuration(row.durationSec) else ""
     return when {
         row.outgoing && row.status == CallStatus.COMPLETED ->
-            Triple(Icons.Filled.CallMade, if (durationLabel.isBlank()) "Outgoing" else "Outgoing · $durationLabel", Color(0xFF10B981))
+            Triple(PulseIcons.ArrowUpRight, if (durationLabel.isBlank()) "Outgoing" else "Outgoing · $durationLabel", EmberPalette.Online)
         row.outgoing && row.status == CallStatus.DECLINED ->
-            Triple(Icons.Filled.CallMade, "Declined", Color(0xFFE11D48))
+            Triple(PulseIcons.ArrowUpRight, "Declined", EmberPalette.Signal)
         row.outgoing ->
-            Triple(Icons.Filled.CallMade, "No answer", Color(0xFFE11D48))
+            Triple(PulseIcons.ArrowUpRight, "No answer", EmberPalette.Signal)
         !row.outgoing && row.status == CallStatus.COMPLETED ->
-            Triple(Icons.Filled.CallReceived, if (durationLabel.isBlank()) "Incoming" else "Incoming · $durationLabel", Color(0xFF10B981))
+            Triple(PulseIcons.ArrowDownLeft, if (durationLabel.isBlank()) "Incoming" else "Incoming · $durationLabel", EmberPalette.Online)
         !row.outgoing && row.status == CallStatus.DECLINED ->
-            Triple(Icons.Filled.CallReceived, "Declined", Color(0xFFE11D48))
+            Triple(PulseIcons.ArrowDownLeft, "Declined", EmberPalette.Signal)
         else ->
-            Triple(Icons.Filled.CallMissed, "Missed", Color(0xFFE11D48))
+            Triple(PulseIcons.ArrowDownLeft, "Missed", EmberPalette.Signal)
     }
 }

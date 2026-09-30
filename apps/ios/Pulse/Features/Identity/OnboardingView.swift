@@ -342,13 +342,15 @@ struct OnboardingView: View {
     }
 
     // zinc slices the web screen uses, per color scheme
-    private var zinc900: Color { colorScheme == .dark ? Color(hex: 0xFAFAFA) : Color(hex: 0x18181B) }
+    // PULSE EMBER (EMB-I): the web's zinc slices pin to their dark values
+    // so the onboarding reads on the ember ground in either scheme.
+    private var zinc900: Color { Color(hex: 0xFAFAFA) }
     private var zinc400: Color { Color(hex: 0xA1A1AA) }
     private var zinc500: Color { Color(hex: 0x71717A) }
-    private var zinc200: Color { colorScheme == .dark ? Color(hex: 0x3F3F46) : Color(hex: 0xE4E4E7) }
-    private var zincField: Color { colorScheme == .dark ? Color(hex: 0x27272A) : Color(hex: 0xFAFAFA) }
-    private var emerald600: Color { Color(hex: 0x059669) }
-    private var amberText: Color { colorScheme == .dark ? Color(hex: 0xFBBF24) : Color(hex: 0xD97706) }
+    private var zinc200: Color { Color.white.opacity(0.12) }
+    private var zincField: Color { Color.white.opacity(0.08) }
+    private var emerald600: Color { PulseTheme.emberGlowBottom }
+    private var amberText: Color { Color(hex: 0xFBBF24) }
 
     private var stepTransition: AnyTransition {
         .asymmetric(
@@ -377,6 +379,12 @@ struct OnboardingView: View {
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(
+            // PULSE EMBER (EMB-I): sunset ground; the palette helpers below
+            // pin the dark values so the screen is scheme-independent.
+            Rectangle().fill(PulseTheme.emberBackdrop).ignoresSafeArea()
+        )
+        .tint(.white)
         .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.87), value: viewModel.step)
         .onAppear {
             handleDeepLinkLogin()
@@ -404,7 +412,7 @@ struct OnboardingView: View {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(
                     RadialGradient(
-                        colors: [PulseTheme.emerald.opacity(glowUp ? 0.85 : 0.45), .clear],
+                        colors: [PulseTheme.emberGlowBottom.opacity(glowUp ? 0.85 : 0.45), .clear],
                         center: .center,
                         startRadius: 8,
                         endRadius: 120,
@@ -415,7 +423,7 @@ struct OnboardingView: View {
                 .scaledToFill()
                 .frame(width: 196, height: 196)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .shadow(color: PulseTheme.emerald.opacity(0.10), radius: 12, y: 6)
+                .shadow(color: PulseTheme.emberGlowBottom.opacity(0.15), radius: 12, y: 6)
         }
         .frame(width: 196, height: 196)
         .onAppear {
@@ -434,7 +442,7 @@ struct OnboardingView: View {
                     .tracking(-0.5)
                     .foregroundStyle(zinc900)
                 Circle()
-                    .fill(LinearGradient(colors: [Color(hex: 0x34D399), emerald600], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .fill(PulseTheme.emberSignalGradient)
                     .frame(width: 8, height: 8)
             }
             Text("Your conversations, instantly alive.")
@@ -523,7 +531,7 @@ struct OnboardingView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(zinc500)
                         .frame(width: 36, height: 36)
-                        .background(Circle().fill(colorScheme == .dark ? Color(hex: 0x27272A) : Color(hex: 0xF4F4F5)))
+                        .background(Circle().fill(Color.white.opacity(0.08)))
                 }
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Back to name step")
@@ -666,7 +674,7 @@ struct OnboardingView: View {
         } label: {
             HStack(spacing: 6) {
                 if viewModel.signingIn {
-                    ProgressView().controlSize(.mini).tint(colorScheme == .dark ? Color(hex: 0x34D399) : Color(hex: 0x047857))
+                    ProgressView().controlSize(.mini).tint(.white)
                 } else {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
                         .font(.system(size: 13, weight: .semibold))
@@ -677,13 +685,13 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity, minHeight: 44)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(PulseTheme.emerald.opacity(0.10)),
+                    .fill(PulseTheme.emberGlowTop.opacity(0.10)),
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(PulseTheme.emerald.opacity(0.5), lineWidth: 1),
+                    .strokeBorder(PulseTheme.emberGlowTop.opacity(0.5), lineWidth: 1),
             )
-            .foregroundStyle(colorScheme == .dark ? Color(hex: 0x34D399) : Color(hex: 0x047857))
+            .foregroundStyle(PulseTheme.emberGlowTop)
         }
         .buttonStyle(PulseButtonStyle())
         .disabled(!viewModel.validName || viewModel.signingIn || viewModel.reclaimCandidate != nil)
@@ -735,11 +743,11 @@ struct OnboardingView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(colorScheme == .dark ? Color(hex: 0x27272A).opacity(0.6) : Color(hex: 0xFAFAFA)),
+                .fill(Color.white.opacity(0.05)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(PulseTheme.emerald.opacity(0.4), lineWidth: 1),
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
         )
         .transition(.opacity.combined(with: .move(edge: .top)))
         .accessibilityElement(children: .contain)
@@ -762,7 +770,7 @@ struct OnboardingView: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "sparkles")
                 .font(.system(size: 12))
-                .foregroundStyle(PulseTheme.emerald)
+                .foregroundStyle(PulseTheme.emberGlowTop)
             Text("Tip: your @handle is optional — add or change it anytime from your Profile.")
                 .font(.system(size: 12))
                 .foregroundStyle(zinc500)
@@ -771,7 +779,7 @@ struct OnboardingView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(colorScheme == .dark ? Color(hex: 0x27272A).opacity(0.6) : Color(hex: 0xFAFAFA)),
+                .fill(Color.white.opacity(0.05)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -821,7 +829,7 @@ private struct SwatchCircle: View {
                 if isSelected {
                     // web ring-2 ring-emerald-600 ring-offset-2
                     Circle()
-                        .strokeBorder(Color(hex: 0x059669), lineWidth: 2)
+                        .strokeBorder(PulseTheme.emberGlowTop, lineWidth: 2)
                         .frame(width: 42, height: 42)
                 }
             }
@@ -847,8 +855,8 @@ private struct PulseOnboardingField: View {
 
     private var borderColor: Color {
         if isError { return Color(hex: 0xFBBF24) }
-        if focused { return Color(hex: 0x059669).opacity(0.6) }
-        return colorScheme == .dark ? Color(hex: 0x3F3F46) : Color(hex: 0xE4E4E7)
+        if focused { return PulseTheme.emberGlowTop.opacity(0.6) }
+        return Color.white.opacity(0.12)
     }
 
     var body: some View {
@@ -870,7 +878,7 @@ private struct PulseOnboardingField: View {
         .frame(height: 44)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(colorScheme == .dark ? Color(hex: 0x27272A) : Color(hex: 0xFAFAFA)),
+                .fill(Color.white.opacity(0.08)),
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)

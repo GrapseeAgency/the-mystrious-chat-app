@@ -456,14 +456,16 @@ struct RootView: View {
         )
     }
 
-    /// Bottom-zone styles reserve the dock's footprint (the R3-era 74);
-    /// floating-top and rail reserve nothing at the bottom — they occupy
-    /// their own top/leading channels instead. Radial is the overlay FAB:
-    /// it floats above the bottom edge, so the SAME footprint applies.
+    /// Bottom-zone styles reserve the dock's footprint; floating-top and rail
+    /// reserve nothing at the bottom - they occupy their own top/leading
+    /// channels instead. Radial is the overlay FAB: it floats above the
+    /// bottom edge, so the SAME footprint applies. EMB-I - the reserve is
+    /// the list contentPadding: content slides behind the floating pill and
+    /// rests ~96pt clear of the screen bottom (dock 64 + float 14 + air).
     private var dockBottomReserve: CGFloat {
         if session.roomVisible { return 0 }
         switch navStyle.zone {
-        case .bottom, .overlay: return 74
+        case .bottom, .overlay: return 96
         default: return 0
         }
     }
@@ -591,10 +593,11 @@ struct RootView: View {
 }
 
 // ─────────────────────────────────────────────────────────────
-// The floating capsule dock — home chrome shared by every tab
-// (web §12): [Chats, Hub] · compose · [Contacts, Profile] · More,
-// glass panel, emerald active pill, unread badge on Chats, wobble
-// on press, compact More menu with honest actions (no fakes).
+// The floating capsule dock - PULSE EMBER chrome (EMB-I): a 64pt dark
+// warm pill (white 8% ring) with the four registry tabs + More, and the
+// 56pt plus FAB floating to its right (compose). Active tab = white icon
+// + label with a 4pt red dot under the icon; inactive = white 45%.
+// Routing, badges, the More menu, haptics and the wobble are unchanged.
 // ─────────────────────────────────────────────────────────────
 private struct CapsuleDock: View {
     @ObservedObject var session: PulseSession
@@ -615,18 +618,23 @@ private struct CapsuleDock: View {
     @State private var wobbleAngle = 0.0
 
     var body: some View {
-        HStack(spacing: 4) {
-            dockTab(.chats, icon: "bubble.left.and.bubble.right", filled: "bubble.left.and.bubble.right.fill", label: "Chats", badge: session.dockUnreadCount)
-            dockTab(.hub, icon: "globe.americas", filled: "globe.americas.fill", label: "Hub", badge: 0)
+        HStack(spacing: 10) {
+            // The floating pill: tabs + More (compose lives on the FAB).
+            HStack(spacing: 4) {
+                dockTab(.chats, icon: "bubble.left.and.bubble.right", filled: "bubble.left.and.bubble.right.fill", label: "Chats", badge: session.dockUnreadCount)
+                dockTab(.hub, icon: "globe.americas", filled: "globe.americas.fill", label: "Hub", badge: 0)
+                dockTab(.contacts, icon: "person.2", filled: "person.2.fill", label: "Contacts", badge: 0)
+                dockTab(.profile, icon: "person.crop.circle", filled: "person.crop.circle.fill", label: "Profile", badge: 0)
+                moreButton
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 64)
+            .background(dockPanel)
+
             composeButton
-            dockTab(.contacts, icon: "person.2", filled: "person.2.fill", label: "Contacts", badge: 0)
-            dockTab(.profile, icon: "person.crop.circle", filled: "person.crop.circle.fill", label: "Profile", badge: 0)
-            moreButton
         }
-        .padding(6)
-        .background(dockPanel)
         .padding(.horizontal, 12)
-        .padding(.bottom, 10)
+        .padding(.bottom, 14)
         .overlay(alignment: .bottomTrailing) {
             if moreOpen {
                 // Veil dismiss layer + the compact glass menu above the More button.
@@ -638,7 +646,7 @@ private struct CapsuleDock: View {
                             withAnimation(.pulse(.pulseSnappy, reduceMotion: reduceMotion)) { moreOpen = false }
                         }
                     moreMenu
-                        .offset(y: -80)
+                        .offset(y: -96)
                 }
                 .transition(.opacity)
             }
@@ -655,25 +663,23 @@ private struct CapsuleDock: View {
         } label: {
             VStack(spacing: 3) {
                 Image(systemName: isActive ? filled : icon)
-                    .font(.system(size: 22, weight: isActive ? .semibold : .regular))
-                    .scaleEffect(isActive ? 1.08 : 1)
-                    .offset(y: isActive ? -1 : 0)
+                    .font(.system(size: 22, weight: isActive ? .semibold : .medium))
+                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
                 Text(label)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 10, weight: isActive ? .semibold : .medium))
+                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
-            .foregroundStyle(isActive ? PulseTheme.accent : PulseTheme.textSecondary)
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background {
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .overlay(alignment: .top) {
                 if isActive {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(PulseTheme.dockPillGradient)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .strokeBorder(PulseTheme.emerald500.opacity(0.30), lineWidth: 1)
-                        )
-                        .shadow(color: PulseTheme.emerald500.opacity(0.55), radius: 10, y: 6)
+                    // 4pt red signal dot, centered 3pt under the icon.
+                    Circle()
+                        .fill(PulseTheme.emberRed)
+                        .frame(width: 4, height: 4)
+                        .offset(y: 27)
+                        .accessibilityHidden(true)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -683,10 +689,9 @@ private struct CapsuleDock: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 5)
                         .frame(minWidth: 20, minHeight: 20)
-                        .background(Capsule().fill(PulseTheme.brandGradient))
-                        .overlay(Capsule().strokeBorder(dark ? PulseTheme.zinc(900) : .white, lineWidth: 2))
-                        .shadow(color: PulseTheme.emerald500.opacity(0.45), radius: 6, y: 2)
-                        .offset(x: 10, y: -6)
+                        .background(Capsule().fill(PulseTheme.emberRed))
+                        .overlay(Capsule().strokeBorder(PulseTheme.emberDotRing, lineWidth: 2))
+                        .offset(x: 10, y: -2)
                         .transition(.scale(scale: 0.4).combined(with: .opacity))
                 }
             }
@@ -698,21 +703,22 @@ private struct CapsuleDock: View {
         .animation(.spring(response: 0.25, dampingFraction: 0.6), value: badge)
     }
 
-    // ── compose ───────────────────────────────────────────────
+    // ── compose - the 56pt ember FAB right of the pill ──────
     private var composeButton: some View {
         Button {
             PulseHaptics.tap()
             onCompose()
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(.white)
-                .frame(width: 46, height: 46)
-                .background(Circle().fill(PulseTheme.brandGradient))
-                .shadow(color: PulseTheme.emerald500.opacity(0.55), radius: 10, y: 4)
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(Color.white.opacity(0.10)))
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
                 .contentShape(Circle())
         }
         .buttonStyle(DockPressStyle())
+        .accessibilityLabel("New chat")
     }
 
     // ── more ──────────────────────────────────────────────────
@@ -723,11 +729,12 @@ private struct CapsuleDock: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(PulseTheme.textSecondary)
+                .foregroundStyle(Color.white.opacity(0.45))
                 .frame(width: 40, height: 40)
                 .contentShape(Circle())
         }
         .buttonStyle(DockPressStyle())
+        .accessibilityLabel("More")
     }
 
     private var moreMenu: some View {
@@ -762,7 +769,7 @@ private struct CapsuleDock: View {
         } label: {
             Label(label, systemImage: icon)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(PulseTheme.titleOnPanel)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
                 .contentShape(Rectangle())
         }
@@ -783,43 +790,25 @@ private struct CapsuleDock: View {
         }
     }
 
-    // ── glass recipes (web §12 panel + menu) ──────────────────
+    // ── ember chrome (EMB-I): dark warm pill + menu ─────────
     private var dockPanel: some View {
-        RoundedRectangle(cornerRadius: 28, style: .continuous)
-            .fill(.ultraThinMaterial)
+        RoundedRectangle(cornerRadius: 32, style: .continuous)
+            .fill(PulseTheme.emberChrome.opacity(0.92))
             .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(dark ? PulseTheme.zinc(900).opacity(0.65) : Color.white.opacity(0.70))
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
             )
-            .overlay(
-                // hairline ring — zinc-200/70 light, white/10 dark
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1)
-            )
-            .overlay(
-                // specular top edge
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(colors: [Color.white.opacity(0.45), Color.white.opacity(0.04)], startPoint: .top, endPoint: .bottom),
-                        lineWidth: 1
-                    )
-                    .opacity(dark ? 0.5 : 1)
-            )
-            .shadow(color: .black.opacity(PulseTheme.panelShadowOpacity), radius: 16, y: 8)
+            .shadow(color: .black.opacity(0.35), radius: 18, y: 10)
     }
 
     private var menuPanel: some View {
         RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(.ultraThinMaterial)
+            .fill(PulseTheme.emberChrome.opacity(0.96))
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(dark ? PulseTheme.zinc(900).opacity(0.72) : Color.white.opacity(0.78))
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(dark ? Color.white.opacity(0.10) : PulseTheme.zinc(200).opacity(0.70), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
+            .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
     }
 }
 

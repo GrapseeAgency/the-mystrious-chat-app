@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,13 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Webhook
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -92,7 +86,7 @@ internal fun AutomationsSection(
     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Icon(PulseIcons.Bolt, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Automations", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
                 Text("${state.rows.size}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -141,7 +135,7 @@ internal fun AutomationsSection(
 
             if (isAdmin) {
                 TextButton(onClick = { onLoad(); createOpen = true }, modifier = Modifier.padding(top = 2.dp)) {
-                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Icon(PulseIcons.Plus, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Create automation", fontSize = 12.sp)
                 }
@@ -211,7 +205,7 @@ private fun AutomationRow(
                 if (row.hits > 0) {
                     Spacer(Modifier.width(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Bolt, contentDescription = null, tint = PulsePalette.Amber, modifier = Modifier.size(11.dp))
+                        Icon(PulseIcons.Bolt, contentDescription = null, tint = PulsePalette.Amber, modifier = Modifier.size(11.dp))
                         Text(" ${row.hits}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -226,12 +220,12 @@ private fun AutomationRow(
         }
         if (isAdmin) {
             IconButton(onClick = onRename, enabled = !busy) {
-                Icon(Icons.Filled.Edit, contentDescription = "Edit trigger \"${row.trigger}\"", modifier = Modifier.size(15.dp))
+                Icon(PulseIcons.Pencil, contentDescription = "Edit trigger \"${row.trigger}\"", modifier = Modifier.size(15.dp))
             }
             Switch(checked = row.enabled, onCheckedChange = { onToggle() }, enabled = !busy)
             IconButton(onClick = onDelete, enabled = !busy) {
                 Icon(
-                    Icons.Filled.Delete,
+                    PulseIcons.Trash,
                     contentDescription = "Delete automation \"${row.trigger}\"",
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(16.dp),
@@ -370,7 +364,7 @@ internal fun WebhooksSection(
     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Webhook, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Icon(PulseIcons.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Webhooks", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
                 Text("${state.rows.size}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -415,7 +409,7 @@ internal fun WebhooksSection(
 
             if (isAdmin) {
                 TextButton(onClick = { onLoad(); createOpen = true }, modifier = Modifier.padding(top = 2.dp)) {
-                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Icon(PulseIcons.Plus, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Create webhook", fontSize = 12.sp)
                 }
@@ -468,7 +462,7 @@ private fun WebhookRow(
                 .background(accent.copy(alpha = 0.22f)),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Filled.Webhook, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
+            Icon(PulseIcons.Link, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
@@ -483,12 +477,12 @@ private fun WebhookRow(
             )
         }
         IconButton(onClick = onCopy) {
-            Icon(Icons.Filled.ContentCopy, contentDescription = "Copy webhook URL", modifier = Modifier.size(15.dp))
+            Icon(PulseIcons.Copy, contentDescription = "Copy webhook URL", modifier = Modifier.size(15.dp))
         }
         if (isAdmin) {
             IconButton(onClick = onDelete) {
                 Icon(
-                    Icons.Filled.Delete,
+                    PulseIcons.Trash,
                     contentDescription = "Delete webhook \"${webhook.name}\"",
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(16.dp),

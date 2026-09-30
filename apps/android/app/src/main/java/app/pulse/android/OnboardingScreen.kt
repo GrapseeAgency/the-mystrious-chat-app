@@ -1,5 +1,6 @@
 package app.pulse.android
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -37,12 +38,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.Login
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -284,7 +279,7 @@ private fun NameStep(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             PulsePrimaryButton(
                 text = "Continue",
-                icon = Icons.AutoMirrored.Filled.ArrowForward,
+                icon = PulseIcons.ArrowRight,
                 enabled = validName && !busy,
                 onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -294,7 +289,7 @@ private fun NameStep(
             if (state.nameTaken) {
                 PulseLoginButton(
                     text = if (state.signingIn) "Signing you in…" else "That's me — log in instead",
-                    icon = Icons.AutoMirrored.Filled.Login,
+                    icon = PulseIcons.Login,
                     loading = state.signingIn,
                     enabled = validName && !state.signingIn,
                     onClick = { viewModel.loginInstead() },
@@ -344,7 +339,7 @@ private fun HandleStep(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
+                    PulseIcons.ChevronLeft,
                     contentDescription = "Back to name step",
                     tint = Zinc500,
                     modifier = Modifier.size(18.dp),
@@ -440,7 +435,7 @@ private fun HandleStep(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             PulsePrimaryButton(
                 text = if (state.pending) "Creating your account…" else "Start chatting",
-                icon = if (state.pending) null else Icons.AutoMirrored.Filled.ArrowForward,
+                icon = if (state.pending) null else PulseIcons.ArrowRight,
                 enabled = canSubmit,
                 loading = state.pending,
                 onClick = {
@@ -557,7 +552,7 @@ private fun SwatchRow(selected: String, onSelect: (String) -> Unit) {
             ) {
                 if (isSelected) {
                     Icon(
-                        Icons.Filled.Check,
+                        PulseIcons.Check,
                         contentDescription = "${sw.name} avatar selected",
                         tint = White,
                         modifier = Modifier.size(16.dp),
@@ -782,7 +777,7 @@ private fun TipCard() {
         verticalAlignment = Alignment.Top,
     ) {
         Icon(
-            Icons.Filled.AutoAwesome,
+            PulseIcons.Sparkle,
             contentDescription = null,
             tint = Emerald500,
             modifier = Modifier.size(14.dp),

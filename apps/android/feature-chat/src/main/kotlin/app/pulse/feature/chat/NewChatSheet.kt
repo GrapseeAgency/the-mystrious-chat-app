@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -22,14 +23,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.Radio
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -303,7 +296,7 @@ fun NewChatSheet(
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close")
+                    Icon(PulseIcons.X, contentDescription = "Close")
                 }
             }
 
@@ -350,7 +343,7 @@ fun NewChatSheet(
                     onValueChange = { search = it },
                     placeholder = { Text("Search people…") },
                     singleLine = true,
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(17.dp)) },
+                    leadingIcon = { Icon(PulseIcons.Search, contentDescription = null, modifier = Modifier.size(17.dp)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 NewChatMode.GROUP -> Column {
@@ -401,7 +394,7 @@ fun NewChatSheet(
                                 )
                             } else {
                                 Icon(
-                                    Icons.Filled.PhotoCamera,
+                                    PulseIcons.Camera,
                                     contentDescription = if (photo == null) "Add a channel photo" else "Replace channel photo",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(20.dp),
@@ -425,7 +418,7 @@ fun NewChatSheet(
                         }
                         if (state.channelPhoto != null) {
                             IconButton(onClick = viewModel::clearChannelPhoto) {
-                                Icon(Icons.Filled.Close, contentDescription = "Remove channel photo", modifier = Modifier.size(16.dp))
+                                Icon(PulseIcons.X, contentDescription = "Remove channel photo", modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -476,7 +469,7 @@ fun NewChatSheet(
                             Modifier.fillMaxWidth().padding(vertical = 28.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Icon(Icons.Filled.Groups, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(26.dp))
+                            Icon(PulseIcons.Users, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(26.dp))
                             Text(
                                 "No one else has joined yet. Open a second browser tab and create another account.",
                                 fontSize = 11.5.sp,
@@ -537,7 +530,7 @@ fun NewChatSheet(
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             if (checked) {
-                                                Icon(Icons.Filled.Check, contentDescription = null, tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(13.dp))
+                                                Icon(PulseIcons.Check, contentDescription = null, tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(13.dp))
                                             }
                                         }
                                     }
@@ -585,7 +578,7 @@ fun NewChatSheet(
 
 /** The web sheet's three-way segmented control (Direct / Group / Channel). */
 internal enum class NewChatMode(val label: String, val icon: ImageVector) {
-    DIRECT("Direct", Icons.Filled.ChatBubble),
-    GROUP("Group", Icons.Filled.Groups),
-    CHANNEL("Channel", Icons.Filled.Radio),
+    DIRECT("Direct", PulseIcons.ChatBubble),
+    GROUP("Group", PulseIcons.Users),
+    CHANNEL("Channel", PulseIcons.Radio),
 }

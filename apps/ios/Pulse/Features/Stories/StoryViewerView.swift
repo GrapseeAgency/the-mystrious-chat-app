@@ -204,7 +204,7 @@ struct StoryViewerView: View {
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 4)
-                                        .background(Capsule().fill(PulseTheme.emeraldDeep))
+                                        .background(Capsule().fill(PulseTheme.emberChrome))
                                         .offset(x: 8, y: -4)
                                 }
                             }
@@ -339,7 +339,8 @@ struct StoryViewerView: View {
     private var viewersSheet: some View {
         NavigationStack {
             ZStack {
-                PulseTheme.pageWash.ignoresSafeArea()
+                // PULSE EMBER (EMB-I): sunset ground under the viewers sheet.
+                Rectangle().fill(PulseTheme.emberBackdrop).ignoresSafeArea()
                 Group {
                     if stories.viewers.isEmpty {
                         VStack(spacing: 8) {
@@ -384,6 +385,9 @@ struct StoryViewerView: View {
                     }
                 }
             }
+            // PULSE EMBER (EMB-I): the sheet subtree pins dark on the ground.
+            .environment(\.colorScheme, .dark)
+            .tint(.white)
             .navigationTitle("Viewers · \(stories.viewers.count)")
             .navigationBarTitleDisplayMode(.inline)
         }

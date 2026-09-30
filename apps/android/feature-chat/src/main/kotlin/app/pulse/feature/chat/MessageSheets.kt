@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.ui.PulseIcons
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,28 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.Forward
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.ViewKanban
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Poll
-import androidx.compose.material.icons.filled.PushPin
 // R1-W2F — F-MD-06 translation action.
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -83,7 +63,7 @@ import app.pulse.domain.model.Message
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulsePalette
 
-/** Wave 1 wire-whitelist palette (spec §1.1 — 🙏 replaced by 🎉 for compliance). */
+/** Wave 1 wire-whitelist palette (spec §1.1, gratitude glyph replaced by party glyph for compliance). */
 internal val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "🎉")
 
 /**
@@ -104,7 +84,7 @@ internal fun PollBuilderSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Poll, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(20.dp))
+                Icon(PulseIcons.Poll, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("New poll", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text(
@@ -144,14 +124,14 @@ internal fun PollBuilderSheet(
                     )
                     if (options.size > 2) {
                         IconButton(onClick = { options = options.filterIndexed { i, _ -> i != index } }) {
-                            Icon(Icons.Filled.Close, contentDescription = "Remove option", modifier = Modifier.size(16.dp))
+                            Icon(PulseIcons.X, contentDescription = "Remove option", modifier = Modifier.size(16.dp))
                         }
                     }
                 }
             }
             if (options.size < 6) {
                 TextButton(onClick = { options = options + "" }) {
-                    Icon(Icons.Filled.Add, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
+                    Icon(PulseIcons.Plus, contentDescription = null, tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Add option", color = PulsePalette.Emerald)
                 }
@@ -230,46 +210,46 @@ internal fun MessageActionSheet(
             }
         }
         Spacer(Modifier.height(4.dp))
-        SheetAction(Icons.AutoMirrored.Filled.Reply, "Reply", onReply)
+        SheetAction(PulseIcons.Reply, "Reply", onReply)
         if (canThread) {
-            SheetAction(Icons.Filled.Forum, "Reply in thread", onReplyInThread)
+            SheetAction(PulseIcons.ChatBubble, "Reply in thread", onReplyInThread)
         }
         if (isMine && message.kind == Message.Kind.TEXT && message.imagePath == null && message.filePath == null) {
-            SheetAction(Icons.Filled.Edit, "Edit", onEdit)
+            SheetAction(PulseIcons.Pencil, "Edit", onEdit)
         }
-        SheetAction(Icons.Filled.ContentCopy, "Copy", onCopy)
+        SheetAction(PulseIcons.Copy, "Copy", onCopy)
         // ── R1-W2F F-MD-06 — the message long-press menu's Translate entry ──
         onTranslate?.let {
             SheetAction(
-                Icons.Filled.Translate,
+                PulseIcons.Globe,
                 if (alreadyTranslated) "Translate again" else "Translate",
                 it,
             )
         }
         SheetAction(
-            Icons.Filled.PushPin,
+            PulseIcons.Pin,
             if (pinned) "Unpin" else "Pin",
             onTogglePin,
         )
-        SheetAction(Icons.Outlined.BookmarkBorder, "Save to library", onToggleSave)
-        SheetAction(Icons.Filled.Forward, "Forward", onForward)
-        onShare?.let { SheetAction(Icons.Filled.Share, "Share", it) }
-        onInfo?.let { SheetAction(Icons.Filled.Info, "Info", it) }
+        SheetAction(PulseIcons.Bookmark, "Save to library", onToggleSave)
+        SheetAction(PulseIcons.ArrowRight, "Forward", onForward)
+        onShare?.let { SheetAction(PulseIcons.ShareArrow, "Share", it) }
+        onInfo?.let { SheetAction(PulseIcons.Info, "Info", it) }
         // ── Wave 7: message→kanban card + per-message reminder (web parity) ──
         if (message.kind == Message.Kind.TEXT && !message.isDeleted) {
-            onAddToBoard?.let { SheetAction(Icons.Filled.ViewKanban, "Add to board", it) }
+            onAddToBoard?.let { SheetAction(PulseIcons.Columns, "Add to board", it) }
         }
         // R3-B item 6 — web chat-room.tsx:6372-6379: "Convert to task" for
         // TOP-LEVEL text rows (parentId === null), LoaderCircle while pending.
         // Checklist is the native stand-in for the web's lucide checklist glyph.
         if (message.kind == Message.Kind.TEXT && !message.isDeleted && message.threadRootId == null) {
             onConvertToTask?.let {
-                SheetAction(Icons.Filled.Checklist, "Convert to task", it, busy = taskPending, enabled = !taskPending)
+                SheetAction(PulseIcons.Checks, "Convert to task", it, busy = taskPending, enabled = !taskPending)
             }
         }
-        onRemindMe?.let { SheetAction(Icons.Filled.Alarm, "Remind me…", it) }
+        onRemindMe?.let { SheetAction(PulseIcons.Clock, "Remind me…", it) }
         onDelete?.let {
-            SheetAction(Icons.Filled.Delete, "Delete", it, tint = PulsePalette.Rose)
+            SheetAction(PulseIcons.Trash, "Delete", it, tint = PulsePalette.Rose)
         }
         Spacer(Modifier.height(28.dp))
     }
@@ -362,7 +342,7 @@ internal fun ForwardSheet(
                     ) {
                         if (isSelected) {
                             Icon(
-                                Icons.Filled.Check,
+                                PulseIcons.Check,
                                 contentDescription = "Selected",
                                 tint = PulsePalette.Emerald,
                                 modifier = Modifier.size(18.dp),
@@ -503,7 +483,7 @@ private fun MemberRow(member: ConversationMember, check: Boolean) {
         if (check) {
             PulseCheckCheck(tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
         } else {
-            Icon(Icons.Outlined.Schedule, contentDescription = "Delivered", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            Icon(PulseIcons.Clock, contentDescription = "Delivered", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
         }
     }
 }
@@ -519,11 +499,11 @@ internal fun PinsDialog(
         Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.PushPin, contentDescription = null, tint = PulsePalette.Amber, modifier = Modifier.size(18.dp))
+                    Icon(PulseIcons.Pin, contentDescription = null, tint = PulsePalette.Amber, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Pinned messages", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Filled.Close, contentDescription = "Close", modifier = Modifier.size(18.dp))
+                        Icon(PulseIcons.X, contentDescription = "Close", modifier = Modifier.size(18.dp))
                     }
                 }
                 LazyColumn(
