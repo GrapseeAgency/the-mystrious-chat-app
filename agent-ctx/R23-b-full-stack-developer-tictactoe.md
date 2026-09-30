@@ -12,7 +12,7 @@ Agent: full-stack-developer (tic-tac-toe) · Date: 2026-09-04 · Status: DONE (A
 ## API contracts (wire shapes)
 - `POST /api/games {userId, conversationId, game?='tictactoe', opponentId?}`
   → `201 { match, message }` — message identical to messages-API POST shape (mapMessage),
-    kind `'game'`, content `'⚔️ Tic-tac-toe challenge'` / `'⚔️ Tic-tac-toe — open challenge'`,
+    kind `'game'`, content `' Tic-tac-toe challenge'` / `' Tic-tac-toe — open challenge'`,
     payload `{"matchId":"…","game":"tictactoe"}`.
   Guards: 404 conv · 403 caller not participant · 400 opponent==self · 400 opponent not participant.
 - `GET /api/games?conversationId=` → `{ matches: Match[] }` newest-first take 25 (400/404 guarded).
@@ -47,7 +47,7 @@ Agent: full-stack-developer (tic-tac-toe) · Date: 2026-09-04 · Status: DONE (A
 2. **`pulse:external-message` listener**: append `detail` (ChatMessage) to the live list when `detail.conversationId === current room` — required for the rematch SENDER (others already get socket `message:new`).
 3. **Composer entry (optional)**: `/game` slash command or tray tile → `POST /api/games {userId: me.id, conversationId}` (omit opponentId = open challenge) → dispatch `pulse:external-message` with `res.message`.
 4. **Gotcha**: messages POST route whitelists kind (`MESSAGE_KINDS`) and will 400 `'game'` — invites must be created via `POST /api/games`; messages GET returns `kind:'game'` untouched.
-5. Chats-list preview shows the ⚔️ content text — acceptable as-is.
+5. Chats-list preview shows the  content text — acceptable as-is.
 
 ## Backlog
 Socket push on move/join (drop poll latency) · tournaments on GameMatch · bot opponent for O · connect-four on the same endpoints.

@@ -137,16 +137,6 @@ export function buzz(pattern: number = 20): void {
 
 // Messages 
 
-/** Reaction palette shown in the message action sheet + chips. */
-export const REACTION_CHOICES = ['👍', '❤️', '😂', '😮', '😢', '🎉'] as const
-
-/** Quick composer emoji strip. */
-export const EMOJI_PICKER_CHOICES = [
-  '😀', '😂', '🥹', '😍', '😎', '🤔', '😴', '🥳',
-  '👍', '🙏', '👏', '🔥', '❤️', '💜', '✨', '🎉',
-  '🚀', '🌈', '☀️', '🌙', '☕', '🍕', '🎂', '⚽',
-] as const
-
 const JUMBO_EMOJI_RE = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\s|\u200d|\ufe0f){1,9}$/u
 
 /** Pure-emoji short messages render extra large (WhatsApp-style). */

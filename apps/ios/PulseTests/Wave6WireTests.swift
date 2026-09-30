@@ -183,10 +183,10 @@ final class Wave6WireTests: XCTestCase {
 
     func testFolderEnvelopeDecodes() throws {
         let envelope = try decode(WireFolderEnvelope.self, """
-        {"folder":{"id":"f1","name":"Work","emoji":"💼","position":2,"conversationIds":["c1","c2"]}}
+        {"folder":{"id":"f1","name":"Work","emoji":"briefcase","position":2,"conversationIds":["c1","c2"]}}
         """)
         XCTAssertEqual(envelope.folder.name, "Work")
-        XCTAssertEqual(envelope.folder.emoji, "💼")
+        XCTAssertEqual(envelope.folder.emoji, "briefcase")
         XCTAssertEqual(envelope.folder.conversationIds, ["c1", "c2"])
     }
 }

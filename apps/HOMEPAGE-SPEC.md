@@ -209,8 +209,8 @@ Body: `bg-white/80 dark:bg-zinc-900/70`, **inset hairline** `ring-white/40` (dar
    amber-500 + **"Draft:"** amber-600 semibold + italic draft text zinc-500 truncate.
 3. **Preview**: prefix (zinc-400): `You: ` when my message · `<Sender>: ` in groups ·
    `↩ ` prefix when reply. Text 13dp; unread → medium zinc-600 (dark zinc-300), else
-   zinc-500 (dark zinc-400). Special texts: deleted → **"🚫 message deleted"** (italic);
-   image-only → **"📷 Photo"**; audio-only → **"🎤 Voice message"**; file →
+   zinc-500 (dark zinc-400). Special texts: deleted → **" message deleted"** (italic);
+   image-only → **" Photo"**; audio-only → **" Voice message"**; file →
    **"Document — <fileName>"**. (These strings match the web exactly, emoji included.)
 
 **Trailing status** (18dp height zone):
@@ -286,7 +286,7 @@ screen cover/push.
   rows: sender avatar 40dp (+16dp group badge), conversation name 13dp semibold, time stamp
   11dp zinc-400, snippet 13dp zinc-500 with the match **highlighted** (`emerald-500/20`
   rounded mark, semibold emerald text), ≤64-char clip window with "…" clippings; deleted →
-  italic "Deleted message"; image → "📷 Photo"; document caption miss → "Document — <file>".
+  italic "Deleted message"; image → " Photo"; document caption miss → "Document — <file>".
 - Query length 1: hint **"Keep typing to search inside messages…"** (centered 12dp zinc-400).
 - No matches anywhere: Search glyph 32dp zinc-300, **"No matches"** 13dp medium zinc-500,
   **"Nothing here for "<q>"."** 12dp zinc-400.

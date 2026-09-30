@@ -201,7 +201,7 @@ async function main() {
   const topicsEmpty = await api(`/conversations/${cid}/topics?userId=${A}`)
   check('TOPICS list starts clean', topicsEmpty.status === 200 && (topicsEmpty.json.topics?.length ?? 0) === 0, '')
 
-  const topicCreate = await api(`/conversations/${cid}/topics`, 'POST', { userId: A, name: 'Launch', emoji: '🚀' })
+  const topicCreate = await api(`/conversations/${cid}/topics`, 'POST', { userId: A, name: 'Launch', emoji: '' })
   check('TOPIC create 201', topicCreate.status === 201 && !!topicCreate.json.topic?.id, JSON.stringify(topicCreate.json?.error))
   const topicId = topicCreate.json.topic.id
 

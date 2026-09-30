@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
@@ -1573,6 +1574,24 @@ private fun DockTabButton(
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                 letterSpacing = if (active) 0.2.sp else 0.sp,
                 color = if (active) activeTint else inactiveTint,
+            )
+            Spacer(Modifier.height(3.dp))
+            // R19-a - the active dock indicator: a soft mint glow bar under
+            // the active icon (alpha-animated, inert when inactive).
+            Box(
+                Modifier
+                    .size(width = 16.dp, height = 3.dp)
+                    .alpha(if (active) 1f else 0f)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                DockEmerald600.copy(alpha = 0.35f),
+                                DockEmerald600,
+                                DockEmerald600.copy(alpha = 0.35f),
+                            ),
+                        ),
+                    ),
             )
         }
     }

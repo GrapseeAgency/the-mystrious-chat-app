@@ -4,9 +4,10 @@ import CoreLocation
 // REM-B P2/P3 - messaging-flow surfaces (web parity, native sheets):
 //   • ScheduleSheet         - F-MS-18 delayed send (30 s – 30 d window)
 //   • ScheduledManagerSheet - F-MS-18 list + cancel pending rows
-//   • ReactionPickerSheet   - F-MS-08 the web's exact 24-emoji picker grid
+//   • ReactionPickerSheet   - F-MS-08 the 7 reaction ids as glyph tiles
 //   • WhoReactedSheet       - F-MS-08 long-press chip → who-reacted list
-//   • StickerPickerSheet    - F-MS-24 the web's 5 packs (kind "sticker")
+//   • StickerPickerSheet    - F-MS-24 the 5 stamp packs (kind "sticker",
+//                             payload value = stamp id)
 //   • SlashPaletteView      - F-MS-22 '/'-trigger palette above the composer
 // R1-W2B additions:
 //   • LocationShareSheet    - F-MD-07 CoreLocation fix → kind "location" pin
@@ -210,18 +211,13 @@ struct ScheduledManagerSheet: View {
     }
 }
 
-/// F-MS-08 - the web's EXACT 24-emoji picker grid (EMOJI_PICKER_CHOICES,
-/// pulse-utils.ts:146-150) used as the extended reaction picker.
+/// F-MS-08 - the reaction picker (R19-b): the 7 REACTION_IDS as designed
+/// glyph tiles (SF Symbols on the accent), values are STABLE IDS - the
+/// react POST body key keeps its historical name, the value domain is ids.
 struct ReactionPickerSheet: View {
-    let onPick: (String) -> Void
+    let onPick: (PulseReactionId) -> Void
 
     @Environment(\.dismiss) private var dismiss
-
-    static let choices = [
-        "😀", "😂", "🥹", "😍", "😎", "🤔", "😴", "🥳",
-        "👍", "🙏", "👏", "🔥", "❤️", "💜", "✨", "🎉",
-        "🚀", "🌈", "☀️", "🌙", "☕", "🍕", "🎂", "⚽",
-    ]
 
     var body: some View {
         VStack(spacing: 12) {
@@ -232,31 +228,34 @@ struct ReactionPickerSheet: View {
             Text("React")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 10) {
-                ForEach(Self.choices, id: \.self) { emoji in
+            HStack(spacing: 6) {
+                ForEach(PulseReactionId.allCases, id: \.self) { reaction in
                     Button {
                         PulseHaptics.tap()
-                        onPick(emoji)
+                        onPick(reaction)
                         dismiss()
                     } label: {
-                        Text(emoji)
-                            .font(.system(size: 26))
+                        Image(systemName: reaction.symbolName)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(PulseTheme.accent)
                             .frame(width: 40, height: 40)
-                            .background(Circle().fill(Color.secondary.opacity(0.08)))
+                            .background(Circle().fill(PulseTheme.accent.opacity(0.10)))
                     }
                     .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("React with \(emoji)")
+                    .accessibilityLabel("React with \(reaction.label)")
                 }
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 18)
         }
-        .presentationDetents([.height(240)])
+        .presentationDetents([.height(180)])
     }
 }
 
-/// F-MS-08 - who-reacted drawer: per-member list for one emoji group +
-/// the toggle action (web reactionInfo drawer parity).
+/// F-MS-08 - who-reacted drawer: per-member list for one reaction group +
+/// the toggle action (web reactionInfo drawer parity). The group key keeps
+/// its historical name; the value domain is ids - render + send normalize
+/// through the registry (R19-b).
 struct WhoReactedSheet: View {
     let message: WireChatMessage
     let emoji: String
@@ -266,6 +265,8 @@ struct WhoReactedSheet: View {
     var onClosed: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
+
+    private var reaction: PulseReactionId { PulseReactionId.normalize(emoji) }
 
     private var group: WireReactionGroup? {
         (message.reactions ?? []).first { $0.emoji == emoji }
@@ -277,7 +278,9 @@ struct WhoReactedSheet: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 6) {
-                Text(emoji).font(.title3)
+                Image(systemName: reaction.symbolName)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(PulseTheme.accent)
                 Text(group?.count == 1 ? "1 reaction" : "\(group?.count ?? 0) reactions")
                     .font(.subheadline.weight(.bold))
             }
@@ -302,7 +305,7 @@ struct WhoReactedSheet: View {
                 if let viewerId {
                     Task {
                         do {
-                            _ = try await session.api.react(messageId: message.id, emoji: emoji)
+                            _ = try await session.api.react(messageId: message.id, emoji: reaction.rawValue)
                         } catch {
                             session.toasts.show(RoomViewModel.describe(error))
                         }
@@ -311,13 +314,14 @@ struct WhoReactedSheet: View {
                 dismiss()
             } label: {
                 HStack(spacing: 6) {
-                    Text(emoji)
-                    Text(iReacted ? "Remove your reaction" : "React \(emoji)")
+                    Image(systemName: reaction.symbolName)
+                        .font(.system(size: 14, weight: .medium))
+                    Text(iReacted ? "Remove your reaction" : "React with \(reaction.label)")
                         .font(.subheadline.weight(.bold))
                 }
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .background(RoundedRectangle(cornerRadius: 14).fill(PulseTheme.emerald))
-                .foregroundStyle(.white)
+                .background(RoundedRectangle(cornerRadius: 14).fill(PulseTheme.accent))
+                .foregroundStyle(PulseTheme.onAccent)
             }
             .buttonStyle(PulseButtonStyle())
             .disabled(viewerId == nil)
@@ -329,8 +333,12 @@ struct WhoReactedSheet: View {
     }
 }
 
-/// F-MS-24 - the web sticker-picker packs (verbatim 5 × 10). Picking posts
-/// kind "sticker" with payload { emoji, pack } (chat-room parseSticker shape).
+/// F-MS-24 - the stamp picker (R19-b): the web's 5 STAMP_PACKS verbatim
+/// (Signal / Celebrate / Create / Nature / Marks). Picking posts kind
+/// "sticker" with payload { emoji, pack } - the payload key keeps its
+/// historical name, the VALUE is the stamp id. Tiles render the stamp's
+/// SF Symbol large on the pack gradient; recents keep their AppStorage
+/// key and normalize legacy values through the registry on render.
 struct StickerPickerSheet: View {
     let onPick: (_ emoji: String, _ pack: String) -> Void
 
@@ -352,39 +360,55 @@ struct StickerPickerSheet: View {
                         .padding(.horizontal, 12)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            ForEach(recents, id: \.emoji) { pick in
-                                tile(pick.emoji, pack: pick.pack, size: 44, fontSize: 22)
+                            ForEach(recents, id: \.self) { pick in
+                                tile(PulseStampId.normalize(pick.emoji), packName: pick.pack, size: 44)
                             }
                         }
                         .padding(.horizontal, 12)
                     }
                 }
             }
-            Picker("Pack", selection: $packIndex) {
-                ForEach(Array(PulseRemediationLogic.stickerPacks.enumerated()), id: \.offset) { index, pack in
-                    Image(systemName: pack.badge).tag(index)
+            // pack selector - custom capsules with the pack badge glyph
+            HStack(spacing: 6) {
+                ForEach(Array(PulseRemediationLogic.stampPacks.enumerated()), id: \.offset) { index, pack in
+                    Button {
+                        PulseHaptics.tap()
+                        packIndex = index
+                    } label: {
+                        Image(systemName: pack.badge)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(index == packIndex ? PulseTheme.onAccent : PulseTheme.textSecondary)
+                            .frame(width: 40, height: 30)
+                            .background(
+                                Capsule().fill(index == packIndex ? PulseTheme.accent : PulseTheme.glassFill),
+                            )
+                            .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .accessibilityLabel("\(pack.name) pack")
+                    .accessibilityAddTraits(index == packIndex ? [.isSelected] : [])
                 }
             }
-            .pickerStyle(.segmented)
             .padding(.horizontal, 12)
-            let active = PulseRemediationLogic.stickerPacks[packIndex]
+            let active = PulseRemediationLogic.stampPacks[packIndex]
             ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                    ForEach(active.items, id: \.self) { emoji in
-                        tile(emoji, pack: active.name, size: 74, fontSize: 38)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                    ForEach(active.items, id: \.self) { stamp in
+                        tile(stamp, packName: active.name, size: 78)
                     }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 14)
                 .padding(.bottom, 16)
             }
-            Text("\(active.name) pack · tap to send")
+            Text("\(active.name) pack - tap to send")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
         .presentationDetents([.medium, .large])
     }
 
-    struct RecentPick: Codable, Equatable {
+    /// Hashable feeds the ForEach(id: \.self) recents row.
+    struct RecentPick: Codable, Hashable {
         let emoji: String
         let pack: String
     }
@@ -395,29 +419,37 @@ struct StickerPickerSheet: View {
         return Array(picks.prefix(12))
     }
 
-    private func remember(_ emoji: String, pack: String) {
-        var picks = recents.filter { $0.emoji != emoji || $0.pack != pack }
-        picks.insert(RecentPick(emoji: emoji, pack: pack), at: 0)
+    private func remember(_ stamp: PulseStampId, pack: String) {
+        var picks = recents.filter { $0.emoji != stamp.rawValue || $0.pack != pack }
+        picks.insert(RecentPick(emoji: stamp.rawValue, pack: pack), at: 0)
         if picks.count > 12 { picks = Array(picks.prefix(12)) }
         recentsRaw = String(data: (try? JSONEncoder().encode(picks)) ?? Data(), encoding: .utf8) ?? ""
     }
 
-    private func tile(_ emoji: String, pack: String, size: CGFloat, fontSize: CGFloat) -> some View {
-        Button {
+    /// One stamp tile - large SF Symbol on the pack gradient
+    /// (web StampTile: rounded-2xl gradient card, white glyph).
+    private func tile(_ stamp: PulseStampId, packName: String, size: CGFloat) -> some View {
+        let pack = PulseRemediationLogic.stampGradientPack(named: packName)
+        return Button {
             PulseHaptics.tap()
-            remember(emoji, pack: pack)
-            onPick(emoji, pack)
+            remember(stamp, pack: pack.name)
+            onPick(stamp.rawValue, pack.name)
         } label: {
-            Text(emoji)
-                .font(.system(size: fontSize))
+            Image(systemName: stamp.symbolName)
+                .font(.system(size: size * 0.42, weight: .medium))
+                .foregroundStyle(.white)
                 .frame(width: size, height: size)
                 .background(
                     RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                        .fill(PulseTheme.emerald.opacity(0.10)),
+                        .fill(LinearGradient(
+                            colors: [Color(hex: pack.gradientFrom), Color(hex: pack.gradientTo)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing,
+                        )),
                 )
+                .shadow(color: Color(hex: pack.gradientTo).opacity(0.30), radius: 5, y: 2)
         }
         .buttonStyle(PulseButtonStyle())
-        .accessibilityLabel("Send \(emoji) sticker from \(pack)")
+        .accessibilityLabel("Send the \(stamp.label) stamp from \(pack.name)")
     }
 }
 

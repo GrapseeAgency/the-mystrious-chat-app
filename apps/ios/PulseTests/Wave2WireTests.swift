@@ -116,18 +116,18 @@ final class Wave2WireTests: XCTestCase {
 
     func testWireTopicPageAndEnvelopeDecode() throws {
         let topicJson = """
-        {"id":"t1","name":"Design","emoji":"🎨","lastMessageAt":"2026-09-08T11:00:00.000Z","messageCount":12}
+        {"id":"t1","name":"Design","emoji":"palette","lastMessageAt":"2026-09-08T11:00:00.000Z","messageCount":12}
         """
         let topic = try JSONDecoder().decode(WireTopic.self, from: Data(topicJson.utf8))
         XCTAssertEqual(topic.id, "t1")
         XCTAssertEqual(topic.name, "Design")
-        XCTAssertEqual(topic.emoji, "🎨")
+        XCTAssertEqual(topic.emoji, "palette")
         XCTAssertEqual(topic.lastMessageAt, "2026-09-08T11:00:00.000Z")
         XCTAssertEqual(topic.messageCount, 12)
 
         let page = try JSONDecoder().decode(
             WireTopicsPage.self,
-            from: Data(#"{"topics":[{"id":"t1","name":"Design","emoji":"🎨","lastMessageAt":"2026-09-08T11:00:00.000Z","messageCount":12}]}"#.utf8),
+            from: Data(#"{"topics":[{"id":"t1","name":"Design","emoji":"palette","lastMessageAt":"2026-09-08T11:00:00.000Z","messageCount":12}]}"#.utf8),
         )
         XCTAssertEqual(page.topics?.count, 1)
         let empty = try JSONDecoder().decode(WireTopicsPage.self, from: Data("{}".utf8))
@@ -136,11 +136,11 @@ final class Wave2WireTests: XCTestCase {
         // POST …/topics answers { topic } on both 200-dedupe and 201-create;
         // the envelope unwraps it (bare-object fallback stays defensive).
         let wrapped = try WireTopicEnvelope.extract(
-            from: Data(#"{"topic":{"id":"t2","name":"QA","emoji":"💬","lastMessageAt":"2026-09-08T11:30:00.000Z","messageCount":0}}"#.utf8),
+            from: Data(#"{"topic":{"id":"t2","name":"QA","emoji":"chat","lastMessageAt":"2026-09-08T11:30:00.000Z","messageCount":0}}"#.utf8),
         )
         XCTAssertEqual(wrapped.id, "t2")
         let bare = try WireTopicEnvelope.extract(
-            from: Data(#"{"id":"t2","name":"QA","emoji":"💬","lastMessageAt":"2026-09-08T11:30:00.000Z","messageCount":0}"#.utf8),
+            from: Data(#"{"id":"t2","name":"QA","emoji":"chat","lastMessageAt":"2026-09-08T11:30:00.000Z","messageCount":0}"#.utf8),
         )
         XCTAssertEqual(bare.name, "QA")
     }

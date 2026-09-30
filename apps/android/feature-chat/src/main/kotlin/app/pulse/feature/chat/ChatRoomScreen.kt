@@ -61,6 +61,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
 // R6 - M5: the DM dead-end notice icon (web chat-room Ban).
 import androidx.compose.material.icons.filled.Block
@@ -98,7 +99,6 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ScheduleSend
-import androidx.compose.material.icons.filled.SentimentSatisfied
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Speed
@@ -141,10 +141,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
@@ -178,11 +180,16 @@ import app.pulse.domain.model.LinkPreviewInfo
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.domain.model.Topic
+import app.pulse.protocol.REACTION_DEFAULT
 import app.pulse.protocol.TOPIC_ICON_DEFAULT
 import app.pulse.protocol.TOPIC_ICON_IDS
+import app.pulse.protocol.reactionId
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.isPulseDarkTheme
+import app.pulse.ui.pulseReactionGlyph
+import app.pulse.ui.pulseReactionLabel
 import app.pulse.ui.pulseTopicGlyph
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
@@ -250,7 +257,9 @@ fun ChatRoomScreen(
     val transcribingIds by viewModel.transcribingIds.collectAsStateWithLifecycle()
     // Wave 8 - prefs-driven room rendering (bubble corners, density, wallpaper)
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
-    val bubbleCorner = when (prefs.bubbleRadius) { "md" -> 10.dp; "pill" -> 26.dp; else -> 16.dp }
+    // R19-a - base radius maps onto the Neo bubble language (default 20dp,
+    // tight 14dp, pill 28dp); the 4dp tail corner is fixed in Bubble().
+    val bubbleCorner = when (prefs.bubbleRadius) { "md" -> 14.dp; "pill" -> 28.dp; else -> 20.dp }
     val densityGap = if (prefs.density == "compact") 3.dp else 6.dp
     val channelRole by viewModel.channelRole.collectAsStateWithLifecycle()
     val safety by viewModel.safety.collectAsStateWithLifecycle()
@@ -292,7 +301,8 @@ fun ChatRoomScreen(
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
-    // R5-B ITEM 1 - emoji appends re-focus the composer through this handle.
+    // Quick-phrase rail refocuses the composer through this handle
+    // (R19-a: the emoji picker that shared it was removed).
     val composerFocus = remember { FocusRequester() }
 
     var draft by remember { mutableStateOf("") }
@@ -313,9 +323,8 @@ fun ChatRoomScreen(
     var wasEditing by remember { mutableStateOf(false) }
     var expandedFor by remember { mutableStateOf<String?>(null) }
     var scrolledFlash by remember { mutableStateOf<String?>(null) }
-    // R1-W2A - reaction picker / who-reacted / stickers / slash help /
+    // R1-W2A - who-reacted / stickers / slash help /
     // schedule / quick-phrases hosts (D27, F-MS-24, F-MS-22, F-MS-29).
-    var reactionPickerTarget by remember { mutableStateOf<Message?>(null) }
     var whoReactedFor by remember { mutableStateOf<Pair<Message, String>?>(null) }
     var stickerOpen by remember { mutableStateOf(false) }
     var scheduleOpen by remember { mutableStateOf(false) }
@@ -324,8 +333,7 @@ fun ChatRoomScreen(
     var helpOpen by remember { mutableStateOf(false) }
     // R6 - M2: the quick-phrase manager now lives on the VM (viewModel.phrasesOpen)
     // so the rail's "manage" chip reaches it - the screen-local flag was a dead end.
-    // R5-B ITEM 1 - composer emoji picker (draft-EDIT engine, distinct from stickers).
-    var emojiOpen by remember { mutableStateOf(false) }
+    // R19-a - the composer emoji picker is REMOVED (feature retirement).
     // R1-W2F - location share sheet (F-MD-07) + theme picker (F-FX-05).
     var locationOpen by remember { mutableStateOf(false) }
     var locationDenied by remember { mutableStateOf(false) }
@@ -920,7 +928,9 @@ fun ChatRoomScreen(
                                 onOpenThread = { onOpenThread(conversationId, message.id) },
                                 // D27 - long-press a reaction chip → who-reacted sheet.
                                 onWhoReacted = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
-                                    { emoji -> whoReactedFor = message to emoji }
+                                    // R19-a - the value handed over is the NORMALIZED
+                                    // reaction id (the chip row normalizes before invoking).
+                                    { id -> whoReactedFor = message to id }
                                 } else {
                                     null
                                 },
@@ -929,8 +939,11 @@ fun ChatRoomScreen(
                                 // :7389-7394: particles only when the tap ADDS the reaction).
                                 onDoubleClick = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                                     {
+                                        // R19-a - double-tap sends the registry default
+                                        // reaction id ("heart"); legacy stored values
+                                        // normalize through reactionId on the compare.
                                         val addsHeart = message.reactions.none {
-                                            it.emoji == "❤️" && it.userId == viewerId
+                                            reactionId(it.emoji) == REACTION_DEFAULT && it.userId == viewerId
                                         }
                                         if (addsHeart) {
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -939,7 +952,7 @@ fun ChatRoomScreen(
                                                 count = 28,
                                             )
                                         }
-                                        viewModel.react(message.id, "❤️")
+                                        viewModel.react(message.id, REACTION_DEFAULT)
                                     }
                                 } else {
                                     null
@@ -1629,7 +1642,22 @@ fun ChatRoomScreen(
                     Text("Only admins can post", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        } else Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+        } else {
+            // R19-a custom input bar - no tonal elevation: neo surface panel
+            // with a hairline TOP edge, and the field side wrapped in a glass
+            // capsule (neoSurface2 fill + hairline rim).
+            val darkBar = isPulseDarkTheme()
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(if (darkBar) PulsePalette.NeoSurface else MaterialTheme.colorScheme.surface.copy(alpha = 0.97f)),
+            ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(if (darkBar) PulsePalette.Hairline else Color(0xFFE4E4E7)),
+            )
             // D31 hold-to-record - the RIGHT slot is ALWAYS mounted (same node
             // across idle → recording) so the press gesture survives the state
             // change: hold the mic to record, release to send, slide LEFT past
@@ -1649,7 +1677,15 @@ fun ChatRoomScreen(
                             onCancel = viewModel::cancelRecording,
                         )
                     } else {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(26.dp))
+                                .background(if (darkBar) PulsePalette.NeoSurface2 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .border(1.dp, if (darkBar) PulsePalette.Hairline else Color(0xFFE4E4E7), RoundedCornerShape(26.dp))
+                                .padding(end = 2.dp),
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
                             // R3-B item 4 - the incognito arming toggle (web anonNext;
                             // GROUPS only - the server clamps anon off on DMs).
                             if (conversation?.isGroupish == true) {
@@ -1696,8 +1732,7 @@ fun ChatRoomScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .focusRequester(composerFocus)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(22.dp))
-                                    .padding(horizontal = 16.dp, vertical = 11.dp),
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
                                 decorationBox = { inner ->
                                     Box {
                                         if (draft.isEmpty()) {
@@ -1711,35 +1746,6 @@ fun ChatRoomScreen(
                                     }
                                 },
                             )
-                            // R5-B ITEM 1 - the smile button (web chat-room.tsx:5384-5390):
-                            // opens the draft-append emoji popup, never sends.
-                            Box {
-                                IconButton(
-                                    onClick = {
-                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        emojiOpen = !emojiOpen
-                                    },
-                                    modifier = Modifier.clip(CircleShape),
-                                ) {
-                                    Icon(
-                                        Icons.Filled.SentimentSatisfied,
-                                        contentDescription = "Insert emoji",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                if (emojiOpen) {
-                                    EmojiPickerPopup(
-                                        onPick = { emoji ->
-                                            // Append at cursor end + keep the composer
-                                            // focused (web: setInput(prev + emoji) → refocus).
-                                            draft += emoji
-                                            viewModel.onDraftChanged(draft)
-                                            composerFocus.requestFocus()
-                                        },
-                                        onDismiss = { emojiOpen = false },
-                                    )
-                                }
-                            }
                         }
                     }
                 }
@@ -1764,6 +1770,7 @@ fun ChatRoomScreen(
                         sendCurrentDraft()
                     },
                 )
+            }
             }
         }
 
@@ -2102,8 +2109,9 @@ fun ChatRoomScreen(
             canThread = target.threadRootId == null && !target.isDeleted,
             pinned = target.pinnedAt != null,
             onDismiss = { actionTarget = null },
-            onReact = { emoji ->
-                viewModel.react(target.id, emoji)
+            onReact = { id ->
+                // R19-a - the action sheet palette sends reaction ids (QUICK_REACTIONS).
+                viewModel.react(target.id, id)
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 actionTarget = null
             },
@@ -2335,15 +2343,19 @@ internal fun buildTimelineRows(
 
 @Composable
 private fun DaySeparator(label: String, modifier: Modifier = Modifier) {
+    // R19-a custom date chip: neo surface + hairline rim, dim mono-feel label.
+    val dark = isPulseDarkTheme()
     Box(modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
         Text(
             label,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 0.3.sp,
+            color = if (dark) PulsePalette.NeoTextDim else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .clip(RoundedCornerShape(999.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                .background(if (dark) PulsePalette.NeoSurface2 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                .border(1.dp, if (dark) PulsePalette.Hairline else Color.Transparent, RoundedCornerShape(999.dp))
                 .padding(horizontal = 12.dp, vertical = 4.dp),
         )
     }
@@ -3019,14 +3031,20 @@ private fun RoomHeader(
     onStartGroupVoice: (() -> Unit)? = null,
     onStartGroupVideo: (() -> Unit)? = null,
 ) {
-    Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
+    // R19-a custom top bar - no Material TopAppBar, no tonal elevation: carbon
+    // panel + hairline bottom edge, 44dp glow-rimmed glyph tiles.
+    val dark = isPulseDarkTheme()
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(if (dark) PulsePalette.NeoSurface else MaterialTheme.colorScheme.surface.copy(alpha = 0.97f)),
+    ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = if (searchOpen) "Close search" else "Back")
-            }
+            RoomHeaderTile(icon = Icons.AutoMirrored.Filled.ArrowBack, label = if (searchOpen) "Close search" else "Back", dark = dark, onClick = onBack)
+            Spacer(Modifier.width(8.dp))
             PulseAvatar(
                 name = conversation?.title ?: "…",
                 colorHex = conversation?.accentColor,
@@ -3080,14 +3098,8 @@ private fun RoomHeader(
                 }
                 // Wave 6 - DM safety-number entry (web chat-room ShieldCheck).
                 if (onOpenSafety != null) {
-                    IconButton(onClick = onOpenSafety) {
-                        Icon(
-                            Icons.Filled.Shield,
-                            contentDescription = "Safety number",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
+                    Spacer(Modifier.width(4.dp))
+                    RoomHeaderTile(Icons.Filled.Shield, "Safety number", dark, onClick = onOpenSafety)
                 }
             }
             // Wave 5 voice room entry - tints live while this room has a
@@ -3110,76 +3122,49 @@ private fun RoomHeader(
                 }
                 Spacer(Modifier.width(2.dp))
             }
-            IconButton(
-                onClick = onOpenVoiceRoom,
-                modifier = Modifier.semantics {
+            Box(
+                Modifier.semantics {
                     contentDescription = if (voiceJoined) "Open the live voice room" else "Open voice room"
                     stateDescription = if (voiceJoined) "In voice room" else "Not in voice room"
                 },
             ) {
-                Icon(
-                    Icons.Filled.GraphicEq,
-                    contentDescription = null,
-                    tint = if (voiceJoined) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
+                RoomHeaderTile(
+                    icon = Icons.Filled.GraphicEq,
+                    label = if (voiceJoined) "Open the live voice room" else "Open voice room",
+                    dark = dark,
+                    active = voiceJoined,
+                    onClick = onOpenVoiceRoom,
                 )
             }
             // R8 Task 3-c - group voice/video call buttons (web chat-room
             // header parity, aria "Start group voice/video call").
             if (onStartGroupVoice != null) {
-                IconButton(
-                    onClick = onStartGroupVoice,
-                    modifier = Modifier.semantics { contentDescription = "Start group voice call" },
-                ) {
-                    Icon(
-                        Icons.Filled.Call,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                RoomHeaderTile(Icons.Filled.Call, "Start group voice call", dark, onClick = onStartGroupVoice)
             }
             if (onStartGroupVideo != null) {
-                IconButton(
-                    onClick = onStartGroupVideo,
-                    modifier = Modifier.semantics { contentDescription = "Start group video call" },
-                ) {
-                    Icon(
-                        Icons.Filled.Videocam,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                RoomHeaderTile(Icons.Filled.Videocam, "Start group video call", dark, onClick = onStartGroupVideo)
             }
             onOpenLeaderboard?.let {
-                IconButton(onClick = it) {
-                    Icon(
-                        Icons.Filled.EmojiEvents,
-                        contentDescription = "Leaderboard",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                RoomHeaderTile(Icons.Filled.EmojiEvents, "Leaderboard", dark, onClick = it)
             }
-            IconButton(onClick = onToggleSearch) {
-                Icon(
-                    if (searchOpen) Icons.Filled.Close else Icons.Filled.Search,
-                    contentDescription = if (searchOpen) "Close search" else "Search in conversation",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            RoomHeaderTile(
+                icon = if (searchOpen) Icons.Filled.Close else Icons.Filled.Search,
+                label = if (searchOpen) "Close search" else "Search in conversation",
+                dark = dark,
+                active = searchOpen,
+                onClick = onToggleSearch,
+            )
             // R6 - BE7 - reminders (web chat-room header BellRing/Schedule
             // parity): opens the existing RemindersSheet; the emerald badge
             // shows the upcoming (unfired) count when non-zero.
             Box {
-                IconButton(onClick = onOpenReminders) {
-                    Icon(
-                        Icons.Filled.EventRepeat,
-                        contentDescription = if (remindersCount > 0) {
-                            "Reminders - $remindersCount upcoming"
-                        } else {
-                            "Reminders"
-                        },
-                        tint = if (remindersCount > 0) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                RoomHeaderTile(
+                    icon = Icons.Filled.EventRepeat,
+                    label = if (remindersCount > 0) "Reminders - $remindersCount upcoming" else "Reminders",
+                    dark = dark,
+                    active = remindersCount > 0,
+                    onClick = onOpenReminders,
+                )
                 if (remindersCount > 0) {
                     Box(
                         Modifier
@@ -3203,13 +3188,7 @@ private fun RoomHeader(
             // future room actions slot in below.
             var roomMenuOpen by remember { mutableStateOf(false) }
             Box {
-                IconButton(onClick = { roomMenuOpen = true }) {
-                    Icon(
-                        Icons.Filled.MoreVert,
-                        contentDescription = "Room menu",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                RoomHeaderTile(Icons.Filled.MoreVert, "Room menu", dark) { roomMenuOpen = true }
                 DropdownMenu(expanded = roomMenuOpen, onDismissRequest = { roomMenuOpen = false }) {
                     // R2-A item 6/7/8/9 - room info (automations, webhooks,
                     // screen security, photo) - groups/channels only.
@@ -3292,6 +3271,69 @@ private fun RoomHeader(
                 }
             }
         }
+        // R19-a - the custom bar's hairline bottom edge (no elevation shadow).
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(0.5.dp)
+                .background(if (dark) PulsePalette.Hairline else Color(0xFFE4E4E7)),
+        )
+    }
+}
+
+/**
+ * R19-a 44dp glow-rimmed room header tile: quiet carbon tile with a hairline rim;
+ * the active state carries the mint under-glow and mint glyph (the "soft
+ * glow" of the Neo language instead of a Material elevation shadow).
+ */
+@Composable
+private fun RoomHeaderTile(
+    icon: ImageVector,
+    label: String,
+    dark: Boolean,
+    active: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(13.dp)
+    Box(
+        Modifier
+            .size(44.dp)
+            .shadow(
+                elevation = if (active && dark) 8.dp else 0.dp,
+                shape = shape,
+                ambientColor = PulsePalette.NeonMint.copy(alpha = 0.30f),
+                spotColor = PulsePalette.NeonMint.copy(alpha = 0.30f),
+            )
+            .clip(shape)
+            .background(
+                when {
+                    active && dark -> PulsePalette.NeonMint.copy(alpha = 0.14f)
+                    dark -> PulsePalette.NeoSurface2
+                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                },
+            )
+            .border(
+                1.dp,
+                when {
+                    active && dark -> PulsePalette.NeonMint.copy(alpha = 0.45f)
+                    dark -> PulsePalette.Hairline
+                    else -> Color(0xFFE4E4E7)
+                },
+                shape,
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = when {
+                active && dark -> PulsePalette.NeonMint
+                dark -> PulsePalette.NeoTextDim
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
@@ -3648,8 +3690,11 @@ private fun MessageRow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 message.reactions
-                    .groupBy { it.emoji }
-                    .forEach { (emoji, list) ->
+                    // R19-a - group by the NORMALIZED reaction id so legacy stored
+                    // values merge into the id's chip; the glyph map renders the
+                    // designed vector, never the raw stored value.
+                    .groupBy { reactionId(it.emoji) }
+                    .forEach { (id, list) ->
                         val popped by animateFloatAsState(1f, animationSpec = PulseMotion.bouncy(), label = "react")
                         Surface(
                             shape = RoundedCornerShape(999.dp),
@@ -3657,15 +3702,20 @@ private fun MessageRow(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(999.dp))
                                 .combinedClickable(
-                                    onClick = { onWhoReacted?.invoke(emoji) },
-                                    onLongClick = { onWhoReacted?.invoke(emoji) },
+                                    onClick = { onWhoReacted?.invoke(id) },
+                                    onLongClick = { onWhoReacted?.invoke(id) },
                                 ),
                         ) {
                             Row(
                                 Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(emoji, fontSize = 12.sp)
+                                Icon(
+                                    pulseReactionGlyph(id),
+                                    contentDescription = pulseReactionLabel(id),
+                                    tint = PulsePalette.Emerald,
+                                    modifier = Modifier.size(13.dp),
+                                )
                                 if (list.size > 1) {
                                     Spacer(Modifier.width(3.dp))
                                     Text("${list.size}", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -3828,17 +3878,25 @@ internal fun Bubble(
     memberNames: List<String> = emptyList(),
     bubbleCornerDp: androidx.compose.ui.unit.Dp = 16.dp,
 ) {
+    // R19-a bubble language: 20dp neo radius with a 4dp tail corner (the
+    // prefs-driven [bubbleCornerDp] scales the base radius, the tail stays
+    // tight), outgoing = emerald->mint gradient with on-accent ink + a soft
+    // mint glow instead of a Material shadow, incoming = neo surface with the
+    // locked 8% hairline rim.
+    val dark = isPulseDarkTheme()
     val shape = if (mine) {
-        RoundedCornerShape(topStart = bubbleCornerDp, topEnd = bubbleCornerDp, bottomStart = bubbleCornerDp, bottomEnd = 6.dp)
+        RoundedCornerShape(topStart = bubbleCornerDp, topEnd = bubbleCornerDp, bottomStart = bubbleCornerDp, bottomEnd = 4.dp)
     } else {
-        RoundedCornerShape(topStart = bubbleCornerDp, topEnd = bubbleCornerDp, bottomStart = 6.dp, bottomEnd = bubbleCornerDp)
+        RoundedCornerShape(topStart = bubbleCornerDp, topEnd = bubbleCornerDp, bottomStart = 4.dp, bottomEnd = bubbleCornerDp)
     }
     val background: Brush = if (mine) {
-        Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep))
+        Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.NeonMint))
+    } else if (dark) {
+        SolidColor(PulsePalette.NeoSurface)
     } else {
         SolidColor(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))
     }
-    val contentColor = if (mine) Color.White else MaterialTheme.colorScheme.onSurface
+    val contentColor = if (mine) PulsePalette.OnNeonMint else MaterialTheme.colorScheme.onSurface
     val flashAlpha by animateFloatAsState(
         targetValue = if (flashing) 1f else 0f,
         animationSpec = tween(220),
@@ -3849,6 +3907,26 @@ internal fun Bubble(
         shape = shape,
         color = Color.Transparent,
         modifier = modifier
+            .then(
+                // soft accent glow (replaces the default elevation shadow)
+                if (mine && dark) {
+                    Modifier.shadow(
+                        elevation = 8.dp,
+                        shape = shape,
+                        ambientColor = PulsePalette.NeonMint.copy(alpha = 0.22f),
+                        spotColor = PulsePalette.NeonMint.copy(alpha = 0.22f),
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .then(
+                if (!mine && dark) {
+                    Modifier.border(1.dp, PulsePalette.Hairline, shape)
+                } else {
+                    Modifier
+                },
+            )
             .border(2.dp, PulsePalette.Amber.copy(alpha = flashAlpha), shape)
             .then(
                 // R6 - M6: double-tap toggles the heart quick reaction (web
@@ -3878,7 +3956,14 @@ internal fun Bubble(
                 Row(
                     Modifier
                         .clip(RoundedCornerShape(9.dp))
-                        .background(if (mine) Color.White.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                        .background(
+                            if (mine) {
+                                // ink-on-mint quote chip (R19-a outgoing bubble)
+                                PulsePalette.OnNeonMint.copy(alpha = 0.14f)
+                            } else {
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+                            },
+                        )
                         .clickable(enabled = onQuoteClick != null) { onQuoteClick?.invoke(quoteId) }
                         .padding(horizontal = 8.dp, vertical = 5.dp),
                 ) {
@@ -3886,13 +3971,17 @@ internal fun Bubble(
                         Text(
                             message.replyToAuthor ?: "Reply",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (mine) Color.White else PulsePalette.Emerald,
+                            color = if (mine) PulsePalette.OnNeonMint else PulsePalette.Emerald,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
                             replyBody,
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (mine) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (mine) {
+                                PulsePalette.OnNeonMint.copy(alpha = 0.82f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -4266,7 +4355,7 @@ private fun HoldRecordSlot(
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -4293,8 +4382,8 @@ private fun HoldRecordSlot(
             .clip(CircleShape)
             .background(
                 when {
-                    recording -> Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep))
-                    canSend -> Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.EmeraldDeep))
+                    recording -> Brush.linearGradient(listOf(PulsePalette.Emerald, PulsePalette.NeonMint))
+                    canSend -> SolidColor(PulsePalette.NeonMint)
                     else -> SolidColor(MaterialTheme.colorScheme.surfaceVariant)
                 },
                 CircleShape,
@@ -4305,25 +4394,25 @@ private fun HoldRecordSlot(
             recording && sending -> CircularProgressIndicator(
                 modifier = Modifier.size(18.dp),
                 strokeWidth = 2.dp,
-                color = Color.White,
+                color = PulsePalette.OnNeonMint,
             )
             recording -> Icon(
-                Icons.AutoMirrored.Filled.Send,
+                Icons.Filled.ArrowUpward,
                 contentDescription = "Release to send the voice note",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp),
+                tint = PulsePalette.OnNeonMint,
+                modifier = Modifier.size(22.dp),
             )
             micVisible -> Icon(
                 Icons.Filled.Mic,
                 contentDescription = "Hold to record a voice note - slide left to cancel",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.4f),
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(22.dp),
             )
             else -> Icon(
-                Icons.AutoMirrored.Filled.Send,
+                Icons.Filled.ArrowUpward,
                 contentDescription = "Send",
-                tint = if (canSend) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
+                tint = if (canSend) PulsePalette.OnNeonMint else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
             )
         }
     }

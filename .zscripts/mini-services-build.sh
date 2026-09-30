@@ -5,11 +5,11 @@ ROOT_DIR="/home/z/my-project/mini-services"
 DIST_DIR="/tmp/build_fullstack_$BUILD_ID/mini-services-dist"
 
 main() {
-    echo "🚀 开始批量构建..."
+    echo " 开始批量构建..."
     
     # 检查 rootdir 是否存在
     if [ ! -d "$ROOT_DIR" ]; then
-        echo "ℹ️  目录 $ROOT_DIR 不存在，跳过构建"
+        echo "  目录 $ROOT_DIR 不存在，跳过构建"
         return
     fi
     
@@ -36,12 +36,12 @@ main() {
             done
             
             if [ -z "$entry_path" ]; then
-                echo "⚠️  跳过 $project_name: 未找到入口文件 (index.ts/js)"
+                echo "  跳过 $project_name: 未找到入口文件 (index.ts/js)"
                 continue
             fi
             
             echo ""
-            echo "📦 正在构建: $project_name..."
+            echo " 正在构建: $project_name..."
             
             # 使用 bun build CLI 构建
             output_file="$DIST_DIR/mini-service-$project_name.js"
@@ -50,10 +50,10 @@ main() {
                 --outfile "$output_file" \
                 --target bun \
                 --minify; then
-                echo "✅ $project_name 构建成功 -> $output_file"
+                echo " $project_name 构建成功 -> $output_file"
                 success_count=$((success_count + 1))
             else
-                echo "❌ $project_name 构建失败"
+                echo " $project_name 构建失败"
                 fail_count=$((fail_count + 1))
             fi
         fi
@@ -65,11 +65,11 @@ main() {
     fi
     
     echo ""
-    echo "🎉 所有任务完成！"
+    echo " 所有任务完成！"
     if [ $success_count -gt 0 ] || [ $fail_count -gt 0 ]; then
-        echo "✅ 成功: $success_count 个"
+        echo " 成功: $success_count 个"
         if [ $fail_count -gt 0 ]; then
-            echo "❌ 失败: $fail_count 个"
+            echo " 失败: $fail_count 个"
         fi
     fi
 }

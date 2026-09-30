@@ -120,8 +120,8 @@ final class PulseDataLayerTests: XCTestCase {
 
     func testReactionsJsonRoundTripPreservesGroupsAndOrder() {
         let groups = [
-            WireReactionGroup(emoji: "👍", userIds: ["u1", "u2"], count: 2),
-            WireReactionGroup(emoji: "❤️", userIds: ["u9"], count: 1),
+            WireReactionGroup(emoji: "thumbsup", userIds: ["u1", "u2"], count: 2),
+            WireReactionGroup(emoji: "heart", userIds: ["u9"], count: 1),
         ]
         let json = PulseStore.reactionsJsonData(groups)
         XCTAssertTrue(json.contains("\"emoji\""))
@@ -135,7 +135,7 @@ final class PulseDataLayerTests: XCTestCase {
         XCTAssertEqual(PulseStore.reactions(fromJson: nil), [])
         // Corrupt rows must degrade to empty, never throw.
         XCTAssertEqual(PulseStore.reactions(fromJson: "not json"), [])
-        XCTAssertEqual(PulseStore.reactions(fromJson: "{\"emoji\":\"👍\"}"), [])
+        XCTAssertEqual(PulseStore.reactions(fromJson: "{\"emoji\":\"thumbsup\"}"), [])
     }
 
     // Wave 1 envelope shapes (tolerant decode)

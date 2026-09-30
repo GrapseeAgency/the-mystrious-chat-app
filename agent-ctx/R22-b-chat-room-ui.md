@@ -8,13 +8,13 @@ Agent: Z.ai Code · Exclusive file: `src/components/chat/chat-room.tsx` (~270KB 
 - **Floating glass capsule**: `rounded-[26px] backdrop-blur-2xl bg-white/80 dark:bg-zinc-900/70 ring-1 ring-inset shadow-[0_8px_32px]`; strip behind = `bg-zinc-100/80 dark:bg-zinc-950/60` (dock-clearance div color-matched).
 - **Focus ring**: emerald hairline (`ring-emerald-500/40`) overlay, spring.soft opacity/scale via `onFocusCapture/onBlurCapture`.
 - **Keyboard lift**: `visualViewport` resize/scroll + focusin/focusout (rAF-throttled). Overlap = `innerHeight − vv.height − vv.offsetTop`, fires only >90px while a text field holds focus, cap 420px → wrapper `motion.div animate={{ y: −lift }}` spring.soft, `will-change: transform` on the wrapper only.
-- **Layout**: `[+ tray] [textarea] [😊 popover] [mic/send]` — replaced the 4-leading-button crush; sticker/location/poll/schedule/photo moved to the tray. Textarea: borderless inside capsule, grows to 120px (~5 lines) then internal scroll, `transition-[height] 200ms`.
+- **Layout**: `[+ tray] [textarea] [ popover] [mic/send]` — replaced the 4-leading-button crush; sticker/location/poll/schedule/photo moved to the tray. Textarea: borderless inside capsule, grows to 120px (~5 lines) then internal scroll, `transition-[height] 200ms`.
 
 ### 2. Send button morph
 - zinc **dot** (disabled/armed-empty) → **plane** slides in x16→0 rotate−35→0 spring.bouncy on emerald-400→600 gradient → **spinner** while pending (rotate-in spring.snappy) → **check** in edit mode. Success pop: `wasSendingRef` watcher bumps `sendPop` → mic remounts with scale [1,1.18,1]. `whileTap 0.88`.
 
 ### 3. Attachments tray
-- `+` rotates 45°→✕ (spring.snappy). Tray springs open ABOVE the capsule (AnimatePresence height/opacity spring.soft) with 8 staggered (30ms, spring.bouncy, whileTap 0.92) glass tiles wired to EXISTING handlers: **Photo** (compress→upload), **Sticker**, **Location**, **Poll**, **Schedule** (empty-draft toast guard), **Board** (`whiteboard.setOpen`), **Effects** (inline sub-row arms confetti/lasers/echo/sparkles via `setPendingEffect` + existing toast), **Commands** (help dialog).
+- `+` rotates 45°→ (spring.snappy). Tray springs open ABOVE the capsule (AnimatePresence height/opacity spring.soft) with 8 staggered (30ms, spring.bouncy, whileTap 0.92) glass tiles wired to EXISTING handlers: **Photo** (compress→upload), **Sticker**, **Location**, **Poll**, **Schedule** (empty-draft toast guard), **Board** (`whiteboard.setOpen`), **Effects** (inline sub-row arms confetti/lasers/echo/sparkles via `setPendingEffect` + existing toast), **Commands** (help dialog).
 - Opening clamps textarea to one line (`trayOpenRef` → autosize cap 48px), dismisses slash palette; closes on send / room switch / recording start; broadcastLocked disables.
 
 ### 4. Recording state

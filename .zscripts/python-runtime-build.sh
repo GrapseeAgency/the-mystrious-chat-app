@@ -26,27 +26,27 @@ has_python_sources() {
 if ! has_python_sources \
     && [ ! -f "$PROJECT_DIR/requirements.txt" ] \
     && [ ! -f "$PROJECT_DIR/pyproject.toml" ]; then
-    echo "ℹ️  未检测到 Python 源码或依赖清单，跳过 Python runtime 构建"
+    echo "  未检测到 Python 源码或依赖清单，跳过 Python runtime 构建"
     exit 0
 fi
 
 if ! command -v uv >/dev/null 2>&1; then
-    echo "❌ 检测到 Python 项目，但构建环境中没有 uv"
+    echo " 检测到 Python 项目，但构建环境中没有 uv"
     exit 1
 fi
 
-echo "🐍 检测到 Python runtime，目标版本: $PYTHON_VERSION"
+echo " 检测到 Python runtime，目标版本: $PYTHON_VERSION"
 mkdir -p "$NEXT_DIST_DIR" "$PYTHON_PACKAGES_DIR"
 
 install_requirements() {
     local requirements_file="$1"
     local target_dir="${2:-$PYTHON_PACKAGES_DIR}"
     if [ ! -s "$requirements_file" ]; then
-        echo "ℹ️  Python 依赖清单为空，跳过依赖安装"
+        echo "  Python 依赖清单为空，跳过依赖安装"
         return 0
     fi
 
-    echo "📦 根据 $(basename "$requirements_file") 固化 Python 生产依赖..."
+    echo " 根据 $(basename "$requirements_file") 固化 Python 生产依赖..."
     uv pip install \
         --python "$PYTHON_VERSION" \
         --target "$target_dir" \
@@ -86,20 +86,20 @@ install_pyproject() {
 }
 
 if [ -f "$PROJECT_DIR/pyproject.toml" ] && [ -f "$PROJECT_DIR/uv.lock" ]; then
-    echo "🔒 使用 pyproject.toml + uv.lock 导出生产依赖..."
+    echo " 使用 pyproject.toml + uv.lock 导出生产依赖..."
     install_pyproject "$PROJECT_DIR" "$PYTHON_PACKAGES_DIR" "requirements.lock.txt"
 elif [ -f "$PROJECT_DIR/requirements.txt" ]; then
     cp "$PROJECT_DIR/requirements.txt" "$PYTHON_RUNTIME_DIR/requirements.txt"
     install_requirements "$PYTHON_RUNTIME_DIR/requirements.txt"
 elif [ -f "$PROJECT_DIR/pyproject.toml" ]; then
-    echo "📦 pyproject.toml 未配套 uv.lock，解析生产依赖..."
+    echo " pyproject.toml 未配套 uv.lock，解析生产依赖..."
     install_pyproject "$PROJECT_DIR" "$PYTHON_PACKAGES_DIR" "requirements.txt"
 else
-    echo "⚠️  检测到 Python 源码，但没有 requirements.txt 或 pyproject.toml；仅支持 Python 标准库"
+    echo "  检测到 Python 源码，但没有 requirements.txt 或 pyproject.toml；仅支持 Python 标准库"
 fi
 
 if has_python_sources; then
-    echo "📄 复制 Python 源码到部署项目，保持相对路径..."
+    echo " 复制 Python 源码到部署项目，保持相对路径..."
     (
         cd "$PROJECT_DIR"
         find . \
@@ -117,4 +117,4 @@ if has_python_sources; then
     ) | tar -C "$NEXT_DIST_DIR" -xf -
 fi
 
-echo "✅ Python runtime 已固化到部署产物"
+echo " Python runtime 已固化到部署产物"

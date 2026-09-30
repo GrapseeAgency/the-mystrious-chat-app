@@ -10,28 +10,28 @@ Every gate executable in this sandbox passed (compile, unit, instrumented, archi
 
 | # | Item | Android | iOS | Evidence |
 |---|------|---------|-----|----------|
-| 1 | Outgoing call | ✅ | ✅ | CallEngine.startOutgoing / PulseCallEngine.startOutgoing → machine startOutgoing → offer; contacts call button (mic-permission gated); DM resolved/created server-side |
-| 2 | Incoming call | ✅ | ✅ | call:offer → incomingRinging; full-screen overlay with caller identity from payload |
-| 3 | Ringing state | ✅ | ✅ | outgoing/incoming ringing surfaces; 30s server ring timeout (authoritative) + 40s defensive client timer |
-| 4 | Accept | ✅ | ✅ | accept → AcquireMedia → MediaReady → ApplyRemoteOffer+CreateAnswer → connecting |
-| 5 | Decline | ✅ | ✅ | call:reject → caller gets call:reject, callee gets call:cancel (relay-proven) |
-| 6 | Cancel | ✅ | ✅ | caller abort while ringing → call:cancel to BOTH sides (E2E-proven) |
-| 7 | Busy/rejected | ✅ | ✅ | relay callByUser map: second caller gets call:cancel reason=busy (E2E-proven); client-side busy guard also rejects |
-| 8 | Timeout | ✅ | ✅ | 30s server ring timeout cancels for BOTH parties (E2E-proven, real timer) |
-| 9 | Missed call | ✅ | ✅ | callee sees Missed (cancel/timeout pre-answer); caller row per single-writer mapping |
-| 10 | Connected state | ✅ | ✅ | peer-connection state → CONNECTED; duration ticker starts |
-| 11 | Mute/unmute | ✅ | ✅ | track enabled toggle; UI mirror + status line "· muted" |
-| 12 | Speaker/audio-route | ✅ | ✅ | Android: setCommunicationDevice (API 31+) / setSpeakerphoneOn; iOS: AVAudioSession overrideOutputAudioPort |
-| 13 | Call duration | ✅ | ✅ | connectedAt→end tick (m:ss / h:mm:ss), relay-computed durationSec on hangup |
-| 14 | End call | ✅ | ✅ | call:hangup + ReleaseMedia (pc close, mic release, focus abandon, FGS stop, session restore) |
-| 15 | Reconnect/recovery | ✅ | ✅ | machine keeps media on signaling loss; disconnected 10s grace; stale-state 45s cleanup; offline queue flush on reconnect |
-| 16 | Call history/log | ✅ | ✅ | single-writer REST /api/calls + local cache + offline queue; CallsView/CallsHistoryView render all 8 cases |
-| 17 | Permission handling | ✅ | ✅ | RECORD_AUDIO runtime gate (Android launcher per entry point); engine-owned mic permission on iOS with honest denied state |
-| 18 | Audio-session lifecycle | ✅ | ✅ | Android: MODE_IN_COMMUNICATION + AUDIOFOCUS_GAIN acquire/abandon; iOS: .playAndRecord+.voiceChat with SAVE & RESTORE of prior session |
-| 19 | WebRTC offer/answer | ✅ | ✅ | SDP round trip E2E-proven through the real relay |
-| 20 | ICE candidate exchange | ✅ | ✅ | trickle + early-candidate queue drained after remote desc; flat triple on the wire (E2E-proven both directions) |
-| 21 | Connection-state handling | ✅ | ✅ | ICE/PC state → machine (connected/disconnected/failed); idempotent at the machine |
-| 22 | Failure/recovery UX | ✅ | ✅ | honest error cards (mic denied, media failure), ended-card summaries, disconnect teardown (E2E-proven) |
+| 1 | Outgoing call |  |  | CallEngine.startOutgoing / PulseCallEngine.startOutgoing → machine startOutgoing → offer; contacts call button (mic-permission gated); DM resolved/created server-side |
+| 2 | Incoming call |  |  | call:offer → incomingRinging; full-screen overlay with caller identity from payload |
+| 3 | Ringing state |  |  | outgoing/incoming ringing surfaces; 30s server ring timeout (authoritative) + 40s defensive client timer |
+| 4 | Accept |  |  | accept → AcquireMedia → MediaReady → ApplyRemoteOffer+CreateAnswer → connecting |
+| 5 | Decline |  |  | call:reject → caller gets call:reject, callee gets call:cancel (relay-proven) |
+| 6 | Cancel |  |  | caller abort while ringing → call:cancel to BOTH sides (E2E-proven) |
+| 7 | Busy/rejected |  |  | relay callByUser map: second caller gets call:cancel reason=busy (E2E-proven); client-side busy guard also rejects |
+| 8 | Timeout |  |  | 30s server ring timeout cancels for BOTH parties (E2E-proven, real timer) |
+| 9 | Missed call |  |  | callee sees Missed (cancel/timeout pre-answer); caller row per single-writer mapping |
+| 10 | Connected state |  |  | peer-connection state → CONNECTED; duration ticker starts |
+| 11 | Mute/unmute |  |  | track enabled toggle; UI mirror + status line "· muted" |
+| 12 | Speaker/audio-route |  |  | Android: setCommunicationDevice (API 31+) / setSpeakerphoneOn; iOS: AVAudioSession overrideOutputAudioPort |
+| 13 | Call duration |  |  | connectedAt→end tick (m:ss / h:mm:ss), relay-computed durationSec on hangup |
+| 14 | End call |  |  | call:hangup + ReleaseMedia (pc close, mic release, focus abandon, FGS stop, session restore) |
+| 15 | Reconnect/recovery |  |  | machine keeps media on signaling loss; disconnected 10s grace; stale-state 45s cleanup; offline queue flush on reconnect |
+| 16 | Call history/log |  |  | single-writer REST /api/calls + local cache + offline queue; CallsView/CallsHistoryView render all 8 cases |
+| 17 | Permission handling |  |  | RECORD_AUDIO runtime gate (Android launcher per entry point); engine-owned mic permission on iOS with honest denied state |
+| 18 | Audio-session lifecycle |  |  | Android: MODE_IN_COMMUNICATION + AUDIOFOCUS_GAIN acquire/abandon; iOS: .playAndRecord+.voiceChat with SAVE & RESTORE of prior session |
+| 19 | WebRTC offer/answer |  |  | SDP round trip E2E-proven through the real relay |
+| 20 | ICE candidate exchange |  |  | trickle + early-candidate queue drained after remote desc; flat triple on the wire (E2E-proven both directions) |
+| 21 | Connection-state handling |  |  | ICE/PC state → machine (connected/disconnected/failed); idempotent at the machine |
+| 22 | Failure/recovery UX |  |  | honest error cards (mic denied, media failure), ended-card summaries, disconnect teardown (E2E-proven) |
 
 **Scope decision (documented, not a simplification):** `kind='voice'` is fully native. `kind='video'` is accepted on the wire end-to-end but the native UI renders the audio-call surface — camera capture/UI is not among the 22 wave items.
 
@@ -64,10 +64,10 @@ Native caches mirror the endpoint offline (Android Room v7 `callLogCache`, iOS G
 | Gate | Result |
 |---|---|
 | Android JVM (local, Temurin 21) | **79 tests, 0 failures** — CallStateMachineTest 31/31, SocketContractsTest 19/19, SocketRoundTripTest 5/5, LiveGatewayParity 2/2, FlushOutbox 5/5, SendMessage 4/4, PollPick 5/5, ChatMessageDtoParity 7/7, Wave2Dto 6/6 |
-| Android CI (tag run) | ✅ build (JVM + signed release APK) + ✅ instrumented (API-30 emulator: launch smoke, Room v3→v7 migrations incl. NEW v6→v7 case, outbox/draft/callLog DAO round-trips) |
-| iOS CI (7bb59b5 + tag) | ✅ **92 tests, 0 failures, 3 env-skips** (state machine 31, mapper, store, REAL-relay signaling round-trip, all prior suites) + ✅ unsigned xcarchive + artifacts |
-| Live signalling E2E | ✅ 17/17 (real edge + relay + REST) |
-| Release | ✅ tag `v0.5.0-native` → GitHub Release `Pulse-v0.5.0-native.apk` (34,951,074 B, zip-integrity OK, libwebrtc JNI present, sha256 `46d296f6…cf59`) → CDN commit (download/Pulse.apk + update-manifest.json versionCode 13, four-source hash equal) |
+| Android CI (tag run) |  build (JVM + signed release APK) +  instrumented (API-30 emulator: launch smoke, Room v3→v7 migrations incl. NEW v6→v7 case, outbox/draft/callLog DAO round-trips) |
+| iOS CI (7bb59b5 + tag) |  **92 tests, 0 failures, 3 env-skips** (state machine 31, mapper, store, REAL-relay signaling round-trip, all prior suites) +  unsigned xcarchive + artifacts |
+| Live signalling E2E |  17/17 (real edge + relay + REST) |
+| Release |  tag `v0.5.0-native` → GitHub Release `Pulse-v0.5.0-native.apk` (34,951,074 B, zip-integrity OK, libwebrtc JNI present, sha256 `46d296f6…cf59`) → CDN commit (download/Pulse.apk + update-manifest.json versionCode 13, four-source hash equal) |
 
 15 CI rounds were driven to green; every fix is documented in the worklog (nested types, WebRTC package paths, ObjC→Swift delegate label imports verified against the pinned headers, continuation typing, migration chaining, relay-room join races).
 

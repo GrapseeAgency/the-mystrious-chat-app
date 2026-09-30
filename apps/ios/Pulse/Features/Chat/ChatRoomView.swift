@@ -37,7 +37,9 @@ struct ChatRoomView: View {
         }
         .navigationTitle(roomTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        // R19-b - the room wears a CUSTOM top bar (avatar + presence + glyph
+        // tiles); the system navigation bar is hidden for this screen.
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             if viewModel == nil {
                 viewModel = RoomViewModel(conversation: conversation, session: session, initialJumpMessageId: jumpMessageId)
@@ -144,7 +146,7 @@ private struct RoomMessageRow: View {
             }
             // Day chip when the calendar day changes between rows.
             if index == 0 || PulseFormat.dayLabel(previous?.createdAt) != PulseFormat.dayLabel(message.createdAt) {
-                CapsuleLabel(PulseFormat.dayLabel(message.createdAt))
+                RoomPillLabel(PulseFormat.dayLabel(message.createdAt))
                     .padding(.vertical, 4)
             }
             BubbleView(
@@ -180,9 +182,9 @@ private struct RoomMessageRow: View {
                 onDoubleTapHeart: {
                     // R47 - double-tap bubble triggers the heart quick reaction (web
                     // chat-room.tsx:7265-7268 onDoubleClick parity). The SAME
-                    // react path the 6-quick-reactions context menu uses; the
-                    // the hearts particle burst rides the VM react path).
-                    viewModel.react(message, emoji: "❤️", session: session)
+                    // react path the quick-reaction context menu uses; the
+                    // hearts particle burst rides the VM react path).
+                    viewModel.react(message, emoji: PulseReactionId.heart.rawValue, session: session)
                 },
                 isClusterHead: cluster.head,
                 onSwipeReply: {
@@ -210,11 +212,14 @@ private struct RoomMessageRow: View {
 
     @ViewBuilder
     private var contextMenu: some View {
-        ForEach(ReactionPalette.emojis, id: \.self) { emoji in
+        // R19-b - the quick reaction strip is the 7 REACTION_IDS rendered as
+        // SF Symbol glyphs; the button sends the STABLE ID (the react body
+        // key keeps its historical name).
+        ForEach(PulseReactionId.allCases, id: \.self) { reaction in
             Button {
-                viewModel.react(message, emoji: emoji, session: session)
+                viewModel.react(message, emoji: reaction.rawValue, session: session)
             } label: {
-                Text(emoji)
+                Label("\(reaction.label)", systemImage: reaction.symbolName)
             }
         }
         Button {
@@ -315,6 +320,7 @@ private struct RoomContent: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
     @FocusState private var composerFocused: Bool
 
     // Wave 1 surfaces - threads, forward, info, pins, lightbox, QuickLook,
@@ -375,8 +381,6 @@ private struct RoomContent: View {
     @State private var locationOpen = false
     @State private var themeOpen = false
     @State private var phrasesOpen = false
-    // R5-A Item 1 - composer emoji picker (draft-only; stickers send instantly).
-    @State private var emojiPickerOpen = false
 
     // R2-B - the veil reads the app scene (the native blur/hidden signal).
     @Environment(\.scenePhase) private var scenePhase
@@ -475,6 +479,8 @@ private struct RoomContent: View {
     // expression exceeded Swift’s type-check budget; VERBATIM tree, split only.
     private var chatBodyStyled_view: some View {
         VStack(spacing: 0) {
+            // R19-b - the custom room top bar (system navigation bar hidden).
+            roomTopBar
             chatBodyPart0
             chatBodyPart1
             chatBodyPart2
@@ -665,221 +671,266 @@ private struct RoomContent: View {
             wallpaperWash
                 .ignoresSafeArea()
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                // W5-f - the voice room entry (VR-1): mic tints active while
-                // any room of THIS conversation is joined; the "Voice · N
-                // live" pill shows when joined + surface closed.
-                if let rooms = session.voiceRooms {
-                    VoiceRoomChatEntry(model: rooms, conversationId: conversation.id)
-                }
+    }
+
+    // R19-b - the custom room top bar (the system navigation bar is hidden):
+    // back tile, avatar + name + presence block, call/video/search glyph
+    // tiles, the voice-room entry and one overflow menu carrying every
+    // former toolbar entry (info, safety, theme, recap, reminders,
+    // leaderboard, mini-chat). Every action is byte-identical to the old
+    // ToolbarItem wiring - only the chrome moved.
+    private var roomTopBar: some View {
+        HStack(spacing: 10) {
+            Button {
+                PulseHaptics.tap()
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(PulseTheme.titleOnWash)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(PulseTheme.glassFill))
+                    .overlay(Circle().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
             }
-            // 3-d - GROUP call buttons (mesh, web chat-room.tsx :4026-4053
+            .buttonStyle(PulseButtonStyle())
+            .accessibilityLabel("Back")
+
+            Button {
+                PulseHaptics.tap()
+                if conversation.isGroup {
+                    groupInfoOpen = true
+                } else {
+                    dmInfoOpen = true
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    RowAvatar(
+                        name: roomDisplayName,
+                        colorName: roomDisplayColor,
+                        photoPath: roomDisplayAvatar,
+                        size: 34,
+                        showPresence: !conversation.isGroup,
+                        online: roomPartnerOnline,
+                    )
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(roomDisplayName)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(PulseTheme.titleOnWash)
+                            .lineLimit(1)
+                        Text(roomPresenceLine)
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(roomPartnerOnline ? PulseTheme.accent : PulseTheme.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PulseButtonStyle())
+            .accessibilityLabel(conversation.isGroup ? "Open group info" : "Open chat info")
+
+            Spacer(minLength: 8)
+
+            // W5-f - the voice room entry (VR-1): mic tints active while
+            // any room of THIS conversation is joined; the "Voice - N live"
+            // pill shows when joined + surface closed.
+            if let rooms = session.voiceRooms {
+                VoiceRoomChatEntry(model: rooms, conversationId: conversation.id)
+            }
+
+            // 3-d - GROUP call tiles (mesh, web chat-room.tsx :4026-4053
             // parity: same shell-dial contract, one session). Groups only;
             // the engine owns every gate (1:1-call exclusion, offline toast,
-            // mic/camera permission asks, camera→voice degrade).
+            // mic/camera permission asks, camera-to-voice degrade).
             if conversation.isGroup, let groupEngine = session.groupCallEngine {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        PulseHaptics.tap()
-                        groupEngine.startCall(kind: .voice, conversationId: conversation.id, title: groupCallTitle)
-                    } label: {
-                        Image(systemName: "phone")
-                    }
-                    .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("Start group voice call in \(groupCallTitle)")
+                roomTileButton("phone", "Start group voice call in \(groupCallTitle)") {
+                    groupEngine.startCall(kind: .voice, conversationId: conversation.id, title: groupCallTitle)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        PulseHaptics.tap()
-                        groupEngine.startCall(kind: .video, conversationId: conversation.id, title: groupCallTitle)
-                    } label: {
-                        Image(systemName: "video")
-                    }
-                    .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("Start group video call in \(groupCallTitle)")
+                roomTileButton("video", "Start group video call in \(groupCallTitle)") {
+                    groupEngine.startCall(kind: .video, conversationId: conversation.id, title: groupCallTitle)
                 }
             }
-            // R9 - 1:1 dial entry (web chat-room.tsx :3988-4012 parity: the DM
-            // room header carries voice + video dials). The engine owns every
-            // gate (idle check, group-call exclusion, offline toast, mic/
-            // camera permission asks) - the room only hands it the peer, the
-            // same contract the group buttons above use for the mesh engine.
+            // R9 - 1:1 dial tiles (web chat-room.tsx :3988-4012 parity: the
+            // DM room header carries voice + video dials). The engine owns
+            // every gate (idle check, group-call exclusion, offline toast,
+            // mic/camera permission asks) - the room only hands it the peer.
             if !conversation.isGroup, let engine = session.callEngine, let partner = dmPartner {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        PulseHaptics.tap()
-                        engine.startOutgoing(
-                            to: CallPeer(id: partner.id, name: partner.name, color: partner.color, avatar: partner.avatar),
-                            conversationId: conversation.id
-                        )
-                    } label: {
-                        Image(systemName: "phone")
-                    }
-                    .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("Start voice call with \(partner.name)")
+                roomTileButton("phone", "Start voice call with \(partner.name)") {
+                    engine.startOutgoing(
+                        to: CallPeer(id: partner.id, name: partner.name, color: partner.color, avatar: partner.avatar),
+                        conversationId: conversation.id
+                    )
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        PulseHaptics.tap()
-                        engine.startOutgoing(
-                            to: CallPeer(id: partner.id, name: partner.name, color: partner.color, avatar: partner.avatar),
-                            conversationId: conversation.id,
-                            kind: .video
-                        )
-                    } label: {
-                        Image(systemName: "video")
-                    }
-                    .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("Start video call with \(partner.name)")
+                roomTileButton("video", "Start video call with \(partner.name)") {
+                    engine.startOutgoing(
+                        to: CallPeer(id: partner.id, name: partner.name, color: partner.color, avatar: partner.avatar),
+                        conversationId: conversation.id,
+                        kind: .video
+                    )
                 }
             }
-            // Wave 7 F-RO-09 - room leaderboard (web group-info-sheet parity).
-            if conversation.isGroup {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        leaderboardOpen = true
-                    } label: {
-                        Image(systemName: "trophy")
-                    }
-                    .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("Leaderboard")
-                }
+            roomTileButton(searchOpen ? "xmark.circle.fill" : "magnifyingglass", "Search messages") {
+                searchOpen.toggle()
+                if !searchOpen { searchQuery = "" }
             }
-            // REM-B P1 - group info entry (member list, roles, invite,
-            // rename, leave, TTL, slow mode) - groups only, web parity.
-            if conversation.isGroup {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        PulseHaptics.tap()
-                        groupInfoOpen = true
-                    } label: {
-                        Image(systemName: "info.circle")
-                    }
-                    .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("Group info")
-                }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    searchOpen.toggle()
-                    if !searchOpen { searchQuery = "" }
-                } label: {
-                    Image(systemName: searchOpen ? "xmark.circle.fill" : "magnifyingglass")
-                }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("Search messages")
-            }
-            // Wave 6 - DM-only safety entry (F-CP-07): ShieldCheck opens the
-            // 60-digit sheet; the emerald badge shows while verified (F-CP-08).
-            // R1-W2B D34 - the UNVERIFIED state also carries the tiny amber
-            // dot (web R37 header parity, chat-room.tsx:3887-3892).
-            if let partner = dmPartner {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        PulseHaptics.tap()
-                        safetyOpen = true
-                    } label: {
-                        Image(systemName: safetyBadges.isVerified(partner.id) ? "checkmark.shield.fill" : "shield.lefthalf.filled")
-                            .foregroundStyle(safetyBadges.isVerified(partner.id) ? PulseTheme.emerald : PulseTheme.textSecondary)
-                            .overlay(alignment: .topTrailing) {
-                                if !safetyBadges.isVerified(partner.id) {
-                                    Circle()
-                                        .fill(PulseTheme.amber)
-                                        .frame(width: 6, height: 6)
-                                        .offset(x: 3, y: -3)
-                                }
-                            }
-                    }
-                    .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel(safetyBadges.isVerified(partner.id) ? "Verified - open safety number" : "Not verified - open safety number")
-                }
-                // R2-D ITEM 1 - DM info entry (web header-menu parity: the
-                // menu covers DMs with TTL + screen security + mute; iOS had
-                // NO privacy surface for DMs before this). Opens the compact
-                // RoomInfoSheet; groups keep their GroupInfoView branch.
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        PulseHaptics.tap()
-                        dmInfoOpen = true
-                    } label: {
-                        Image(systemName: "info.circle")
-                    }
-                    .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("Chat info")
-                }
-            }
+            roomOverflowMenu
         }
-        // R1-W2B F-FX-05 - per-conversation theme picker entry (web lives in
-        // the room info page; native mirrors the chat toolbar for reach).
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    PulseHaptics.tap()
-                    themeOpen = true
-                } label: {
-                    Image(systemName: "paintpalette")
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Rectangle()
+                .fill(PulseTheme.headerFill)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(PulseTheme.hairlineStrong)
+                        .frame(height: 1)
                 }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("Chat theme")
+                .ignoresSafeArea(edges: .top),
+        )
+    }
+
+    /// One 36pt glyph tile in the top bar (glass fill + hairline rim).
+    private func roomTileButton(_ icon: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button {
+            PulseHaptics.tap()
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(PulseTheme.titleOnWash)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(PulseTheme.glassFill))
+                .overlay(Circle().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel(label)
+    }
+
+    /// Overflow menu - every former toolbar entry that does not fit the tile
+    /// row (info, safety, theme, recap, reminders, leaderboard, mini-chat).
+    private var roomOverflowMenu: some View {
+        Menu {
+            if conversation.isGroup {
+                Button {
+                    groupInfoOpen = true
+                } label: {
+                    Label("Group info", systemImage: "info.circle")
+                }
+                // Wave 7 F-RO-09 - room leaderboard (web group-info-sheet parity).
+                Button {
+                    leaderboardOpen = true
+                } label: {
+                    Label("Leaderboard", systemImage: "trophy")
+                }
+            } else {
+                Button {
+                    dmInfoOpen = true
+                } label: {
+                    Label("Chat info", systemImage: "info.circle")
+                }
+                // Wave 6 - DM-only safety entry (F-CP-07); the badge color
+                // carries the verified state (F-CP-08).
+                Button {
+                    safetyOpen = true
+                } label: {
+                    Label(
+                        dmPartner != nil && safetyBadges.isVerified(dmPartner!.id)
+                            ? "Safety number - verified"
+                            : "Safety number",
+                        systemImage: dmPartner != nil && safetyBadges.isVerified(dmPartner!.id)
+                            ? "checkmark.shield.fill"
+                            : "shield.lefthalf.filled",
+                    )
+                }
             }
-            // R34-b - AI recap entry (web header-menu "Recap with AI" parity;
-            // the requestRecap ≥5 gate + 15 s auto-dismiss card handle the rest).
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    PulseHaptics.tap()
-                    viewModel.requestRecap(session: session)
-                } label: {
-                    Image(systemName: "sparkles")
-                }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("Recap with AI")
+            // R1-W2B F-FX-05 - per-conversation theme picker.
+            Button {
+                PulseHaptics.tap()
+                themeOpen = true
+            } label: {
+                Label("Chat theme", systemImage: "paintpalette")
             }
-            // R30-b - room-header reminders entry (web chat-room.tsx:4054-4075
-            // parity): opens the existing Wave7 sheet (room-level - no message
-            // anchor); the emerald badge counts the viewer's unfired reminders.
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    PulseHaptics.tap()
-                    wave7.reminderAnchor = nil
-                    wave7.remindersOpen = true
-                } label: {
-                    Image(systemName: "bell")
-                        .overlay(alignment: .topTrailing) {
-                            if viewModel.upcomingReminderCount > 0 {
-                                Text(PulseRoomParityLogic.reminderBadgeText(viewModel.upcomingReminderCount))
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 4)
-                                    .frame(minWidth: 16, minHeight: 16)
-                                    .background(Capsule().fill(PulseTheme.emerald500))
-                                    .offset(x: 8, y: -4)
-                            }
-                        }
-                }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel(viewModel.upcomingReminderCount > 0
-                    ? "Reminders - \(viewModel.upcomingReminderCount) upcoming"
-                    : "Reminders")
+            // R34-b - AI recap entry (the >=5 gate + auto-dismiss card handle
+            // the rest).
+            Button {
+                PulseHaptics.tap()
+                viewModel.requestRecap(session: session)
+            } label: {
+                Label("Recap with AI", systemImage: "sparkles")
+            }
+            // R30-b - room-header reminders entry; the badge counts the
+            // viewer's unfired reminders.
+            Button {
+                PulseHaptics.tap()
+                wave7.reminderAnchor = nil
+                wave7.remindersOpen = true
+            } label: {
+                Label(
+                    viewModel.upcomingReminderCount > 0
+                        ? "Reminders - \(viewModel.upcomingReminderCount) upcoming"
+                        : "Reminders",
+                    systemImage: "bell",
+                )
             }
             // R1-W2I F-PI-03 - the pop-out mini-chat toggle (web chat-room
-            // header PictureInPicture2 button): opens/closes this room's pane.
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    PulseHaptics.tap()
-                    if session.pip.conversationId == conversation.id {
-                        session.pip.close()
-                    } else {
-                        session.pip.open(conversation.id)
-                    }
-                } label: {
-                    Image(systemName: session.pip.conversationId == conversation.id
-                        ? "pip.fill" : "pip")
+            // header PictureInPicture2 button).
+            Button {
+                PulseHaptics.tap()
+                if session.pip.conversationId == conversation.id {
+                    session.pip.close()
+                } else {
+                    session.pip.open(conversation.id)
                 }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("Pop out mini chat")
+            } label: {
+                Label("Pop out mini chat", systemImage: "pip")
             }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(PulseTheme.titleOnWash)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(PulseTheme.glassFill))
+                .overlay(Circle().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
+                .contentShape(Circle())
         }
+        .accessibilityLabel("More room options")
+    }
+
+    // Room header identity - the conversation name, then the DM partner
+    // (web displayName parity), then any member, then the honest generic.
+    private var roomDisplayName: String {
+        conversation.name
+            ?? conversation.members.first(where: { $0.id != session.viewer?.id })?.name
+            ?? conversation.members.first?.name
+            ?? "Conversation"
+    }
+
+    private var roomDisplayColor: String? {
+        conversation.isGroup
+            ? nil
+            : (conversation.members.first(where: { $0.id != session.viewer?.id })?.color ?? conversation.members.first?.color)
+    }
+
+    private var roomDisplayAvatar: String? {
+        conversation.isGroup
+            ? nil
+            : (conversation.members.first(where: { $0.id != session.viewer?.id })?.avatar ?? conversation.members.first?.avatar)
+    }
+
+    /// Presence signal for the header: DM partner online via the live
+    /// presence set; groups show the member count.
+    private var roomPartnerOnline: Bool {
+        guard !conversation.isGroup else { return false }
+        let partner = conversation.members.first(where: { $0.id != session.viewer?.id })
+            ?? conversation.members.first
+        guard let partner else { return false }
+        return session.onlineUserIds.contains(partner.id)
+    }
+
+    private var roomPresenceLine: String {
+        conversation.isGroup
+            ? "\(conversation.members.count) members"
+            : (roomPartnerOnline ? "online" : "offline")
     }
 
     private var chatBodyStyled1: some View {
@@ -976,8 +1027,8 @@ private struct RoomContent: View {
                 .onDisappear { viewModel.loadScheduled(session: session) }
         }
         .sheet(item: $reactionTarget) { target in
-            ReactionPickerSheet { emoji in
-                viewModel.react(target, emoji: emoji, session: session)
+            ReactionPickerSheet { reaction in
+                viewModel.react(target, emoji: reaction.rawValue, session: session)
             }
         }
         .sheet(isPresented: $stickerOpen) {
@@ -985,20 +1036,10 @@ private struct RoomContent: View {
                 viewModel.sendSticker(emoji: emoji, pack: pack, session: session)
             }
         }
-        // R5-A Item 1 - emoji picker (web chat-room.tsx:5385-5412 parity):
-        // tap APPENDS to the draft (web setInput(prev => prev + emoji)) and
-        // the focus hand-back on dismiss keeps the keyboard up (web
-        // requestAnimationFrame(textareaRef.focus) parity).
     }
 
     private var chatBodyStyled6: some View {
         chatBodyStyled5
-        .sheet(isPresented: $emojiPickerOpen) {
-            EmojiPickerSheet { emoji in
-                viewModel.draft = viewModel.draft + emoji
-            }
-            .onDisappear { composerFocused = true }
-        }
         .sheet(isPresented: $whoReactedOpen) {
             if let target = whoReactedMessage {
                 WhoReactedSheet(
@@ -2068,15 +2109,23 @@ private struct RoomContent: View {
                 } else {
                     attachMenu
 
+                    // R19-b - custom composer capsule: neo surface fill +
+                    // hairline rim (plain text field, no system gray capsule).
                     TextField(
                         viewModel.editingTarget != nil ? "Edit message" : "Message",
                         text: $viewModel.draft,
                         axis: .vertical,
                     )
+                    .textFieldStyle(.plain)
                     .lineLimit(1...5)
+                    .foregroundStyle(PulseTheme.titleOnWash)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(Capsule().fill(Color(.secondarySystemBackground)))
+                    .background(
+                        Capsule()
+                            .fill(PulseTheme.glassFill)
+                            .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)),
+                    )
                     .focused($composerFocused)
                     .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
                     .disabled(viewModel.staged != nil)
@@ -2093,21 +2142,6 @@ private struct RoomContent: View {
                                 .transition(.opacity)
                         }
                     }
-
-                    // R5-A Item 1 - Smile button (web composer row parity: the
-                    // emoji popover sits between the input and the mic/send).
-                    Button {
-                        PulseHaptics.tap()
-                        emojiPickerOpen = true
-                    } label: {
-                        Image(systemName: "face.smiling")
-                            .font(.system(size: 22))
-                            .foregroundStyle(Color.secondary)
-                            .frame(width: 30, height: 42)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Insert emoji")
                 }
 
                 voiceSendSlot
@@ -2121,9 +2155,9 @@ private struct RoomContent: View {
             .background(.ultraThinMaterial)
     }
 
-    /// D31 - the ALWAYS-MOUNTED trailing composer slot. One Image node whose
-    /// glyph/style swap by state keeps view identity (and the in-flight press
-    /// gesture) alive across idle → recording:
+    /// D31 - the ALWAYS-MOUNTED trailing composer slot. One 48pt mint circle
+    /// whose fill/glyph swap by state keeps view identity (and the in-flight
+    /// press gesture) alive across idle → recording:
     ///   • blank draft → mic: press-and-hold records; release sends; slide
     ///     left past 80pt arms cancel ("Release to cancel" in the bar).
     ///   • recording → send arrow: release sends; a quick tap also sends (the
@@ -2133,14 +2167,20 @@ private struct RoomContent: View {
     /// TapGesture would never win recognition, so taps route through onEnded.
     private var voiceSendSlot: some View {
         ZStack {
-            Image(systemName: viewModel.isRecording || !viewModel.canStartVoiceRecording ? "arrow.up.circle.fill" : "mic.circle.fill")
-                .font(.system(size: 32))
-                .foregroundStyle(slotStyle)
-                .gesture(holdGesture)
+            Circle()
+                .fill(slotFill)
+                .overlay(Circle().strokeBorder(slotRim, lineWidth: 1))
+                .shadow(color: PulseTheme.accent.opacity(slotActive ? 0.32 : 0), radius: 7, y: 3)
+            Image(systemName: viewModel.isRecording || !viewModel.canStartVoiceRecording ? "arrow.up" : "mic.fill")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(slotInk)
             if viewModel.sendingVoice && !viewModel.isRecording {
-                ProgressView().tint(PulseTheme.emerald)
+                ProgressView().tint(PulseTheme.onAccent)
             }
         }
+        .frame(width: 48, height: 48)
+        .contentShape(Circle())
+        .gesture(holdGesture)
         .accessibilityLabel(
             viewModel.isRecording
                 ? "Release to send voice note - slide left to cancel"
@@ -2148,12 +2188,24 @@ private struct RoomContent: View {
         )
     }
 
-    private var slotStyle: AnyShapeStyle {
-        if viewModel.isRecording { return AnyShapeStyle(PulseTheme.gradient(named: "emerald")) }
-        if viewModel.canStartVoiceRecording { return AnyShapeStyle(PulseTheme.emerald) }
-        return viewModel.canSend
-            ? AnyShapeStyle(PulseTheme.gradient(named: "emerald"))
-            : AnyShapeStyle(Color.secondary.opacity(0.4))
+    /// The send/record slot is "active" while it carries the mint send fill.
+    private var slotActive: Bool {
+        viewModel.isRecording || !viewModel.canStartVoiceRecording
+    }
+
+    private var slotFill: AnyShapeStyle {
+        if slotActive { return AnyShapeStyle(PulseTheme.accent) }
+        return AnyShapeStyle(PulseTheme.glassFill)
+    }
+
+    private var slotRim: Color {
+        slotActive ? Color.clear : PulseTheme.hairlineStrong
+    }
+
+    private var slotInk: Color {
+        if slotActive { return PulseTheme.onAccent }
+        if viewModel.canStartVoiceRecording { return PulseTheme.accent }
+        return PulseTheme.textTertiary
     }
 
     /// D31 press-and-hold recorder gesture - minimumDistance 0 so a plain
@@ -2613,7 +2665,9 @@ private struct MessageInfoSheet: View {
                     Section("Reactions") {
                         ForEach(reactions, id: \.emoji) { group in
                             HStack(spacing: 8) {
-                                Text(group.emoji).font(.body)
+                                Label(PulseReactionId.normalize(group.emoji).label,
+                                      systemImage: PulseReactionId.normalize(group.emoji).symbolName)
+                                    .font(.body)
                                 Text("\(group.count)")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
@@ -2794,20 +2848,20 @@ struct BubbleView: View {
         message.viewOnce == true && !mine && message.viewedAt != nil
     }
 
-    /// Wave 8 - the corner token drives every radius; the "tail" corner
-    /// (bottom-trailing for the viewer, bottom-leading for the peer) stays
-    /// the asymmetric 6 exactly like the web's rounded-br-md.
+    /// Wave 8 / R19-b - the corner token drives every radius; the "tail"
+    /// corner (bottom-trailing for the viewer, bottom-leading for the peer)
+    /// is the Neo 4pt tail. Radii: md=12, lg=20 (spec), pill=28.
     private var bubbleShape: UnevenRoundedRectangle {
         let r = bubbleRadius.cornerRadius
         return mine
-            ? UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r, bottomTrailingRadius: 6, topTrailingRadius: r)
-            : UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: 6, bottomTrailingRadius: r, topTrailingRadius: r)
+            ? UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r, bottomTrailingRadius: 4, topTrailingRadius: r)
+            : UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: 4, bottomTrailingRadius: r, topTrailingRadius: r)
     }
 
     var body: some View {
         VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
             if isSystem {
-                CapsuleLabel(message.content)
+                RoomPillLabel(message.content)
                     .padding(.vertical, 4)
             } else {
                 // R7 - sender name renders on HEAD rows of incoming group
@@ -2902,23 +2956,26 @@ struct BubbleView: View {
             HStack(spacing: 5) {
                 Text(PulseFormat.clockTime(message.createdAt))
                     .font(.caption2)
-                    .foregroundStyle(mine ? Color.white.opacity(0.8) : .secondary)
+                    .foregroundStyle(mine ? PulseTheme.onBubbleMine.opacity(0.8) : .secondary)
                 if isPending {
                     // Queued offline - still in the outbox, clock = not sent yet.
                     Image(systemName: "clock")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(mine ? Color.white.opacity(0.85) : PulseTheme.amber)
+                        .foregroundStyle(mine ? PulseTheme.onBubbleMine.opacity(0.85) : PulseTheme.amber)
                 }
                 if message.pinnedAt != nil {
                     Image(systemName: "pin.fill")
                         .font(.caption2)
-                        .foregroundStyle(mine ? Color.white.opacity(0.85) : PulseTheme.amber)
+                        .foregroundStyle(mine ? PulseTheme.onBubbleMine.opacity(0.85) : PulseTheme.amber)
                 }
             }
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 9)
         .background(bubbleShape.fill(bubbleFill))
+        .overlay(bubbleShape.strokeBorder(bubbleRim, lineWidth: 1))
+        // R19-b - the soft mint glow under the viewer's tail only.
+        .shadow(color: mine ? PulseTheme.accent.opacity(0.22) : .clear, radius: 8, y: 3)
         .overlay(reactionChips, alignment: .bottom)
         .padding(.bottom, reactionChipsHeight())
         .overlay(
@@ -2946,6 +3003,8 @@ struct BubbleView: View {
             switch message.kind {
             case "image":
                 imageContent
+            case "sticker":
+                stickerContent
             case "audio", "voice":
                 voiceContent
             case "file":
@@ -3043,6 +3102,34 @@ struct BubbleView: View {
             // Poll row whose card payload is missing (degraded cache row).
             Label("Poll", systemImage: "chart.bar.fill")
                 .font(.subheadline)
+        }
+    }
+
+    /// R19-b - sticker rows render the stamp's SF Symbol large on the pack
+    /// gradient (web isSticker tile: 96pt rounded card, white glyph). The
+    /// payload value normalizes through the stamp registry; a corrupt or
+    /// legacy payload degrades to the plain content text.
+    @ViewBuilder
+    private var stickerContent: some View {
+        if let stampInfo = PulseRemediationLogic.stampOfPayload(message.payload) {
+            let pack = PulseRemediationLogic.stampGradientPack(named: stampInfo.pack)
+            Image(systemName: stampInfo.stamp.symbolName)
+                .font(.system(size: 44, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 96, height: 96)
+                .background(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(LinearGradient(
+                            colors: [Color(hex: pack.gradientFrom), Color(hex: pack.gradientTo)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing,
+                        )),
+                )
+                .shadow(color: Color(hex: pack.gradientTo).opacity(0.28), radius: 6, y: 3)
+                .accessibilityLabel("Sticker \(stampInfo.stamp.label) from the \(pack.name) pack")
+        } else {
+            Text(message.content)
+                .font(.body)
+                .textSelection(.enabled)
         }
     }
 
@@ -3205,7 +3292,7 @@ struct BubbleView: View {
     private var voiceChip: some View {
         HStack(spacing: 6) {
             Image(systemName: "waveform")
-                .foregroundStyle(mine ? Color.white : PulseTheme.emerald)
+                .foregroundStyle(mine ? PulseTheme.onBubbleMine : PulseTheme.emerald)
             // Deterministic waveform bars from the message id (native mirror
             // of the web voice bubble, no emoji chrome).
             HStack(spacing: 2) {
@@ -3213,7 +3300,7 @@ struct BubbleView: View {
                     let seed = abs(message.id.hashValue)
                     let height = CGFloat(5 + (seed * (index + 7)) % 15)
                     Capsule()
-                        .fill(mine ? Color.white.opacity(0.85) : PulseTheme.emerald.opacity(0.7))
+                        .fill(mine ? PulseTheme.onBubbleMine.opacity(0.85) : PulseTheme.emerald.opacity(0.7))
                         .frame(width: 2.5, height: height)
                 }
             }
@@ -3221,7 +3308,7 @@ struct BubbleView: View {
             if !duration.isEmpty {
                 Text(duration)
                     .font(.caption2)
-                    .foregroundStyle(mine ? Color.white.opacity(0.85) : .secondary)
+                    .foregroundStyle(mine ? PulseTheme.onBubbleMine.opacity(0.85) : .secondary)
             }
         }
     }
@@ -3234,15 +3321,15 @@ struct BubbleView: View {
         HStack(alignment: .top, spacing: 5) {
             Image(systemName: "globe")
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(mine ? Color.white.opacity(0.85) : PulseTheme.emerald)
+                .foregroundStyle(mine ? PulseTheme.onBubbleMine.opacity(0.85) : PulseTheme.emerald)
             VStack(alignment: .leading, spacing: 1) {
                 Text(translation.text)
                     .font(.footnote.italic())
-                    .foregroundStyle(mine ? Color.white.opacity(0.88) : Color.primary.opacity(0.7))
+                    .foregroundStyle(mine ? PulseTheme.onBubbleMine.opacity(0.88) : Color.primary.opacity(0.7))
                     .textSelection(.enabled)
                 Text(translation.lang.uppercased())
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(mine ? Color.white.opacity(0.6) : PulseTheme.textTertiary)
+                    .foregroundStyle(mine ? PulseTheme.onBubbleMine.opacity(0.6) : PulseTheme.textTertiary)
             }
         }
         .padding(.horizontal, 9)
@@ -3273,32 +3360,32 @@ struct BubbleView: View {
                         VStack(spacing: 18) {
                             ForEach(0..<4, id: \.self) { _ in
                                 Rectangle()
-                                    .fill((mine ? Color.white : PulseTheme.emerald).opacity(0.16))
+                                    .fill((mine ? PulseTheme.onBubbleMine : PulseTheme.emerald).opacity(0.16))
                                     .frame(height: 1)
                             }
                         }
                         HStack(spacing: 26) {
                             ForEach(0..<5, id: \.self) { _ in
                                 Rectangle()
-                                    .fill((mine ? Color.white : PulseTheme.emerald).opacity(0.16))
+                                    .fill((mine ? PulseTheme.onBubbleMine : PulseTheme.emerald).opacity(0.16))
                                     .frame(width: 1)
                             }
                         }
                         VStack(spacing: 3) {
                             Image(systemName: "mappin.circle.fill")
                                 .font(.system(size: 30))
-                                .foregroundStyle(mine ? Color.white : PulseTheme.emerald)
+                                .foregroundStyle(mine ? PulseTheme.onBubbleMine : PulseTheme.emerald)
                         }
                     }
                     .frame(width: 216, height: 116)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(loc.label.isEmpty ? "Location" : loc.label)
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(mine ? Color.white : PulseTheme.titleOnPanel)
+                            .foregroundStyle(mine ? PulseTheme.onBubbleMine : PulseTheme.titleOnPanel)
                             .lineLimit(1)
                         Text(PulseRemediationLogic.coordinateText(lat: loc.lat, lng: loc.lng))
                             .font(.caption2)
-                            .foregroundStyle(mine ? Color.white.opacity(0.8) : PulseTheme.textSecondary)
+                            .foregroundStyle(mine ? PulseTheme.onBubbleMine.opacity(0.8) : PulseTheme.textSecondary)
                     }
                 }
             }
@@ -3312,14 +3399,27 @@ struct BubbleView: View {
         }
     }
 
+    /// R19-b Neo bubbles - outgoing: mint gradient (dark) / emerald
+    /// gradient (light) with a soft glow; incoming: neoSurface card with
+    /// the white 8% hairline rim (paper surface in light).
     private var bubbleFill: some ShapeStyle {
         if mine {
             return AnyShapeStyle(LinearGradient(
-                colors: [PulseTheme.emerald, PulseTheme.emeraldDeep],
+                colors: [PulseTheme.bubbleMineTop, PulseTheme.bubbleMineBottom],
                 startPoint: .topLeading, endPoint: .bottomTrailing,
             ))
         }
-        return AnyShapeStyle(Color(.secondarySystemBackground))
+        return AnyShapeStyle(PulseTheme.bubbleTheirs)
+    }
+
+    /// Incoming hairline rim - visible in dark (white 8%), soft in light.
+    private var bubbleRim: Color {
+        adaptive(Color.black.opacity(0.06), PulseTheme.neoHairline)
+    }
+
+    /// Local trait-resolved color helper (light/dark) for bubble chrome.
+    private func adaptive(_ light: Color, _ dark: Color) -> Color {
+        Color(UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light) })
     }
 
     @ViewBuilder
@@ -3327,10 +3427,10 @@ struct BubbleView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(reply.senderName)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(mine ? Color.white : PulseTheme.emerald)
+                .foregroundStyle(mine ? PulseTheme.onBubbleMine : PulseTheme.emerald)
             Text(reply.deleted == true ? "Deleted message" : reply.content)
                 .font(.caption)
-                .foregroundStyle(mine ? Color.white.opacity(0.85) : .secondary)
+                .foregroundStyle(mine ? PulseTheme.onBubbleMine.opacity(0.85) : .secondary)
                 .lineLimit(2)
         }
         .padding(.horizontal, 9)
@@ -3348,12 +3448,16 @@ struct BubbleView: View {
                 // the who-reacted sheet (web ReactionChip long-press → drawer
                 // parity, native affordance = tap). Without the callback the
                 // chip stays decorative (threads).
+                // R19-b - the chip renders the NORMALIZED reaction's SF Symbol
+                // + count: the wire group key is never rendered raw.
                 Button {
                     PulseHaptics.tap()
                     onReactionChip?(message, group.emoji)
                 } label: {
                     HStack(spacing: 3) {
-                        Text(group.emoji).font(.caption)
+                        Image(systemName: PulseReactionId.normalize(group.emoji).symbolName)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(PulseTheme.accent)
                         if group.count > 1 {
                             Text("\(group.count)")
                                 .font(.caption2.weight(.semibold))
@@ -3361,15 +3465,15 @@ struct BubbleView: View {
                         }
                     }
                     .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 3)
                     .background(Capsule().fill(.thinMaterial))
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(
                     onReactionChip == nil
-                        ? "\(group.count) reactions with \(group.emoji)"
-                        : "Who reacted with \(group.emoji) - \(group.count) people",
+                        ? "\(group.count) reactions with \(PulseReactionId.normalize(group.emoji).label)"
+                        : "Who reacted with \(PulseReactionId.normalize(group.emoji).label) - \(group.count) people",
                 )
             }
         }
@@ -3479,7 +3583,7 @@ struct PulseBubbleBody: View {
             // promote to a URL degrades to styled text (honest, no crash).
             piece.link = Self.linkURL(for: run.text)
             piece.underlineStyle = .single
-            piece.foregroundColor = mine ? Color.white : PulseTheme.bubbleLink
+            piece.foregroundColor = mine ? PulseTheme.onBubbleMine : PulseTheme.bubbleLink
         }
         return piece
     }
@@ -3556,8 +3660,27 @@ struct PulseBubbleBody: View {
     }
 }
 
-enum ReactionPalette {
-    static let emojis = ["👍", "❤️", "😂", "😮", "😢", "🎉"]
+// R19-b - the quick-reaction domain moved to PulseReactionId
+// (Core/Support/PulseIconIds.swift): 7 stable ids, SF Symbol glyphs.
+
+/// R19-b - the room's custom date/system capsule: neo glass fill, hairline
+/// rim and a mono caption (the system CapsuleLabel stays for other screens).
+struct RoomPillLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+            .tracking(0.4)
+            .foregroundStyle(PulseTheme.textSecondary)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(PulseTheme.glassFill)
+                    .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1)),
+            )
+    }
 }
 
 /// Room state holder - transport lives in PulseSession; this owns messages,
@@ -4654,8 +4777,10 @@ final class RoomViewModel: ObservableObject {
 
     // REM-B F-MS-24 - stickers
 
-    /// kind "sticker" + payload { emoji, pack } (web sticker-picker parity;
-    /// the bubble renders the emoji big). Online-only like all rich kinds.
+    /// kind "sticker" + payload { emoji, pack } (web sendSticker parity;
+    /// content rides empty like the web). R19-b - the payload VALUE is the
+    /// stamp id; the bubble renders the stamp's SF Symbol on the pack
+    /// gradient. Online-only like all rich kinds.
     func sendSticker(emoji: String, pack: String, session: PulseSession) {
         guard let viewer = session.viewer else { return }
         Task { [weak self] in
@@ -4663,10 +4788,10 @@ final class RoomViewModel: ObservableObject {
             do {
                 let message = try await session.api.sendMessage(
                     conversationId: conversationId,
-                    content: emoji,
+                    content: "",
                     kind: "sticker",
                     topicId: activeTopicId,
-                    payload: ["emoji": emoji, "pack": pack],
+                    payload: ["emoji": PulseStampId.normalize(emoji).rawValue, "pack": pack],
                 )
                 self.upsert(message)
                 try? session.store?.upsert(messages: [message])
@@ -4814,7 +4939,11 @@ final class RoomViewModel: ObservableObject {
             do {
                 let fresh = try await session.api.react(messageId: message.id, emoji: emoji)
                 upsert(fresh)
-                if emoji == "❤️" { session.particles.fire(kind: .hearts, count: 24) }
+                // R19-b - the hearts burst keys off the NORMALIZED reaction:
+                // the heart id and every legacy heart emoji wire value fire it.
+                if PulseReactionId.normalize(emoji) == .heart {
+                    session.particles.fire(kind: .hearts, count: 24)
+                }
             } catch {
                 errorText = Self.describe(error)
             }

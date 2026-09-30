@@ -1,4 +1,4 @@
-// /api/messages/[id]/react - toggle an emoji reaction
+// /api/messages/[id]/react - toggle a reaction (value domain: reaction ids)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -32,7 +32,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   }
   const emoji = strField(body.emoji)
   if (!(REACTION_EMOJIS as readonly string[]).includes(emoji)) {
-    return NextResponse.json({ error: 'Unsupported reaction emoji.' }, { status: 400 })
+    return NextResponse.json({ error: 'Unsupported reaction.' }, { status: 400 })
   }
 
   const message = await db.message.findUnique({

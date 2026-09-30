@@ -8,7 +8,7 @@ import Foundation
 //   • MessageTextParser  - port of the chat-room.tsx FORMAT_RE bubble formatter
 //   • TtlFilter          - client-side hiding of expired rows (F-MS-19)
 //   • PulseSlash         - the 25 web slash commands + applySlash outcome parser
-//   • PulseStickers      - the web sticker-picker packs (kind:"sticker" payload)
+//   • PulseStamps        - the 5 stamp packs (kind:"sticker" payload, stamp ids)
 public enum PulseRemediationLogic {
 
     // F-MS-17 - deterministic incognito alias
@@ -154,7 +154,7 @@ public enum PulseRemediationLogic {
         .init(cmd: "/schedule", args: "", help: "Schedule this message for later"),
         .init(cmd: "/remind", args: "<message> in <time>", help: "Set a reminder on your next message"),
         .init(cmd: "/recap", args: "", help: "AI summary of the recent chat"),
-        .init(cmd: "/sticker", args: "", help: "Open the sticker packs"),
+        .init(cmd: "/sticker", args: "", help: "Open the stamp packs"),
         .init(cmd: "/location", args: "", help: "Share a live map pin"),
         .init(cmd: "/whiteboard", args: "", help: "Open the shared whiteboard"),
         .init(cmd: "/redpacket", args: "", help: "Send a red packet (coins)"),
@@ -363,22 +363,50 @@ public enum PulseRemediationLogic {
         return "\(component(lat, positive: "N", negative: "S")), \(component(lng, positive: "E", negative: "W"))"
     }
 
-    // F-MS-24 - sticker packs (web sticker-picker.tsx). Badges are SF Symbol
-    // names (web renders designed glyph badges); items are user content.
+    // R19-b - stamp packs (web sticker-picker.tsx STAMP_PACKS 1:1). Badges
+    // are SF Symbol names; items are STAMP IDS (PulseStampId domain); the
+    // gradient pair is the pack tile wash (hex, resolved by the sheet).
 
-    public struct StickerPack: Equatable, Identifiable {
+    public struct StampPack: Equatable, Identifiable {
         public var id: String { name }
         public let name: String
         /// SF Symbol name rendered as the pack badge (never an emoji).
         public let badge: String
-        public let items: [String]
+        /// Tile gradient endpoints (web tailwind from/to pairs).
+        public let gradientFrom: String
+        public let gradientTo: String
+        public let items: [PulseStampId]
     }
 
-    public static let stickerPacks: [StickerPack] = [
-        .init(name: "Pulse", badge: "bolt.fill", items: ["⚡️", "🔥", "💥", "🎉", "✨", "🌟", "💫", "🚀", "🎯", "🏆"]),
-        .init(name: "Faces", badge: "face.smiling", items: ["😂", "😍", "😎", "🤯", "😭", "😡", "🥳", "😴", "🤔", "🫠"]),
-        .init(name: "Reactions", badge: "hand.thumbsup.fill", items: ["👍", "👎", "🙏", "👏", "💪", "🤝", "😅", "🫡", "🤌", "🤗"]),
-        .init(name: "Love", badge: "heart.fill", items: ["❤️", "🧡", "💛", "💚", "💜", "🖤", "💖", "💘", "💞", "🫶"]),
-        .init(name: "Critters", badge: "pawprint.fill", items: ["🐶", "🐱", "🐼", "🦊", "🐸", "🐵", "🦄", "🐙", "🦋", "🐢"]),
+    public static let stampPacks: [StampPack] = [
+        .init(name: "Signal", badge: "bolt.fill", gradientFrom: "#34d399", gradientTo: "#14b8a6",
+              items: [.bolt, .flame, .sparkles, .rocket, .target, .star]),
+        .init(name: "Celebrate", badge: "heart.fill", gradientFrom: "#fb7185", gradientTo: "#ec4899",
+              items: [.trophy, .crown, .gift, .cake, .music, .heart]),
+        .init(name: "Create", badge: "face.smiling.fill", gradientFrom: "#fbbf24", gradientTo: "#f97316",
+              items: [.palette, .camera, .mic, .gamepad, .brain, .drama]),
+        .init(name: "Nature", badge: "pawprint.fill", gradientFrom: "#a3e635", gradientTo: "#22c55e",
+              items: [.leaf, .moon, .drop, .planet, .coffee, .paw]),
+        .init(name: "Marks", badge: "hand.thumbsup.fill", gradientFrom: "#a78bfa", gradientTo: "#e879f9",
+              items: [.smile, .pin, .sun, .shield, .key, .thumbsup, .thumbsdown]),
     ]
+
+    /// Tile gradient for a pack name - unknown packs fall back to the
+    /// neutral Signal pair (web stickerGradient parity).
+    public static func stampGradientPack(named name: String?) -> StampPack {
+        stampPacks.first { $0.name == name } ?? stampPacks[0]
+    }
+
+    /// Sticker payload decode ({ emoji, pack } JSON string - the payload
+    /// key keeps its historical name, the VALUE domain is stamp ids).
+    /// Legacy emoji values normalize through the registry; a corrupt or
+    /// missing payload yields nil (the bubble degrades to plain text).
+    public static func stampOfPayload(_ payload: String?) -> (stamp: PulseStampId, pack: String)? {
+        guard let payload, !payload.isEmpty,
+              let data = payload.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let raw = object["emoji"] as? String, !raw.isEmpty else { return nil }
+        let pack = object["pack"] as? String ?? "Signal"
+        return (stamp: PulseStampId.normalize(raw), pack: pack)
+    }
 }

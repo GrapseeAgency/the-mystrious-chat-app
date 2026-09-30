@@ -14,7 +14,7 @@ final class Wave7WireTests: XCTestCase {
     func testRedPacketCreateResultPopulated() throws {
         let r = try decode(
             WireRedPacketCreateResult.self,
-            #"{"message":{"id":"m1","conversationId":"c1","senderId":"u1","content":"🧧 Red packet","kind":"redpacket","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"packetId\":\"p1\",\"total\":100,\"count\":5,\"note\":\"hi\"}"},"packet":{"id":"p1","total":100,"count":5,"grabbed":0,"expiresAt":"2026-01-16T00:00:00.000Z"}}"#,
+            #"{"message":{"id":"m1","conversationId":"c1","senderId":"u1","content":"Red packet","kind":"redpacket","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"packetId\":\"p1\",\"total\":100,\"count\":5,\"note\":\"hi\"}"},"packet":{"id":"p1","total":100,"count":5,"grabbed":0,"expiresAt":"2026-01-16T00:00:00.000Z"}}"#,
         )
         XCTAssertEqual(r.message?.kind, "redpacket")
         XCTAssertEqual(r.packet?.id, "p1")
@@ -135,7 +135,7 @@ final class Wave7WireTests: XCTestCase {
     func testGameCreateResultCarriesMessage() throws {
         let r = try decode(
             WireGameMatchCreateResult.self,
-            #"{"match":{"id":"m1","status":"active"},"message":{"id":"gm1","conversationId":"c1","senderId":"u1","content":"⚔️ Tic-tac-toe - open challenge","kind":"game","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"matchId\":\"m1\",\"game\":\"tictactoe\"}"}}"#,
+            #"{"match":{"id":"m1","status":"active"},"message":{"id":"gm1","conversationId":"c1","senderId":"u1","content":"Tic-tac-toe - open challenge","kind":"game","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"matchId\":\"m1\",\"game\":\"tictactoe\"}"}}"#,
         )
         XCTAssertEqual(r.message?.kind, "game")
         XCTAssertEqual(PulseWave7Logic.gamePayload(r.message?.payload)?.matchId, "m1")
@@ -150,7 +150,7 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(t.entries?.first?.points, 3)
         let create = try decode(
             WireTournamentCreateResult.self,
-            #"{"tournament":{"id":"t1","name":"S1","status":"running"},"message":{"id":"tm1","conversationId":"c1","senderId":"u1","content":"🏆 Tournament S1 started","kind":"tournament","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"tournamentId\":\"t1\",\"name\":\"S1\",\"game\":\"tictactoe\"}"}}"#,
+            #"{"tournament":{"id":"t1","name":"S1","status":"running"},"message":{"id":"tm1","conversationId":"c1","senderId":"u1","content":"Tournament S1 started","kind":"tournament","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"tournamentId\":\"t1\",\"name\":\"S1\",\"game\":\"tictactoe\"}"}}"#,
         )
         XCTAssertEqual(PulseWave7Logic.tournamentPayload(create.message?.payload)?.name, "S1")
         let join = try decode(WireTournamentJoinResult.self, #"{"entry":{"id":"en1","tournamentId":"t1","userId":"u1","points":0}}"#)
@@ -230,7 +230,7 @@ final class Wave7WireTests: XCTestCase {
         let store = try PulseStore(path: dir.appendingPathComponent("pulse.db").path)
         let json = #"{"packetId":"p1","total":100,"count":5,"note":"hi"}"#
         let message = WireChatMessage(
-            id: "m7", conversationId: "c7", senderId: "u1", content: "🧧 Red packet", kind: "redpacket",
+            id: "m7", conversationId: "c7", senderId: "u1", content: "Red packet", kind: "redpacket",
             createdAt: "2026-01-15T00:00:00.000Z", editedAt: nil, deletedAt: nil, sender: nil,
             reactions: nil, replyTo: nil, parentId: nil, imagePath: nil, audioPath: nil,
             durationMs: nil, filePath: nil, fileName: nil, fileSize: nil, pinnedAt: nil,

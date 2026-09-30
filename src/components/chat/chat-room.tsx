@@ -78,7 +78,6 @@ import {
   SendHorizontal,
   ShieldCheck,
   Ban,
-  Smile,
   Sparkles,
   SquareKanban,
   Sticker,
@@ -123,11 +122,11 @@ import {
   isSameDayIso,
   jsonBody,
   otherMemberOf,
-  REACTION_CHOICES,
-  EMOJI_PICKER_CHOICES,
   splitUrlSegments,
   uid,
 } from '@/lib/pulse-utils'
+import { REACTION_IDS, REACTION_LABELS, reactionId, stampId } from '@/lib/icon-ids'
+import { reactionGlyphFor, stampGlyphFor } from '@/components/ui/icons'
 import { haptic, pulseSettingsStore } from '@/lib/pulse-settings'
 import { spring, ease, pressTap, pressSpring, fireParticles, type ParticleKind } from '@/lib/motion'
 import { pulseDraftsStore } from '@/lib/pulse-drafts'
@@ -177,7 +176,7 @@ import {
   type EffectOrigin,
   type MessageEffectName,
 } from '@/components/chat/message-effects'
-import { StickerPicker, stickerGradient, type StickerPick } from '@/components/chat/sticker-picker'
+import { StickerPicker, stickerGradient, type StampPick } from '@/components/chat/sticker-picker'
 import {
   LocationBubble,
   LocationShareSheet,
@@ -370,13 +369,14 @@ function anonAliasPreview(userId: string, conversationId: string): string {
   return `${adjective} the ${animal}`
 }
 
-/** Safe-parse a sticker payload {emoji, pack} - never throws. */
-function parseSticker(payload: string | null): { emoji: string; pack: string } | null {
+/** Safe-parse a sticker payload {emoji, pack}. The value domain is
+ * stamp ids (legacy emoji values normalize through the registry). */
+function parseSticker(payload: string | null): { stamp: string; pack: string } | null {
   const p = parseMessagePayload(payload)
-  const emoji = typeof p.emoji === 'string' ? p.emoji : ''
-  if (!emoji) return null
-  const pack = typeof p.pack === 'string' ? p.pack : 'Pulse'
-  return { emoji, pack }
+  const raw = typeof p.emoji === 'string' ? p.emoji : ''
+  if (!raw) return null
+  const pack = typeof p.pack === 'string' ? p.pack : 'Signal'
+  return { stamp: stampId(raw), pack }
 }
 
 /** Safe-parse a message payload blob - never throws, always an object. */
@@ -3190,7 +3190,7 @@ export function ChatRoom({
 
   /** Sticker tile tap → real kind:'sticker' message. */
   const sendSticker = useCallback(
-    (pick: StickerPick) => {
+    (pick: StampPick) => {
       if (sendMessage.isPending || isOffline) {
         if (isOffline) toast.error('Stickers need a connection')
         return
@@ -3199,7 +3199,7 @@ export function ChatRoom({
         clientId: uid(),
         content: '',
         kind: 'sticker',
-        payload: { emoji: pick.emoji, pack: pick.pack },
+        payload: { emoji: pick.stamp, pack: pick.pack },
         ...(replyTo && !replyTo.deletedAt ? { replyToId: replyTo.id } : {}),
       })
     },
@@ -5416,43 +5416,6 @@ export function ChatRoom({
                 className="pulse-scroll max-h-[120px] min-h-[44px] w-full flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-[height] duration-200 ease-out placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
               />
               {/* R24-b incognito arm moved to the tray's Express group (R34-b regroup) */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label="Insert emoji"
-                    className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-500 active:scale-90 dark:hover:bg-zinc-800"
-                  >
-                    <Smile className="size-6" aria-hidden />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  side="top"
-                  align="start"
-                  sideOffset={10}
-                  className="w-[272px] rounded-2xl p-2 dark:bg-zinc-800"
-                >
-                  <div className="grid grid-cols-8 gap-0.5">
-                    {EMOJI_PICKER_CHOICES.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        aria-label={`Insert ${emoji}`}
-                        onClick={() => {
-                          setInput((prev) => prev + emoji)
-                          requestAnimationFrame(() => {
-                            autosize()
-                            textareaRef.current?.focus()
-                          })
-                        }}
-                        className="rounded-lg py-1 text-xl outline-none transition-transform hover:bg-zinc-100 hover:scale-125 active:scale-95 dark:hover:bg-zinc-700"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
               {input.trim().length === 0 && !editing && pendingEffect === null ? (
                 <motion.button
                   type="button"
@@ -5866,7 +5829,10 @@ export function ChatRoom({
           {reactionInfo ? (
             <div className="pb-2">
               <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
-                <span className="text-lg leading-none">{reactionInfo.emoji}</span>
+                {(() => {
+                  const InfoGlyph = reactionGlyphFor(reactionInfo.emoji)
+                  return <InfoGlyph className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                })()}
                 {(() => {
                   const group = reactionInfo.message.reactions.find((g) => g.emoji === reactionInfo.emoji)
                   const n = group?.count ?? 0
@@ -5914,12 +5880,15 @@ export function ChatRoom({
                 }}
                 className="mt-1 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-bold text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-60"
               >
-                <span className="text-base leading-none">{reactionInfo.emoji}</span>
+                {(() => {
+                  const ToggleGlyph = reactionGlyphFor(reactionInfo.emoji)
+                  return <ToggleGlyph className="size-4" aria-hidden />
+                })()}
                 {reactionInfo.message.reactions
                   .find((g) => g.emoji === reactionInfo.emoji)
                   ?.userIds.includes(me.id)
                   ? 'Remove your reaction'
-                  : `React ${reactionInfo.emoji}`}
+                  : `React with ${REACTION_LABELS[reactionId(reactionInfo.emoji)]}`}
               </button>
             </div>
           ) : null}
@@ -6348,19 +6317,20 @@ function MessageActionMenu({
       >
         {!deleted ? (
           <GlassMenuStrip role="group" aria-label="React to this message">
-            {REACTION_CHOICES.map((emoji) => {
+            {REACTION_IDS.map((rid) => {
               const active = message.reactions.some(
-                (g) => g.emoji === emoji && g.userIds.includes(myId),
+                (g) => g.emoji === rid && g.userIds.includes(myId),
               )
+              const ReactionGlyph = reactionGlyphFor(rid)
               return (
                 <motion.button
-                  key={emoji}
+                  key={rid}
                   type="button"
-                  aria-label={`React with ${emoji}`}
+                  aria-label={`React with ${REACTION_LABELS[rid]}`}
                   aria-pressed={active}
                   whileTap={{ scale: 0.82 }}
                   transition={pressSpring}
-                  onClick={(e) => onReact(emoji, e.currentTarget)}
+                  onClick={(e) => onReact(rid, e.currentTarget)}
                   className={cn(
                     'flex size-9 items-center justify-center rounded-full text-xl outline-none transition-colors',
                     active
@@ -6368,7 +6338,7 @@ function MessageActionMenu({
                       : 'hover:bg-zinc-900/[0.06] dark:hover:bg-white/[0.08]',
                   )}
                 >
-                  {emoji}
+                  <ReactionGlyph className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden />
                 </motion.button>
               )
             })}
@@ -7301,7 +7271,7 @@ const MessageRow = memo(function MessageRow({
 
   /** true when a heart double-tap would ADD (not remove) the reaction */
   const doubleTapAddsHeart = !message.reactions.some(
-    (g) => g.emoji === '❤️' && g.userIds.includes(myId),
+    (g) => g.emoji === 'heart' && g.userIds.includes(myId),
   )
 
   const openReactionInfo = (emoji: string) => {
@@ -7426,7 +7396,7 @@ const MessageRow = memo(function MessageRow({
           onDoubleClick={(e) => {
             if (interactive) {
               if (doubleTapAddsHeart && !reducedMotion) fireParticlesAt(e.currentTarget, 'hearts', 28)
-              onToggleReaction(message.id, '❤️')
+              onToggleReaction(message.id, 'heart')
             }
           }}
           role={interactive && !isImage && !isFile ? 'button' : undefined}
@@ -7610,13 +7580,16 @@ const MessageRow = memo(function MessageRow({
               ) : isSticker && sticker ? (
                 <div
                   role="img"
-                  aria-label={`Sticker ${sticker.emoji} from the ${sticker.pack} pack`}
+                  aria-label={`Sticker ${sticker.stamp} from the ${sticker.pack} pack`}
                   className={cn(
-                    'flex size-24 items-center justify-center rounded-3xl text-5xl shadow-md ring-1 ring-black/5 transition-transform active:scale-95',
+                    'flex size-24 items-center justify-center rounded-3xl shadow-md ring-1 ring-black/5 transition-transform active:scale-95',
                     stickerGradient(sticker.pack),
                   )}
                 >
-                  {sticker.emoji}
+                  {(() => {
+                    const StampGlyph = stampGlyphFor(sticker.stamp)
+                    return <StampGlyph className="size-12 text-white drop-shadow-sm" aria-hidden />
+                  })()}
                 </div>
               ) : isLocation && loc ? (
                 <LocationBubble lat={loc.lat} lng={loc.lng} label={loc.label} mine={mine} />
@@ -7714,7 +7687,7 @@ const MessageRow = memo(function MessageRow({
                 <button
                   key={group.emoji}
                   type="button"
-                  aria-label={`${group.emoji} ${group.count} - tap to toggle, hold for details`}
+                  aria-label={`${REACTION_LABELS[reactionId(group.emoji)]} ${group.count} - tap to toggle, hold for details`}
                   onClick={(e) => {
                     if (!chipFiredRef.current) {
                       // R22: hearts burst from the chip when a reaction is added
@@ -7751,7 +7724,10 @@ const MessageRow = memo(function MessageRow({
                       : 'border-zinc-200 bg-white/95 dark:border-zinc-600 dark:bg-zinc-800/95',
                   )}
                 >
-                  <span className="text-xs leading-none">{group.emoji}</span>
+                  {(() => {
+                    const ChipGlyph = reactionGlyphFor(group.emoji)
+                    return <ChipGlyph className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                  })()}
                   {group.count > 1 ? (
                     <motion.span
                       key={`${group.count}-${iReacted}`}

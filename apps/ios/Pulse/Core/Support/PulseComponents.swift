@@ -248,19 +248,20 @@ struct StreakHeatRing: View {
     }
 }
 
-/// Row unread capsule - 18pt emerald pill, white 2pt ring, "99+" cap.
+/// Row unread capsule - 18pt mint pill (R19-b: accent token so dark reads
+/// neon mint), on-accent ink, "99+" cap.
 struct RowUnreadBadge: View {
     let count: Int
 
     var body: some View {
         Text(count > 99 ? "99+" : "\(count)")
             .font(.system(size: 10, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(PulseTheme.onAccent)
             .padding(.horizontal, 6)
             .frame(minWidth: 18, minHeight: 18)
-            .background(Capsule().fill(PulseTheme.emerald500))
+            .background(Capsule().fill(PulseTheme.accent))
             .overlay(Capsule().strokeBorder(PulseTheme.badgeRing, lineWidth: 2))
-            .shadow(color: PulseTheme.emerald600.opacity(0.40), radius: 2, y: 1)
+            .shadow(color: PulseTheme.accent.opacity(0.40), radius: 3, y: 1)
     }
 }
 

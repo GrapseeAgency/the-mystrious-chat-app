@@ -73,8 +73,8 @@ final class PulseStoreMigrationTests: XCTestCase {
             deletedAt: nil,
             sender: WireSender(id: "u2", name: "Grace", username: nil, color: "amber", avatar: nil),
             reactions: [
-                WireReactionGroup(emoji: "👍", userIds: ["u1", "u2"], count: 2),
-                WireReactionGroup(emoji: "🎉", userIds: ["u9"], count: 1),
+                WireReactionGroup(emoji: "thumbsup", userIds: ["u1", "u2"], count: 2),
+                WireReactionGroup(emoji: "celebrate", userIds: ["u9"], count: 1),
             ],
             replyTo: nil,
             parentId: parentId,
@@ -297,7 +297,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(rich.sender?.name, "Grace")
         XCTAssertEqual(rich.sender?.color, "amber")
         XCTAssertEqual(rich.reactions?.count, 2)
-        XCTAssertEqual(rich.reactions?.first?.emoji, "👍")
+        XCTAssertEqual(rich.reactions?.first?.emoji, "thumbsup")
         XCTAssertEqual(rich.reactions?.first?.userIds, ["u1", "u2"])
         XCTAssertEqual(rich.reactions?.last?.userIds, ["u9"])
     }
@@ -331,8 +331,8 @@ final class PulseStoreMigrationTests: XCTestCase {
 
     func testReactionsJsonCodecRoundTrip() throws {
         let groups = [
-            WireReactionGroup(emoji: "👍", userIds: ["u1", "u2"], count: 2),
-            WireReactionGroup(emoji: "🎉", userIds: ["u9"], count: 1),
+            WireReactionGroup(emoji: "thumbsup", userIds: ["u1", "u2"], count: 2),
+            WireReactionGroup(emoji: "celebrate", userIds: ["u9"], count: 1),
         ]
         let json = PulseStore.reactionsJsonData(groups)
         XCTAssertEqual(PulseStore.reactions(fromJson: json), groups)
@@ -473,14 +473,14 @@ final class PulseStoreMigrationTests: XCTestCase {
 
     func testTopicsUpsertPrunesAndOrdersByLastMessageAt() throws {
         let store = try PulseStore()
-        let design = WireTopic(id: "t1", name: "Design", emoji: "🎨", lastMessageAt: "2026-09-08T12:00:00.000Z", messageCount: 12)
+        let design = WireTopic(id: "t1", name: "Design", emoji: "palette", lastMessageAt: "2026-09-08T12:00:00.000Z", messageCount: 12)
         let qa = WireTopic(id: "t2", name: "QA", emoji: nil, lastMessageAt: "2026-09-08T11:00:00.000Z", messageCount: 3)
         try store.upsert(topics: [design, qa], conversationId: "c1")
 
         // Newest activity first; nil emoji rehydrates from the column default.
         var topics = try store.topics(conversationId: "c1")
         XCTAssertEqual(topics.map(\.id), ["t1", "t2"])
-        XCTAssertEqual(topics[0].emoji, "🎨")
+        XCTAssertEqual(topics[0].emoji, "palette")
         XCTAssertEqual(topics[0].messageCount, 12)
         XCTAssertEqual(topics[1].emoji, "chat") // column NOT NULL DEFAULT 'chat' (R18-b icon ids)
 
@@ -490,7 +490,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(topics.map(\.id), ["t1"])
 
         // Pruning is scoped to the conversation - c2 rows stay untouched.
-        let other = WireTopic(id: "t3", name: "Ops", emoji: "🛠️", lastMessageAt: "2026-09-08T10:00:00.000Z", messageCount: 1)
+        let other = WireTopic(id: "t3", name: "Ops", emoji: "wrench", lastMessageAt: "2026-09-08T10:00:00.000Z", messageCount: 1)
         try store.upsert(topics: [other], conversationId: "c2")
         XCTAssertEqual(try store.topics(conversationId: "c2").map(\.id), ["t3"])
         XCTAssertEqual(try store.topics(conversationId: "c1").map(\.id), ["t1"])

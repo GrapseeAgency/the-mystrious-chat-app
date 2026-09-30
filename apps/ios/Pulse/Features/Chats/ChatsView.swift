@@ -95,7 +95,12 @@ struct ChatsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .top) {
-                PulseTheme.pageWash
+                // R19-b - carbon page (paper in light) with a STATIC mint
+                // aurora: two blurred blooms + a soft top fade, zero motion.
+                Rectangle()
+                    .fill(PulseTheme.neoPage)
+                    .ignoresSafeArea()
+                auroraWash
                     .ignoresSafeArea()
                 content
             }
@@ -205,6 +210,31 @@ struct ChatsView: View {
     }
 
     // actions
+
+    /// R19-b - the static mint aurora behind the chats list: one accent
+    /// bloom top-leading, one magenta bloom (sparing) top-trailing and a
+    /// soft top fade. No animation - the wash costs nothing at rest.
+    private var auroraWash: some View {
+        ZStack {
+            LinearGradient(
+                colors: [PulseTheme.accent.opacity(0.10), Color.clear],
+                startPoint: .top,
+                endPoint: UnitPoint(x: 0.5, y: 0.38),
+            )
+            Circle()
+                .fill(PulseTheme.accent.opacity(0.10))
+                .frame(width: 320, height: 320)
+                .blur(radius: 90)
+                .offset(x: -110, y: -150)
+            Circle()
+                .fill(PulseTheme.neonMagenta.opacity(0.05))
+                .frame(width: 260, height: 260)
+                .blur(radius: 90)
+                .offset(x: 130, y: -90)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 
     private func enterSearch() {
         if viewModel.selectMode { viewModel.exitSelect() }
@@ -739,73 +769,55 @@ private struct ChatsHeaderBar: View {
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Open my profile")
 
+                // R19-b - the Pulse wordmark rides the SF Rounded floor.
                 HStack(spacing: 6) {
                     Text("Pulse")
-                        .font(.system(size: 20, weight: .bold, design: .default))
-                        .tracking(-0.3)
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .tracking(-0.4)
                         .foregroundStyle(PulseTheme.titleOnWash)
                     Circle()
-                        .fill(PulseTheme.emeraldGradient)
+                        .fill(PulseTheme.accent)
                         .frame(width: 6, height: 6)
+                        .shadow(color: PulseTheme.accent.opacity(0.6), radius: 3)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 4)
 
-                Button(action: onPhone) {
-                    Image(systemName: "phone")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .frame(width: 40, height: 40)
-                        .background(Circle().fill(Color.clear))
-                        .contentShape(Circle())
+                // R19-b - search rides the header tiles now (the old glass
+                // pill is gone; the tile opens the same search surface).
+                headerTile("magnifyingglass", "Search chats and messages", onStartSearch)
+                headerTile("phone", "Open calls", onPhone)
+                headerTile("square.and.pencil", "New chat", onCompose)
+                headerTile(appearanceIcon, "Appearance: \(appearanceName)") {
+                    prefs.cycleAppearance()
                 }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("Open calls")
-
-                Button(action: onCompose) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .frame(width: 40, height: 40)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("New chat")
-
-                Button(action: { prefs.cycleAppearance() }) {
-                    Image(systemName: appearanceIcon)
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .frame(width: 40, height: 40)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(PulseButtonStyle())
-                .accessibilityLabel("Appearance: \(appearanceName)")
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 10)
-
-            Button(action: onStartSearch) {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 15))
-                        .foregroundStyle(PulseTheme.textTertiary)
-                    Text("Search chats and messages")
-                        .font(.system(size: 14))
-                        .foregroundStyle(PulseTheme.textTertiary)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 16)
-                .frame(height: 40)
-                .background(Capsule().fill(PulseTheme.glassFill))
-                .overlay(Capsule().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
-            }
-            .buttonStyle(PulseButtonStyle())
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
-            .accessibilityLabel("Start searching")
         }
+    }
+
+    /// R19-b - one 44pt glow-rimmed glyph tile (neo surface fill, hairline
+    /// rim, soft accent halo) - the header's search/compose/theme hardware.
+    private func headerTile(_ icon: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(PulseTheme.accent)
+                .frame(width: 44, height: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(PulseTheme.chipFill),
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1),
+                )
+                .shadow(color: PulseTheme.accent.opacity(0.18), radius: 6, y: 2)
+        }
+        .buttonStyle(PulseButtonStyle())
+        .accessibilityLabel(label)
     }
 
     private var appearanceIcon: String {
@@ -822,13 +834,6 @@ private struct ChatsHeaderBar: View {
         case "dark": return "Dark"
         default: return "System"
         }
-    }
-}
-
-private extension PulseTheme {
-    /// 6pt title dot - emerald 400→600.
-    static var emeraldGradient: LinearGradient {
-        LinearGradient(colors: [emerald400, emerald600], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 
@@ -947,18 +952,18 @@ private struct FilterChipsRow: View {
                         .foregroundStyle(PulseTheme.accent)
                         .padding(.horizontal, 4)
                         .frame(minWidth: 15, minHeight: 15)
-                        .background(Capsule().fill(PulseTheme.emerald500.opacity(0.20)))
+                        .background(Capsule().fill(PulseTheme.accent.opacity(0.20)))
                 }
                 Text(label)
             }
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(active ? Color.white : PulseTheme.textSecondary)
+            .foregroundStyle(active ? PulseTheme.onAccent : PulseTheme.textSecondary)
             .padding(.horizontal, 12)
             .frame(height: 28)
             .background(
-                Capsule().fill(active ? PulseTheme.emerald500 : PulseTheme.chipFill),
+                Capsule().fill(active ? PulseTheme.accent : PulseTheme.chipFill),
             )
-            .shadow(color: active ? PulseTheme.emerald600.opacity(0.25) : .clear, radius: 3, y: 1)
+            .shadow(color: active ? PulseTheme.accent.opacity(0.30) : .clear, radius: 4, y: 1)
         }
         .buttonStyle(PulseButtonStyle())
         .accessibilityLabel("\(label) filter")
@@ -1068,7 +1073,7 @@ private struct FolderRailView: View {
                 if let icon {
                     Image(systemName: icon)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(active ? Color.white : PulseTheme.accent)
+                        .foregroundStyle(active ? PulseTheme.onAccent : PulseTheme.accent)
                 }
                 Text(label)
                     .lineLimit(1)
@@ -1076,23 +1081,24 @@ private struct FolderRailView: View {
                 if count > 0 {
                     Text(count > 99 ? "99+" : "\(count)")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(active ? .white : PulseTheme.accent)
+                        .foregroundStyle(active ? PulseTheme.onAccent : PulseTheme.accent)
                         .padding(.horizontal, 4)
                         .frame(minWidth: 15, minHeight: 15)
                         .background(
-                            Capsule().fill(active ? Color.white.opacity(0.25) : PulseTheme.emerald500.opacity(0.20)),
+                            Capsule().fill(active ? PulseTheme.onAccent.opacity(0.25) : PulseTheme.accent.opacity(0.20)),
                         )
                 }
             }
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(active ? Color.white : PulseTheme.textPrimary)
+            .foregroundStyle(active ? PulseTheme.onAccent : PulseTheme.textPrimary)
             .padding(.horizontal, 16)
             .frame(height: 44)
             .background(
-                Capsule().fill(active ? PulseTheme.emerald500 : Color.clear)
+                Capsule().fill(active ? PulseTheme.accent : Color.clear)
                     .background(Capsule().fill(PulseTheme.glassFill)),
             )
             .overlay(Capsule().strokeBorder(active ? Color.clear : PulseTheme.hairlineStrong, lineWidth: 1))
+            .shadow(color: active ? PulseTheme.accent.opacity(0.25) : .clear, radius: 5, y: 2)
         }
         .buttonStyle(PulseButtonStyle())
         .accessibilityLabel(id == nil ? "All chats" : "Folder \(label)")
@@ -1270,7 +1276,8 @@ private struct ConversationRow: View {
             Rectangle()
                 .fill(PulseTheme.hairlineSoft)
                 .frame(height: 1)
-                .padding(.leading, 64)
+                // R19-b - inset past the 52pt avatar (8 + 52 + 8).
+                .padding(.leading, 68)
         }
         .padding(.horizontal, 8)
         .opacity(entered ? 1 : 0)
@@ -1398,7 +1405,8 @@ private struct ConversationRow: View {
         .accessibilityLabel("\(row.name), \(row.time), \(row.previewText)")
     }
 
-    // avatar 48pt - presence halo + heat ring + presence dot / squircle group
+    // avatar 52pt (R19-b) - hairline ring + presence halo + heat ring +
+    // presence dot / squircle group
     private var avatarBlock: some View {
         ZStack {
             if !row.isGroup && row.online {
@@ -1411,18 +1419,27 @@ private struct ConversationRow: View {
                 name: row.isGroup ? row.groupTitle : (row.dmName ?? row.name),
                 colorName: row.isGroup ? nil : (row.dmColor ?? "emerald"),
                 photoPath: row.photo,
-                size: 48,
+                size: 52,
                 groupID: row.isGroup ? row.id : nil,
                 avatarShape: row.isGroup ? .squircle : .circle,
                 showPresence: !row.isGroup,
                 online: row.online,
             )
+            // R19-b - the hairline ring every avatar wears on carbon.
+            row.isGroup
+                ? AnyView(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1),
+                )
+                : AnyView(
+                    Circle().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1),
+                )
             if selectMode {
                 SelectCheckmark(selected: selected)
                     .transition(.scale(scale: 0.4).combined(with: .opacity))
             }
         }
-        .frame(width: 48, height: 48)
+        .frame(width: 52, height: 52)
         .animation(.pulse(.pulseBouncy, reduceMotion: reduceMotion), value: selectMode)
     }
 

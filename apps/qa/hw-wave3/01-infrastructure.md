@@ -2,7 +2,7 @@
 
 Nothing below can be produced from the sandbox (no inbound ports, no public
 IP for UDP relay). This is the operator runbook. Do not run call tests before
-every check in §5 is ✅.
+every check in §5 is .
 
 ## 1. Host
 
@@ -99,7 +99,7 @@ probe — Android `ManifestEndpoints.kt`, iOS `PulseEndpoints.fetchManifestOverr
 - Devices adopt overrides within one launch (3–6 s probe, persisted in
   vault/Keychain). Cold-start the apps after committing the manifest.
 
-## 5. Infrastructure verification (all must be ✅ before device tests)
+## 5. Infrastructure verification (all must be  before device tests)
 
 | # | Check | Command | Expected |
 |---|-------|---------|----------|

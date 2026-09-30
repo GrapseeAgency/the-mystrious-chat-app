@@ -21,7 +21,7 @@ class Wave6LogicTest {
         val dto = PulseJson.decodeFromString(
             UserEnvelopeDto.serializer(),
             """{"user":{"id":"u1","name":"Cara Chen","username":"cara","about":"hi","color":"emerald",
-                "avatar":"/api/uploads/a.jpg","statusEmoji":"🔥","statusText":"shipping",
+                "avatar":"/api/uploads/a.jpg","statusEmoji":"flame","statusText":"shipping",
                 "createdAt":"2024-01-02T03:04:05.000Z","lastSeenAt":null,"unknownKey":123}}""",
         )
         val u = requireNotNull(dto.user)
@@ -29,7 +29,7 @@ class Wave6LogicTest {
         assertEquals("Cara Chen", u.name)
         assertEquals("cara", u.username)
         assertNull(u.lastSeenAt)
-        assertEquals("🔥", u.statusEmoji)
+        assertEquals("flame", u.statusEmoji)
     }
 
     @Test
@@ -127,7 +127,7 @@ class Wave6LogicTest {
     fun `folder rows parse with ordered membership`() {
         val folder = PulseJson.decodeFromString(
             FolderDto.serializer(),
-            """{"id":"f1","name":"Work","emoji":"💼","position":2,
+            """{"id":"f1","name":"Work","emoji":"briefcase","position":2,
                 "conversationIds":["c2","c1"],"extra":true}""",
         )
         assertEquals(listOf("c2", "c1"), folder.conversationIds)

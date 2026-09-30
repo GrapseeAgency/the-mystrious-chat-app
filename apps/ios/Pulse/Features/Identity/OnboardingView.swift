@@ -339,14 +339,41 @@ struct OnboardingView: View {
         _viewModel = StateObject(wrappedValue: OnboardingViewModel(api: session.api))
     }
 
-    // zinc slices the web screen uses, per color scheme
-    private var zinc900: Color { colorScheme == .dark ? Color(hex: 0xFAFAFA) : Color(hex: 0x18181B) }
-    private var zinc400: Color { Color(hex: 0xA1A1AA) }
-    private var zinc500: Color { Color(hex: 0x71717A) }
-    private var zinc200: Color { colorScheme == .dark ? Color(hex: 0x3F3F46) : Color(hex: 0xE4E4E7) }
-    private var zincField: Color { colorScheme == .dark ? Color(hex: 0x27272A) : Color(hex: 0xFAFAFA) }
-    private var emerald600: Color { Color(hex: 0x059669) }
+    // R19-b - the palette now rides the Neo tokens (dark = the flagship
+    // carbon/neon set, light keeps the paper family). The historical zinc
+    // names stay as local aliases so every call site below keeps its shape.
+    private var zinc900: Color { PulseTheme.titleOnWash }
+    private var zinc400: Color { PulseTheme.textTertiary }
+    private var zinc500: Color { PulseTheme.textSecondary }
+    private var zinc200: Color { PulseTheme.hairlineStrong }
+    private var zincField: Color { PulseTheme.glassFill }
+    private var emerald600: Color { PulseTheme.accent }
     private var amberText: Color { colorScheme == .dark ? Color(hex: 0xFBBF24) : Color(hex: 0xD97706) }
+
+    /// R19-b - the static onboarding aurora behind everything: one mint
+    /// bloom top-leading, one faint magenta counter-bleed bottom-right and
+    /// a soft top fade. No animation - the wash costs nothing at rest.
+    private var auroraWash: some View {
+        ZStack {
+            LinearGradient(
+                colors: [PulseTheme.accent.opacity(0.10), Color.clear],
+                startPoint: .top,
+                endPoint: UnitPoint(x: 0.5, y: 0.40),
+            )
+            Circle()
+                .fill(PulseTheme.accent.opacity(0.12))
+                .frame(width: 360, height: 360)
+                .blur(radius: 100)
+                .offset(x: -120, y: -170)
+            Circle()
+                .fill(PulseTheme.neonMagenta.opacity(0.05))
+                .frame(width: 300, height: 300)
+                .blur(radius: 100)
+                .offset(x: 140, y: 330)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 
     private var stepTransition: AnyTransition {
         .asymmetric(
@@ -356,24 +383,32 @@ struct OnboardingView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                hero
-                wordmark
-                ZStack {
-                    switch viewModel.step {
-                    case .name:
-                        nameStep.transition(stepTransition)
-                    case .handle:
-                        handleStep.transition(stepTransition)
+        ZStack {
+            // R19-b - full-bleed carbon hero canvas (paper in light).
+            Rectangle()
+                .fill(PulseTheme.neoPage)
+                .ignoresSafeArea()
+            auroraWash
+                .ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: 20) {
+                    hero
+                    wordmark
+                    ZStack {
+                        switch viewModel.step {
+                        case .name:
+                            nameStep.transition(stepTransition)
+                        case .handle:
+                            handleStep.transition(stepTransition)
+                        }
                     }
+                    tipCard
                 }
-                tipCard
+                .padding(.horizontal, 24)
+                .padding(.top, 32)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 32)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.87), value: viewModel.step)
         .onAppear {
@@ -398,11 +433,11 @@ struct OnboardingView: View {
 
     private var hero: some View {
         ZStack {
-            // webgl-glow stand-in: slow emerald breathing behind the illustration
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            // webgl-glow stand-in: slow mint breathing behind the illustration
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(
                     RadialGradient(
-                        colors: [PulseTheme.emerald.opacity(glowUp ? 0.85 : 0.45), .clear],
+                        colors: [PulseTheme.accent.opacity(glowUp ? 0.85 : 0.45), .clear],
                         center: .center,
                         startRadius: 8,
                         endRadius: 120,
@@ -412,8 +447,12 @@ struct OnboardingView: View {
                 .resizable()
                 .scaledToFill()
                 .frame(width: 196, height: 196)
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .shadow(color: PulseTheme.emerald.opacity(0.10), radius: 12, y: 6)
+                .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1),
+                )
+                .shadow(color: PulseTheme.accent.opacity(0.14), radius: 14, y: 6)
         }
         .frame(width: 196, height: 196)
         .onAppear {
@@ -428,16 +467,17 @@ struct OnboardingView: View {
         VStack(spacing: 4) {
             HStack(spacing: 6) {
                 Text("Pulse")
-                    .font(.system(size: 26, weight: .bold))
-                    .tracking(-0.5)
-                    .foregroundStyle(zinc900)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .tracking(-0.6)
+                    .foregroundStyle(PulseTheme.titleOnWash)
                 Circle()
-                    .fill(LinearGradient(colors: [Color(hex: 0x34D399), emerald600], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .fill(PulseTheme.accent)
                     .frame(width: 8, height: 8)
+                    .shadow(color: PulseTheme.accent.opacity(0.6), radius: 3)
             }
             Text("Your conversations, instantly alive.")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(zinc500)
+                .foregroundStyle(PulseTheme.textTertiary)
         }
     }
 
@@ -521,7 +561,8 @@ struct OnboardingView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(zinc500)
                         .frame(width: 36, height: 36)
-                        .background(Circle().fill(colorScheme == .dark ? Color(hex: 0x27272A) : Color(hex: 0xF4F4F5)))
+                        .background(Circle().fill(PulseTheme.glassFill))
+                        .overlay(Circle().strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
                 }
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Back to name step")
@@ -636,7 +677,7 @@ struct OnboardingView: View {
                 if loading {
                     ProgressView()
                         .controlSize(.mini)
-                        .tint(.white)
+                        .tint(PulseTheme.onAccent)
                 }
                 Text(title)
                     .font(.system(size: 15, weight: .semibold))
@@ -647,24 +688,24 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(emerald600.opacity(enabled ? 1.0 : 0.5)),
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(PulseTheme.accent.opacity(enabled ? 1.0 : 0.5)),
             )
-            .foregroundStyle(.white)
-            .shadow(color: emerald600.opacity(0.2), radius: 6, y: 3)
+            .foregroundStyle(PulseTheme.onAccent)
+            .shadow(color: PulseTheme.accent.opacity(enabled ? 0.30 : 0), radius: 8, y: 3)
         }
         .buttonStyle(PulseButtonStyle())
         .disabled(!enabled)
     }
 
-    /// "That's me - log in instead" - emerald-tinted outline button (web parity).
+    /// "That's me - log in instead" - accent-tinted outline button (web parity).
     private var loginButton: some View {
         Button {
             viewModel.loginInstead(onSuccess: complete)
         } label: {
             HStack(spacing: 6) {
                 if viewModel.signingIn {
-                    ProgressView().controlSize(.mini).tint(colorScheme == .dark ? Color(hex: 0x34D399) : Color(hex: 0x047857))
+                    ProgressView().controlSize(.mini).tint(PulseTheme.accent)
                 } else {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
                         .font(.system(size: 13, weight: .semibold))
@@ -674,14 +715,14 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: .infinity, minHeight: 44)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(PulseTheme.emerald.opacity(0.10)),
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(PulseTheme.accent.opacity(0.10)),
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(PulseTheme.emerald.opacity(0.5), lineWidth: 1),
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(PulseTheme.accent.opacity(0.5), lineWidth: 1),
             )
-            .foregroundStyle(colorScheme == .dark ? Color(hex: 0x34D399) : Color(hex: 0x047857))
+            .foregroundStyle(PulseTheme.accent)
         }
         .buttonStyle(PulseButtonStyle())
         .disabled(!viewModel.validName || viewModel.signingIn || viewModel.reclaimCandidate != nil)
@@ -707,14 +748,14 @@ struct OnboardingView: View {
                 } label: {
                     HStack(spacing: 6) {
                         if viewModel.confirming {
-                            ProgressView().controlSize(.mini).tint(.white)
+                            ProgressView().controlSize(.mini).tint(PulseTheme.onAccent)
                         }
                         Text(viewModel.confirming ? "Signing in…" : "Log in")
                             .font(.system(size: 14, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity, minHeight: 42)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(emerald600))
-                    .foregroundStyle(.white)
+                    .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(PulseTheme.accent))
+                    .foregroundStyle(PulseTheme.onAccent)
                 }
                 .buttonStyle(PulseButtonStyle())
                 .disabled(viewModel.confirming)
@@ -732,12 +773,12 @@ struct OnboardingView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(colorScheme == .dark ? Color(hex: 0x27272A).opacity(0.6) : Color(hex: 0xFAFAFA)),
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(PulseTheme.glassFill),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(PulseTheme.emerald.opacity(0.4), lineWidth: 1),
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(PulseTheme.accent.opacity(0.4), lineWidth: 1),
         )
         .transition(.opacity.combined(with: .move(edge: .top)))
         .accessibilityElement(children: .contain)
@@ -768,11 +809,11 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(colorScheme == .dark ? Color(hex: 0x27272A).opacity(0.6) : Color(hex: 0xFAFAFA)),
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(PulseTheme.glassFill),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(zinc200, style: StrokeStyle(lineWidth: 1, dash: [5, 4])),
         )
     }
@@ -817,9 +858,9 @@ private struct SwatchCircle: View {
             .frame(width: 36, height: 36)
             .overlay {
                 if isSelected {
-                    // web ring-2 ring-emerald-600 ring-offset-2
+                    // web ring-2 ring-offset-2 - the Neo accent ring
                     Circle()
-                        .strokeBorder(Color(hex: 0x059669), lineWidth: 2)
+                        .strokeBorder(PulseTheme.accent, lineWidth: 2)
                         .frame(width: 42, height: 42)
                 }
             }
@@ -830,8 +871,8 @@ private struct SwatchCircle: View {
     }
 }
 
-/// The web's shadcn Input: 44dp rounded field on zinc-50/zinc-800,
-/// emerald focus ring, amber error border - SwiftUI implementation.
+/// The web's shadcn Input, re-skinned R19-b: 44pt neo field on the glass
+/// fill, white 8% hairline at rest, mint focus rim, amber error border.
 private struct PulseOnboardingField: View {
     @Binding var text: String
     let placeholder: String
@@ -845,20 +886,21 @@ private struct PulseOnboardingField: View {
 
     private var borderColor: Color {
         if isError { return Color(hex: 0xFBBF24) }
-        if focused { return Color(hex: 0x059669).opacity(0.6) }
-        return colorScheme == .dark ? Color(hex: 0x3F3F46) : Color(hex: 0xE4E4E7)
+        if focused { return PulseTheme.accent.opacity(0.7) }
+        return PulseTheme.hairlineStrong
     }
 
     var body: some View {
         HStack(spacing: leadingAt ? 4 : 0) {
             if leadingAt {
                 Text("@")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color(hex: 0xA1A1AA))
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(PulseTheme.textTertiary)
             }
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
+                .foregroundStyle(PulseTheme.titleOnWash)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .focused($focused)
@@ -867,11 +909,11 @@ private struct PulseOnboardingField: View {
         .padding(.horizontal, leadingAt ? 14 : 12)
         .frame(height: 44)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(colorScheme == .dark ? Color(hex: 0x27272A) : Color(hex: 0xFAFAFA)),
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(zincField),
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(borderColor, lineWidth: 1),
         )
         .onAppear {

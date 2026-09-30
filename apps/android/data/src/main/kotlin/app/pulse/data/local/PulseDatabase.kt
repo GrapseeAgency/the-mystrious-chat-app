@@ -22,6 +22,7 @@ import app.pulse.domain.model.PollOptionInfo
 import app.pulse.protocol.LinkPreviewDto
 import app.pulse.protocol.PollDto
 import app.pulse.protocol.PollOptionDto
+import app.pulse.protocol.TOPIC_ICON_IDS
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
@@ -47,6 +48,9 @@ import kotlinx.serialization.json.longOrNull
  * v8 (Wave 4) adds the stories snapshot cache `story_cache` (one canonical
  * JSON blob per key mirroring the GET /api/stories DTO page) - additive
  * (MIGRATION_7_8).
+ * v10 (R19-a) retires emoji values on the topics rail: the `emoji` column
+ * default moves to 'chat' and legacy stored values backfill to topic-id
+ * registry values (MIGRATION_9_10).
  */
 @Entity(tableName = "conversations")
 data class ConversationEntity(
@@ -395,7 +399,7 @@ data class TopicEntity(
     @PrimaryKey val id: String,
     val conversationId: String,
     val name: String,
-    @ColumnInfo(defaultValue = "💬") val emoji: String = app.pulse.protocol.TOPIC_ICON_DEFAULT,
+    @ColumnInfo(defaultValue = "chat") val emoji: String = app.pulse.protocol.TOPIC_ICON_DEFAULT,
     val lastMessageAt: String?,
     @ColumnInfo(defaultValue = "0") val messageCount: Int = 0,
 ) {
@@ -869,7 +873,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -941,8 +945,10 @@ abstract class PulseDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `linkPreviewJson` TEXT")
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `topicId` TEXT")
                 db.execSQL(
+                    // The historical v6 default (a legacy glyph) stays byte-exact
+                    // via its unicode escape; R19-a MIGRATION_9_10 retires it at v10.
                     "CREATE TABLE IF NOT EXISTS `topics` (`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, " +
-                        "`name` TEXT NOT NULL, `emoji` TEXT NOT NULL DEFAULT '💬', `lastMessageAt` TEXT, " +
+                        "`name` TEXT NOT NULL, `emoji` TEXT NOT NULL DEFAULT '\ud83d\udcec', `lastMessageAt` TEXT, " +
                         "`messageCount` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_topics_conversationId` ON `topics` (`conversationId`)")
@@ -1006,6 +1012,35 @@ abstract class PulseDatabase : RoomDatabase() {
                 // Wave 7 rich-object carriers (red packet / game / tournament) -
                 // the raw payload JSON must survive offline restarts.
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
+            }
+        }
+
+        /**
+         * v9 → v10 (R19-a): the topic icon column retires emoji values for the
+         * stable topic-id registry (TOPIC_ICON_IDS). Two things must happen:
+         * the column DEFAULT moves from the legacy glyph to 'chat', and stored
+         * legacy values backfill to the nearest id (UPDATE semantics). SQLite
+         * cannot ALTER a column DEFAULT, so the table is rebuilt with the new
+         * default and the backfill rides the INSERT..SELECT CASE in the same
+         * pass. Non-destructive: every row, key and index survives 1:1.
+         */
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `topics_new` (`id` TEXT NOT NULL, `conversationId` TEXT NOT NULL, " +
+                        "`name` TEXT NOT NULL, `emoji` TEXT NOT NULL DEFAULT 'chat', `lastMessageAt` TEXT, " +
+                        "`messageCount` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
+                )
+                val validIds = TOPIC_ICON_IDS.joinToString(",") { "'$it'" }
+                db.execSQL(
+                    "INSERT INTO `topics_new` (`id`,`conversationId`,`name`,`emoji`,`lastMessageAt`,`messageCount`) " +
+                        "SELECT `id`,`conversationId`,`name`," +
+                        "CASE WHEN `emoji` IN ($validIds) THEN `emoji` ELSE 'chat' END," +
+                        "`lastMessageAt`,`messageCount` FROM `topics`",
+                )
+                db.execSQL("DROP TABLE `topics`")
+                db.execSQL("ALTER TABLE `topics_new` RENAME TO `topics`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_topics_conversationId` ON `topics` (`conversationId`)")
             }
         }
     }

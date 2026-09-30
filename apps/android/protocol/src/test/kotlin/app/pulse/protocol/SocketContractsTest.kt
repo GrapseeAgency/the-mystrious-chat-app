@@ -100,7 +100,7 @@ class SocketContractsTest {
             "id": "m1", "conversationId": "c1", "senderId": "u1", "content": "hello",
             "kind": "text", "createdAt": "2026-02-14T10:00:00.000Z",
             "sender": {"id": "u1", "name": "Alice", "color": "emerald"},
-            "reactions": [{"emoji": "❤️", "userIds": ["u2"], "count": 1}],
+            "reactions": [{"emoji": "heart", "userIds": ["u2"], "count": 1}],
             "replyTo": {"id": "m0", "conversationId": "c1", "senderId": "u2", "content": "hi", "createdAt": "2026-02-14T09:59:00.000Z"},
             "someFutureFlag": {"deep": [1, 2, 3]}
           },
@@ -119,7 +119,7 @@ class SocketContractsTest {
         assertEquals("hello", row.content)
         assertEquals("Alice", row.sender?.name)
         assertEquals(1, row.reactions.size)
-        assertEquals("❤️", row.reactions.first().emoji)
+        assertEquals("heart", row.reactions.first().emoji)
         assertEquals("m0", row.replyTo?.id)
     }
 

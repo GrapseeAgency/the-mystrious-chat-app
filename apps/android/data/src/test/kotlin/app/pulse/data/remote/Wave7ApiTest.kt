@@ -56,7 +56,7 @@ class Wave7ApiTest {
     @Test
     fun `create red packet posts total count and note`() = runTest {
         configured()
-        response = """{"message":{"id":"m1","conversationId":"c1","senderId":"u1","content":"🧧 Red packet","kind":"redpacket",
+        response = """{"message":{"id":"m1","conversationId":"c1","senderId":"u1","content":"Red packet","kind":"redpacket",
             "payload":"{\"packetId\":\"p1\",\"total\":100,\"count\":5,\"note\":\"hi\"}","createdAt":"2026-01-15T00:00:00.000Z"},
             "packet":{"id":"p1","total":100,"count":5,"grabbed":0,"expiresAt":"2026-01-16T00:00:00.000Z"}}"""
         val r = api().createRedPacket("u1", "c1", total = 100, count = 5, note = "hi")
@@ -226,7 +226,7 @@ class Wave7ApiTest {
     fun `game create posts open challenge and move posts cell`() = runTest {
         configured()
         response = """{"match":{"id":"m1","conversationId":"c1","game":"tictactoe","playerXId":"u1","playerOId":null,"board":"         ","turn":"X","status":"active","moveCount":0},
-            "message":{"id":"gm1","conversationId":"c1","senderId":"u1","content":"⚔️ Tic-tac-toe - open challenge","kind":"game","createdAt":"2026-01-15T00:00:00.000Z"}}"""
+            "message":{"id":"gm1","conversationId":"c1","senderId":"u1","content":"Tic-tac-toe - open challenge","kind":"game","createdAt":"2026-01-15T00:00:00.000Z"}}"""
         val r = api().createGame("u1", "c1", opponentId = null)
         assertTrue(r is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/games"))

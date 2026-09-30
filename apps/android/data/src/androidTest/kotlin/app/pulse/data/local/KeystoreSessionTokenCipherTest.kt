@@ -63,7 +63,7 @@ class KeystoreSessionTokenCipherTest {
 
     @Test
     fun roundTripSurvivesUnicodeAndWhitespace() {
-        val payload = "token with spaces + emoji 🔐 and unicode Łódź"
+        val payload = "token with spaces + unicode Łódź ünïcode åccénts"
         assertEquals(payload, cipher.decryptOrNull(cipher.encrypt(payload)))
     }
 }

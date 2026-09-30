@@ -22,15 +22,15 @@ Platforms: native Android (Kotlin + Compose) and native iOS (Swift + SwiftUI). B
 | F-RO-09 | Message → rich-object actions ("Add to board", "Remind me", attach palette rows: Whiteboard/Red packet/Events/Game/Tournament/Kanban, groups-only gating + toasts) | ChatRoom long-press + attach palette + header leaderboard entry | ChatRoom long-press + attach palette | in-app |
 | F-RO-10 | XP / leaderboard display (server-authoritative) | LeaderboardSheet (room) / global | LeaderboardSheet | REST |
 | F-HB-01 | Wallet hero (coins/gems/streak/checkedInToday) + ledger | live Hub rewrite (static stub deleted) | live HubView rewrite (wallet tiles deleted) | REST |
-| F-HB-02 | Check-in (+streak copy; 409 body includes wallet → honest toast) | ✓ | ✓ | REST |
-| F-HB-03 | Transfer (@handle, amount validation) | ✓ | ✓ | REST |
-| F-HB-04 | Swap (rates pc/gem 100/80 + stats, min/multiple 100) | ✓ | ✓ | REST |
-| F-HB-05 | Tasks (personal kanban CRUD) | ✓ | ✓ | REST |
-| F-HB-06 | Market (list + buy `{ok,wallet}`, honest 402 on INSUFFICIENT) | ✓ | ✓ | REST |
-| F-HB-07 | Logs (stream, ≤80, live append while open) | ✓ | ✓ | REST |
+| F-HB-02 | Check-in (+streak copy; 409 body includes wallet → honest toast) |  |  | REST |
+| F-HB-03 | Transfer (@handle, amount validation) |  |  | REST |
+| F-HB-04 | Swap (rates pc/gem 100/80 + stats, min/multiple 100) |  |  | REST |
+| F-HB-05 | Tasks (personal kanban CRUD) |  |  | REST |
+| F-HB-06 | Market (list + buy `{ok,wallet}`, honest 402 on INSUFFICIENT) |  |  | REST |
+| F-HB-07 | Logs (stream, ≤80, live append while open) |  |  | REST |
 | F-HB-08 | Apps catalog — 100 apps bundled offline (NO catalog GET on server) | `assets/hub_catalog.json` generated from `src/lib/hub-catalog.ts` via `tools/gen-hub-catalog.mjs` | `Resources/hub_catalog.json` same source | bundled asset |
 | F-HB-09 | Install / uninstall + My apps (fan-out per-app GET — replicated, no batch endpoint invented) | fan-out | fan-out | REST |
-| F-HB-10 | Communities (auto-provisions `#NNN · name` real group, founder admin → opens room) | ✓ | ✓ | REST |
+| F-HB-10 | Communities (auto-provisions `#NNN · name` real group, founder admin → opens room) |  |  | REST |
 
 **Zero scope expansion honored:** no game abandonment, no tournament auto-end, no batch-installs endpoint, no whiteboard socket channel — all per binding spec §2.
 
@@ -114,7 +114,7 @@ Live runtime E2E (`apps/qa/wave7-runtime-e2e.js`, real backend `localhost:3000`,
 - Tag **`v0.9.0-native`** → tag CI published the GitHub Release, `target: main`.
 - versionCode **19**, versionName **0.9.0-native** (Android `app/build.gradle.kts` defaults; iOS `CFBundleShortVersionString 0.9.0-native` in `project.yml`).
 - Asset **Pulse-v0.9.0-native.apk**: 35,648,706 bytes; GitHub-reported digest `sha256:36f560ed6b3619da1b4894bfba0458436306276004ba3cefbbad5675edbe4035`.
-- **Byte verification:** asset re-downloaded from the release URL → local `sha256sum` `36f560ed…4035` == GitHub digest ✓; size match ✓.
+- **Byte verification:** asset re-downloaded from the release URL → local `sha256sum` `36f560ed…4035` == GitHub digest ; size match .
 - Structural spot-check of the downloaded APK: 177 entries, `classes.dex` present, **`assets/hub_catalog.json` present** (Wave 7 marker).
 - aapt2 badging NOT re-run this wave — the sandbox Android SDK was reset mid-session (documented; badging evidence for versionCode comes from the build-script source + CI build from that exact commit).
 - CDN manifest `download/update-manifest.json` pinned: versionCode 19 / 0.9.0-native / tag-asset URL / sha256 `36f560ed…4035`; mirror `download/Pulse.apk` binary swapped to the verified release bytes (re-hashed after copy: identical digest).

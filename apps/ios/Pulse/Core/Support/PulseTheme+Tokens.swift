@@ -66,6 +66,25 @@ extension PulseTheme {
     /// The one hairline - white 8% (web --border dark).
     static var neoHairline: Color { Color.white.opacity(0.08) }
 
+    // R19-b bubble surfaces - the outgoing fill rides the Neo signal in
+    // dark (neon mint top -> teal deep) and keeps the emerald pair in
+    // light; incoming is the neoSurface card in dark, paper in light.
+    /// Outgoing bubble gradient top - neon mint in dark, emerald 400 light.
+    static var bubbleMineTop: Color { adaptive(emerald400, neonMint) }
+    /// Outgoing bubble gradient bottom - teal 500 in dark, emerald 600 light.
+    static var bubbleMineBottom: Color { adaptive(emerald600, teal500) }
+    /// Incoming bubble card - secondary system surface light, neoSurface dark.
+    static var bubbleTheirs: Color { adaptive(Color(UIColor.secondarySystemBackground), neoSurface) }
+    /// Ink on the outgoing bubble fill - white in light, onNeon (#04120c) in
+    /// dark. Every mine-conditional text/glyph color inside a bubble resolves
+    /// through this so the mint gradient carries dark ink.
+    static var onBubbleMine: Color { adaptive(Color.white, onNeon) }
+    /// Custom room header fill - near-white light, neoSurface dark, with the
+    /// hairline riding the bottom edge (R19-b custom top bar).
+    static var headerFill: Color {
+        adaptive(UIColor.white.withAlphaComponent(0.94), UIColor(red: 0.051, green: 0.071, blue: 0.067, alpha: 1.0))
+    }
+
     /// Neo page base - paper grouped background in light, carbon in dark
     /// (web R35 re-skins the dark palette only; light keeps its own).
     static var neoPage: Color {

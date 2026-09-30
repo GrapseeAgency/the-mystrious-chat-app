@@ -23,11 +23,11 @@ Status: COMPLETE — all verification green. Full detail in worklog.md (`Task ID
 Trigger: leading `/` · `@pulseai` (word-boundary) · `pulseai,`/`pulseai:`/`pulseai!` prefix; optional `/` after the handle is normalized. Unknown bare slash = silent; handle-mention w/o command = "/help" pointer. Commands: `/help /roll [N] /flip /8ball <q> /math <expr> /rps <pick> /dice /time /wallet /poll q | o1 | o2 [| …]`. Payloads: bot replies `{"bot":true}`; webhook posts `{"webhookName","webhookColor","webhook":true}` — kind stays `text` so all renderers work.
 
 ## Proof highlights (curl, against :3000)
-- `/math (2+3)*4-6/3` → `🧮 (2+3)*4-6/3 = 18`; `2**10%7` → `= 2`; `2+abc` → `Invalid expression`
+- `/math (2+3)*4-6/3` → ` (2+3)*4-6/3 = 18`; `2**10%7` → `= 2`; `2+abc` → `Invalid expression`
 - `/wallet` → real balances `PC 10 · GEM 6 · streak 1` (Alice's actual UserWallet)
 - `/poll Favorite Pulse color? | Emerald | Violet | Amber` → real Poll + 3 PollOptions on a bot message
-- `@pulseai /roll 20` → `🎲 @alicechen rolled 6 (1-20)`; `pulseai, /flip` → `🪙 Heads`
-- Webhook ingest `{"content":"Build #42 passed ✅","username":"CI Robot"}` → `{success:true}` + message payload on the wire
+- `@pulseai /roll 20` → ` @alicechen rolled 6 (1-20)`; `pulseai, /flip` → ` Heads`
+- Webhook ingest `{"content":"Build #42 passed ","username":"CI Robot"}` → `{success:true}` + message payload on the wire
 - 21-post burst → `200×19 429 429` (20/min/token incl. earlier post)
 - Member delete → 403; deleted token → 404; non-participant list → 403
 - Fixture DM (Alice↔Bob, bot absent): `/math 1+1` → no reply (participant gate)

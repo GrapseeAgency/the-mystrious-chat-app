@@ -85,6 +85,7 @@ object DataModule {
                 PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
+                PulseDatabase.MIGRATION_9_10,
             )
             .build()
 

@@ -65,8 +65,8 @@ final class Wave2UITests: XCTestCase {
 
     func testTopicHealResetsGhostActiveTopic() {
         let topics = [
-            WireTopic(id: "t1", name: "Design", emoji: "🎨", lastMessageAt: nil, messageCount: 3),
-            WireTopic(id: "t2", name: "Launch", emoji: "🚀", lastMessageAt: nil, messageCount: 0),
+            WireTopic(id: "t1", name: "Design", emoji: "palette", lastMessageAt: nil, messageCount: 3),
+            WireTopic(id: "t2", name: "Launch", emoji: "rocket", lastMessageAt: nil, messageCount: 0),
         ]
         XCTAssertEqual(TopicHeal.healed("t1", topics: topics), "t1")
         XCTAssertNil(TopicHeal.healed("t-deleted", topics: topics))

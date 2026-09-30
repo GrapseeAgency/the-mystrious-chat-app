@@ -25,16 +25,17 @@ public struct PulseViewer: Codable, Equatable {
 // Wave 8 - prefs value tokens (src/lib/prefs-defaults.ts parity)
 
 /// Chat bubble corner style consumed by chat-room bubbles. Native corner
-/// radii: md=10, lg=16, pill=26 (the "tail" corner stays 6 on all tokens).
+/// radii: md=12, lg=20 (the R19-b Neo spec radius), pill=28 (the "tail"
+/// corner is 4 on all tokens).
 public enum PulseBubbleRadius: String, CaseIterable, Sendable {
     case md, lg, pill
 
-    /// The bubble's base corner radius (the tail corner subtracts to 6).
+    /// The bubble's base corner radius (the tail corner is 4).
     public var cornerRadius: CGFloat {
         switch self {
-        case .md: return 10
-        case .lg: return 16
-        case .pill: return 26
+        case .md: return 12
+        case .lg: return 20
+        case .pill: return 28
         }
     }
 

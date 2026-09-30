@@ -63,6 +63,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -86,6 +87,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.ui.PulseMotion
+import app.pulse.ui.PulsePalette
 import app.pulse.ui.pulsePress
 import app.pulse.ui.rememberPressSource
 
@@ -133,10 +135,44 @@ fun OnboardingScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val haptics = LocalHapticFeedback.current
+    val dark = isSystemInDarkTheme()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // R19-a - full-bleed carbon field with a static mint aurora bleed
+            // from the top-left (dark is the flagship; light keeps paper).
+            .drawBehind {
+                if (dark) {
+                    drawRect(PulsePalette.NeoCarbon)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                PulsePalette.NeonMint.copy(alpha = 0.16f),
+                                PulsePalette.NeonMint.copy(alpha = 0.03f),
+                                Color.Transparent,
+                            ),
+                            center = Offset(x = size.width * 0.12f, y = 0f),
+                            radius = size.width * 1.1f,
+                        ),
+                        radius = size.width * 1.1f,
+                        center = Offset(x = size.width * 0.12f, y = 0f),
+                    )
+                    // faint magenta counter-bleed, bottom-right, sparing
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                PulsePalette.NeonMagenta.copy(alpha = 0.05f),
+                                Color.Transparent,
+                            ),
+                            center = Offset(x = size.width, y = size.height * 0.96f),
+                            radius = size.width * 0.7f,
+                        ),
+                        radius = size.width * 0.7f,
+                        center = Offset(x = size.width, y = size.height * 0.96f),
+                    )
+                }
+            }
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
             .navigationBarsPadding()
@@ -198,7 +234,7 @@ private fun OnboardingHero() {
                 .clip(RoundedCornerShape(24.dp))
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(Emerald500.copy(alpha = glowAlpha), Color.Transparent),
+                        colors = listOf(PulsePalette.NeonMint.copy(alpha = glowAlpha), Color.Transparent),
                     ),
                 ),
         )
@@ -217,19 +253,21 @@ private fun OnboardingHero() {
 private fun Wordmark() {
     val dark = isSystemInDarkTheme()
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // R19-a custom wordmark: Space Grotesk voice (theme typography), mint
+        // signal dot, dim tagline - all on the carbon hero.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 "Pulse",
-                fontSize = 26.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.5).sp,
-                color = if (dark) Color(0xFFFAFAFA) else Color(0xFF18181B),
+                letterSpacing = (-0.6).sp,
+                color = if (dark) PulsePalette.NeoText else Color(0xFF18181B),
             )
             Box(
                 Modifier
                     .size(8.dp)
                     .clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(Emerald400, Emerald600))),
+                    .background(Brush.linearGradient(listOf(PulsePalette.NeonMint, PulsePalette.Teal))),
             )
         }
         Spacer(Modifier.height(4.dp))
@@ -237,7 +275,7 @@ private fun Wordmark() {
             "Your conversations, instantly alive.",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
-            color = if (dark) Zinc400 else Zinc500,
+            color = if (dark) PulsePalette.NeoTextDim else Zinc500,
         )
     }
 }
@@ -603,7 +641,7 @@ private fun PulseTextField(
             fontWeight = FontWeight.Normal,
             color = MaterialTheme.colorScheme.onBackground,
         ),
-        cursorBrush = SolidColor(Emerald600),
+        cursorBrush = SolidColor(if (dark) PulsePalette.NeonMint else Emerald600),
         keyboardOptions = KeyboardOptions(
             capitalization = capitalization,
             keyboardType = keyboardType,
@@ -615,16 +653,17 @@ private fun PulseTextField(
             .height(44.dp)
             .focusRequester(focusRequester)
             .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (dark) Zinc800 else Color(0xFFFAFAFA))
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (dark) PulsePalette.NeoSurface else Color(0xFFFAFAFA))
             .border(
                 width = 1.dp,
                 color = when {
                     error -> Amber400
-                    focused -> Emerald600.copy(alpha = 0.6f)
-                    else -> if (dark) Zinc700 else Zinc200
+                    // R19-a - the mint focus rim replaces the emerald ring.
+                    focused -> PulsePalette.NeonMint.copy(alpha = 0.65f)
+                    else -> if (dark) PulsePalette.Hairline else Zinc200
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
             ),
         decorationBox = { inner ->
             Row(
@@ -665,29 +704,38 @@ private fun PulsePrimaryButton(
     loading: Boolean = false,
     onClick: () -> Unit,
 ) {
+    // R19-a - the accent pill: neon mint fill, on-accent ink, soft mint glow
+    // instead of the Material shadow (web Button h-12 rounded-full parity).
     val interaction = rememberPressSource()
+    val pillShape = RoundedCornerShape(24.dp)
     Button(
         onClick = onClick,
         enabled = enabled,
         interactionSource = interaction,
-        shape = RoundedCornerShape(12.dp),
+        shape = pillShape,
         colors = ButtonDefaults.buttonColors(
-            containerColor = Emerald600,
-            contentColor = White,
-            disabledContainerColor = Emerald600.copy(alpha = 0.5f),
-            disabledContentColor = White,
+            containerColor = PulsePalette.NeonMint,
+            contentColor = PulsePalette.OnNeonMint,
+            disabledContainerColor = PulsePalette.NeonMint.copy(alpha = 0.45f),
+            disabledContentColor = PulsePalette.OnNeonMint,
         ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .shadow(6.dp, RoundedCornerShape(12.dp))
+            .shadow(
+                elevation = 8.dp,
+                shape = pillShape,
+                ambientColor = PulsePalette.NeonMint.copy(alpha = 0.30f),
+                spotColor = PulsePalette.NeonMint.copy(alpha = 0.30f),
+            )
             .pulsePress(interaction),
     ) {
         if (loading) {
             CircularProgressIndicator(
                 modifier = Modifier.size(16.dp),
                 strokeWidth = 2.dp,
-                color = White,
+                color = PulsePalette.OnNeonMint,
             )
         }
         Text(
@@ -717,22 +765,22 @@ private fun PulseLoginButton(
         onClick = onClick,
         enabled = enabled,
         interactionSource = interaction,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Emerald500.copy(alpha = 0.10f),
-            contentColor = if (dark) Emerald400 else Emerald700,
+            containerColor = PulsePalette.NeonMint.copy(alpha = 0.10f),
+            contentColor = if (dark) PulsePalette.NeonMint else Emerald700,
         ),
         modifier = Modifier
             .fillMaxWidth()
             .height(44.dp)
-            .border(1.dp, Emerald500.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .border(1.dp, PulsePalette.NeonMint.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
             .pulsePress(interaction),
     ) {
         if (loading) {
             CircularProgressIndicator(
                 modifier = Modifier.size(16.dp),
                 strokeWidth = 2.dp,
-                color = if (dark) Emerald400 else Emerald700,
+                color = if (dark) PulsePalette.NeonMint else Emerald700,
             )
         } else {
             Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -752,9 +800,9 @@ private fun PulseGhostButton(text: String, enabled: Boolean, onClick: () -> Unit
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = Color.Transparent,
-            contentColor = Zinc500,
+            contentColor = if (isSystemInDarkTheme()) PulsePalette.NeoTextDim else Zinc500,
             disabledContainerColor = Color.Transparent,
-            disabledContentColor = Zinc500,
+            disabledContentColor = if (isSystemInDarkTheme()) PulsePalette.NeoTextDim else Zinc500,
         ),
         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp, pressedElevation = 0.dp),
         modifier = Modifier
@@ -773,8 +821,8 @@ private fun TipCard() {
     Row(
         Modifier
             .fillMaxWidth()
-            .dashedBorder(1.dp, if (dark) Zinc700 else Zinc200, RoundedCornerShape(16.dp))
-            .background(if (dark) Zinc800.copy(alpha = 0.6f) else Color(0xFFFAFAFA))
+            .dashedBorder(1.dp, if (dark) PulsePalette.Hairline else Zinc200, RoundedCornerShape(18.dp))
+            .background(if (dark) PulsePalette.NeoSurface.copy(alpha = 0.72f) else Color(0xFFFAFAFA))
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.Top,
@@ -782,14 +830,14 @@ private fun TipCard() {
         Icon(
             Icons.Filled.AutoAwesome,
             contentDescription = null,
-            tint = Emerald500,
+            tint = PulsePalette.NeonMint,
             modifier = Modifier.size(14.dp),
         )
         Text(
             "Tip: your @handle is optional - add or change it anytime from your Profile.",
             fontSize = 12.sp,
             lineHeight = 17.sp,
-            color = if (dark) Zinc400 else Zinc500,
+            color = if (dark) PulsePalette.NeoTextDim else Zinc500,
         )
     }
 }

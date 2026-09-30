@@ -9,8 +9,12 @@
 import type { ComponentType } from 'react'
 import {
   type FolderIconId,
+  type ReactionId,
+  type StampId,
   type TopicIconId,
   folderIconId,
+  reactionId,
+  stampId,
   topicIconId,
 } from '@/lib/icon-ids'
 import {
@@ -22,6 +26,7 @@ import {
   Brain,
   Briefcase,
   Broadcast,
+  Camera,
   CaretLeft,
   CaretRight,
   ChatCenteredDots,
@@ -35,9 +40,12 @@ import {
   Confetti,
   CopySimple,
   Crosshair,
+  Crown,
   Database,
   DotsSixVertical,
   DotsThree,
+  Drop,
+  Eyes,
   Fire,
   FolderPlus,
   FolderSimple,
@@ -49,11 +57,16 @@ import {
   ImageSquare,
   Info,
   Kanban,
+  Key,
+  Leaf,
   Lightning,
   Lock,
   MagnifyingGlass,
+  MaskHappy,
+  MaskSad,
   Microphone,
   Monitor,
+  Moon,
   MoonStars,
   MusicNotes,
   PaperPlaneTilt,
@@ -69,14 +82,20 @@ import {
   Rocket,
   SealCheck,
   ShareNetwork,
+  Shield,
   ShieldCheck,
   SignOut,
   Smiley,
+  SmileySad,
+  Sparkle,
   Star,
   Sun,
   Sword,
+  Cake,
+  ThumbsDown,
   ThumbsUp,
   Trash,
+  Trophy,
   UserCircle,
   UsersThree,
   VideoCamera,
@@ -213,4 +232,61 @@ export function folderGlyphFor(value: string | null | undefined): PulseGlyph {
 
 export function topicGlyphFor(value: string | null | undefined): PulseGlyph {
   return TOPIC_ICON_GLYPHS[topicIconId(value)]
+}
+
+// Reaction glyphs, keyed by the reaction id persisted on the wire.
+export const REACTION_ICON_GLYPHS: Record<ReactionId, PulseGlyph> = {
+  heart: solid(HeartStraight),
+  fire: solid(Fire),
+  laugh: solid(MaskHappy),
+  wow: solid(Eyes),
+  sad: solid(SmileySad),
+  celebrate: solid(Confetti),
+  thumbsup: solid(ThumbsUp),
+}
+
+/** Solid fill inside chips and palettes; resolved through the id registry. */
+export function reactionGlyphFor(value: string | null | undefined): PulseGlyph {
+  return REACTION_ICON_GLYPHS[reactionId(value)]
+}
+
+// Stamp glyphs (the sticker surface), keyed by the stamp id persisted
+// in the sticker message payload.
+export const STAMP_ICON_GLYPHS: Record<StampId, PulseGlyph> = {
+  bolt: duo(Lightning),
+  flame: duo(Fire),
+  sparkles: duo(Sparkle),
+  rocket: duo(Rocket),
+  target: duo(Crosshair),
+  star: duo(Star),
+  trophy: duo(Trophy),
+  crown: duo(Crown),
+  gift: duo(Gift),
+  cake: duo(Cake),
+  music: duo(MusicNotes),
+  heart: duo(HeartStraight),
+  palette: duo(Palette),
+  camera: duo(Camera),
+  mic: duo(Microphone),
+  gamepad: duo(GameController),
+  brain: duo(Brain),
+  drama: duo(MaskSad),
+  smile: duo(Smiley),
+  pin: duo(PushPin),
+  sun: duo(Sun),
+  shield: duo(Shield),
+  key: duo(Key),
+  thumbsup: duo(ThumbsUp),
+  thumbsdown: duo(ThumbsDown),
+  leaf: duo(Leaf),
+  moon: duo(Moon),
+  drop: duo(Drop),
+  planet: duo(Planet),
+  coffee: duo(Coffee),
+  paw: duo(PawPrint),
+}
+
+/** Large duotone glyph for a stamp value (legacy emoji values included). */
+export function stampGlyphFor(value: string | null | undefined): PulseGlyph {
+  return STAMP_ICON_GLYPHS[stampId(value)]
 }

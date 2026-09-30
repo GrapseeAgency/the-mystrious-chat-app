@@ -91,8 +91,8 @@ export async function suggestUsername(base: string): Promise<string> {
   return `${base}${Date.now().toString(36)}`
 }
 
-/** Emoji allowed as reactions (keeps bubbles tidy). */
-export const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉'] as const
+/** Reaction ids allowed on the wire (registry lives in '@/lib/icon-ids'). */
+export { REACTION_IDS as REACTION_EMOJIS } from '@/lib/icon-ids'
 
 export const AVATAR_COLORS = [
   'emerald',

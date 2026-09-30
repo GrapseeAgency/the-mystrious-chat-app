@@ -27,7 +27,7 @@ import org.junit.runner.RunWith
  *   - v5 → MIGRATION_5_6: rows survive; Wave-2 depth columns (viewedAt/
  *     transcript/transcribedAt/pollJson/linkPreviewJson/topicId) + the new
  *     topics/savedMessages tables are usable (DAO round-trips);
- *   - v5 → chain (…→ MIGRATION_7_8 → MIGRATION_8_9): rows survive;
+ *   - v5 → chain (…→ MIGRATION_9_10): rows survive;
  *     Wave-7 additions (wave7_cache table + messages.payloadJson)
  *     are usable (DAO + raw round-trip).
  * Runs on the emulator (android-ci connectedDebugAndroidTest).
@@ -276,7 +276,7 @@ class RoomMigrationTest {
             // Wave 1: the compiled schema is now v5, so the REAL open path is
             // 3 → 4 → 5 - both migrations must be present (v5 columns are
             // additive; every assertion below still holds on the v5 state).
-            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9)
+            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10)
             .allowMainThreadQueries()
             .build()
 
@@ -351,7 +351,7 @@ class RoomMigrationTest {
     fun migration4To5PreservesRowsAndAddsMediaAndMembers() = runBlocking {
         createV4DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9)
+            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10)
             .allowMainThreadQueries()
             .build()
 
@@ -446,7 +446,7 @@ class RoomMigrationTest {
     fun migration5To6PreservesRowsAndAddsDepthColumnsAndTables() = runBlocking {
         createV5DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9)
+            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10)
             .allowMainThreadQueries()
             .build()
 
@@ -476,7 +476,7 @@ class RoomMigrationTest {
                     id = "t1",
                     conversationId = "c1",
                     name = "Design",
-                    emoji = "🎨",
+                    emoji = "palette",
                     lastMessageAt = "2026-02-20T14:00:00.000Z",
                     messageCount = 7,
                 ),
@@ -485,7 +485,7 @@ class RoomMigrationTest {
                     conversationId = "c1",
                     name = "Launch",
                     lastMessageAt = "2026-02-20T13:00:00.000Z",
-                    // defaults: emoji '💬', messageCount 0
+                    // defaults: emoji 'chat' (the registry default), messageCount 0
                 ),
             ),
         )
@@ -495,7 +495,7 @@ class RoomMigrationTest {
         assertEquals(listOf("t1", "t2"), rail.map { it.id })
         assertEquals("Design", rail.first().name)
         assertEquals(7, rail.first().messageCount)
-        assertEquals("💬", rail[1].emoji) // backfilled by the column default
+        assertEquals("chat", rail[1].emoji) // backfilled by the column default
         // Domain mapping: ISO → epoch, count carried.
         val domainTopic = rail.first().toDomain()
         assertEquals("Design", domainTopic.name)
@@ -635,6 +635,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
+                PulseDatabase.MIGRATION_9_10,
             )
             .allowMainThreadQueries()
             .build()
@@ -649,6 +650,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
+                PulseDatabase.MIGRATION_9_10,
             )
             .allowMainThreadQueries()
             .build()
@@ -710,6 +712,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
+                PulseDatabase.MIGRATION_9_10,
             )
             .allowMainThreadQueries()
             .build()
@@ -744,6 +747,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
+                PulseDatabase.MIGRATION_9_10,
             )
             .allowMainThreadQueries()
             .build()

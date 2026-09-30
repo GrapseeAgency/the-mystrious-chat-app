@@ -62,7 +62,7 @@ final class WireParityTests: XCTestCase {
          "filePath":"uploads/doc.pdf","fileName":"doc.pdf","fileSize":2048,
          "editedAt":"2026-09-07T13:00:00.000Z","deletedAt":null,
          "pinnedAt":"2026-09-07T14:00:00.000Z","viewOnce":false,
-         "reactions":[{"emoji":"👍","userIds":["u1"],"count":1}],
+         "reactions":[{"emoji":"thumbsup","userIds":["u1"],"count":1}],
          "linkPreview":null,"linkUrl":null,"poll":null,"topicId":null,
          "transcript":null,"transcribedAt":null,"translations":null,
          "viaAutomation":true,"viewedAt":null,"viewedBy":null,"anon":false,
@@ -77,7 +77,7 @@ final class WireParityTests: XCTestCase {
         XCTAssertEqual(msg.editedAt, "2026-09-07T13:00:00.000Z")
         XCTAssertEqual(msg.pinnedAt, "2026-09-07T14:00:00.000Z")
         XCTAssertEqual(msg.viewOnce, false)
-        XCTAssertEqual(msg.reactions?.first?.emoji, "👍")
+        XCTAssertEqual(msg.reactions?.first?.emoji, "thumbsup")
         XCTAssertEqual(msg.reactions?.first?.userIds, ["u1"])
 
         // Spec §2 row 5 - parentId decodes into the THREAD ROOT slot;

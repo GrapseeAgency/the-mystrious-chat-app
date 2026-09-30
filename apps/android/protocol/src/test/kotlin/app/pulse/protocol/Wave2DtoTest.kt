@@ -167,7 +167,7 @@ class Wave2DtoTest {
             """
             {
               "topics": [
-                {"id": "t1", "name": "Design", "emoji": "🎨",
+                {"id": "t1", "name": "Design", "emoji": "palette",
                  "lastMessageAt": "2026-02-20T14:00:00.000Z", "messageCount": 7},
                 {"id": "t2", "name": "Launch", "messageCount": 2}
               ],
@@ -177,12 +177,12 @@ class Wave2DtoTest {
         )
         assertEquals(listOf("t1", "t2"), page.topics.map { it.id })
         assertEquals("Design", page.topics[0].name)
-        assertEquals("🎨", page.topics[0].emoji)
+        assertEquals("palette", page.topics[0].emoji)
         assertEquals("2026-02-20T14:00:00.000Z", page.topics[0].lastMessageAt)
         assertEquals(7, page.topics[0].messageCount)
         // Missing emoji/lastMessageAt decode to the defaults.
         assertEquals("Launch", page.topics[1].name)
-        assertEquals("💬", page.topics[1].emoji)
+        assertEquals("chat", page.topics[1].emoji)
         assertNull(page.topics[1].lastMessageAt)
         assertEquals(2, page.topics[1].messageCount)
         assertEquals(emptyList<TopicDto>(), PulseJson.decodeFromString(TopicsPageDto.serializer(), "{}").topics)
@@ -190,7 +190,7 @@ class Wave2DtoTest {
         // POST /topics → { topic } envelope (200 existing / 201 new).
         val env = PulseJson.decodeFromString(
             TopicEnvelopeDto.serializer(),
-            """{"topic": {"id": "t9", "name": "Design", "emoji": "🎨", "messageCount": 0}}""",
+            """{"topic": {"id": "t9", "name": "Design", "emoji": "palette", "messageCount": 0}}""",
         )
         assertEquals("t9", env.topic?.id)
         assertNull(PulseJson.decodeFromString(TopicEnvelopeDto.serializer(), "{}").topic)

@@ -54,7 +54,7 @@ class ContactsDirectoryTest {
         assertEquals("A", indexLetterOf("alice"))
         assertEquals("B", indexLetterOf("  bob "))
         assertEquals("#", indexLetterOf("3am"))
-        assertEquals("#", indexLetterOf("🌙night"))
+        assertEquals("#", indexLetterOf("_night"))
     }
 
     @Test

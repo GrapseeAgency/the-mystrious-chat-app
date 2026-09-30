@@ -115,6 +115,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -359,7 +362,29 @@ fun ChatsScreen(
     // the app under edge-to-edge - the dock lifts by the same amount.
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            // R19-a - carbon field with a subtle STATIC radial mint bleed from
+            // the top-left corner (drawn once per layout, no runtime cost).
+            .drawBehind {
+                if (dark) {
+                    drawRect(PulsePalette.NeoCarbon)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                PulsePalette.NeonMint.copy(alpha = 0.07f),
+                                Color.Transparent,
+                            ),
+                            center = Offset(x = size.width * 0.08f, y = size.height * 0.02f),
+                            radius = size.width * 0.9f,
+                        ),
+                        radius = size.width * 0.9f,
+                        center = Offset(x = size.width * 0.08f, y = size.height * 0.02f),
+                    )
+                }
+            },
+    ) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             if (search) {
                 SearchHeader(
@@ -770,8 +795,31 @@ fun ArchivedScreen(
     val chats = remember(rawChats, drafts) { rawChats.map { it.withLocalDraft(drafts[it.id]) } }
     val archived = chats.filter { it.isArchived }
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val dark = isPulseDarkTheme()
 
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            // R19-a - carbon field with a subtle STATIC radial mint bleed from
+            // the top-left corner (drawn once per layout, no runtime cost).
+            .drawBehind {
+                if (dark) {
+                    drawRect(PulsePalette.NeoCarbon)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                PulsePalette.NeonMint.copy(alpha = 0.07f),
+                                Color.Transparent,
+                            ),
+                            center = Offset(x = size.width * 0.08f, y = size.height * 0.02f),
+                            radius = size.width * 0.9f,
+                        ),
+                        radius = size.width * 0.9f,
+                        center = Offset(x = size.width * 0.08f, y = size.height * 0.02f),
+                    )
+                }
+            },
+    ) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 8.dp),
@@ -883,6 +931,12 @@ fun ArchivedScreen(
 
 // header
 
+/**
+ * R19-a custom top bar - no Material TopAppBar: Space Grotesk wordmark on the
+ * carbon field, then 44dp glow-rimmed icon tiles (search, calls, compose) and
+ * the kept theme toggle. The hairline bottom edge replaces the old full-width
+ * border + glass search pill (the search tile now opens the same surface).
+ */
 @Composable
 private fun HomeHeader(
     viewerName: String?,
@@ -897,10 +951,10 @@ private fun HomeHeader(
     Column(
         Modifier
             .fillMaxWidth()
-            .border(0.5.dp, if (dark) Color.White.copy(alpha = 0.08f) else Color(0xFFE4E4E7)),
+            .border(0.5.dp, if (dark) PulsePalette.Hairline else Color(0xFFE4E4E7)),
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -908,68 +962,118 @@ private fun HomeHeader(
                     .clip(CircleShape)
                     .clickable(onClick = onAvatar),
             ) {
-                PulseAvatar(name = viewerName ?: "Me", colorHex = viewerColor, size = 36.dp)
+                PulseAvatar(
+                    name = viewerName ?: "Me",
+                    colorHex = viewerColor,
+                    size = 40.dp,
+                    modifier = Modifier.border(
+                        2.dp,
+                        if (dark) PulsePalette.NeonMint.copy(alpha = 0.35f) else Color(0xFFE4E4E7),
+                        CircleShape,
+                    ),
+                )
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(10.dp))
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "Pulse",
-                    fontSize = 20.sp,
+                    fontSize = 21.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.2).sp,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    letterSpacing = (-0.4).sp,
+                    color = if (dark) PulsePalette.NeoText else MaterialTheme.colorScheme.onBackground,
                 )
                 Spacer(Modifier.width(6.dp))
+                // the mint signal dot - the wordmark's live heartbeat
                 Box(
                     Modifier
-                        .size(6.dp)
+                        .size(7.dp)
                         .clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(Emerald400, Emerald600))),
+                        .background(Brush.linearGradient(listOf(PulsePalette.NeonMint, PulsePalette.Teal))),
                 )
             }
-            HeaderIconButton(Icons.Filled.Phone, "Open calls", onCalls)
-            HeaderIconButton(Icons.Filled.Create, "New chat", onCompose)
+            HeaderTile(Icons.Filled.Search, "Search chats and messages", dark, onSearch)
+            Spacer(Modifier.width(8.dp))
+            HeaderTile(Icons.Filled.Phone, "Open calls", dark, onCalls)
+            Spacer(Modifier.width(8.dp))
+            HeaderTile(Icons.Filled.Create, "New chat", dark, onCompose, accent = true)
+            Spacer(Modifier.width(8.dp))
             ThemeToggleButton(onToggle = onTheme)
         }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp)
-                .padding(bottom = 10.dp)
-                .height(40.dp)
-                .pulseGlass(dark, RoundedCornerShape(50))
-                .clickable(onClick = onSearch),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.Search,
-                    contentDescription = null,
-                    tint = Zinc400,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(10.dp))
-                Text("Search chats and messages", fontSize = 14.sp, color = Zinc400)
-            }
-        }
+    }
+}
+
+/**
+ * 44dp glow-rimmed icon tile (R19-a): hairline rim + mint under-glow; the
+ * accent variant fills with the neon mint signal and the locked on-accent ink.
+ */
+@Composable
+private fun HeaderTile(
+    icon: ImageVector,
+    label: String,
+    dark: Boolean,
+    onClick: () -> Unit,
+    accent: Boolean = false,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        Modifier
+            .size(44.dp)
+            .then(
+                if (accent && dark) {
+                    Modifier
+                        .shadow(
+                            elevation = 6.dp,
+                            shape = shape,
+                            ambientColor = PulsePalette.NeonMint.copy(alpha = 0.35f),
+                            spotColor = PulsePalette.NeonMint.copy(alpha = 0.35f),
+                        )
+                        .clip(shape)
+                        .background(PulsePalette.NeonMint)
+                } else {
+                    Modifier
+                        .clip(shape)
+                        .background(if (dark) PulsePalette.NeoSurface2 else Color(0xFFF4F4F5))
+                        .border(1.dp, if (dark) PulsePalette.Hairline else Color(0xFFE4E4E7), shape)
+                },
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = when {
+                accent && dark -> PulsePalette.OnNeonMint
+                dark -> PulsePalette.NeoTextDim
+                else -> Zinc500
+            },
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
 /** System → light → dark cycle, icon mirrors the current state (web parity). */
 @Composable
 private fun ThemeToggleButton(onToggle: () -> Unit) {
-    val darkOverride = when (isPulseDarkTheme()) {
-        true -> "dark"
-        false -> "light"
-    }
-    IconButton(onClick = onToggle, modifier = Modifier.size(40.dp)) {
+    val dark = isPulseDarkTheme()
+    val darkOverride = if (dark) "dark" else "light"
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(shape)
+            .background(if (dark) PulsePalette.NeoSurface2 else Color(0xFFF4F4F5))
+            .border(1.dp, if (dark) PulsePalette.Hairline else Color(0xFFE4E4E7), shape)
+            .clickable(onClick = onToggle),
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(
             imageVector = when (darkOverride) {
                 "dark" -> Icons.Filled.DarkMode
                 else -> Icons.Filled.LightMode
             },
             contentDescription = "Toggle theme (system cycles on press)",
-            tint = Zinc500,
+            tint = if (dark) PulsePalette.NeonMint else Zinc500,
             modifier = Modifier.size(20.dp),
         )
     }
@@ -1064,6 +1168,7 @@ private fun SearchHeader(
 
 @Composable
 private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) -> Unit) {
+    val dark = isPulseDarkTheme()
     val chips = listOf("all" to "All", "unread" to "Unread", "groups" to "Groups")
     Row(
         Modifier
@@ -1074,12 +1179,15 @@ private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) 
     ) {
         chips.forEach { (key, label) ->
             val isActive = active == key
+            // R19-a - active pill = the neon mint signal with the locked
+            // on-accent ink; inactive pills stay quiet glass.
             Row(
                 Modifier
-                    .height(28.dp)
+                    .height(30.dp)
                     .clip(RoundedCornerShape(50))
                     .background(
                         when {
+                            isActive && dark -> PulsePalette.NeonMint
                             isActive -> Emerald500
                             else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                         },
@@ -1107,7 +1215,11 @@ private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) 
                     label,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isActive) Color.White else Zinc500,
+                    color = when {
+                        isActive && dark -> PulsePalette.OnNeonMint
+                        isActive -> Color.White
+                        else -> if (dark) PulsePalette.NeoTextDim else Zinc500
+                    },
                 )
             }
         }
@@ -1628,16 +1740,27 @@ private fun ConversationRowItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // avatar block (48dp) - presence halo, streak heat ring, squircle groups
-            Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
+            // avatar block (52dp, R19-a) - presence halo, streak heat ring, squircle groups
+            Box(Modifier.size(60.dp), contentAlignment = Alignment.Center) {
                 if (online && !conversation.isGroupish) PresenceGlow()
                 if (heat > 0) StreakHeatRing(heat)
                 PulseAvatar(
                     name = conversation.title,
                     colorHex = conversation.accentColor,
-                    size = 48.dp,
+                    size = 52.dp,
                     online = online && !conversation.isGroupish,
                     isGroup = conversation.isGroupish,
+                    modifier = Modifier.border(
+                        1.5.dp,
+                        // R19-a - the tint ring: online rows glow mint, the rest
+                        // ride the identity color at a whisper.
+                        if (online && !conversation.isGroupish) {
+                            PulsePalette.NeonMint.copy(alpha = 0.55f)
+                        } else {
+                            (PulsePalette.parse(conversation.accentColor) ?: PulsePalette.Teal).copy(alpha = 0.35f)
+                        },
+                        CircleShape,
+                    ),
                 )
                 if (selectMode) {
                     Box(
@@ -1772,7 +1895,7 @@ private fun ConversationRowItem(
         Box(
             Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 64.dp)
+                .padding(start = 68.dp)
                 .fillMaxWidth()
                 .height(0.5.dp)
                 .background(if (dark) PulsePalette.Hairline else Color(0xFFF4F4F5)),

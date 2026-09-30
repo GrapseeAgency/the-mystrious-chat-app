@@ -80,11 +80,18 @@ import app.pulse.core.time.PulseTime
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.Message
+import app.pulse.protocol.REACTION_IDS
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.pulseReactionGlyph
+import app.pulse.ui.pulseReactionLabel
 
-/** Wave 1 wire-whitelist palette (spec §1.1; pray was swapped for party for compliance). */
-internal val QUICK_REACTIONS = listOf("👍", "❤️", "😂", "😮", "😢", "🎉")
+/**
+ * Wave 1 wire-whitelist palette, now the R19-a reaction-id registry (web
+ * REACTION_IDS): the sheet sends stable ids on the wire and renders each id
+ * through the Material glyph map - no raw value is ever drawn.
+ */
+internal val QUICK_REACTIONS: List<String> = REACTION_IDS
 
 /**
  * Wave 2 poll builder (spec §2.1): question ≤140 chars, 2–6 option rows with
@@ -215,16 +222,21 @@ internal fun MessageActionSheet(
             Modifier.fillMaxWidth().padding(vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            QUICK_REACTIONS.forEach { emoji ->
+            QUICK_REACTIONS.forEach { id ->
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier
                         .size(46.dp)
-                        .clickable { onReact(emoji) },
+                        .clickable { onReact(id) },
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(46.dp)) {
-                        Text(emoji, fontSize = 22.sp)
+                        Icon(
+                            pulseReactionGlyph(id),
+                            contentDescription = pulseReactionLabel(id),
+                            tint = PulsePalette.Emerald,
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 }
             }
