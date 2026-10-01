@@ -156,8 +156,47 @@ def dock_tap():
 def dock_drag():
     """Horizontal drag across the dock pill: prev/next tab (web edge-swipe parity)."""
     y = H - int(H * 0.075)
-    adb_ok("shell", "input", "swipe", str(W // 2 - 150), str(y), str(W // 2 + 150), str(y), "250")
+    dx = int(W * 0.25)
+    adb_ok("shell", "input", "swipe", str(W // 2 - dx), str(y), str(W // 2 + dx), str(y), "250")
     time.sleep(3.0)
+
+def dock_menu_probe():
+    """Detect the quick-switcher popup WITHOUT touching the accessibility tree
+    (uiautomator dump dismisses transient menus). Returns the popup frame as
+    (x1, y1, x2, y2) or None."""
+    out = adb("shell", "dumpsys", "window", "windows", timeout=60).stdout or ""
+    for chunk in out.split("Window #")[1:]:
+        if "popup" not in chunk.lower() and "MenuPopup" not in chunk and "popupmenu" not in chunk.lower():
+            continue
+        m = re.search(r"mFrame=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]", chunk)
+        if m:
+            x1, y1, x2, y2 = map(int, m.groups())
+            if x2 > x1 and y2 > y1 and y2 - y1 > 40:
+                return (x1, y1, x2, y2)
+    return None
+
+def open_switcher():
+    """Tap the floating dock pill (icon-only, bottom-center), scanning rows
+    until the quick-switcher popup appears. Returns True when open."""
+    for frac in (0.085, 0.075, 0.095, 0.065, 0.105):
+        tap((W // 2, H - int(H * frac)))
+        time.sleep(1.6)
+        if dock_menu_probe() is not None:
+            return True
+    note("MISS dock pill: quick-switcher did not open at any candidate row")
+    return False
+
+def tap_switcher_item(index):
+    """Tap menu item #index (DOCK_TABS order) inside the popup frame."""
+    frame = dock_menu_probe()
+    if frame is None:
+        note("MISS popup: switcher closed before item tap")
+        return False
+    x1, y1, x2, y2 = frame
+    item_h = (y2 - y1) / 4.0
+    tap(((x1 + x2) // 2, int(y1 + item_h * index + item_h / 2)))
+    time.sleep(3.0)
+    return True
 
 def main():
     global W, H
@@ -216,18 +255,20 @@ def main():
     if not stage("tab-walk-drag", tab_walk):
         return finish(2)
 
-    # Dock quick-switcher: tap the pill, menu opens; tap items by text.
+    # Dock quick-switcher: tap the pill, menu opens; tap items by popup frame.
+    # DOCK_TABS order: chats(0), hub(1), contacts(2), profile(3).
     def nav_via_switcher():
-        dock_tap()
+        if not open_switcher():
+            return
         screen("03-switcher-open.png")
-        for label in ("Hub", "Contacts", "Profile"):
-            if not tap_text(label, wait=3.0):
+        for idx, label in ((1, "hub"), (2, "contacts"), (3, "profile")):
+            if not tap_switcher_item(idx):
                 return
-            screen("04-switch-%s.png" % label.lower())
+            screen("04-switch-%s.png" % label)
             note("switched to " + label)
             if not alive():
                 return
-            dock_tap()
+            open_switcher()
 
     if not stage("nav-switcher", nav_via_switcher):
         return finish(2)
