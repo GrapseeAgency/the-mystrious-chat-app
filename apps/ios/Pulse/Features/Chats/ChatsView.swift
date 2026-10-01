@@ -1004,9 +1004,9 @@ private struct StoriesRowView: View {
                                 ring: group.allSeen == true ? .seen : .unseen,
                                 plus: false,
                                 label: user.name,
+                                onPress: { onPress(user.id) },
                                 photoPath: user.avatar,
                                 thumbnailPath: latestImageStory(group),
-                                onPress: { onPress(user.id) },
                             )
                         }
                     }

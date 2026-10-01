@@ -4450,3 +4450,16 @@ Work Log:
 
 Stage Summary:
 - Honest note: iOS still compiles only in CI; the 2057 "unable to type-check" may be cascade - will re-judge on the next CI run.
+
+---
+Task ID: R20-ios-fix3
+Agent: orchestrator (Z.ai main session)
+Task: fix wave-3 iOS CI errors (StoryRingCell arg order + composerRows type-check timeout)
+
+Work Log:
+- ChatsView.swift:1001: second StoryRingCell call reordered (onPress before photoPath/thumbnailPath); StoriesView call site audited OK.
+- ChatRoomView.swift: composerRows type-check timeout fixed by splitting: composerTopBars (quick-phrase rail + edit/reply/staged bars) and emberComposerCapsule (52pt ember input capsule: smile-to-stamp-picker + TextField + camera) extracted as separate computed builders; composerRows is now a thin composition.
+- brace_gate 2/2 BALANCED.
+
+Stage Summary:
+- The type-check timeout was the real EMB-I debt (file never compiled locally); the split also improves readability.

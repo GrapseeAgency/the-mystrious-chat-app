@@ -2048,22 +2048,28 @@ private struct RoomContent: View {
         return pieces.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Type-check relief: the top bars split out of the composer builder.
+    @ViewBuilder
+    private var composerTopBars: some View {
+        // R1-W2B F-MS-29 - the quick-phrase rail sits right above the
+        // composer row (web spec row: "rail chips"; tap inserts the line).
+        if !viewModel.quickPhrases.isEmpty {
+            quickPhraseRail
+        }
+        if let editing = viewModel.editingTarget {
+            editBar(editing)
+        }
+        if let reply = viewModel.replyTarget {
+            replyBar(reply)
+        }
+        if let staged = viewModel.staged {
+            stagedMediaBar(staged)
+        }
+    }
+
     @ViewBuilder
     private var composerRows: some View {
-            // R1-W2B F-MS-29 - the quick-phrase rail sits right above the
-            // composer row (web spec row: "rail chips"; tap inserts the line).
-            if !viewModel.quickPhrases.isEmpty {
-                quickPhraseRail
-            }
-            if let editing = viewModel.editingTarget {
-                editBar(editing)
-            }
-            if let reply = viewModel.replyTarget {
-                replyBar(reply)
-            }
-            if let staged = viewModel.staged {
-                stagedMediaBar(staged)
-            }
+            composerTopBars
             HStack(alignment: .bottom, spacing: 10) {
                 if viewModel.isRecording {
                     // Recording bar replaces the composer TEXT (spec §1 row 11)
@@ -2084,77 +2090,7 @@ private struct RoomContent: View {
                     // always-mounted voice/send slot on the right.
                     attachMenu
 
-                    HStack(spacing: 8) {
-                        // R5-A Item 1 - Smile button hosts the stamp picker
-                        // (R19-a retired the draft-append emoji popover; the
-                        // stamps are registry ids with designed glyphs).
-                        Button {
-                            PulseHaptics.tap()
-                            stickerOpen = true
-                        } label: {
-                            Image(systemName: "face.smiling")
-                                .font(.system(size: 22, weight: .medium))
-                                .foregroundStyle(Color.white.opacity(0.80))
-                                .frame(width: 30, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Insert emoji")
-
-                        TextField(
-                            viewModel.editingTarget != nil ? "Edit message" : "Type here",
-                            text: $viewModel.draft,
-                            axis: .vertical,
-                            prompt: Text(viewModel.editingTarget != nil ? "Edit message" : "Type here")
-                                .foregroundColor(Color.white.opacity(0.40)),
-                        )
-                        .lineLimit(1...5)
-                        .foregroundStyle(.white)
-                        .padding(.vertical, 9)
-                        .focused($composerFocused)
-                        .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
-                        .disabled(viewModel.staged != nil)
-                        // R2-D - the composer is VISIBLY locked while the
-                        // slow-mode window runs (web send/mic disabled parity).
-                        .disabled(viewModel.isSlowModeLocked)
-                        .opacity(viewModel.isSlowModeLocked ? 0.55 : 1)
-                        .overlay(alignment: .leading) {
-                            if viewModel.isSlowModeLocked {
-                                Image(systemName: "lock.fill")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Color.white.opacity(0.40))
-                                    .padding(.leading, 16)
-                                    .transition(.opacity)
-                            }
-                        }
-
-                        // EMB-I - camera shortcut inside the capsule; it
-                        // rides the EXISTING D30 camera capture flow.
-                        Button {
-                            CameraPicker.requestAccess { granted in
-                                DispatchQueue.main.async {
-                                    if granted {
-                                        showCamera = true
-                                    } else {
-                                        cameraDenied = true
-                                    }
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "camera")
-                                .font(.system(size: 20, weight: .medium))
-                                .foregroundStyle(Color.white.opacity(0.80))
-                                .frame(width: 30, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Camera")
-                    }
-                    .padding(.leading, 10)
-                    .padding(.trailing, 8)
-                    .frame(minHeight: 52)
-                    .background(Capsule().fill(PulseTheme.emberChrome.opacity(0.92)))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                    emberComposerCapsule
                 }
 
                 voiceSendSlot
@@ -2166,6 +2102,82 @@ private struct RoomContent: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(.ultraThinMaterial)
+    }
+
+    /// Type-check relief: the 52pt ember input capsule split out of the
+    /// composer builder (smile opens the stamp picker, text field, camera).
+    private var emberComposerCapsule: some View {
+        HStack(spacing: 8) {
+            // R5-A Item 1 - Smile button hosts the stamp picker
+            // (R19-a retired the draft-append emoji popover; the
+            // stamps are registry ids with designed glyphs).
+            Button {
+                PulseHaptics.tap()
+                stickerOpen = true
+            } label: {
+                Image(systemName: "face.smiling")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.80))
+                    .frame(width: 30, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Insert emoji")
+
+            TextField(
+                viewModel.editingTarget != nil ? "Edit message" : "Type here",
+                text: $viewModel.draft,
+                axis: .vertical,
+                prompt: Text(viewModel.editingTarget != nil ? "Edit message" : "Type here")
+                    .foregroundColor(Color.white.opacity(0.40)),
+            )
+            .lineLimit(1...5)
+            .foregroundStyle(.white)
+            .padding(.vertical, 9)
+            .focused($composerFocused)
+            .onChange(of: viewModel.draft) { _, _ in viewModel.draftChanged(session: session) }
+            .disabled(viewModel.staged != nil)
+            // R2-D - the composer is VISIBLY locked while the
+            // slow-mode window runs (web send/mic disabled parity).
+            .disabled(viewModel.isSlowModeLocked)
+            .opacity(viewModel.isSlowModeLocked ? 0.55 : 1)
+            .overlay(alignment: .leading) {
+                if viewModel.isSlowModeLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.40))
+                        .padding(.leading, 16)
+                        .transition(.opacity)
+                }
+            }
+
+            // EMB-I - camera shortcut inside the capsule; it
+            // rides the EXISTING D30 camera capture flow.
+            Button {
+                CameraPicker.requestAccess { granted in
+                    DispatchQueue.main.async {
+                        if granted {
+                            showCamera = true
+                        } else {
+                            cameraDenied = true
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "camera")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.80))
+                    .frame(width: 30, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Camera")
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .frame(minHeight: 52)
+        .background(Capsule().fill(PulseTheme.emberChrome.opacity(0.92)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
     }
 
     /// D31 - the ALWAYS-MOUNTED trailing composer slot. EMB-I visuals: the
