@@ -44,17 +44,34 @@ def wm_size():
 
 def dismiss_system_dialogs():
     """API 33+ raises the POST_NOTIFICATIONS dialog at startup; it blocks every
-    tap. Tap 'Allow' (or 'Don't allow') by accessibility text when present."""
+    tap. Tap the exact 'Allow' button (NOT the dialog title, which also says
+    Allow) or 'Don't allow' when present."""
     for _ in range(2):
         xml = uiax_xml()
-        pos = node_bounds(xml, "Allow")
+        pos = node_bounds(xml, "Allow", exact=True)
         if pos is None:
-            pos = node_bounds(xml, "Don't allow")
+            pos = node_bounds(xml, "Don't allow", exact=True)
         if pos is None:
             return
         note("dismissing system permission dialog")
         tap(pos)
         time.sleep(2.0)
+
+def tap_scrolling(needle, wait=2.0, max_swipes=4):
+    """Tap a node that may sit below the fold: swipe up to reveal, retry."""
+    for i in range(max_swipes + 1):
+        pos = node_bounds(uiax_xml(), needle, exact=True)
+        if pos is None:
+            pos = node_bounds(uiax_xml(), needle)
+        if pos is not None:
+            tap(pos)
+            time.sleep(wait)
+            return True
+        if i < max_swipes:
+            adb_ok("shell", "input", "swipe", str(W // 2), int(H * 0.7), str(W // 2), int(H * 0.35), "300")
+            time.sleep(1.2)
+    note("MISS node after scrolling: " + needle)
+    return False
 
 def ime_visible():
     out = adb("shell", "dumpsys", "input_method", timeout=60).stdout or ""
@@ -97,15 +114,23 @@ def uiax_xml():
         time.sleep(1.5)
     return ""
 
-def node_bounds(xml, needle):
-    """First node whose text or content-desc contains needle, as center (x, y)."""
+def node_bounds(xml, needle, exact=False):
+    """First node whose text or content-desc matches needle (contains, or
+    equals when exact), as center (x, y)."""
     if not xml:
         return None
+    needle_l = needle.lower()
     for chunk in xml.split("<node")[1:]:
         tm = re.search(r'text="([^"]*)"', chunk)
         dm = re.search(r'content-desc="([^"]*)"', chunk)
-        texts = ((tm.group(1) if tm else "") + " " + (dm.group(1) if dm else "")).strip()
-        if needle.lower() in texts.lower():
+        candidates = [tm.group(1) if tm else "", dm.group(1) if dm else ""]
+        hit = False
+        for t in candidates:
+            t = t.strip()
+            if (t.lower() == needle_l) if exact else (needle_l in t.lower()):
+                hit = True
+                break
+        if hit:
             bm = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', chunk)
             if bm:
                 x1, y1, x2, y2 = map(int, bm.groups())
@@ -267,8 +292,12 @@ def main():
         adb_ok("shell", "input", "keyevent", "111")  # ESC closes any suggestion bar
         dismiss_ime()  # the IME hides the Continue button below the fold
         time.sleep(1)
-        tap_text("Continue", wait=2.5)
-        tap_text("Skip for now", wait=4.0)
+        # fast path: the field's IME action (GO) advances; fallback: scroll+tap
+        adb_ok("shell", "input", "keyevent", "66")
+        time.sleep(2.0)
+        if not tap_scrolling("Continue"):
+            return
+        tap_scrolling("Skip for now", wait=4.0)
 
     stage("onboarding", do_onboarding)
     dismiss_system_dialogs()
@@ -318,7 +347,7 @@ def main():
 
     # Settings entry from the chats header (icon-only button).
     def open_settings():
-        if not tap_text("Settings", wait=3.5):
+        if not tap_scrolling("Settings", wait=3.5):
             return
         screen("06-settings.png")
 
