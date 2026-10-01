@@ -23,8 +23,17 @@ SINCE = ""  # logcat -T marker so each scan reads only fresh lines
 def sh(*args, timeout=60):
     return subprocess.run(list(args), capture_output=True, text=True, timeout=timeout)
 
-def adb(*args, timeout=60):
-    return sh("adb", *args, timeout=timeout)
+def adb(*args, timeout=90):
+    try:
+        return sh("adb", *args, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print("ADB TIMEOUT:", args, flush=True)
+        class R: returncode = 1; stdout = ""; stderr = "adb timeout"
+        return R()
+    except Exception as e:  # survive transient adb/emulator hiccups
+        print("ADB ERROR:", args, e, flush=True)
+        class R: returncode = 1; stdout = ""; stderr = str(e)
+        return R()
 
 def adb_ok(*args, timeout=60):
     r = adb(*args, timeout=timeout)
