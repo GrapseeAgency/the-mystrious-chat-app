@@ -5,6 +5,7 @@ dock drag, header buttons), and captures screenshots + logcat at every stage.
 Exit codes: 0 = smoke clean, 2 = crash captured (full logcat in artifacts),
 3 = driver could not establish the environment (adb device missing etc.).
 """
+import os
 import re
 import subprocess
 import sys
@@ -13,6 +14,7 @@ import time
 PKG = "app.pulse.chat"
 ACT = PKG + "/app.pulse.android.MainActivity"
 OUT = "release-smoke"
+os.makedirs(OUT, exist_ok=True)
 REPORT = []
 
 def sh(*args, timeout=60):
@@ -37,6 +39,7 @@ def wm_size():
     return int(m.group(1)), int(m.group(2))
 
 def screen(name):
+    os.makedirs(OUT, exist_ok=True)
     r = subprocess.run(["adb", "exec-out", "screencap", "-p"], capture_output=True, timeout=90)
     if r.returncode == 0 and len(r.stdout) > 1000:
         with open(OUT + "/" + name, "wb") as f:
