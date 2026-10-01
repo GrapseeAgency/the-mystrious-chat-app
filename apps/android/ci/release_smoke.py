@@ -233,15 +233,47 @@ def dock_menu_probe():
                 return (x1, y1, x2, y2)
     return None
 
-def open_switcher():
-    """Tap the floating dock pill (icon-only, bottom-center), scanning rows
-    until the quick-switcher popup appears. Returns True when open."""
+def node_bounds_all(xml, needle, exact=False):
+    """Every node matching needle (contains, or equals when exact), as centers."""
+    if not xml:
+        return []
+    needle_l = needle.lower()
+    out = []
+    for chunk in xml.split("<node")[1:]:
+        tm = re.search(r'text="([^"]*)"', chunk)
+        dm = re.search(r'content-desc="([^"]*)"', chunk)
+        candidates = [tm.group(1) if tm else "", dm.group(1) if dm else ""]
+        hit = False
+        for t in candidates:
+            t = t.strip()
+            if (t.lower() == needle_l) if exact else (needle_l in t.lower()):
+                hit = True
+                break
+        if hit:
+            bm = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', chunk)
+            if bm:
+                x1, y1, x2, y2 = map(int, bm.groups())
+                out.append(((x1 + x2) // 2, (y1 + y2) // 2))
+    return out
+
+def dock_pill_tap():
+    """Tap the floating dock pill through its own label text (the pill shows
+    'Chats' 'Hub' 'Contact' 'Profile' labels). Blind coordinates keep missing
+    it across densities; the label is always on the pill."""
+    xml = uiax_xml()
+    for label in ("Chats", "Hub"):
+        for (x, y) in node_bounds_all(xml, label, exact=True):
+            if y > H * 0.72:
+                tap((x, y))
+                time.sleep(2.0)
+                return True
+    # fallback: scan bottom-center rows
     for frac in (0.085, 0.075, 0.095, 0.065, 0.105):
         tap((W // 2, H - int(H * frac)))
         time.sleep(1.6)
         if dock_menu_probe() is not None:
             return True
-    note("MISS dock pill: quick-switcher did not open at any candidate row")
+    note("MISS dock pill (label and rows)")
     return False
 
 def tap_switcher_item(index):
@@ -301,12 +333,14 @@ def main():
         adb_ok("shell", "input", "keyevent", "111")  # ESC closes any suggestion bar
         dismiss_ime()  # the IME hides the Continue button below the fold
         time.sleep(1)
-        # fast path: the field's IME action (GO) advances; fallback: scroll+tap
+        # fast path: the field's IME action (GO) may advance straight to the
+        # handle step - then Continue no longer exists and Skip is next.
         adb_ok("shell", "input", "keyevent", "66")
         time.sleep(2.0)
-        if not tap_scrolling("Continue"):
-            return
-        tap_scrolling("Skip for now", wait=4.0)
+        if not tap_scrolling("Skip for now", wait=3.0):
+            if not tap_scrolling("Continue"):
+                return
+            tap_scrolling("Skip for now", wait=4.0)
 
     stage("onboarding", do_onboarding)
     dismiss_system_dialogs()
@@ -319,8 +353,8 @@ def main():
     # Skip entirely when onboarding never finished (drags would hit its UX).
     def in_shell():
         xml = uiax_xml()
-        return (node_bounds(xml, "Chats") is not None or node_bounds(xml, "Hub") is not None) \
-            and node_bounds(xml, "What should people call you") is None
+        return (node_bounds(xml, "What should people call you") is None
+                and node_bounds(xml, "Pick your handle") is None)
 
     def tab_walk():
         if not in_shell():
@@ -336,10 +370,10 @@ def main():
     if not stage("tab-walk-drag", tab_walk):
         return finish(2)
 
-    # Dock quick-switcher: tap the pill, menu opens; tap items by popup frame.
-    # DOCK_TABS order: chats(0), hub(1), contacts(2), profile(3).
+    # Dock quick-switcher: tap the pill via its label, menu opens; tap items
+    # by popup frame. DOCK_TABS order: chats(0), hub(1), contacts(2), profile(3).
     def nav_via_switcher():
-        if not open_switcher():
+        if not dock_pill_tap():
             return
         screen("03-switcher-open.png")
         for idx, label in ((1, "hub"), (2, "contacts"), (3, "profile")):
@@ -349,7 +383,7 @@ def main():
             note("switched to " + label)
             if not alive():
                 return
-            open_switcher()
+            dock_pill_tap()
 
     if not stage("nav-switcher", nav_via_switcher):
         return finish(2)
