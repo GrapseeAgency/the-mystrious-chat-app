@@ -503,7 +503,7 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
 // Particle bursts (native port of particle-layer.tsx)
 
 private val CONFETTI_COLORS = listOf(
-    Color(0xFF10B981), Color(0xFF14B8A6), Color(0xFFF59E0B),
+    Color(0xFFFFB86B), Color(0xFFFF7A3D), Color(0xFFF59E0B),
     Color(0xFFFB7185), Color(0xFF8B5CF6), Color(0xFFFFFFFF),
 )
 private val HEART_COLORS = listOf(Color(0xFFFB7185), Color(0xFFF43F5E), Color(0xFFFDA4AF), Color(0xFFFF6B81))

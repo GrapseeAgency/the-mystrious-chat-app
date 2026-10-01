@@ -4482,3 +4482,18 @@ Stage Summary:
 - Smoothness: .animateItem() on chats lists (reorder/add/remove springs), PulseMotion press/tap micro-interactions, nav slide+fade transitions.
 - CI loop discipline: 5 iOS fix waves driven by CI logs (optionals, EmojiPickerSheet retirement, StoryRingCell arg order, composerRows type-check split, TextField overload order, pinned copy) - each verified via downloaded job logs.
 - Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.12.0-native
+
+---
+Task ID: R21-ci-only
+Agent: orchestrator (Z.ai main session)
+Task: ship everything through GitHub Actions only - no sandbox builds - per user mandate
+
+Work Log:
+- Root cause found: ALL THREE workflow files (android-ci.yml, ios-ci.yml, web-ci.yml) had a corrupted push trigger: "branches: ain]" instead of "branches: [main]" - push-to-main CI silently never fired; only tag pushes worked. Fixed all three, verified byte-by-byte with od.
+- Committed the pending EMB-B ember retarget wave (ChatsScreen, Theme, Fx, MessageText, StoryComposer/Viewer, CallOverlay, Onboarding, Common) + version bump 28 -> 29 (0.12.1-native) + trigger fixes as f9dc452 and pushed main.
+- PAT hygiene: grepped the full pending diff for the token before commit (0 hits); token used only inline in push URL / API headers, never written to any file.
+- Android CI run 36867496166 fired on main push (trigger fix proven live).
+
+Stage Summary:
+- CI-only discipline from now on: local Gradle/Xcode builds are banned; GitHub Actions is the single build/verify/release channel.
+- Next: monitor run 36867496166; on green, tag v0.12.1-native -> signed APK (versionCode 29) -> GitHub Release publish; monitor iOS CI for the EMB-B Swift port status.
