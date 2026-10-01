@@ -250,8 +250,14 @@ def main():
 
     # Onboarding (fresh install): name -> Continue -> Skip for now.
     def do_onboarding():
-        xml = uiax_xml()
-        field = node_bounds(xml, "What should people call you")
+        field = None
+        for _ in range(3):
+            xml = uiax_xml()
+            field = node_bounds(xml, "What should people call you")
+            if field is not None:
+                break
+            dismiss_system_dialogs()
+            time.sleep(1.5)
         if field is None:
             note("onboarding not detected (existing install or different state); continuing")
             return
@@ -259,6 +265,7 @@ def main():
         time.sleep(1)
         adb_ok("shell", "input", "text", "EmberTester")
         adb_ok("shell", "input", "keyevent", "111")  # ESC closes any suggestion bar
+        dismiss_ime()  # the IME hides the Continue button below the fold
         time.sleep(1)
         tap_text("Continue", wait=2.5)
         tap_text("Skip for now", wait=4.0)
@@ -271,7 +278,16 @@ def main():
         return finish(2)
 
     # Deterministic tab walk via dock drag (chats -> hub -> contacts -> profile).
+    # Skip entirely when onboarding never finished (drags would hit its UX).
+    def in_shell():
+        xml = uiax_xml()
+        return (node_bounds(xml, "Chats") is not None or node_bounds(xml, "Hub") is not None) \
+            and node_bounds(xml, "What should people call you") is None
+
     def tab_walk():
+        if not in_shell():
+            note("shell not detected; skipping drag walk")
+            return
         for i, name in enumerate(("hub", "contacts", "profile")):
             dock_drag()
             screen("04-drag-%s.png" % name)
