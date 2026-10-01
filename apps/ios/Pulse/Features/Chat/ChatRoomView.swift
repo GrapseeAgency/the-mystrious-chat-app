@@ -383,7 +383,6 @@ private struct RoomContent: View {
     @State private var themeOpen = false
     @State private var phrasesOpen = false
     // R5-A Item 1 - composer emoji picker (draft-only; stickers send instantly).
-    @State private var emojiPickerOpen = false
 
     // R2-B - the veil reads the app scene (the native blur/hidden signal).
     @Environment(\.scenePhase) private var scenePhase
@@ -994,8 +993,10 @@ private struct RoomContent: View {
                 .onDisappear { viewModel.loadScheduled(session: session) }
         }
         .sheet(item: $reactionTarget) { target in
-            ReactionPickerSheet { emoji in
-                viewModel.react(target, emoji: emoji, session: session)
+            // R19-b - the picker emits the STABLE id; the react body key keeps
+            // its historical name.
+            ReactionPickerSheet { reaction in
+                viewModel.react(target, emoji: reaction.rawValue, session: session)
             }
         }
         .sheet(isPresented: $stickerOpen) {
@@ -1011,12 +1012,6 @@ private struct RoomContent: View {
 
     private var chatBodyStyled6: some View {
         chatBodyStyled5
-        .sheet(isPresented: $emojiPickerOpen) {
-            EmojiPickerSheet { emoji in
-                viewModel.draft = viewModel.draft + emoji
-            }
-            .onDisappear { composerFocused = true }
-        }
         .sheet(isPresented: $whoReactedOpen) {
             if let target = whoReactedMessage {
                 WhoReactedSheet(
@@ -2090,11 +2085,12 @@ private struct RoomContent: View {
                     attachMenu
 
                     HStack(spacing: 8) {
-                        // R5-A Item 1 - Smile button opens the EXISTING
-                        // emoji popover trigger.
+                        // R5-A Item 1 - Smile button hosts the stamp picker
+                        // (R19-a retired the draft-append emoji popover; the
+                        // stamps are registry ids with designed glyphs).
                         Button {
                             PulseHaptics.tap()
-                            emojiPickerOpen = true
+                            stickerOpen = true
                         } label: {
                             Image(systemName: "face.smiling")
                                 .font(.system(size: 22, weight: .medium))

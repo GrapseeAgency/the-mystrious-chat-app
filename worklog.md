@@ -4436,3 +4436,17 @@ Work Log:
 
 Stage Summary:
 - Android CI still in flight on v0.12.0-native. iOS fix commit will be pushed and the tag force-moved so android-ci + ios-ci re-run on the fixed SHA.
+
+---
+Task ID: R20-ios-fix2
+Agent: orchestrator (Z.ai main session)
+Task: fix the second iOS CI wave (6 errors: reaction id type, EmojiPickerSheet retirement, StoryRingCell arg order, status normalize optionals)
+
+Work Log:
+- ChatRoomView: ReactionPickerSheet onPick now sends PulseReactionId.rawValue (stable id on the wire); EmojiPickerSheet host + @State emojiPickerOpen deleted (R19-a retirement); composer smile button re-wired to stickerOpen (the stamp picker) mirroring the Android R20-merge fix.
+- ChatsView: StoryRingCell call args reordered to the struct declaration (onPress before photoPath/thumbnailPath).
+- ContactsView: subtitle status id coalesced with ?? .fallback.
+- brace_gate 3/3 BALANCED; zero EmojiPickerSheet/emojiPickerOpen refs remain tree-wide.
+
+Stage Summary:
+- Honest note: iOS still compiles only in CI; the 2057 "unable to type-check" may be cascade - will re-judge on the next CI run.

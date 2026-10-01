@@ -990,11 +990,11 @@ private struct StoriesRowView: View {
                         ring: myStoryGroup != nil ? .unseen : .none,
                         plus: true, // D1: "+" stays reachable even while a story is live
                         label: "My status",
-                        photoPath: viewer?.avatar,
-                        thumbnailPath: myStoryGroup.flatMap(latestImageStory),
                         onPress: {
                             onPress(myStoryGroup?.user?.id) // live → viewer; none → composer
                         },
+                        photoPath: viewer?.avatar,
+                        thumbnailPath: myStoryGroup.flatMap(latestImageStory),
                     )
                     ForEach(otherGroups, id: \.user?.id) { group in
                         if let user = group.user {

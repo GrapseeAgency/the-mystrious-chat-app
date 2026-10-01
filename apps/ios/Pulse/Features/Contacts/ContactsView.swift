@@ -392,7 +392,7 @@ private struct ContactRow: View {
     /// speaks its human label (web status-glyph LABEL_BY_ID), never a raw emoji.
     private var subtitle: String {
         if let emoji = user.statusEmoji, !emoji.isEmpty {
-            let id = PulseStatusIconId.normalize(emoji)
+            let id = PulseStatusIconId.normalize(emoji) ?? PulseStatusIconId.fallback
             if let text = user.statusText, !text.isEmpty {
                 return "\(id.label) \u{00B7} \(text)"
             }
