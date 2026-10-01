@@ -4514,3 +4514,36 @@ Work Log:
 Stage Summary:
 - iOS GLASS now speaks ember on every accent-fed surface via the token table (no per-screen edits needed); Android stamp pack + confetti complete the sweep.
 - Waiting on CI green for both platforms, then tag v0.13.0-ember -> signed APK (versionCode 29) -> GitHub Release. No local builds anywhere.
+
+---
+Task ID: R21-ship
+Agent: orchestrator (Z.ai main session)
+Task: ship v0.13.0-ember through GitHub Actions only and verify the release artifact byte-level
+
+Work Log:
+- Session interruption recovery: found two more commits already pushed (16f4a1a final ember sweep + stamp pack/confetti + version bump; f42e495 web+iOS glass parity + parity tests). CI state on main: Android green (16f4a1a), iOS green (f42e495), Web green (f42e495); f42e495 touched no Android code so the Android green carries over.
+- Confirmed apps/android/app/build.gradle.kts:11-12 = versionCode 29 / versionName 0.13.0-ember.
+- Tagged v0.13.0-ember on f42e495 and pushed the tag. Tag-triggered runs fired: Android 36883568133, iOS 36883568200.
+- Android tag run 36883568133: BOTH jobs success (build: JVM tests + signed R8 APK + Release publish; instrumented: emulator launch smoke + Room migration + DAO tests).
+- GitHub Release v0.13.0-ember PUBLISHED with asset Pulse-v0.13.0-ember.apk (25,444,760 bytes).
+- Hard verification of the shipped artifact: downloaded the release APK, parsed the binary AndroidManifest.xml (AXML string pool + start-element attributes, aapt2 no-rawValue layout) -> versionCode = 29 (INT_DEC), versionName = 0.13.0-ember, package = app.pulse.chat, compileSdk 35. versionName also byte-matched as UTF-16LE inside the manifest.
+- Signing posture (repo-committed distribution keystore model, build.gradle.kts:32-52): v1+v2+v3 schemes enabled so LiveUpdater overwrite-installs cleanly.
+- Zero sandbox builds performed this session: verification was API polling + artifact inspection only, per the user mandate.
+- iOS tag run: archive job success; build-test in flight at log time (same sources already green on main, run 36871572372).
+
+Stage Summary:
+- SHIPPED: v0.13.0-ember (versionCode 29) - the EMB-B ember language wave (warm sunset surfaces, amber accents, ember GLASS tokens on web+iOS, red unread badges / white active chips / ember story cards / orange presence / amber typing / flat rows, Signal stamp pack + confetti retarget) is on GitHub Releases as a CI-built signed APK.
+- Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.13.0-ember
+- CI-only discipline holds: all builds, tests, signing, release publishing happen in GitHub Actions; sandbox does QA/read-only verification at most.
+
+---
+Task ID: R21-ship-final
+Agent: orchestrator (Z.ai main session)
+Task: close the v0.13.0-ember tag loop
+
+Work Log:
+- iOS tag run 36883568200: SUCCESS (build-test incl. simulator launch smoke + screenshot; archive). Both platform CIs green on the release tag.
+- Recurring webDevReview cron re-created: job 428767, fixed_rate 900s.
+
+Stage Summary:
+- v0.13.0-ember fully shipped and CI-verified on both platforms. Release: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.13.0-ember
