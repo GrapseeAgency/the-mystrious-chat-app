@@ -4497,3 +4497,20 @@ Work Log:
 Stage Summary:
 - CI-only discipline from now on: local Gradle/Xcode builds are banned; GitHub Actions is the single build/verify/release channel.
 - Next: monitor run 36867496166; on green, tag v0.12.1-native -> signed APK (versionCode 29) -> GitHub Release publish; monitor iOS CI for the EMB-B Swift port status.
+
+---
+Task ID: R21-ember-sweep
+Agent: orchestrator (Z.ai main session)
+Task: finish the EMB-B ember retarget on Android + iOS mirror, ship v0.13.0-ember via GitHub Actions only
+
+Work Log:
+- Android leftovers retargeted: MessagingSurfaces.kt STAMP_PACKS "Signal" pack gradient emerald/teal -> ember amber pair (FFB86B/FF7A3D); Fx.kt CONFETTI_COLORS first two greens -> ember pair.
+- Verified done-state of the user checklist: GLASS theme tokens retargeted (Theme.kt committed f9dc452), PulsePalette.Emerald/EmeraldDeep/NeonMint -> ember (Common.kt), ChatsScreen red unread badges (EmberPalette.Signal FF453A) + white active chips + orange presence (EmberPalette.Online FF9F0A) + amber TypingDots + flat borderless header rows, Onboarding/StoryComposer local vals.
+- iOS mirror (PulseTheme+Tokens.swift): GLASS tokens accent #10b981/#2be8a6/#0ea5e9 -> ember #C9762B/#FFB86B + #E08A3C/#FF7A3D (dark-flipped, Android Theme.kt parity); pageBg -> #FBF6F0 light / #150F0B dark; panelBg dark -> warm #1E1610 60%; panelBorder light -> warm ink; pinnedWash emerald -> ember amber; bubbleLink -> #B4631F light / emberGlowTop dark; dockPillGradient -> ember pair; glass meta swatch -> #FFB86B/#FF7A3D. brace_gate.py 1/1 BALANCED.
+- User-selectable identity swatches (onboarding "emerald"/"teal", StoryPalette stages, ChatRoomScreen id->color map) intentionally kept: user data-variety options, not the app accent - same policy as web.
+- Version bump: versionCode 29, versionName 0.13.0-ember. PAT sweep on staged diff: 0 hits. Pushed 16f4a1a to main.
+- CI evidence: instrumented job (emulator launch smoke + Room migration + DAO tests) PASSED on f9dc452; runs 36869714697 (Android) + 36869714672 (iOS) fired on 16f4a1a - trigger fix proven on both platforms.
+
+Stage Summary:
+- iOS GLASS now speaks ember on every accent-fed surface via the token table (no per-screen edits needed); Android stamp pack + confetti complete the sweep.
+- Waiting on CI green for both platforms, then tag v0.13.0-ember -> signed APK (versionCode 29) -> GitHub Release. No local builds anywhere.
