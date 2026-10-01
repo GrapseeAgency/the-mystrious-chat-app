@@ -1107,18 +1107,9 @@ private fun PulseShell(
                     storiesVm = storiesVm,
                 )
             }
-            
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                }}}}}}}}}}}}
+            }
+        }
+    }
 
     // ── R4-B item 3 - the dock dispatch: one shared action bundle (tabs,
     // compose → NewChatSheet, More → Settings/Search/Saved/Stories) over the
