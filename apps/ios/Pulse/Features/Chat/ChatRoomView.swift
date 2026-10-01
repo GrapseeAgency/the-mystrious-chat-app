@@ -2127,9 +2127,11 @@ private struct RoomContent: View {
             TextField(
                 viewModel.editingTarget != nil ? "Edit message" : "Type here",
                 text: $viewModel.draft,
-                axis: .vertical,
+                // String title resolves to the (title:text:prompt:axis:)
+                // overload - prompt precedes axis.
                 prompt: Text(viewModel.editingTarget != nil ? "Edit message" : "Type here")
                     .foregroundColor(Color.white.opacity(0.40)),
+                axis: .vertical,
             )
             .lineLimit(1...5)
             .foregroundStyle(.white)
