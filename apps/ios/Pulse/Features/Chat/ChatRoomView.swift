@@ -3,19 +3,19 @@ import UIKit
 import Combine
 import PhotosUI
 
-/// Chat room — native rebuild of the web conversation surface. Same outcome:
+/// Chat room - native rebuild of the web conversation surface. Same outcome:
 /// emerald gradient bubbles for the viewer, material bubbles for others,
 /// reply quotes, grouped reaction chips, voice waveform chips, read state,
 /// live typing with drifting dots. Apple mechanics: ScrollViewReader anchor,
 /// contextMenu reactions, FocusState composer, socket-driven updates.
-/// Wave 8 — the room consumes the server-synced PulsePrefs blob: the
+/// Wave 8 - the room consumes the server-synced PulsePrefs blob: the
 /// wallpaper wash background, the bubble corner token (md/lg/pill) and the
 /// row density spacing.
 struct ChatRoomView: View {
     let conversation: WireConversationSummary
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
-    /// Global-search jump — the room scrolls to + flashes this message after
+    /// Global-search jump - the room scrolls to + flashes this message after
     /// its initial load (bounded history expansion if it sits out of window).
     var jumpMessageId: String? = nil
 
@@ -47,12 +47,12 @@ struct ChatRoomView: View {
             }
             // The dock hides itself while a room owns the screen (web §12).
             session.roomVisible = true
-            // Wave 8 — the incoming-attention gate treats THIS room as read.
+            // Wave 8 - the incoming-attention gate treats THIS room as read.
             session.activeRoomId = conversation.id
-            // 3-d — the group-call engine tracks the OPEN room: this drives
+            // 3-d - the group-call engine tracks the OPEN room: this drives
             // the 20s ongoing-call probe + the 'Ongoing group call' banner
             // (web useGroupCallSession options.conversationId parity). Groups
-            // only — DMs never host group calls.
+            // only - DMs never host group calls.
             if conversation.isGroup {
                 session.groupCallEngine?.setActiveConversation(conversation.id)
             }
@@ -62,7 +62,7 @@ struct ChatRoomView: View {
             if session.activeRoomId == conversation.id {
                 session.activeRoomId = nil
             }
-            // 3-d — room closed: the probe + banner stand down for THIS room
+            // 3-d - room closed: the probe + banner stand down for THIS room
             // (the engine keeps an in-flight call alive regardless).
             if conversation.isGroup,
                session.groupCallEngine?.activeConversationId == conversation.id {
@@ -79,7 +79,7 @@ struct ChatRoomView: View {
     }
 }
 
-/// R30-c — the unread divider (web chat-room.tsx:4418-4434 parity):
+/// R30-c - the unread divider (web chat-room.tsx:4418-4434 parity):
 /// emerald hairlines around a tracking-widest UNREAD capsule.
 struct UnreadDividerRow: View {
     var body: some View {
@@ -103,7 +103,7 @@ struct UnreadDividerRow: View {
     }
 }
 
-/// One river row — day chip + bubble + context menu + pagination trigger.
+/// One river row - day chip + bubble + context menu + pagination trigger.
 /// Extracted from RoomContent so the Swift type-checker sees a bounded
 /// expression (Wave 1 row carries media/thread/flash wiring).
 private struct RoomMessageRow: View {
@@ -114,11 +114,11 @@ private struct RoomMessageRow: View {
     let conversation: WireConversationSummary
     @ObservedObject var viewModel: RoomViewModel
     let colorOf: (String) -> Color
-    /// Wave 8 — prefs bubble corner token (md/lg/pill).
+    /// Wave 8 - prefs bubble corner token (md/lg/pill).
     let bubbleRadius: PulseBubbleRadius
-    /// R30-c — the tap-time unread divider sits right above this row.
+    /// R30-c - the tap-time unread divider sits right above this row.
     let showUnreadDivider: Bool
-    // R7 — web buildItems cluster verdict for THIS row: head rows carry the
+    // R7 - web buildItems cluster verdict for THIS row: head rows carry the
     // sender name (web MessageRow `head` gate), non-head rows tighten the
     // stack gap by `clusterTighten` (web mt-px/mt-0.5 parity).
     let cluster: PulseCluster.Flags
@@ -128,18 +128,18 @@ private struct RoomMessageRow: View {
     let onOpenThread: (WireChatMessage) -> Void
     let onForward: (WireChatMessage) -> Void
     let onInfo: (WireChatMessage) -> Void
-    /// Wave 2 view-once — instant reveal (lightbox) + POST /viewed burn.
+    /// Wave 2 view-once - instant reveal (lightbox) + POST /viewed burn.
     let onViewOnce: (WireChatMessage) -> Void
-    // ── Wave 7 — rich-object cards + message actions ──
+    // ── Wave 7 - rich-object cards + message actions ──
     let wave7: Wave7RoomActions
-    // R3-A item 7 — roster names drive the @mention chips in bubble bodies.
+    // R3-A item 7 - roster names drive the @mention chips in bubble bodies.
     let memberNames: [String]
-    // R3-A item 4 — tap a reaction chip → who-reacted roster sheet.
+    // R3-A item 4 - tap a reaction chip → who-reacted roster sheet.
     let onWhoReacted: (WireChatMessage, String) -> Void
 
     var body: some View {
         Group {
-            // R30-c — the unread divider anchors at the FIRST message newer
+            // R30-c - the unread divider anchors at the FIRST message newer
             // than the frozen lastRead watermark (web buildItems parity).
             if showUnreadDivider {
                 UnreadDividerRow()
@@ -181,7 +181,7 @@ private struct RoomMessageRow: View {
                 memberNames: memberNames,
                 onReactionChip: onWhoReacted,
                 onDoubleTapHeart: {
-                    // R47 — double-tap bubble fires the heart quick reaction (web
+                    // R47 - double-tap bubble fires the heart quick reaction (web
                     // chat-room.tsx:7265-7268 onDoubleClick parity). The SAME
                     // react path the quick-reactions context menu uses; the
                     // hearts burst rides the VM react path. R19-b: the react
@@ -190,13 +190,13 @@ private struct RoomMessageRow: View {
                 },
                 isClusterHead: cluster.head,
                 onSwipeReply: {
-                    // R7 — swipe past 28pt → the SAME reply path the context
+                    // R7 - swipe past 28pt → the SAME reply path the context
                     // menu "Reply" uses (web beginReply parity).
                     viewModel.beginReply(to: message)
                 },
             )
-            // R7 — non-head clustered rows pull the bubble up (negative top
-            // padding inside the LazyVStack gap): cozy 6→2, compact 2→1 — the
+            // R7 - non-head clustered rows pull the bubble up (negative top
+            // padding inside the LazyVStack gap): cozy 6→2, compact 2→1 - the
             // web's mt-px/mt-0.5 clustered rhythm vs the mt-2.5 head gap.
             // Attached to the bubble only (a Group modifier would also hit the
             // optional divider/day-chip children).
@@ -248,7 +248,7 @@ private struct RoomMessageRow: View {
         } label: {
             Label("Copy", systemImage: "doc.on.doc.fill")
         }
-        // R1-W2B F-MD-06 — on-demand LLM translation (POST /translate);
+        // R1-W2B F-MD-06 - on-demand LLM translation (POST /translate);
         // the fresh row's translations render inline in the bubble.
         if message.kind == "text", message.deletedAt == nil, !message.id.hasPrefix("local_") {
             Button {
@@ -284,7 +284,7 @@ private struct RoomMessageRow: View {
         } label: {
             Label("Info", systemImage: "info.circle")
         }
-        // ── Wave 7 — message→kanban card + per-message reminder ──
+        // ── Wave 7 - message→kanban card + per-message reminder ──
         if message.kind == "text" && message.deletedAt == nil {
             Button {
                 wave7.kanbanSourceMessage = message
@@ -293,9 +293,9 @@ private struct RoomMessageRow: View {
                 Label("Add to board", systemImage: "square.stack.3d.up.fill")
             }
         }
-        // R3-A item 11 — Chanty-style direct conversion (web chat-room.tsx
+        // R3-A item 11 - Chanty-style direct conversion (web chat-room.tsx
         // "Convert to task" :6372-6379: text rows only, not deleted, thread
-        // roots only — the message itself becomes the board card via the
+        // roots only - the message itself becomes the board card via the
         // messageId POST, no form).
         if message.kind == "text" && message.deletedAt == nil && message.parentId == nil
             && !message.id.hasPrefix("local_") {
@@ -324,7 +324,7 @@ private struct RoomContent: View {
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var composerFocused: Bool
 
-    // Wave 1 surfaces — threads, forward, info, pins, lightbox, QuickLook,
+    // Wave 1 surfaces - threads, forward, info, pins, lightbox, QuickLook,
     // room search, and the media attach flow (photo picker + document).
     @State private var threadRoot: WireChatMessage?
     @State private var forwardSource: WireChatMessage?
@@ -336,25 +336,25 @@ private struct RoomContent: View {
     @State private var searchQuery = ""
     @State private var photoItem: PhotosPickerItem?
     @State private var showFileImporter = false
-    // D30 camera capture — system camera + TCC state; D31 hold-to-record state.
+    // D30 camera capture - system camera + TCC state; D31 hold-to-record state.
     @State private var showCamera = false
     @State private var cameraDenied = false
     @State private var micDenied = false
     @State private var holdStarted = false
     @State private var holdCancelArmed = false
-    // Wave 2 — poll builder sheet.
+    // Wave 2 - poll builder sheet.
     @State private var pollBuilderOpen = false
-    // ── Wave 7 — collaboration & hub surfaces ──
+    // ── Wave 7 - collaboration & hub surfaces ──
     @StateObject private var wave7 = Wave7RoomActions()
     @State private var leaderboardOpen = false
-    // Wave 6 — DM safety-number sheet (F-CP-07/08) + the @-suggester (F-SM-04).
+    // Wave 6 - DM safety-number sheet (F-CP-07/08) + the @-suggester (F-SM-04).
     @StateObject private var safetyBadges = PulseSafetyBadgeCache.shared
     @State private var safetyOpen = false
-    // R2-D ITEM 1 — the DM info surface (web header-menu parity: TTL, screen
+    // R2-D ITEM 1 - the DM info surface (web header-menu parity: TTL, screen
     // security, mute, theme + safety-number entries for DIRECT chats).
     @State private var dmInfoOpen = false
 
-    // ── REM-B — group admin / scheduled / reactions / stickers / who-reacted ──
+    // ── REM-B - group admin / scheduled / reactions / stickers / who-reacted ──
     @State private var groupInfoOpen = false
     @State private var scheduleOpen = false
     @State private var scheduledManagerOpen = false
@@ -364,11 +364,11 @@ private struct RoomContent: View {
     @State private var whoReactedMessage: WireChatMessage?
     @State private var whoReactedEmoji = ""
 
-    /// R3-A item 7 — roster display names for the @mention chips in bubble
+    /// R3-A item 7 - roster display names for the @mention chips in bubble
     /// bodies (web memberNames stable-list parity).
     private var memberNames: [String] { conversation.members.map(\.name) }
 
-    /// 3-d — the group-call dial title (web `displayName || 'Group call'`
+    /// 3-d - the group-call dial title (web `displayName || 'Group call'`
     /// parity, chat-room.tsx :4034): the conversation name, then the partner
     /// name, then any member, then the honest generic.
     private var groupCallTitle: String {
@@ -378,17 +378,17 @@ private struct RoomContent: View {
             ?? "Group call"
     }
 
-    // ── R1-W2B — location share / conv themes / quick phrases ──
+    // ── R1-W2B - location share / conv themes / quick phrases ──
     @State private var locationOpen = false
     @State private var themeOpen = false
     @State private var phrasesOpen = false
-    // R5-A Item 1 — composer emoji picker (draft-only; stickers send instantly).
+    // R5-A Item 1 - composer emoji picker (draft-only; stickers send instantly).
     @State private var emojiPickerOpen = false
 
-    // R2-B — the veil reads the app scene (the native blur/hidden signal).
+    // R2-B - the veil reads the app scene (the native blur/hidden signal).
     @Environment(\.scenePhase) private var scenePhase
 
-    /// F-CH-04 — broadcast composer lock: broadcastMode on + the viewer is
+    /// F-CH-04 - broadcast composer lock: broadcastMode on + the viewer is
     /// NOT an admin (server 403s the post; the web hides the composer too).
     private var broadcastLocked: Bool {
         guard conversation.broadcastMode == true else { return false }
@@ -396,7 +396,7 @@ private struct RoomContent: View {
         return role != "admin"
     }
 
-    /// F-SM-04 — the @-token active right now (draft tail), if any. The R47
+    /// F-SM-04 - the @-token active right now (draft tail), if any. The R47
     /// dead-end notice suppresses it too (the composer itself is replaced).
     private var mentionSuggestion: (token: String, atIndex: Int)? {
         (broadcastLocked || viewModel.dmBlocked) ? nil : PulseMentions.activeToken(in: viewModel.draft)
@@ -413,17 +413,17 @@ private struct RoomContent: View {
         guard let suggestion = mentionSuggestion else { return }
         let insertion = PulseMentions.insertion(for: member.name)
         let draft = viewModel.draft
-        // The token is anchored at the draft tail — replace from the @ to end.
+        // The token is anchored at the draft tail - replace from the @ to end.
         let prefix = draft.prefix(suggestion.atIndex)
         PulseHaptics.tap()
         viewModel.draft = prefix + insertion
         composerFocused = true
     }
 
-    /// Wave 8 — the room background: the per-conversation theme override
+    /// Wave 8 - the room background: the per-conversation theme override
     /// (R1-W2B F-FX-05) wins over the global prefs wallpaper (web
     /// effectiveConvWallpaper parity), and an optional tint layers a soft
-    /// accent glow over it (web applyConvTint parity — conv-theme.ts:175).
+    /// accent glow over it (web applyConvTint parity - conv-theme.ts:175).
     private var effectiveWallpaper: PulseWallpaper {
         if let raw = prefs.convThemes[conversation.id]?.wallpaper,
            let token = PulseWallpaper(rawValue: raw) {
@@ -437,7 +437,7 @@ private struct RoomContent: View {
         return Self.convTintColor(named: tint)
     }
 
-    /// Web CONV_TINT_META glow colors — emerald/rose/amber/violet/teal.
+    /// Web CONV_TINT_META glow colors - emerald/rose/amber/violet/teal.
     static func convTintColor(named tint: String) -> Color {
         switch tint {
         case "rose": return Color(red: 0.96, green: 0.25, blue: 0.37)
@@ -448,7 +448,7 @@ private struct RoomContent: View {
         }
     }
 
-    /// R3-A item 8 — the four effect names (web EFFECT set verbatim:
+    /// R3-A item 8 - the four effect names (web EFFECT set verbatim:
     /// confetti/lasers/echo/sparkles) with SF glyphs for the attach-menu
     /// Effects submenu. The pick routes the EXISTING sendWithEffect engine.
     static let expressEffects: [(name: String, icon: String)] = [
@@ -465,7 +465,7 @@ private struct RoomContent: View {
             }
             if let tint = convTintGlow {
                 // The tint glow sits above the wallpaper (web replaces the
-                // top glow color — visible even on the `none` wallpaper).
+                // top glow color - visible even on the `none` wallpaper).
                 LinearGradient(
                     colors: [tint.opacity(0.16), Color.clear],
                     startPoint: .top, endPoint: .center,
@@ -478,7 +478,7 @@ private struct RoomContent: View {
         chatBodyStyled14
     }
 
-    // ChatRoomView.body — R12 type-check decomposition: the original single builder
+    // ChatRoomView.body - R12 type-check decomposition: the original single builder
     // expression exceeded Swift’s type-check budget; VERBATIM tree, split only.
     private var chatBodyStyled_view: some View {
         VStack(spacing: 0) {
@@ -514,7 +514,7 @@ private struct RoomContent: View {
 
     @ViewBuilder
     private var chatBodyPart0: some View {
-            // Wave 2 topics — group rooms only (General = whole room, spec §1 row 9).
+            // Wave 2 topics - group rooms only (General = whole room, spec §1 row 9).
     }
 
     @ViewBuilder
@@ -538,7 +538,7 @@ private struct RoomContent: View {
 
     @ViewBuilder
     private var chatBodyPart3: some View {
-            // REM-B F-MS-19 — header TTL chip when disappearing is on.
+            // REM-B F-MS-19 - header TTL chip when disappearing is on.
     }
 
     @ViewBuilder
@@ -569,7 +569,7 @@ private struct RoomContent: View {
 
     @ViewBuilder
     private var chatBodyPart6: some View {
-            // R38/R42 — the veil covers ONLY the message river (header +
+            // R38/R42 - the veil covers ONLY the message river (header +
     }
 
     @ViewBuilder
@@ -596,7 +596,7 @@ private struct RoomContent: View {
 
     @ViewBuilder
     private var chatBodyPart10: some View {
-            // R34-b — AI recap card pinned above the composer.
+            // R34-b - AI recap card pinned above the composer.
     }
 
     @ViewBuilder
@@ -611,7 +611,7 @@ private struct RoomContent: View {
 
     @ViewBuilder
     private var chatBodyPart12: some View {
-            // F-SM-04 — @-suggester popover (roster, top-5 prefix match).
+            // F-SM-04 - @-suggester popover (roster, top-5 prefix match).
     }
 
     @ViewBuilder
@@ -623,7 +623,7 @@ private struct RoomContent: View {
 
     @ViewBuilder
     private var chatBodyPart14: some View {
-            // R3-A item 1 — the live '/' palette (web SlashPalette parity:
+            // R3-A item 1 - the live '/' palette (web SlashPalette parity:
     }
 
     @ViewBuilder
@@ -633,7 +633,7 @@ private struct RoomContent: View {
 
     @ViewBuilder
     private var chatBodyPart16: some View {
-            // palette and the @-suggester never compete — a '/' draft carries
+            // palette and the @-suggester never compete - a '/' draft carries
     }
 
     @ViewBuilder
@@ -685,14 +685,14 @@ private struct RoomContent: View {
             }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                // W5-f — the voice room entry (VR-1): mic tints active while
+                // W5-f - the voice room entry (VR-1): mic tints active while
                 // any room of THIS conversation is joined; the "Voice · N
                 // live" pill shows when joined + surface closed.
                 if let rooms = session.voiceRooms {
                     VoiceRoomChatEntry(model: rooms, conversationId: conversation.id)
                 }
             }
-            // 3-d — GROUP call buttons (mesh, web chat-room.tsx :4026-4053
+            // 3-d - GROUP call buttons (mesh, web chat-room.tsx :4026-4053
             // parity: same shell-dial contract, one session). Groups only;
             // the engine owns every gate (1:1-call exclusion, offline toast,
             // mic/camera permission asks, camera→voice degrade).
@@ -718,10 +718,10 @@ private struct RoomContent: View {
                     .accessibilityLabel("Start group video call in \(groupCallTitle)")
                 }
             }
-            // R9 — 1:1 dial entry (web chat-room.tsx :3988-4012 parity: the DM
+            // R9 - 1:1 dial entry (web chat-room.tsx :3988-4012 parity: the DM
             // room header carries voice + video dials). The engine owns every
             // gate (idle check, group-call exclusion, offline toast, mic/
-            // camera permission asks) — the room only hands it the peer, the
+            // camera permission asks) - the room only hands it the peer, the
             // same contract the group buttons above use for the mesh engine.
             if !conversation.isGroup, let engine = session.callEngine, let partner = dmPartner {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -752,7 +752,7 @@ private struct RoomContent: View {
                     .accessibilityLabel("Start video call with \(partner.name)")
                 }
             }
-            // Wave 7 F-RO-09 — room leaderboard (web group-info-sheet parity).
+            // Wave 7 F-RO-09 - room leaderboard (web group-info-sheet parity).
             if conversation.isGroup {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -764,8 +764,8 @@ private struct RoomContent: View {
                     .accessibilityLabel("Leaderboard")
                 }
             }
-            // REM-B P1 — group info entry (member list, roles, invite,
-            // rename, leave, TTL, slow mode) — groups only, web parity.
+            // REM-B P1 - group info entry (member list, roles, invite,
+            // rename, leave, TTL, slow mode) - groups only, web parity.
             if conversation.isGroup {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -788,9 +788,9 @@ private struct RoomContent: View {
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Search messages")
             }
-            // Wave 6 — DM-only safety entry (F-CP-07): ShieldCheck opens the
+            // Wave 6 - DM-only safety entry (F-CP-07): ShieldCheck opens the
             // 60-digit sheet; the emerald badge shows while verified (F-CP-08).
-            // R1-W2B D34 — the UNVERIFIED state also carries the tiny amber
+            // R1-W2B D34 - the UNVERIFIED state also carries the tiny amber
             // dot (web R37 header parity, chat-room.tsx:3887-3892).
             if let partner = dmPartner {
                 ToolbarItem(placement: .topBarLeading) {
@@ -812,7 +812,7 @@ private struct RoomContent: View {
                     .buttonStyle(PulseButtonStyle())
                     .accessibilityLabel(safetyBadges.isVerified(partner.id) ? "Verified — open safety number" : "Not verified — open safety number")
                 }
-                // R2-D ITEM 1 — DM info entry (web header-menu parity: the
+                // R2-D ITEM 1 - DM info entry (web header-menu parity: the
                 // menu covers DMs with TTL + screen security + mute; iOS had
                 // NO privacy surface for DMs before this). Opens the compact
                 // RoomInfoSheet; groups keep their GroupInfoView branch.
@@ -828,7 +828,7 @@ private struct RoomContent: View {
                 }
             }
         }
-        // R1-W2B F-FX-05 — per-conversation theme picker entry (web lives in
+        // R1-W2B F-FX-05 - per-conversation theme picker entry (web lives in
         // the room info page; native mirrors the chat toolbar for reach).
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -841,7 +841,7 @@ private struct RoomContent: View {
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Chat theme")
             }
-            // R34-b — AI recap entry (web header-menu "Recap with AI" parity;
+            // R34-b - AI recap entry (web header-menu "Recap with AI" parity;
             // the requestRecap ≥5 gate + 15 s auto-dismiss card handle the rest).
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -853,8 +853,8 @@ private struct RoomContent: View {
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel("Recap with AI")
             }
-            // R30-b — room-header reminders entry (web chat-room.tsx:4054-4075
-            // parity): opens the existing Wave7 sheet (room-level — no message
+            // R30-b - room-header reminders entry (web chat-room.tsx:4054-4075
+            // parity): opens the existing Wave7 sheet (room-level - no message
             // anchor); the emerald badge counts the viewer's unfired reminders.
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -880,7 +880,7 @@ private struct RoomContent: View {
                     ? "Reminders — \(viewModel.upcomingReminderCount) upcoming"
                     : "Reminders")
             }
-            // R1-W2I F-PI-03 — the pop-out mini-chat toggle (web chat-room
+            // R1-W2I F-PI-03 - the pop-out mini-chat toggle (web chat-room
             // header PictureInPicture2 button): opens/closes this room's pane.
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -907,7 +907,7 @@ private struct RoomContent: View {
                 SafetySheetView(session: session, peer: partner)
             }
         }
-        // R2-D ITEM 1 — the DM info sheet (groups keep GroupInfoView below;
+        // R2-D ITEM 1 - the DM info sheet (groups keep GroupInfoView below;
         // the onDetailUpdated handoff matches that sheet's veil plumbing).
         .sheet(isPresented: $dmInfoOpen) {
             if let partner = dmPartner {
@@ -917,7 +917,7 @@ private struct RoomContent: View {
                     session: session,
                     prefs: prefs,
                     onDetailUpdated: { detail in
-                        // R38/R47 — one mutator adopts both flags from the
+                        // R38/R47 - one mutator adopts both flags from the
                         // sheet's fresh detail (dmBlocked is private(set)).
                         viewModel.applyFreshDetail(detail)
                     },
@@ -925,7 +925,7 @@ private struct RoomContent: View {
             }
         }
         .task {
-            // Wave 6 — populate the verified-badge cache for this DM (one
+            // Wave 6 - populate the verified-badge cache for this DM (one
             // quiet GET on room open; the header badge reads the cache).
             guard let partner = dmPartner else { return }
             if let state = try? await session.api.safetyState(peerId: partner.id) {
@@ -937,11 +937,11 @@ private struct RoomContent: View {
     private var chatBodyStyled2: some View {
         chatBodyStyled1
         .task {
-            // R1-W2B F-MS-29 — the quick-phrase rail seeds on room open.
+            // R1-W2B F-MS-29 - the quick-phrase rail seeds on room open.
             viewModel.loadQuickPhrases(session: session)
         }
         .task {
-            // R2-B R38/R42 — server truth for both veil flags on room open.
+            // R2-B R38/R42 - server truth for both veil flags on room open.
             await viewModel.loadPrivacyState(session: session)
         }
         .sheet(item: $threadRoot) { root in
@@ -974,7 +974,7 @@ private struct RoomContent: View {
                 session: session,
                 prefs: prefs,
                 onDetailUpdated: { detail in
-                    // R38/R47 — one mutator adopts both flags from the
+                    // R38/R47 - one mutator adopts both flags from the
                     // info-sheet's fresh detail (dmBlocked is private(set)).
                     viewModel.applyFreshDetail(detail)
                 },
@@ -1003,7 +1003,7 @@ private struct RoomContent: View {
                 viewModel.sendSticker(emoji: emoji, pack: pack, session: session)
             }
         }
-        // R5-A Item 1 — emoji picker (web chat-room.tsx:5385-5412 parity):
+        // R5-A Item 1 - emoji picker (web chat-room.tsx:5385-5412 parity):
         // tap APPENDS to the draft (web setInput(prev => prev + emoji)) and
         // the focus hand-back on dismiss keeps the keyboard up (web
         // requestAnimationFrame(textareaRef.focus) parity).
@@ -1124,7 +1124,7 @@ private struct RoomContent: View {
                 viewerId: session.viewer?.id ?? "",
                 load: { since in try? await session.api.whiteboard(conversationId: conversation.id, since: since) },
                 onStrokes: { strokes in
-                    // R1-W2G D44 — the sheet awaits the sync verdict: the
+                    // R1-W2G D44 - the sheet awaits the sync verdict: the
                     // draft store clears a stroke only on server confirmation.
                     await wave7.postStrokes(api: session.api, conversationId: conversation.id, strokes: strokes)
                 },
@@ -1159,7 +1159,7 @@ private struct RoomContent: View {
                 onResolve: { id in wave7.resolveReminder(api: session.api, id: id) },
                 onDelete: { id in wave7.deleteReminder(api: session.api, id: id) },
                 onJump: { item in
-                    // R7 — web onReminderJump parity (chat-room.tsx:1093-1103):
+                    // R7 - web onReminderJump parity (chat-room.tsx:1093-1103):
                     // close the sheet first; a reminder anchored in THIS room
                     // jumps + flashes, another room navigates there with the
                     // jump target riding the established requestOpenRoom bridge
@@ -1184,7 +1184,7 @@ private struct RoomContent: View {
             )
         }
         .onChange(of: wave7.remindersOpen) { _, open in
-            // R30-b — the header badge re-syncs after create/resolve/delete
+            // R30-b - the header badge re-syncs after create/resolve/delete
             // inside the sheet (its list fetch is the sheet's own).
             if !open { viewModel.loadUpcomingReminderCount(session: session) }
         }
@@ -1228,7 +1228,7 @@ private struct RoomContent: View {
             wave7.cardGrab = { id in wave7.grabRedPacket(api: session.api, packetId: id) }
             wave7.cardMove = { matchId, cell in wave7.moveGame(api: session.api, matchId: matchId, cell: cell) }
             wave7.cardJoinGame = { matchId in wave7.joinGame(api: session.api, matchId: matchId) }
-            // R7 — rematch: card hands the opponent id, the room supplies
+            // R7 - rematch: card hands the opponent id, the room supplies
             // conversation.id + api (in-flight spinner + toast ride wave7).
             wave7.cardRematch = { opponentId in
                 wave7.rematchGame(api: session.api, conversationId: conversation.id, opponentId: opponentId)
@@ -1249,7 +1249,7 @@ private struct RoomContent: View {
                 .ignoresSafeArea()
         }
         .onDisappear {
-            // Wave 2 — honest teardown: a recording or playback must never
+            // Wave 2 - honest teardown: a recording or playback must never
             // outlive the room (roomVisible off / conversation change).
             viewModel.handleRoomDisappeared()
         }
@@ -1258,7 +1258,7 @@ private struct RoomContent: View {
     private var chatBodyStyled13: some View {
         chatBodyStyled12
         .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
-        // D30 camera capture — the shot flows through stageImage → the SAME
+        // D30 camera capture - the shot flows through stageImage → the SAME
         // ≤1280px JPEG staged pipeline as the photo picker (web parity).
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker(
@@ -1300,7 +1300,7 @@ private struct RoomContent: View {
 
     @State private var showPhotoPicker = false
 
-    /// Wave 6 — the DM partner (safety entry + verified badge are DM-only,
+    /// Wave 6 - the DM partner (safety entry + verified badge are DM-only,
     /// web parity: group rooms carry no safety number).
     private var dmPartner: WireConversationMember? {
         guard !conversation.isGroup else { return nil }
@@ -1308,7 +1308,7 @@ private struct RoomContent: View {
             ?? conversation.members.first
     }
 
-    // ── F-SM-04 — the @-suggester popover (roster, top-5 prefix match) ──
+    // ── F-SM-04 - the @-suggester popover (roster, top-5 prefix match) ──
     private func mentionPopover() -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(mentionCandidates.enumerated()), id: \.element.id) { index, member in
@@ -1488,7 +1488,7 @@ private struct RoomContent: View {
 
     // ── messages ─────────────────────────────────────────────
     private var messagesList: some View {
-        // R7 — cluster verdicts computed ONCE per river build (web buildItems
+        // R7 - cluster verdicts computed ONCE per river build (web buildItems
         // parity, chat-room.tsx:1367-1424): sender name renders on head rows
         // only and clustered rows tighten. Pure kernel → no memo cache needed;
         // the map pass is O(n) like the row build itself.
@@ -1500,7 +1500,7 @@ private struct RoomContent: View {
         )
         return ScrollViewReader { proxy in
             ScrollView {
-                // Wave 8 — prefs density: cozy keeps the Wave-0 rhythm,
+                // Wave 8 - prefs density: cozy keeps the Wave-0 rhythm,
                 // compact tightens the river (web chat-room density parity).
                 LazyVStack(spacing: prefs.density.rowSpacing) {
                     if viewModel.messages.isEmpty && viewModel.phase == .loading {
@@ -1520,7 +1520,7 @@ private struct RoomContent: View {
                             colorOf: colorOf,
                             bubbleRadius: prefs.bubbleRadius,
                             showUnreadDivider: (unreadDividerIndex ?? -1) == index,
-                            // R7 — this row's web buildItems cluster verdict
+                            // R7 - this row's web buildItems cluster verdict
                             // + the density-scaled gap tighten for non-head
                             // rows (web mt-0.5/mt-px parity).
                             cluster: clusterFlags[index],
@@ -1538,7 +1538,7 @@ private struct RoomContent: View {
                             wave7: wave7,
                             memberNames: memberNames,
                             onWhoReacted: { message, emoji in
-                                // R3-A item 4 — chip tap → the who-reacted roster.
+                                // R3-A item 4 - chip tap → the who-reacted roster.
                                 whoReactedMessage = message
                                 whoReactedEmoji = emoji
                                 whoReactedOpen = true
@@ -1561,7 +1561,7 @@ private struct RoomContent: View {
                     }
                     Color.clear.frame(height: 4).id("tail")
                         .onAppear {
-                            // R26 — the tail sentinel doubles as the native
+                            // R26 - the tail sentinel doubles as the native
                             // nearBottomRef: visible = the viewer sits at the
                             // bottom (didSet resets the missed badge).
                             viewModel.isTailVisible = true
@@ -1575,9 +1575,9 @@ private struct RoomContent: View {
             }
             .defaultScrollAnchor(.bottom)
             .onChange(of: viewModel.messages.count) { _, _ in
-                // R26 — the missed-badge machine + tail-id pill arming run
+                // R26 - the missed-badge machine + tail-id pill arming run
                 // on every river change; the auto-scroll only fires while
-                // the viewer sits at the bottom (web nearBottomRef parity —
+                // the viewer sits at the bottom (web nearBottomRef parity -
                 // reading history is never yanked to the tail).
                 viewModel.noteRiverChanged()
                 if viewModel.isTailVisible {
@@ -1593,7 +1593,7 @@ private struct RoomContent: View {
             .onAppear {
                 proxy.scrollTo("tail", anchor: .bottom)
             }
-            // R26 — Telegram-style jump-to-latest pill (web chat-room
+            // R26 - Telegram-style jump-to-latest pill (web chat-room
             // :4527-4568 parity): armed on off-screen arrivals, badge shows
             // the missed count, tap lands on the tail.
             .overlay(alignment: .bottom) {
@@ -1602,10 +1602,10 @@ private struct RoomContent: View {
         }
     }
 
-    // ── R2-B — jump pill · unread divider index · recap card · veil ──
+    // ── R2-B - jump pill · unread divider index · recap card · veil ──
 
     /// The tap-time anchor (frozen in the view model) drives the divider
-    /// row index — nil when there is nothing unread or nothing qualifies.
+    /// row index - nil when there is nothing unread or nothing qualifies.
     private var unreadDividerIndex: Int? {
         viewModel.unreadDividerRow(viewerId: session.viewer?.id)
     }
@@ -1655,7 +1655,7 @@ private struct RoomContent: View {
         }
     }
 
-    /// R34-b — the recap card (web :4835-4905 parity): sparkles chip, the
+    /// R34-b - the recap card (web :4835-4905 parity): sparkles chip, the
     /// "Summarizing…" loading state, the bullet summary with a copy button,
     /// and a dismiss control; auto-dismiss is armed by the view model.
     @ViewBuilder
@@ -1725,9 +1725,9 @@ private struct RoomContent: View {
         .accessibilityLabel("AI recap")
     }
 
-    /// R38/R42 — the veil engages when EITHER flag is on; on iOS the
+    /// R38/R42 - the veil engages when EITHER flag is on; on iOS the
     /// "unfocused" state is scenePhase != .active (app switcher, another
-    /// app, lock — web blur/hidden parity).
+    /// app, lock - web blur/hidden parity).
     private var veilEngaged: Bool {
         let eitherOn = viewModel.roomScreenPrivacy == true
             || (session.prefs?.screenPrivacy[conversation.id] == true)
@@ -1806,14 +1806,14 @@ private struct RoomContent: View {
 
     // ── composer ─────────────────────────────────────────────
     // D31 hold-to-record: the trailing slot (voiceSendSlot) is ALWAYS mounted
-    // in the same HStack position — idle mic, recording send-arrow and plain
-    // send are the SAME view with a swapped glyph — so a press gesture that
+    // in the same HStack position - idle mic, recording send-arrow and plain
+    // send are the SAME view with a swapped glyph - so a press gesture that
     // starts on the mic survives the recording bar appearing, and release
     // still lands where the finger went down.
     private var composer: some View {
         VStack(spacing: 0) {
-            // R5-A Item 6 — the scheduled chip above the composer (web
-            // chat-room.tsx:4726-4744): "{next} · {count} pending — tap to
+            // R5-A Item 6 - the scheduled chip above the composer (web
+            // chat-room.tsx:4726-4744): "{next} · {count} pending - tap to
             // manage", tap opens the manager sheet (the dead manager entry
             // point now has a real affordance too).
             if let chipText = viewModel.scheduledChipText {
@@ -1847,21 +1847,21 @@ private struct RoomContent: View {
             if cameraDenied {
                 deniedNotice("Camera access is off — allow it to take photos for this chat.") { cameraDenied = false }
             }
-            // R2-D — the F-MS-20 slow-mode countdown: the chip appears the
+            // R2-D - the F-MS-20 slow-mode countdown: the chip appears the
             // moment the server's 429 arms the lock, counts the honest wait
             // down live (web chat-room.tsx slow-mode-chip parity) and
             // collapses when the ticker clears the lock.
             if viewModel.isSlowModeLocked {
                 slowModeChip
             }
-            // R3-A item 5 — the incognito hint (web anon-pill parity,
+            // R3-A item 5 - the incognito hint (web anon-pill parity,
             // chat-room.tsx:4799-4833): groups only, X disarms the mask.
             if conversation.isGroup && viewModel.anonOn {
                 incognitoPill
             }
-            // R7 — topic filing pill (web chat-room.tsx:4663-4690): persistent
+            // R7 - topic filing pill (web chat-room.tsx:4663-4690): persistent
             // emerald pill above the composer while a topic view is active and
-            // the composer is not editing — X stops filing (back to General).
+            // the composer is not editing - X stops filing (back to General).
             if conversation.isGroup,
                viewModel.activeTopicId != nil,
                viewModel.editingTarget == nil,
@@ -1869,7 +1869,7 @@ private struct RoomContent: View {
                 topicFilingPill(name: filingName)
             }
             if broadcastLocked {
-                // F-CH-04 — the broadcast lock replaces the composer row for
+                // F-CH-04 - the broadcast lock replaces the composer row for
                 // non-admins (verbatim web copy; input is gone, not disabled).
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill")
@@ -1891,10 +1891,10 @@ private struct RoomContent: View {
         }
     }
 
-    /// R47 — blocked-pair DM dead-end notice (web chat-room.tsx:5035-5044
+    /// R47 - blocked-pair DM dead-end notice (web chat-room.tsx:5035-5044
     /// copy verbatim: rose Ban glyph on the deep-glass strip). The composer
     /// is REPLACED, not disabled; the server's messages-POST 403 stays the
-    /// enforcement — this is UX only.
+    /// enforcement - this is UX only.
     private var dmBlockedNotice: some View {
         HStack(spacing: 8) {
             Image(systemName: "minus.circle.fill")
@@ -1910,7 +1910,7 @@ private struct RoomContent: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// R2-D — slow-mode countdown chip (web chat-room.tsx:4758-4770 copy
+    /// R2-D - slow-mode countdown chip (web chat-room.tsx:4758-4770 copy
     /// verbatim, Gauge glyph + mm:ss countdown); role=status/live so the
     /// remaining time is announced as it ticks.
     private var slowModeChip: some View {
@@ -1937,7 +1937,7 @@ private struct RoomContent: View {
         .accessibilityLabel("Slow mode — you can send again in \(viewModel.slowModeRemainingSeconds) seconds")
     }
 
-    /// R3-A item 5 — the incognito hint pill (web anon-pill :4809-4830 copy
+    /// R3-A item 5 - the incognito hint pill (web anon-pill :4809-4830 copy
     /// verbatim): emerald wash + mask glyph + "hides your name" line + an X
     /// that disarms. Only mounted while the mask is armed in a GROUP.
     private var incognitoPill: some View {
@@ -1972,7 +1972,7 @@ private struct RoomContent: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// R7 — topic filing pill (web chat-room.tsx:4663-4690 copy verbatim:
+    /// R7 - topic filing pill (web chat-room.tsx:4663-4690 copy verbatim:
     /// "Filing to #<name>", MessagesSquare glyph, X → back to General with
     /// haptic). Same glass style as the sibling incognito pill.
     private func topicFilingPill(name: String) -> some View {
@@ -1986,7 +1986,7 @@ private struct RoomContent: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
             Button {
-                // setActiveTopic already haptics (web pill X parity) — no
+                // setActiveTopic already haptics (web pill X parity) - no
                 // second tap here.
                 viewModel.setActiveTopic(nil, session: session)
             } label: {
@@ -2009,7 +2009,7 @@ private struct RoomContent: View {
         .frame(maxWidth: .infinity)
     }
 
-    // ── R3-A item 1 — the '/' palette wiring ─────────────────
+    // ── R3-A item 1 - the '/' palette wiring ─────────────────
 
     /// Web SlashPalette open-gate parity (chat-room.tsx:5200): the draft
     /// starts with '/' while the composer is in normal send mode. The
@@ -2039,7 +2039,7 @@ private struct RoomContent: View {
     }
 
     /// The args after the leading "/token" (web replace(/^\/\S*\s*/, '')
-    /// parity) — no closure predicates, plain token walk.
+    /// parity) - no closure predicates, plain token walk.
     private func slashArgs(from draft: String) -> String {
         var pieces: [String] = []
         var droppedFirst = false
@@ -2055,7 +2055,7 @@ private struct RoomContent: View {
 
     @ViewBuilder
     private var composerRows: some View {
-            // R1-W2B F-MS-29 — the quick-phrase rail sits right above the
+            // R1-W2B F-MS-29 - the quick-phrase rail sits right above the
             // composer row (web spec row: "rail chips"; tap inserts the line).
             if !viewModel.quickPhrases.isEmpty {
                 quickPhraseRail
@@ -2072,7 +2072,7 @@ private struct RoomContent: View {
             HStack(alignment: .bottom, spacing: 10) {
                 if viewModel.isRecording {
                     // Recording bar replaces the composer TEXT (spec §1 row 11)
-                    // — the trailing slot stays mounted for release-to-send.
+                    // - the trailing slot stays mounted for release-to-send.
                     VoiceRecordingBar(
                         elapsedText: PulseFormat.duration(viewModel.recordingElapsedMs),
                         amplitudes: viewModel.recordingAmplitudes,
@@ -2162,7 +2162,7 @@ private struct RoomContent: View {
                 }
 
                 voiceSendSlot
-                    // R2-D — mic/send refuses touches while the slow-mode
+                    // R2-D - mic/send refuses touches while the slow-mode
                     // window runs (web disabled={slowRemaining > 0} parity).
                     .opacity(viewModel.isSlowModeLocked ? 0.45 : 1)
                     .allowsHitTesting(!viewModel.isSlowModeLocked)
@@ -2204,7 +2204,7 @@ private struct RoomContent: View {
         )
     }
 
-    /// D31 press-and-hold recorder gesture — minimumDistance 0 so a plain
+    /// D31 press-and-hold recorder gesture - minimumDistance 0 so a plain
     /// press counts; translation tracks the slide-to-cancel arm (leftward).
     private var holdGesture: some Gesture {
         DragGesture(minimumDistance: 0)
@@ -2225,7 +2225,7 @@ private struct RoomContent: View {
             }
             .onEnded { _ in
                 if !holdStarted {
-                    // Text-mode tap (drag with zero distance) — plain send.
+                    // Text-mode tap (drag with zero distance) - plain send.
                     sendSlotTap()
                     return
                 }
@@ -2236,7 +2236,7 @@ private struct RoomContent: View {
             }
     }
 
-    /// Slot tap — sends while recording (release already processed, e.g. the
+    /// Slot tap - sends while recording (release already processed, e.g. the
     /// TCC prompt case) or the plain send/edit/staged dispatch when text mode.
     private func sendSlotTap() {
         if holdStarted { return }
@@ -2251,7 +2251,7 @@ private struct RoomContent: View {
         } else if viewModel.staged != nil {
             viewModel.sendStaged(session: session)
         } else {
-            // R3-A item 1 — the send tap is a LIVE slash trigger (web Enter
+            // R3-A item 1 - the send tap is a LIVE slash trigger (web Enter
             // parity: submit runs parseComposerInput first). A leading '/'
             // command is consumed by the outcome machine; plain text falls
             // through to the ordinary send.
@@ -2260,7 +2260,7 @@ private struct RoomContent: View {
         }
     }
 
-    /// D30/D31 — the honest inline permission explainer (no crash, no dead
+    /// D30/D31 - the honest inline permission explainer (no crash, no dead
     /// end): an explanatory row above the composer with a Settings jump.
     private func deniedNotice(_ message: String, dismiss: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
@@ -2296,7 +2296,7 @@ private struct RoomContent: View {
             } label: {
                 Label("Photo Library", systemImage: "photo")
             }
-            // D30 — take a full-resolution shot with the system camera; the
+            // D30 - take a full-resolution shot with the system camera; the
             // file flows through the same staged upload path as the library.
             Button {
                 CameraPicker.requestAccess { granted in
@@ -2316,14 +2316,14 @@ private struct RoomContent: View {
             } label: {
                 Label("Document", systemImage: "folder")
             }
-            // R1-W2B F-MD-07 — location share (web composer attach parity,
+            // R1-W2B F-MD-07 - location share (web composer attach parity,
             // chat-room.tsx composer palette + '/location').
             Button {
                 locationOpen = true
             } label: {
                 Label("Location", systemImage: "location.fill")
             }
-            // R3-A item 3 — scheduled sends UI: arm the draft (ScheduleSheet)
+            // R3-A item 3 - scheduled sends UI: arm the draft (ScheduleSheet)
             // and manage the pending rows (ScheduledManagerSheet: list +
             // cancel). Web tray 'Schedule' + manager drawer parity.
             Button {
@@ -2376,9 +2376,9 @@ private struct RoomContent: View {
             } label: {
                 Label("Kanban", systemImage: "square.stack.3d.up.fill")
             }
-            // ── R3-A items 2/5/8 — the Express section (web tray 'Express'
+            // ── R3-A items 2/5/8 - the Express section (web tray 'Express'
             // group parity): sticker packs, the effect-flagged sends and the
-            // incognito mask (groups only) — every former-dead surface now
+            // incognito mask (groups only) - every former-dead surface now
             // has a discoverable entry.
             Section("Express") {
                 Button {
@@ -2423,7 +2423,7 @@ private struct RoomContent: View {
         .accessibilityLabel("Attach")
     }
 
-    // ── R1-W2B F-MS-29 — the quick-phrase rail ───────────────
+    // ── R1-W2B F-MS-29 - the quick-phrase rail ───────────────
     // One-tap lines above the composer (tap inserts at the caret end); the
     // trailing "⋯" chip opens the manage sheet (add/delete rides the API).
 
@@ -2545,7 +2545,7 @@ private struct RoomContent: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            // Wave 2 view-once — image sends only (server: viewOnce requires
+            // Wave 2 view-once - image sends only (server: viewOnce requires
             // imagePath, spec §0).
             if staged.kind == .image {
                 Toggle(
@@ -2594,14 +2594,14 @@ private struct RoomContent: View {
     }
 }
 
-/// Wave 1 message info — seen-by watermarks (conversation members) + the
+/// Wave 1 message info - seen-by watermarks (conversation members) + the
 /// reaction groups with member names. Read-only, native sheet.
-/// R2-D — the sheet mirrors the web/Android delivered split: "Seen by" =
+/// R2-D - the sheet mirrors the web/Android delivered split: "Seen by" =
 /// lastReadAt >= createdAt, "Delivered to" = the rest (viewer excluded).
 private struct MessageInfoSheet: View {
     let message: WireChatMessage
     let conversation: WireConversationSummary
-    /// R2-D — the viewer id (excluded from both receipt lists, web parity).
+    /// R2-D - the viewer id (excluded from both receipt lists, web parity).
     var viewerId: String? = nil
 
     @Environment(\.dismiss) private var dismiss
@@ -2648,7 +2648,7 @@ private struct MessageInfoSheet: View {
                 } header: {
                     Text(seenTitle)
                 }
-                // R2-D — "Delivered to" = everyone who hasn't read it yet
+                // R2-D - "Delivered to" = everyone who hasn't read it yet
                 // (web chat-room.tsx:5940-5957 + Android MessageSheets parity).
                 Section {
                     if split.deliveredTo.isEmpty {
@@ -2693,7 +2693,7 @@ private struct MessageInfoSheet: View {
         .presentationDetents([.medium])
     }
 
-    /// One receipt row — read watermark stamp + the double-check (seen) or
+    /// One receipt row - read watermark stamp + the double-check (seen) or
     /// plain check (delivered) glyph, web seen-by-sheet rhythm.
     private func receiptRow(_ member: PulseRoomParityLogic.ReceiptMember, seen: Bool) -> some View {
         let summary = conversation.members.first(where: { $0.id == member.id })
@@ -2720,7 +2720,7 @@ private struct MessageInfoSheet: View {
     }
 }
 
-/// R47 — conditional double-tap attachment: when `action` is nil NOTHING is
+/// R47 - conditional double-tap attachment: when `action` is nil NOTHING is
 /// attached (call sites keep their exact gesture graph). When present, the
 /// COUNT-2 tap is attached BEFORE any single-tap on the same view so the
 /// double-tap wins the disambiguation (SwiftUI higher-count-first rule).
@@ -2734,8 +2734,8 @@ private extension View {
         }
     }
 
-    /// R7 — conditional drag attachment: when `active` is false NOTHING is
-    /// attached (call sites keep their exact gesture graph) — the swipe-to-
+    /// R7 - conditional drag attachment: when `active` is false NOTHING is
+    /// attached (call sites keep their exact gesture graph) - the swipe-to-
     /// reply twin of heartDoubleTapGesture above.
     @ViewBuilder
     func swipeReplyDrag<G: Gesture>(_ gesture: G, active: Bool) -> some View {
@@ -2747,7 +2747,7 @@ private extension View {
     }
 }
 
-/// One message bubble — the web outcome with an iOS accent: asymmetric
+/// One message bubble - the web outcome with an iOS accent: asymmetric
 /// corner radius, gradient fill for the viewer, quote block, reaction chips,
 /// voice/image/file/system renderings, "Seen" under the viewer's tail.
 struct BubbleView: View {
@@ -2757,16 +2757,16 @@ struct BubbleView: View {
     let viewerColor: () -> Color
     var seen: Bool = false
     var onLongPressActions: Bool = true
-    /// Wave 1 — jump flash ring, live thread-reply chip, media surfaces.
+    /// Wave 1 - jump flash ring, live thread-reply chip, media surfaces.
     var flashing: Bool = false
     var replyCount: Int = 0
-    /// Wave 8 — prefs bubble corner token (md=10, lg=16, pill=26 native
+    /// Wave 8 - prefs bubble corner token (md=10, lg=16, pill=26 native
     /// radii; the tail corner stays 6). Defaults to the web's 'lg'.
     var bubbleRadius: PulseBubbleRadius = .lg
     var onOpenImage: ((WireChatMessage) -> Void)? = nil
     var onOpenFile: ((WireChatMessage) -> Void)? = nil
     var onOpenThread: ((WireChatMessage) -> Void)? = nil
-    // Wave 2 — voice playback/transcribe, poll voting/close, view-once reveal.
+    // Wave 2 - voice playback/transcribe, poll voting/close, view-once reveal.
     var viewerId: String? = nil
     var voicePlayback: VoicePlaybackManager.PlaybackState? = nil
     var voiceRate: Float = 1.0
@@ -2776,47 +2776,47 @@ struct BubbleView: View {
     var onPollVote: ((String) -> Void)? = nil
     var onPollClose: (() -> Void)? = nil
     var onViewOnceOpen: ((WireChatMessage) -> Void)? = nil
-    // ── Wave 7 — rich-object cards (red packet / game / tournament) ──
+    // ── Wave 7 - rich-object cards (red packet / game / tournament) ──
     var wave7: Wave7RoomActions? = nil
-    // R3-A item 7 — roster names drive the @mention chips in body text.
+    // R3-A item 7 - roster names drive the @mention chips in body text.
     var memberNames: [String] = []
-    // R3-A item 4 — tap a reaction chip → who-reacted roster sheet (web
+    // R3-A item 4 - tap a reaction chip → who-reacted roster sheet (web
     // chat-room.tsx ReactionChip tap → reactionInfo parity). nil = decorative.
     var onReactionChip: ((WireChatMessage, String) -> Void)? = nil
-    // R47 — double-tap bubble fires the heart quick reaction (web chat-room.tsx:7265-7268
+    // R47 - double-tap bubble fires the heart quick reaction (web chat-room.tsx:7265-7268
     // onDoubleClick parity). nil = gesture NOT attached (threads stay nil;
     // the hearts burst rides the VM react path, not here).
     var onDoubleTapHeart: (() -> Void)? = nil
-    // R7 — web buildItems cluster verdict: sender name renders on HEAD rows
+    // R7 - web buildItems cluster verdict: sender name renders on HEAD rows
     // only (chat-room.tsx:7289 `!mine && isGroup && head` parity). Default
     // true keeps thread/decorative uses rendering exactly as before.
     var isClusterHead: Bool = true
-    // R7 — swipe-bubble-to-reply (web chat-room.tsx:7248-7263): horizontal
+    // R7 - swipe-bubble-to-reply (web chat-room.tsx:7248-7263): horizontal
     // drag past 28pt toward the reply side → beginReply. nil = gesture NOT
     // attached (threads/decorative uses keep their exact gesture graph).
     var onSwipeReply: (() -> Void)? = nil
 
-    // R7 — live horizontal offset of the bubble during the reply swipe
+    // R7 - live horizontal offset of the bubble during the reply swipe
     // (clamped ±64, spring-snapped back on release, web dragConstraints).
     @State private var swipeX: CGFloat = 0
 
-    /// R47 — the double-tap action when the row is interactive (web
+    /// R47 - the double-tap action when the row is interactive (web
     /// `interactive = !deleted && !pending`, chat-room.tsx:7212). nil when
-    /// no handler was wired — the gesture modifier is then never attached,
+    /// no handler was wired - the gesture modifier is then never attached,
     /// so thread rows and decorative uses keep their exact old behavior.
     private var heartDoubleTapAction: (() -> Void)? {
         guard onDoubleTapHeart != nil, !isDeleted, !isPending else { return nil }
         return { onDoubleTapHeart?() }
     }
 
-    // R7 — the swipe signal along the NATURAL reply direction (web towardX:
-    // mine ? -x : x) — dragging "the wrong way" keeps the hint at opacity 0.
+    // R7 - the swipe signal along the NATURAL reply direction (web towardX:
+    // mine ? -x : x) - dragging "the wrong way" keeps the hint at opacity 0.
     private var swipeToward: CGFloat { mine ? -swipeX : swipeX }
 
-    /// R7 — the horizontal reply drag (web chat-room.tsx:7248-7263):
+    /// R7 - the horizontal reply drag (web chat-room.tsx:7248-7263):
     /// minimumDistance 14 keeps vertical scrolling AND the long-press
     /// contextMenu recognizing (the drag only claims predominantly horizontal
-    /// moves); the count-2 double-tap still wins — it needs no 14pt travel.
+    /// moves); the count-2 double-tap still wins - it needs no 14pt travel.
     /// Clamp ±64 (web dragConstraints), toward > 28 → haptic + the wired
     /// reply path, then the bubble spring-snaps home (web dragSnapToOrigin).
     private var swipeReplyGesture: some Gesture {
@@ -2840,10 +2840,10 @@ struct BubbleView: View {
 
     private var isDeleted: Bool { message.deletedAt != nil }
     private var isSystem: Bool { message.kind == "system" }
-    /// Wave 0 outbox — optimistic queued bubble (id "local_<clientId>").
+    /// Wave 0 outbox - optimistic queued bubble (id "local_<clientId>").
     private var isPending: Bool { message.id.hasPrefix("local_") }
 
-    // Wave 2 view-once — sender always renders normal; a row the viewer has
+    // Wave 2 view-once - sender always renders normal; a row the viewer has
     // ALREADY opened renders NO image at all (anti-replay hardening, spec §1
     // row 6: no blurred original, no lightbox entry, no preview fetch).
     private var viewOnceGated: Bool {
@@ -2870,9 +2870,9 @@ struct BubbleView: View {
                 CapsuleLabel(message.content)
                     .padding(.vertical, 4)
             } else {
-                // R7 — sender name renders on HEAD rows of incoming group
+                // R7 - sender name renders on HEAD rows of incoming group
                 // messages only (web chat-room.tsx:7289 head gate; the little
-                // color dot is the row's avatar stand-in — gated with it).
+                // color dot is the row's avatar stand-in - gated with it).
                 // EMB-I - sender name 12pt ember glow (#FFB86B).
                 if groupChat && !mine, isClusterHead, let sender = message.sender {
                     HStack(spacing: 5) {
@@ -2893,7 +2893,7 @@ struct BubbleView: View {
                     if !mine { Spacer(minLength: 44) }
                 }
                 .overlay(alignment: mine ? .trailing : .leading) {
-                    // R7 — reply-arrow hint while dragging (web hintOpacity =
+                    // R7 - reply-arrow hint while dragging (web hintOpacity =
                     // clamp((toward-4)/24, 0…1); both sides share one signal,
                     // so dragging "the wrong way" keeps the hint invisible).
                     if swipeX != 0 {
@@ -2907,7 +2907,7 @@ struct BubbleView: View {
                     }
                 }
 
-                // Wave 1 — "N replies ↳" chip opens the thread sheet.
+                // Wave 1 - "N replies ↳" chip opens the thread sheet.
                 if replyCount > 0 && message.parentId == nil && onOpenThread != nil {
                     Button {
                         onOpenThread?(message)
@@ -2947,12 +2947,12 @@ struct BubbleView: View {
                     .foregroundStyle(Color.white.opacity(0.50))
             } else {
                 content
-                // Wave 2 link preview — under the text, suppressed on poll
+                // Wave 2 link preview - under the text, suppressed on poll
                 // rows; nothing renders until the unfurl envelope lands.
                 if message.poll == nil, let preview = message.linkPreview {
                     LinkPreviewCard(preview: preview)
                 }
-                // R1-W2B F-MD-06 — persisted LLM translation under the
+                // R1-W2B F-MD-06 - persisted LLM translation under the
                 // original (web TranslationLine parity: italic secondary
                 // strip with the globe glyph; chat-room.tsx:6913-6955).
                 if let translations = message.translations, let first = translations.first {
@@ -2967,7 +2967,7 @@ struct BubbleView: View {
                     .monospacedDigit()
                     .foregroundStyle(Color.white.opacity(0.40))
                 if isPending {
-                    // Queued offline — still in the outbox, clock = not sent yet.
+                    // Queued offline - still in the outbox, clock = not sent yet.
                     Image(systemName: "clock")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Color.white.opacity(0.45))
@@ -2985,7 +2985,7 @@ struct BubbleView: View {
         .overlay(reactionChips, alignment: .bottom)
         .padding(.bottom, reactionChipsHeight())
         .overlay(
-            // Jump-to-message flash ring (amber pulse, ~1.5s — web parity).
+            // Jump-to-message flash ring (amber pulse, ~1.5s - web parity).
             RoundedRectangle(cornerRadius: bubbleRadius.cornerRadius, style: .continuous)
                 .stroke(PulseTheme.amber, lineWidth: 2.5)
                 .opacity(flashing ? 1 : 0)
@@ -2996,7 +2996,7 @@ struct BubbleView: View {
 
     @ViewBuilder
     private var content: some View {
-        // Wave 2 polls — the card replaces the body text entirely.
+        // Wave 2 polls - the card replaces the body text entirely.
         if message.poll != nil || message.kind == "poll" {
             pollContent
         } else if message.kind == "redpacket" {
@@ -3019,7 +3019,7 @@ struct BubbleView: View {
             case "location":
                 locationContent
             default:
-                // R3-A items 6/7 — the web BubbleText outcome natively: jumbo
+                // R3-A items 6/7 - the web BubbleText outcome natively: jumbo
                 // solo-emoji rows render oversized plain text; everything else
                 // flows through the ported FORMAT_RE formatter + mention chips.
                 if PulseRemediationLogic.isJumboEmoji(message.content) {
@@ -3067,7 +3067,7 @@ struct BubbleView: View {
                 load: { id in await wave7.cardGameLoad(id) },
                 onMove: { cell in wave7.cardMove(gp.matchId, cell) },
                 onJoin: { wave7.cardJoinGame(gp.matchId) },
-                // R7 — rematch POSTs /api/games against the finished match's
+                // R7 - rematch POSTs /api/games against the finished match's
                 // opponent; toast + carrier message ride the wave7 hub.
                 wave7: wave7,
             )
@@ -3127,7 +3127,7 @@ struct BubbleView: View {
         }
     }
 
-    /// Stored image render — AsyncImage against the gateway upload URL,
+    /// Stored image render - AsyncImage against the gateway upload URL,
     /// clamped bubble size, tap → lightbox, caption rides `content`.
     /// Wave 2 view-once (spec §1 rows 5/6/7): gated = blurred + overlay
     /// + instant-reveal tap; burned = dashed tombstone, NO image render.
@@ -3190,7 +3190,7 @@ struct BubbleView: View {
                     }
                     .frame(width: 200, height: 200)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    // Blur the IMAGE only (spec) — the overlay stays crisp.
+                    // Blur the IMAGE only (spec) - the overlay stays crisp.
                     .blur(radius: 24)
                 } else {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -3239,7 +3239,7 @@ struct BubbleView: View {
             )
     }
 
-    /// Document bubble — name + humanized size, tap → download + QuickLook.
+    /// Document bubble - name + humanized size, tap → download + QuickLook.
     private var fileContent: some View {
         Button {
             onOpenFile?(message)
@@ -3289,9 +3289,9 @@ struct BubbleView: View {
         }
     }
 
-    // ── R1-W2B F-MD-06 — translation strip ───────────────────
+    // ── R1-W2B F-MD-06 - translation strip ───────────────────
 
-    /// The first persisted translation rendered under the original text —
+    /// The first persisted translation rendered under the original text -
     /// secondary italic with a globe glyph (web TranslationLine parity).
     private func translationStrip(_ translation: WireTranslation) -> some View {
         HStack(alignment: .top, spacing: 5) {
@@ -3314,10 +3314,10 @@ struct BubbleView: View {
         .background(RoundedRectangle(cornerRadius: 9).fill(mine ? Color.white.opacity(0.14) : PulseTheme.emberGlowTop.opacity(0.06)))
     }
 
-    // ── R1-W2B F-MD-07 — location card ───────────────────────
+    // ── R1-W2B F-MD-07 - location card ───────────────────────
 
     /// kind "location" rows render the stylized map card (web LocationBubble
-    /// parity — pure vector art, no tile servers); tapping opens Apple Maps
+    /// parity - pure vector art, no tile servers); tapping opens Apple Maps
     /// at the pin (spec F-MD-07 "Map card tap → platform maps").
     @ViewBuilder
     private var locationContent: some View {
@@ -3331,7 +3331,7 @@ struct BubbleView: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .fill(mine ? Color.white.opacity(0.18) : PulseTheme.emberGlowTop.opacity(0.10))
-                        // Graticule grid — the pin's spot comes from the real
+                        // Graticule grid - the pin's spot comes from the real
                         // coordinates (equirectangular projection, web parity).
                         VStack(spacing: 18) {
                             ForEach(0..<4, id: \.self) { _ in
@@ -3368,7 +3368,7 @@ struct BubbleView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Location pin \(loc.label) — open in Maps")
         } else {
-            // Corrupt/legacy payload — degrade to the plain content text.
+            // Corrupt/legacy payload - degrade to the plain content text.
             Text(message.content)
                 .font(.body)
                 .textSelection(.enabled)
@@ -3405,7 +3405,7 @@ struct BubbleView: View {
     private var reactionChips: some View {
         HStack(spacing: 4) {
             ForEach(reactions, id: \.emoji) { group in
-                // R3-A item 4 — the chip is a Button whenever the room wires
+                // R3-A item 4 - the chip is a Button whenever the room wires
                 // the who-reacted sheet (web ReactionChip long-press → drawer
                 // parity, native affordance = tap). Without the callback the
                 // chip stays decorative (threads).
@@ -3451,17 +3451,17 @@ struct BubbleView: View {
     }
 }
 
-/// R3-A items 6/7 — the web BubbleText outcome natively. Runs come from the
+/// R3-A items 6/7 - the web BubbleText outcome natively. Runs come from the
 /// tested pure logic (PulseBubbleTextLogic = buildMentionRuns + the ported
 /// FORMAT_RE parser + the R4-A splitUrlSegments composition); the renderer:
 ///   • concatenates consecutive inline runs into ONE SwiftUI Text (perfect
 ///     flow for the common bold/italic/code/mention cases),
-///   • renders ```pre``` blocks and ||spoiler|| runs as detached blocks —
+///   • renders ```pre``` blocks and ||spoiler|| runs as detached blocks -
 ///     spoilers blur + tap-reveal (web SpoilerSpan :6804-6834 parity),
-///   • R4-A item 1 — url runs ride AttributedString `.link` so they render
+///   • R4-A item 1 - url runs ride AttributedString `.link` so they render
 ///     as tappable links INSIDE the composed text (web renderPlain anchors,
 ///     :6873-6896). One attributed Text per inline chunk keeps every
-///     per-run attribute (including links) intact — Text-concatenation
+///     per-run attribute (including links) intact - Text-concatenation
 ///     fragments cannot reliably carry per-run links.
 /// Performance: the parsed run list is NSCache'd per message id + roster
 /// signature (PulseBubbleTextLogic.cachedRuns) so LazyVStack re-renders
@@ -3500,7 +3500,7 @@ struct PulseBubbleBody: View {
         }
     }
 
-    /// R4-A item 1 — inline chunks assemble as ONE AttributedString so a
+    /// R4-A item 1 - inline chunks assemble as ONE AttributedString so a
     /// `.link` run stays tappable inside the composed Text (the previous
     /// Text(a)+Text(b) fragments could not carry per-run links). Attribute
     /// parity with the R3 styled() modifiers is preserved run-for-run.
@@ -3513,7 +3513,7 @@ struct PulseBubbleBody: View {
     }
 
     /// Web run styling parity (BubbleText :6898-6967): bold/italic/underline/
-    /// strike, mono code chips, emerald mention chips — plus R4-A url runs
+    /// strike, mono code chips, emerald mention chips - plus R4-A url runs
     /// as real anchors (underline, mine = white, else emerald-700/400;
     /// www. opens prefixed https:// exactly like the web href :6879). Run
     /// backgrounds make the chips readable on BOTH bubble fills (web
@@ -3543,7 +3543,7 @@ struct PulseBubbleBody: View {
             piece.foregroundColor = .white
             piece.backgroundColor = PulseTheme.emberGlowBottom.opacity(0.24)
         case .url:
-            // Web renderPlain :6876-6891 — href https://-prefixes www.,
+            // Web renderPlain :6876-6891 - href https://-prefixes www.,
             // underline, text-white on my bubbles / emerald-700 light and
             // emerald-400 dark otherwise. A token the URL parser cannot
             // promote to a URL degrades to styled text (honest, no crash).
@@ -3564,7 +3564,7 @@ struct PulseBubbleBody: View {
         return URL(string: value)
     }
 
-    /// ```pre``` — block-level mono card (web :6917-6928).
+    /// ```pre``` - block-level mono card (web :6917-6928).
     private func preBlock(_ text: String) -> some View {
         Text(text)
             .font(.system(.callout, design: .monospaced))
@@ -3578,7 +3578,7 @@ struct PulseBubbleBody: View {
             .accessibilityLabel("Code block")
     }
 
-    /// ||spoiler|| — blur-reveal (web SpoilerSpan: 5px blur + wash, tap once).
+    /// ||spoiler|| - blur-reveal (web SpoilerSpan: 5px blur + wash, tap once).
     private func spoilerBlock(_ text: String, id: Int) -> some View {
         let revealed = revealedSpoilers.contains(id)
         return Text(text)
@@ -3598,7 +3598,7 @@ struct PulseBubbleBody: View {
     }
 
     /// Spoiler ids must survive re-renders even when the SAME text appears
-    /// twice — key on the run text (revealed state is per-row @State anyway).
+    /// twice - key on the run text (revealed state is per-row @State anyway).
     private func spoilerId(_ text: String) -> Int {
         PulseTheme.hashString(text)
     }
@@ -3626,7 +3626,7 @@ struct PulseBubbleBody: View {
     }
 }
 
-/// Room state holder — transport lives in PulseSession; this owns messages,
+/// Room state holder - transport lives in PulseSession; this owns messages,
 /// drafts, replies, receipts and the live signal subscriptions.
 @MainActor
 final class RoomViewModel: ObservableObject {
@@ -3638,7 +3638,7 @@ final class RoomViewModel: ObservableObject {
         let expiresAt: Date
     }
 
-    /// Wave 1 attach flow — a staged photo/document awaiting upload + send.
+    /// Wave 1 attach flow - a staged photo/document awaiting upload + send.
     struct StagedMedia: Equatable {
         enum Kind { case image, file }
         let kind: Kind
@@ -3647,7 +3647,7 @@ final class RoomViewModel: ObservableObject {
         let fileSize: Int?
         /// Local preview for the staged card (images only).
         let previewURL: URL?
-        /// Wave 2 view-once — image sends only (server: viewOnce needs imagePath).
+        /// Wave 2 view-once - image sends only (server: viewOnce needs imagePath).
         let viewOnce: Bool
     }
 
@@ -3659,7 +3659,7 @@ final class RoomViewModel: ObservableObject {
     @Published var draft = ""
     @Published var replyTarget: WireChatMessage?
 
-    // Wave 1 — pagination, threads, actions, search, jump, media.
+    // Wave 1 - pagination, threads, actions, search, jump, media.
     @Published private(set) var hasMore = false
     @Published private(set) var loadingOlder = false
     @Published private(set) var replyCounts: [String: Int] = [:]
@@ -3673,16 +3673,16 @@ final class RoomViewModel: ObservableObject {
     @Published var caption = ""
     @Published private(set) var uploading = false
 
-    // ── REM-B — scheduled / slow-mode / incognito / slash ──
-    /// F-MS-18 — the viewer's pending scheduled rows for THIS room (the list
+    // ── REM-B - scheduled / slow-mode / incognito / slash ──
+    /// F-MS-18 - the viewer's pending scheduled rows for THIS room (the list
     /// feeds the composer banner chip; the manager sheet lists details).
-    /// R5-A Item 6 — the chip now also surfaces the SOONEST non-cancelled
+    /// R5-A Item 6 - the chip now also surfaces the SOONEST non-cancelled
     /// row's relative stamp (web scheduledChip parity), so the full list
     /// replaces the bare count.
     @Published private(set) var scheduledItems: [WireScheduledItem] = []
-    /// F-MS-18 — pending-row count for the chip (R5-A: derived from the list).
+    /// F-MS-18 - pending-row count for the chip (R5-A: derived from the list).
     var scheduledCount: Int { scheduledItems.count }
-    /// R5-A Item 6 — web scheduledChip parity: "{next} · {count} pending —
+    /// R5-A Item 6 - web scheduledChip parity: "{next} · {count} pending -
     /// tap to manage" where next = the soonest non-cancelled row's stamp
     /// (web formatListStamp(items[0]); the API sorts pending soonest-first).
     var scheduledChipText: String? {
@@ -3693,33 +3693,33 @@ final class RoomViewModel: ObservableObject {
         }
         return "\(next) · \(scheduledCount) pending — tap to manage"
     }
-    /// F-MS-20 — slow-mode lockout: after a 429 the composer refuses sends
+    /// F-MS-20 - slow-mode lockout: after a 429 the composer refuses sends
     /// until the server-suggested window elapses (countdown chip in the UI).
     @Published private(set) var slowModeLockUntil: Date?
     @Published private(set) var slowModeRemainingSeconds = 0
-    /// F-MS-17 — incognito mask (groups only): sends ride anon:true and the
+    /// F-MS-17 - incognito mask (groups only): sends ride anon:true and the
     /// optimistic bubble shows the deterministic FNV-1a alias.
     @Published var anonOn = false
-    /// F-MS-22 — sheet command armed by the slash palette ('/poll' etc.) —
+    /// F-MS-22 - sheet command armed by the slash palette ('/poll' etc.) -
     /// the view consumes it in onChange to present the right surface.
     @Published var pendingSlashSheet: String?
-    /// R1-W2B F-MS-29 — the viewer's quick phrases for the composer rail
+    /// R1-W2B F-MS-29 - the viewer's quick phrases for the composer rail
     /// (server CRUD via /api/users/{id}/phrases; the manage sheet reloads
     /// this through loadQuickPhrases after every mutation).
     @Published private(set) var quickPhrases: [WireQuickPhrase] = []
 
-    // ── R2-B — unread divider · jump-pill missed count · AI recap · veil ──
-    /// R30-c — the tap-time unread anchor (web chats-tab.tsx:431-435 freeze):
+    // ── R2-B - unread divider · jump-pill missed count · AI recap · veil ──
+    /// R30-c - the tap-time unread anchor (web chats-tab.tsx:431-435 freeze):
     /// MY lastReadAt from the route-carried summary when the row showed an
-    /// unread badge, else nil — nil means the divider never places.
+    /// unread badge, else nil - nil means the divider never places.
     private let unreadAnchorMs: Double?
-    /// R26 — off-screen arrivals badge on the jump-to-latest pill (the web
+    /// R26 - off-screen arrivals badge on the jump-to-latest pill (the web
     /// missedCountRef machine chat-room.tsx:1594-1612; the pure step lives
     /// in PulseRoomParityLogic.missedStep).
     @Published private(set) var missedCount = 0
     private var lastSeenLen = 0
     private var lastTailId: String?
-    /// The tail sentinel row is on-screen — the viewer sits at the bottom
+    /// The tail sentinel row is on-screen - the viewer sits at the bottom
     /// (the native nearBottomRef). Reaching the bottom resets the badge.
     @Published var isTailVisible = true {
         didSet {
@@ -3729,27 +3729,27 @@ final class RoomViewModel: ObservableObject {
             showJumpPill = false
         }
     }
-    /// Web showJump — armed when a new tail lands while scrolled away,
+    /// Web showJump - armed when a new tail lands while scrolled away,
     /// cleared at the bottom (never by the scroll position alone).
     @Published private(set) var showJumpPill = false
-    /// R34-b — live recap card content; nil = no card. Loading while the
+    /// R34-b - live recap card content; nil = no card. Loading while the
     /// LLM summarizes, then the returned summary; auto-dismisses after 15 s.
     enum RecapPhase: Equatable { case loading; case ready(text: String, basedOn: Int) }
     @Published private(set) var recap: RecapPhase?
     private var recapDismissTask: Task<Void, Never>?
-    /// R38 — the room-wide screen-security switch (server conversation flag;
+    /// R38 - the room-wide screen-security switch (server conversation flag;
     /// nil = unknown / older relay → veil off).
     @Published var roomScreenPrivacy: Bool?
-    /// R47 — DM blocked-pair dead-end (wire detail `dmBlocked`, a UserBlock
-    /// in EITHER direction; server 403 stays the enforcement — client is UX
+    /// R47 - DM blocked-pair dead-end (wire detail `dmBlocked`, a UserBlock
+    /// in EITHER direction; server 403 stays the enforcement - client is UX
     /// only). False until the room-open detail GET says otherwise.
     @Published private(set) var dmBlocked = false
 
-    // Wave 2 — voice recording, playback, polls, transcription, topics.
+    // Wave 2 - voice recording, playback, polls, transcription, topics.
     @Published private(set) var isRecording = false
     @Published private(set) var recordingElapsedMs: Double = 0
     @Published private(set) var sendingVoice = false
-    /// D31 — live mic levels (0…1) sampled every 100 ms while held; the
+    /// D31 - live mic levels (0…1) sampled every 100 ms while held; the
     /// composer renders the last VoiceMath.liveWaveformBars as bars.
     @Published private(set) var recordingAmplitudes: [Double] = []
     @Published private(set) var transcriptionBusy: Set<String> = []
@@ -3758,7 +3758,7 @@ final class RoomViewModel: ObservableObject {
     @Published var activeTopicId: String?
     @Published private(set) var voiceRate: Float
 
-    /// W7 — carrier rows (game / tournament / red packet) land instantly from
+    /// W7 - carrier rows (game / tournament / red packet) land instantly from
     /// the flow that created them; the next window refresh reconciles.
     func injectCarrier(_ m: WireChatMessage) {
         guard !messages.contains(where: { $0.id == m.id }) else { return }
@@ -3773,13 +3773,13 @@ final class RoomViewModel: ObservableObject {
     private var draftSaveTask: Task<Void, Never>?
     private var flashClearTask: Task<Void, Never>?
     private var initialJumpMessageId: String?
-    /// Member read watermarks (id → lastReadAt) — group-aware "Seen".
+    /// Member read watermarks (id → lastReadAt) - group-aware "Seen".
     private var memberWatermarks: [String: Date] = [:]
-    // Wave 2 voice plumbing — recorder + single active player + timers.
+    // Wave 2 voice plumbing - recorder + single active player + timers.
     private var voiceRecorder: VoiceRecorder?
     private var recordingStartedAt: Date?
     private var recordingTicker: AnyCancellable?
-    /// D31 — the session that armed the hold; the auto-send-at-cap tick needs
+    /// D31 - the session that armed the hold; the auto-send-at-cap tick needs
     /// it when the finger is still down and cannot deliver it.
     private weak var voiceSession: PulseSession?
     private var topicTicker: AnyCancellable?
@@ -3792,12 +3792,12 @@ final class RoomViewModel: ObservableObject {
         return !draft.trimmingCharacters(in: .whitespaces).isEmpty && !isSlowModeLocked
     }
 
-    /// F-MS-20 — the composer is locked while the slow-mode window runs.
+    /// F-MS-20 - the composer is locked while the slow-mode window runs.
     var isSlowModeLocked: Bool {
         (slowModeLockUntil ?? .distantPast) > Date()
     }
 
-    /// F-MS-18 — scheduled-row refresh (open + after arming/cancelling).
+    /// F-MS-18 - scheduled-row refresh (open + after arming/cancelling).
     func loadScheduled(session: PulseSession) {
         Task { [weak self] in
             guard let self else { return }
@@ -3805,14 +3805,14 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// R30-b — header-badge count: the viewer's UNFIRED reminders (web
+    /// R30-b - header-badge count: the viewer's UNFIRED reminders (web
     /// upcomingReminderCount chat-room.tsx:2311-2313 `firedAt === null`
-    /// parity — the GET is viewer-scoped, so this spans all rooms).
+    /// parity - the GET is viewer-scoped, so this spans all rooms).
     @Published private(set) var upcomingReminderCount = 0
 
-    /// R30-b — lightweight upcoming fetch on room open + after the reminders
+    /// R30-b - lightweight upcoming fetch on room open + after the reminders
     /// sheet closes (the sheet loads its own list; the badge needs the count
-    /// only — loadPins pattern). A failed fetch keeps the last honest count.
+    /// only - loadPins pattern). A failed fetch keeps the last honest count.
     func loadUpcomingReminderCount(session: PulseSession) {
         Task { [weak self] in
             guard let self else { return }
@@ -3859,7 +3859,7 @@ final class RoomViewModel: ObservableObject {
         self.isGroupRoom = conversation.isGroup
         self.initialJumpMessageId = initialJumpMessageId
         self.voiceRate = VoicePlaybackManager.storedRate()
-        // R2-B R30-c — freeze the unread anchor from the list summary the
+        // R2-B R30-c - freeze the unread anchor from the list summary the
         // route carried (web freezes the same values at tap time).
         let viewerId = session.viewer?.id
         self.unreadAnchorMs = PulseRoomParityLogic.unreadAnchorMs(
@@ -3877,14 +3877,14 @@ final class RoomViewModel: ObservableObject {
         loadPins(session: session)
         startTopicTicker()
         loadTopics(session: session)
-        // REM-B F-MS-18 — pending scheduled count for the composer banner.
+        // REM-B F-MS-18 - pending scheduled count for the composer banner.
         loadScheduled(session: session)
-        // R30-b — upcoming reminders for the header badge (one quiet GET).
+        // R30-b - upcoming reminders for the header badge (one quiet GET).
         loadUpcomingReminderCount(session: session)
         Task { await refresh(session: session) }
     }
 
-    /// Wave 2 — a recording/playback must never outlive the room. Called
+    /// Wave 2 - a recording/playback must never outlive the room. Called
     /// from ChatRoomView.onDisappear (roomVisible off); a conversation
     /// change builds a NEW view model, so its deinit covers that path.
     func handleRoomDisappeared() {
@@ -3897,7 +3897,7 @@ final class RoomViewModel: ObservableObject {
         voiceRecorder?.cancel()
     }
 
-    /// Wave 0 offline rehydration — runs BEFORE the network fetch:
+    /// Wave 0 offline rehydration - runs BEFORE the network fetch:
     ///   • messages rehydrate from the GRDB cache (relaunch works offline)
     ///   • the composer seeds from the local draft, falling back to myDraft
     private func seedLocalState(conversation: WireConversationSummary, session: PulseSession) {
@@ -3926,14 +3926,14 @@ final class RoomViewModel: ObservableObject {
                           let message = PulseSession.decodeMessage(from: raw) else { return }
                     try? session.store?.upsert(messages: [message])
                     if message.parentId != nil {
-                        // Thread reply — river keeps it out; the parent's
+                        // Thread reply - river keeps it out; the parent's
                         // "N replies" chip bumps live (web threadCounts parity).
                         let root = message.parentId ?? ""
                         replyCounts[root, default: 0] += 1
                         if message.senderId == session.viewer?.id { return }
                     }
                     upsert(message)
-                    // REM-B F-MS-23 — effect-flagged rows burst full-screen.
+                    // REM-B F-MS-23 - effect-flagged rows burst full-screen.
                     fireIncomingEffectIfAny(message, viewerId: session.viewer?.id, session: session)
                     if message.senderId != session.viewer?.id {
                         Task { try? await session.api.markRead(conversationId: self.conversationId) }
@@ -3952,7 +3952,7 @@ final class RoomViewModel: ObservableObject {
                     try? session.store?.upsert(messages: [message])
                 case .messageRead(let convId, let userId, let lastReadAt):
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
-                    // W1-DATA-B — trust the relayed watermark when present;
+                    // W1-DATA-B - trust the relayed watermark when present;
                     // fall back to "now" (older relays / clock-safety).
                     partnerLastReadAt = lastReadAt.flatMap { PulseFormat.date($0) } ?? Date()
                 case .typing(let convId, let userId, let userName, let isTyping):
@@ -3963,7 +3963,7 @@ final class RoomViewModel: ObservableObject {
                     }
                     typers = bucket
                 case .messageEnvelope(_, let convId, let raw):
-                    // Wave 2 — message:viewed / poll:voted / link:preview carry
+                    // Wave 2 - message:viewed / poll:voted / link:preview carry
                     // the AUTHORITATIVE row (spec §0): upsert whole → the
                     // burn stamp, live tally and preview card paint instantly.
                     guard convId == self.conversationId,
@@ -3977,7 +3977,7 @@ final class RoomViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Wave 2 — realtimeRefreshTick bumps on every background mutation
+        // Wave 2 - realtimeRefreshTick bumps on every background mutation
         // (viewed/poll/link envelopes, outbox deliveries). Recompute the
         // active topic view so incoming topic-tagged rows land instantly
         // (the native improvement over web's 3.5 s cache poll, spec §1 row 9).
@@ -3990,7 +3990,7 @@ final class RoomViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Wave 0 — the outbox engine swaps the queued placeholder for the real
+        // Wave 0 - the outbox engine swaps the queued placeholder for the real
         // row (web sendMessage.onSuccess dedupe parity), drops it on 4xx.
         session.outboxEvents
             .receive(on: DispatchQueue.main)
@@ -3999,7 +3999,7 @@ final class RoomViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Typer expiry sweep — keeps the dots honest without server stop events.
+        // Typer expiry sweep - keeps the dots honest without server stop events.
         Timer.publish(every: 1.2, on: .main, in: .common)
             .autoconnect()
             .receive(on: DispatchQueue.main)
@@ -4013,7 +4013,7 @@ final class RoomViewModel: ObservableObject {
     }
 
     func refresh(session: PulseSession) async {
-        // Cache seed first — the room renders instantly (offline too), then
+        // Cache seed first - the room renders instantly (offline too), then
         // the network refresh replaces it.
         if messages.isEmpty, let store = session.store {
             let cached = (try? store.messages(conversationId: conversationId)) ?? []
@@ -4025,7 +4025,7 @@ final class RoomViewModel: ObservableObject {
         }
         phase = messages.isEmpty ? .loading : phase
         do {
-            // D47 delta sync — the route accepts `since=<ISO>` and answers
+            // D47 delta sync - the route accepts `since=<ISO>` and answers
             // with only the rows STRICTLY NEWER than the cursor (same shape).
             // First load (no window on screen yet) keeps the full newest
             // window; every later refresh fetches just the tail.
@@ -4048,9 +4048,9 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// D47 — the delta-sync cursor: the newest REAL (non-optimistic) row's
+    /// D47 - the delta-sync cursor: the newest REAL (non-optimistic) row's
     /// wire createdAt ISO, exactly what the route's `since` expects. Local
-    /// `local_` rows are excluded — their client-side stamps must never gate
+    /// `local_` rows are excluded - their client-side stamps must never gate
     /// what the server considers "newer". Nil = no real rows → full load.
     private var deltaSyncCursor: String? {
         let real = messages.filter { !$0.id.hasPrefix("local_") }
@@ -4062,10 +4062,10 @@ final class RoomViewModel: ObservableObject {
         return newest.createdAt
     }
 
-    /// D47 — merges a delta page into the river: server rows the window
+    /// D47 - merges a delta page into the river: server rows the window
     /// doesn't know yet are appended id-dedupe + re-sorted ascending (the
     /// same rhythm loadOlder uses). Edits/deletes keep flowing through the
-    /// socket signals — this path only ever ADDS missing rows.
+    /// socket signals - this path only ever ADDS missing rows.
     private func mergeDelta(_ fresh: [WireChatMessage]) {
         let rows = riverRows(from: fresh)
         guard !rows.isEmpty else { return }
@@ -4078,11 +4078,11 @@ final class RoomViewModel: ObservableObject {
         noteRiverChanged()
     }
 
-    /// The main river EXCLUDES thread replies (web parity) — they live in
+    /// The main river EXCLUDES thread replies (web parity) - they live in
     /// ThreadView and surface as "N replies" chips on the parent bubble.
     /// Wave 2 topics: activeTopicId == nil → General = the WHOLE room;
     /// otherwise only rows filed under that topic (spec §1 row 9).
-    /// REM-B F-MS-19 — rows whose TTL already elapsed never render.
+    /// REM-B F-MS-19 - rows whose TTL already elapsed never render.
     private func riverRows(from rows: [WireChatMessage]) -> [WireChatMessage] {
         rows.filter { row in
             guard row.parentId == nil else { return false }
@@ -4094,7 +4094,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// Live topic-view hygiene — drops rows that stopped matching the active
+    /// Live topic-view hygiene - drops rows that stopped matching the active
     /// filter (e.g. an envelope re-mapped a row's topic). No-op on General.
     private func refilterInPlace() {
         let expired = messages.filter { !PulseRemediationLogic.isAlive($0.expiresAt) }
@@ -4115,7 +4115,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// Wave 1 pagination — older history page (`before` cursor), 40 rows,
+    /// Wave 1 pagination - older history page (`before` cursor), 40 rows,
     /// merged id-dedupe ascending. The view triggers from the oldest row.
     func loadOlder(session: PulseSession) {
         guard hasMore, !loadingOlder, let oldest = messages.first(where: { !$0.id.hasPrefix("local_") }) else { return }
@@ -4141,7 +4141,7 @@ final class RoomViewModel: ObservableObject {
                 self.messages.insert(contentsOf: fresh, at: 0)
                 self.hasMore = page.hasMore && !page.messages.isEmpty
             } catch {
-                // Older history is best-effort — the current window stays usable.
+                // Older history is best-effort - the current window stays usable.
             }
         }
     }
@@ -4214,13 +4214,13 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    // ── R2-B — jump-pill missed machine + unread divider anchor ──
+    // ── R2-B - jump-pill missed machine + unread divider anchor ──
 
-    /// R26 — fed on EVERY river length change by the view (the web effects
+    /// R26 - fed on EVERY river length change by the view (the web effects
     /// on messages.data + lastMessageId, chat-room.tsx:1543-1612): the badge
     /// grows while away, resets at the bottom, and the pill arms only when a
     /// NEW tail lands while the viewer is scrolled away. History prepends
-    /// (load older) grow the badge silently without arming the pill — the
+    /// (load older) grow the badge silently without arming the pill - the
     /// web's exact behavior (the pill show is tail-id driven).
     func noteRiverChanged() {
         let newLen = messages.count
@@ -4231,7 +4231,7 @@ final class RoomViewModel: ObservableObject {
             missedCount += newLen - lastSeenLen
             lastSeenLen = newLen
         } else if newLen < lastSeenLen {
-            // room switch / cache reset — badge drops
+            // room switch / cache reset - badge drops
             lastSeenLen = newLen
             missedCount = 0
         }
@@ -4246,14 +4246,14 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// Pill tap — drop the badge, land on the tail (web jump button parity).
+    /// Pill tap - drop the badge, land on the tail (web jump button parity).
     func jumpToLatest() {
         showJumpPill = false
         missedCount = 0
         lastSeenLen = messages.count
     }
 
-    /// R30-c — the index the unread divider row sits BEFORE (web
+    /// R30-c - the index the unread divider row sits BEFORE (web
     /// buildItems parity). Nil = anchor absent or nothing qualifies.
     func unreadDividerRow(viewerId: String?) -> Int? {
         PulseRoomParityLogic.unreadDividerIndex(
@@ -4263,7 +4263,7 @@ final class RoomViewModel: ObservableObject {
         )
     }
 
-    // ── R2-B R34-b — AI recap ──
+    // ── R2-B R34-b - AI recap ──
 
     /// Web requestRecap parity: the ≥5-live-messages gate toasts locally,
     /// then POST /api/ai/recap fills the card; failures surface verbatim.
@@ -4319,9 +4319,9 @@ final class RoomViewModel: ObservableObject {
         return nil
     }
 
-    // ── R2-B R38/R42 — screen security (veil) ──
+    // ── R2-B R38/R42 - screen security (veil) ──
 
-    /// R38/R47 — view surfaces hand back a fresh detail after a successful
+    /// R38/R47 - view surfaces hand back a fresh detail after a successful
     /// PATCH (privacy sheet, DM-block toggle): the river re-veils without a
     /// refetch. Same adoption rules as loadPrivacyState.
     func applyFreshDetail(_ detail: WireConversationSummary) {
@@ -4336,7 +4336,7 @@ final class RoomViewModel: ObservableObject {
         let viewerId = session.viewer?.id ?? ""
         guard !viewerId.isEmpty, let detail = try? await session.api.conversationDetail(id: conversationId, userId: viewerId) else { return }
         roomScreenPrivacy = detail.screenPrivacy
-        // R47 — the same detail GET carries the DM dead-end flag (either
+        // R47 - the same detail GET carries the DM dead-end flag (either
         // direction); groups always decode false here.
         dmBlocked = !detail.isGroup && detail.dmBlockedNow
         if let mine = detail.myScreenPrivacy {
@@ -4358,7 +4358,7 @@ final class RoomViewModel: ObservableObject {
         }
         searching = true
         searchTask = Task { [weak self] in
-            // 220 ms debounce — the room-search rhythm (web room-search-page;
+            // 220 ms debounce - the room-search rhythm (web room-search-page;
             // the GLOBAL chats search keeps its own 250 ms).
             try? await Task.sleep(nanoseconds: 220_000_000)
             guard let self, !Task.isCancelled else { return }
@@ -4387,11 +4387,11 @@ final class RoomViewModel: ObservableObject {
     }
 
     func upsert(_ message: WireChatMessage) {
-        // Main river only — thread replies render in ThreadView.
+        // Main river only - thread replies render in ThreadView.
         if message.parentId != nil { return }
-        // REM-B F-MS-19 — expired rows never surface.
+        // REM-B F-MS-19 - expired rows never surface.
         guard PulseRemediationLogic.isAlive(message.expiresAt) else { return }
-        // Wave 2 topics — an active topic view must not surface rows filed
+        // Wave 2 topics - an active topic view must not surface rows filed
         // elsewhere (the store keeps them; switching back refetches).
         if let active = activeTopicId, message.topicId != active { return }
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else {
@@ -4403,7 +4403,7 @@ final class RoomViewModel: ObservableObject {
     }
 
     func draftChanged(session: PulseSession) {
-        // Wave 0 — 600ms debounced draft persistence (web pulse-drafts parity).
+        // Wave 0 - 600ms debounced draft persistence (web pulse-drafts parity).
         scheduleDraftSave(session: session)
 
         let text = draft
@@ -4438,7 +4438,7 @@ final class RoomViewModel: ObservableObject {
         } else {
             try? store.saveDraft(conversationId: conversationId, text: text)
         }
-        // Wave 1 server mirror (web pulse-drafts parity) — fire-and-forget,
+        // Wave 1 server mirror (web pulse-drafts parity) - fire-and-forget,
         // silent-fail; the local draft stays authoritative for this device.
         if let viewer = session.viewer {
             Task {
@@ -4451,7 +4451,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// Called on the successful-send path — the composer is clean, so the
+    /// Called on the successful-send path - the composer is clean, so the
     /// local draft must go (server myDraft takes over on the next read).
     func clearDraft(session: PulseSession) {
         draftSaveTask?.cancel()
@@ -4468,7 +4468,7 @@ final class RoomViewModel: ObservableObject {
         replyTarget = nil
         typingStopTask?.cancel()
         typingStopTask = nil
-        // Wave 1 optimistic send — the temp bubble paints immediately and
+        // Wave 1 optimistic send - the temp bubble paints immediately and
         // swaps for the server row (web onMutate parity). Network-class
         // failure keeps the temp + queues the outbox (Wave 0 semantics).
         guard let viewer = session.viewer else {
@@ -4476,10 +4476,10 @@ final class RoomViewModel: ObservableObject {
             return
         }
         let clientId = UUID().uuidString
-        // REM-B F-MS-17 — groups only: armed mask + the server's deterministic
+        // REM-B F-MS-17 - groups only: armed mask + the server's deterministic
         // FNV-1a alias (the optimistic bubble shows the exact stored alias).
         let anonAlias = (isGroupRoom && anonOn) ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: conversationId) : nil
-        // R4-A item 2 — armed state captured AT SEND TIME (Android
+        // R4-A item 2 - armed state captured AT SEND TIME (Android
         // `anonArmed` parity) so an in-flight toggle can't desync the
         // one-shot verdict.
         let wasAnonArmed = anonAlias != nil
@@ -4507,10 +4507,10 @@ final class RoomViewModel: ObservableObject {
                 )
                 self.swapTemp(temp.id, for: result.message, session: session)
                 self.clearDraft(session: session)
-                // R5-A Item 5 — streak nudge (web chat-room.tsx:1736-1751):
+                // R5-A Item 5 - streak nudge (web chat-room.tsx:1736-1751):
                 // fires ONLY when THIS send GREW the streak (second-or-later
                 // consecutive day). Same-day re-sends carry no streak sibling
-                // and restarts carry continued=false — both stay silent here,
+                // and restarts carry continued=false - both stay silent here,
                 // mirrored from PulseStreakVerdict.
                 if let line = PulseStreakVerdict.toastLine(
                     count: result.streak?.count,
@@ -4518,27 +4518,27 @@ final class RoomViewModel: ObservableObject {
                 ) {
                     session.toasts.show(line)
                 }
-                // R4-A item 2 — ONE-SHOT incognito: a server-accepted send
+                // R4-A item 2 - ONE-SHOT incognito: a server-accepted send
                 // consumes the mask and the hint pill hides with it (web
                 // chat-room.tsx:1747-1751 onSuccess; Android R3-B one-shot
                 // disarm, ChatRoomViewModel.kt:566-570). Gated on the
-                // send-time arming like Android — a plain send never touches
+                // send-time arming like Android - a plain send never touches
                 // a mask the user armed mid-flight.
                 if wasAnonArmed {
                     self.anonOn = PulseRoomParityLogic.anonDisarmAfterSend(armed: wasAnonArmed, serverAccepted: true)
                 }
                 session.particles.fire(kind: .burst, count: 22)
                 session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
-                // Wave 2 topics — own send bumps Topic.lastMessageAt server-side.
+                // Wave 2 topics - own send bumps Topic.lastMessageAt server-side.
                 self.loadTopics(session: session)
-                // Wave 2 link previews — spec §1 row 8: the ORIGINAL SENDER's
+                // Wave 2 link previews - spec §1 row 8: the ORIGINAL SENDER's
                 // client triggers /unfurl once, fire-and-forget, ignoring the
                 // result (nil is valid = nothing link-ish / host unreachable).
                 if UnfurlTrigger.matches(body) {
                     self.triggerUnfurl(for: result.message, viewerId: viewer.id, session: session)
                 }
             } catch {
-                // REM-B F-MS-20 — slow mode: 429 + retryAfter arms the
+                // REM-B F-MS-20 - slow mode: 429 + retryAfter arms the
                 // composer countdown lock (web backoff parity).
                 if let failure = error as? PulseAPIClient.Failure,
                    failure.status == 429, let wait = failure.retryAfter, wait > 0 {
@@ -4552,12 +4552,12 @@ final class RoomViewModel: ObservableObject {
                     try? session.store?.deleteMessage(id: temp.id)
                     self.errorText = Self.describe(error)
                 } else {
-                    // R4-A privacy repair (orchestrator) — an incognito send
+                    // R4-A privacy repair (orchestrator) - an incognito send
                     // NEVER rides the outbox: the queue payload is
                     // content-only, so a later flush would post the text
                     // UN-masked (identity leak). Android parity (R3-B
                     // PulseRepositoryImpl :812-818): retract the optimistic
-                    // bubble, keep the draft, keep the mask armed — privacy
+                    // bubble, keep the draft, keep the mask armed - privacy
                     // over delivery.
                     if wasAnonArmed {
                         self.messages.removeAll { $0.id == temp.id }
@@ -4565,10 +4565,10 @@ final class RoomViewModel: ObservableObject {
                         self.draft = body
                         session.toasts.show("Incognito needs a live connection — message kept in the composer")
                     } else {
-                        // Temp row stays (queued clock) — outbox flush reconciles.
-                        // R4-A item 2 — a QUEUED send is not a server-accepted
+                        // Temp row stays (queued clock) - outbox flush reconciles.
+                        // R4-A item 2 - a QUEUED send is not a server-accepted
                         // send: the mask stays armed (PulseRoomParityLogic
-                        // .anonDisarmAfterSend false branch — Android
+                        // .anonDisarmAfterSend false branch - Android
                         // :560-564 parity; the manual disarm path above the
                         // composer still works).
                         session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
@@ -4579,10 +4579,10 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    // ── REM-B F-MS-22 — slash commands ─────────────────────
+    // ── REM-B F-MS-22 - slash commands ─────────────────────
 
     /// Interprets a leading '/' command from the draft. Returns TRUE when the
-    /// draft was consumed (sheet opened / error shown / effect sent) — FALSE
+    /// draft was consumed (sheet opened / error shown / effect sent) - FALSE
     /// when the plain send path should proceed (text transform applied).
     func interpretSlashDraft(session: PulseSession) -> Bool {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4609,13 +4609,13 @@ final class RoomViewModel: ObservableObject {
             session.toasts.show("Reminders ride \"Remind me…\" on any message")
             return true
         case .recap:
-            // R34-b — /recap rides the same requestRecap as the header entry.
+            // R34-b - /recap rides the same requestRecap as the header entry.
             draft = ""
             requestRecap(session: session)
             return true
         case .effect(let name, let content):
             draft = ""
-            // R3-A item 8 — the web send path can never fire an effect with
+            // R3-A item 8 - the web send path can never fire an effect with
             // an empty body (its send button is disabled on empty input), so
             // the machine mirrors that honestly instead of POSTing "".
             guard !content.isEmpty else {
@@ -4627,7 +4627,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// R3-A item 8 — attach-menu Effects entry: the CURRENT draft rides the
+    /// R3-A item 8 - attach-menu Effects entry: the CURRENT draft rides the
     /// EXISTING sendWithEffect engine (optimistic temp → payload {effect} →
     /// particle burst). An empty draft surfaces the honest toast instead of
     /// a silent no-op; reply/edit/staged state blocks like the plain send.
@@ -4646,7 +4646,7 @@ final class RoomViewModel: ObservableObject {
         sendWithEffect(effect: effect, content: body, session: session)
     }
 
-    // ── R3-A item 11 — Chanty-style message → task conversion ──
+    // ── R3-A item 11 - Chanty-style message → task conversion ──
 
     /// Re-entry guard while a conversion POST is in flight (the context menu
     /// has no spinner; a second tap inside the window is ignored).
@@ -4654,7 +4654,7 @@ final class RoomViewModel: ObservableObject {
 
     /// Web convertToTask parity (chat-room.tsx:2100-2122): the message itself
     /// becomes a board card via POST /api/conversations/{id}/kanban with
-    /// { userId, messageId } — the server derives the title (first 80 chars)
+    /// { userId, messageId } - the server derives the title (first 80 chars)
     /// and keeps sourceMessageId provenance. Honest toast on BOTH outcomes;
     /// the success burst mirrors web fireParticles({kind:'burst',count:40}).
     func convertMessageToTask(_ message: WireChatMessage, session: PulseSession) {
@@ -4680,7 +4680,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// F-MS-22/23 — effect-flagged send: payload { effect } rides kind text;
+    /// F-MS-22/23 - effect-flagged send: payload { effect } rides kind text;
     /// the sender's client fires the burst locally (web fireParticles parity).
     private func sendWithEffect(effect: String, content: String, session: PulseSession) {
         guard let viewer = session.viewer, editingTarget == nil, staged == nil else { return }
@@ -4717,7 +4717,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    // ── REM-B F-MS-24 — stickers ───────────────────────────
+    // ── REM-B F-MS-24 - stickers ───────────────────────────
 
     /// kind "sticker" + payload { emoji, pack } (web sticker-picker parity;
     /// the bubble renders the emoji big). Online-only like all rich kinds.
@@ -4742,9 +4742,9 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    // ── R1-W2B F-MD-06 — translate ───────────────────────
+    // ── R1-W2B F-MD-06 - translate ───────────────────────
 
-    /// POST /api/messages/{id}/translate (text rows only) — the fresh row
+    /// POST /api/messages/{id}/translate (text rows only) - the fresh row
     /// carries message.translations; the bubble renders the strip inline.
     /// Peers receive the same row via the translation:added relay envelope.
     func translate(_ message: WireChatMessage, session: PulseSession) {
@@ -4766,11 +4766,11 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    // ── R1-W2B F-MD-07 — location send ───────────────────
+    // ── R1-W2B F-MD-07 - location send ───────────────────
 
     /// kind "location" + payload { lat, lng, label } (web sendLocation parity,
     /// chat-room.tsx:3120-3138; content rides empty like the web). Online-only
-    /// like every rich kind — failures surface the honest toast.
+    /// like every rich kind - failures surface the honest toast.
     func sendLocation(lat: Double, lng: Double, label: String, session: PulseSession) {
         guard session.viewer != nil else { return }
         Task { [weak self] in
@@ -4792,7 +4792,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    // ── R1-W2B F-MS-29 — quick phrases ───────────────────
+    // ── R1-W2B F-MS-29 - quick phrases ───────────────────
 
     func loadQuickPhrases(session: PulseSession) {
         guard session.viewer != nil else { return }
@@ -4802,7 +4802,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    // ── REM-B F-MS-18 — schedule the composer draft ────────
+    // ── REM-B F-MS-18 - schedule the composer draft ────────
 
     func scheduleDraft(for date: Date, session: PulseSession) {
         let body = draft.trimmingCharacters(in: .whitespaces)
@@ -4814,7 +4814,7 @@ final class RoomViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                // R5-A Item 6 — the returned row joins the cached list (no
+                // R5-A Item 6 - the returned row joins the cached list (no
                 // refetch) so the chip count + next-dispatch stamp update.
                 let item = try await session.api.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
                 self.draft = ""
@@ -4828,7 +4828,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// Wave 2 — fire-and-forget unfurl after OWN link-bearing send (spec §1
+    /// Wave 2 - fire-and-forget unfurl after OWN link-bearing send (spec §1
     /// row 8). Detached + swallow-everything: the card arrives either through
     /// this row or the link:preview relay envelope.
     private func triggerUnfurl(for message: WireChatMessage, viewerId: String, session: PulseSession) {
@@ -4853,7 +4853,7 @@ final class RoomViewModel: ObservableObject {
         try? session.store?.deleteMessage(id: tempId)
     }
 
-    /// Wave 0 outbox reconciliation — the engine swapped/removed a queued
+    /// Wave 0 outbox reconciliation - the engine swapped/removed a queued
     /// placeholder (text sends only; spec §1.2).
     private func handleOutboxEvent(_ event: PulseOutboxEvent) {
         switch event {
@@ -4898,7 +4898,7 @@ final class RoomViewModel: ObservableObject {
         guard message.senderId == session?.viewer?.id,
               let last = messages.last(where: { $0.senderId == session?.viewer?.id }) else { return false }
         guard last.id == message.id else { return false }
-        // Wave 1 — group-aware watermarks: any OTHER member's lastReadAt
+        // Wave 1 - group-aware watermarks: any OTHER member's lastReadAt
         // covering this message counts as seen (DM keeps the partner path).
         var stamps = Array(memberWatermarks.values)
         if let partner = partnerLastReadAt { stamps.append(partner) }
@@ -4933,7 +4933,7 @@ final class RoomViewModel: ObservableObject {
         guard !body.isEmpty else { return }
         editingTarget = nil
         draft = ""
-        // Edits never queue (spec §1.2) — an honest error covers offline.
+        // Edits never queue (spec §1.2) - an honest error covers offline.
         Task { [weak self] in
             guard let self, let viewer = session.viewer else { return }
             do {
@@ -5035,7 +5035,7 @@ final class RoomViewModel: ObservableObject {
         caption = ""
     }
 
-    /// Wave 2 view-once — flips the staged card's burn flag (image sends).
+    /// Wave 2 view-once - flips the staged card's burn flag (image sends).
     func setStagedViewOnce(_ on: Bool) {
         guard let current = staged else { return }
         staged = StagedMedia(
@@ -5054,7 +5054,7 @@ final class RoomViewModel: ObservableObject {
         uploading = false
     }
 
-    /// Upload → send. Media NEVER queues offline (spec §1.2) — failures
+    /// Upload → send. Media NEVER queues offline (spec §1.2) - failures
     /// surface an honest inline error and keep the staged card for retry.
     func sendStaged(session: PulseSession) {
         guard let media = staged, !uploading else { return }
@@ -5105,7 +5105,7 @@ final class RoomViewModel: ObservableObject {
 
     // ── Wave 2 voice notes (spec §1 rows 1/11/12/15) ─────
 
-    /// D31 hold-to-record — called the moment the mic slot receives a press.
+    /// D31 hold-to-record - called the moment the mic slot receives a press.
     /// Mic TCC first; if the prompt swallows the finger lift the recording
     /// simply continues with the explicit bar (cancel X + slot tap to send).
     func startVoiceRecording(session: PulseSession) {
@@ -5137,7 +5137,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// D31 — hold finished: slide-away cancels (discard), plain release sends.
+    /// D31 - hold finished: slide-away cancels (discard), plain release sends.
     func endVoiceHold(cancelled: Bool, session: PulseSession) {
         if cancelled {
             cancelVoiceRecording()
@@ -5152,9 +5152,9 @@ final class RoomViewModel: ObservableObject {
         teardownRecording()
     }
 
-    /// Send path — stop, round the duration (spec: max(1, round(ms/100)*100)),
+    /// Send path - stop, round the duration (spec: max(1, round(ms/100)*100)),
     /// discard <600 ms with the honest toast, else upload + send kind "audio"
-    /// (never queued — media never queues, spec §1.2).
+    /// (never queued - media never queues, spec §1.2).
     func finishAndSendVoice(session: PulseSession) {
         guard isRecording, !sendingVoice, let startedAt = recordingStartedAt else { return }
         let elapsedMs = Date().timeIntervalSince(startedAt) * 1000
@@ -5196,7 +5196,7 @@ final class RoomViewModel: ObservableObject {
                 session.particles.fire(kind: .burst, count: 22)
                 self.loadTopics(session: session)
             } catch {
-                // Media NEVER queues (web parity) — honest toast instead.
+                // Media NEVER queues (web parity) - honest toast instead.
                 session.toasts.show(Self.describe(error))
             }
         }
@@ -5212,7 +5212,7 @@ final class RoomViewModel: ObservableObject {
         voiceSession = nil
     }
 
-    /// 100 ms sweep — wall-clock elapsed + LIVE metering (averagePower →
+    /// 100 ms sweep - wall-clock elapsed + LIVE metering (averagePower →
     /// normalized 0…1 into the ring buffer for the waveform bars). At the
     /// wire cap (server refuses durationMs > 600000) the take auto-sends
     /// instead of recording a note the gateway would reject (D31).
@@ -5257,7 +5257,7 @@ final class RoomViewModel: ObservableObject {
             }
             return
         }
-        // Single active player — starting one message stops the previous one.
+        // Single active player - starting one message stops the previous one.
         playback.stop()
         startVoicePlayback(message, session: session)
     }
@@ -5285,7 +5285,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// Speed chip 1x → 1.5x → 2x → 1x — global pref (UserDefaults
+    /// Speed chip 1x → 1.5x → 2x → 1x - global pref (UserDefaults
     /// "pulse.voiceRate"), applied live to the active player.
     func cycleVoiceRate() {
         let next = VoicePlaybackManager.nextRate(after: voiceRate)
@@ -5294,7 +5294,7 @@ final class RoomViewModel: ObservableObject {
         playback.setRate(next)
     }
 
-    /// POST /transcribe (kind "audio" rows only) — patches the store row AND
+    /// POST /transcribe (kind "audio" rows only) - patches the store row AND
     /// the river row; 502 surfaces the service wording, everything else the
     /// honest fallback (spec §1 row 15).
     func transcribeVoice(_ message: WireChatMessage, session: PulseSession) {
@@ -5335,7 +5335,7 @@ final class RoomViewModel: ObservableObject {
     // ── Wave 2 view-once (spec §1 rows 5/6/7) ────────────
 
     /// The reveal already happened in the UI (instant lightbox, web parity);
-    /// this stamps the burn server-side and patches the rows. Best-effort —
+    /// this stamps the burn server-side and patches the rows. Best-effort -
     /// the relayed message:viewed envelope reconciles later on failure.
     func revealViewOnce(_ message: WireChatMessage, session: PulseSession) {
         guard message.viewOnce == true,
@@ -5409,7 +5409,7 @@ final class RoomViewModel: ObservableObject {
 
     // ── Wave 2 topics (spec §1 rows 9/10) ────────────────
 
-    /// Open + after own sends + the 15 s ticker — api.topics → store upsert →
+    /// Open + after own sends + the 15 s ticker - api.topics → store upsert →
     /// read back (the cached rail renders even when the next fetch fails).
     func loadTopics(session: PulseSession) {
         guard isGroupRoom, let viewer = session.viewer else { return }
@@ -5419,7 +5419,7 @@ final class RoomViewModel: ObservableObject {
                 let fresh = try await session.api.topics(conversationId: conversationId, userId: viewer.id)
                 try? session.store?.upsert(topics: fresh, conversationId: conversationId)
             } catch {
-                // Offline — the cached rail below still renders.
+                // Offline - the cached rail below still renders.
             }
             if let store = session.store {
                 topics = (try? store.topics(conversationId: conversationId)) ?? topics
@@ -5448,7 +5448,7 @@ final class RoomViewModel: ObservableObject {
             phase = .loaded
             try? session.store?.upsert(messages: page.messages)
         } catch {
-            // Offline — filter the cache in place instead of failing hard.
+            // Offline - filter the cache in place instead of failing hard.
             if let store = session.store {
                 let cached = (try? store.messages(conversationId: conversationId)) ?? []
                 messages = riverRows(from: cached)
@@ -5477,7 +5477,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// Every 15 s while the room owns the screen (spec §1 row 9 — counts
+    /// Every 15 s while the room owns the screen (spec §1 row 9 - counts
     /// refresh on open + after own send + poll).
     private func startTopicTicker() {
         topicTicker?.cancel()
@@ -5497,8 +5497,8 @@ final class RoomViewModel: ObservableObject {
         return "The gateway is unreachable."
     }
 
-    /// F-MS-23 — web EFFECT_PARTICLES name → native bus kind.
-    /// R14 5-b — lasers/echo map to their OWN distinct canvases (rotating
+    /// F-MS-23 - web EFFECT_PARTICLES name → native bus kind.
+    /// R14 5-b - lasers/echo map to their OWN distinct canvases (rotating
     /// beams / expanding rings), no longer the generic burst.
     private static func particleKind(named name: String) -> ParticleBus.Kind {
         switch name {
@@ -5510,7 +5510,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// R14 5-b — the effect's native particle count: the lasers/echo
+    /// R14 5-b - the effect's native particle count: the lasers/echo
     /// canvases draw beams/rings (3-4 of them on the web), not bursts.
     private static func particleCount(for kind: ParticleBus.Kind) -> Int {
         switch kind {
@@ -5520,7 +5520,7 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// F-MS-23 — incoming effect-flagged rows fire the burst for rows OTHERS
+    /// F-MS-23 - incoming effect-flagged rows fire the burst for rows OTHERS
     /// sent (own sends fire on the success path). messageNew + envelopes.
     private func fireIncomingEffectIfAny(_ message: WireChatMessage, viewerId: String?, session: PulseSession) {
         guard message.senderId != viewerId,
@@ -5531,7 +5531,7 @@ final class RoomViewModel: ObservableObject {
     }
 }
 
-/// Optimistic temp-row factory shared by the river AND thread sends —
+/// Optimistic temp-row factory shared by the river AND thread sends -
 /// id `local_<clientId>` (Wave 0 convention), viewer sender, quote block,
 /// optional thread parent. Real rows replace it by id + content dedupe.
 /// @MainActor: builds on PulseOutboxEngine.tempMessageId (MainActor-static).
@@ -5598,11 +5598,11 @@ enum TempMessages {
 }
 
 // ─────────────────────────────────────────────────────────────
-// R1-W2B F-FX-05 — per-conversation theme sheet (web conv-theme-picker.tsx
+// R1-W2B F-FX-05 - per-conversation theme sheet (web conv-theme-picker.tsx
 // parity). Wallpaper swatches reuse the exact global token set + the same
 // wash previews; optional accent tint chips layer over the wallpaper;
 // "Reset to default" removes the override entirely. Writes go through the
-// settings PATCH funnel (prefs blob key chat.convThemes) — the same server
+// settings PATCH funnel (prefs blob key chat.convThemes) - the same server
 // path the web picker uses, so both surfaces converge.
 // ─────────────────────────────────────────────────────────────
 struct ConvThemeSheet: View {
@@ -5615,7 +5615,7 @@ struct ConvThemeSheet: View {
         prefs.convThemes[conversationId]
     }
 
-    /// The EFFECTIVE wallpaper (override ?? global) — the selected swatch
+    /// The EFFECTIVE wallpaper (override ?? global) - the selected swatch
     /// matches what the room actually renders (web parity).
     private var effectiveWallpaper: PulseWallpaper {
         if let raw = override?.wallpaper, let token = PulseWallpaper(rawValue: raw) {
@@ -5687,7 +5687,7 @@ struct ConvThemeSheet: View {
         .presentationDragIndicator(.visible)
     }
 
-    /// Wallpaper swatch — the room's own wash preview (light + dark aware of
+    /// Wallpaper swatch - the room's own wash preview (light + dark aware of
     /// nothing here; the gradient IS the room background source of truth).
     private func swatch(_ token: PulseWallpaper) -> some View {
         let selected = effectiveWallpaper == token
@@ -5748,7 +5748,7 @@ struct ConvThemeSheet: View {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Wave 8 — native wallpaper washes (web WALLPAPERS preview parity,
+// Wave 8 - native wallpaper washes (web WALLPAPERS preview parity,
 // settings-screen.tsx + chat-room.tsx wallpaperGlows). Each token is one
 // soft diagonal gradient with light/dark variants; 'none' renders nothing
 // so the plain page look stays.

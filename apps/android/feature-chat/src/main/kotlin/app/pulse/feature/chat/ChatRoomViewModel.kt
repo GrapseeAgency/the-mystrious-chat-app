@@ -9,7 +9,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.pulse.core.media.PulseMedia
 import app.pulse.core.time.PulseTime
-// R1-W2F — per-conversation themes (F-FX-05) + location payloads (F-MD-07).
+// R1-W2F - per-conversation themes (F-FX-05) + location payloads (F-MD-07).
 import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.GroupMeta
@@ -58,7 +58,7 @@ import kotlinx.coroutines.launch
 data class RoomNotice(val text: String, val isError: Boolean = false)
 
 /**
- * R1-W2F — one-shot location fix state for the pin share (F-MD-07). The
+ * R1-W2F - one-shot location fix state for the pin share (F-MD-07). The
  * last-known seed keeps the sheet honest while a fresh fix lands; the
  * permission gate lives at the UI layer (mic/camera precedent).
  */
@@ -90,7 +90,7 @@ data class StagedMedia(
 data class FileReady(val path: String, val mime: String, val share: Boolean)
 
 /**
- * Chat room state holder — messages, live typing/presence, sends + reactions
+ * Chat room state holder - messages, live typing/presence, sends + reactions
  * (Wave 0 core) plus the Wave 1 messaging surface: pagination, ticks, edit/
  * delete/pin/save/forward/info, room search + jump, staged media sends,
  * offline honesty and the OutboxDropped notice channel.
@@ -103,10 +103,10 @@ class ChatRoomViewModel @Inject constructor(
     private val sendUseCase: SendMessageUseCase,
     /** The ONE active voice player — room + thread share the singleton. */
     val voicePlayer: VoicePlayer,
-    // R1-W2I — PiP pane store (F-PI-01..03): the pop-out toggle writes the
+    // R1-W2I - PiP pane store (F-PI-01..03): the pop-out toggle writes the
     // same process-singleton the shell-level overlay renders from.
     private val pipStore: PulsePiPStore,
-    // R2-C item 4 — the durable whiteboard pending-stroke draft store
+    // R2-C item 4 - the durable whiteboard pending-stroke draft store
     // (iOS PulseWhiteboardDraft parity; per-conversation DataStore keys).
     private val prefsStore: app.pulse.domain.repository.PulsePrefsStore,
 ) : ViewModel() {
@@ -121,10 +121,10 @@ class ChatRoomViewModel @Inject constructor(
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
 
-    // ── R1-W2I — PiP pane (F-PI-01..03), web usePipChat legacy contract ──
+    // ── R1-W2I - PiP pane (F-PI-01..03), web usePipChat legacy contract ──
 
     /**
-     * The focused pane's conversation (null = stack-only / none) — the room
+     * The focused pane's conversation (null = stack-only / none) - the room
      * header's pop-out toggle reads it exactly like web chat-room.tsx's
      * `pipConversationId` selector (`s.isOpen ? s.conversationId : null`).
      */
@@ -195,7 +195,7 @@ class ChatRoomViewModel @Inject constructor(
     val sendingVoice: StateFlow<Boolean> = _sendingVoice.asStateFlow()
 
     /**
-     * D31 live waveform — normalized mic amplitudes (0f..1f) sampled from
+     * D31 live waveform - normalized mic amplitudes (0f..1f) sampled from
      * MediaRecorder.maxAmplitude every 100 ms while the hold lasts. The
      * composer renders the last [PulseMedia.RECORD_WAVEFORM_BARS] entries as
      * bars; the list is DETERMINISTIC from the amplitude samples (no random).
@@ -214,7 +214,7 @@ class ChatRoomViewModel @Inject constructor(
             _activeTopicId,
         ) { rows, topicId ->
             // Topic views (Wave 2 §1 row 9): null = General = WHOLE room
-            // (unfiltered); non-null filters the client-side Room flow —
+            // (unfiltered); non-null filters the client-side Room flow -
             // incoming message:new rows carry topicId so live views update
             // without extra fetches.
             rows.filter { it.threadRootId == null && (topicId == null || it.topicId == topicId) }
@@ -225,7 +225,7 @@ class ChatRoomViewModel @Inject constructor(
         .map { list -> list.firstOrNull { it.id == conversationId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    // Wave 6 — broadcast channel lock: THIS viewer's role from the server
+    // Wave 6 - broadcast channel lock: THIS viewer's role from the server
     // detail (ConversationMemberDto.role); non-admins get the glass notice.
     private val _channelRole = MutableStateFlow<String?>(null)
     val channelRole: StateFlow<String?> = _channelRole.asStateFlow()
@@ -328,7 +328,7 @@ class ChatRoomViewModel @Inject constructor(
         java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm").format(zoned)
     }.getOrDefault(iso)
 
-    // ── R3-B item 4 — F-MS-17 incognito arming (GROUPS only, session-scoped) ──
+    // ── R3-B item 4 - F-MS-17 incognito arming (GROUPS only, session-scoped) ──
     /**
      * Web anonNext parity (chat-room.tsx:806): armed → the NEXT plain text
      * send posts anonymously; the server clamps it off on DMs, one-shot
@@ -341,7 +341,7 @@ class ChatRoomViewModel @Inject constructor(
         _anonNext.value = !_anonNext.value
     }
 
-    // Wave 6 — DM safety-number sheet (settle-confirmed; NO optimistic lies).
+    // Wave 6 - DM safety-number sheet (settle-confirmed; NO optimistic lies).
     data class SafetyUi(val peerId: String, val state: SafetyState?, val busy: Boolean = false)
 
     private val _safety = MutableStateFlow<SafetyUi?>(null)
@@ -434,12 +434,12 @@ class ChatRoomViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            // Wave 2 topics — load the rail on open (UI re-ticks every 15s).
+            // Wave 2 topics - load the rail on open (UI re-ticks every 15s).
             runCatching { repo.refreshTopics(conversationId) }
         }
         viewModelScope.launch {
             // Self-heal: a topic that disappeared from the rail (deleted
-            // elsewhere) resets the view to General — messages fall back.
+            // elsewhere) resets the view to General - messages fall back.
             topics.collect { list ->
                 val active = _activeTopicId.value ?: return@collect
                 if (list.none { it.id == active }) _activeTopicId.value = null
@@ -465,7 +465,7 @@ class ChatRoomViewModel @Inject constructor(
                     }
                     is PulseEvent.MessageReceived -> if (event.conversationId == conversationId) {
                         scheduleRead()
-                        // D29/F-MS-23 — incoming effect payloads fire the
+                        // D29/F-MS-23 - incoming effect payloads fire the
                         // app-wide burst (web triggerEffectFor parity:
                         // confetti→confetti · sparkles→stars · lasers/echo→burst).
                         PulseEffects.burstOfPayload(event.message.payload)?.let { kind ->
@@ -504,7 +504,7 @@ class ChatRoomViewModel @Inject constructor(
             typingJob = null
         }
         // 600ms debounced local save; the repo mirrors every mutation to the
-        // server draft endpoint (fire-and-forget, blank clears — spec row 6).
+        // server draft endpoint (fire-and-forget, blank clears - spec row 6).
         draftSaveJob?.cancel()
         draftSaveJob = viewModelScope.launch {
             delay(600)
@@ -541,10 +541,10 @@ class ChatRoomViewModel @Inject constructor(
         }
         val replyId = _state.value.replyTo?.id
         _state.value = _state.value.copy(replyTo = null)
-        // R3-B item 4 — the arming only consumes on a real send in GROUPS
+        // R3-B item 4 - the arming only consumes on a real send in GROUPS
         // (web chat-room.tsx:1670 gates on isGroup). The optimistic echo
         // already wears the deterministic "Adjective the Animal" alias the
-        // server will store (web anonAliasPreview parity) — fnv1a + word
+        // server will store (web anonAliasPreview parity) - fnv1a + word
         // lists ported 1:1 in protocol IncognitoAlias (JVM-pinned).
         val anonArmed = _anonNext.value && isGroup
         val anonAliasPreview = if (anonArmed) {
@@ -554,14 +554,14 @@ class ChatRoomViewModel @Inject constructor(
         }
         viewModelScope.launch {
             // Quote replies DO file to the active topic (only THREAD replies
-            // are excluded — the repo drops topicId on parentId sends).
+            // are excluded - the repo drops topicId on parentId sends).
             sendUseCase(conversationId, body, replyId, topicId = _activeTopicId.value, anon = anonArmed, anonAliasPreview = anonAliasPreview)
                 .onSuccess { receipt ->
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         // Network-class failure → queued in the outbox. The
-                        // composer text has left for the queue — clear the
+                        // composer text has left for the queue - clear the
                         // draft and let the pending bubble + banner tell it.
-                        // (Incognito sends never reach this branch — the repo
+                        // (Incognito sends never reach this branch - the repo
                         // refuses to queue an un-maskable row.)
                         runCatching { repo.clearDraft(conversationId) }
                     } else {
@@ -572,7 +572,7 @@ class ChatRoomViewModel @Inject constructor(
                         repo.setTyping(conversationId, viewerName(), false)
                         runCatching { repo.clearDraft(conversationId) }
                         afterOwnSend(receipt.message)
-                        // R31-a parity — the web-verbatim streak nudge (fires
+                        // R31-a parity - the web-verbatim streak nudge (fires
                         // only when THIS send GREW the streak, second-or-later
                         // consecutive day).
                         maybeStreakNudge(receipt.streak)
@@ -585,7 +585,7 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     /**
-     * REM-A rich send — sticker payloads (F-MS-24), effect-carried text
+     * REM-A rich send - sticker payloads (F-MS-24), effect-carried text
      * (F-MS-23) and the incognito flag (F-MS-17) all ride ONE repo method.
      * Echo/offline semantics match [send].
      */
@@ -636,7 +636,7 @@ class ChatRoomViewModel @Inject constructor(
     /**
      * Post-send hooks for a DELIVERED row (Wave 2 §1 rows 8/9):
      * - link hint in the body → fire-and-forget unfurl (the sender's client
-     *   triggers it, exactly once, only on direct send success — never on the
+     *   triggers it, exactly once, only on direct send success - never on the
      *   outbox flush path, web parity);
      * - topic rail refresh (+ the active topic window so counts stay warm).
      */
@@ -651,7 +651,7 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     /**
-     * R31-a streak nudge — web chat-room.tsx:1736-1745 verbatim. Fires ONLY
+     * R31-a streak nudge - web chat-room.tsx:1736-1745 verbatim. Fires ONLY
      * when THIS send GREW the streak (second-or-later consecutive day):
      * same-day re-sends carry no streak, restarts stay silent (continued
      * false). The fire-condition + copy live in the pure protocol kernel
@@ -721,7 +721,7 @@ class ChatRoomViewModel @Inject constructor(
             repo.deleteMessage(messageId)
                 .onSuccess {
                     notify("Message deleted")
-                    // The tombstone row arrives from the server truth — refetch
+                    // The tombstone row arrives from the server truth - refetch
                     // the window so "Message deleted" renders immediately.
                     runCatching { repo.refreshMessages(conversationId) }
                 }
@@ -748,7 +748,7 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch { repo.react(messageId, emoji) }
     }
 
-    // ── R1-W2A — F-MS-24 sticker send + F-MS-23 effect send ──────────
+    // ── R1-W2A - F-MS-24 sticker send + F-MS-23 effect send ──────────
 
     /** Sticker tile tap → REAL kind:"sticker" message, payload {emoji,pack}. */
     fun sendSticker(emoji: String, pack: String) {
@@ -771,7 +771,7 @@ class ChatRoomViewModel @Inject constructor(
             body = content,
             kind = "text",
             payload = payload,
-            // Own effect sends fire the mapped burst (web parity) — the
+            // Own effect sends fire the mapped burst (web parity) - the
             // generic send burst is replaced, not stacked.
             fxKind = PulseEffects.burstKindOf(effect),
         )
@@ -834,7 +834,7 @@ class ChatRoomViewModel @Inject constructor(
      * replace: a new target (or a racing loadOlder) never strands the gate.
      */
     fun expandForJump(messageId: String) {
-        // Jump surfaces (search/pins/quotes/saved) are whole-room — a topic
+        // Jump surfaces (search/pins/quotes/saved) are whole-room - a topic
         // filter would hide the target. Fall back to General first.
         _activeTopicId.value = null
         jumpExpansionJob?.cancel()
@@ -918,7 +918,7 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    // ── staged media (spec row 9 — never queued, honest errors) ──
+    // ── staged media (spec row 9 - never queued, honest errors) ──
 
     fun onImagePicked(uri: Uri) {
         _state.value = _state.value.copy(
@@ -1023,7 +1023,7 @@ class ChatRoomViewModel @Inject constructor(
                     conversationId = conversationId,
                     body = caption.trim(),
                     imagePath = path,
-                    // Wire contract: viewOnce===true REQUIRES imagePath — image kind only.
+                    // Wire contract: viewOnce===true REQUIRES imagePath - image kind only.
                     viewOnce = if (staged.viewOnce) true else null,
                     topicId = topicId,
                 )
@@ -1085,7 +1085,7 @@ class ChatRoomViewModel @Inject constructor(
     // ── Wave 2: voice recording (spec §1 row 1 / row 11) ───────────────
 
     /**
-     * D31 hold-to-record — called the moment the mic button receives a press
+     * D31 hold-to-record - called the moment the mic button receives a press
      * (RECORD_AUDIO is requested at the UI layer BEFORE this call).
      * MediaRecorder → AAC in MPEG_4, max 10 min (the server durationMs cap),
      * temp file cacheDir/voice-<uuid>.m4a. The 100ms ticker drives the timer
@@ -1103,8 +1103,8 @@ class ChatRoomViewModel @Inject constructor(
             mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             mr.setAudioSamplingRate(44100)
             mr.setMaxDuration(600_000)
-            // D31 — metering: mr.maxAmplitude reports the raw 0..32767 range
-            // while held (the sandbox platform jar omits setMaxAmplitude —
+            // D31 - metering: mr.maxAmplitude reports the raw 0..32767 range
+            // while held (the sandbox platform jar omits setMaxAmplitude -
             // the ceiling call is a no-op re-scale, dropped honestly).
             mr.setOutputFile(file.absolutePath)
             mr.prepare()
@@ -1127,7 +1127,7 @@ class ChatRoomViewModel @Inject constructor(
                 delay(100)
                 val elapsed = if (recordStartedAtMs > 0) SystemClock.elapsedRealtime() - recordStartedAtMs else _recordMs.value
                 _recordMs.value = elapsed
-                // Live waveform sample — maxAmplitude is the peak since the
+                // Live waveform sample - maxAmplitude is the peak since the
                 // last call, which IS the correct per-tick reading.
                 val mr = recorder
                 if (mr != null) {
@@ -1157,7 +1157,7 @@ class ChatRoomViewModel @Inject constructor(
     /**
      * Stop → elapsed → `durationMs = max(1, round(ms/100)*100)` (web parity).
      * Under 600ms the note is DISCARDED with a notice. Never queued: upload
-     * dataURL → repo.uploadMedia → sendMediaMessage(kind="audio") — kind MUST
+     * dataURL → repo.uploadMedia → sendMediaMessage(kind="audio") - kind MUST
      * be "audio" so /transcribe works (spec §1 row 1, web kind-omission bug).
      */
     fun stopAndSend() {
@@ -1274,7 +1274,7 @@ class ChatRoomViewModel @Inject constructor(
     /**
      * null → General (whole room, unfiltered); non-null → also fetch the
      * server window for that topic (native keeps the client-side filter live
-     * via the Room flow — improvement over the web 3.5s cache poll).
+     * via the Room flow - improvement over the web 3.5s cache poll).
      */
     fun setActiveTopic(topicId: String?) {
         _activeTopicId.value = topicId
@@ -1296,7 +1296,7 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    // ── Wave 7 — collaboration & hub (F-RO-02…09) ──────────────────────
+    // ── Wave 7 - collaboration & hub (F-RO-02…09) ──────────────────────
 
     val viewerId: String get() = repo.viewerId ?: ""
 
@@ -1335,7 +1335,7 @@ class ChatRoomViewModel @Inject constructor(
     fun openLeaderboard() { leaderboardOpen = true }
     fun openRedPacketDetail(id: String) { redPacketDetailId = id }
 
-    // ── R6 — BE7: room-header reminders badge (web header button + count) ──
+    // ── R6 - BE7: room-header reminders badge (web header button + count) ──
     /** Upcoming (not fired, remindAt in the future) reminder count for the header badge. */
     private val _remindersUpcoming = MutableStateFlow(0)
     val remindersUpcoming: StateFlow<Int> = _remindersUpcoming.asStateFlow()
@@ -1373,12 +1373,12 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    // ── R7 item 3 — game rematch (web game-tictactoe-card.tsx:213-236) ──
+    // ── R7 item 3 - game rematch (web game-tictactoe-card.tsx:213-236) ──
     /**
      * Finished match + I'm a player → POST the SAME create flow the attach
      * sheet uses against the ORIGINAL opponent (mySide == 'X' → playerOId,
      * else playerXId). The fresh challenge message rides the normal message
-     * stream (repo.createGame upserts the response message — the Android
+     * stream (repo.createGame upserts the response message - the Android
      * analogue of web's GAME_EXTERNAL_MESSAGE_EVENT hand-off). Toast copy
      * verbatim; the card disables itself while the POST is in flight.
      */
@@ -1424,9 +1424,9 @@ class ChatRoomViewModel @Inject constructor(
         kanbanOpen = true
     }
 
-    // ── R3-B item 6 — web "Convert to task" (text messages) ──────────────
+    // ── R3-B item 6 - web "Convert to task" (text messages) ──────────────
     /**
-     * Web chat-room.tsx:2100-2109 — the long-press action POSTs
+     * Web chat-room.tsx:2100-2109 - the long-press action POSTs
      * { userId, messageId } to /api/conversations/{id}/kanban and the SERVER
      * derives the card title from the message (first 80 chars, route.ts:172-190).
      * Toast copy verbatim: 'Task created from message' / 'Could not create
@@ -1549,7 +1549,7 @@ class ChatRoomViewModel @Inject constructor(
         runCatching { repo.whiteboard(conversationId, since).getOrNull() }.getOrNull()
 
     /**
-     * R2-C item 4 — the flush now returns the server VERDICT: the sheet
+     * R2-C item 4 - the flush now returns the server VERDICT: the sheet
      * purges the durable draft only when the POST succeeded (strokes stay
      * pending through failures and re-sync on the next open), and failures
      * surface the honest toast.
@@ -1559,7 +1559,7 @@ class ChatRoomViewModel @Inject constructor(
             .onFailure { notify(it.message ?: "Stroke upload failed — try again", isError = true) }
             .isSuccess
 
-    // ── R2-C item 4 — durable whiteboard draft (per-conversation prefs) ──
+    // ── R2-C item 4 - durable whiteboard draft (per-conversation prefs) ──
 
     suspend fun whiteboardDraft(conversationId: String): List<WhiteboardStrokePostDto> =
         prefsStore.whiteboardDraft(conversationId)
@@ -1668,7 +1668,7 @@ class ChatRoomViewModel @Inject constructor(
     suspend fun leaderboard(conversationId: String?): LeaderboardPageDto? =
         runCatching { repo.leaderboard(conversationId).getOrNull() }.getOrNull()
 
-    // ── R1-W2A — quick phrases (F-MS-29) ──────────────────────────────
+    // ── R1-W2A - quick phrases (F-MS-29) ──────────────────────────────
 
     private val _phrases = MutableStateFlow<List<app.pulse.domain.model.QuickPhrase>>(emptyList())
     val phrases: StateFlow<List<app.pulse.domain.model.QuickPhrase>> = _phrases.asStateFlow()
@@ -1676,7 +1676,7 @@ class ChatRoomViewModel @Inject constructor(
     private val _phrasesBusy = MutableStateFlow(false)
     val phrasesBusy: StateFlow<Boolean> = _phrasesBusy.asStateFlow()
 
-    // R6 — M2: public (was private + zero callers → the manage sheet could
+    // R6 - M2: public (was private + zero callers → the manage sheet could
     // never open). Hosted by ChatRoomScreen beside the other sheet flags.
     var phrasesOpen by androidx.compose.runtime.mutableStateOf(false)
 
@@ -1718,7 +1718,7 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    // ── R2-A item 5 — AI recap (web chat-room.tsx:2178-2208) ─────────
+    // ── R2-A item 5 - AI recap (web chat-room.tsx:2178-2208) ─────────
 
     /** Live recap card content — null = no card (web `recap` state parity). */
     data class RecapUi(val text: String, val basedOn: Int)
@@ -1734,7 +1734,7 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     /**
-     * Header-menu / palette /recap entry — POST /api/ai/recap { userId,
+     * Header-menu / palette /recap entry - POST /api/ai/recap { userId,
      * conversationId }. Gate: real activity only (≥5 live messages, web
      * requestRecap parity). Failures surface the server's honest copy.
      */
@@ -1759,14 +1759,14 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    // ── R1-W2F — F-MD-06 translation ─────────────────────────────────
+    // ── R1-W2F - F-MD-06 translation ─────────────────────────────────
 
     /** The message whose LLM translation is in flight (menu row → spinner). */
     private val _translatingId = MutableStateFlow<String?>(null)
     val translatingId: StateFlow<String?> = _translatingId.asStateFlow()
 
     /**
-     * messageId → translated text — conversationId-INDEPENDENT (the server
+     * messageId → translated text - conversationId-INDEPENDENT (the server
      * persists per language; this map is the session's render cache).
      * Re-translating a message overwrites its entry.
      */
@@ -1799,7 +1799,7 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    // ── R1-W2F — F-MD-07 location share ──────────────────────────────
+    // ── R1-W2F - F-MD-07 location share ──────────────────────────────
 
     /** Live one-shot fix the share sheet renders (locating → fix / failure). */
     private val _locationFix = MutableStateFlow(LocationFix())
@@ -1809,7 +1809,7 @@ class ChatRoomViewModel @Inject constructor(
     private var locationListener: android.location.LocationListener? = null
 
     /**
-     * One-shot location read — NO continuous tracking (a static pin needs no
+     * One-shot location read - NO continuous tracking (a static pin needs no
      * background location, web/iOS parity). Provider priority NETWORK → GPS →
      * PASSIVE: coarse is fine for a pin (spec F-MD-07 PERMS). The last-known
      * reading seeds the sheet immediately so it never renders empty while the
@@ -1842,7 +1842,7 @@ class ChatRoomViewModel @Inject constructor(
                 )
                 cancelLocationFix()
             }
-            // Pre-API 30 runtimes declare these abstract — explicit overrides
+            // Pre-API 30 runtimes declare these abstract - explicit overrides
             // keep old devices from throwing AbstractMethodError on status flips.
             @Deprecated("Deprecated in Java")
             override fun onStatusChanged(p: String?, status: Int, extras: android.os.Bundle?) = Unit
@@ -1857,7 +1857,7 @@ class ChatRoomViewModel @Inject constructor(
             return
         }
         locationListener = listener
-        // Honesty timeout — a cold GPS can stall forever; give up after 12 s
+        // Honesty timeout - a cold GPS can stall forever; give up after 12 s
         // (a stale seed may already be showing; Retry re-runs the request).
         viewModelScope.launch {
             delay(LOCATION_FIX_TIMEOUT_MS)
@@ -1883,7 +1883,7 @@ class ChatRoomViewModel @Inject constructor(
 
     /**
      * Confirm-sheet → REAL kind:"location" message, payload {lat,lng,label}
-     * (web sendLocation parity: content rides EMPTY — the label lives in the
+     * (web sendLocation parity: content rides EMPTY - the label lives in the
      * payload blob; wire kind whitelist text|image|audio|sticker|location|file).
      */
     fun sendLocation(lat: Double, lng: Double, label: String) {
@@ -1895,7 +1895,7 @@ class ChatRoomViewModel @Inject constructor(
         sendRich(body = "", kind = "location", payload = payload)
     }
 
-    // ── R1-W2F — F-FX-05 per-conversation themes ─────────────────────
+    // ── R1-W2F - F-FX-05 per-conversation themes ─────────────────────
 
     /** Live `chat.convThemes` overrides (LRU-capped at 48 in the prefs store). */
     val convThemes: StateFlow<Map<String, ConvTheme>> = repo.convThemes
@@ -1922,14 +1922,14 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch { runCatching { repo.setConvTheme(conversationId, null) } }
     }
 
-    // ── R1-W2A — D34 verified badge (quiet header state, NO sheet) ────
+    // ── R1-W2A - D34 verified badge (quiet header state, NO sheet) ────
 
     /** DM-peer verification state for the header badge (null = unknown/loading). */
     private val _peerVerified = MutableStateFlow<Boolean?>(null)
     val peerVerified: StateFlow<Boolean?> = _peerVerified.asStateFlow()
 
     /**
-     * Quiet safety fetch for the D34 header badge — deliberately does NOT
+     * Quiet safety fetch for the D34 header badge - deliberately does NOT
      * open the safety sheet (that is loadSafety's job when the badge is tapped).
      */
     fun loadPeerVerification(peerId: String) {
@@ -1940,15 +1940,15 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    // ── R1-W2A — D29 incoming effect FX + rich sends ──────────────────
+    // ── R1-W2A - D29 incoming effect FX + rich sends ──────────────────
 
     override fun onCleared() {
-        // Recording must never outlive the room — stop + release + delete.
+        // Recording must never outlive the room - stop + release + delete.
         stopRecorderLocked()
         recordFile?.delete()
         recordFile = null
         _recording.value = false
-        // R1-W2F — the one-shot location listener must never outlive the room.
+        // R1-W2F - the one-shot location listener must never outlive the room.
         cancelLocationFix()
         voicePlayer.release()
         super.onCleared()

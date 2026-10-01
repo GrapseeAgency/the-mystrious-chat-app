@@ -73,7 +73,7 @@ import java.time.format.DateTimeFormatter
  * Wave 7 collaboration sheets (F-RO-03…09). Poll transports are web parity:
  * kanban 1500 ms while open (kanban-sheet.tsx:65), whiteboard since-delta
  * 900 ms (whiteboard-sheet.tsx:66). Server error copy surfaces verbatim
- * through the room snackbar — the sheets never invent success.
+ * through the room snackbar - the sheets never invent success.
  */
 
 private val W7_COLORS = listOf("#22c55e", "#0ea5e9", "#f59e0b", "#ef4444", "#a855f7", "#e2e8f0")
@@ -300,7 +300,7 @@ fun KanbanSheet(
                                 Text(who, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
-                        // move controls — native-native equivalent of web drag/drop
+                        // move controls - native-native equivalent of web drag/drop
                         if (col != "todo") {
                             Text("‹", Modifier.clickable { onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) - 1], null) }.padding(6.dp), fontSize = 18.sp)
                         }
@@ -332,7 +332,7 @@ private fun colIndex(col: String): Int = PulseWave7Logic.KANBAN_COLUMNS.indexOf(
 // ── Whiteboard (F-RO-03) ─────────────────────────────────────────────────
 
 /**
- * R2-C item 4 — the durable pending-stroke draft hooks (iOS
+ * R2-C item 4 - the durable pending-stroke draft hooks (iOS
  * PulseWhiteboardDraft parity): the sheet writes through on every drawn
  * stroke, restores + dedupes on open, purges on the server flush verdict
  * and on the board-reset path. Backed by the per-conversation prefs store
@@ -381,9 +381,9 @@ fun WhiteboardSheet(
 
     LaunchedEffect(Unit) {
         load(null)?.let { remote = it; lastServerTime = it.serverTime ?: 0; resetAt = it.resetAt ?: 0 }
-        // R2-C item 4 — restore the durable draft on open, minus the strokes
+        // R2-C item 4 - restore the durable draft on open, minus the strokes
         // the snapshot ALREADY carries (they landed before the crash; the
-        // dedupe pass rewrites the store — iOS PulseWhiteboardDraft
+        // dedupe pass rewrites the store - iOS PulseWhiteboardDraft
         // .droppingSynced/.replaceAll parity).
         val pending = draft.load()
         if (pending.isNotEmpty()) {
@@ -470,7 +470,7 @@ fun WhiteboardSheet(
                                 if (currentPts.size >= 2) {
                                     val stroke = Triple(color, width, currentPts.takeLast(500))
                                     localStrokes = localStrokes + listOf(stroke)
-                                    // R2-C item 4 — draw-time write-through: the
+                                    // R2-C item 4 - draw-time write-through: the
                                     // stroke is durable BEFORE any sync attempt.
                                     draft.append(stroke.toStrokePost())
                                 }
@@ -513,7 +513,7 @@ fun WhiteboardSheet(
             )
             Spacer(Modifier.height(12.dp))
 
-            // flush pending strokes in batches of ≤40 — a batch leaves the
+            // flush pending strokes in batches of ≤40 - a batch leaves the
             // durable draft only when the server verdicts the POST
             // (R2-C item 4: failures keep the strokes pending; the VM toast
             // stays honest and the next sheet open re-syncs them).
@@ -692,7 +692,7 @@ fun RemindersSheet(
     onCreate: (note: String, remindAtIso: String, anchoredMessageId: String?) -> Unit,
     onResolve: (id: String) -> Unit,
     onDelete: (id: String) -> Unit,
-    // R7 item 4 — web REMINDER_JUMP_EVENT parity: rows anchored to a message
+    // R7 item 4 - web REMINDER_JUMP_EVENT parity: rows anchored to a message
     // offer Jump (host dismisses the sheet + jumps/flash-engines there).
     onJump: (item: app.pulse.protocol.ReminderItemDto) -> Unit = {},
     anchoredMessageId: String?,
@@ -771,7 +771,7 @@ fun RemindersSheet(
                         )
                     }
                     if (r.messageId != null && r.firedAt == null) {
-                        // R7 item 4 — jump to the anchored message (web row tap
+                        // R7 item 4 - jump to the anchored message (web row tap
                         // parity, reminders-sheet.tsx jump()); the host closes
                         // the sheet and routes the jump.
                         Text(

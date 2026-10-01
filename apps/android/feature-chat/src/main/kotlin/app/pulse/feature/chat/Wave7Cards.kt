@@ -81,7 +81,7 @@ fun RedPacketCard(
     var detail by remember(packetId) { mutableStateOf<RedPacketDetailDto?>(null) }
     var grabbed by remember(packetId) { mutableStateOf(0) }
 
-    // 20 s poll — web redpacket-bubble.tsx:79.
+    // 20 s poll - web redpacket-bubble.tsx:79.
     LaunchedEffect(packetId) {
         while (true) {
             detail?.let { d -> grabbed = d.packet?.grabbed ?: 0 }
@@ -210,14 +210,14 @@ fun TicTacToeCard(
     load: suspend () -> GameDetailDto?,
     onMove: (Int) -> Unit,
     onJoin: () -> Unit,
-    // R7 item 3 — rematch (web game-tictactoe-card.tsx:213-236 + 452-476):
+    // R7 item 3 - rematch (web game-tictactoe-card.tsx:213-236 + 452-476):
     // posts a fresh challenge against the ORIGINAL opponent; the new invite
     // message arrives via the normal message stream.
     onRematch: suspend (GameMatchDto) -> Unit = {},
 ) {
     var detail by remember(matchId) { mutableStateOf(initial) }
 
-    // 1500 ms poll while active — web game-tictactoe-card.tsx:33,134.
+    // 1500 ms poll while active - web game-tictactoe-card.tsx:33,134.
     LaunchedEffect(matchId, detail?.match?.status) {
         while (detail?.match?.status == "active") {
             delay(1_500)
@@ -332,14 +332,14 @@ fun TicTacToeCard(
                 Text("Take the O seat")
             }
         }
-        // R7 item 3 — "Rematch" (web verbatim): finished match + I'm a player
+        // R7 item 3 - "Rematch" (web verbatim): finished match + I'm a player
         // + both seats filled. Emerald tinted pill (border-emerald-500/30 on
         // bg-emerald-500/10), spinner + disabled while the POST is in flight.
         val finished = m.status != "active"
         if (finished && mySide != null && m.playerOId != null) {
             var rematching by remember(matchId) { mutableStateOf(false) }
             val rematchScope = rememberCoroutineScope()
-            // R7 item 3 — web rematch() fires haptic(6) before the POST
+            // R7 item 3 - web rematch() fires haptic(6) before the POST
             // (game-tictactoe-card.tsx:217); the native TextHandleMove tick
             // rides the SAME tap the in-flight disable arms on.
             val haptics = LocalHapticFeedback.current
@@ -395,7 +395,7 @@ fun TournamentCard(
     onFinish: () -> Unit,
 ) {
     var t by remember(tournamentId) { mutableStateOf<TournamentSummaryDto?>(null) }
-    // R7 item 9 — standings poll every 15s while the card is visible
+    // R7 item 9 - standings poll every 15s while the card is visible
     // (web tournament-card.tsx:29 POLL_MS + :76-77 refetchInterval while
     // running). The LaunchedEffect lives exactly as long as the bubble is
     // composed, so off-screen tournaments cost nothing.
@@ -430,7 +430,7 @@ fun TournamentCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // R7 item 9 — ALL standings entries (web tournament-card.tsx:183 maps
+        // R7 item 9 - ALL standings entries (web tournament-card.tsx:183 maps
         // every entry), scrollable like the web's max-h-56 list, with the
         // podium colors on the top-3 rank (web MEDALS: 1 amber / 2 zinc /
         // 3 orange) and the emerald "· you" marker on the viewer's row.

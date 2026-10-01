@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// Adaptive token set for the home rebuild — every zinc shade, surface and
+// Adaptive token set for the home rebuild - every zinc shade, surface and
 // hairline the web glass recipes use, resolved per color scheme at draw time.
 extension PulseTheme {
     // ── exact accents (web palette §13) ──────────────────────
@@ -43,7 +43,7 @@ extension PulseTheme {
     // green-cast carbon ground with a neon-mint signal. These are the
     // exact hex mirrors; the adaptive helpers below consume them in
     // dark mode while light mode keeps the paper palette.
-    /// Page base — carbon green-cast near-black (web --background).
+    /// Page base - carbon green-cast near-black (web --background).
     static var neoBackground: Color { PulseUiThemeColor(hex: "#07090b").color }
     /// Elevated card surface (web --card).
     static var neoSurface: Color { PulseUiThemeColor(hex: "#0d1211").color }
@@ -55,29 +55,29 @@ extension PulseTheme {
     static var neoTextDim: Color { PulseUiThemeColor(hex: "#d7e4dd").color }
     /// Muted text (web --muted-foreground).
     static var neoMuted: Color { PulseUiThemeColor(hex: "#8ca398").color }
-    /// THE Neo signal — neon mint (web --primary).
+    /// THE Neo signal - neon mint (web --primary).
     static var neonMint: Color { PulseUiThemeColor(hex: "#2be8a6").color }
     /// Text on filled mint surfaces (web --primary-foreground).
     static var onNeon: Color { PulseUiThemeColor(hex: "#04120c").color }
-    /// Secondary accent, magenta — SPARING use only (web --chart-2).
+    /// Secondary accent, magenta - SPARING use only (web --chart-2).
     static var neonMagenta: Color { PulseUiThemeColor(hex: "#ff5ca8").color }
     /// Destructive (web --destructive).
     static var neoDestructive: Color { PulseUiThemeColor(hex: "#ff5c6c").color }
-    /// The one hairline — white 8% (web --border dark).
+    /// The one hairline - white 8% (web --border dark).
     static var neoHairline: Color { Color.white.opacity(0.08) }
 
-    /// Neo page base — paper grouped background in light, carbon in dark
+    /// Neo page base - paper grouped background in light, carbon in dark
     /// (web R35 re-skins the dark palette only; light keeps its own).
     static var neoPage: Color {
         adaptive(Color(UIColor.systemGroupedBackground), neoBackground)
     }
 
-    /// Neo elevated card fill — system card white in light, #0d1211 dark.
+    /// Neo elevated card fill - system card white in light, #0d1211 dark.
     static var neoCard: Color {
         adaptive(Color(UIColor.secondarySystemGroupedBackground), neoSurface)
     }
 
-    /// Text/icons on accent fills — white in light, #04120c in dark.
+    /// Text/icons on accent fills - white in light, #04120c in dark.
     static var onAccent: Color {
         adaptive(Color.white, onNeon)
     }
@@ -87,13 +87,13 @@ extension PulseTheme {
         Color(UIColor { traits in traits.userInterfaceStyle == .dark ? dark : light })
     }
 
-    /// SwiftUI.Color flavor — the zinc/accent token helpers pass Color values
+    /// SwiftUI.Color flavor - the zinc/accent token helpers pass Color values
     /// (zinc(_:), emerald600, …), which do NOT implicitly convert to UIColor.
     private static func adaptive(_ light: Color, _ dark: Color) -> Color {
         Color(UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light) })
     }
 
-    /// Page wash behind everything — the translucent layer that makes glass read.
+    /// Page wash behind everything - the translucent layer that makes glass read.
     static var pageWash: Color {
         adaptive(
             UIColor.white.withAlphaComponent(0.30),
@@ -101,7 +101,7 @@ extension PulseTheme {
         )
     }
 
-    /// Conversation row fill — white/80 light, Neo carbon surface 70% dark.
+    /// Conversation row fill - white/80 light, Neo carbon surface 70% dark.
     static var rowFill: Color {
         adaptive(
             UIColor.white.withAlphaComponent(0.80),
@@ -109,7 +109,7 @@ extension PulseTheme {
         )
     }
 
-    /// Row inner hairline — white/40 light, white 8% dark (Neo hairline).
+    /// Row inner hairline - white/40 light, white 8% dark (Neo hairline).
     static var rowRim: Color {
         adaptive(
             UIColor.white.withAlphaComponent(0.40),
@@ -117,7 +117,7 @@ extension PulseTheme {
         )
     }
 
-    /// Glass pill fill — zinc-100/80 light, Neo secondary surface 60% dark.
+    /// Glass pill fill - zinc-100/80 light, Neo secondary surface 60% dark.
     static var glassFill: Color {
         adaptive(
             UIColor(red: 0.957, green: 0.957, blue: 0.961, alpha: 0.80),
@@ -125,7 +125,7 @@ extension PulseTheme {
         )
     }
 
-    /// Glass pill ring — zinc-200/70 light, white 8% dark (Neo hairline).
+    /// Glass pill ring - zinc-200/70 light, white 8% dark (Neo hairline).
     static var hairlineStrong: Color {
         adaptive(
             UIColor(red: 0.894, green: 0.894, blue: 0.906, alpha: 0.70),
@@ -133,38 +133,38 @@ extension PulseTheme {
         )
     }
 
-    /// Soft hairline — zinc-100 light, zinc-800 dark.
+    /// Soft hairline - zinc-100 light, zinc-800 dark.
     static var hairlineSoft: Color {
         adaptive(zinc(100), zinc(800))
     }
 
-    /// Panel separator — zinc-200 light, zinc-800 dark.
+    /// Panel separator - zinc-200 light, zinc-800 dark.
     static var hairlinePanel: Color {
         adaptive(zinc(200), zinc(800))
     }
 
-    /// Strong titles — zinc-900 light, Neo text dark.
+    /// Strong titles - zinc-900 light, Neo text dark.
     static var titleOnWash: Color { adaptive(zinc(900), neoText) }
 
-    /// Body titles on panels — zinc-900 light, Neo text dark.
+    /// Body titles on panels - zinc-900 light, Neo text dark.
     static var titleOnPanel: Color { adaptive(zinc(900), neoText) }
 
-    /// Primary body text — zinc-600 light, Neo dim text dark.
+    /// Primary body text - zinc-600 light, Neo dim text dark.
     static var textPrimary: Color { adaptive(zinc(600), neoTextDim) }
 
-    /// Muted body text — zinc-500 light, Neo muted dark.
+    /// Muted body text - zinc-500 light, Neo muted dark.
     static var textSecondary: Color { adaptive(zinc(500), neoMuted) }
 
-    /// Faint text — zinc-400 light, dimmed Neo muted dark.
+    /// Faint text - zinc-400 light, dimmed Neo muted dark.
     static var textTertiary: Color { adaptive(zinc(400), PulseUiThemeColor(hex: "#6e837a").color) }
 
-    // ── R2-D — active design language (web ui-theme.ts R25 parity) ──────
+    // ── R2-D - active design language (web ui-theme.ts R25 parity) ──────
     // PulsePrefs owns the persisted selection; RootView mirrors it here so
     // every PulseTheme-fed view swaps tokens without any screen redesign.
     // Main-thread only (set at shell attach + on change).
     static var activeUiTheme: PulseUiThemeId = .glass
 
-    /// THE accent token — theme-driven (glass emerald #10b981, kinetic ink
+    /// THE accent token - theme-driven (glass emerald #10b981, kinetic ink
     /// flipping to near-white in dark, minimal zinc, dynamic amber, aero
     /// sky). Resolved per color-scheme trait at draw time.
     static var accent: Color {
@@ -175,7 +175,7 @@ extension PulseTheme {
     }
 
     /// Theme secondary accent (glass sky #0ea5e9, kinetic rose, minimal
-    /// zinc-400, dynamic pink, aero indigo) — adaptive like accent.
+    /// zinc-400, dynamic pink, aero indigo) - adaptive like accent.
     static var accent2: Color {
         let id = activeUiTheme
         let light = PulseUiTheme.tokens(for: id, dark: false).accent2
@@ -184,27 +184,27 @@ extension PulseTheme {
     }
 
     /// Panel radius base for the active language (glass 28 base; kinetic 14,
-    /// minimal 22, dynamic 26, aero 24 — globals.css --ui-radius-panel).
+    /// minimal 22, dynamic 26, aero 24 - globals.css --ui-radius-panel).
     static var radiusPanel: CGFloat {
         PulseUiTheme.tokens(for: activeUiTheme, dark: false).radiusPanel
     }
 
-    /// Presence dot offline tint — zinc-300 light, zinc-600 dark.
+    /// Presence dot offline tint - zinc-300 light, zinc-600 dark.
     static var presenceOffline: Color { adaptive(zinc(300), zinc(600)) }
 
-    /// Story ring "seen" tint — zinc-300 light, zinc-600 dark.
+    /// Story ring "seen" tint - zinc-300 light, zinc-600 dark.
     static var ringSeen: Color { adaptive(zinc(300), zinc(600)) }
 
-    /// Story ring "none" tint — zinc-200 light, zinc-700 dark.
+    /// Story ring "none" tint - zinc-200 light, zinc-700 dark.
     static var ringNone: Color { adaptive(zinc(200), zinc(700)) }
 
-    /// Unread badge outer ring — white light, zinc-900 dark.
+    /// Unread badge outer ring - white light, zinc-900 dark.
     static var badgeRing: Color { adaptive(.white, zinc(900)) }
 
-    /// Filter chip inactive fill — zinc-100 light, Neo secondary surface dark.
+    /// Filter chip inactive fill - zinc-100 light, Neo secondary surface dark.
     static var chipFill: Color { adaptive(zinc(100), neoSurfaceAlt) }
 
-    /// Pressed overlay on rows — zinc-900 4% light, white 5% dark.
+    /// Pressed overlay on rows - zinc-900 4% light, white 5% dark.
     static var pressOverlay: Color {
         adaptive(
             UIColor.black.withAlphaComponent(0.04),
@@ -212,7 +212,7 @@ extension PulseTheme {
         )
     }
 
-    /// Pinned wash — emerald 4.5% light, 6% dark.
+    /// Pinned wash - emerald 4.5% light, 6% dark.
     static var pinnedWash: Color {
         adaptive(
             UIColor(red: 0.063, green: 0.725, blue: 0.506, alpha: 0.045),
@@ -227,11 +227,11 @@ extension PulseTheme {
         adaptive(PulseUiThemeColor(hex: "#047857").color, emerald400)
     }
 
-    /// Dock/panel shadow strength — heavier in dark.
+    /// Dock/panel shadow strength - heavier in dark.
     static var panelShadowOpacity: Double { 0.14 }
 
     // ── gradients ────────────────────────────────────────────
-    /// Brand gradient — accent → accent2 of the ACTIVE design language
+    /// Brand gradient - accent → accent2 of the ACTIVE design language
     /// (glass keeps the emerald→teal feel via its sky secondary; kinetic
     /// ink→rose, minimal zinc pair, dynamic amber→pink, aero sky→indigo).
     static var brandGradient: LinearGradient {
@@ -243,7 +243,7 @@ extension PulseTheme {
         return LinearGradient(colors: [start, end], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    /// Active dock pill — emerald 500/20 → 500/6 top-to-bottom (dark: 400/16 → 5%).
+    /// Active dock pill - emerald 500/20 → 500/6 top-to-bottom (dark: 400/16 → 5%).
     static var dockPillGradient: LinearGradient {
         LinearGradient(
             colors: [adaptive(emerald500.opacity(0.20), emerald400.opacity(0.16)),
@@ -253,7 +253,7 @@ extension PulseTheme {
     }
 
     /// Group avatar gradient picked by hashing the conversation id
-    /// (web GROUP_GRADIENTS — violet family, 4 variants).
+    /// (web GROUP_GRADIENTS - violet family, 4 variants).
     static func groupGradient(for id: String) -> LinearGradient {
         let palettes: [[Color]] = [
             [violet400, purple600],
@@ -265,7 +265,7 @@ extension PulseTheme {
         return LinearGradient(colors: picked, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    /// Web hashString — h = (h * 31 + charCode) | 0, folded positive.
+    /// Web hashString - h = (h * 31 + charCode) | 0, folded positive.
     static func hashString(_ value: String) -> Int {
         var h: Int32 = 0
         for unit in value.utf16 {
@@ -274,7 +274,7 @@ extension PulseTheme {
         return Int(UInt32(bitPattern: h) & 0x7FFF_FFFF)
     }
 
-    /// Streak heat ring sweep — amber → rose → fading amber (conic, web §7.4).
+    /// Streak heat ring sweep - amber → rose → fading amber (conic, web §7.4).
     static var heatRingGradient: AngularGradient {
         let stops: [Gradient.Stop] = [
             .init(color: amber500.opacity(0.9), location: 0),
@@ -292,7 +292,7 @@ extension PulseTheme {
     static let amber = Color(red: 0.961, green: 0.620, blue: 0.043)
     static let rose = Color(red: 0.984, green: 0.445, blue: 0.522)
 
-    /// Unseen story ring sweep — the four emerald/teal greens (web §5).
+    /// Unseen story ring sweep - the four emerald/teal greens (web §5).
     static var storyRingGradient: AngularGradient {
         AngularGradient(
             stops: [
@@ -473,7 +473,7 @@ extension View {
 }
 
 // ─────────────────────────────────────────────────────────────
-// R2-D — the five locked design languages, ported verbatim from
+// R2-D - the five locked design languages, ported verbatim from
 // web src/lib/ui-theme.ts:35-76 (meta: label/tagline/detail/swatch/motion)
 // + the token blocks of src/app/globals.css:124-240 (accent pair, radius
 // panel, page/panel/border colors, blur, panel alpha per light+dark).
@@ -481,25 +481,25 @@ extension View {
 // `pulse.uiTheme.v2` with byte-identical values glass|kinetic|minimal|dynamic|aero.
 // ─────────────────────────────────────────────────────────────
 
-/// Theme ids — raw values are the wire strings (web UiThemeId).
+/// Theme ids - raw values are the wire strings (web UiThemeId).
 public enum PulseUiThemeId: String, CaseIterable, Sendable {
     case glass, kinetic, minimal, dynamic, aero
 }
 
-/// One language's picker metadata (web UiThemeMeta — strings byte-same).
+/// One language's picker metadata (web UiThemeMeta - strings byte-same).
 public struct PulseUiThemeMeta: Equatable, Sendable {
     public let id: PulseUiThemeId
     public let label: String
     public let tagline: String
     /// one-line description for pickers
     public let detail: String
-    /// preview accent pair (hex) for swatches — web swatch order preserved
+    /// preview accent pair (hex) for swatches - web swatch order preserved
     public let swatch: [String]
-    /// motion personality — surfaces may pick springs by theme
+    /// motion personality - surfaces may pick springs by theme
     public let motion: String
 }
 
-/// A decoded CSS color (hex + alpha) — pure value so tokens stay testable.
+/// A decoded CSS color (hex + alpha) - pure value so tokens stay testable.
 public struct PulseUiThemeColor: Equatable, Sendable {
     public let red: Double
     public let green: Double
@@ -507,7 +507,7 @@ public struct PulseUiThemeColor: Equatable, Sendable {
     public let alpha: Double
 
     /// "#RRGGBB" / "RRGGBB" (+ separate alpha, globals rgba). Junk input
-    /// degrades to opaque black — never crashes, never traps.
+    /// degrades to opaque black - never crashes, never traps.
     public init(hex: String, alpha: Double = 1.0) {
         let digits = hex.filter { $0.isHexDigit }
         let padded = digits.count >= 6
@@ -546,7 +546,7 @@ public enum PulseUiTheme {
     /// Web DEFAULT_UI_THEME.
     public static let defaultId: PulseUiThemeId = .glass
 
-    /// The metadata table — web UI_THEMES verbatim (ui-theme.ts:35-76).
+    /// The metadata table - web UI_THEMES verbatim (ui-theme.ts:35-76).
     public static func meta(for id: PulseUiThemeId) -> PulseUiThemeMeta {
         switch id {
         case .glass:
@@ -601,7 +601,7 @@ public enum PulseUiTheme {
         PulseUiThemeId.allCases.map { meta(for: $0) }
     }
 
-    /// Tolerant decode — web isUiThemeId parity: anything outside the five
+    /// Tolerant decode - web isUiThemeId parity: anything outside the five
     /// locked ids (nil, junk, legacy values) falls back to glass.
     public static func parse(_ raw: String?) -> PulseUiThemeId {
         guard let raw, !raw.isEmpty else { return defaultId }
@@ -613,7 +613,7 @@ public enum PulseUiTheme {
     public static func tokens(for id: PulseUiThemeId, dark: Bool) -> PulseUiThemeTokens {
         switch id {
         case .glass:
-            // ui-glass — aurora wash over warm paper / R35 Neo carbon.
+            // ui-glass - aurora wash over warm paper / R35 Neo carbon.
             // R17: the DARK accent is the Neo neon mint (web .dark --primary
             // #2be8a6); the light accent stays the pinned emerald swatch.
             return PulseUiThemeTokens(
@@ -630,7 +630,7 @@ public enum PulseUiTheme {
                 blur: 28,
             )
         case .kinetic:
-            // ui-kinetic — ink on paper, hard edges, high contrast.
+            // ui-kinetic - ink on paper, hard edges, high contrast.
             return PulseUiThemeTokens(
                 accent: dark ? PulseUiThemeColor(hex: "#fafafa") : PulseUiThemeColor(hex: "#18181b"),
                 accent2: PulseUiThemeColor(hex: "#f43f5e"),
@@ -643,7 +643,7 @@ public enum PulseUiTheme {
                 blur: 0,
             )
         case .minimal:
-            // ui-minimal — hairlines, whitespace, whisper motion.
+            // ui-minimal - hairlines, whitespace, whisper motion.
             return PulseUiThemeTokens(
                 accent: PulseUiThemeColor(hex: "#52525b"),
                 accent2: PulseUiThemeColor(hex: "#a1a1aa"),
@@ -658,7 +658,7 @@ public enum PulseUiTheme {
                 blur: 14,
             )
         case .dynamic:
-            // ui-dynamic — soft neutrals + vivid gradient accents.
+            // ui-dynamic - soft neutrals + vivid gradient accents.
             return PulseUiThemeTokens(
                 accent: PulseUiThemeColor(hex: "#f59e0b"),
                 accent2: PulseUiThemeColor(hex: "#ec4899"),
@@ -673,7 +673,7 @@ public enum PulseUiTheme {
                 blur: 22,
             )
         case .aero:
-            // ui-aero — frost strokes on cool graphite.
+            // ui-aero - frost strokes on cool graphite.
             return PulseUiThemeTokens(
                 accent: PulseUiThemeColor(hex: "#38bdf8"),
                 accent2: PulseUiThemeColor(hex: "#818cf8"),

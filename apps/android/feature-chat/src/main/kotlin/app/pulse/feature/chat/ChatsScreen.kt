@@ -164,17 +164,17 @@ private fun streakHeat(count: Int): Int = when {
 private fun countLabel(count: Int): String = if (count > 99) "99+" else "$count"
 
 /**
- * R1-W2H D24 — ChatsViewModel's export-success notice is the only surface the
+ * R1-W2H D24 - ChatsViewModel's export-success notice is the only surface the
  * VM (owned upstream this round) exposes the exported file name on:
- * `notify("Chat exported — Saved $it")` where `it` is the file written under
+ * `notify("Chat exported - Saved $it")` where `it` is the file written under
  * cacheDir/exports (PulseRepositoryImpl.exportChat). The screens parse THAT
  * contract, rebuild the absolute path and fire MediaSupport's FileProvider
- * ACTION_SEND chooser — D24's share sheet with zero VM edits.
+ * ACTION_SEND chooser - D24's share sheet with zero VM edits.
  */
 private const val EXPORT_NOTICE_PREFIX = "Chat exported — Saved "
 
 /**
- * The Chats tab — the native home page. Design + logic parity with the web
+ * The Chats tab - the native home page. Design + logic parity with the web
  * `chats-tab.tsx` per apps/HOMEPAGE-SPEC.md (binding spec).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -196,7 +196,7 @@ fun ChatsScreen(
     /** Wave 6 — mentions / channels surfaces + the folders manage sheet. */
     onOpenMentions: () -> Unit = {},
     onOpenChannels: () -> Unit = {},
-    // R2-A item 2/1 — the header phone icon opens the calls history page and
+    // R2-A item 2/1 - the header phone icon opens the calls history page and
     // the pencil icon opens the REAL new-chat composer (web chats header).
     onOpenCalls: () -> Unit = {},
     onOpenNewChat: () -> Unit = {},
@@ -215,9 +215,9 @@ fun ChatsScreen(
     val mentionCount by viewModel.mentionCount.collectAsStateWithLifecycle()
     val searchHits by viewModel.searchHits.collectAsStateWithLifecycle()
     val searchRunning by viewModel.searching.collectAsStateWithLifecycle()
-    // R2-C item 7 — recent searches for the search bar (last 5).
+    // R2-C item 7 - recent searches for the search bar (last 5).
     val spotlightRecents by viewModel.spotlightRecents.collectAsStateWithLifecycle()
-    // R14 gap 14 — the spotlight check-in flight flag (Actions block).
+    // R14 gap 14 - the spotlight check-in flight flag (Actions block).
     val checkin by viewModel.checkin.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
 
@@ -229,7 +229,7 @@ fun ChatsScreen(
     var actionTarget by remember { mutableStateOf<Conversation?>(null) }
     var activeFolderId by remember { mutableStateOf<String?>(null) }
     var foldersSheet by remember { mutableStateOf(false) }
-    // R1-W2H D24 — the exported file path awaiting the share-sheet launch.
+    // R1-W2H D24 - the exported file path awaiting the share-sheet launch.
     var pendingShareFile by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
@@ -242,7 +242,7 @@ fun ChatsScreen(
             viewModel.loadChrome()
         }
     }
-    // Audit D25 fix — poll ONLY while this surface is visible AND the app is
+    // Audit D25 fix - poll ONLY while this surface is visible AND the app is
     // foregrounded: start on enter + ON_START, stop on leave + ON_STOP.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -262,7 +262,7 @@ fun ChatsScreen(
     }
     LaunchedEffect(notice) {
         val n = notice ?: return@LaunchedEffect
-        // R1-W2H D24 — intercept the export-success notice (VM contract, see
+        // R1-W2H D24 - intercept the export-success notice (VM contract, see
         // EXPORT_NOTICE_PREFIX) and arm the ACTION_SEND share sheet launch.
         n.text.removePrefix(EXPORT_NOTICE_PREFIX).takeIf { it != n.text }?.let { fileName ->
             pendingShareFile = File(context.cacheDir, "exports/$fileName").absolutePath
@@ -270,7 +270,7 @@ fun ChatsScreen(
         snackbar.showSnackbar(n.text, withDismissAction = false)
         viewModel.consumeNotice()
     }
-    // R1-W2H D24 — fire the system chooser for the exported .txt via
+    // R1-W2H D24 - fire the system chooser for the exported .txt via
     // MediaSupport's FileProvider intent (state cleared first so a rejected
     // launch can't loop; the toast still told the user where it saved).
     LaunchedEffect(pendingShareFile) {
@@ -288,7 +288,7 @@ fun ChatsScreen(
             focused = true
         }
     }
-    // R2-C item 7 — the debounced server message search (the VM owns the
+    // R2-C item 7 - the debounced server message search (the VM owns the
     // 250ms rhythm; the screen only feeds it). Chats filter live above it.
     LaunchedEffect(search, query) {
         if (search) viewModel.search(query)
@@ -338,7 +338,7 @@ fun ChatsScreen(
     }
 
     // Clear the system nav bar (gesture pill / 3-button strip) that draws over
-    // the app under edge-to-edge — the dock lifts by the same amount.
+    // the app under edge-to-edge - the dock lifts by the same amount.
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     // EMB-A: the home tab sits on the warm sunset-blur backdrop (dark mode).
@@ -367,9 +367,9 @@ fun ChatsScreen(
                     viewerColor = viewerColor,
                     dark = dark,
                     onAvatar = { onSwitchTab("profile") },
-                    // R2-A item 2 — real calls history (route owned by the shell).
+                    // R2-A item 2 - real calls history (route owned by the shell).
                     onCalls = onOpenCalls,
-                    // R2-A item 1 — real new-chat composer (shell-hosted sheet).
+                    // R2-A item 1 - real new-chat composer (shell-hosted sheet).
                     onCompose = onOpenNewChat,
                     onTheme = onCycleTheme,
                     onSearch = {
@@ -414,7 +414,7 @@ fun ChatsScreen(
                 )
             }
 
-            // Wave 6 — the folders manage sheet (create/rename/emoji/membership/delete).
+            // Wave 6 - the folders manage sheet (create/rename/emoji/membership/delete).
             if (foldersSheet) {
                 FoldersManageSheet(onDismiss = { foldersSheet = false })
             }
@@ -445,7 +445,7 @@ fun ChatsScreen(
                         searching = searchRunning,
                         typing = typing,
                         presence = presence,
-                        // R2-C item 7 — recent-search suggestions + push-on-open.
+                        // R2-C item 7 - recent-search suggestions + push-on-open.
                         recents = spotlightRecents,
                         onPickRecent = { picked ->
                             query = picked
@@ -460,7 +460,7 @@ fun ChatsScreen(
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
                             onOpenRoom(hit.conversationId, hit.id)
                         },
-                        // R14 gap 14 — the Actions block atop the empty-query
+                        // R14 gap 14 - the Actions block atop the empty-query
                         // surface (web spotlight.tsx:237-291).
                         checkinPending = checkin.pending,
                         onNewChat = {
@@ -522,7 +522,35 @@ fun ChatsScreen(
                         if (pinnedRows.isNotEmpty()) {
                             item(key = "header-pinned") { SectionHeader("Pinned", pinnedRows.size) }
                             items(pinnedRows, key = { it.id }) { conv ->
-                                ConversationRowItem(
+                                Box(Modifier.animateItem()) {
+ConversationRowItem(
+                                        conversation = conv,
+                                        typing = typing[conv.id] != null,
+                                        online = !conv.isGroupish && conv.otherUserId != null && conv.otherUserId in presence,
+                                        selectMode = selectMode,
+                                        selected = conv.id in selectedIds,
+                                        entranceIndex = null,
+                                        inArchived = false,
+                                        onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                        onLongPress = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            selectMode = true
+                                            selectedIds = setOf(conv.id)
+                                        },
+                                        onToggleSelect = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            selectedIds = if (conv.id in selectedIds) selectedIds - conv.id else selectedIds + conv.id
+                                        },
+                                        onPin = { viewModel.togglePin(conv.id, !conv.isPinned) },
+                                        onArchive = { viewModel.archive(conv.id, !conv.isArchived) },
+                                    )
+                                }
+                            }
+                            item(key = "header-all") { SectionHeader("All chats", unpinnedRows.size) }
+                        }
+                        items(unpinnedRows, key = { it.id }) { conv ->
+                            Box(Modifier.animateItem()) {
+ConversationRowItem(
                                     conversation = conv,
                                     typing = typing[conv.id] != null,
                                     online = !conv.isGroupish && conv.otherUserId != null && conv.otherUserId in presence,
@@ -544,30 +572,6 @@ fun ChatsScreen(
                                     onArchive = { viewModel.archive(conv.id, !conv.isArchived) },
                                 )
                             }
-                            item(key = "header-all") { SectionHeader("All chats", unpinnedRows.size) }
-                        }
-                        items(unpinnedRows, key = { it.id }) { conv ->
-                            ConversationRowItem(
-                                conversation = conv,
-                                typing = typing[conv.id] != null,
-                                online = !conv.isGroupish && conv.otherUserId != null && conv.otherUserId in presence,
-                                selectMode = selectMode,
-                                selected = conv.id in selectedIds,
-                                entranceIndex = null,
-                                inArchived = false,
-                                onPress = { openConversation(viewModel, conv, onOpenRoom) },
-                                onLongPress = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    selectMode = true
-                                    selectedIds = setOf(conv.id)
-                                },
-                                onToggleSelect = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    selectedIds = if (conv.id in selectedIds) selectedIds - conv.id else selectedIds + conv.id
-                                },
-                                onPin = { viewModel.togglePin(conv.id, !conv.isPinned) },
-                                onArchive = { viewModel.archive(conv.id, !conv.isArchived) },
-                            )
                         }
                         if (folderFiltered.isEmpty() && activeRows.isNotEmpty()) {
                             item(key = "filter-empty") {
@@ -690,7 +694,7 @@ private fun Conversation.withLocalDraft(local: String?): Conversation =
     if (local.isNullOrBlank()) this else copy(myDraft = local)
 
 /**
- * Archived sub-page (spec §9) — same rows, same swipe/sheet actions, the
+ * Archived sub-page (spec §9) - same rows, same swipe/sheet actions, the
  * Archive chip reads "Unarchive". Real hash-sub-page parity on the web.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -708,7 +712,7 @@ fun ArchivedScreen(
     val typing by viewModel.typing.collectAsStateWithLifecycle()
     val notice by viewModel.notice.collectAsStateWithLifecycle()
     var actionTarget by remember { mutableStateOf<Conversation?>(null) }
-    // R1-W2H D24 — same export share hand-off as the main tab.
+    // R1-W2H D24 - same export share hand-off as the main tab.
     var pendingShareFile by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
@@ -735,14 +739,14 @@ fun ArchivedScreen(
     }
     LaunchedEffect(notice) {
         val n = notice ?: return@LaunchedEffect
-        // R1-W2H D24 — intercept the export-success notice (see ChatsScreen).
+        // R1-W2H D24 - intercept the export-success notice (see ChatsScreen).
         n.text.removePrefix(EXPORT_NOTICE_PREFIX).takeIf { it != n.text }?.let { fileName ->
             pendingShareFile = File(context.cacheDir, "exports/$fileName").absolutePath
         }
         snackbar.showSnackbar(n.text, withDismissAction = false)
         viewModel.consumeNotice()
     }
-    // R1-W2H D24 — same ACTION_SEND chooser launch as the main tab.
+    // R1-W2H D24 - same ACTION_SEND chooser launch as the main tab.
     LaunchedEffect(pendingShareFile) {
         val path = pendingShareFile ?: return@LaunchedEffect
         pendingShareFile = null
@@ -801,23 +805,25 @@ fun ArchivedScreen(
                         contentPadding = PaddingValues(bottom = 128.dp + navBottom),
                     ) {
                         items(archived, key = { it.id }) { conv ->
-                            ConversationRowItem(
-                                conversation = conv,
-                                typing = typing[conv.id] != null,
-                                online = !conv.isGroupish && conv.otherUserId != null && conv.otherUserId in presence,
-                                selectMode = false,
-                                selected = false,
-                                entranceIndex = null,
-                                inArchived = true,
-                                onPress = { openConversation(viewModel, conv, onOpenRoom) },
-                                onLongPress = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    actionTarget = conv
-                                },
-                                onToggleSelect = null,
-                                onPin = { viewModel.togglePin(conv.id, !conv.isPinned) },
-                                onArchive = { viewModel.archive(conv.id, !conv.isArchived) },
-                            )
+                            Box(Modifier.animateItem()) {
+ConversationRowItem(
+                                    conversation = conv,
+                                    typing = typing[conv.id] != null,
+                                    online = !conv.isGroupish && conv.otherUserId != null && conv.otherUserId in presence,
+                                    selectMode = false,
+                                    selected = false,
+                                    entranceIndex = null,
+                                    inArchived = true,
+                                    onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                    onLongPress = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        actionTarget = conv
+                                    },
+                                    onToggleSelect = null,
+                                    onPin = { viewModel.togglePin(conv.id, !conv.isPinned) },
+                                    onArchive = { viewModel.archive(conv.id, !conv.isArchived) },
+                                )
+                            }
                         }
                     }
                 }
@@ -956,7 +962,7 @@ private fun HomeHeader(
                 }
             }
         }
-        // EMB-A: the header search pill is gone — search lives in the glass
+        // EMB-A: the header search pill is gone - search lives in the glass
         // button; the title row keeps the same rhythm without the duplicate.
         Spacer(Modifier.height(4.dp))
     }
@@ -1145,7 +1151,7 @@ private fun StoriesRail(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // D1: the own cell carries BOTH affordances when a live story
-            // exists — ring tap = viewer seeded at my group, "+" tap =
+            // exists - ring tap = viewer seeded at my group, "+" tap =
             // composer; with NO live story the whole cell is the composer
             // entry (web "My status" parity).
             StoryRingCell(
@@ -1416,7 +1422,7 @@ private fun NoteToSelfCard(exists: Boolean, onOpen: () -> Unit, onCreate: () -> 
     }
 }
 
-// ── entry pills — Mentions / Channels / Archived (spec §7.2) ─────────
+// ── entry pills - Mentions / Channels / Archived (spec §7.2) ─────────
 
 @Composable
 private fun EntryPill(
@@ -1526,7 +1532,7 @@ private fun ConversationRowItem(
     val offsetX = remember { Animatable(0f) }
     var swipeOpen by remember { mutableStateOf(false) }
 
-    // First-load entrance stagger — 28ms × index capped at 12 items (web parity).
+    // First-load entrance stagger - 28ms × index capped at 12 items (web parity).
     val entranceAlpha = remember { Animatable(if (entranceIndex != null) 0f else 1f) }
     val entranceY = remember { Animatable(if (entranceIndex != null) 14f else 0f) }
     LaunchedEffect(entranceIndex) {
@@ -1630,7 +1636,7 @@ private fun ConversationRowItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // avatar block (48dp) — presence halo, streak heat ring, squircle groups
+            // avatar block (48dp) - presence halo, streak heat ring, squircle groups
             Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
                 if (online && !conversation.isGroupish) PresenceGlow()
                 if (heat > 0) StreakHeatRing(heat)
@@ -1680,7 +1686,7 @@ private fun ConversationRowItem(
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     Spacer(Modifier.weight(1f))
-                    // streak chips — priority: at-risk > live > lost (never two)
+                    // streak chips - priority: at-risk > live > lost (never two)
                     if (conversation.streakAtRiskCount > 0) {
                         StreakChip(icon = PulseIcons.Clock, text = "ends tonight", amber = true)
                     } else if (conversation.streakCount > 0) {
@@ -1698,7 +1704,7 @@ private fun ConversationRowItem(
                     )
                 }
                 Spacer(Modifier.height(2.dp))
-                // preview line — typing > draft > preview
+                // preview line - typing > draft > preview
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     when {
                         typing -> TypingDots()
@@ -2072,11 +2078,11 @@ private fun SearchResults(
     presence: Set<String>,
     onPress: (Conversation) -> Unit,
     onOpenHit: (MessageHit) -> Unit,
-    // R2-C item 7 — recent searches (web spotlight.tsx recents parity).
+    // R2-C item 7 - recent searches (web spotlight.tsx recents parity).
     recents: List<String> = emptyList(),
     onPickRecent: (String) -> Unit = {},
     onClearRecents: () -> Unit = {},
-    // R14 gap 14 — the Actions block (web spotlight.tsx:237-291: New chat /
+    // R14 gap 14 - the Actions block (web spotlight.tsx:237-291: New chat /
     // Check in to Hub via POST /api/hub/wallet/checkin / Toggle theme).
     checkinPending: Boolean = false,
     onNewChat: () -> Unit = {},
@@ -2086,7 +2092,7 @@ private fun SearchResults(
     val q = query.trim()
     val darkSurface = isPulseDarkTheme()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 128.dp)) {
-        // R14 gap 14 — ACTIONS (web runs this block atop the search results;
+        // R14 gap 14 - ACTIONS (web runs this block atop the search results;
         // on the empty-query surface it sits above Recents, like the web's
         // actions-before-recents flatten order).
         if (q.isEmpty()) {
@@ -2122,7 +2128,7 @@ private fun SearchResults(
                 onClick = onToggleTheme,
             )
         }
-        // R2-C item 7 — recent searches surface while the query is EMPTY
+        // R2-C item 7 - recent searches surface while the query is EMPTY
         // (last 5, deduped, newest first; tap refills the field, Clear wipes).
         if (q.isEmpty() && recents.isNotEmpty()) {
             Row(
@@ -2214,7 +2220,7 @@ private fun SearchResults(
 }
 
 /**
- * R14 gap 14 — one row of the spotlight Actions block (web spotlight.tsx
+ * R14 gap 14 - one row of the spotlight Actions block (web spotlight.tsx
  * SpotlightRow 'action' rendering): icon tile + label + hint, tap to run.
  */
 @Composable
@@ -2384,7 +2390,7 @@ private fun EmptyStateCard(
         verticalArrangement = Arrangement.Center,
     ) {
         Box(Modifier.fillMaxWidth().padding(horizontal = 32.dp)) {
-            // soft emerald radial glow blooming behind the illustration —
+            // soft emerald radial glow blooming behind the illustration -
             // drawn first so the glass card paints over it
             Box(
                 Modifier

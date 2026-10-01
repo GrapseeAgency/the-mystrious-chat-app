@@ -1,7 +1,7 @@
 package app.pulse.feature.settings
 
 // ─────────────────────────────────────────────────────────────
-// Wave 8 (master-spec §7 "Platform & hardening") — SettingsRootScreen
+// Wave 8 (master-spec §7 "Platform & hardening") - SettingsRootScreen
 // + all nine sections, replacing the dead dock toast. Web truth:
 // src/components/chat/settings-screen.tsx SECTION_MAP labels/captions.
 // Every row is real: toggles PATCH /api/settings (optimistic local
@@ -127,7 +127,7 @@ fun SettingsRootScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val prefsOffline by viewModel.prefsOffline.collectAsStateWithLifecycle()
-    // R15 — web root-row live hints (settings-screen.tsx:1875-1885): every
+    // R15 - web root-row live hints (settings-screen.tsx:1875-1885): every
     // section row shows its LIVE state line instead of the static caption.
     val viewerName by viewModel.viewerName.collectAsStateWithLifecycle()
     val viewerProfile by viewModel.viewerProfile.collectAsStateWithLifecycle()
@@ -274,7 +274,7 @@ fun SettingsRootScreen(
                     }
                 }
             }
-            // R15 — root version footer (web settings-screen.tsx:2005-2007).
+            // R15 - root version footer (web settings-screen.tsx:2005-2007).
             Text(
                 "Pulse v${versionName ?: "?"} — every control here is live.",
                 fontSize = 11.sp,
@@ -401,7 +401,7 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                 PulseAvatar(name = profile?.name ?: viewerName ?: "?", colorHex = profile?.color, size = 44.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    // R14 gap 7b — status glyph rides the name line (web
+                    // R14 gap 7b - status glyph rides the name line (web
                     // settings-screen.tsx:815-831) + honest member-since line.
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(profile?.name ?: viewerName ?: "—", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
@@ -421,7 +421,7 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                         fontSize = 12.5.sp,
                         color = EmberPalette.Online,
                     )
-                    // R16 — the web statusLine (settings-screen.tsx:777-780 +
+                    // R16 - the web statusLine (settings-screen.tsx:777-780 +
                     // :816-818): status glyph+text when set, else the bio line.
                     val statusLine = listOfNotNull(
                         profile?.statusEmoji?.takeIf { it.isNotBlank() },
@@ -482,9 +482,9 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
             Spacer(Modifier.width(12.dp))
             Text("Edit profile", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
         }
-        // R14 gap 4 — the session-scope row (web settings-screen.tsx:858-863):
+        // R14 gap 4 - the session-scope row (web settings-screen.tsx:858-863):
         // the session lives in the device's encrypted SecureSessionStore vault
-        // ("session.vault"), so the honest Android copy says device — not tab.
+        // ("session.vault"), so the honest Android copy says device - not tab.
         Row(
             Modifier.fillMaxWidth().padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -536,10 +536,10 @@ private val UI_THEME_ROW_2 = listOf(
 )
 
 /**
- * R4-B item 3 / R14 — ALL 13 navigation architectures with the web
+ * R4-B item 3 / R14 - ALL 13 navigation architectures with the web
  * nav-registry.ts:51-63 label + hint strings VERBATIM (floating-dock /
  * command-bar / radial / gesture / contextual-dock now ship as honest
- * mobile adaptations — see the MainActivity renderer comments).
+ * mobile adaptations - see the MainActivity renderer comments).
  */
 private val NAV_STYLE_CARDS = listOf(
     Triple(app.pulse.protocol.PulseNavStyle.CAPSULE, "Floating Capsule", "Detached glass capsule dock — the default"),
@@ -562,13 +562,13 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
     val darkOverride by viewModel.darkOverride.collectAsStateWithLifecycle()
     val fxMode by viewModel.fxMode.collectAsStateWithLifecycle()
-    // R2-C item 3 — the selected design language.
+    // R2-C item 3 - the selected design language.
     val uiTheme by viewModel.uiTheme.collectAsStateWithLifecycle()
     val uiThemeMeta = app.pulse.ui.PulseUiTheme.fromId(uiTheme)
-    // R4-B item 3 — the selected navigation architecture.
+    // R4-B item 3 - the selected navigation architecture.
     val navStyle by viewModel.navStyle.collectAsStateWithLifecycle()
     SectionScaffold("Appearance", onBack) {
-        // R2-C item 3 — the design-language picker (web ui-theme.ts five
+        // R2-C item 3 - the design-language picker (web ui-theme.ts five
         // languages; value strings ride the SAME `pulse.uiTheme.v2` key the
         // web persists, so a native pick and a web pick stay in step locally).
         Text("Design language", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
@@ -599,7 +599,7 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
             color = Color.White.copy(alpha = 0.5f),
             modifier = Modifier.padding(top = 4.dp),
         )
-        // R4-B item 3 / R14 — the navigation-architecture picker (web
+        // R4-B item 3 / R14 - the navigation-architecture picker (web
         // nav-registry.ts labels/hints verbatim, now ALL 13 styles): 2-column
         // card grid, selection ring like the wallpaper swatches. The value
         // strings ride the SAME `pulse.navStyle.v2` key the web persists.
@@ -676,7 +676,7 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
                 }
             }
         }
-        // R2-A item 11 — the FULL six-mode set (web WEBGL_MODES: off · aurora ·
+        // R2-A item 11 - the FULL six-mode set (web WEBGL_MODES: off · aurora ·
         // caustics · mesh · stars · liquid); two 3-wide rows keep the labels legible.
         Text("Ambient FX", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 10.dp, bottom = 6.dp))
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -711,7 +711,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
     val drafts by viewModel.drafts.collectAsStateWithLifecycle()
     val outbox by viewModel.outbox.collectAsStateWithLifecycle()
-    // R14 gap 10 — the default list filter (web settings-screen.tsx:1065-1083
+    // R14 gap 10 - the default list filter (web settings-screen.tsx:1065-1083
     // "Default list filter" picker): same device key the chats chips write.
     val listFilter by viewModel.chatsListFilter.collectAsStateWithLifecycle()
     val haptics = LocalHapticFeedback.current
@@ -790,7 +790,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
 @Composable
 fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
-    // R14 gap 1 — the device-local ding master (web "Incoming sound" row) and
+    // R14 gap 1 - the device-local ding master (web "Incoming sound" row) and
     // the haptics toggle the Preview alert honors, both from pulse.settings.v1.
     val soundOn by viewModel.soundOn.collectAsStateWithLifecycle()
     val hapticsOn by viewModel.hapticsOn.collectAsStateWithLifecycle()
@@ -821,17 +821,17 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
             )
         }
         HorizontalDivider(Modifier.padding(vertical = 10.dp), color = EmberPalette.Hairline)
-        // R9 — honest device state (web parity: settings-screen.tsx Remote-push
+        // R9 - honest device state (web parity: settings-screen.tsx Remote-push
         // toggle row; iOS parity: SettingsView status row). Device state, not a
-        // preference — an unarmed build says Off instead of pretending.
+        // preference - an unarmed build says Off instead of pretending.
         RemotePushStatusRow(pushStatus, onResync = { viewModel.resyncPush() })
-        // R14 gap 2 — the "Preview alert" test row (web settings-screen.tsx
+        // R14 gap 2 - the "Preview alert" test row (web settings-screen.tsx
         // Test group :1258-1275): plays the REAL incoming ding through
-        // IncomingAttention — honoring soundOn, haptics and quiet hours.
+        // IncomingAttention - honoring soundOn, haptics and quiet hours.
         HorizontalDivider(Modifier.padding(vertical = 10.dp), color = EmberPalette.Hairline)
         Text("Test", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(bottom = 6.dp))
         Button(
-            // R14 gap 2 — the REAL :app IncomingAttention path through the
+            // R14 gap 2 - the REAL :app IncomingAttention path through the
             // domain seam (feature modules cannot see app-module code).
             onClick = { app.pulse.domain.notify.PreviewAlertHook.playPreview(hapticsOn) },
             enabled = !quietNow,
@@ -899,7 +899,7 @@ private fun RemotePushStatusRow(
 
 @Composable
 private fun OutlinedField(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
-    // local typing state — commit ONLY when a full valid HH:MM lands
+    // local typing state - commit ONLY when a full valid HH:MM lands
     var text by remember(value) { mutableStateOf(value) }
     val valid = Regex("^\\d{1,2}:\\d{2}$").matches(text)
     OutlinedTextField(
@@ -933,7 +933,7 @@ private fun OutlinedField(label: String, value: String, onChange: (String) -> Un
 fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
     val appLockOn by viewModel.appLockEnabled.collectAsStateWithLifecycle()
-    // R10-a — read ONCE in composable context; the App-lock callback below is
+    // R10-a - read ONCE in composable context; the App-lock callback below is
     // a plain (Boolean) -> Unit, so it can't touch LocalContext itself.
     val context = LocalContext.current
     SectionScaffold("Privacy & Security", onBack) {
@@ -941,9 +941,9 @@ fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: Set
         RowToggle("Read receipts", "Send and request read receipts.", prefs.readReceipts == true, viewModel::setReadReceipts)
         RowToggle("Typing indicator", "Broadcast when you type. Server-enforced.", prefs.typingVisible == true, viewModel::setTypingVisible)
         HorizontalDivider(Modifier.padding(vertical = 10.dp), color = EmberPalette.Hairline)
-        // R10-a — biometric App lock (device-local). Turning it ON runs ONE
+        // R10-a - biometric App lock (device-local). Turning it ON runs ONE
         // confirmation BiometricPrompt right here: only a device that can
-        // actually verify keeps the flag — anything else is an honest revert.
+        // actually verify keeps the flag - anything else is an honest revert.
         RowToggle(
             "App lock",
             "Lock Pulse behind biometrics or your device screen lock.",
@@ -991,10 +991,10 @@ fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: Set
 fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
     val connected by viewModel.connected.collectAsStateWithLifecycle()
     val probe by viewModel.probe.collectAsStateWithLifecycle()
-    // R15 — web "Device network" row state (settings-screen.tsx:1483-1492).
+    // R15 - web "Device network" row state (settings-screen.tsx:1483-1492).
     val deviceOnline by viewModel.deviceOnline.collectAsStateWithLifecycle()
-    // R7 item 6 — web ctx.onlineCount (settings-screen.tsx:1423): the live
-    // presence flow (repo onlineIds — socket Joined/PresenceSnapshot truth,
+    // R7 item 6 - web ctx.onlineCount (settings-screen.tsx:1423): the live
+    // presence flow (repo onlineIds - socket Joined/PresenceSnapshot truth,
     // PulseRepositoryImpl.observePresence) reduced to a count.
     val onlineCount by viewModel.onlineCount.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.probeGateway() }
@@ -1036,7 +1036,7 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                 }
             }
         }
-        // R7 item 6 — web StaticRow parity (settings-screen.tsx:1419-1424):
+        // R7 item 6 - web StaticRow parity (settings-screen.tsx:1419-1424):
         // "People online now" / "Live presence snapshot from the socket
         // server." with the count in a zinc info-tone StatusBadge pill.
         Row(
@@ -1073,7 +1073,7 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                 )
             }
         }
-        // R15 — web "Device network" StaticRow parity (settings-screen.tsx
+        // R15 - web "Device network" StaticRow parity (settings-screen.tsx
         // :1483-1492): navigator.onLine truth with Online/Offline badge.
         Row(
             Modifier
@@ -1110,7 +1110,7 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                 )
             }
         }
-        // R14 gap 5 — the voice-rooms info row (web settings-screen.tsx
+        // R14 gap 5 - the voice-rooms info row (web settings-screen.tsx
         // :1495-1500 StaticRow, caption verbatim).
         Row(
             Modifier
@@ -1184,9 +1184,9 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
         viewModel.refreshFootprintStats()
     }
     SectionScaffold("Data & Storage", onBack) {
-        // ── R5-B ITEM 4 — "Your footprint" live tiles (web settings-screen.tsx
+        // ── R5-B ITEM 4 - "Your footprint" live tiles (web settings-screen.tsx
         // :1496-1571): messages / photos / voice notes / chats / groups / days
-        // — the same stats route the user page consumes, evaluated for the
+        // - the same stats route the user page consumes, evaluated for the
         // VIEWER. Loading skeletons + honest failure with a retry. ──
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -1243,7 +1243,7 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                             "Days active" to (stats?.days ?: 0),
                         )
                         if (fs.loading && stats == null) {
-                            // loading — 6 skeleton tiles in the same 3-col grid
+                            // loading - 6 skeleton tiles in the same 3-col grid
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 repeat(2) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1325,9 +1325,9 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                 }) { Text("Check for updates", color = EmberPalette.Online) }
             }
         }
-        // R14 gap 6 — "The Hub" explore row (web settings-screen.tsx:1676-1686):
+        // R14 gap 6 - "The Hub" explore row (web settings-screen.tsx:1676-1686):
         // lands on the Hub tab through the shell's switchTab (which pops the
-        // settings back stack to the start destination — the sheet closes).
+        // settings back stack to the start destination - the sheet closes).
         if (onOpenHub != null) {
             Text("Explore", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
             Row(
@@ -1362,8 +1362,8 @@ private fun formatBytes(bytes: Long): String = when {
 }
 
 /**
- * R14 gap 7b — the web formatMemberSince (pulse-utils.ts:280): "August 2026"
- * — null when the profile row carries no birth timestamp.
+ * R14 gap 7b - the web formatMemberSince (pulse-utils.ts:280): "August 2026"
+ * - null when the profile row carries no birth timestamp.
  */
 internal fun memberSinceLine(iso: String?): String? {
     if (iso.isNullOrBlank()) return null
@@ -1383,7 +1383,7 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
     val context = LocalContext.current
     val uri = LocalUriHandler.current
     val pm = remember { context.packageManager.getPackageInfo(context.packageName, 0) }
-    // R14 gap 3 — the Realtime row carries the LIVE socket truth (the same
+    // R14 gap 3 - the Realtime row carries the LIVE socket truth (the same
     // repo.observeConnected flow the Real-time section header uses).
     val connected by viewModel.connected.collectAsStateWithLifecycle()
     SectionScaffold("About", onBack) {
@@ -1423,7 +1423,7 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
                 Text("GrapseeAgency/the-mystrious-chat-app", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
             }
         }
-        // R14 gap 3 — the footer (web settings-screen.tsx:1755-1763).
+        // R14 gap 3 - the footer (web settings-screen.tsx:1755-1763).
         Column(
             Modifier.fillMaxWidth().padding(top = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1460,8 +1460,8 @@ private fun AboutInfoRow(label: String, value: String, live: Boolean = false) {
 }
 
 /**
- * R10-a — the App lock enable-confirmation: ONE BiometricPrompt runs right
- * now. Availability first — a device with no biometrics/screen lock gets the
+ * R10-a - the App lock enable-confirmation: ONE BiometricPrompt runs right
+ * now. Availability first - a device with no biometrics/screen lock gets the
  * honest toast and the toggle stays off (the caller never persists). Success
  * is the only path that persists the flag.
  */
@@ -1486,7 +1486,7 @@ private fun confirmAppLock(activity: FragmentActivity, onConfirmed: () -> Unit) 
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                 onConfirmed()
             }
-            // Failure / dismissal persist NOTHING — the toggle stays off and
+            // Failure / dismissal persist NOTHING - the toggle stays off and
             // the user can try again. No silent half-enabled state.
         },
     )

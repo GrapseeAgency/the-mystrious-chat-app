@@ -85,7 +85,7 @@ import app.pulse.ui.pulsePress
 import app.pulse.ui.rememberPressSource
 
 // ─────────────────────────────────────────────────────────────
-// Pulse onboarding — native mirror of the web OnboardingScreen:
+// Pulse onboarding - native mirror of the web OnboardingScreen:
 // hero + wordmark, name/color step, @handle step with live
 // availability, "log in instead" and "skip for now" affordances.
 // ─────────────────────────────────────────────────────────────
@@ -565,7 +565,7 @@ private fun SwatchRow(selected: String, onSelect: (String) -> Unit) {
 
 /**
  * The web's shadcn Input: 44dp rounded field on zinc-50/zinc-800,
- * emerald focus ring, amber error border — BasicTextField, exact metrics.
+ * emerald focus ring, amber error border - BasicTextField, exact metrics.
  */
 @Composable
 private fun PulseTextField(

@@ -268,7 +268,7 @@ internal fun stickerOf(message: Message): Pair<String, String>? {
 }
 
 /**
- * Local recents for the sticker picker — SharedPreferences mirror of the web
+ * Local recents for the sticker picker - SharedPreferences mirror of the web
  * localStorage "pulse.sticker-recents.v1" (max 12). Sent data stays real chat
  * data; recents are a local nicety only.
  */
@@ -466,7 +466,7 @@ internal fun StickerBubble(
     }
 }
 
-// ── F-MS-22/D43 — '/'-triggered command palette (web slash-palette port) ──
+// ── F-MS-22/D43 - '/'-triggered command palette (web slash-palette port) ──
 
 /**
  * Palette rows above the composer whenever the draft starts with '/'. Same
@@ -528,10 +528,10 @@ internal fun SlashPalette(
     }
 }
 
-// ── F-MS-18 — /schedule arms a delayed send (server window 30 s…30 d) ──────
+// ── F-MS-18 - /schedule arms a delayed send (server window 30 s…30 d) ──────
 
 /**
- * Compact delayed-send armer for the /slash palette — the three web schedule
+ * Compact delayed-send armer for the /slash palette - the three web schedule
  * presets (iOS ScheduleSheet parity). The server enforces the 30 s minimum
  * and 30-day horizon; presets land safely inside it.
  */
@@ -607,13 +607,13 @@ internal fun ScheduleSheet(
     }
 }
 
-// ── R3-B item 3 — scheduled sends manager (web ScheduledListDrawer) ───────
+// ── R3-B item 3 - scheduled sends manager (web ScheduledListDrawer) ───────
 
 /**
  * The web chat-room.tsx:8661-8755 drawer, ported: the viewer's pending
  * delayed sends for THIS room with per-row cancel (DELETE /api/scheduled/{id}
  * via the VM's existing cancelScheduled), refused rows kept visible ("Not
- * sent — blocked · was {stamp}"), honest loading and the verbatim empty
+ * sent - blocked · was {stamp}"), honest loading and the verbatim empty
  * state. Consumes the ChatRoomViewModel `scheduled` StateFlow.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -774,7 +774,7 @@ internal fun ScheduledSendsSheet(
     }
 }
 
-// ── /help — the full command list (web help sheet parity) ─────────────────
+// ── /help - the full command list (web help sheet parity) ─────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -828,7 +828,7 @@ internal fun QuickPhrasesRail(
     onUse: (String) -> Unit,
     onManage: () -> Unit,
 ) {
-    // R6 — M2: zero phrases no longer hides the rail entirely — the web shows
+    // R6 - M2: zero phrases no longer hides the rail entirely - the web shows
     // a labeled "+ Quick phrase" pill as the manager entry (chat-room.tsx:
     // 5089-5105); without it the manager was unreachable for fresh accounts.
     if (phrases.isEmpty()) {
@@ -1024,14 +1024,14 @@ internal fun PhrasesSheet(
     }
 }
 
-// ── R1-W2F — F-MD-07 location share (web location-share.tsx / iOS
+// ── R1-W2F - F-MD-07 location share (web location-share.tsx / iOS
 //    MessagingSurfaces.swift:485 LocationShareSheet siblings) ──────────────
 
 /** Web location-share.tsx DEFAULT_LABEL. */
 internal const val LOCATION_DEFAULT_LABEL = "Current location"
 
 /**
- * Safe-parse a `kind:"location"` payload blob {lat,lng,label} — web
+ * Safe-parse a `kind:"location"` payload blob {lat,lng,label} - web
  * parseLocationPayload parity: garbled/missing coordinates fail the decode →
  * null (the row degrades to its body text); a blank label gets the default.
  */
@@ -1051,7 +1051,7 @@ internal fun coordinateText(lat: Double, lng: Double): String =
     )
 
 /**
- * Location pin row — the tappable render for `kind:"location"` messages.
+ * Location pin row - the tappable render for `kind:"location"` messages.
  * Tap → ACTION_VIEW on a geo:lat,lng URI (the system maps picker; a device
  * without any maps app is caught, never crashes). A garbled payload
  * degrades honestly to the row's body text (web falls back too).
@@ -1142,7 +1142,7 @@ internal fun LocationPinBubble(
 /**
  * Location confirm sheet (web LocationShareSheet flow): one-shot fix →
  * coords + label → REAL kind:'location' message. The sheet owns NO
- * transport — onConfirm hands the confirmed pin to the room, which POSTs it.
+ * transport - onConfirm hands the confirmed pin to the room, which POSTs it.
  * Permission denial is an inline explainer + Settings hand-off (D30/D31
  * house pattern); the runtime gate itself lives at the screen layer.
  */
@@ -1172,7 +1172,7 @@ internal fun LocationShareSheet(
             }
             Spacer(Modifier.height(12.dp))
             when {
-                // Permission denied — honest explainer + Settings hand-off.
+                // Permission denied - honest explainer + Settings hand-off.
                 denied -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Icon(
                         PulseIcons.MapPinSlash,
@@ -1195,7 +1195,7 @@ internal fun LocationShareSheet(
                         }
                     }
                 }
-                // No provider / fix refused — retry re-runs the one-shot read.
+                // No provider / fix refused - retry re-runs the one-shot read.
                 fix.failed && !ready -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Icon(
                         PulseIcons.MapPinSlash,

@@ -15,16 +15,16 @@ struct ProfileView: View {
     @ObservedObject var prefs: PulsePrefs
 
     @State private var identitySheet = false
-    // Wave 6 — the full profile editor (F-CP-04/09) via the real PATCH.
+    // Wave 6 - the full profile editor (F-CP-04/09) via the real PATCH.
     @State private var editProfileOpen = false
-    // R7 bonus — the saved-messages library in the profile tab (web hosts it
+    // R7 bonus - the saved-messages library in the profile tab (web hosts it
     // here; iOS only exposed it through the dock-More menu).
     @State private var savedOpen = false
-    // R2-B — hub wallet chip state (GET /api/hub/wallet?userId=).
+    // R2-B - hub wallet chip state (GET /api/hub/wallet?userId=).
     enum WalletPhase: Equatable { case loading, loaded, failed }
     @State private var walletPhase: WalletPhase = .loading
     @State private var walletCoins: Int = 0
-    // R14 5-b — the activity stats row (GET /api/users/{id}/stats — the
+    // R14 5-b - the activity stats row (GET /api/users/{id}/stats - the
     // same endpoint the Settings footprint + user pages call).
     @State private var stats: WireUserStats?
     @State private var statsFailed = false
@@ -73,7 +73,7 @@ struct ProfileView: View {
             ProfileEditView(session: session, prefs: prefs)
         }
         .sheet(isPresented: $savedOpen) {
-            // R7 bonus — the EXISTING SavedLibraryView route (RootView mounts
+            // R7 bonus - the EXISTING SavedLibraryView route (RootView mounts
             // the same sheet from dock-More). "Open original" hands the room
             // + jump target to the session bridge; the Chats tab consumes it
             // (Published replay) on next activation.
@@ -198,10 +198,10 @@ struct ProfileView: View {
             // R18-b - stored value is an icon ID (unknown -> registry default).
             if let emoji = prefs.viewerStatusEmoji, !emoji.isEmpty {
                 HStack(spacing: 6) {
-                    Image(systemName: PulseStatusIconId.normalize(emoji).symbolName)
+                    Image(systemName: (PulseStatusIconId.normalize(emoji) ?? PulseStatusIconId.fallback).symbolName)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(PulseTheme.emberGlowTop)
-                        .accessibilityLabel(PulseStatusIconId.normalize(emoji).label)
+                        .accessibilityLabel((PulseStatusIconId.normalize(emoji) ?? PulseStatusIconId.fallback).label)
                     if let text = prefs.viewerStatusText, !text.isEmpty {
                         Text(text)
                             .font(.system(size: 13, weight: .medium))
@@ -508,7 +508,7 @@ struct ProfileView: View {
         VStack(alignment: .leading, spacing: 8) {
             emberCardHeader("Wallet")
             Button {
-                // A failed fetch is honest — tap retries (web refetch parity).
+                // A failed fetch is honest - tap retries (web refetch parity).
                 guard walletPhase == .failed else { return }
                 walletPhase = .loading
                 Task { await loadWallet() }
@@ -547,17 +547,17 @@ struct ProfileView: View {
         .emberCard()
     }
 
-    /// F-CP-09 — the viewer's status emoji + text, live from prefs.
+    /// F-CP-09 - the viewer's status emoji + text, live from prefs.
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             emberCardHeader("Status")
             // R18-b - stored value is an icon ID (unknown -> registry default).
             if let emoji = prefs.viewerStatusEmoji, !emoji.isEmpty {
                 HStack(spacing: 8) {
-                    Image(systemName: PulseStatusIconId.normalize(emoji).symbolName)
+                    Image(systemName: (PulseStatusIconId.normalize(emoji) ?? PulseStatusIconId.fallback).symbolName)
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(PulseTheme.emberGlowTop)
-                        .accessibilityLabel(PulseStatusIconId.normalize(emoji).label)
+                        .accessibilityLabel((PulseStatusIconId.normalize(emoji) ?? PulseStatusIconId.fallback).label)
                     Text(prefs.viewerStatusText ?? "")
                         .font(.system(size: 13))
                         .foregroundStyle(Color.white.opacity(0.55))
@@ -578,7 +578,7 @@ struct ProfileView: View {
         .emberCard()
     }
 
-    /// Appearance — mode picker + the ambient FX strip (unchanged behavior;
+    /// Appearance - mode picker + the ambient FX strip (unchanged behavior;
     /// the previews are the real Metal/Canvas modes).
     private var appearanceCard: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -637,7 +637,7 @@ struct ProfileView: View {
         .buttonStyle(PulseButtonStyle())
     }
 
-    /// Motion note (unchanged copy — Reduce Motion is honored system-wide).
+    /// Motion note (unchanged copy - Reduce Motion is honored system-wide).
     private var motionCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             emberCardHeader("Motion")
@@ -706,7 +706,7 @@ struct ProfileView: View {
             .padding(.leading, 50)
     }
 
-    /// R47 — the shared text: verbatim web copy (profile-tab.tsx:270) plus
+    /// R47 - the shared text: verbatim web copy (profile-tab.tsx:270) plus
     /// the pulse://user/{id} deep link when the viewer id exists (the app
     /// scheme registered in project.yml; PulseDeepLink routes it back in).
     static func shareMessage(handle: String, userId: String?) -> String {

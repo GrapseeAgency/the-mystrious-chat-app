@@ -96,16 +96,16 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Wave 7 F-HB-01…10 — the LIVE hub. Replaces the Wave-0 static tile grid:
+ * Wave 7 F-HB-01…10 - the LIVE hub. Replaces the Wave-0 static tile grid:
  * real wallet + ledger, daily check-in (+25 PC, +2/day streak bonus capped
  * +20), @handle transfers, PC⇄GEM swap (100/80 rates), personal tasks,
  * market with atomic buy, logs stream, the 100-app matrix (bundled catalog
- * JSON — browsable offline) with install/connect, app communities
+ * JSON - browsable offline) with install/connect, app communities
  * (auto-provisioned real conversations) and My apps (fan-out install state
- * — web hub-data.tsx parity).
+ * - web hub-data.tsx parity).
  */
 
-// Bundled catalog (generated from src/lib/hub-catalog.ts — tools/gen-hub-catalog.mjs).
+// Bundled catalog (generated from src/lib/hub-catalog.ts - tools/gen-hub-catalog.mjs).
 @kotlinx.serialization.Serializable
 data class HubCatalogApp(
     val n: Int = 0,
@@ -161,7 +161,7 @@ class HubViewModel @Inject constructor(
     val wallet: StateFlow<WalletUi> = _wallet.asStateFlow()
 
     /**
-     * R5-B ITEM 3 — the per-app install truth now carries the full GET
+     * R5-B ITEM 3 - the per-app install truth now carries the full GET
      * /api/hub/apps/[appId]/install payload: installedAt (viewer's own connect
      * day) + installers (≤6 most-recent REAL connected users) + status.
      */
@@ -184,7 +184,7 @@ class HubViewModel @Inject constructor(
     val notice: StateFlow<String?> = _notice.asStateFlow()
 
     /**
-     * R1-W2H D38 — one-shot check-in success event (carries the reward). The
+     * R1-W2H D38 - one-shot check-in success event (carries the reward). The
      * screen turns it into the F-HB-02 celebration; never replayed to a
      * re-entering surface (extraBufferCapacity=1, DROP_OLDEST, no replay).
      */
@@ -484,10 +484,10 @@ fun HubScreen(
     LaunchedEffect(notice) { notice?.let { toast = it; vm.consumeNotice() } }
     LaunchedEffect(toast) { toast?.let { delay(2_600); toast = null } }
 
-    // R1-W2H D38 — check-in celebration (spec F-HB-02 "Success haptic +
+    // R1-W2H D38 - check-in celebration (spec F-HB-02 "Success haptic +
     // particles"; the web's toast-only ground truth is exceeded, sanctioned).
     // ONE confetti burst per successful check-in via the same API onboarding
-    // uses — the shell's global ParticleBurstHost renders it and ticks its own
+    // uses - the shell's global ParticleBurstHost renders it and ticks its own
     // subtle haptic. The screen adds the house screen-haptic (LocalHapticFeedback,
     // the idiom every other surface uses) so the success feedback survives
     // Reduce Motion, where the host gates everything.
@@ -672,10 +672,10 @@ private fun SheetHost(onDismiss: () -> Unit, content: @Composable () -> Unit) {
 }
 
 /**
- * R1-W2H D40 — hub logs live poll (web ground truth hub-tab.tsx:603-611
+ * R1-W2H D40 - hub logs live poll (web ground truth hub-tab.tsx:603-611
  * refetchInterval 12_000). Runs only while the Logs sheet is composed (the
  * call site lives inside the LOGS branch, so closing the sheet disposes it)
- * and pauses whenever the app drops below STARTED — the D25 house pattern
+ * and pauses whenever the app drops below STARTED - the D25 house pattern
  * (DisposableEffect + LifecycleEventObserver) copied verbatim. First tick is
  * immediate so the sheet never opens empty; failure toasts stay rare (the VM
  * notifies only on error).
@@ -703,7 +703,7 @@ private fun LogsLivePoll(vm: HubViewModel) {
             }
         }
         lifecycleOwner.lifecycle.addObserver(obs)
-        // The sheet can open while the app is already STARTED — the observer
+        // The sheet can open while the app is already STARTED - the observer
         // only fires on transitions, so kick the loop for the current state.
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) startLoop()
         onDispose {
@@ -1081,7 +1081,7 @@ private fun AppsSheet(
     }
 
     expanded?.let { app ->
-        // R5-B ITEM 3 — the deep app-detail sheet (Overview | Community |
+        // R5-B ITEM 3 - the deep app-detail sheet (Overview | Community |
         // Connectors + installer stack + related rail). Same mutations,
         // same community handoff; tapping a related app swaps the detail.
         AppDetailSheet(

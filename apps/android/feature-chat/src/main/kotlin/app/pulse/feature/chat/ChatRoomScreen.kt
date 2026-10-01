@@ -57,8 +57,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-// R6 — M5: the DM dead-end notice icon (web chat-room Ban).
-// R1-W2I F-PI-03 — pop-out mini chat menu icon (web PictureInPicture2).
+// R6 - M5: the DM dead-end notice icon (web chat-room Ban).
+// R1-W2I F-PI-03 - pop-out mini chat menu icon (web PictureInPicture2).
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -124,7 +124,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.core.media.PulseMedia
 import app.pulse.core.time.PulseTime
-// R1-W2F — per-conversation themes (F-FX-05).
+// R1-W2F - per-conversation themes (F-FX-05).
 import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.CallKind
 import app.pulse.domain.model.Conversation
@@ -151,14 +151,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Chat room — the native rebuild of the web conversation surface, now on the
+ * Chat room - the native rebuild of the web conversation surface, now on the
  * Wave 1 messaging engine ([ChatRoomViewModel]): paginated timeline with day
  * separators, tick states (queued clock, sent tick, seen double tick), the full message
  * action surface, pinned banner, room search + jump, staged media sends and
  * the honest offline strip. Threads open [ThreadScreen] via onOpenThread.
  */
 
-// R7 item 2 — web swipe-to-reply constants (chat-room.tsx:7261-7263, 7357-7361):
+// R7 item 2 - web swipe-to-reply constants (chat-room.tsx:7261-7263, 7357-7361):
 // dragConstraints ±64 with elastic 0.12, threshold toward > 28 → beginReply,
 // hint opacity fades in between 4 → 28 (all in web CSS px ≈ dp here).
 private val REPLY_DRAG_LIMIT = 64.dp
@@ -175,7 +175,7 @@ fun ChatRoomScreen(
     onBack: () -> Unit,
     onOpenThread: (conversationId: String, rootId: String) -> Unit,
     viewModel: ChatRoomViewModel = hiltViewModel(),
-    // Wave 5 voice rooms (authorized shared plumbing only — the same
+    // Wave 5 voice rooms (authorized shared plumbing only - the same
     // MainActivity-level trigger idiom the calls surface uses):
     /** True while this conversation has a joined voice room (header tint). */
     voiceJoined: Boolean = false,
@@ -183,17 +183,17 @@ fun ChatRoomScreen(
     voiceLiveCount: Int = 0,
     /** Opens the voice-rooms overlay for this conversation. */
     onOpenVoiceRoom: () -> Unit = {},
-    // R2-A item 6/7/8/9 — the room-info surface (GroupInfoScreen) hosts the
+    // R2-A item 6/7/8/9 - the room-info surface (GroupInfoScreen) hosts the
     // automations/webhooks managers, the screen-security toggles and the
     // photo edit; groups/channels only (web room-info-page parity).
     onOpenRoomInfo: (String) -> Unit = {},
-    // R7 item 4 — reminder jump for OTHER rooms (web REMINDER_JUMP_EVENT):
+    // R7 item 4 - reminder jump for OTHER rooms (web REMINDER_JUMP_EVENT):
     // navigates to room/{id}?jump={messageId} so that room auto-flashes.
     onJumpToRoom: (conversationId: String, messageId: String) -> Unit = { _, _ -> },
-    // R8 Task 3-c — group calls (mesh WebRTC): the room reports activation
+    // R8 Task 3-c - group calls (mesh WebRTC): the room reports activation
     // (id + display title → the shell-level session's probe/banner identity)
     // and dials NEW group calls through the ONE shell session. The 1:1
-    // header buttons dial the same way through onCall — one live call.
+    // header buttons dial the same way through onCall - one live call.
     onRoomActivated: (String, String) -> Unit = { _, _ -> },
     onStartGroupCall: (CallKind, String) -> Unit = { _, _ -> },
 ) {
@@ -210,37 +210,37 @@ fun ChatRoomScreen(
     val recordAmps by viewModel.recordAmps.collectAsStateWithLifecycle()
     val sendingVoice by viewModel.sendingVoice.collectAsStateWithLifecycle()
     val transcribingIds by viewModel.transcribingIds.collectAsStateWithLifecycle()
-    // Wave 8 — prefs-driven room rendering (bubble corners, density, wallpaper)
+    // Wave 8 - prefs-driven room rendering (bubble corners, density, wallpaper)
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
     val bubbleCorner = when (prefs.bubbleRadius) { "md" -> 14.dp; "pill" -> 26.dp; else -> 20.dp }
     val densityGap = if (prefs.density == "compact") 3.dp else 6.dp
     val channelRole by viewModel.channelRole.collectAsStateWithLifecycle()
     val safety by viewModel.safety.collectAsStateWithLifecycle()
-    // R1-W2A — quick phrases (F-MS-29) + D34 verified badge state.
+    // R1-W2A - quick phrases (F-MS-29) + D34 verified badge state.
     val phrases by viewModel.phrases.collectAsStateWithLifecycle()
     val phrasesBusy by viewModel.phrasesBusy.collectAsStateWithLifecycle()
     val peerVerified by viewModel.peerVerified.collectAsStateWithLifecycle()
-    // R1-W2F — translation (F-MD-06), location fix (F-MD-07), conv themes (F-FX-05).
+    // R1-W2F - translation (F-MD-06), location fix (F-MD-07), conv themes (F-FX-05).
     val translatingId by viewModel.translatingId.collectAsStateWithLifecycle()
     val translated by viewModel.translated.collectAsStateWithLifecycle()
     val locationFix by viewModel.locationFix.collectAsStateWithLifecycle()
     val convThemes by viewModel.convThemes.collectAsStateWithLifecycle()
-    // R1-W2I — PiP pane focus (F-PI-03): drives the pop-out toggle in the room menu.
+    // R1-W2I - PiP pane focus (F-PI-03): drives the pop-out toggle in the room menu.
     val pipFocusedId by viewModel.pipFocusedConversationId.collectAsStateWithLifecycle()
-    // R2-A item 5 — AI recap card state; item 8 — live group meta drives the veil.
+    // R2-A item 5 - AI recap card state; item 8 - live group meta drives the veil.
     val recap by viewModel.recap.collectAsStateWithLifecycle()
     val recapLoading by viewModel.recapLoading.collectAsStateWithLifecycle()
     val groupMeta by viewModel.groupMeta.collectAsStateWithLifecycle()
 
-    // R3-B item 3 — the scheduled sends flow now has a consumer (manager sheet
-    // + composer chip); item 4 — the incognito arming; item 6 — task busy.
+    // R3-B item 3 - the scheduled sends flow now has a consumer (manager sheet
+    // + composer chip); item 4 - the incognito arming; item 6 - task busy.
     val scheduledItems by viewModel.scheduled.collectAsStateWithLifecycle()
     val scheduledLoading by viewModel.scheduledLoading.collectAsStateWithLifecycle()
-    // R6 — BE7 — upcoming-reminder count for the room-header badge.
+    // R6 - BE7 - upcoming-reminder count for the room-header badge.
     val remindersUpcoming by viewModel.remindersUpcoming.collectAsStateWithLifecycle()
     val anonNext by viewModel.anonNext.collectAsStateWithLifecycle()
     val taskPending by viewModel.taskPending.collectAsStateWithLifecycle()
-    // R2-C item 5 — the R44 slow-mode countdown (armed by the 429 retryAfter;
+    // R2-C item 5 - the R44 slow-mode countdown (armed by the 429 retryAfter;
     // the composer chip counts it down live and send/mic stay locked).
     val slowModeRemainingSec by viewModel.slowModeRemainingSec.collectAsStateWithLifecycle()
     val slowBlocked = slowModeRemainingSec > 0
@@ -254,7 +254,7 @@ fun ChatRoomScreen(
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
-    // R5-B ITEM 1 — emoji appends re-focus the composer through this handle.
+    // R5-B ITEM 1 - emoji appends re-focus the composer through this handle.
     val composerFocus = remember { FocusRequester() }
 
     var draft by remember { mutableStateOf("") }
@@ -266,7 +266,7 @@ fun ChatRoomScreen(
     var lightboxTarget by remember { mutableStateOf<Message?>(null) }
     var pinsOpen by remember { mutableStateOf(false) }
     var attachOpen by remember { mutableStateOf(false) }
-    // R4-B item 2 — the attach sheet's Effects submenu state (web
+    // R4-B item 2 - the attach sheet's Effects submenu state (web
     // trayEffectsOpen parity): the four chips route into the SAME outcome
     // machine as the /effects slash (PulseSlash.Outcome.Effect → sendEffect).
     var attachEffectsOpen by remember { mutableStateOf(false) }
@@ -275,51 +275,51 @@ fun ChatRoomScreen(
     var wasEditing by remember { mutableStateOf(false) }
     var expandedFor by remember { mutableStateOf<String?>(null) }
     var scrolledFlash by remember { mutableStateOf<String?>(null) }
-    // R1-W2A — reaction picker / who-reacted / stickers / slash help /
+    // R1-W2A - reaction picker / who-reacted / stickers / slash help /
     // schedule / quick-phrases hosts (D27, F-MS-24, F-MS-22, F-MS-29).
     var reactionPickerTarget by remember { mutableStateOf<Message?>(null) }
     var whoReactedFor by remember { mutableStateOf<Pair<Message, String>?>(null) }
     var stickerOpen by remember { mutableStateOf(false) }
     var scheduleOpen by remember { mutableStateOf(false) }
-    // R3-B item 3 — scheduled sends manager sheet.
+    // R3-B item 3 - scheduled sends manager sheet.
     var scheduledOpen by remember { mutableStateOf(false) }
     var helpOpen by remember { mutableStateOf(false) }
-    // R6 — M2: the quick-phrase manager now lives on the VM (viewModel.phrasesOpen)
-    // so the rail's "manage" chip reaches it — the screen-local flag was a dead end.
-    // R5-B ITEM 1 — composer emoji picker (draft-EDIT engine, distinct from stickers).
-    // R1-W2F — location share sheet (F-MD-07) + theme picker (F-FX-05).
+    // R6 - M2: the quick-phrase manager now lives on the VM (viewModel.phrasesOpen)
+    // so the rail's "manage" chip reaches it - the screen-local flag was a dead end.
+    // R5-B ITEM 1 - composer emoji picker (draft-EDIT engine, distinct from stickers).
+    // R1-W2F - location share sheet (F-MD-07) + theme picker (F-FX-05).
     var locationOpen by remember { mutableStateOf(false) }
     var locationDenied by remember { mutableStateOf(false) }
     var themeOpen by remember { mutableStateOf(false) }
-    // R2-A item 5 — the composer draft staged for the /schedule armer.
+    // R2-A item 5 - the composer draft staged for the /schedule armer.
     var scheduleDraft by remember { mutableStateOf<String?>(null) }
-    // R2-A item 4 — the frozen pre-open read watermark (unread divider).
+    // R2-A item 4 - the frozen pre-open read watermark (unread divider).
     var unreadAnchorMs by remember(conversationId) { mutableStateOf<Long?>(null) }
 
-    // Wave 6 — broadcast channel lock (role from the server detail).
+    // Wave 6 - broadcast channel lock (role from the server detail).
     val isChannel = conversation?.kind == Conversation.Kind.CHANNEL
     LaunchedEffect(isChannel, conversationId) {
         if (isChannel) viewModel.loadComposerLock()
     }
     val composerLocked = isChannel && channelRole != "admin"
-    // R6 — M5: DM dead-end (web chat-room.tsx:5035-5044 `dmBlocked` from the
+    // R6 - M5: DM dead-end (web chat-room.tsx:5035-5044 `dmBlocked` from the
     // conversation detail): a block in EITHER direction between the pair.
-    // The server still 403-enforces sends — this is the honest UX notice.
+    // The server still 403-enforces sends - this is the honest UX notice.
     val dmBlocked = conversation?.kind == Conversation.Kind.DM && groupMeta?.dmBlocked == true
-    // Wave 6 — DM safety entry: the only non-viewer member of a DM.
+    // Wave 6 - DM safety entry: the only non-viewer member of a DM.
     val dmPeerId = conversation
         ?.takeIf { it.kind == Conversation.Kind.DM }
         ?.memberIds?.firstOrNull { it != viewerId }
 
     // Timeline rows (asc) with day separators, then reversed for the
-    // reverseLayout list — index 0 is the newest row, the anchor for tails.
-    // R2-A item 4 — an "unread" divider row is inserted at the first OTHER
+    // reverseLayout list - index 0 is the newest row, the anchor for tails.
+    // R2-A item 4 - an "unread" divider row is inserted at the first OTHER
     // person's message after the frozen watermark (web chat-room.tsx:1398-1424).
     val rows = remember(messages, unreadAnchorMs, viewerId) {
         buildTimelineRows(messages, unreadAnchorMs, viewerId)
     }
     val rowsReversed = remember(rows) { rows.asReversed() }
-    // R7 item 1 — cluster rhythm (web chat-room.tsx:7275-7278: cozy head
+    // R7 item 1 - cluster rhythm (web chat-room.tsx:7275-7278: cozy head
     // mt-2.5 / non-head mt-0.5, compact mt-1 / mt-px). The list spacing drops
     // to the web's subtle non-head gap; HEAD rows (and day/unread dividers)
     // carry the difference as top padding so only clustered rows tighten.
@@ -329,7 +329,7 @@ fun ChatRoomScreen(
         messages.lastOrNull { it.authorId == viewerId && !it.isDeleted }?.id
     }
 
-    // Wave 0 draft restore — the VM seeds from the local draft table (or the
+    // Wave 0 draft restore - the VM seeds from the local draft table (or the
     // server myDraft fallback) exactly once; never stomp live typing.
     val initialDraft by viewModel.initialDraft.collectAsStateWithLifecycle()
     LaunchedEffect(initialDraft) {
@@ -357,7 +357,7 @@ fun ChatRoomScreen(
         }
     }
 
-    // R2-A item 4 — freeze the viewer's pre-open read watermark from the FIRST
+    // R2-A item 4 - freeze the viewer's pre-open read watermark from the FIRST
     // Room summary that lands (web chats-tab handlePress freezes it at tap
     // time): only when unreadCount > 0, else no divider. markRead on entry
     // zeroes the summary shortly after, so this runs exactly once.
@@ -371,7 +371,7 @@ fun ChatRoomScreen(
         }
     }
 
-    // R2-A item 4 — jump-to-latest tracking (web chat-room.tsx:1575-1612):
+    // R2-A item 4 - jump-to-latest tracking (web chat-room.tsx:1575-1612):
     // near-tail detection clears the missed counter; off-screen arrivals
     // accumulate into the pill badge.
     val nearTail by remember { derivedStateOf { listState.firstVisibleItemIndex <= 1 } }
@@ -392,7 +392,7 @@ fun ChatRoomScreen(
         }
     }
 
-    // R2-A item 8 — screen security: while EITHER flag is on, FLAG_SECURE
+    // R2-A item 8 - screen security: while EITHER flag is on, FLAG_SECURE
     // keeps the room out of screenshots + the task-switcher preview (the
     // Android analogue of the web blur engagement), and the message area
     // covers while the app is backgrounded (web privacyHidden parity).
@@ -430,7 +430,7 @@ fun ChatRoomScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
-    // Load-older trigger — the reverseLayout list ends at the OLDEST rows;
+    // Load-older trigger - the reverseLayout list ends at the OLDEST rows;
     // the VM gates reentrancy and the hasMore/limit rules.
     LaunchedEffect(listState) {
         snapshotFlow {
@@ -473,7 +473,7 @@ fun ChatRoomScreen(
         viewModel.consumeNotice()
     }
 
-    // Downloaded file hand-off — system viewer or share sheet (spec row 9).
+    // Downloaded file hand-off - system viewer or share sheet (spec row 9).
     LaunchedEffect(state.openedFile) {
         val file = state.openedFile ?: return@LaunchedEffect
         runCatching {
@@ -487,7 +487,7 @@ fun ChatRoomScreen(
         viewModel.consumeOpenedFile()
     }
 
-    // Attachment pickers — photo picker + system documents (spec row 9).
+    // Attachment pickers - photo picker + system documents (spec row 9).
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let(viewModel::onImagePicked)
     }
@@ -524,9 +524,9 @@ fun ChatRoomScreen(
     }
 
     // ── D31 hold-to-record: RECORD_AUDIO gate + honest inline explainer ──
-    // Wave 2 mic gate — RECORD_AUDIO is requested at the UI layer; denial is
+    // Wave 2 mic gate - RECORD_AUDIO is requested at the UI layer; denial is
     // an inline explainer row above the composer (plus the one-shot notice)
-    // pointing at Settings — the mic button itself stays usable, no crash.
+    // pointing at Settings - the mic button itself stays usable, no crash.
     var micDenied by remember { mutableStateOf(false) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -546,10 +546,10 @@ fun ChatRoomScreen(
         if (cancelled) viewModel.cancelRecording() else viewModel.stopAndSend()
     }
 
-    // ── R8 Task 3-c — group call dial gates (contacts-screen idiom) ──
+    // ── R8 Task 3-c - group call dial gates (contacts-screen idiom) ──
     // RECORD_AUDIO is the hard gate for BOTH kinds (the honest mic-denied
     // card inside the engine is the second net); video also asks for CAMERA
-    // in one prompt — camera denial degrades to a voice call in the engine,
+    // in one prompt - camera denial degrades to a voice call in the engine,
     // never blocking the join. The dial rides the ONE shell-level session.
     var groupCallDial by remember { mutableStateOf<Pair<CallKind, String>?>(null) }
     val groupMicLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -580,20 +580,20 @@ fun ChatRoomScreen(
         }
     }
 
-    // R8 Task 3-c — report room activation (id + display title) so the shell
+    // R8 Task 3-c - report room activation (id + display title) so the shell
     // session probes THIS conversation and banners carry the right title
-    // (web openConversationId parity). Idempotent — the shell also sets the
+    // (web openConversationId parity). Idempotent - the shell also sets the
     // bare id on room enter.
     LaunchedEffect(conversation?.id, conversation?.title) {
         if (conversation != null) onRoomActivated(conversationId, conversation?.title.orEmpty())
     }
 
-    // ── R1-W2F F-MD-07 — ACCESS_COARSE_LOCATION runtime gate for pin share.
+    // ── R1-W2F F-MD-07 - ACCESS_COARSE_LOCATION runtime gate for pin share.
     // Mirrors the D30 camera gate: denial is an inline explainer INSIDE the
     // location sheet (no crash, no dead end).
     // NOTE for the manifest owner: AndroidManifest.xml needs
     //     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    // — runtime-only; no background location is used (a static pin needs none).
+    // - runtime-only; no background location is used (a static pin needs none).
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             locationDenied = false
@@ -609,7 +609,7 @@ fun ChatRoomScreen(
     }
 
     /**
-     * R2-A item 5 — one slash machine for BOTH the palette pick and the send
+     * R2-A item 5 - one slash machine for BOTH the palette pick and the send
      * path (web applySlash at chat-room.tsx:296-502 + runPaletteCommand:3226):
      * text outcomes send, sheet outcomes open their REAL surface, /recap runs
      * the AI recap request.
@@ -674,15 +674,15 @@ fun ChatRoomScreen(
         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
     }
 
-    // Wave 2 topic rail — refresh on open + every 15s while the room is open
+    // Wave 2 topic rail - refresh on open + every 15s while the room is open
     // (web parity tick; after-send refreshes ride the VM).
     LaunchedEffect(conversationId) {
         viewModel.refreshTopics()
         viewModel.loadPhrases()
-        // R3-B item 3 — load the pending scheduled sends once on open (the
+        // R3-B item 3 - load the pending scheduled sends once on open (the
         // manager + composer chip re-arm after every schedule/cancel via the VM).
         viewModel.loadScheduled()
-        // R6 — BE7 — the header badge counts upcoming reminders once per open.
+        // R6 - BE7 - the header badge counts upcoming reminders once per open.
         viewModel.loadRemindersUpcoming()
         while (true) {
             delay(15_000)
@@ -690,7 +690,7 @@ fun ChatRoomScreen(
         }
     }
 
-    // D34 — DM peer verification state for the header badge (quiet fetch;
+    // D34 - DM peer verification state for the header badge (quiet fetch;
     // tapping the badge still opens the safety sheet via onOpenSafety).
     LaunchedEffect(dmPeerId) {
         dmPeerId?.let(viewModel::loadPeerVerification)
@@ -723,31 +723,31 @@ fun ChatRoomScreen(
             onOpenLeaderboard = if (conversation?.isGroupish == true) {
                 { viewModel.openLeaderboard() }
             } else null,
-            // R1-W2F F-FX-05 — the overflow menu's theme picker entry.
+            // R1-W2F F-FX-05 - the overflow menu's theme picker entry.
             onOpenTheme = { themeOpen = true },
-            // R1-W2I F-PI-03 — the pop-out mini-chat toggle (web header
+            // R1-W2I F-PI-03 - the pop-out mini-chat toggle (web header
             // PictureInPicture2 button: focused pane → close, else open).
             pipActive = pipFocusedId == conversationId,
             onTogglePip = { viewModel.togglePipPane() },
-            // D34 — DM peer verification badge state (null = unknown/loading).
+            // D34 - DM peer verification badge state (null = unknown/loading).
             peerVerified = if (dmPeerId != null) peerVerified else null,
-            // R2-A item 5 — the AI-recap header entry (web chat-room.tsx:4162).
+            // R2-A item 5 - the AI-recap header entry (web chat-room.tsx:4162).
             recapBusy = recapLoading,
             onRequestRecap = viewModel::requestRecap,
-            // R2-C item 1 — room info for EVERY room kind: web's header menu
+            // R2-C item 1 - room info for EVERY room kind: web's header menu
             // covers DMs too (chat-room.tsx:2153-2171 · room-info-page.tsx),
             // so the gate is only "the conversation is loaded". GroupInfoScreen
             // adapts itself for DMs (partner header, no members/invite/roles).
             onOpenRoomInfo = if (conversation != null) {
                 { onOpenRoomInfo(conversationId) }
             } else null,
-            // R3-B item 3 — the scheduled sends manager (overflow entry).
+            // R3-B item 3 - the scheduled sends manager (overflow entry).
             onOpenScheduled = { scheduledOpen = true },
             scheduledCount = scheduledItems.count { it.cancelledAtIso == null },
-            // R6 — BE7 — the reminders button (web header parity) + badge.
+            // R6 - BE7 - the reminders button (web header parity) + badge.
             onOpenReminders = viewModel::openReminders,
             remindersCount = remindersUpcoming,
-            // R8 Task 3-c — GROUP call dials (web chat-room header Phone/Video
+            // R8 Task 3-c - GROUP call dials (web chat-room header Phone/Video
             // group buttons, chat-room.tsx:4026-4053): voice always, video
             // beside it; groups only, permission gates live in the screen.
             onStartGroupVoice = if (conversation?.isGroupish == true) {
@@ -758,7 +758,7 @@ fun ChatRoomScreen(
             } else null,
         )
 
-        // Wave 2 topic rail — GROUP rooms only (DMs have nothing to file into).
+        // Wave 2 topic rail - GROUP rooms only (DMs have nothing to file into).
         if (conversation?.isGroupish == true) {
             TopicBar(
                 topics = topics,
@@ -807,14 +807,14 @@ fun ChatRoomScreen(
             Modifier
                 .weight(1f)
                 .then(
-                    // R1-W2F F-FX-05 — per-conversation override ?? global default
+                    // R1-W2F F-FX-05 - per-conversation override ?? global default
                     // (web effectiveConvWallpaper parity).
                     app.pulse.ui.PulseWallpaper.brush(effectiveWallpaper)
                         ?.let { brush -> Modifier.background(brush) }
                         ?: Modifier,
                 )
                 .then(
-                    // R1-W2F F-FX-05 — the tint glow replaces the TOP gradient
+                    // R1-W2F F-FX-05 - the tint glow replaces the TOP gradient
                     // stop (web applyConvTint parity), visible even on `none`.
                     roomTheme?.tint?.let { tint -> convTintGlow(tint) }
                         ?.let { brush -> Modifier.background(brush) }
@@ -846,7 +846,7 @@ fun ChatRoomScreen(
                                 downloading = state.downloadingFileId == message.id,
                                 voicePlayer = viewModel.voicePlayer,
                                 transcribing = message.id in transcribingIds,
-                                // R1-W2F F-MD-06 — per-message LLM translation state.
+                                // R1-W2F F-MD-06 - per-message LLM translation state.
                                 translating = translatingId == message.id,
                                 translatedText = translated[message.id],
                                 onTranscribe = viewModel::transcribeVoice,
@@ -855,7 +855,7 @@ fun ChatRoomScreen(
                                 onGameMove = { matchId, cell -> viewModel.gameMove(matchId, cell) },
                                 onGameJoin = { matchId -> viewModel.joinGame(matchId) },
                                 onGameLoad = { matchId -> viewModel.gameDetail(matchId) },
-                                // R7 item 3 — rematch POSTs a fresh challenge.
+                                // R7 item 3 - rematch POSTs a fresh challenge.
                                 onGameRematch = { match -> viewModel.rematch(match) },
                                 onRedPacketLoad = { id -> viewModel.redPacketDetail(id) },
                                 onRedPacketGrab = { id -> viewModel.grabRedPacket(id) },
@@ -864,7 +864,7 @@ fun ChatRoomScreen(
                                 onTournamentJoin = { id -> viewModel.joinTournament(id) },
                                 onTournamentFinish = { id -> viewModel.finishTournament(id) },
                                 onConsumeViewOnce = { target ->
-                                    // Reveal is instant — the POST is fire-and-forget (web parity).
+                                    // Reveal is instant - the POST is fire-and-forget (web parity).
                                     viewModel.consumeViewOnce(target)
                                     lightboxTarget = target
                                 },
@@ -880,13 +880,13 @@ fun ChatRoomScreen(
                                 onOpenImage = { lightboxTarget = message },
                                 onOpenFile = { viewModel.openFile(message, share = false) },
                                 onOpenThread = { onOpenThread(conversationId, message.id) },
-                                // D27 — long-press a reaction chip → who-reacted sheet.
+                                // D27 - long-press a reaction chip → who-reacted sheet.
                                 onWhoReacted = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                                     { emoji -> whoReactedFor = message to emoji }
                                 } else {
                                     null
                                 },
-                                // R6 — M6 — double-tap bubble toggles the heart reaction + heart burst
+                                // R6 - M6 - double-tap bubble toggles the heart reaction + heart burst
                                 // burst (web chat-room.tsx:7265-7268 + :7389-7394:
                                 // particles only when the tap ADDS the reaction).
                                 onDoubleClick = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
@@ -910,7 +910,7 @@ fun ChatRoomScreen(
                                 },
                                 head = row.head,
                                 tail = row.tail,
-                                // R7 item 2 — swipe the bubble toward the
+                                // R7 item 2 - swipe the bubble toward the
                                 // trailing edge to reply (web beginReply).
                                 onReply = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                                     {
@@ -922,7 +922,7 @@ fun ChatRoomScreen(
                                 modifier = Modifier
                                     .animateItem()
                                     .then(
-                                        // R7 item 1 — head rows restore the
+                                        // R7 item 1 - head rows restore the
                                         // room's normal rhythm above the bubble.
                                         if (row.head) Modifier.padding(top = clusterHeadGap) else Modifier,
                                     ),
@@ -932,11 +932,11 @@ fun ChatRoomScreen(
                 }
             }
 
-            // R7 item 1(c) — pinned day chip (web `sticky top-1`,
+            // R7 item 1(c) - pinned day chip (web `sticky top-1`,
             // chat-room.tsx:4406-4417): the OLDEST visible day pins to the top
             // edge whenever its natural chip has scrolled away. LazyListScope's
-            // stickyHeader pins to the reverseLayout START edge (the bottom) —
-            // the wrong edge for web semantics — so the pin derives from the
+            // stickyHeader pins to the reverseLayout START edge (the bottom) -
+            // the wrong edge for web semantics - so the pin derives from the
             // visible window instead.
             val pinnedDayChip by remember(rowsReversed) {
                 derivedStateOf {
@@ -968,7 +968,7 @@ fun ChatRoomScreen(
                 pinnedDayChip?.let { DaySeparator(it) }
             }
 
-            // R2-A item 4 — jump-to-latest pill (web chat-room.tsx:4527-4565):
+            // R2-A item 4 - jump-to-latest pill (web chat-room.tsx:4527-4565):
             // visible while scrolled away from the tail, badge = the number of
             // rows that landed off-screen; tap scrolls to the newest row.
             androidx.compose.animation.AnimatedVisibility(
@@ -1032,7 +1032,7 @@ fun ChatRoomScreen(
                 }
             }
 
-            // R2-A item 8 — the veil over the message area while the app is
+            // R2-A item 8 - the veil over the message area while the app is
             // backgrounded (web screen-privacy-veil: covers ONLY the messages;
             // header + composer stay untouched).
             if (screenPrivacyOn && privacyHidden) {
@@ -1068,7 +1068,7 @@ fun ChatRoomScreen(
                 }
             }
 
-            // Load failure — honest error card with retry (page fetch / offline).
+            // Load failure - honest error card with retry (page fetch / offline).
             androidx.compose.animation.AnimatedVisibility(
                 visible = state.error != null,
                 enter = fadeIn() + scaleIn(initialScale = 0.9f, animationSpec = PulseMotion.soft()),
@@ -1087,7 +1087,7 @@ fun ChatRoomScreen(
                 }
             }
 
-            // Wave 0 offline core — pending outbox state is honest, neutral,
+            // Wave 0 offline core - pending outbox state is honest, neutral,
             // and self-clearing: it shows while a `local_` bubble is queued
             // and disappears the moment the flush swaps it for the real row.
             val hasPending = messages.any { it.id.startsWith(TEMP_MESSAGE_PREFIX) }
@@ -1119,7 +1119,7 @@ fun ChatRoomScreen(
             }
         }
 
-        // Staged media card — upload lifecycle lives in the VM (never queued).
+        // Staged media card - upload lifecycle lives in the VM (never queued).
         AnimatedVisibility(
             visible = state.staged != null,
             enter = fadeIn() + scaleIn(initialScale = 0.96f, animationSpec = PulseMotion.soft()),
@@ -1204,7 +1204,7 @@ fun ChatRoomScreen(
             }
         }
 
-        // Offline honesty strip (spec row 7) — text queues, media won't.
+        // Offline honesty strip (spec row 7) - text queues, media won't.
         AnimatedVisibility(visible = state.connected == false) {
             Surface(
                 color = EmberPalette.CardFill,
@@ -1230,7 +1230,7 @@ fun ChatRoomScreen(
             }
         }
 
-        // R2-A item 5 — AI recap card pinned above the composer (web
+        // R2-A item 5 - AI recap card pinned above the composer (web
         // chat-room.tsx:4835-4900): loading spinner → summary with Copy, and
         // an auto-dismiss after 15 s so it never outstays its welcome.
         LaunchedEffect(recap) {
@@ -1316,7 +1316,7 @@ fun ChatRoomScreen(
             }
         }
 
-        // R2-A item 5 — the '/'-command palette (web chat-room.tsx:5199):
+        // R2-A item 5 - the '/'-command palette (web chat-room.tsx:5199):
         // drafts starting with '/' list the matched commands; a pick runs the
         // same outcome machine the web palette does.
         if (draft.startsWith("/") && state.editing == null) {
@@ -1326,7 +1326,7 @@ fun ChatRoomScreen(
             )
         }
 
-        // Wave 6 — @mention suggester above the composer (roster-filtered).
+        // Wave 6 - @mention suggester above the composer (roster-filtered).
         val memberNames = conversation?.memberNames.orEmpty()
         val activeToken = draft.substringAfterLast(' ', "")
         val mentionQuery = activeToken.takeIf { it.startsWith("@") }?.drop(1)?.lowercase().orEmpty()
@@ -1359,7 +1359,7 @@ fun ChatRoomScreen(
             }
         }
 
-        // ── R2-C item 5 — slow-mode countdown chip (web chat-room.tsx:4747-
+        // ── R2-C item 5 - slow-mode countdown chip (web chat-room.tsx:4747-
         // 4768): appears the moment the server answers 429, counts the honest
         // wait down live (mm:ss), then collapses. Send + mic stay disabled
         // while it shows.
@@ -1400,8 +1400,8 @@ fun ChatRoomScreen(
             }
         }
 
-        // ── R3-B item 3 — scheduled sends chip (web chat-room.tsx:4726-4741):
-        // "next · N pending — tap to manage" while this room has pending rows.
+        // ── R3-B item 3 - scheduled sends chip (web chat-room.tsx:4726-4741):
+        // "next · N pending - tap to manage" while this room has pending rows.
         val nextScheduled = scheduledItems.filter { it.cancelledAtIso == null }.minByOrNull { PulseTime.epochMs(it.scheduledAtIso) }
         if (nextScheduled != null) {
             Row(
@@ -1445,7 +1445,7 @@ fun ChatRoomScreen(
             }
         }
 
-        // ── R3-B item 4 — the armed-incognito hint (web chat-room.tsx:4800-4825,
+        // ── R3-B item 4 - the armed-incognito hint (web chat-room.tsx:4800-4825,
         // verbatim copy): tap the X to disarm before the next send.
         if (anonNext && conversation?.isGroupish == true && !recording) {
             Row(
@@ -1488,9 +1488,9 @@ fun ChatRoomScreen(
             }
         }
 
-        // ── R6 — M2: quick phrases rail (F-MS-29, web chat-room.tsx:5046-5060
+        // ── R6 - M2: quick phrases rail (F-MS-29, web chat-room.tsx:5046-5060
         // parity): composer-adjacent chips; tap appends the phrase to the
-        // draft (space-separated, then refocus — web insertQuickPhrase), the
+        // draft (space-separated, then refocus - web insertQuickPhrase), the
         // tail chip opens the manage sheet. Hidden while locked/blocked/
         // recording/editing exactly like the web rail.
         if (!composerLocked && !dmBlocked && !recording && state.editing == null) {
@@ -1515,9 +1515,9 @@ fun ChatRoomScreen(
             )
         }
 
-        // ── R7 item 5 — topic filing pill (web chat-room.tsx:4663-4690) ──
+        // ── R7 item 5 - topic filing pill (web chat-room.tsx:4663-4690) ──
         // While a topic is active and not editing: persistent emerald pill
-        // ABOVE the composer — MessagesSquare icon, "Filing to #<name>", X
+        // ABOVE the composer - MessagesSquare icon, "Filing to #<name>", X
         // stops filing and returns to General (setActiveTopicId(null)).
         val activeTopic = topics.firstOrNull { it.id == activeTopicId }
         androidx.compose.animation.AnimatedVisibility(
@@ -1566,12 +1566,12 @@ fun ChatRoomScreen(
             }
         }
 
-        // Composer — the text side swaps to the record bar while recording;
+        // Composer - the text side swaps to the record bar while recording;
         // the right slot (HoldRecordSlot) is ALWAYS mounted so the hold
-        // gesture survives. Wave 6 — broadcast channel lock: non-admins get
+        // gesture survives. Wave 6 - broadcast channel lock: non-admins get
         // the glass notice (web parity); the server still 403s non-admin posts.
-        // R6 — M5: a blocked DM pair gets the rose dead-end notice instead of
-        // the composer (web chat-room.tsx:5035-5044) — mic/send are gone with
+        // R6 - M5: a blocked DM pair gets the rose dead-end notice instead of
+        // the composer (web chat-room.tsx:5035-5044) - mic/send are gone with
         // it; the server 403 stays the authoritative gate.
         if (dmBlocked) {
             Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
@@ -1600,7 +1600,7 @@ fun ChatRoomScreen(
                 }
             }
         } else Surface(color = Color.Transparent) {
-            // D31 hold-to-record — the RIGHT slot is ALWAYS mounted (same node
+            // D31 hold-to-record - the RIGHT slot is ALWAYS mounted (same node
             // across idle → recording) so the press gesture survives the state
             // change: hold the mic to record, release to send, slide LEFT past
             // the threshold to cancel (bar shows "Release to cancel").
@@ -1621,8 +1621,8 @@ fun ChatRoomScreen(
                     } else {
                         // EMB composer: [incognito] [ pill: smile | field | camera ] [attach] [mic/send]
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            // R3-B item 4 — the incognito arming toggle (web anonNext;
-                            // GROUPS only — the server clamps anon off on DMs).
+                            // R3-B item 4 - the incognito arming toggle (web anonNext;
+                            // GROUPS only - the server clamps anon off on DMs).
                             if (conversation?.isGroupish == true) {
                                 IconButton(
                                     onClick = {
@@ -1648,7 +1648,7 @@ fun ChatRoomScreen(
                                     )
                                 }
                             }
-                            // EMB: the 52dp glass pill — PillFill, white 8% border, radius 26.
+                            // EMB: the 52dp glass pill - PillFill, white 8% border, radius 26.
                             Row(
                                 Modifier
                                     .weight(1f)
@@ -1701,7 +1701,7 @@ fun ChatRoomScreen(
                                         }
                                     },
                                 )
-                                // D30 camera glyph — the EXISTING capture trigger.
+                                // D30 camera glyph - the EXISTING capture trigger.
                                 IconButton(
                                     onClick = onCameraCapture,
                                     modifier = Modifier.clip(CircleShape),
@@ -1745,7 +1745,7 @@ fun ChatRoomScreen(
                     sending = sendingVoice,
                     micVisible = slotMic,
                     canSend = canSend,
-                    // R2-C item 5 — slow mode locks the mic (web disabled-mic parity).
+                    // R2-C item 5 - slow mode locks the mic (web disabled-mic parity).
                     enabled = !slowBlocked,
                     onRecordStart = onStartVoiceHold,
                     onRecordArm = { armed -> cancelArmed = armed },
@@ -1797,7 +1797,7 @@ fun ChatRoomScreen(
                 attachOpen = false
                 documentPicker.launch(PulseMedia.DOCUMENT_MIME_ARRAY)
             },
-            // R1-W2F F-MD-07 — one-shot fix → confirm sheet → kind:"location" row.
+            // R1-W2F F-MD-07 - one-shot fix → confirm sheet → kind:"location" row.
             onLocation = {
                 attachOpen = false
                 locationOpen = true
@@ -1816,7 +1816,7 @@ fun ChatRoomScreen(
                 if (viewModel.isGroup) viewModel.openTournament() else viewModel.notifySticky("Tournaments are for groups only")
             },
             onKanban = { attachOpen = false; viewModel.openKanban() },
-            // ── R4-B item 2 — Express rows ──
+            // ── R4-B item 2 - Express rows ──
             effectsOpen = attachEffectsOpen,
             onToggleEffects = { attachEffectsOpen = !attachEffectsOpen },
             onPickEffect = { effect ->
@@ -1832,7 +1832,7 @@ fun ChatRoomScreen(
                 } else {
                     // Empty draft → stage the command; the existing slash
                     // machine sends it on the next send tap (web arms the
-                    // effect — Android stages it visibly, honest parity).
+                    // effect - Android stages it visibly, honest parity).
                     draft = "/effects $effect "
                     viewModel.onDraftChanged(draft)
                 }
@@ -1861,7 +1861,7 @@ fun ChatRoomScreen(
             },
             // Group-gated like the composer toggle (web groupOnly parity):
             // null in DMs hides the row entirely. Both entries flip the SAME
-            // VM anonNext state — one source of truth.
+            // VM anonNext state - one source of truth.
             onIncognito = if (conversation?.isGroupish == true) {
                 {
                     attachOpen = false
@@ -1875,7 +1875,7 @@ fun ChatRoomScreen(
         )
     }
 
-    // R2-A item 5 — the palette's sticker / schedule / help hosts (the
+    // R2-A item 5 - the palette's sticker / schedule / help hosts (the
     // composables existed since R1-W2A; the palette pick now opens them with
     // REAL send/schedule paths).
     if (stickerOpen) {
@@ -1899,7 +1899,7 @@ fun ChatRoomScreen(
             },
         )
     }
-    // R3-B item 3 — the scheduled sends manager (consumes the VM's
+    // R3-B item 3 - the scheduled sends manager (consumes the VM's
     // `scheduled` StateFlow; cancel rides the existing cancelScheduled).
     if (scheduledOpen) {
         ScheduledSendsSheet(
@@ -1913,8 +1913,8 @@ fun ChatRoomScreen(
         SlashHelpDialog(onDismiss = { helpOpen = false })
     }
 
-    // R6 — M2: quick-phrase manager (F-MS-29). Add/delete ride the VM funcs
-    // (repo.addPhrase/deletePhrase — GET/POST/DELETE /api/users/{id}/phrases);
+    // R6 - M2: quick-phrase manager (F-MS-29). Add/delete ride the VM funcs
+    // (repo.addPhrase/deletePhrase - GET/POST/DELETE /api/users/{id}/phrases);
     // the rail refreshes through the same VM state the composer chips render.
     if (viewModel.phrasesOpen) {
         PhrasesSheet(
@@ -1926,7 +1926,7 @@ fun ChatRoomScreen(
         )
     }
 
-    // R1-W2F F-MD-07 — location confirm sheet (fix lives in the VM; dismissal
+    // R1-W2F F-MD-07 - location confirm sheet (fix lives in the VM; dismissal
     // detaches any still-running one-shot listener).
     if (locationOpen) {
         LocationShareSheet(
@@ -1945,7 +1945,7 @@ fun ChatRoomScreen(
         )
     }
 
-    // R1-W2F F-FX-05 — per-conversation theme picker (wallpaper + tint).
+    // R1-W2F F-FX-05 - per-conversation theme picker (wallpaper + tint).
     if (themeOpen) {
         ConvThemeSheet(
             current = roomTheme,
@@ -2009,7 +2009,7 @@ fun ChatRoomScreen(
             onUndo = { viewModel.undoWhiteboard(viewModel.conversationId) },
             onClear = { viewModel.clearWhiteboard(viewModel.conversationId) },
             onDismiss = { viewModel.whiteboardOpen = false },
-            // R2-C item 4 — the durable pending-stroke draft (survives close/death).
+            // R2-C item 4 - the durable pending-stroke draft (survives close/death).
             draft = WhiteboardDraftHooks(
                 load = { viewModel.whiteboardDraft(viewModel.conversationId) },
                 append = { viewModel.appendWhiteboardDraft(viewModel.conversationId, it) },
@@ -2040,8 +2040,8 @@ fun ChatRoomScreen(
             onCreate = { note, iso, anchor -> viewModel.createReminder(note, iso, anchor) },
             onResolve = { id -> viewModel.resolveReminder(id) },
             onDelete = { id -> viewModel.deleteReminder(id) },
-            // R7 item 4 — web REMINDER_JUMP_EVENT parity (reminders-sheet.tsx
-            // jump()): dismiss the sheet, then jump to the anchored message —
+            // R7 item 4 - web REMINDER_JUMP_EVENT parity (reminders-sheet.tsx
+            // jump()): dismiss the sheet, then jump to the anchored message -
             // this room's engine (flash + bounded expansion) or another room
             // via the jump-payload nav route.
             onJump = { r ->
@@ -2078,7 +2078,7 @@ fun ChatRoomScreen(
     }
 
     actionTarget?.let { target ->
-        // R3-B item 6 — web onSettled parity: the sheet stays open (row
+        // R3-B item 6 - web onSettled parity: the sheet stays open (row
         // spinning) while the kanban round-trip runs, then closes.
         var taskInFlight by remember { mutableStateOf(false) }
         LaunchedEffect(taskPending) {
@@ -2147,7 +2147,7 @@ fun ChatRoomScreen(
                 viewModel.addMessageToBoard(target.id, target.body)
                 actionTarget = null
             },
-            // R3-B item 6 — web "Convert to task": one-shot POST
+            // R3-B item 6 - web "Convert to task": one-shot POST
             // { userId, messageId } → /api/conversations/{id}/kanban.
             onConvertToTask = if (target.kind == Message.Kind.TEXT && !target.isDeleted && target.threadRootId == null) {
                 {
@@ -2161,7 +2161,7 @@ fun ChatRoomScreen(
                 viewModel.remindMe(target.id)
                 actionTarget = null
             },
-            // R1-W2F F-MD-06 — Translate (text rows only; the server rejects
+            // R1-W2F F-MD-06 - Translate (text rows only; the server rejects
             // the rest with its honest copy anyway).
             onTranslate = if (target.kind == Message.Kind.TEXT && !target.isDeleted && target.body.isNotBlank()) {
                 {
@@ -2195,10 +2195,10 @@ fun ChatRoomScreen(
         )
     }
 
-    // R6 — M1: the reaction chip tap/long-press already armed `whoReactedFor`
+    // R6 - M1: the reaction chip tap/long-press already armed `whoReactedFor`
     // (D27); this host finally renders it. The toggle button rides the SAME
     // VM react() toggle path as the quick-reaction grid (iOS WhoReactedSheet
-    // parity — the roster can toggle your own reaction from the list).
+    // parity - the roster can toggle your own reaction from the list).
     whoReactedFor?.let { (reactedMessage, reactedEmoji) ->
         WhoReactedSheet(
             message = reactedMessage,
@@ -2240,7 +2240,7 @@ fun ChatRoomScreen(
         )
     }
 
-    // Wave 6 — DM safety-number sheet (12×5 digits, settle-confirmed verify).
+    // Wave 6 - DM safety-number sheet (12×5 digits, settle-confirmed verify).
     safety?.let { current ->
         SafetyNumberSheetHost(safety = current, onDismiss = viewModel::closeSafety, onVerify = viewModel::verifySafety, onReset = viewModel::unverifySafety)
     }
@@ -2263,7 +2263,7 @@ internal sealed interface TimelineRow {
 
     /**
      * A river message (thread replies never reach this list).
-     * R7 item 1 — [head] opens a visual cluster (sender label renders only
+     * R7 item 1 - [head] opens a visual cluster (sender label renders only
      * here), [tail] closes one (web chat-room.tsx:1376-1393 cluster parity).
      */
     data class Msg(
@@ -2277,7 +2277,7 @@ internal sealed interface TimelineRow {
 
 /**
  * Asc rows with a centered day pill wherever the calendar date changes.
- * R2-A item 4 — [unreadAnchorMs] (the viewer's pre-open read watermark, null
+ * R2-A item 4 - [unreadAnchorMs] (the viewer's pre-open read watermark, null
  * = no divider) inserts an [TimelineRow.Unread] row before the first OTHER
  * person's non-deleted message newer than the watermark (web chat-room.tsx
  * buildTimeline unreadDividerPlaced parity).
@@ -2290,10 +2290,10 @@ internal fun buildTimelineRows(
     val rows = mutableListOf<TimelineRow>()
     var lastIso: String? = null
     var dividerPlaced = unreadAnchorMs == null
-    // R7 item 1 — the pure clustering kernel (web chat-room.tsx:1376-1393):
+    // R7 item 1 - the pure clustering kernel (web chat-room.tsx:1376-1393):
     // head = sender-label row, tail = closes the run. Thread replies are
     // already excluded upstream (ChatRoomViewModel filters threadRootId !=
-    // null — web `parentId !== null` filter parity), deleted rows stay.
+    // null - web `parentId !== null` filter parity), deleted rows stay.
     val clusterFlags = app.pulse.protocol.PulseClusterKernel.flags(
         messages.map { m ->
             app.pulse.protocol.PulseClusterKernel.Entry(
@@ -2530,7 +2530,7 @@ private fun RoomSearchBar(
 }
 
 /**
- * Attach sheet — photo picker, camera capture (D30), system document or poll
+ * Attach sheet - photo picker, camera capture (D30), system document or poll
  * builder (spec row 9 + Wave 2).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -2540,7 +2540,7 @@ private fun AttachSheet(
     onPhoto: () -> Unit,
     onCamera: () -> Unit,
     onDocument: () -> Unit,
-    // R1-W2F F-MD-07 — share a live pin (one-shot fix → confirm sheet).
+    // R1-W2F F-MD-07 - share a live pin (one-shot fix → confirm sheet).
     onLocation: () -> Unit,
     onPoll: () -> Unit,
     onWhiteboard: () -> Unit,
@@ -2549,7 +2549,7 @@ private fun AttachSheet(
     onGame: () -> Unit,
     onTournament: () -> Unit,
     onKanban: () -> Unit,
-    // R4-B item 2 — the web tray's Express group (chat-room.tsx:2752-2800).
+    // R4-B item 2 - the web tray's Express group (chat-room.tsx:2752-2800).
     // Discoverability only: every row opens/toggles an EXISTING engine.
     effectsOpen: Boolean,
     onToggleEffects: () -> Unit,
@@ -2562,11 +2562,11 @@ private fun AttachSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         SheetAction(PulseIcons.ImageIcon, "Photo", onPhoto)
-        // D30 — take a full-resolution shot with the system camera app; the
+        // D30 - take a full-resolution shot with the system camera app; the
         // file flows through the same ≤1280px JPEG upload path as "Photo".
         SheetAction(PulseIcons.Camera, "Camera", onCamera)
         SheetAction(PulseIcons.File, "Document", onDocument)
-        // R1-W2F F-MD-07 — wire kind whitelist carries "location" with the
+        // R1-W2F F-MD-07 - wire kind whitelist carries "location" with the
         // payload blob {lat,lng,label} (web/iOS parity).
         SheetAction(PulseIcons.MapPin, "Location", onLocation, tint = PulsePalette.Emerald)
         SheetAction(PulseIcons.Poll, "Poll", onPoll, tint = PulsePalette.Emerald)
@@ -2578,7 +2578,7 @@ private fun AttachSheet(
         SheetAction(PulseIcons.Trophy, "Tournament", onTournament)
         SheetAction(PulseIcons.Columns, "Kanban", onKanban)
 
-        // ── R4-B item 2 — Express (web tray group verbatim label) ──
+        // ── R4-B item 2 - Express (web tray group verbatim label) ──
         Text(
             "EXPRESS",
             fontSize = 10.sp,
@@ -2587,7 +2587,7 @@ private fun AttachSheet(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 24.dp, top = 8.dp, bottom = 2.dp),
         )
-        // Effects submenu — the web tray's inline effect chips
+        // Effects submenu - the web tray's inline effect chips
         // (chat-room.tsx:4992-5025): confetti | lasers | echo | sparkles,
         // each routing into the SAME outcome machine as the /effects slash.
         if (effectsOpen) {
@@ -2643,10 +2643,10 @@ private fun AttachSheet(
     }
 }
 
-// ── R1-W2F — F-FX-05 per-conversation theme picker ──────────────────────
+// ── R1-W2F - F-FX-05 per-conversation theme picker ──────────────────────
 
 /**
- * Web CONV_TINT_META swatch colors (the bg-*-500 Tailwind classes) — shared
+ * Web CONV_TINT_META swatch colors (the bg-*-500 Tailwind classes) - shared
  * by the picker chips and the room glow so they can never drift.
  */
 private fun convTintSwatch(tint: String): Color = when (tint) {
@@ -2659,7 +2659,7 @@ private fun convTintSwatch(tint: String): Color = when (tint) {
 }
 
 /**
- * Web applyConvTint parity — the tint REPLACES the top gradient stop over the
+ * Web applyConvTint parity - the tint REPLACES the top gradient stop over the
  * wallpaper (visible even on the `none` wallpaper); alphas mirror
  * CONV_TINT_META glow values (emerald/violet 0.17, rose/amber/teal 0.16).
  */
@@ -2679,7 +2679,7 @@ private fun wallpaperLabel(token: String): String =
     app.pulse.ui.PulseWallpaper.TOKENS.firstOrNull { it.first == token }?.second ?: token
 
 /**
- * R1-W2F F-FX-05 — per-conversation theme picker (web ConvThemePicker
+ * R1-W2F F-FX-05 - per-conversation theme picker (web ConvThemePicker
  * parity, iMessage-style): the SAME wallpaper swatches the Wave-8 Appearance
  * picker renders (PulseWallpaper.TOKENS) + optional tint chips + "Reset to
  * default". Every tap commits through the prefs store (`chat.convThemes`,
@@ -2827,7 +2827,7 @@ internal fun ConvThemeSheet(
 }
 
 /**
- * Staged attachment card — preview, caption, upload spinner or inline error
+ * Staged attachment card - preview, caption, upload spinner or inline error
  * retry. Media is NEVER queued: send either delivers or surfaces the error.
  */
 @Composable
@@ -2923,7 +2923,7 @@ private fun StagedMediaCard(
                     Icon(PulseIcons.X, contentDescription = "Remove attachment", modifier = Modifier.size(15.dp), tint = Color.White.copy(alpha = 0.55f))
                 }
             }
-            // Wave 2 view-once send toggle — IMAGE kind only (the wire
+            // Wave 2 view-once send toggle - IMAGE kind only (the wire
             // requires imagePath when viewOnce===true). Spec §1 row 5: this
             // tray tile is a native ADD, deliberately absent on web.
             if (staged.kind == StagedMedia.Kind.IMAGE) {
@@ -2990,28 +2990,28 @@ private fun RoomHeader(
     onToggleSearch: () -> Unit,
     onOpenSafety: (() -> Unit)? = null,
     onOpenLeaderboard: (() -> Unit)? = null,
-    // R1-W2F F-FX-05 — the room overflow menu (chat theme entry).
+    // R1-W2F F-FX-05 - the room overflow menu (chat theme entry).
     onOpenTheme: () -> Unit = {},
-    // R1-W2I F-PI-03 — the pop-out mini-chat toggle (web chat-room.tsx
+    // R1-W2I F-PI-03 - the pop-out mini-chat toggle (web chat-room.tsx
     // header PictureInPicture2 button, aria "Open/Close mini chat window").
     pipActive: Boolean = false,
     onTogglePip: () -> Unit = {},
-    // D34 — DM peer verification state (null = unknown/loading): emerald
+    // D34 - DM peer verification state (null = unknown/loading): emerald
     // badge when verified, amber dot only when unverified (web parity).
     peerVerified: Boolean? = null,
-    // R2-A item 5 — the AI-recap header entry (web chat-room.tsx:4162-4166:
+    // R2-A item 5 - the AI-recap header entry (web chat-room.tsx:4162-4166:
     // disabled while the LLM round-trip is in flight).
     recapBusy: Boolean = false,
     onRequestRecap: () -> Unit = {},
-    // R2-A item 6/7/8/9 — room info (GroupInfoScreen); null on DMs.
+    // R2-A item 6/7/8/9 - room info (GroupInfoScreen); null on DMs.
     onOpenRoomInfo: (() -> Unit)? = null,
-    // R3-B item 3 — the scheduled sends manager (overflow row + pending count).
+    // R3-B item 3 - the scheduled sends manager (overflow row + pending count).
     onOpenScheduled: () -> Unit = {},
     scheduledCount: Int = 0,
-    // R6 — BE7 — the room reminders entry (web header button + badge).
+    // R6 - BE7 - the room reminders entry (web header button + badge).
     onOpenReminders: () -> Unit = {},
     remindersCount: Int = 0,
-    // R8 Task 3-c — GROUP call dials (null = not a group / no shell session).
+    // R8 Task 3-c - GROUP call dials (null = not a group / no shell session).
     onStartGroupVoice: (() -> Unit)? = null,
     onStartGroupVideo: (() -> Unit)? = null,
 ) {
@@ -3087,7 +3087,7 @@ private fun RoomHeader(
                         )
                     }
                 }
-                // Wave 6 — DM safety-number entry (web chat-room ShieldCheck).
+                // Wave 6 - DM safety-number entry (web chat-room ShieldCheck).
                 if (onOpenSafety != null) {
                     IconButton(onClick = onOpenSafety, modifier = Modifier.size(28.dp)) {
                         Icon(
@@ -3099,7 +3099,7 @@ private fun RoomHeader(
                     }
                 }
             }
-            // Wave 5 voice room entry — tints live while this room has a
+            // Wave 5 voice room entry - tints live while this room has a
             // joined voice seat; the pill shows the live roster size.
             if (voiceJoined) {
                 Surface(
@@ -3128,7 +3128,7 @@ private fun RoomHeader(
                     stateDescription = if (voiceJoined) "In voice room" else "Not in voice room"
                 },
             )
-            // R8 Task 3-c — group voice/video call buttons (web chat-room
+            // R8 Task 3-c - group voice/video call buttons (web chat-room
             // header parity, aria "Start group voice/video call").
             if (onStartGroupVoice != null) {
                 EmberGlassButton(
@@ -3156,7 +3156,7 @@ private fun RoomHeader(
                 label = if (searchOpen) "Close search" else "Search in conversation",
                 onClick = onToggleSearch,
             )
-            // R6 — BE7 — reminders (web chat-room header BellRing/Schedule
+            // R6 - BE7 - reminders (web chat-room header BellRing/Schedule
             // parity): opens the existing RemindersSheet; the emerald badge
             // shows the upcoming (unfired) count when non-zero.
             Box {
@@ -3183,7 +3183,7 @@ private fun RoomHeader(
                     }
                 }
             }
-            // R1-W2F — the room overflow menu (new host; the header previously
+            // R1-W2F - the room overflow menu (new host; the header previously
             // had only icon buttons). F-FX-05's theme picker entry lives here;
             // future room actions slot in below.
             var roomMenuOpen by remember { mutableStateOf(false) }
@@ -3194,8 +3194,8 @@ private fun RoomHeader(
                     onClick = { roomMenuOpen = true },
                 )
                 DropdownMenu(expanded = roomMenuOpen, onDismissRequest = { roomMenuOpen = false }) {
-                    // R2-A item 6/7/8/9 — room info (automations, webhooks,
-                    // screen security, photo) — groups/channels only.
+                    // R2-A item 6/7/8/9 - room info (automations, webhooks,
+                    // screen security, photo) - groups/channels only.
                     if (onOpenRoomInfo != null) {
                         DropdownMenuItem(
                             text = { Text("Room info") },
@@ -3208,7 +3208,7 @@ private fun RoomHeader(
                             },
                         )
                     }
-                    // R2-A item 5 — AI recap (web header overflow parity).
+                    // R2-A item 5 - AI recap (web header overflow parity).
                     DropdownMenuItem(
                         text = { Text(if (recapBusy) "Summarizing…" else "AI recap") },
                         leadingIcon = {
@@ -3230,7 +3230,7 @@ private fun RoomHeader(
                             onOpenTheme()
                         },
                     )
-                    // R1-W2I F-PI-03 — pop-out mini chat (web chat-room.tsx
+                    // R1-W2I F-PI-03 - pop-out mini chat (web chat-room.tsx
                     // :4023-4037: focused pane → close, else open this room).
                     DropdownMenuItem(
                         text = { Text(if (pipActive) "Close mini chat window" else "Open mini chat window") },
@@ -3247,7 +3247,7 @@ private fun RoomHeader(
                             onTogglePip()
                         },
                     )
-                    // R3-B item 3 — the scheduled sends manager (web tray row
+                    // R3-B item 3 - the scheduled sends manager (web tray row
                     // "Manage N pending scheduled messages", chat-room.tsx:8650).
                     DropdownMenuItem(
                         text = {
@@ -3301,7 +3301,7 @@ private fun MessageRow(
     downloading: Boolean,
     voicePlayer: VoicePlayer,
     transcribing: Boolean,
-    // R1-W2F F-MD-06 — inline LLM translation for the text bubble.
+    // R1-W2F F-MD-06 - inline LLM translation for the text bubble.
     translating: Boolean = false,
     translatedText: String? = null,
     onTranscribe: (String) -> Unit,
@@ -3317,7 +3317,7 @@ private fun MessageRow(
     onGameMove: (String, Int) -> Unit = { _, _ -> },
     onGameJoin: (String) -> Unit = {},
     onGameLoad: suspend (String) -> app.pulse.protocol.GameDetailDto? = { null },
-    // R7 item 3 — rematch on finished matches (web game-tictactoe-card.tsx).
+    // R7 item 3 - rematch on finished matches (web game-tictactoe-card.tsx).
     onGameRematch: suspend (app.pulse.protocol.GameMatchDto) -> Unit = {},
     onRedPacketLoad: suspend (String) -> app.pulse.protocol.RedPacketDetailDto? = { null },
     onRedPacketGrab: (String) -> Unit = {},
@@ -3325,15 +3325,15 @@ private fun MessageRow(
     onTournamentLoad: suspend (String) -> app.pulse.protocol.TournamentSummaryDto? = { null },
     onTournamentJoin: (String) -> Unit = {},
     onTournamentFinish: (String) -> Unit = {},
-    // D27 — long-press a reaction chip → who-reacted sheet (null = inert).
+    // D27 - long-press a reaction chip → who-reacted sheet (null = inert).
     onWhoReacted: ((String) -> Unit)? = null,
-    // R6 — M6 — double-tap the bubble fires the heart quick reaction (null = inert).
+    // R6 - M6 - double-tap the bubble fires the heart quick reaction (null = inert).
     onDoubleClick: (() -> Unit)? = null,
-    // R7 item 1 — cluster position (web chat-room.tsx:1376-1393): the sender
+    // R7 item 1 - cluster position (web chat-room.tsx:1376-1393): the sender
     // label renders ONLY on head rows; non-head rows tuck up tight.
     head: Boolean = true,
     tail: Boolean = true,
-    // R7 item 2 — swipe-bubble-to-reply (web drag="x" onDragEnd toward > 28;
+    // R7 item 2 - swipe-bubble-to-reply (web drag="x" onDragEnd toward > 28;
     // null = inert: deleted rows + queued local_ echoes keep web's gate).
     onReply: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -3359,10 +3359,10 @@ private fun MessageRow(
             return@Column
         }
 
-        // Group sender label above their first bubble run — incognito rows
+        // Group sender label above their first bubble run - incognito rows
         // (R3-B item 4) mask the real name behind the server alias with a
         // neutral zinc dot (web anonMasked parity, chat-room.tsx:7232-7235).
-        // R7 item 1 — head-only (web chat-room.tsx:7313 `head && !deleted`).
+        // R7 item 1 - head-only (web chat-room.tsx:7313 `head && !deleted`).
         if (!mine && head && conversation?.isGroupish == true) {
             val anonMasked = message.anon && message.anonAlias != null
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)) {
@@ -3388,7 +3388,7 @@ private fun MessageRow(
             }
         }
 
-        // ── R7 item 2 — swipe-bubble-to-reply (web chat-room.tsx:7248-7373) ──
+        // ── R7 item 2 - swipe-bubble-to-reply (web chat-room.tsx:7248-7373) ──
         // Horizontal drag with a ±64dp clamp, spring snap-back on release,
         // reply when the toward-trailing-edge offset (toward = mine ? -x : x)
         // passes 28dp. The static reply-arrow hint chip fades 0→1 between 4
@@ -3466,14 +3466,14 @@ private fun MessageRow(
                     ),
             ) {
             // Wave 2 view-once gate (spec §1 row 6): only the RECEIVER is
-            // gated — the sender always sees their own photo normally.
+            // gated - the sender always sees their own photo normally.
             val viewOncePhoto = message.viewOnce && message.imagePath != null
             val burned = viewOncePhoto && !mine && message.viewedAt != null
             val gated = viewOncePhoto && !mine && message.viewedAt == null && !message.isDeleted
             when {
-                // Tombstone — soft-deleted rows render the honest placeholder.
+                // Tombstone - soft-deleted rows render the honest placeholder.
                 message.isDeleted -> TombstoneBubble()
-                // Wave 7 — red packet carrier (payload {packetId,total,count,note}).
+                // Wave 7 - red packet carrier (payload {packetId,total,count,note}).
                 message.kind == Message.Kind.RED_PACKET -> MediaWithQuote(
                     quoteId = message.replyToId,
                     quoteBody = message.replyToBody,
@@ -3495,7 +3495,7 @@ private fun MessageRow(
                         )
                     },
                 )
-                // Wave 7 — tic-tac-toe carrier (payload {matchId, game}).
+                // Wave 7 - tic-tac-toe carrier (payload {matchId, game}).
                 message.kind == Message.Kind.GAME -> MediaWithQuote(
                     quoteId = message.replyToId,
                     quoteBody = message.replyToBody,
@@ -3511,12 +3511,12 @@ private fun MessageRow(
                             load = { onGameLoad(gp?.matchId ?: "") },
                             onMove = { cell -> onGameMove(gp?.matchId ?: "", cell) },
                             onJoin = { onGameJoin(gp?.matchId ?: "") },
-                            // R7 item 3 — the loaded match drives the rematch POST.
+                            // R7 item 3 - the loaded match drives the rematch POST.
                             onRematch = { match -> onGameRematch(match) },
                         )
                     },
                 )
-                // Wave 7 — tournament carrier (payload {tournamentId, name, game}).
+                // Wave 7 - tournament carrier (payload {tournamentId, name, game}).
                 message.kind == Message.Kind.TOURNAMENT -> MediaWithQuote(
                     quoteId = message.replyToId,
                     quoteBody = message.replyToBody,
@@ -3536,7 +3536,7 @@ private fun MessageRow(
                         )
                     },
                 )
-                // Live poll — PollCard replaces the body text entirely.
+                // Live poll - PollCard replaces the body text entirely.
                 message.poll != null || message.kind == Message.Kind.POLL -> MediaWithQuote(
                     quoteId = message.replyToId,
                     quoteBody = message.replyToBody,
@@ -3553,7 +3553,7 @@ private fun MessageRow(
                         )
                     },
                 )
-                // Burned (viewed) — NO image render path at all (anti-replay).
+                // Burned (viewed) - NO image render path at all (anti-replay).
                 burned -> MediaWithQuote(
                     quoteId = message.replyToId,
                     quoteBody = message.replyToBody,
@@ -3562,7 +3562,7 @@ private fun MessageRow(
                     onQuoteClick = onQuoteClick,
                     content = { BurnedPhotoBubble() },
                 )
-                // Gated (unopened) — blurred + overlay; tap consumes + reveals.
+                // Gated (unopened) - blurred + overlay; tap consumes + reveals.
                 gated -> MediaWithQuote(
                     quoteId = message.replyToId,
                     quoteBody = message.replyToBody,
@@ -3585,7 +3585,7 @@ private fun MessageRow(
                     onQuoteClick = onQuoteClick,
                     content = { ImageBubble(message = message, mine = mine, onOpen = onOpenImage) },
                 )
-                // R1-W2F F-MD-07 — tappable pin row (payload {lat,lng,label});
+                // R1-W2F F-MD-07 - tappable pin row (payload {lat,lng,label});
                 // tap fires ACTION_VIEW geo:lat,lng. Before the imagePath/file
                 // gates so a pin never falls into their paths.
                 message.kind == Message.Kind.LOCATION -> MediaWithQuote(
@@ -3612,18 +3612,18 @@ private fun MessageRow(
                     flashing = flashing,
                     onLongPress = onLongPress,
                     onQuoteClick = onQuoteClick,
-                    // R6 — M6 — the heart double-tap rides the text bubble.
+                    // R6 - M6 - the heart double-tap rides the text bubble.
                     onDoubleClick = onDoubleClick,
                     voicePlayer = voicePlayer,
                     onTranscribe = onTranscribe,
                     transcribing = transcribing,
-                    // R1-W2F F-MD-06 — inline translation line under the body.
+                    // R1-W2F F-MD-06 - inline translation line under the body.
                     translating = translating,
                     translatedText = translatedText,
-                    // R3-B item 2 — the roster that drives @mention highlight.
+                    // R3-B item 2 - the roster that drives @mention highlight.
                     memberNames = conversation?.memberNames.orEmpty(),
                     bubbleCornerDp = bubbleCornerDp,
-                    // R7 item 1 — the grouped-first bubble tucks its top corner.
+                    // R7 item 1 - the grouped-first bubble tucks its top corner.
                     head = head,
                 )
             }
@@ -3671,7 +3671,7 @@ private fun MessageRow(
             }
         }
 
-        // Thread chip — "N replies ↳" on parents (live counts, tap opens the thread).
+        // Thread chip - "N replies ↳" on parents (live counts, tap opens the thread).
         if (replyCount > 0 && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
             Surface(
                 shape = RoundedCornerShape(999.dp),
@@ -3708,7 +3708,7 @@ private fun MessageRow(
         // Tick line on the LAST own message: queued clock, sent tick, seen double tick.
         if (mine && isLastMine) {
             if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
-                // Queued in the outbox — a clock, never a false "Seen".
+                // Queued in the outbox - a clock, never a false "Seen".
                 Row(
                     Modifier.padding(end = 4.dp, top = 1.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -3810,20 +3810,20 @@ internal fun Bubble(
     flashing: Boolean,
     onLongPress: (() -> Unit)?,
     onQuoteClick: ((String) -> Unit)?,
-    // R6 — M6: double-tap toggles the heart reaction (text bubbles; media bubbles keep their
+    // R6 - M6: double-tap toggles the heart reaction (text bubbles; media bubbles keep their
     // own open-on-tap, matching the web interactive gate `!isImage && !isFile`).
     onDoubleClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     voicePlayer: VoicePlayer? = null,
     onTranscribe: ((String) -> Unit)? = null,
     transcribing: Boolean = false,
-    // R1-W2F F-MD-06 — per-message LLM translation render state.
+    // R1-W2F F-MD-06 - per-message LLM translation render state.
     translating: Boolean = false,
     translatedText: String? = null,
-    // R3-B item 2 — the room roster; @Name tokens render as mention chips.
+    // R3-B item 2 - the room roster; @Name tokens render as mention chips.
     memberNames: List<String> = emptyList(),
     bubbleCornerDp: androidx.compose.ui.unit.Dp = 20.dp,
-    // R7 item 1 — cluster head: the grouped-first bubble tucks its near-sender
+    // R7 item 1 - cluster head: the grouped-first bubble tucks its near-sender
     // top corner to 6dp (ember bubble shape, spec item 3).
     head: Boolean = true,
 ) {
@@ -3866,8 +3866,8 @@ internal fun Bubble(
             .wrapContentWidth(if (mine) Alignment.End else Alignment.Start)
             .border(2.dp, PulsePalette.Amber.copy(alpha = flashAlpha), shape)
             .then(
-                // R6 — M6: double-tap toggles the heart quick reaction (web
-                // chat-room.tsx:7265-7268) — long-press keeps opening the
+                // R6 - M6: double-tap toggles the heart quick reaction (web
+                // chat-room.tsx:7265-7268) - long-press keeps opening the
                 // action sheet, single tap stays inert exactly as before.
                 if (onLongPress != null || onDoubleClick != null) {
                     Modifier.combinedClickable(
@@ -3885,7 +3885,7 @@ internal fun Bubble(
                 .background(background, shape)
                 .padding(horizontal = 13.dp, vertical = 9.dp),
         ) {
-            // reply quote — tap jumps to the quoted message (when a jump
+            // reply quote - tap jumps to the quoted message (when a jump
             // surface exists; thread bubbles render it read-only).
             val replyBody = message.replyToBody
             val quoteId = message.replyToId
@@ -3928,7 +3928,7 @@ internal fun Bubble(
                     transcribing = transcribing,
                 )
             } else if (isVoice) {
-                // Defensive: voice rows without a player (shouldn't happen —
+                // Defensive: voice rows without a player (shouldn't happen -
                 // both screens inject the singleton) render the static bars.
                 VoiceBubbleStatic(message, contentColor)
             } else when (message.kind) {
@@ -3938,9 +3938,9 @@ internal fun Bubble(
                     Text("Photo", color = contentColor, style = MaterialTheme.typography.bodyMedium)
                 }
                 else -> Column {
-                    // R3-B item 1/2/3 — rich body: markdown/spoilers/mention
+                    // R3-B item 1/2/3 - rich body: markdown/spoilers/mention
                     // chips via FormattedMessageBody, with the web jumbo gate
-                    // (chat-room.tsx:7213/7603-7604) first — pure-emoji short
+                    // (chat-room.tsx:7213/7603-7604) first - pure-emoji short
                     // rows render oversized (34sp, 1.2 line) instead.
                     val jumbo = message.poll == null && MessageTextParser.isJumboEmoji(message.body)
                     if (jumbo) {
@@ -3969,7 +3969,7 @@ internal fun Bubble(
                 }
             }
 
-            // ── R1-W2F F-MD-06 — inline LLM translation (web TranslationLine
+            // ── R1-W2F F-MD-06 - inline LLM translation (web TranslationLine
             // parity: italic secondary line under the bubble content; the
             // conversationId-independent map overwrites on re-translate).
             if (translating) {
@@ -4005,7 +4005,7 @@ internal fun Bubble(
                 horizontalArrangement = Arrangement.End,
             ) {
                 if (message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
-                    // Pending outbox bubble — clock marker replaces the clock text.
+                    // Pending outbox bubble - clock marker replaces the clock text.
                     Icon(
                         PulseIcons.Clock,
                         contentDescription = "Queued",
@@ -4073,7 +4073,7 @@ private fun VoiceBubbleStatic(message: Message, contentColor: Color) {
         Icon(PulseIcons.Waveform, contentDescription = "Voice message", tint = contentColor, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-            // D31 — the exact web voiceBars LCG (same bars as web/iOS per id).
+            // D31 - the exact web voiceBars LCG (same bars as web/iOS per id).
             val bars = remember(message.id) { PulseMedia.voiceBubbleBars(message.id, count = 16) }
             bars.forEach { v ->
                 val h = (4 + (v - 28) / 72f * 14f).dp
@@ -4097,11 +4097,11 @@ private fun VoiceBubbleStatic(message: Message, contentColor: Color) {
 }
 
 /**
- * Native waveform placeholder — deterministic bars from the message id, now
+ * Native waveform placeholder - deterministic bars from the message id, now
  * interactive (Wave 2): play/pause circle, 26 bars recolored by playback
  * progress, current/total time and the 1x→1.5x→2x speed chip (persisted pref,
  * chip hidden below API 23 where setPlaybackParams doesn't exist). The
- * transcript strip renders under the bubble row — text when present, a
+ * transcript strip renders under the bubble row - text when present, a
  * "Transcribe" pill otherwise (never on optimistic local_ rows).
  */
 @Composable
@@ -4148,8 +4148,8 @@ private fun VoiceBubble(
                 }
             }
             Spacer(Modifier.width(8.dp))
-            // 26 deterministic bars — full color up to the playhead, dim after.
-            // D31 — the exact web voiceBars LCG: identical bars on web/iOS for
+            // 26 deterministic bars - full color up to the playhead, dim after.
+            // D31 - the exact web voiceBars LCG: identical bars on web/iOS for
             // the same message id (the wire carries NO waveform; all three
             // surfaces derive it from the id deterministically).
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -4176,7 +4176,7 @@ private fun VoiceBubble(
                 style = MaterialTheme.typography.labelSmall,
                 color = contentColor.copy(alpha = 0.8f),
             )
-            // Speed chip — API 23+ only (setPlaybackParams guard).
+            // Speed chip - API 23+ only (setPlaybackParams guard).
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 Spacer(Modifier.width(6.dp))
                 Surface(
@@ -4251,7 +4251,7 @@ private fun slowCountdown(totalSeconds: Int): String {
 }
 
 /**
- * The composer's right slot — ALWAYS the same node across idle → recording
+ * The composer's right slot - ALWAYS the same node across idle → recording
  * so a press gesture started on the mic survives the recording bar replacing
  * the composer (release then lands where the finger went down).
  *
@@ -4353,7 +4353,7 @@ private fun HoldRecordSlot(
 /**
  * The left section while recording: cancel button, pulsing red dot, m:ss timer,
  * LIVE waveform bars (one per 100ms amplitude sample, deterministic from the
- * mic readings — no random) and the release hint. Replaces only the composer
+ * mic readings - no random) and the release hint. Replaces only the composer
  * text; the right slot [HoldRecordSlot] stays mounted for the release.
  */
 @Composable
@@ -4376,7 +4376,7 @@ private fun RecordBarContent(
             Icon(PulseIcons.X, contentDescription = "Cancel recording", tint = PulsePalette.Rose)
         }
         Spacer(Modifier.width(4.dp))
-        // Red pulsing dot — infinite alpha breathing.
+        // Red pulsing dot - infinite alpha breathing.
         val pulse = rememberInfiniteTransition(label = "recordPulse")
         val dotAlpha by pulse.animateFloat(
             initialValue = 1f,
@@ -4431,7 +4431,7 @@ private fun RecordBarContent(
 }
 
 /**
- * Live hold-to-record waveform — one bar per amplitude sample (the VM keeps
+ * Live hold-to-record waveform - one bar per amplitude sample (the VM keeps
  * the last [PulseMedia.RECORD_WAVEFORM_BARS]). Bar height is a pure function
  * of the recorded amplitude (4..24dp), nothing random.
  */
@@ -4459,7 +4459,7 @@ private fun RecordWaveform(
 }
 
 /**
- * D30/D31 permission-denied explainer — an honest inline row above the
+ * D30/D31 permission-denied explainer - an honest inline row above the
  * composer with a jump to the app's Settings page. No crash, no dead end;
  * dismissible; the permission launchers clear the state on grant.
  */
@@ -4519,7 +4519,7 @@ private fun openAppSettings(context: android.content.Context) {
  * Wave 2 live poll card (spec §1 rows 2/3/4): header, bold question,
  * single-choice option rows with animated %-fill bars, vote footer and the
  * creator-only End button. Own pick derives ONLY from poll.pickFor(viewerId)
- * — myOptionId is actor-relative on relays and null on history (proven bug).
+ * - myOptionId is actor-relative on relays and null on history (proven bug).
  */
 @Composable
 internal fun PollCard(
@@ -4668,7 +4668,7 @@ internal fun PollCard(
 }
 
 /**
- * Wave 2 link preview card (spec §1 row 8) — thumbnail (≤120dp, clipped),
+ * Wave 2 link preview card (spec §1 row 8) - thumbnail (≤120dp, clipped),
  * title, 2-line description, siteName/host + Link glyph; tap opens the URL
  * in the browser (custom tab not required for this wave).
  */
@@ -4746,7 +4746,7 @@ private fun LinkPreviewCard(
 }
 
 /**
- * Wave 2 topic rail — GROUP rooms only (spec §1 row 9). General = WHOLE room
+ * Wave 2 topic rail - GROUP rooms only (spec §1 row 9). General = WHOLE room
  * (activeTopicId == null, unfiltered); topic chips show {emoji} {name} plus a
  * capped count badge; the dashed trailing "+" chip unfolds the inline create
  * panel (name ≤32 + emoji row). Tap a chip → [onSelect].
@@ -4791,7 +4791,7 @@ private fun TopicBar(
                         },
                     )
                 }
-                // dashed "+" chip — opens the inline create panel
+                // dashed "+" chip - opens the inline create panel
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(999.dp))
@@ -4946,7 +4946,7 @@ private fun TopicChip(
     }
 }
 
-// ── Wave 6 — DM safety-number sheet (web safety-sheet parity) ───────────
+// ── Wave 6 - DM safety-number sheet (web safety-sheet parity) ───────────
 
 private fun safetyStamp(iso: String): String = runCatching {
     java.time.format.DateTimeFormatter.ofPattern("MMM d, HH:mm")

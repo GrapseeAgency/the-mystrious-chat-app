@@ -4421,3 +4421,18 @@ Stage Summary:
 - One coherent line now: Ember design language (the 4 reference screenshots) + R18/R19 stable icon-id wire contract, on web + Android + iOS.
 - versionCode 28 (v0.12.0-native) ready to push; android-ci.yml builds the signed APK on the tag and publishes the GitHub Release automatically.
 - Honest caveat: iOS compiles only in CI (no Xcode in sandbox); brace gate + symbol greps are the local evidence.
+
+---
+Task ID: R20-ios-fix1
+Agent: orchestrator (Z.ai main session)
+Task: fix the 6 optional-unwrap compile errors surfaced by iOS CI on v0.12.0-native
+
+Work Log:
+- iOS CI (run 36827494570) build-test + archive steps failed with 6 unique errors: PulseStatusIconId.normalize returns PulseStatusIconId? (nil for empty status) and my R20-merge port used the result as non-optional.
+- ProfileEditView.swift:207: glyphButton id now coalesced via ?? .fallback.
+- ProfileView.swift:201/204/557/560: symbolName/label coalesced via ?? .fallback (4 sites).
+- brace_gate.py 2/2 BALANCED on both touched files; full-log error scan shows no other compile errors in either job.
+- Created the recurring webDevReview cron job (every 15 min, job 427865).
+
+Stage Summary:
+- Android CI still in flight on v0.12.0-native. iOS fix commit will be pushed and the tag force-moved so android-ci + ios-ci re-run on the fixed SHA.

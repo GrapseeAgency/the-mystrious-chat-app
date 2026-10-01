@@ -2,7 +2,7 @@ import SwiftUI
 import PhotosUI
 
 // ─────────────────────────────────────────────────────────────
-// Wave 6 — profile edit (F-CP-04 + F-CP-09, profile-tab.tsx /
+// Wave 6 - profile edit (F-CP-04 + F-CP-09, profile-tab.tsx /
 // handle-editor.tsx / avatar-editor.tsx parity): name (32), bio (140,
 // web placeholder), status glyph picker (the 11 fixed stored values) +
 // status text (48), 8 avatar color swatches, @handle editor (350 ms
@@ -11,7 +11,7 @@ import PhotosUI
 // with rollback ("Profile updated").
 // ─────────────────────────────────────────────────────────────
 
-/// Pure @handle availability state — the verdict derivation is testable
+/// Pure @handle availability state - the verdict derivation is testable
 /// (handle-validation + suggestion tests) with zero networking involved.
 struct HandleCheckState: Equatable {
     var value = ""
@@ -67,7 +67,7 @@ struct ProfileEditView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    // field limits — the exact server contract (users/[id] route.ts)
+    // field limits - the exact server contract (users/[id] route.ts)
     static let nameMax = 32
     static let aboutMax = 140
     static let statusMax = 48
@@ -121,7 +121,7 @@ struct ProfileEditView: View {
                 Task { await uploadAvatar(item) }
             }
         }
-        // R17 Neo — sheets at 28pt (web sheet radius parity).
+        // R17 Neo - sheets at 28pt (web sheet radius parity).
         .presentationCornerRadius(28)
     }
 
@@ -153,9 +153,9 @@ struct ProfileEditView: View {
                     }
                 }
                 .tint(PulseTheme.accent)
-                // R14 5-b — the remove branch (web avatar-editor.tsx
+                // R14 5-b - the remove branch (web avatar-editor.tsx
                 // runRemovePhoto): shown only while a photo exists, PATCHes
-                // { avatar: "" } — the server nulls the column.
+                // { avatar: "" } - the server nulls the column.
                 if viewer?.avatar != nil {
                     if avatarUploading {
                         EmptyView()
@@ -204,7 +204,7 @@ struct ProfileEditView: View {
     private func glyphButton(_ glyph: String) -> some View {
         // R18-b - stored values are icon IDs; each renders through its
         // PulseStatusIconId SF Symbol, never as a raw emoji.
-        let id = PulseStatusIconId.normalize(glyph)
+        let id = PulseStatusIconId.normalize(glyph) ?? PulseStatusIconId.fallback
         let selected = statusEmoji == glyph
         return Button {
             PulseHaptics.tap()
@@ -399,7 +399,7 @@ struct ProfileEditView: View {
         handleState.value = viewer.username ?? ""
     }
 
-    /// 350 ms debounced live availability — skipped while re-typing the
+    /// 350 ms debounced live availability - skipped while re-typing the
     /// current handle (web HANDLE_DEBOUNCE_MS parity).
     private func scheduleHandleCheck() {
         handleCheckTask?.cancel()
@@ -433,7 +433,7 @@ struct ProfileEditView: View {
         }
     }
 
-    /// R14 5-b — the remove branch (web avatar-editor.tsx runRemovePhoto
+    /// R14 5-b - the remove branch (web avatar-editor.tsx runRemovePhoto
     /// :141-163): PATCH { avatar: "" } (the server nulls the column) with an
     /// optimistic viewer mirror + honest rollback on failure.
     private func removePhoto() async {
@@ -481,7 +481,7 @@ struct ProfileEditView: View {
         }
     }
 
-    /// Optimistic save — the viewer prefs flip immediately, the PATCH runs,
+    /// Optimistic save - the viewer prefs flip immediately, the PATCH runs,
     /// and any failure rolls the snapshot back (never a silent lie).
     private func save() async {
         guard let viewer, canSave, !saving else { return }
@@ -526,7 +526,7 @@ struct ProfileEditView: View {
             session.toasts.show("Profile updated")
             dismiss()
         } catch let failure as PulseAPIClient.Failure where failure.status == 409 {
-            // Handle clash between check and save — surface the server suggestion.
+            // Handle clash between check and save - surface the server suggestion.
             prefs.setViewer(snapshot)
             handleState.clashSuggestion = failure.suggestion
             notice = failure.message ?? "That handle was just taken"
@@ -553,7 +553,7 @@ struct ProfileEditView: View {
 
 extension PulsePrefs {
     /// The full viewer profile fields live on the WIRE user, not the stored
-    /// PulseViewer — mirror them here (UserDefaults-backed JSON on the same
+    /// PulseViewer - mirror them here (UserDefaults-backed JSON on the same
     /// pulse.viewer payload keys) so the edit form seeds + persists status.
     var viewerAbout: String? { extraProfile["about"] }
     var viewerStatusEmoji: String? { extraProfile["statusEmoji"] }

@@ -1,19 +1,19 @@
 import SwiftUI
 
 // ─────────────────────────────────────────────────────────────
-// R4-A item 3 — the navigation architectures (R14 5-b: all 13 web idioms).
-// Web ground truth: src/lib/nav-registry.ts (:50-64 meta — labels/hints
+// R4-A item 3 - the navigation architectures (R14 5-b: all 13 web idioms).
+// Web ground truth: src/lib/nav-registry.ts (:50-64 meta - labels/hints
 // byte-verbatim, ported into PulseNavStyle in PulsePrefs.swift) +
 // src/components/chat/nav-router.tsx renderers:
 //   FloatingTopNav :466 · PillNav :563 · BottomBar :617 · TabBarNav :664 ·
 //   FloatingTabBar :719 · RailNav :873 · IslandNav :925.
 // The current default capsule dock STAYS in RootView.swift untouched
-// (brief: keep as-is) — the styles below are layout renderers over
+// (brief: keep as-is) - the styles below are layout renderers over
 // the SAME shared state/actions (PulseDockContext = web TabProps +
 // onContextAction parity): one tab registry (PulseNavDestinations ≙
 // NAV_ITEMS :68-73), one unread badge (≙ UnreadBadge :105-122, 99+ cap),
 // one More menu (≙ NavOverflowButton rows).
-// R14 5-b — the five previously-excluded web idioms now ship as honest
+// R14 5-b - the five previously-excluded web idioms now ship as honest
 // mobile adaptations (floating-dock = magnify-emphasis dock :floating-dock,
 // command-bar = top text strip, radial = FAB arc overlay, gesture = drag
 // pill quick switcher, contextual-dock = per-tab trailing chip).
@@ -23,7 +23,7 @@ import SwiftUI
 // Settings entry on iOS (web surfaces don't all expose it).
 // ─────────────────────────────────────────────────────────────
 
-/// Shared geometry constants — the PiP host (RootView) reserves the same
+/// Shared geometry constants - the PiP host (RootView) reserves the same
 /// channels so panes never slide under the top bar or the rail.
 enum PulseDockMetrics {
     /// Floating-top bar: 52pt tabs + 12pt padding + 2pt top pad.
@@ -32,7 +32,7 @@ enum PulseDockMetrics {
     static let railWidth: CGFloat = 68
 }
 
-/// One destination in the shared dock model (web NAV_ITEMS :68-73 —
+/// One destination in the shared dock model (web NAV_ITEMS :68-73 -
 /// id/label/badge registry; icons are the SF Symbols mirrors already used
 /// by the shipped capsule dock).
 struct PulseNavDestination: Identifiable, Equatable {
@@ -51,11 +51,11 @@ enum PulseNavDestinations {
         PulseNavDestination(tab: .profile, label: "Profile", icon: "person.crop.circle", filled: "person.crop.circle.fill"),
     ]
 
-    /// Web NAV_ITEMS[0] — the badge-carrying destination.
+    /// Web NAV_ITEMS[0] - the badge-carrying destination.
     static let chats = all[0]
 }
 
-/// Shared dock state + actions — every style is a layout renderer over the
+/// Shared dock state + actions - every style is a layout renderer over the
 /// SAME context (web TabProps + onContextAction parity). RootView owns the
 /// sheets behind every closure; the renderers never touch storage.
 struct PulseDockContext {
@@ -73,7 +73,7 @@ struct PulseDockContext {
 
 // ── shared unread badge (web UnreadBadge :105-122) ──────────
 
-/// Emerald gradient disc, 99+ cap, ring — pops (scale 0.4 → 1) on every
+/// Emerald gradient disc, 99+ cap, ring - pops (scale 0.4 → 1) on every
 /// count CHANGE like the web key-remount spring. Hidden at count ≤ 0.
 struct PulseNavBadge: View {
     let count: Int
@@ -115,7 +115,7 @@ struct PulseNavBadge: View {
 
 // ── shared More menu (web NavOverflowButton rows) ───────────
 
-/// The five compact glass-menu rows — identical content to the shipped
+/// The five compact glass-menu rows - identical content to the shipped
 /// CapsuleDock More menu (R3-A), factored so every non-capsule style hosts
 /// the same surface. Each row haptic-closes then fires.
 struct PulseNavMoreMenu: View {
@@ -164,7 +164,7 @@ struct PulseNavMoreMenu: View {
 }
 
 /// The glass recipe behind the menu (same layers as the shipped dock
-/// panel — CapsuleDock keeps its private copy byte-as-is per the brief).
+/// panel - CapsuleDock keeps its private copy byte-as-is per the brief).
 /// The scheme comes from the dock context (RootView's resolved isDark),
 /// matching the panel it floats above instead of the global trait.
 struct PulseNavMenuPanel: View {
@@ -185,7 +185,7 @@ struct PulseNavMenuPanel: View {
     }
 }
 
-/// Veil + anchored glass menu — the shipped CapsuleDock dismissal pattern
+/// Veil + anchored glass menu - the shipped CapsuleDock dismissal pattern
 /// (veil covers the screen via ignoresSafeArea, menu floats above the
 /// trigger). Shared by every non-capsule style.
 private struct PulseNavMenuHost: View {
@@ -214,10 +214,10 @@ private struct PulseNavMenuHost: View {
 }
 
 // ── shared tab press feedback ───────────────────────────────
-// (the wobble lives per-renderer as @State — the proven CapsuleDock
+// (the wobble lives per-renderer as @State - the proven CapsuleDock
 // runWobble pattern; floating-top reuses the capsule tab semantics.)
 
-// ── 2 · floating-top — glass capsule bar beneath the top edge ──
+// ── 2 · floating-top - glass capsule bar beneath the top edge ──
 // (web FloatingTopNav :466-501: ALL four tabs + overflow, GLASS_PANEL,
 // rounded-[26px], the SAME CapsuleTab wobble/pill as the default dock.)
 
@@ -227,7 +227,7 @@ struct FloatingTopDock: View {
 
     @State private var moreOpen = false
     // The web wobble state (rotate [0, -8, 6, 0]° over ~350ms,
-    // nav-router.tsx:152) — reduced motion → no-op.
+    // nav-router.tsx:152) - reduced motion → no-op.
     @State private var wobbling: PulseTab?
     @State private var wobbleAngle = 0.0
 
@@ -254,7 +254,7 @@ struct FloatingTopDock: View {
         .frame(height: PulseDockMetrics.topBarHeight, alignment: .top)
     }
 
-    /// Web CapsuleTab :128-202 verbatim semantics — active pill, icon
+    /// Web CapsuleTab :128-202 verbatim semantics - active pill, icon
     /// scale 1.08, 10pt label, wobble on press.
     private func floatingTopTab(_ item: PulseNavDestination) -> some View {
         let isActive = active == item.tab
@@ -300,7 +300,7 @@ struct FloatingTopDock: View {
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }
 
-    /// Web CapsuleTab wobble — rotate [0, -8, 6, 0]° over ~350ms.
+    /// Web CapsuleTab wobble - rotate [0, -8, 6, 0]° over ~350ms.
     private func runWobble(_ target: PulseTab) {
         guard !context.reduceMotion else { return }
         wobbling = target
@@ -344,7 +344,7 @@ struct FloatingTopDock: View {
     }
 }
 
-// ── 4 · pill — single segmented pill with sliding fill ──────
+// ── 4 · pill - single segmented pill with sliding fill ──────
 // (web PillNav :563-613: rounded-full GLASS_PANEL, one emerald gradient
 // fill that slides to the active segment, white label when active.)
 
@@ -400,7 +400,7 @@ struct PillNavDock: View {
             .frame(maxWidth: .infinity, minHeight: 44)
             .background {
                 if isActive {
-                    // The sliding fill — matchedGeometryEffect ≙ the web's
+                    // The sliding fill - matchedGeometryEffect ≙ the web's
                     // layoutId "nav-pill-fill" (:596).
                     Capsule()
                         .fill(Color.white.opacity(0.12))
@@ -445,7 +445,7 @@ struct PillNavDock: View {
     }
 }
 
-// ── 5 · bottom-bar — classic edge-to-edge bar with labels ───
+// ── 5 · bottom-bar - classic edge-to-edge bar with labels ───
 // (web BottomBar :617-660: full-width bar, border-t, active emerald with
 // a top-center dot, icon-over-label rows.)
 
@@ -466,7 +466,7 @@ struct BottomBarDock: View {
         .frame(maxWidth: .infinity)
         .frame(height: 56)
         .background {
-            // Edge-to-edge — the material bleeds through the home-indicator
+            // Edge-to-edge - the material bleeds through the home-indicator
             // strip (web pb-[env(safe-area-inset-bottom)] parity).
             Rectangle()
                 .fill(.ultraThinMaterial)
@@ -511,7 +511,7 @@ struct BottomBarDock: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) {
                 if isActive {
-                    // web "nav-bottombar-dot" (:649-653) — top-center tick.
+                    // web "nav-bottombar-dot" (:649-653) - top-center tick.
                     Capsule()
                         .fill(PulseTheme.emberGlowBottom)
                         .frame(width: 32, height: 3)
@@ -546,7 +546,7 @@ struct BottomBarDock: View {
     }
 }
 
-// ── 6 · tab-bar — iOS-style tinted squircles ────────────────
+// ── 6 · tab-bar - iOS-style tinted squircles ────────────────
 // (web TabBarNav :664-715: full-width bar, active tab wears a rounded
 // emerald-15% squircle with an inset ring.)
 
@@ -611,7 +611,7 @@ struct TabBarDock: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 if isActive {
-                    // web "nav-tabbar-squircle" (:690-694) — inset-x-3
+                    // web "nav-tabbar-squircle" (:690-694) - inset-x-3
                     // inset-y-1 rounded-2xl emerald-500/15 + inset ring.
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color.white.opacity(0.10))
@@ -651,7 +651,7 @@ struct TabBarDock: View {
     }
 }
 
-// ── 7 · floating-tab-bar — detached elevated card, active lifted ──
+// ── 7 · floating-tab-bar - detached elevated card, active lifted ──
 // (web FloatingTabBar :719-782: detached GLASS_PANEL card, the active tab
 // translates -4 and wears a white/zinc card + emerald ring.)
 
@@ -705,7 +705,7 @@ struct FloatingTabBarDock: View {
             .frame(maxWidth: .infinity, minHeight: 54)
             .background {
                 if isActive {
-                    // web "nav-ftab-card" (:750-755) — elevated card.
+                    // web "nav-ftab-card" (:750-755) - elevated card.
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(Color.white.opacity(0.12))
                         .overlay(
@@ -760,7 +760,7 @@ struct FloatingTabBarDock: View {
     }
 }
 
-// ── 9 · rail — persistent vertical side rail (left edge) ────
+// ── 9 · rail - persistent vertical side rail (left edge) ────
 // (web RailNav :873-921: 68pt rail, "P" logo tile, left indicator bar on
 // the active destination, labels under icons.)
 
@@ -770,7 +770,7 @@ struct RailDock: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            // web :880 — the brand tile.
+            // web :880 - the brand tile.
             Text("P")
                 .font(.system(size: 14, weight: .black))
                 .foregroundStyle(.white)
@@ -786,7 +786,7 @@ struct RailDock: View {
 
             Spacer(minLength: 0)
 
-            // iOS deviation: system Menu — the rail is 68pt wide, too
+            // iOS deviation: system Menu - the rail is 68pt wide, too
             // narrow to anchor the glass popover; the dock menu is the only
             // Settings entry on iOS so the affordance must exist.
             Menu {
@@ -851,7 +851,7 @@ struct RailDock: View {
             }
             .overlay(alignment: .leading) {
                 if isActive {
-                    // web "nav-rail-bar" (:905-909) — left edge indicator.
+                    // web "nav-rail-bar" (:905-909) - left edge indicator.
                     Capsule()
                         .fill(PulseTheme.emberGlowBottom)
                         .frame(width: 4, height: 28)
@@ -867,7 +867,7 @@ struct RailDock: View {
     }
 }
 
-// ── 10 · island — dynamic-island pill that expands on tap ───
+// ── 10 · island - dynamic-island pill that expands on tap ───
 // (web IslandNav :925-1041: closed 148pt pill showing the active tab,
 // tap expands to the full tab row + labeled More, auto-collapse 4.2s
 // paused while the overflow menu is open.)
@@ -900,7 +900,7 @@ struct IslandDock: View {
                 .offset(y: -96)
             }
         }
-        // Auto-collapse ≙ web :935-941 — 4.2s timer, paused while the
+        // Auto-collapse ≙ web :935-941 - 4.2s timer, paused while the
         // overflow menu is open (the menu lives inside the expanded island).
         .task(id: "\(expanded)#\(moreOpen)") {
             guard expanded, !moreOpen else { return }
@@ -934,7 +934,7 @@ struct IslandDock: View {
         .accessibilityLabel(expanded ? "Collapse navigation" : "Navigation — \(activeItem.label), tap to expand")
     }
 
-    /// Closed state ≙ web :1021-1035 — active icon + label + grip glyph.
+    /// Closed state ≙ web :1021-1035 - active icon + label + grip glyph.
     private var closedPill: some View {
         HStack(spacing: 8) {
             Image(systemName: activeItem.filled)
@@ -956,7 +956,7 @@ struct IslandDock: View {
         .padding(.horizontal, 14)
     }
 
-    /// Expanded state ≙ web :961-1019 — 4 destinations + labeled More.
+    /// Expanded state ≙ web :961-1019 - 4 destinations + labeled More.
     private var expandedRow: some View {
         HStack(spacing: 0) {
             ForEach(PulseNavDestinations.all) { item in
@@ -1044,7 +1044,7 @@ struct IslandDock: View {
     }
 }
 
-// ── 3 · floating-dock — desktop dock, mobile magnify emphasis ──
+// ── 3 · floating-dock - desktop dock, mobile magnify emphasis ──
 // (web FloatingDock :507-559 is a hover-magnifying desktop dock; phones
 // have no hover, so the honest adaptation keeps the roomy tile dock and
 // applies the magnification to the ACTIVE destination instead. R14 5-b.)
@@ -1087,7 +1087,7 @@ struct FloatingDockDock: View {
             VStack(spacing: 4) {
                 Image(systemName: isActive ? item.filled : item.icon)
                     .font(.system(size: 24, weight: .medium))
-                    // The magnify emphasis — the active tile grows while the
+                    // The magnify emphasis - the active tile grows while the
                     // rest stay dock-sized (web hover-magnify parity).
                     .scaleEffect(isActive ? 1.3 : 1.0)
                     .overlay(alignment: .topTrailing) {
@@ -1140,8 +1140,8 @@ struct FloatingDockDock: View {
     }
 }
 
-// ── 8 · command-bar — compact text command strip with search ──
-// (web CommandBar :817-869: a TOP text strip — brand, text tab commands,
+// ── 8 · command-bar - compact text command strip with search ──
+// (web CommandBar :817-869: a TOP text strip - brand, text tab commands,
 // then the search + settings glyphs inline. R14 5-b.)
 
 struct CommandBarDock: View {
@@ -1150,7 +1150,7 @@ struct CommandBarDock: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            // web :825 — the brand tile leads the strip.
+            // web :825 - the brand tile leads the strip.
             Text("P")
                 .font(.system(size: 12, weight: .black))
                 .foregroundStyle(.white)
@@ -1233,7 +1233,7 @@ struct CommandBarDock: View {
     }
 }
 
-// ── 11 · radial — center FAB fanning destinations in an arc ──
+// ── 11 · radial - center FAB fanning destinations in an arc ──
 // (web RadialNav :1046-1103: a FAB overlay; tap fans the destinations in
 // an arc above it. Reduced motion → instant placement. R14 5-b.)
 
@@ -1268,7 +1268,7 @@ struct RadialDock: View {
         .animation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion), value: expanded)
     }
 
-    /// The arc — destinations fan out above the FAB, left to right, with
+    /// The arc - destinations fan out above the FAB, left to right, with
     /// labels; the active one arrives highlighted.
     private var radialFan: some View {
         HStack(spacing: 14) {
@@ -1360,9 +1360,9 @@ struct RadialDock: View {
     }
 }
 
-// ── 12 · gesture — minimal bar + draggable quick-switcher pill ──
+// ── 12 · gesture - minimal bar + draggable quick-switcher pill ──
 // (web GestureNav :1107-1160: a minimal bar whose pill drags between tabs
-// and opens the quick switcher. R14 5-b — the shell already carries the
+// and opens the quick switcher. R14 5-b - the shell already carries the
 // edge-swipe route change; the pill adds the in-dock drag + switcher.)
 
 struct GestureDock: View {
@@ -1457,7 +1457,7 @@ struct GestureDock: View {
         }
     }
 
-    /// The quick switcher — every destination + the dock actions.
+    /// The quick switcher - every destination + the dock actions.
     private var switcherPanel: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(PulseNavDestinations.all) { item in
@@ -1498,9 +1498,9 @@ struct GestureDock: View {
     }
 }
 
-// ── 13 · contextual-dock — dock that adapts to the active tab ──
+// ── 13 · contextual-dock - dock that adapts to the active tab ──
 // (web ContextualDock :1193-1240: the four destinations plus a trailing
-// gradient chip whose action follows the active tab — chats→New chat,
+// gradient chip whose action follows the active tab - chats→New chat,
 // hub→Search, contacts→New group, profile→Settings. R14 5-b.)
 
 struct ContextualDock: View {
@@ -1509,7 +1509,7 @@ struct ContextualDock: View {
 
     @State private var moreOpen = false
 
-    /// web CONTEXT_ACTION — label + glyph per active tab.
+    /// web CONTEXT_ACTION - label + glyph per active tab.
     private var contextAction: (label: String, icon: String) {
         switch active {
         case .chats: return ("New chat", "plus")
@@ -1576,7 +1576,7 @@ struct ContextualDock: View {
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }
 
-    /// The trailing chip — its glyph/label/action follow the active tab
+    /// The trailing chip - its glyph/label/action follow the active tab
     /// (web :1225-1253 popLayout swap parity).
     private var contextChip: some View {
         Button {

@@ -24,7 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-// R1-W2F — F-MD-06 translation action.
+// R1-W2F - F-MD-06 translation action.
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -162,7 +162,7 @@ internal fun PollBuilderSheet(
 }
 
 /**
- * The long-press message sheet — Wave 0's reactions/reply/copy grown into the
+ * The long-press message sheet - Wave 0's reactions/reply/copy grown into the
  * full action surface (spec §2 row 4): edit, delete, pin, save, forward,
  * share, info, reply-in-thread. Every row is wired; conditional rows simply
  * don't render (no dead entries, no stubs).
@@ -189,11 +189,11 @@ internal fun MessageActionSheet(
     // ── Wave 7 ──
     onAddToBoard: (() -> Unit)? = null,
     onRemindMe: (() -> Unit)? = null,
-    // ── R3-B item 6 — web "Convert to task" (text rows, thread roots only) ──
+    // ── R3-B item 6 - web "Convert to task" (text rows, thread roots only) ──
     onConvertToTask: (() -> Unit)? = null,
     /** Busy while the kanban round-trip runs — the row spins + disables. */
     taskPending: Boolean = false,
-    // ── R1-W2F — F-MD-06 LLM translation (text rows only; server persists per language) ──
+    // ── R1-W2F - F-MD-06 LLM translation (text rows only; server persists per language) ──
     onTranslate: (() -> Unit)? = null,
     /** iOS parity — an already-translated row re-labels the action. */
     alreadyTranslated: Boolean = false,
@@ -231,7 +231,7 @@ internal fun MessageActionSheet(
             SheetAction(PulseIcons.Pencil, "Edit", onEdit)
         }
         SheetAction(PulseIcons.Copy, "Copy", onCopy)
-        // ── R1-W2F F-MD-06 — the message long-press menu's Translate entry ──
+        // ── R1-W2F F-MD-06 - the message long-press menu's Translate entry ──
         onTranslate?.let {
             SheetAction(
                 PulseIcons.Globe,
@@ -252,7 +252,7 @@ internal fun MessageActionSheet(
         if (message.kind == Message.Kind.TEXT && !message.isDeleted) {
             onAddToBoard?.let { SheetAction(PulseIcons.Columns, "Add to board", it) }
         }
-        // R3-B item 6 — web chat-room.tsx:6372-6379: "Convert to task" for
+        // R3-B item 6 - web chat-room.tsx:6372-6379: "Convert to task" for
         // TOP-LEVEL text rows (parentId === null), LoaderCircle while pending.
         // Checklist is the native stand-in for the web's lucide checklist glyph.
         if (message.kind == Message.Kind.TEXT && !message.isDeleted && message.threadRootId == null) {
@@ -269,7 +269,7 @@ internal fun MessageActionSheet(
 }
 
 /**
- * Forward targets — every conversation, search-filterable, multi-select,
+ * Forward targets - every conversation, search-filterable, multi-select,
  * one "Send" re-POSTing the source into each chosen chat (spec §1.1 forward).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -686,7 +686,7 @@ internal fun snippetAnnotated(content: String, query: String): AnnotatedString {
 }
 
 /**
- * Double-check "seen" glyph — material-icons-extended is deliberately kept off
+ * Double-check "seen" glyph - material-icons-extended is deliberately kept off
  * the classpath (APK size, minify disabled), so the two-stroke check is drawn
  * natively. Same silhouette as the extended-icons CheckCheck.
  */
