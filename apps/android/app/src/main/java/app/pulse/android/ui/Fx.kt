@@ -396,13 +396,14 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
         val h = size.height
         val aspect = w / h.coerceAtLeast(1f)
 
-        val base = if (dark) Color(0xFF030B09) else Color(0xFFF6F8F7)
+        val base = if (dark) Color(0xFF0B0705) else Color(0xFFFAF6F1)
         drawRect(base)
 
-        val emerald = Color(0xFF10B981)
-        val teal = Color(0xFF14B8A6)
+        // EMB-B: the fx layer rides the ember language (warm glow fields).
+        val emerald = Color(0xFFFFB86B)
+        val teal = Color(0xFFFF7A3D)
         val violet = Color(0xFF8B5CF6)
-        val white = Color(0xFFEAF6FF)
+        val white = Color(0xFFFFF3E2)
 
         val strength = if (dark) 0.30f else 0.10f
         val blend = if (dark) BlendMode.Plus else BlendMode.Multiply
@@ -438,8 +439,8 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
                 }
             }
             FxMode.LIQUID -> {
-                // five fused metaballs - emerald/teal body with a rose rim
-                val emerald = Color(0xFF10B981)
+                // five fused metaballs - ember amber/deep body with a rose rim
+                val emerald = Color(0xFFFFB86B)
                 val rose = Color(0xFFF43F5E)
                 repeat(5) { ball ->
                     val cx = w * (0.5f + 0.15f * sin(time * 0.21f + ball * 1.7f))
@@ -507,7 +508,7 @@ private val CONFETTI_COLORS = listOf(
 )
 private val HEART_COLORS = listOf(Color(0xFFFB7185), Color(0xFFF43F5E), Color(0xFFFDA4AF), Color(0xFFFF6B81))
 private val STAR_COLORS = listOf(Color(0xFFFDE68A), Color(0xFFFFFFFF), Color(0xFFA7F3D0), Color(0xFF99F6E4))
-private val BURST_COLORS = listOf(Color(0xFF10B981), Color(0xFF5EEAD4), Color(0xFFFFFFFF), Color(0xFFFBBF24))
+private val BURST_COLORS = listOf(Color(0xFFFFB86B), Color(0xFFFF7A3D), Color(0xFFFFFFFF), Color(0xFFFBBF24))
 
 private class P(
     var x: Float, var y: Float,

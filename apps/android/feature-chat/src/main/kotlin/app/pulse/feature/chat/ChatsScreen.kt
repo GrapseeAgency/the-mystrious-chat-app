@@ -142,17 +142,20 @@ private val Amber500 = Color(0xFFF59E0B)
 private val Amber600 = Color(0xFFD97706)
 private val Rose400 = Color(0xFFFB7185)
 
-// ── EMB-A ember text tokens (dark language) ──
+// ── EMB-B ember text tokens (dark language) ──
 private val EmberText = Color.White
 private val EmberText80 = Color.White.copy(alpha = 0.80f)
 private val EmberText55 = Color.White.copy(alpha = 0.55f)
 private val EmberText45 = Color.White.copy(alpha = 0.45f)
 private val EmberText40 = Color.White.copy(alpha = 0.40f)
-private val Emerald400 = Color(0xFF34D399)
+// EMB-B: the old green quartet rides the ember language now (the shared
+// PulsePalette.Emerald pair is retargeted upstream; these file-local shades
+// follow: light glow ring, mid accent, readable deep for light surfaces).
+private val Emerald400 = Color(0xFFFFD9A8)
 private val Emerald500 = PulsePalette.Emerald
-private val Emerald600 = Color(0xFF059669)
-private val Teal500 = Color(0xFF14B8A6)
-private val Teal600 = Color(0xFF0D9488)
+private val Emerald600 = PulsePalette.EmeraldDeep
+private val Teal500 = Color(0xFFFF7A3D)
+private val Teal600 = Color(0xFFD96A2B)
 
 /** Web `streakHeatLevel` - 2-4 → warm, 5-9 → hot, 10+ → blazing. */
 private fun streakHeat(count: Int): Int = when {
@@ -887,11 +890,7 @@ private fun HomeHeader(
     onTheme: () -> Unit,
     onSearch: () -> Unit,
 ) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .border(0.5.dp, if (dark) EmberPalette.Hairline else Color(0xFFE4E4E7)),
-    ) {
+    Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1072,6 +1071,7 @@ private fun SearchHeader(
 
 @Composable
 private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) -> Unit) {
+    val dark = isPulseDarkTheme()
     val chips = listOf("all" to "All", "unread" to "Unread", "groups" to "Groups")
     Row(
         Modifier
@@ -1082,20 +1082,24 @@ private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) 
     ) {
         chips.forEach { (key, label) ->
             val isActive = active == key
+            // EMB-B reference language: the active chip is the white pill with
+            // ink text (ink pill on light), inactive chips are glass.
             Row(
                 Modifier
-                    .height(28.dp)
+                    .height(30.dp)
                     .clip(RoundedCornerShape(50))
                     .background(
                         when {
-                            isActive -> Emerald500
+                            isActive && dark -> Color.White
+                            isActive -> Color(0xFF1C1410)
+                            dark -> Color.White.copy(alpha = 0.09f)
                             else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                         },
                     )
                     .clickable { onSelect(key) }
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 if (key == "unread" && unreadTotal > 0 && !isActive) {
                     Text(
@@ -1103,19 +1107,24 @@ private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) 
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
-                        color = Emerald600,
+                        color = Color.White,
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(Emerald500.copy(alpha = 0.2f))
+                            .background(EmberPalette.Signal)
                             .defaultMinSize(minWidth = 15.dp, minHeight = 15.dp)
                             .padding(horizontal = 4.dp, vertical = 1.dp),
                     )
                 }
                 Text(
                     label,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isActive) Color.White else Zinc500,
+                    color = when {
+                        isActive && dark -> Color(0xFF1C1410)
+                        isActive -> Color.White
+                        dark -> EmberText55
+                        else -> Zinc500
+                    },
                 )
             }
         }
@@ -1137,57 +1146,53 @@ private fun StoriesRail(
     val dark = isPulseDarkTheme()
     val mine = cells.firstOrNull { it.mine }
     val others = cells.filter { !it.mine }
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
-            .border(0.5.dp, if (dark) Color.White.copy(alpha = 0.06f) else Color(0xFFF4F4F5))
-            .padding(vertical = 8.dp),
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // D1: the own cell carries BOTH affordances when a live story
-            // exists - ring tap = viewer seeded at my group, "+" tap =
-            // composer; with NO live story the whole cell is the composer
-            // entry (web "My status" parity).
-            StoryRingCell(
-                name = viewerName,
-                color = viewerColor,
-                ring = if (mine != null && mine.unseen) "unseen" else "none",
-                plus = true,
-                label = "My status",
-                onPress = {
-                    if (mine != null) onOpenViewer(mine.userId) else onOpenComposer()
-                },
-                onPlus = if (mine != null) ({ onOpenComposer() }) else null,
+        // D1: the own cell carries BOTH affordances when a live story
+        // exists - tile tap = viewer seeded at my group, "+" tap =
+        // composer; with NO live story the whole cell is the composer
+        // entry (web "My status" parity).
+        StoryTile(
+            name = viewerName,
+            color = viewerColor,
+            unseen = mine != null && mine.unseen,
+            isOwn = true,
+            dark = dark,
+            onPress = { if (mine != null) onOpenViewer(mine.userId) else onOpenComposer() },
+            onPlus = if (mine != null) ({ onOpenComposer() }) else null,
+        )
+        others.forEach { cell ->
+            StoryTile(
+                name = cell.name,
+                color = cell.color,
+                unseen = cell.unseen,
+                isOwn = false,
+                dark = dark,
+                onPress = { onOpenViewer(cell.userId) },
             )
-            others.forEach { cell ->
-                StoryRingCell(
-                    name = cell.name,
-                    color = cell.color,
-                    ring = if (cell.unseen) "unseen" else "seen",
-                    plus = false,
-                    label = cell.name,
-                    onPress = { onOpenViewer(cell.userId) },
-                )
-            }
         }
     }
 }
 
+/**
+ * EMB-B story tile - the reference rounded-rect card: a warm gradient tile
+ * with the author initial, an ember sweep ring while unseen, and the name
+ * below in white. The own cell is glass with the ember "+" badge.
+ */
 @Composable
-private fun StoryRingCell(
+private fun StoryTile(
     name: String,
     color: String?,
-    ring: String,
-    plus: Boolean,
-    label: String,
+    unseen: Boolean,
+    isOwn: Boolean,
+    dark: Boolean,
     onPress: () -> Unit,
-    /** Non-null ⇒ the "+" badge is its own tap target (D1: "+" = composer while the ring = viewer). */
+    /** Non-null ⇒ the "+" badge is its own tap target (D1). */
     onPlus: (() -> Unit)? = null,
 ) {
     val spin = rememberInfiniteTransition(label = "storySpin")
@@ -1197,65 +1202,100 @@ private fun StoryRingCell(
         animationSpec = infiniteRepeatable(tween(6000, easing = LinearEasing)),
         label = "storyAngle",
     )
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .width(64.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onPress)
-            .padding(vertical = 2.dp),
-    ) {
-        Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
-            when (ring) {
-                "unseen" -> Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { rotationZ = angle }
-                        .clip(CircleShape)
-                        .background(
-                            Brush.sweepGradient(listOf(Emerald400, Teal500, Color(0xFF6EE7B7), Emerald500, Emerald400)),
-                        ),
+    val scale = remember { Animatable(1f) }
+    val scope = rememberCoroutineScope()
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .size(width = 62.dp, height = 82.dp)
+                .scale(scale.value)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color.Transparent)
+                .then(
+                    if (unseen) {
+                        Modifier
+                            .graphicsLayer { rotationZ = angle }
+                            .border(
+                                2.dp,
+                                Brush.sweepGradient(
+                                    listOf(
+                                        EmberPalette.Amber,
+                                        EmberPalette.Deep,
+                                        Color(0xFFFFE3C2),
+                                        EmberPalette.Deep,
+                                        EmberPalette.Amber,
+                                    ),
+                                ),
+                                RoundedCornerShape(18.dp),
+                            )
+                    } else {
+                        Modifier
+                    },
                 )
-                "seen" -> Box(Modifier.fillMaxSize().clip(CircleShape).background(Color(0xFFD4D4D8)))
-                else -> Box(Modifier.fillMaxSize().clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant))
-            }
-            Box(
-                Modifier
-                    .padding(2.5.dp)
-                    .size(51.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.background),
-            ) {
-                PulseAvatar(name = name, colorHex = color, size = 51.dp, modifier = Modifier.align(Alignment.Center))
-            }
-            if (plus) {
+                .then(
+                    // Inner tile: gradient wash from the author accent (own cell
+                    // stays glass with the + badge like the reference "You" tile).
+                    if (isOwn) {
+                        Modifier
+                            .padding(3.dp)
+                            .clip(RoundedCornerShape(15.dp))
+                            .background(EmberPalette.GlassFill)
+                            .border(1.dp, EmberPalette.GlassBorder, RoundedCornerShape(15.dp))
+                    } else {
+                        // Public gradient helper: author accent (or hashed
+                        // fallback) as a two-stop vertical wash.
+                        val wash = PulsePalette.gradientFor(name, color)
+                        Modifier
+                            .padding(3.dp)
+                            .clip(RoundedCornerShape(15.dp))
+                            .background(
+                                Brush.linearGradient(wash),
+                            )
+                    },
+                )
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null,
+                    onClick = {
+                        scope.launch {
+                            scale.animateTo(0.94f, tween(70))
+                            scale.animateTo(1f, PulseMotion.snappy())
+                        }
+                        onPress()
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isOwn) {
                 Box(
                     Modifier
-                        .align(Alignment.BottomEnd)
-                        .size(20.dp)
+                        .size(26.dp)
                         .clip(CircleShape)
-                        .background(Emerald500)
-                        .border(2.dp, MaterialTheme.colorScheme.background, CircleShape)
-                        // D1: when onPlus is wired the badge is its own tap
-                        // target; without it the badge click falls through to
-                        // the whole-cell handler (empty own cell = composer).
+                        .background(EmberPalette.Deep)
                         .clickable(enabled = onPlus != null) { onPlus?.invoke() },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("+", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("+", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
+            } else {
+                Text(
+                    name.trim().take(1).uppercase().ifEmpty { "?" },
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.92f),
+                )
             }
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(5.dp))
         Text(
-            label,
+            if (isOwn) "You" else name,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
-            color = Zinc600,
+            color = if (dark) EmberText80 else Zinc600,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.width(62.dp),
         )
     }
 }
@@ -1315,12 +1355,20 @@ private fun FolderRail(
 
 @Composable
 private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Boolean, dark: Boolean, onClick: () -> Unit) {
+    // EMB-B: the active rail pill is the white/ink pill (reference language);
+    // inactive pills stay glass with warm-deep glyph tint.
     Row(
         Modifier
-            .height(44.dp)
+            .height(36.dp)
             .clip(RoundedCornerShape(50))
-            .background(if (active) Emerald500 else Color.Transparent)
-            .then(if (active) Modifier else Modifier.pulseGlass(dark, RoundedCornerShape(50)))
+            .background(
+                when {
+                    active && dark -> Color.White
+                    active -> Color(0xFF1C1410)
+                    dark -> Color.White.copy(alpha = 0.08f)
+                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                },
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = if (icon == null) 16.dp else 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1332,7 +1380,7 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
             Icon(
                 icon,
                 contentDescription = null,
-                tint = if (active) Color.White else Emerald600,
+                tint = if (active) (if (dark) Color(0xFF1C1410) else Color.White) else EmberPalette.Amber,
                 modifier = Modifier.size(14.dp),
             )
         }
@@ -1340,7 +1388,12 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
             label,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
-            color = if (active) Color.White else Zinc600,
+            color = when {
+                active && dark -> Color(0xFF1C1410)
+                active -> Color.White
+                dark -> EmberText55
+                else -> Zinc600
+            },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.widthIn(max = 96.dp),
@@ -1350,10 +1403,10 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
                 countLabel(count),
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (active) Color.White else Emerald600,
+                color = Color.White,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(if (active) Color.White.copy(alpha = 0.25f) else Emerald500.copy(alpha = 0.2f))
+                    .background(EmberPalette.Signal)
                     .padding(horizontal = 4.dp, vertical = 1.dp),
             )
         }
@@ -1618,7 +1671,9 @@ private fun ConversationRowItem(
                 }
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 2.dp)
-                .pulseGlass(dark, RoundedCornerShape(16.dp))
+                // EMB-B: rows sit flat on the sunset gradient in dark (the
+                // reference list has no card chrome); light keeps the glass.
+                .then(if (dark) Modifier else Modifier.pulseGlass(dark, RoundedCornerShape(16.dp)))
                 .combinedClickable(
                     onClick = {
                         when {
@@ -1671,7 +1726,7 @@ private fun ConversationRowItem(
                         Icon(
                             PulseIcons.Pin,
                             contentDescription = "Pinned",
-                            tint = Emerald500,
+                            tint = Amber500,
                             modifier = Modifier.size(12.dp),
                         )
                         Spacer(Modifier.width(4.dp))
@@ -1700,7 +1755,11 @@ private fun ConversationRowItem(
                         fontFamily = PulseMonoFamily,
                         fontSize = 11.sp,
                         fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (hasUnread) Emerald600 else Zinc400,
+                        color = if (hasUnread) {
+                            if (dark) EmberText80 else Color(0xFF1C1410)
+                        } else {
+                            if (dark) EmberText45 else Zinc400
+                        },
                     )
                 }
                 Spacer(Modifier.height(2.dp))
@@ -1751,7 +1810,7 @@ private fun ConversationRowItem(
                                 .padding(horizontal = 3.dp)
                                 .size(12.dp)
                                 .clip(CircleShape)
-                                .background(Emerald500)
+                                .background(EmberPalette.Signal)
                                 .border(2.dp, MaterialTheme.colorScheme.background, CircleShape),
                         )
                         muted -> MutedChip(hasUnread = hasUnread, unread = conversation.unreadCount)
@@ -1759,15 +1818,18 @@ private fun ConversationRowItem(
                 }
             }
         }
-        // hairline divider indented past the avatar (64dp)
-        Box(
-            Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 64.dp)
-                .fillMaxWidth()
-                .height(0.5.dp)
-                .background(if (dark) Color.White.copy(alpha = 0.06f) else Color(0xFFF4F4F5)),
-        )
+        // hairline divider indented past the avatar (64dp) - dark sits flat
+        // on the gradient with no dividers (reference list).
+        if (!dark) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 64.dp)
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(Color(0xFFF4F4F5)),
+            )
+        }
     }
 }
 
@@ -1822,7 +1884,8 @@ private fun UnreadBadge(count: Int) {
             .scale(scale)
             .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
             .clip(RoundedCornerShape(50))
-            .background(Emerald500)
+            // EMB-B: the unread signal is the ember red (reference badges).
+            .background(EmberPalette.Signal)
             .border(2.dp, MaterialTheme.colorScheme.background, RoundedCornerShape(50))
             .padding(horizontal = 5.dp),
         contentAlignment = Alignment.Center,
@@ -1862,7 +1925,7 @@ private fun MutedChip(hasUnread: Boolean, unread: Int) {
     }
 }
 
-/** Pulsing emerald presence halo behind online DM avatars (web PresenceGlow). */
+/** Pulsing warm presence halo behind online DM avatars (EMB-B: ember orange). */
 @Composable
 private fun PresenceGlow() {
     val transition = rememberInfiniteTransition(label = "presenceGlow")
@@ -1877,7 +1940,7 @@ private fun PresenceGlow() {
             .size(56.dp)
             .graphicsLayer { scaleX = 1.10f; scaleY = 1.10f }
             .clip(CircleShape)
-            .border(2.dp, Emerald500.copy(alpha = pulse), CircleShape),
+            .border(2.dp, EmberPalette.Online.copy(alpha = pulse), CircleShape),
     )
 }
 
@@ -1912,7 +1975,7 @@ private fun StreakHeatRing(heat: Int) {
     }
 }
 
-/** Three bouncing emerald dots + italic "typing…" (web typing preview). */
+/** Three bouncing amber dots + italic "typing…" (EMB-B ember language). */
 @Composable
 private fun TypingDots() {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1933,7 +1996,7 @@ private fun TypingDots() {
                     .offset(y = (y).dp)
                     .size(3.5.dp)
                     .clip(CircleShape)
-                    .background(Emerald500),
+                    .background(Amber500),
             )
         }
     }
@@ -1943,7 +2006,7 @@ private fun TypingDots() {
         fontSize = 13.sp,
         fontWeight = FontWeight.Medium,
         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-        color = Emerald600,
+        color = EmberPalette.Amber,
     )
 }
 
