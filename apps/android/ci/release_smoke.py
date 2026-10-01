@@ -87,8 +87,10 @@ def ime_visible():
     return "mInputShown=true" in out
 
 def dismiss_ime():
+    adb_ok("shell", "input", "keyevent", "111")  # ESC first: cancel composing
+    time.sleep(0.8)
     if ime_visible():
-        adb_ok("shell", "input", "keyevent", "4")  # BACK closes the IME first
+        adb_ok("shell", "input", "keyevent", "4")  # BACK closes the IME
         time.sleep(1.5)
 
 def screen(name):
@@ -334,17 +336,20 @@ def main():
         dismiss_ime()  # the IME hides the Continue button below the fold
         time.sleep(1)
         # fast path: the field's IME action (GO) may advance straight to the
-        # handle step - then Continue no longer exists and Skip is next.
+        # handle step - then Continue no longer exists and Start chatting is next.
         adb_ok("shell", "input", "keyevent", "66")
         time.sleep(2.0)
-        if not tap_scrolling("Skip for now", wait=3.0):
-            if not tap_scrolling("Continue"):
-                return
-            tap_scrolling("Skip for now", wait=4.0)
+        if not tap_scrolling("Start chatting", wait=4.0):
+            if not tap_scrolling("Skip for now", wait=4.0):
+                if not tap_scrolling("Continue"):
+                    return
+                tap_scrolling("Start chatting", wait=4.0)
 
     stage("onboarding", do_onboarding)
     dismiss_system_dialogs()
     dismiss_ime()
+    adb_ok("shell", "input", "keyevent", "4")  # belt: any IME residue gone
+    time.sleep(1.5)
     screen("02-main-shell.png")
     if failed:
         return finish(2)
