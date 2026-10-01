@@ -931,7 +931,7 @@ struct IslandDock: View {
             .animation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion), value: expanded)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(expanded ? "Collapse navigation" : "Navigation — \(activeItem.label), tap to expand")
+        .accessibilityLabel(expanded ? "Collapse navigation" : "Navigation - \(activeItem.label), tap to expand")
     }
 
     /// Closed state ≙ web :1021-1035 - active icon + label + grip glyph.
@@ -1356,7 +1356,7 @@ struct RadialDock: View {
             
         }
         .buttonStyle(PulseButtonStyle())
-        .accessibilityLabel(expanded ? "Close navigation" : "Navigation — \(activeItem.label), tap to fan out")
+        .accessibilityLabel(expanded ? "Close navigation" : "Navigation - \(activeItem.label), tap to fan out")
     }
 }
 
@@ -1420,7 +1420,7 @@ struct GestureDock: View {
                     PulseHaptics.tap()
                     withAnimation(.pulse(.pulseSnappy, reduceMotion: context.reduceMotion)) { switcherOpen.toggle() }
                 }
-                .accessibilityLabel("Tab switcher — drag or tap")
+                .accessibilityLabel("Tab switcher - drag or tap")
                 .accessibilityAddTraits(.isButton)
         }
         .padding(.vertical, 8)

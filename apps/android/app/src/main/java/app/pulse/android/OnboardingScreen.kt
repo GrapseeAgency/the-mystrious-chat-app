@@ -106,7 +106,7 @@ private val Amber600 = Color(0xFFD97706)
 private val Amber700 = Color(0xFFB45309)
 private val White = Color(0xFFFFFFFF)
 
-/** Web AVATAR_GRADIENTS — Tailwind 400→600 pairs, same order as PULSE_COLORS. */
+/** Web AVATAR_GRADIENTS - Tailwind 400→600 pairs, same order as PULSE_COLORS. */
 private data class Swatch(val name: String, val from: Color, val to: Color)
 
 private val SWATCHES = listOf(
@@ -124,7 +124,7 @@ private enum class NoticeTone { EMERALD, AMBER, MUTED }
 
 @Composable
 fun OnboardingScreen(
-    /** Wave 8 — honest session-rotated notice ("log in again") from the shell. */
+    /** Wave 8 - honest session-rotated notice ("log in again") from the shell. */
     sessionNotice: String? = null,
     viewModel: OnboardingViewModel = hiltViewModel(),
 ) {
@@ -288,7 +288,7 @@ private fun NameStep(
             )
             if (state.nameTaken) {
                 PulseLoginButton(
-                    text = if (state.signingIn) "Signing you in…" else "That's me — log in instead",
+                    text = if (state.signingIn) "Signing you in…" else "That's me - log in instead",
                     icon = PulseIcons.Login,
                     loading = state.signingIn,
                     enabled = validName && !state.signingIn,
@@ -354,7 +354,7 @@ private fun HandleStep(
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
-                    "Creating account for “${state.name.trim()}” — optional, but it makes you findable.",
+                    "Creating account for “${state.name.trim()}” - optional, but it makes you findable.",
                     fontSize = 11.sp,
                     color = Zinc500,
                 )
@@ -395,7 +395,7 @@ private fun HandleStep(
             ) {
                 when {
                     trimmed.isEmpty() ->
-                        NoticeLine("Skip it if you prefer — you can add one later in Profile.", NoticeTone.MUTED)
+                        NoticeLine("Skip it if you prefer - you can add one later in Profile.", NoticeTone.MUTED)
                     !validHandle ->
                         NoticeLine("3–20 characters: lowercase letters, digits, underscore.", NoticeTone.MUTED)
                     checking -> Row(
@@ -653,7 +653,7 @@ private fun PulseTextField(
     )
 }
 
-/** emerald-600 primary action — web Button classes verbatim (h-12 rounded-xl). */
+/** emerald-600 primary action - web Button classes verbatim (h-12 rounded-xl). */
 @Composable
 private fun PulsePrimaryButton(
     text: String,
@@ -699,7 +699,7 @@ private fun PulsePrimaryButton(
     }
 }
 
-/** "That's me — log in instead" — emerald-tinted outline button (web parity). */
+/** "That's me - log in instead" - emerald-tinted outline button (web parity). */
 @Composable
 private fun PulseLoginButton(
     text: String,
@@ -763,7 +763,7 @@ private fun PulseGhostButton(text: String, enabled: Boolean, onClick: () -> Unit
     }
 }
 
-/** dashed zinc tip card — the web footer, copy adapted for the native app. */
+/** dashed zinc tip card - the web footer, copy adapted for the native app. */
 @Composable
 private fun TipCard() {
     val dark = isSystemInDarkTheme()
@@ -783,7 +783,7 @@ private fun TipCard() {
             modifier = Modifier.size(14.dp),
         )
         Text(
-            "Tip: your @handle is optional — add or change it anytime from your Profile.",
+            "Tip: your @handle is optional - add or change it anytime from your Profile.",
             fontSize = 12.sp,
             lineHeight = 17.sp,
             color = if (dark) Zinc400 else Zinc500,

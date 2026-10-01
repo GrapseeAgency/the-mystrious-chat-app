@@ -175,7 +175,7 @@ private val DockTeal600 = Color(0xFFFF7A3D)
 private val DockInactiveDark = Color.White.copy(alpha = 0.45f)
 private val DockInactiveLight = Color(0xFF71717A)
 
-/** Canonical tab order — drives dock layout + direction-aware transitions. */
+/** Canonical tab order - drives dock layout + direction-aware transitions. */
 private val TAB_ROUTES = listOf("chats", "hub", "contacts", "profile")
 
 private data class DockTab(
@@ -200,14 +200,14 @@ private val DOCK_TABS = listOf(
  */
 data class ShortcutRequest(val tab: String? = null, val action: String? = null)
 
-/** R10-a — extras + actions shared with res/xml/shortcuts.xml. */
+/** R10-a - extras + actions shared with res/xml/shortcuts.xml. */
 const val ACTION_SHORTCUT = "app.pulse.android.action.SHORTCUT"
 const val EXTRA_SHORTCUT_TAB = "pulse.shortcut.tab"
 const val EXTRA_SHORTCUT_ACTION = "pulse.shortcut.action"
 const val SHORTCUT_ACTION_NEW_MESSAGE = "new_message"
 const val SHORTCUT_ACTION_SEARCH = "search"
 
-/** Dock-scoped state — live unread total for the Chats badge (web useUnread). */
+/** Dock-scoped state - live unread total for the Chats badge (web useUnread). */
 @HiltViewModel
 class ShellViewModel @Inject constructor(
     repo: PulseRepository,
@@ -242,19 +242,19 @@ class MainActivity : FragmentActivity() {
 
     @Inject lateinit var repository: app.pulse.domain.repository.PulseRepository
 
-    /** R10-a — biometric App lock: state holder + prompt presenter. */
+    /** R10-a - biometric App lock: state holder + prompt presenter. */
     @Inject lateinit var appLock: app.pulse.android.security.PulseAppLock
 
-    /** Wave 6 — pulse:// deep links (invite/user/room); consumed by the shell. */
+    /** Wave 6 - pulse:// deep links (invite/user/room); consumed by the shell. */
     private val deepLinks = MutableStateFlow<app.pulse.core.link.PulseDeepLink?>(null)
 
-    /** R10-a — the share-in payload forwarded by ShareInActivity (null = none). */
+    /** R10-a - the share-in payload forwarded by ShareInActivity (null = none). */
     private val shareIn = MutableStateFlow<ShareInPayload?>(null)
 
-    /** R10-a — launcher-shortcut tab/action requests (null = none pending). */
+    /** R10-a - launcher-shortcut tab/action requests (null = none pending). */
     private val shortcutRequest = MutableStateFlow<ShortcutRequest?>(null)
 
-    /** Wave 7 — POST_NOTIFICATIONS launcher (must register before STARTED). */
+    /** Wave 7 - POST_NOTIFICATIONS launcher (must register before STARTED). */
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             // Honest: denial keeps in-app surfaces live, no reminders as push.
@@ -1689,7 +1689,7 @@ private fun MoreDockButton(
 // NewChatSheet + More menu, the PulseMotion springs and the reduce-motion +
 // haptics idioms.
 
-/** Shared dock callbacks — every architecture drives the identical state. */
+/** Shared dock callbacks - every architecture drives the identical state. */
 private data class DockActions(
     val onSelect: (String) -> Unit,
     val onCompose: () -> Unit,
@@ -2353,9 +2353,9 @@ private fun IslandDock(
                     .padding(horizontal = 12.dp, vertical = 6.dp)
                     .semantics {
                         contentDescription = if (expanded) {
-                            "Navigation — collapse"
+                            "Navigation - collapse"
                         } else {
-                            "Navigation — ${activeTab.label}, tap to expand"
+                            "Navigation - ${activeTab.label}, tap to expand"
                         }
                     },
                 verticalAlignment = Alignment.CenterVertically,

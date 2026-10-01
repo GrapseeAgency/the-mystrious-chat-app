@@ -243,10 +243,10 @@ final class OnboardingViewModel: ObservableObject {
                     // Onboarding completes; the app runs offline-first from here.
                     onSuccess(Self.localIdentity(name: trimmed, color: self.color, username: username), nil)
                 } else {
-                    self.notice = failure.message ?? "Network error — try again."
+                    self.notice = failure.message ?? "Network error - try again."
                 }
             } catch {
-                self.notice = "Network error — try again."
+                self.notice = "Network error - try again."
             }
         }
     }
@@ -288,10 +288,10 @@ final class OnboardingViewModel: ObservableObject {
     static func message(of error: Error) -> String {
         if let failure = error as? PulseAPIClient.Failure {
             // Transport-level errors carry raw engine strings - humans get copy.
-            if failure.status == nil { return "Can't reach the Pulse server — check your connection." }
+            if failure.status == nil { return "Can't reach the Pulse server - check your connection." }
             if let message = failure.message { return message }
         }
-        return "Network error — try again."
+        return "Network error - try again."
     }
 
     /// Offline identity - stable random id, same shape as a server row.
@@ -540,7 +540,7 @@ struct OnboardingView: View {
                     Text("Pick your handle")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(zinc900)
-                    Text("Creating account for “\(viewModel.trimmedName)” — optional, but it makes you findable.")
+                    Text("Creating account for “\(viewModel.trimmedName)” - optional, but it makes you findable.")
                         .font(.system(size: 11))
                         .foregroundStyle(zinc500)
                 }
@@ -566,7 +566,7 @@ struct OnboardingView: View {
                 // live availability line (web aria-live region)
                 Group {
                     if trimmedHandle.isEmpty {
-                        noticeLine("Skip it if you prefer — you can add one later in Profile.", zinc400)
+                        noticeLine("Skip it if you prefer - you can add one later in Profile.", zinc400)
                     } else if !validHandle {
                         noticeLine("3–20 characters: lowercase letters, digits, underscore.", zinc500)
                     } else if isChecking {
@@ -679,7 +679,7 @@ struct OnboardingView: View {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                Text(viewModel.signingIn ? "Signing you in…" : "That's me — log in instead")
+                Text(viewModel.signingIn ? "Signing you in…" : "That's me - log in instead")
                     .font(.system(size: 14, weight: .semibold))
             }
             .frame(maxWidth: .infinity, minHeight: 44)
@@ -695,7 +695,7 @@ struct OnboardingView: View {
         }
         .buttonStyle(PulseButtonStyle())
         .disabled(!viewModel.validName || viewModel.signingIn || viewModel.reclaimCandidate != nil)
-        .accessibilityLabel("That's me — log in instead")
+        .accessibilityLabel("That's me - log in instead")
     }
 
     /// Wave 8 - reclaim confirm card: explicit "log in" (the login rotates
@@ -771,7 +771,7 @@ struct OnboardingView: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 12))
                 .foregroundStyle(PulseTheme.emberGlowTop)
-            Text("Tip: your @handle is optional — add or change it anytime from your Profile.")
+            Text("Tip: your @handle is optional - add or change it anytime from your Profile.")
                 .font(.system(size: 12))
                 .foregroundStyle(zinc500)
         }

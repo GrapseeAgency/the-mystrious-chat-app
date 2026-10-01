@@ -153,7 +153,7 @@ struct SavedLibraryView: View {
                     systemImage: "bookmark",
                     note: query.isEmpty
                         ? "Long-press any message and choose Save to keep it here"
-                        : "Try a different search — the library keeps the 100 most recent saves",
+                        : "Try a different search - the library keeps the 100 most recent saves",
                 )
             } else {
                 List(filtered, id: \.message.id) { item in

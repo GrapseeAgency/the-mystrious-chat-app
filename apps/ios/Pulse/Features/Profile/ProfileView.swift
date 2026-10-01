@@ -259,19 +259,19 @@ struct ProfileView: View {
     }
 
     private var statsValueText: String {
-        guard let stats else { return statsFailed ? "—" : "·" }
+        guard let stats else { return statsFailed ? "-" : "·" }
         return (stats.messages ?? 0).formatted()
     }
 
     private var roomsValueText: String {
-        guard let stats else { return statsFailed ? "—" : "·" }
+        guard let stats else { return statsFailed ? "-" : "·" }
         return (stats.chats ?? 0).formatted()
     }
 
     private var coinsValueText: String {
         switch walletPhase {
         case .loading: return "·"
-        case .failed: return "—"
+        case .failed: return "-"
         case .loaded: return walletCoins.formatted()
         }
     }
@@ -523,7 +523,7 @@ struct ProfileView: View {
                     case .loading:
                         ProgressView().controlSize(.small).tint(.white)
                     case .failed:
-                        Text("—")
+                        Text("-")
                             .font(.system(size: 13, weight: .semibold).monospacedDigit())
                             .foregroundStyle(Color.white.opacity(0.40))
                     case .loaded:
@@ -597,7 +597,7 @@ struct ProfileView: View {
                 Text("Ambient field")
                     .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(.white)
-                Text("The web's WebGL modes, rebuilt with Metal + Canvas — same palette, same physics.")
+                Text("The web's WebGL modes, rebuilt with Metal + Canvas - same palette, same physics.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Color.white.opacity(0.40))
                     .fixedSize(horizontal: false, vertical: true)
@@ -659,7 +659,7 @@ struct ProfileView: View {
             emberCardHeader("About")
             aboutLine(label: "Version", value: "1.0.0-native")
             aboutLine(label: "Stack", value: "SwiftUI · GRDB · Socket.IO")
-            Text("Rebuilt natively against the same live gateway as the web app — chats, rooms, reactions, typing and presence are real.")
+            Text("Rebuilt natively against the same live gateway as the web app - chats, rooms, reactions, typing and presence are real.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Color.white.opacity(0.40))
                 .fixedSize(horizontal: false, vertical: true)
@@ -710,7 +710,7 @@ struct ProfileView: View {
     /// the pulse://user/{id} deep link when the viewer id exists (the app
     /// scheme registered in project.yml; PulseDeepLink routes it back in).
     static func shareMessage(handle: String, userId: String?) -> String {
-        var text = "Find me on Pulse — @\(handle)"
+        var text = "Find me on Pulse - @\(handle)"
         if let userId, !userId.isEmpty {
             text += "\n\(PulseDeepLink.scheme)://user/\(userId)"
         }

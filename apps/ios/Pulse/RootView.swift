@@ -142,7 +142,7 @@ struct RootView: View {
                 // it - the identical optimistic contract.
                 session.validateStoredIdentity { [weak session] name in
                     session?.prefs?.setViewer(nil)
-                    session?.toasts.show("“\(name)” no longer exists on this Pulse — sign in or create an identity.")
+                    session?.toasts.show("“\(name)” no longer exists on this Pulse - sign in or create an identity.")
                 }
             }
             // R2-D - reminder-notification taps route like pulse://room: the

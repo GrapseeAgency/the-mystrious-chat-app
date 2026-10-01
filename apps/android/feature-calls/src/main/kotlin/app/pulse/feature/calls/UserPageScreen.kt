@@ -152,7 +152,7 @@ class UserPageViewModel @Inject constructor(
                 notice = if (result.isSuccess) {
                     (if (fresh) "Blocked " else "Unblocked ") + profile.firstName
                 } else {
-                    "Could not update the block — try again"
+                    "Could not update the block - try again"
                 },
             )
         }
@@ -170,7 +170,7 @@ class UserPageViewModel @Inject constructor(
                 notice = if (result.isSuccess) {
                     "Report submitted. Thanks for helping keep Pulse safe."
                 } else {
-                    "Could not submit the report — try again"
+                    "Could not submit the report - try again"
                 },
             )
         }
@@ -188,7 +188,7 @@ class UserPageViewModel @Inject constructor(
                 .onFailure { error ->
                     _state.value = _state.value.copy(
                         busy = false,
-                        notice = error.message ?: "Could not open the direct chat — try again",
+                        notice = error.message ?: "Could not open the direct chat - try again",
                     )
                 }
         }
@@ -322,7 +322,7 @@ fun UserPageScreen(
 
                 // Member since / last seen
                 val joined = state.stats?.joinedAtIso ?: profile.createdAtIso
-                MemberRow("Member since", joined?.let { formatStamp(it, monthOnly = true) } ?: "—")
+                MemberRow("Member since", joined?.let { formatStamp(it, monthOnly = true) } ?: "-")
                 MemberRow(
                     "Last seen",
                     profile.lastSeenIso?.let { "Active " + relative(it) } ?: "Last seen hidden",
@@ -477,7 +477,7 @@ fun ReportPanel(
             Text("Report $firstName", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Tell us what's happening. Reports are private — $firstName will not be notified.",
+                "Tell us what's happening. Reports are private - $firstName will not be notified.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
             )

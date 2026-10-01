@@ -94,7 +94,7 @@ fun RedPacketSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Text("Red packet", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("Whole PC only — every grab wins at least 1.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text("Whole PC only - every grab wins at least 1.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = total, onValueChange = { total = it.filter(Char::isDigit).take(5) },
@@ -368,7 +368,7 @@ fun WhiteboardSheet(
     onUndo: () -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
-    /** R2-C item 4 — the durable pending-stroke draft (required). */
+    /** R2-C item 4 - the durable pending-stroke draft (required). */
     draft: WhiteboardDraftHooks,
 ) {
     var color by remember { mutableStateOf(W7_COLORS[0]) }
@@ -593,7 +593,7 @@ fun EventsSheet(
                 Spacer(Modifier.height(10.dp))
             }
             if (events.isEmpty()) {
-                Text("No events yet — schedule the first one.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("No events yet - schedule the first one.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             events.forEach { e ->
                 val counts = e.counts ?: EventCountsDto()
@@ -721,7 +721,7 @@ fun RemindersSheet(
             OutlinedTextField(
                 value = when_,
                 onValueChange = { when_ = it },
-                label = { Text("When — \"in 30m\", \"tomorrow\", \"2026-01-20 09:00\"") },
+                label = { Text("When - \"in 30m\", \"tomorrow\", \"2026-01-20 09:00\"") },
                 modifier = Modifier.fillMaxWidth(),
             )
             error?.let {
@@ -739,7 +739,7 @@ fun RemindersSheet(
                     } ?: parseEventDate(when_)
                     val finalNote = parsed?.note ?: note.trim()
                     when {
-                        iso == null -> error = "No sane time found — try \"in 30m\", \"tomorrow\" or an exact date."
+                        iso == null -> error = "No sane time found - try \"in 30m\", \"tomorrow\" or an exact date."
                         finalNote.isEmpty() -> error = "Note can't be empty."
                         else -> {
                             error = null
@@ -765,7 +765,7 @@ fun RemindersSheet(
                     Column(Modifier.weight(1f)) {
                         Text(r.note.ifBlank { "Reminder" }, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (due) FontWeight.SemiBold else FontWeight.Normal)
                         Text(
-                            (if (due) "DUE NOW — " else "") + formatEventTime(r.remindAt) + (r.conversation.name.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
+                            (if (due) "DUE NOW - " else "") + formatEventTime(r.remindAt) + (r.conversation.name.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
                             fontSize = 12.sp,
                             color = if (due) PulsePalette.Emerald else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -832,7 +832,7 @@ fun LeaderboardSheet(
                 TextButton(onClick = { scope = !scope }) { Text(if (scope) "This room" else "Global") }
             }
             val rows = page?.rows ?: emptyList()
-            if (rows.isEmpty()) Text("No standings yet — send messages, win games, join tournaments.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (rows.isEmpty()) Text("No standings yet - send messages, win games, join tournaments.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             rows.forEachIndexed { i, r ->
                 Row(
                     Modifier

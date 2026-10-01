@@ -132,7 +132,7 @@ fun RedPacketCard(
                 myGrab != null && myGrab > 0 -> "You grabbed ${myGrab} PC"
                 isMine -> "$grabbedNow/$count claimed · $total PC"
                 exhausted -> when (status) {
-                    "expired" -> "Expired — unclaimed PC refunded"
+                    "expired" -> "Expired - unclaimed PC refunded"
                     else -> "Fully grabbed"
                 }
                 else -> "$total PC · $count grabs"
@@ -159,7 +159,7 @@ fun RedPacketDetailSheetBody(
     Column(Modifier.padding(horizontal = 18.dp)) {
         Text(
             when (p?.status) {
-                "expired" -> "Expired — unclaimed PC refunded to the sender"
+                "expired" -> "Expired - unclaimed PC refunded to the sender"
                 "exhausted" -> "Fully grabbed"
                 else -> "${p?.grabbed ?: 0}/${p?.count ?: 0} claimed"
             },
@@ -239,10 +239,10 @@ fun TicTacToeCard(
     ) {
         Text(
             when {
-                m.status == "x_won" -> "X wins — ${detail?.playerX?.name ?: "X"}"
-                m.status == "o_won" -> "O wins — ${detail?.playerO?.name ?: "O"}"
-                m.status == "draw" -> "Draw — both +10 XP"
-                m.playerOId == null -> "Open challenge — tap a seat to join"
+                m.status == "x_won" -> "X wins - ${detail?.playerX?.name ?: "X"}"
+                m.status == "o_won" -> "O wins - ${detail?.playerO?.name ?: "O"}"
+                m.status == "draw" -> "Draw - both +10 XP"
+                m.playerOId == null -> "Open challenge - tap a seat to join"
                 myTurn -> "Your turn ($mySide)"
                 else -> "Turn: ${m.turn}"
             },
@@ -438,7 +438,7 @@ fun TournamentCard(
         if (entries.isEmpty()) {
             Spacer(Modifier.height(6.dp))
             Text(
-                "No players yet — be the first",
+                "No players yet - be the first",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

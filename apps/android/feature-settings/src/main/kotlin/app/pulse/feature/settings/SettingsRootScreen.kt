@@ -117,7 +117,7 @@ private val GROUPS: List<Pair<String, List<String>>> = listOf(
     "About" to listOf("about"),
 )
 
-/** Root — compact grouped section list (web parity: no search, no overlay). */
+/** Root - compact grouped section list (web parity: no search, no overlay). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsRootScreen(
@@ -213,7 +213,7 @@ fun SettingsRootScreen(
         ) {
             if (prefsOffline) {
                 Text(
-                    "Offline — changes stay on this device until Pulse reconnects.",
+                    "Offline - changes stay on this device until Pulse reconnects.",
                     color = Color.White.copy(alpha = 0.5f),
                     fontSize = 12.sp,
                     modifier = Modifier.padding(vertical = 6.dp),
@@ -276,7 +276,7 @@ fun SettingsRootScreen(
             }
             // R15 - root version footer (web settings-screen.tsx:2005-2007).
             Text(
-                "Pulse v${versionName ?: "?"} — every control here is live.",
+                "Pulse v${versionName ?: "?"} - every control here is live.",
                 fontSize = 11.sp,
                 color = Color.White.copy(alpha = 0.5f),
                 modifier = Modifier
@@ -404,7 +404,7 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
                     // R14 gap 7b - status glyph rides the name line (web
                     // settings-screen.tsx:815-831) + honest member-since line.
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(profile?.name ?: viewerName ?: "—", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Text(profile?.name ?: viewerName ?: "-", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                         val glyph = profile?.statusEmoji
                         if (!glyph.isNullOrBlank()) {
                             Spacer(Modifier.width(6.dp))
@@ -494,7 +494,7 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
             Column(Modifier.weight(1f)) {
                 Text("Session scope", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
                 Text(
-                    "Signed in on this device only (encrypted session vault) — other devices keep their own sessions.",
+                    "Signed in on this device only (encrypted session vault) - other devices keep their own sessions.",
                     fontSize = 11.5.sp,
                     color = Color.White.copy(alpha = 0.5f),
                 )
@@ -520,11 +520,11 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
 
 private val WALLPAPERS = PulseWallpaper.TOKENS
 
-/** R2-A item 11 — web WEBGL_MODES as two legible 3-wide picker rows. */
+/** R2-A item 11 - web WEBGL_MODES as two legible 3-wide picker rows. */
 private val FX_MODE_ROW_1 = listOf("aurora" to "Aurora", "caustics" to "Caustics", "mesh" to "Mesh")
 private val FX_MODE_ROW_2 = listOf("stars" to "Stars", "liquid" to "Liquid", "off" to "Off")
 
-/** R2-C item 3 — the five design languages (web UI_THEMES) as picker rows. */
+/** R2-C item 3 - the five design languages (web UI_THEMES) as picker rows. */
 private val UI_THEME_ROW_1 = listOf(
     "glass" to "Glass",
     "kinetic" to "Kinetic",
@@ -542,7 +542,7 @@ private val UI_THEME_ROW_2 = listOf(
  * mobile adaptations - see the MainActivity renderer comments).
  */
 private val NAV_STYLE_CARDS = listOf(
-    Triple(app.pulse.protocol.PulseNavStyle.CAPSULE, "Floating Capsule", "Detached glass capsule dock — the default"),
+    Triple(app.pulse.protocol.PulseNavStyle.CAPSULE, "Floating Capsule", "Detached glass capsule dock - the default"),
     Triple(app.pulse.protocol.PulseNavStyle.FLOATING_TOP, "Floating Top Nav", "Capsule bar floating beneath the top edge"),
     Triple(app.pulse.protocol.PulseNavStyle.FLOATING_DOCK, "Floating Dock", "Desktop-style dock with magnifying icons"),
     Triple(app.pulse.protocol.PulseNavStyle.PILL, "Pill Navigation", "Single segmented pill with sliding fill"),
@@ -594,7 +594,7 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
             }
         }
         Text(
-            uiThemeMeta.label + " — " + uiThemeMeta.detail,
+            uiThemeMeta.label + " - " + uiThemeMeta.detail,
             fontSize = 11.sp,
             color = Color.White.copy(alpha = 0.5f),
             modifier = Modifier.padding(top = 4.dp),
@@ -737,7 +737,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
         Text("Drafts & Outbox", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
         Text("Drafts live on this device; outbox messages flush when Pulse reconnects.", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
         if (drafts.isEmpty() && outbox.isEmpty()) {
-            Text("Nothing queued — all clear.", fontSize = 13.sp, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 12.dp))
+            Text("Nothing queued - all clear.", fontSize = 13.sp, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 12.dp))
         }
         if (drafts.isNotEmpty()) {
             Text("Drafts · ${drafts.size}", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
@@ -803,7 +803,7 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
     // only changes when the :app push wiring itself transitions)
     LaunchedEffect(Unit) { viewModel.refreshPushStatus() }
     SectionScaffold("Notifications", onBack) {
-        RowToggle("Incoming sound", "Master ding gate on this device — the web soundOn toggle.", soundOn, viewModel::setSoundOn)
+        RowToggle("Incoming sound", "Master ding gate on this device - the web soundOn toggle.", soundOn, viewModel::setSoundOn)
         RowToggle("Show message previews", "Message text in notification-style toasts.", prefs.notifPreviews == true, viewModel::setNotifPreviews)
         RowToggle("Play a soft pop", "Per-account pop sound for incoming messages.", prefs.notifSound == true, viewModel::setNotifSound)
         RowToggle("Vibrate", "Where the device supports it.", prefs.notifVibrate == true, viewModel::setNotifVibrate)
@@ -862,8 +862,8 @@ private fun RemotePushStatusRow(
     onResync: () -> Unit,
 ) {
     val (badge, note, on) = when {
-        !status.armed -> Triple("Off", "This build carries no push credentials — delivery stays disabled.", false)
-        !status.hasToken -> Triple("Armed", "Credentials present — the device registers on the next sign-in.", false)
+        !status.armed -> Triple("Off", "This build carries no push credentials - delivery stays disabled.", false)
+        !status.hasToken -> Triple("Armed", "Credentials present - the device registers on the next sign-in.", false)
         !status.viewerBound -> Triple("Token ready", "Waiting for sign-in to bind push to your account.", false)
         else -> Triple("On", "This device is registered for push delivery.", true)
     }
@@ -911,7 +911,7 @@ private fun OutlinedField(label: String, value: String, onChange: (String) -> Un
         label = { Text(label) },
         supportingText = {
             Text(
-                if (valid) "HH:MM" else "Use HH:MM — e.g. 22:00",
+                if (valid) "HH:MM" else "Use HH:MM - e.g. 22:00",
                 color = if (Regex("^\\d{1,2}:\\d{2}$").matches(value)) Color.White.copy(alpha = 0.5f) else EmberPalette.Signal,
             )
         },
@@ -954,7 +954,7 @@ fun PrivacySection(onBack: () -> Unit, onOpenBlocked: () -> Unit, viewModel: Set
                 !want -> viewModel.setAppLockEnabled(false)
                 activity == null -> Toast.makeText(
                     context,
-                    "App lock needs the app's main screen — try again from a chat tab.",
+                    "App lock needs the app's main screen - try again from a chat tab.",
                     Toast.LENGTH_SHORT,
                 ).show()
                 else -> confirmAppLock(activity) { viewModel.setAppLockEnabled(true) }
@@ -1010,7 +1010,7 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(PulseIcons.Radio, contentDescription = null, tint = if (connected) EmberPalette.Online else Color.White.copy(alpha = 0.5f), modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (connected) "Realtime connected" else "Realtime offline — polling fallback", fontSize = 13.5.sp)
+                    Text(if (connected) "Realtime connected" else "Realtime offline - polling fallback", fontSize = 13.5.sp)
                 }
                 Text("Gateway · ${viewModel.gatewayHost}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
                 HorizontalDivider(color = EmberPalette.Hairline)
@@ -1091,8 +1091,8 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
             Column(Modifier.weight(1f)) {
                 Text("Device network", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
                 Text(
-                    if (deviceOnline) "This device is online — delivery is instant."
-                    else "This device is offline — messages wait in the queue.",
+                    if (deviceOnline) "This device is online - delivery is instant."
+                    else "This device is offline - messages wait in the queue.",
                     fontSize = 11.5.sp,
                     color = Color.White.copy(alpha = 0.5f),
                 )
@@ -1159,7 +1159,7 @@ fun AccessibilitySection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
         RowToggle(
             "Reduce motion",
             if (systemAnimationsOff) {
-                "On — your system \"Remove animations\" setting is honored."
+                "On - your system \"Remove animations\" setting is honored."
             } else {
                 "Less parallax and ambient movement app-wide."
             },
@@ -1398,14 +1398,14 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
                 Text("Pulse", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 Text("Real-time chat with a built-in economy", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
                 Text("versionName ${pm.versionName} · versionCode ${pm.longVersionCode}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
-                Text("Native Android build — Kotlin + Compose.", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                Text("Native Android build - Kotlin + Compose.", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
             }
         }
         AboutInfoRow("Version", "${pm.versionName} · Stable")
         AboutInfoRow("Framework", "Kotlin + Jetpack Compose (native Android)")
         AboutInfoRow(
             "Realtime",
-            if (connected) "socket.io relay — connected live" else "socket.io relay — offline, polling fallback",
+            if (connected) "socket.io relay - connected live" else "socket.io relay - offline, polling fallback",
             live = connected,
         )
         AboutInfoRow("Data", "Prisma + SQLite · zero mock data")
@@ -1440,7 +1440,7 @@ fun AboutSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
     }
 }
 
-/** R14 gap 3 — one static Build row of the About section. */
+/** R14 gap 3 - one static Build row of the About section. */
 @Composable
 private fun AboutInfoRow(label: String, value: String, live: Boolean = false) {
     Row(

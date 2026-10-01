@@ -174,7 +174,7 @@ class HubViewModel @Inject constructor(
         val installers: List<HubLogUserDto> = emptyList(),
     )
 
-    /** R5-B ITEM 3 — viewer id for "(you)" marks + the own-row relative stamp. */
+    /** R5-B ITEM 3 - viewer id for "(you)" marks + the own-row relative stamp. */
     val viewerId: String? get() = repo.viewerId
 
     private val _installs = MutableStateFlow<Map<String, AppInstallRow>>(emptyMap())
@@ -214,7 +214,7 @@ class HubViewModel @Inject constructor(
             repo.wallet().fold(
                 onSuccess = { page -> _wallet.value = WalletUi(loading = false, page = page, stale = false) },
                 onFailure = { t ->
-                    val msg = t.message ?: "No gateway configured — set your server in Profile → Connection."
+                    val msg = t.message ?: "No gateway configured - set your server in Profile → Connection."
                     val hasCache = _wallet.value.page != null
                     _wallet.value = _wallet.value.copy(loading = false, stale = hasCache, error = if (hasCache) null else msg)
                 },
@@ -227,8 +227,8 @@ class HubViewModel @Inject constructor(
         viewModelScope.launch {
             repo.checkinWallet().fold(
                 onSuccess = { v ->
-                    notify("Checked in — +${v.reward} PC${if (v.streak > 1) " · ${v.streak}-day streak" else ""}")
-                    _checkinSuccess.tryEmit(v.reward) // R1-W2H D38 — once per success
+                    notify("Checked in - +${v.reward} PC${if (v.streak > 1) " · ${v.streak}-day streak" else ""}")
+                    _checkinSuccess.tryEmit(v.reward) // R1-W2H D38 - once per success
                     loadWallet()
                 },
                 onFailure = { t ->
@@ -403,7 +403,7 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    /** F-HB-09 — join (or fetch) the app community → real conversation id. */
+    /** F-HB-09 - join (or fetch) the app community → real conversation id. */
     fun joinCommunity(appId: String, name: String, onJoined: (String) -> Unit) {
         viewModelScope.launch {
             repo.joinAppCommunity(appId).fold(
@@ -418,7 +418,7 @@ class HubViewModel @Inject constructor(
         }
     }
 
-    /** F-HB-10 — fan-out My apps state (web hub-data.tsx parity). */
+    /** F-HB-10 - fan-out My apps state (web hub-data.tsx parity). */
     fun loadMyApps(catalog: HubCatalog) {
         viewModelScope.launch {
             val ids = catalog.apps.take(24).map { it.n.toString() }
@@ -514,7 +514,7 @@ fun HubScreen(
             Spacer(Modifier.height(14.dp))
             Text("Hub", fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Text(
-                if (viewerName.isBlank()) "XP · streaks · mini apps" else "Hey $viewerName — XP · streaks · mini apps",
+                if (viewerName.isBlank()) "XP · streaks · mini apps" else "Hey $viewerName - XP · streaks · mini apps",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
             )
@@ -531,7 +531,7 @@ fun HubScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Pulse Wallet", color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    if (wallet.stale) Text("offline — cached", color = Color(0x99FFFFFF), fontSize = 11.sp)
+                    if (wallet.stale) Text("offline - cached", color = Color(0x99FFFFFF), fontSize = 11.sp)
                     if (wallet.loading) {
                         Spacer(Modifier.width(8.dp))
                         CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
@@ -615,7 +615,7 @@ fun HubScreen(
         HubSurface.TASKS -> TasksSheet(vm = vm, onDismiss = { surface = null })
         HubSurface.MARKET -> MarketSheet(vm = vm, onDismiss = { surface = null })
         HubSurface.LOGS -> {
-            LogsLivePoll(vm) // R1-W2H D40 — 12s live poll while this sheet is open
+            LogsLivePoll(vm) // R1-W2H D40 - 12s live poll while this sheet is open
             SheetHost(onDismiss = { surface = null }) {
                 LogsBody(logs = logs)
             }
@@ -751,7 +751,7 @@ private fun TransferSheet(vm: HubViewModel, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Text("Send PC", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("Whole PC only — max 100,000 per transfer.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text("Whole PC only - max 100,000 per transfer.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(value = handle, onValueChange = { handle = it.take(24) }, label = { Text("@handle") }, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(6.dp))
@@ -989,7 +989,7 @@ private fun LogsBody(logs: List<HubLogDto>) {
     }
 }
 
-/** F-HB-08/10 — apps matrix (bundled catalog, offline-browsable) + My apps. */
+/** F-HB-08/10 - apps matrix (bundled catalog, offline-browsable) + My apps. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppsSheet(
@@ -1018,7 +1018,7 @@ private fun AppsSheet(
             )
             Text(
                 if (myAppsOnly) "Installed & connected apps"
-                else "${catalog.apps.size} apps · ${catalog.categories.size} categories — browsable offline",
+                else "${catalog.apps.size} apps · ${catalog.categories.size} categories - browsable offline",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
@@ -1039,7 +1039,7 @@ private fun AppsSheet(
             Spacer(Modifier.height(8.dp))
             if (visible.isEmpty()) {
                 Text(
-                    if (myAppsOnly) "No apps connected yet — open Mini apps to connect."
+                    if (myAppsOnly) "No apps connected yet - open Mini apps to connect."
                     else "No apps match.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 4.dp),

@@ -52,11 +52,11 @@ struct SettingsView: View {
     }
 
     private var version: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
     }
 
     private var build: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
     }
 
     private var gatewayHost: String {
@@ -185,7 +185,7 @@ struct SettingsView: View {
                 PulseHaptics.tap()
                 editProfileOpen = true
             } label: {
-                settingsLinkRow(icon: "pencil", label: "Edit profile", caption: "Name, handle, status and avatar — in the Profile tab", value: "Open")
+                settingsLinkRow(icon: "pencil", label: "Edit profile", caption: "Name, handle, status and avatar - in the Profile tab", value: "Open")
             }
             .buttonStyle(.plain)
 
@@ -197,7 +197,7 @@ struct SettingsView: View {
                     Text("User ID")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.white)
-                    Text(prefs.viewer?.id ?? "—")
+                    Text(prefs.viewer?.id ?? "-")
                         .font(.system(size: 11.5, design: .monospaced))
                         .foregroundStyle(Color.white.opacity(0.55))
                         .lineLimit(1)
@@ -276,7 +276,7 @@ struct SettingsView: View {
         }
         if await PulseAppLock.shared.runEnableConfirmation() {
             prefs.setAppLockEnabled(true)
-            session.toasts.show("App lock is on — Pulse locks when backgrounded.")
+            session.toasts.show("App lock is on - Pulse locks when backgrounded.")
         } else {
             session.toasts.show(PulseAppLock.shared.statusMessage ?? "App lock needs Face ID, Touch ID or the device passcode.")
         }
@@ -310,7 +310,7 @@ struct SettingsView: View {
                 Text("Design language")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.55))
-                Text("One of five locked looks — \(PulseUiTheme.meta(for: prefs.uiTheme).detail)")
+                Text("One of five locked looks - \(PulseUiTheme.meta(for: prefs.uiTheme).detail)")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Color.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
@@ -332,7 +332,7 @@ struct SettingsView: View {
                 Text("Navigation style")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.55))
-                Text("How the app's dock is laid out — currently \(prefs.navStyle.label).")
+                Text("How the app's dock is laid out - currently \(prefs.navStyle.label).")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Color.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
@@ -348,7 +348,7 @@ struct SettingsView: View {
                 Text("Chat wallpaper")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.55))
-                Text("Background behind every chat room — currently \(prefs.wallpaper.label).")
+                Text("Background behind every chat room - currently \(prefs.wallpaper.label).")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Color.white.opacity(0.55))
                 HStack(spacing: 10) {
@@ -440,7 +440,7 @@ struct SettingsView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(themeMeta.label) design language — \(themeMeta.tagline)")
+        .accessibilityLabel("\(themeMeta.label) design language - \(themeMeta.tagline)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -491,7 +491,7 @@ struct SettingsView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(style.label) navigation style — \(style.hint)")
+        .accessibilityLabel("\(style.label) navigation style - \(style.hint)")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -579,7 +579,7 @@ struct SettingsView: View {
             // R14 5-b - the device-local MASTER ding gate (web
             // pulse-settings.ts soundOn, default true). The pop above plays
             // only when this is on too (web gate chain parity).
-            toggleRow(icon: "speaker.wave.2", title: "Incoming sound", description: "Master ding gate — the incoming pop plays only while this is on.", isOn: prefs.soundOn) {
+            toggleRow(icon: "speaker.wave.2", title: "Incoming sound", description: "Master ding gate - the incoming pop plays only while this is on.", isOn: prefs.soundOn) {
                 prefs.setSoundOn($0)
             }
             toggleRow(icon: "iphone.radiowaves.left.and.right", title: "Vibration", description: "Buzz on incoming messages.", isOn: prefs.notifVibrate) {
@@ -617,7 +617,7 @@ struct SettingsView: View {
                     label: "Window status",
                     value: prefs.isQuietHoursNow ? "Active now" : "Idle",
                 )
-                Text("\(prefs.quietStart) → \(prefs.quietEnd) — overnight windows are supported.")
+                Text("\(prefs.quietStart) → \(prefs.quietEnd) - overnight windows are supported.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(Color.white.opacity(0.55))
             }
@@ -743,7 +743,7 @@ struct SettingsView: View {
             toggleRow(icon: "faceid", title: "App lock", description: "Ask for Face ID, Touch ID or the passcode when returning to Pulse.", isOn: prefs.appLockEnabled) { newValue in
                 Task { await self.confirmAppLock(newValue) }
             }
-            Text("App lock guards this device only — it never syncs to your account.")
+            Text("App lock guards this device only - it never syncs to your account.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Color.white.opacity(0.55))
 
@@ -753,12 +753,12 @@ struct SettingsView: View {
                 PulseHaptics.tap()
                 blockedOpen = true
             } label: {
-                settingsLinkRow(icon: "person.badge.minus", label: "Blocked accounts", caption: "Blocked accounts cannot message you in direct chats — the server enforces the boundary.", value: "Open")
+                settingsLinkRow(icon: "person.badge.minus", label: "Blocked accounts", caption: "Blocked accounts cannot message you in direct chats - the server enforces the boundary.", value: "Open")
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Blocked accounts — open the blocked list")
+            .accessibilityLabel("Blocked accounts - open the blocked list")
 
-            Text("These sync to your Pulse account and are enforced server-side — hidden last-seen also hides your online status, hidden typing ends the relay before it reaches anyone, and blocked accounts cannot DM you.")
+            Text("These sync to your Pulse account and are enforced server-side - hidden last-seen also hides your online status, hidden typing ends the relay before it reaches anyone, and blocked accounts cannot DM you.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Color.white.opacity(0.55))
         }
@@ -771,7 +771,7 @@ struct SettingsView: View {
             settingsRow(
                 icon: "network",
                 label: "Gateway",
-                value: PulseEndpoints.configuredBase == nil ? "Not set — offline-first" : gatewayHost,
+                value: PulseEndpoints.configuredBase == nil ? "Not set - offline-first" : gatewayHost,
             )
             settingsRow(
                 icon: "bolt",
@@ -889,7 +889,7 @@ struct SettingsView: View {
 
     private var accessibilityCard: some View {
         settingsCard(title: "Accessibility", icon: "accessibility") {
-            toggleRow(icon: "accessibility", title: "Reduced motion", description: "Calm the interface — instant transitions, no ambient particles or message effects.", isOn: prefs.reducedMotion) {
+            toggleRow(icon: "accessibility", title: "Reduced motion", description: "Calm the interface - instant transitions, no ambient particles or message effects.", isOn: prefs.reducedMotion) {
                 prefs.setReducedMotion($0)
             }
             settingsRow(
@@ -898,7 +898,7 @@ struct SettingsView: View {
                 value: systemReduceMotion ? "Reduce" : "Full",
             )
             Text(systemReduceMotion
-                ? "Your OS asks apps to reduce motion — motion is reduced regardless of the toggle."
+                ? "Your OS asks apps to reduce motion - motion is reduced regardless of the toggle."
                 : "When the OS Reduce Motion setting is on, motion is reduced regardless of the toggle above.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Color.white.opacity(0.55))
@@ -1043,7 +1043,7 @@ struct SettingsView: View {
                 PulseHaptics.tap()
                 clearAllDrafts()
             } label: {
-                actionRow(icon: "doc.text", title: "Clear drafts", caption: draftCount > 0 ? "\(draftCount) saved on this device — clearing frees their storage." : "Empty — nothing to clear.", actionLabel: "Clear", disabled: draftCount == 0)
+                actionRow(icon: "doc.text", title: "Clear drafts", caption: draftCount > 0 ? "\(draftCount) saved on this device - clearing frees their storage." : "Empty - nothing to clear.", actionLabel: "Clear", disabled: draftCount == 0)
             }
             .buttonStyle(.plain)
             .disabled(draftCount == 0)
@@ -1052,13 +1052,13 @@ struct SettingsView: View {
                 PulseHaptics.tap()
                 clearOutbox()
             } label: {
-                actionRow(icon: "cloud.slash", title: "Discard offline queue", caption: queuedCount > 0 ? "\(queuedCount) waiting — discarding drops them without sending." : "Empty — nothing queued right now.", actionLabel: "Discard", disabled: queuedCount == 0)
+                actionRow(icon: "cloud.slash", title: "Discard offline queue", caption: queuedCount > 0 ? "\(queuedCount) waiting - discarding drops them without sending." : "Empty - nothing queued right now.", actionLabel: "Discard", disabled: queuedCount == 0)
             }
             .buttonStyle(.plain)
             .disabled(queuedCount == 0)
 
             settingsRow(icon: "arrow.triangle.2.circlepath", label: "Updates", value: "App Store pipeline")
-            Text("iOS updates ship through the App Store pipeline — in-place live updates are the Android build's superpower. This screen always shows the exact installed version below.")
+            Text("iOS updates ship through the App Store pipeline - in-place live updates are the Android build's superpower. This screen always shows the exact installed version below.")
                 .font(.system(size: 11.5))
                 .foregroundStyle(Color.white.opacity(0.55))
 
@@ -1079,13 +1079,13 @@ struct SettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("The Hub — open the hub tab")
+                .accessibilityLabel("The Hub - open the hub tab")
             }
         }
     }
 
     private var footprintText: String {
-        guard let bytes = footprintBytes else { return "—" }
+        guard let bytes = footprintBytes else { return "-" }
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
@@ -1155,7 +1155,7 @@ struct SettingsView: View {
                 )
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("GitHub repository — opens in Safari")
+            .accessibilityLabel("GitHub repository - opens in Safari")
 
             // R14 5-b - the web footer (heart + wordmark + live-sync line).
             VStack(spacing: 4) {
@@ -1283,7 +1283,7 @@ struct SettingsView: View {
         .frame(minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label) — \(value)")
+        .accessibilityLabel("\(label) - \(value)")
     }
 
     private func toggleRow(
@@ -1342,7 +1342,7 @@ struct SettingsView: View {
         .frame(minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title) — \(actionLabel)")
+        .accessibilityLabel("\(title) - \(actionLabel)")
     }
 
     // ── actions ──────────────────────────────────────────────
@@ -1410,10 +1410,10 @@ struct SettingsView: View {
             do {
                 _ = try await candidate.users()
                 let ms = Int(Date().timeIntervalSince(started) * 1000)
-                withAnimation { probeResult = .ok("Reachable — identities endpoint answered in \(ms) ms.") }
+                withAnimation { probeResult = .ok("Reachable - identities endpoint answered in \(ms) ms.") }
             } catch {
                 withAnimation {
-                    probeResult = .fail("No answer — the offline-first store keeps your chats readable meanwhile.")
+                    probeResult = .fail("No answer - the offline-first store keeps your chats readable meanwhile.")
                 }
             }
             probing = false

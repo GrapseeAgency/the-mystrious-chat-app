@@ -307,7 +307,7 @@ object StickerRecents {
     }
 }
 
-/** F-MS-24 — the sticker packs sheet: recents strip + pack tabs + 3-col grid. */
+/** F-MS-24 - the sticker packs sheet: recents strip + pack tabs + 3-col grid. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun StickerPickerSheet(
@@ -664,7 +664,7 @@ internal fun ScheduledSendsSheet(
                     )
                 }
                 items.isEmpty() -> Text(
-                    "Draft a message and choose \u201CSchedule message\u201D — it sends itself later.",
+                    "Draft a message and choose \u201CSchedule message\u201D - it sends itself later.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -703,7 +703,7 @@ internal fun ScheduledSendsSheet(
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     if (refused) {
-                                        "Not sent — blocked · was " + PulseTime.listStamp(item.scheduledAtIso)
+                                        "Not sent - blocked · was " + PulseTime.listStamp(item.scheduledAtIso)
                                     } else {
                                         PulseTime.listStamp(item.scheduledAtIso) + " · " + PulseTime.clock(item.scheduledAtIso)
                                     },
@@ -911,7 +911,7 @@ internal fun QuickPhrasesRail(
     }
 }
 
-/** F-MS-29 — manage sheet: add (≤120 chars, server caps 12 rows) + delete. */
+/** F-MS-29 - manage sheet: add (≤120 chars, server caps 12 rows) + delete. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PhrasesSheet(
@@ -945,7 +945,7 @@ internal fun PhrasesSheet(
                 )
             }
             Text(
-                "One-tap lines for the composer — synced to your account.",
+                "One-tap lines for the composer - synced to your account.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp),
@@ -984,7 +984,7 @@ internal fun PhrasesSheet(
                 if (phrases.isEmpty()) {
                     item {
                         Text(
-                            "No quick phrases yet — add your first one",
+                            "No quick phrases yet - add your first one",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 8.dp),
@@ -1043,7 +1043,7 @@ internal fun locationOf(message: Message): LocationPayload? {
     return if (parsed.label.isBlank()) parsed.copy(label = LOCATION_DEFAULT_LABEL) else parsed
 }
 
-/** Web coordText — "12.3457° N, 67.8901° W" (locale-safe, tabular digits). */
+/** Web coordText - "12.3457° N, 67.8901° W" (locale-safe, tabular digits). */
 internal fun coordinateText(lat: Double, lng: Double): String =
     String.format(java.util.Locale.US, "%.4f° %s, %.4f° %s",
         Math.abs(lat), if (lat >= 0) "N" else "S",
@@ -1182,7 +1182,7 @@ internal fun LocationShareSheet(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Location access is off — enable it in Settings to share a pin",
+                        "Location access is off - enable it in Settings to share a pin",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -1205,7 +1205,7 @@ internal fun LocationShareSheet(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Couldn't get a fix — check that location is on, then retry",
+                        "Couldn't get a fix - check that location is on, then retry",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -1276,7 +1276,7 @@ internal fun LocationShareSheet(
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Sends a map pin to this chat — your coordinates ride the message.",
+                        "Sends a map pin to this chat - your coordinates ride the message.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

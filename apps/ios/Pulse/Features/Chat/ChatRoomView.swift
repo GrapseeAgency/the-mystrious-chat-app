@@ -809,7 +809,7 @@ private struct RoomContent: View {
                             }
                     }
                     .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel(safetyBadges.isVerified(partner.id) ? "Verified — open safety number" : "Not verified — open safety number")
+                    .accessibilityLabel(safetyBadges.isVerified(partner.id) ? "Verified - open safety number" : "Not verified - open safety number")
                 }
                 // R2-D ITEM 1 - DM info entry (web header-menu parity: the
                 // menu covers DMs with TTL + screen security + mute; iOS had
@@ -876,7 +876,7 @@ private struct RoomContent: View {
                 }
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel(viewModel.upcomingReminderCount > 0
-                    ? "Reminders — \(viewModel.upcomingReminderCount) upcoming"
+                    ? "Reminders - \(viewModel.upcomingReminderCount) upcoming"
                     : "Reminders")
             }
             // R1-W2I F-PI-03 - the pop-out mini-chat toggle (web chat-room
@@ -1170,7 +1170,7 @@ private struct RoomContent: View {
                             if let conv = try? await session.api.conversationDetail(id: targetId, userId: session.api.userId) {
                                 session.requestOpenRoom(conv, jumpMessageId: messageId)
                             } else {
-                                session.toasts.show("That reminder lives in \(targetName) — open it to see the message")
+                                session.toasts.show("That reminder lives in \(targetName) - open it to see the message")
                             }
                         }
                     }
@@ -1472,7 +1472,7 @@ private struct RoomContent: View {
     private var offlineStrip: some View {
         HStack(spacing: 6) {
             Image(systemName: "wifi.slash")
-            Text("Offline — messages will queue")
+            Text("Offline - messages will queue")
         }
         .font(.caption2.weight(.medium))
         .foregroundStyle(.secondary)
@@ -1642,7 +1642,7 @@ private struct RoomContent: View {
             .padding(.bottom, 6)
             .transition(.opacity.combined(with: .scale(scale: 0.9)))
             .accessibilityLabel(viewModel.missedCount > 0
-                ? "Jump to newest messages — \(viewModel.missedCount) new"
+                ? "Jump to newest messages - \(viewModel.missedCount) new"
                 : "Jump to newest messages")
         } else {
             Color.clear.frame(height: 0)
@@ -1699,7 +1699,7 @@ private struct RoomContent: View {
                             .foregroundStyle(.secondary)
                     }
                 case .ready:
-                    Text(viewModel.recapText ?? "—")
+                    Text(viewModel.recapText ?? "-")
                         .font(.caption)
                         .foregroundStyle(.primary)
                         .lineSpacing(3)
@@ -1750,7 +1750,7 @@ private struct RoomContent: View {
             .padding(28)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Screen security is on — messages are hidden while Pulse is not focused")
+        .accessibilityLabel("Screen security is on - messages are hidden while Pulse is not focused")
     }
 
     private func openLightbox(_ message: WireChatMessage) {
@@ -1836,11 +1836,11 @@ private struct RoomContent: View {
             }
             if micDenied {
                 deniedNotice(
-                    "Microphone access is off — voice notes need it. Hold-to-record unlocks once it's on.",
+                    "Microphone access is off - voice notes need it. Hold-to-record unlocks once it's on.",
                 ) { micDenied = false }
             }
             if cameraDenied {
-                deniedNotice("Camera access is off — allow it to take photos for this chat.") { cameraDenied = false }
+                deniedNotice("Camera access is off - allow it to take photos for this chat.") { cameraDenied = false }
             }
             // R2-D - the F-MS-20 slow-mode countdown: the chip appears the
             // moment the server's 429 arms the lock, counts the honest wait
@@ -1913,7 +1913,7 @@ private struct RoomContent: View {
             Image(systemName: "gauge")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(PulseTheme.emberGlowTop)
-            Text("Slow mode — you can send again in \(PulseFormat.countdown(viewModel.slowModeRemainingSeconds))")
+            Text("Slow mode - you can send again in \(PulseFormat.countdown(viewModel.slowModeRemainingSeconds))")
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(PulseTheme.textSecondary)
             Spacer(minLength: 0)
@@ -1929,7 +1929,7 @@ private struct RoomContent: View {
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Slow mode — you can send again in \(viewModel.slowModeRemainingSeconds) seconds")
+        .accessibilityLabel("Slow mode - you can send again in \(viewModel.slowModeRemainingSeconds) seconds")
     }
 
     /// R3-A item 5 - the incognito hint pill (web anon-pill :4809-4830 copy
@@ -1940,7 +1940,7 @@ private struct RoomContent: View {
             Image(systemName: "theatermasks.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(PulseTheme.emberGlowTop)
-            Text("Incognito on — next message hides your name")
+            Text("Incognito on - next message hides your name")
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(PulseTheme.textSecondary)
             Spacer(minLength: 0)
@@ -1990,7 +1990,7 @@ private struct RoomContent: View {
                     .foregroundStyle(PulseTheme.textTertiary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Stop filing to this topic — back to General")
+            .accessibilityLabel("Stop filing to this topic - back to General")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -2209,7 +2209,7 @@ private struct RoomContent: View {
         }
         .accessibilityLabel(
             viewModel.isRecording
-                ? "Release to send voice note — slide left to cancel"
+                ? "Release to send voice note - slide left to cancel"
                 : (viewModel.canStartVoiceRecording ? "Record voice note" : "Send"),
         )
     }
@@ -2413,7 +2413,7 @@ private struct RoomContent: View {
                         viewModel.anonOn.toggle()
                     } label: {
                         Label(
-                            viewModel.anonOn ? "Incognito on — tap to send under your name" : "Incognito",
+                            viewModel.anonOn ? "Incognito on - tap to send under your name" : "Incognito",
                             systemImage: viewModel.anonOn ? "theatermasks.fill" : "theatermasks",
                         )
                     }
@@ -2559,7 +2559,7 @@ private struct RoomContent: View {
             // imagePath, spec §0).
             if staged.kind == .image {
                 Toggle(
-                    "View once — disappears after opening",
+                    "View once - disappears after opening",
                     isOn: Binding(
                         get: { viewModel.staged?.viewOnce ?? false },
                         set: { viewModel.setStagedViewOnce($0) },
@@ -3376,7 +3376,7 @@ struct BubbleView: View {
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Location pin \(loc.label) — open in Maps")
+            .accessibilityLabel("Location pin \(loc.label) - open in Maps")
         } else {
             // Corrupt/legacy payload - degrade to the plain content text.
             Text(message.content)
@@ -3604,7 +3604,7 @@ struct PulseBubbleBody: View {
                 PulseHaptics.tap()
                 revealedSpoilers.insert(id)
             }
-            .accessibilityLabel(revealed ? text : "Hidden spoiler — tap to reveal")
+            .accessibilityLabel(revealed ? text : "Hidden spoiler - tap to reveal")
     }
 
     /// Spoiler ids must survive re-renders even when the SAME text appears
@@ -3699,9 +3699,9 @@ final class RoomViewModel: ObservableObject {
         guard !scheduledItems.isEmpty else { return nil }
         let next = PulseFormat.listStamp(PulseScheduledChip.nextIso(in: scheduledItems))
         if next.isEmpty {
-            return "\(scheduledCount) pending — tap to manage"
+            return "\(scheduledCount) pending - tap to manage"
         }
-        return "\(next) · \(scheduledCount) pending — tap to manage"
+        return "\(next) · \(scheduledCount) pending - tap to manage"
     }
     /// F-MS-20 - slow-mode lockout: after a 429 the composer refuses sends
     /// until the server-suggested window elapses (countdown chip in the UI).
@@ -4573,7 +4573,7 @@ final class RoomViewModel: ObservableObject {
                         self.messages.removeAll { $0.id == temp.id }
                         try? session.store?.deleteMessage(id: temp.id)
                         self.draft = body
-                        session.toasts.show("Incognito needs a live connection — message kept in the composer")
+                        session.toasts.show("Incognito needs a live connection - message kept in the composer")
                     } else {
                         // Temp row stays (queued clock) - outbox flush reconciles.
                         // R4-A item 2 - a QUEUED send is not a server-accepted
@@ -4582,7 +4582,7 @@ final class RoomViewModel: ObservableObject {
                         // :560-564 parity; the manual disarm path above the
                         // composer still works).
                         session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
-                        session.toasts.show("Message queued — sends when you're back online")
+                        session.toasts.show("Message queued - sends when you're back online")
                     }
                 }
             }
@@ -4605,7 +4605,7 @@ final class RoomViewModel: ObservableObject {
             errorText = message
             return true
         case .help:
-            session.toasts.show("Try /me /shrug /roll /poll /schedule /sticker /effects confetti — type '/' for the full list")
+            session.toasts.show("Try /me /shrug /roll /poll /schedule /sticker /effects confetti - type '/' for the full list")
             return true
         case .sheet(let name):
             pendingSlashSheet = name
@@ -4629,7 +4629,7 @@ final class RoomViewModel: ObservableObject {
             // an empty body (its send button is disabled on empty input), so
             // the machine mirrors that honestly instead of POSTing "".
             guard !content.isEmpty else {
-                session.toasts.show("Type the message first — the effect rides your send")
+                session.toasts.show("Type the message first - the effect rides your send")
                 return true
             }
             sendWithEffect(effect: name, content: content, session: session)
@@ -4644,7 +4644,7 @@ final class RoomViewModel: ObservableObject {
     func sendEffect(effect: String, session: PulseSession) {
         let body = draft.trimmingCharacters(in: .whitespaces)
         guard !body.isEmpty else {
-            session.toasts.show("Type the message first — the effect rides your send")
+            session.toasts.show("Type the message first - the effect rides your send")
             return
         }
         guard editingTarget == nil, staged == nil else { return }
@@ -4817,7 +4817,7 @@ final class RoomViewModel: ObservableObject {
     func scheduleDraft(for date: Date, session: PulseSession) {
         let body = draft.trimmingCharacters(in: .whitespaces)
         guard !body.isEmpty else {
-            session.toasts.show("Type the message first — scheduling sends the draft")
+            session.toasts.show("Type the message first - scheduling sends the draft")
             return
         }
         let iso = ScheduleSheet.isoFormatter.string(from: date)
@@ -4831,7 +4831,7 @@ final class RoomViewModel: ObservableObject {
                 self.scheduledItems.append(item)
                 try? session.store?.deleteDraft(conversationId: conversationId)
                 PulseHaptics.success()
-                session.toasts.show("Scheduled — \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")
+                session.toasts.show("Scheduled - \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")
             } catch {
                 session.toasts.show(Self.describe(error))
             }
@@ -5126,7 +5126,7 @@ final class RoomViewModel: ObservableObject {
             let granted = await VoiceRecorder.requestPermission()
             guard granted else {
                 self.voiceSession = nil
-                session.toasts.show("Microphone access is off — enable it in Settings to record voice notes")
+                session.toasts.show("Microphone access is off - enable it in Settings to record voice notes")
                 return
             }
             guard !self.isRecording, self.voiceRecorder == nil else { return }
@@ -5174,7 +5174,7 @@ final class RoomViewModel: ObservableObject {
         teardownRecording()
         guard !VoiceMath.isTooShort(elapsedMs), let fileURL else {
             if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
-            session.toasts.show("Too short — voice note discarded")
+            session.toasts.show("Too short - voice note discarded")
             return
         }
         guard let viewer = session.viewer else {
@@ -5333,7 +5333,7 @@ final class RoomViewModel: ObservableObject {
     static func transcribeErrorWording(_ error: Error) -> String {
         if let failure = error as? PulseAPIClient.Failure {
             if failure.status == 502 {
-                return "Transcription service is down — try again later"
+                return "Transcription service is down - try again later"
             }
             if let message = failure.message, !message.isEmpty {
                 return message
@@ -5410,7 +5410,7 @@ final class RoomViewModel: ObservableObject {
                 let message = try await session.api.closePoll(pollId: pollID, userId: viewer.id)
                 withAnimation { self.upsert(message) }
                 try? session.store?.upsert(messages: [message])
-                session.toasts.show("Voting closed — results are final")
+                session.toasts.show("Voting closed - results are final")
             } catch {
                 session.toasts.show(Self.describe(error))
             }
@@ -5480,7 +5480,7 @@ final class RoomViewModel: ObservableObject {
                 )
                 self.loadTopics(session: session)
                 self.setActiveTopic(topic.id, session: session)
-                session.toasts.show("Filing to \(emoji) \(topic.name) — next send lands there")
+                session.toasts.show("Filing to \(emoji) \(topic.name) - next send lands there")
             } catch {
                 session.toasts.show(Self.describe(error))
             }
@@ -5663,7 +5663,7 @@ struct ConvThemeSheet: View {
                                 tintChip(tint)
                             }
                         }
-                        Text("Layers a soft glow over the wallpaper — also visible on None.")
+                        Text("Layers a soft glow over the wallpaper - also visible on None.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }

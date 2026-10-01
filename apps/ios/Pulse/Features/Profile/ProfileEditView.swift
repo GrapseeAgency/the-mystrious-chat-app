@@ -356,7 +356,7 @@ struct ProfileEditView: View {
                     .foregroundStyle(PulseTheme.amber600)
             }
         } footer: {
-            Text("Changes appear everywhere instantly — profile, chats and mentions.")
+            Text("Changes appear everywhere instantly - profile, chats and mentions.")
         }
     }
 
@@ -463,7 +463,7 @@ struct ProfileEditView: View {
         guard let viewer, !avatarUploading else { return }
         guard let raw = try? await item.loadTransferable(type: Data.self),
               let jpeg = PulseAvatarImage.jpegData(from: raw) else {
-            notice = "Couldn't read that image — try another one"
+            notice = "Couldn't read that image - try another one"
             return
         }
         avatarUploading = true

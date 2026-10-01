@@ -154,7 +154,7 @@ private val Emerald600 = Color(0xFF059669)
 private val Teal500 = Color(0xFF14B8A6)
 private val Teal600 = Color(0xFF0D9488)
 
-/** Web `streakHeatLevel` — 2-4 → warm, 5-9 → hot, 10+ → blazing. */
+/** Web `streakHeatLevel` - 2-4 → warm, 5-9 → hot, 10+ → blazing. */
 private fun streakHeat(count: Int): Int = when {
     count >= 10 -> 3
     count >= 5 -> 2
@@ -171,7 +171,7 @@ private fun countLabel(count: Int): String = if (count > 99) "99+" else "$count"
  * contract, rebuild the absolute path and fire MediaSupport's FileProvider
  * ACTION_SEND chooser - D24's share sheet with zero VM edits.
  */
-private const val EXPORT_NOTICE_PREFIX = "Chat exported — Saved "
+private const val EXPORT_NOTICE_PREFIX = "Chat exported - Saved "
 
 /**
  * The Chats tab - the native home page. Design + logic parity with the web
@@ -189,11 +189,11 @@ fun ChatsScreen(
     onSwitchTab: (String) -> Unit,
     onOpenArchived: () -> Unit,
     onCycleTheme: () -> Unit,
-    /** Wave 4 — ring tap on a cell with a live story; arg = author id (viewer start group). */
+    /** Wave 4 - ring tap on a cell with a live story; arg = author id (viewer start group). */
     onOpenStoriesViewer: (String?) -> Unit = {},
-    /** Wave 4 — the own-cell "+" affordance (or empty "My status" cell) → composer. */
+    /** Wave 4 - the own-cell "+" affordance (or empty "My status" cell) → composer. */
     onOpenStoriesComposer: () -> Unit = {},
-    /** Wave 6 — mentions / channels surfaces + the folders manage sheet. */
+    /** Wave 6 - mentions / channels surfaces + the folders manage sheet. */
     onOpenMentions: () -> Unit = {},
     onOpenChannels: () -> Unit = {},
     // R2-A item 2/1 - the header phone icon opens the calls history page and
@@ -433,7 +433,7 @@ fun ChatsScreen(
                     )
                     state.error != null && all.isEmpty() -> EmptyStateCard(
                         title = "Could not reach the gateway",
-                        body = state.error ?: "Network error — the inbox will retry.",
+                        body = state.error ?: "Network error - the inbox will retry.",
                         actionLabel = "Retry",
                         onAction = { viewModel.refresh() },
                     )
@@ -577,9 +577,9 @@ ConversationRowItem(
                             item(key = "filter-empty") {
                                 Text(
                                     text = when {
-                                        activeFolderId != null -> "This folder is empty — tap the folder button on the rail to add chats."
-                                        listFilter == "unread" -> "No unread chats — you are all caught up."
-                                        else -> "No groups yet — start one from Contacts."
+                                        activeFolderId != null -> "This folder is empty - tap the folder button on the rail to add chats."
+                                        listFilter == "unread" -> "No unread chats - you are all caught up."
+                                        else -> "No groups yet - start one from Contacts."
                                     },
                                     fontSize = 13.sp,
                                     lineHeight = 20.sp,
@@ -1129,9 +1129,9 @@ private fun StoriesRail(
     viewerName: String,
     viewerColor: String?,
     cells: List<StoryCell>,
-    /** Ring tap on a cell with a live story — arg = author userId (viewer start). */
+    /** Ring tap on a cell with a live story - arg = author userId (viewer start). */
     onOpenViewer: (String?) -> Unit,
-    /** The "+" affordance / empty own cell — opens the composer (D1). */
+    /** The "+" affordance / empty own cell - opens the composer (D1). */
     onOpenComposer: () -> Unit,
 ) {
     val dark = isPulseDarkTheme()
@@ -1395,7 +1395,7 @@ private fun NoteToSelfCard(exists: Boolean, onOpen: () -> Unit, onCreate: () -> 
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "Your private space — notes, links, ideas",
+                "Your private space - notes, links, ideas",
                 fontSize = 11.sp,
                 color = Zinc500,
                 maxLines = 1,
@@ -1771,7 +1771,7 @@ private fun ConversationRowItem(
     }
 }
 
-/** Web conversationPreviewPrefix — You: / Name: / ↩ rules. */
+/** Web conversationPreviewPrefix - You: / Name: / ↩ rules. */
 private fun previewPrefix(c: Conversation): String = when {
     c.lastMessageDeleted -> ""
     c.lastMessageIsReply && c.lastMessageMine -> "↩ You: "
@@ -1787,7 +1787,7 @@ private fun previewText(c: Conversation): String = when {
     c.lastMessageDeleted -> "Message deleted"
     c.lastMessageIsImage && c.lastMessagePreview.isNullOrBlank() -> "Photo"
     c.lastMessageIsAudio && c.lastMessagePreview.isNullOrBlank() -> "Voice message"
-    c.lastMessageIsFile -> "Document — ${c.lastMessageFileName ?: "file"}"
+    c.lastMessageIsFile -> "Document - ${c.lastMessageFileName ?: "file"}"
     !c.lastMessagePreview.isNullOrBlank() -> c.lastMessagePreview ?: "No messages yet"
     else -> "No messages yet"
 }
@@ -1881,7 +1881,7 @@ private fun PresenceGlow() {
     )
 }
 
-/** Snapchat-style streak heat ring — conic amber→rose arc, width scales with heat. */
+/** Snapchat-style streak heat ring - conic amber→rose arc, width scales with heat. */
 @Composable
 private fun StreakHeatRing(heat: Int) {
     val inset = when (heat) {
@@ -2284,7 +2284,7 @@ private fun SearchSectionHeader(label: String, count: Int) {
     }
 }
 
-/** One server-side message hit — sender avatar, chat title, highlighted snippet. */
+/** One server-side message hit - sender avatar, chat title, highlighted snippet. */
 @Composable
 private fun SearchHitRow(hit: MessageHit, query: String, onOpen: () -> Unit) {
     Row(
@@ -2340,7 +2340,7 @@ private fun SearchHitRow(hit: MessageHit, query: String, onOpen: () -> Unit) {
                 else -> Text(
                     snippetAnnotated(
                         if (hit.isFile && !hit.content.contains(query, ignoreCase = true)) {
-                            "Document — ${hit.fileName ?: "file"}"
+                            "Document - ${hit.fileName ?: "file"}"
                         } else {
                             hit.content
                         },

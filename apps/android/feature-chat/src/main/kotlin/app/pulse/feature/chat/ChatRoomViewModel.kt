@@ -66,7 +66,7 @@ data class LocationFix(
     val locating: Boolean = false,
     val lat: Double? = null,
     val lng: Double? = null,
-    /** No provider / LocationManager refused — the sheet offers a retry. */
+    /** No provider / LocationManager refused - the sheet offers a retry. */
     val failed: Boolean = false,
 )
 
@@ -80,7 +80,7 @@ data class StagedMedia(
     val uploading: Boolean = false,
     val uploadedPath: String? = null,
     val error: String? = null,
-    /** Wave 2 view-once (IMAGE kind only — wire requires imagePath when true). */
+    /** Wave 2 view-once (IMAGE kind only - wire requires imagePath when true). */
     val viewOnce: Boolean = false,
 ) {
     enum class Kind { IMAGE, FILE }
@@ -101,7 +101,7 @@ class ChatRoomViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repo: PulseRepository,
     private val sendUseCase: SendMessageUseCase,
-    /** The ONE active voice player — room + thread share the singleton. */
+    /** The ONE active voice player - room + thread share the singleton. */
     val voicePlayer: VoicePlayer,
     // R1-W2I - PiP pane store (F-PI-01..03): the pop-out toggle writes the
     // same process-singleton the shell-level overlay renders from.
@@ -111,7 +111,7 @@ class ChatRoomViewModel @Inject constructor(
     private val prefsStore: app.pulse.domain.repository.PulsePrefsStore,
 ) : ViewModel() {
 
-    /** Wave 8 — server-backed prefs for bubble corners / density / wallpaper. */
+    /** Wave 8 - server-backed prefs for bubble corners / density / wallpaper. */
     val prefs: StateFlow<WirePulsePrefs> = repo.pulsePrefs
         .stateIn(
             viewModelScope,
@@ -138,7 +138,7 @@ class ChatRoomViewModel @Inject constructor(
         if (pipFocusedConversationId.value == conversationId) pipStore.close() else pipStore.open(conversationId)
     }
 
-    /** Global-search / notification jump — the room scrolls + flashes on arrival. */
+    /** Global-search / notification jump - the room scrolls + flashes on arrival. */
     private val initialJumpMessageId: String? = savedStateHandle.get<String>("jump")
 
     data class UiState(
@@ -166,7 +166,7 @@ class ChatRoomViewModel @Inject constructor(
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    /** Composer restore seed — local draft table first, server myDraft fallback. */
+    /** Composer restore seed - local draft table first, server myDraft fallback. */
     private val _initialDraft = MutableStateFlow<String?>(null)
     val initialDraft: StateFlow<String?> = _initialDraft.asStateFlow()
 
@@ -174,7 +174,7 @@ class ChatRoomViewModel @Inject constructor(
     private val _activeTopicId = MutableStateFlow<String?>(null)
     val activeTopicId: StateFlow<String?> = _activeTopicId.asStateFlow()
 
-    /** Live topic chips (General is NOT a row — the UI prepends it). */
+    /** Live topic chips (General is NOT a row - the UI prepends it). */
     val topics: StateFlow<List<Topic>> = repo.observeTopics(conversationId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -187,7 +187,7 @@ class ChatRoomViewModel @Inject constructor(
     private val _recording = MutableStateFlow(false)
     val recording: StateFlow<Boolean> = _recording.asStateFlow()
 
-    /** Live record timer — the composer bar renders it as "m:ss". */
+    /** Live record timer - the composer bar renders it as "m:ss". */
     private val _recordMs = MutableStateFlow(0L)
     val recordMs: StateFlow<Long> = _recordMs.asStateFlow()
 
@@ -207,7 +207,7 @@ class ChatRoomViewModel @Inject constructor(
     private val _transcribingIds = MutableStateFlow<Set<String>>(emptySet())
     val transcribingIds: StateFlow<Set<String>> = _transcribingIds.asStateFlow()
 
-    /** MAIN RIVER — thread replies (threadRootId != null) live on the ThreadScreen only. */
+    /** MAIN RIVER - thread replies (threadRootId != null) live on the ThreadScreen only. */
     val messages: StateFlow<List<Message>> =
         combine(
             repo.observeMessages(conversationId),
@@ -237,7 +237,7 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     // ── REM-A group meta (TTL chip, admin surfaces, invite link) ──────
-    /** Live server truth — null until the first load, kept for GroupInfo deep links. */
+    /** Live server truth - null until the first load, kept for GroupInfo deep links. */
     private val _groupMeta = MutableStateFlow<GroupMeta?>(null)
     val groupMeta: StateFlow<GroupMeta?> = _groupMeta.asStateFlow()
 
@@ -247,15 +247,15 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    /** Refresh after any group mutation — the TTL/broadcast chips stay honest. */
+    /** Refresh after any group mutation - the TTL/broadcast chips stay honest. */
     fun refreshGroupMeta() = loadGroupMeta()
 
     // ── REM-A slow-mode lockout (F-MS-20, web retryAfter parity) ─────
-    /** Epoch-ms deadline of an active slow-mode lockout — null/0 = composer free. */
+    /** Epoch-ms deadline of an active slow-mode lockout - null/0 = composer free. */
     private val _slowModeUntilMs = MutableStateFlow(0L)
     private val _slowModeRemainingSec = MutableStateFlow(0)
 
-    /** Seconds left on the composer lockout (0 = unlocked) — ticks once per second. */
+    /** Seconds left on the composer lockout (0 = unlocked) - ticks once per second. */
     val slowModeRemainingSec: StateFlow<Int> = _slowModeRemainingSec.asStateFlow()
 
     private var slowModeTicker: Job? = null
@@ -277,7 +277,7 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    /** Send-failure classifier — a 429 arms the composer countdown (mm:ss). */
+    /** Send-failure classifier - a 429 arms the composer countdown (mm:ss). */
     private fun failureNotice(failure: Throwable): String {
         val retryAfter = (failure as? PulseApiException)?.retryAfter
         if (retryAfter != null) armSlowMode(retryAfter)
@@ -305,7 +305,7 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch {
             repo.scheduleMessage(conversationId, content, scheduledAtIso)
                 .onSuccess { item ->
-                    notify("Scheduled for ${formatScheduleStamp(item.scheduledAtIso)} — it sends itself")
+                    notify("Scheduled for ${formatScheduleStamp(item.scheduledAtIso)} - it sends itself")
                     loadScheduled()
                 }
                 .onFailure { notify(failureNotice(it), isError = true) }
@@ -376,11 +376,11 @@ class ChatRoomViewModel @Inject constructor(
         _safety.value = null
     }
 
-    /** Every chat — the ForwardSheet target list (spec §1.1 forward = client re-POST). */
+    /** Every chat - the ForwardSheet target list (spec §1.1 forward = client re-POST). */
     val conversations: StateFlow<List<Conversation>> = repo.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** "N replies ↳" chip counts — one batched Room query per river change, live. */
+    /** "N replies ↳" chip counts - one batched Room query per river change, live. */
     val replyCounts: StateFlow<Map<String, Int>> = messages
         .map { rows ->
             val parents = rows.filter { !it.id.startsWith(TEMP_MESSAGE_PREFIX) }.map { it.id }
@@ -595,7 +595,7 @@ class ChatRoomViewModel @Inject constructor(
         payload: String? = null,
         anon: Boolean = false,
         onDelivered: ((Message) -> Unit)? = null,
-        /** Send burst kind — effect sends map to their web EFFECT_PARTICLES kind. */
+        /** Send burst kind - effect sends map to their web EFFECT_PARTICLES kind. */
         fxKind: app.pulse.core.fx.PulseFx.BurstKind? = app.pulse.core.fx.PulseFx.BurstKind.BURST,
     ) {
         val editing = _state.value.editing
@@ -667,7 +667,7 @@ class ChatRoomViewModel @Inject constructor(
         dto.nudgeText()?.let { notify(it) }
     }
 
-    /** PATCH edit — online-only by design (spec row 4); failure is an honest toast. */
+    /** PATCH edit - online-only by design (spec row 4); failure is an honest toast. */
     private fun sendEdit(messageId: String, content: String) {
         viewModelScope.launch {
             repo.editMessage(messageId, content.trim())
@@ -737,7 +737,7 @@ class ChatRoomViewModel @Inject constructor(
                 if (runCatching { repo.forwardMessage(target, source) }.isSuccess) done += 1
             }
             if (done == 0) {
-                notify("Couldn't forward — check your connection", isError = true)
+                notify("Couldn't forward - check your connection", isError = true)
             } else {
                 notify("Forwarded to $done ${if (done == 1) "chat" else "chats"}")
             }
@@ -760,7 +760,7 @@ class ChatRoomViewModel @Inject constructor(
         sendRich(body = emoji, kind = "sticker", payload = payload)
     }
 
-    /** /effects <name> [text] — effect rides the text row's payload blob. */
+    /** /effects <name> [text] - effect rides the text row's payload blob. */
     fun sendEffect(effect: String, content: String) {
         if (effect !in app.pulse.protocol.PulseWave7Logic.EFFECT_NAMES) return
         val payload = app.pulse.protocol.PulseJson.encodeToString(
@@ -955,7 +955,7 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    /** Upload (or re-upload) the staged attachment — one route, both kinds. */
+    /** Upload (or re-upload) the staged attachment - one route, both kinds. */
     private fun uploadStaged(dataUrl: String, fileName: String?) {
         val staged = _state.value.staged ?: return
         _state.value = _state.value.copy(staged = staged.copy(uploading = true, error = null))
@@ -1008,12 +1008,12 @@ class ChatRoomViewModel @Inject constructor(
         _state.value = _state.value.copy(staged = null)
     }
 
-    /** Send the staged attachment with its caption (≤500 — UI enforces). */
+    /** Send the staged attachment with its caption (≤500 - UI enforces). */
     fun sendStaged(caption: String) {
         val staged = _state.value.staged ?: return
         val path = staged.uploadedPath
         if (path == null) {
-            stageFailed("Still uploading — hold on a second")
+            stageFailed("Still uploading - hold on a second")
             return
         }
         viewModelScope.launch {
@@ -1043,7 +1043,7 @@ class ChatRoomViewModel @Inject constructor(
                     app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
                     afterOwnSend(it)
                 }
-                .onFailure { stageFailed(it.message ?: "Couldn't send — you appear to be offline") }
+                .onFailure { stageFailed(it.message ?: "Couldn't send - you appear to be offline") }
         }
     }
 
@@ -1112,7 +1112,7 @@ class ChatRoomViewModel @Inject constructor(
         } catch (t: Throwable) {
             runCatching { mr.release() }
             file.delete()
-            notify("Couldn't start recording — check microphone access", isError = true)
+            notify("Couldn't start recording - check microphone access", isError = true)
             return
         }
         recorder = mr
@@ -1171,7 +1171,7 @@ class ChatRoomViewModel @Inject constructor(
         _recordAmps.value = emptyList()
         if (elapsedMs < app.pulse.core.media.PulseMedia.MIN_VOICE_MS || file == null) {
             file?.delete()
-            notify("Too short — voice note discarded")
+            notify("Too short - voice note discarded")
             return
         }
         val durationMs = app.pulse.core.media.PulseMedia.voiceDurationMs(elapsedMs)
@@ -1215,7 +1215,7 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── Wave 2: transcription strip (spec §1 row 15) ───────────────────
 
-    /** "Transcribe" pill action — 422/502 surface the honest toast. */
+    /** "Transcribe" pill action - 422/502 surface the honest toast. */
     fun transcribeVoice(messageId: String) {
         if (messageId.startsWith(TEMP_MESSAGE_PREFIX)) return
         if (messageId in _transcribingIds.value) return
@@ -1230,7 +1230,7 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── Wave 2: view-once consumption (spec §1 rows 6/7) ───────────────
 
-    /** Fire-and-forget POST /viewed — the lightbox opens WITHOUT waiting on it. */
+    /** Fire-and-forget POST /viewed - the lightbox opens WITHOUT waiting on it. */
     fun consumeViewOnce(message: Message) {
         viewModelScope.launch { repo.markMessageViewed(message.id) }
     }
@@ -1259,14 +1259,14 @@ class ChatRoomViewModel @Inject constructor(
     fun closePoll(pollId: String) {
         viewModelScope.launch {
             repo.closePoll(pollId)
-                .onSuccess { notify("Voting closed — results are final") }
+                .onSuccess { notify("Voting closed - results are final") }
                 .onFailure { notify("Couldn't close the poll", isError = true) }
         }
     }
 
     // ── Wave 2: topics (spec §1 row 9) ─────────────────────────────────
 
-    /** Rail re-tick — UI runs this on open + every 15s + after own sends. */
+    /** Rail re-tick - UI runs this on open + every 15s + after own sends. */
     fun refreshTopics() {
         viewModelScope.launch { runCatching { repo.refreshTopics(conversationId) } }
     }
@@ -1290,7 +1290,7 @@ class ChatRoomViewModel @Inject constructor(
                     runCatching { repo.refreshTopics(conversationId) }
                     _activeTopicId.value = topic.id
                     viewModelScope.launch { runCatching { repo.refreshMessages(conversationId, topic.id) } }
-                    notify("Filing to $emoji ${topic.name} — next send lands there")
+                    notify("Filing to $emoji ${topic.name} - next send lands there")
                 }
                 .onFailure { notify("Couldn't create the topic", isError = true) }
         }
@@ -1306,7 +1306,7 @@ class ChatRoomViewModel @Inject constructor(
     /** Room admin? (channels: role from myRole; groups: creator heuristic on web = admins list) */
     fun isAdmin(): Boolean = channelRole.value == "admin"
 
-    /** Sheet host bus — one flag per surface, all exclusive. */
+    /** Sheet host bus - one flag per surface, all exclusive. */
     var redPacketOpen by androidx.compose.runtime.mutableStateOf(false)
     var gameOpen by androidx.compose.runtime.mutableStateOf(false)
     var tournamentOpen by androidx.compose.runtime.mutableStateOf(false)
@@ -1322,7 +1322,7 @@ class ChatRoomViewModel @Inject constructor(
     /** Audit D2 fix: carry the anchored message body so the sheet prefills the derived title (web: server derives from content, cap 80). */
     var kanbanSourceTitle by androidx.compose.runtime.mutableStateOf<String?>(null)
 
-    /** Non-surface helper — routes into the room snackbar. */
+    /** Non-surface helper - routes into the room snackbar. */
     fun notifySticky(message: String) = notify(message, isError = false)
 
     fun openRedPacket() { redPacketOpen = true }
@@ -1350,13 +1350,13 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    /** POST /api/redpackets — honest 402/400 copy surfaces verbatim. */
+    /** POST /api/redpackets - honest 402/400 copy surfaces verbatim. */
     fun createRedPacket(total: Long, count: Int, note: String?) {
         viewModelScope.launch {
             repo.createRedPacket(conversationId, total, count, note)
                 .onSuccess {
                     redPacketOpen = false
-                    notify("Red packet sent — $total PC in $count grabs")
+                    notify("Red packet sent - $total PC in $count grabs")
                 }
                 .onFailure { notify(it.message ?: "Could not send the red packet", isError = true) }
         }
@@ -1389,8 +1389,8 @@ class ChatRoomViewModel @Inject constructor(
         if (opponentId.isNullOrBlank()) return
         viewModelScope.launch {
             repo.createGame(match.conversationId.ifBlank { conversationId }, opponentId)
-                .onSuccess { notify("Rematch sent — new challenge in the chat.") }
-                .onFailure { notify(it.message ?: "Rematch failed — try again.", isError = true) }
+                .onSuccess { notify("Rematch sent - new challenge in the chat.") }
+                .onFailure { notify(it.message ?: "Rematch failed - try again.", isError = true) }
         }
     }
 
@@ -1471,7 +1471,7 @@ class ChatRoomViewModel @Inject constructor(
     suspend fun redPacketDetail(packetId: String): RedPacketDetailDto? =
         runCatching { repo.redPacket(packetId).getOrNull() }.getOrNull()
 
-    /** Atomic grab — 409 copy (own packet / already grabbed / race) surfaces verbatim. */
+    /** Atomic grab - 409 copy (own packet / already grabbed / race) surfaces verbatim. */
     fun grabRedPacket(packetId: String) {
         viewModelScope.launch {
             repo.grabRedPacket(packetId)
@@ -1486,7 +1486,7 @@ class ChatRoomViewModel @Inject constructor(
     fun joinTournament(tournamentId: String) {
         viewModelScope.launch {
             repo.joinTournament(tournamentId)
-                .onSuccess { notify("You are in — play tic-tac-toe matches to score points") }
+                .onSuccess { notify("You are in - play tic-tac-toe matches to score points") }
                 .onFailure { notify(it.message ?: "Could not join the tournament", isError = true) }
         }
     }
@@ -1499,13 +1499,13 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    /** Reminder create via the sheet (absolute picker) — relative parse lives in PulseWave7Logic. */
+    /** Reminder create via the sheet (absolute picker) - relative parse lives in PulseWave7Logic. */
     fun createReminder(note: String, remindAtIso: String, anchoredMessageId: String? = null) {
         viewModelScope.launch {
             repo.createReminder(conversationId, anchoredMessageId, note, remindAtIso)
                 .onSuccess {
                     remindersOpen = false
-                    loadRemindersUpcoming() // R6 — BE7: keep the header badge honest
+                    loadRemindersUpcoming() // R6 - BE7: keep the header badge honest
                 }
                 .onFailure { notify(it.message ?: "Could not set the reminder", isError = true) }
         }
@@ -1556,7 +1556,7 @@ class ChatRoomViewModel @Inject constructor(
      */
     suspend fun postWhiteboardStrokes(conversationId: String, strokes: List<WhiteboardStrokePostDto>): Boolean =
         repo.postWhiteboardStrokes(conversationId, strokes)
-            .onFailure { notify(it.message ?: "Stroke upload failed — try again", isError = true) }
+            .onFailure { notify(it.message ?: "Stroke upload failed - try again", isError = true) }
             .isSuccess
 
     // ── R2-C item 4 - durable whiteboard draft (per-conversation prefs) ──
@@ -1608,7 +1608,7 @@ class ChatRoomViewModel @Inject constructor(
             repo.createEvent(conversationId, title, startsAtIso, description, location)
                 .onSuccess {
                     eventsOpen = false
-                    notify("Event scheduled — see you there")
+                    notify("Event scheduled - see you there")
                 }
                 .onFailure { notify(it.message ?: "Could not schedule the event.", isError = true) }
         }
@@ -1617,7 +1617,7 @@ class ChatRoomViewModel @Inject constructor(
     fun rsvp(eventId: String, status: String) {
         viewModelScope.launch {
             repo.rsvpEvent(eventId, status)
-                .onFailure { notify(it.message ?: "RSVP failed — try again.", isError = true) }
+                .onFailure { notify(it.message ?: "RSVP failed - try again.", isError = true) }
         }
     }
 
@@ -1627,11 +1627,11 @@ class ChatRoomViewModel @Inject constructor(
                 .onSuccess {
                     when {
                         it.alreadyCheckedIn -> notify("Already checked in.")
-                        it.xpAwarded -> notify("Checked in — see you there · +15 XP")
-                        else -> notify("Checked in — see you there")
+                        it.xpAwarded -> notify("Checked in - see you there · +15 XP")
+                        else -> notify("Checked in - see you there")
                     }
                 }
-                .onFailure { notify(it.message ?: "Check-in failed — try again.", isError = true) }
+                .onFailure { notify(it.message ?: "Check-in failed - try again.", isError = true) }
         }
     }
 
@@ -1649,7 +1649,7 @@ class ChatRoomViewModel @Inject constructor(
     fun resolveReminder(reminderId: String) {
         viewModelScope.launch {
             repo.resolveReminder(reminderId)
-                .onSuccess { loadRemindersUpcoming() } // R6 — BE7: badge refresh
+                .onSuccess { loadRemindersUpcoming() } // R6 - BE7: badge refresh
                 .onFailure { notify(it.message ?: "Couldn't resolve the reminder", isError = true) }
         }
     }
@@ -1659,7 +1659,7 @@ class ChatRoomViewModel @Inject constructor(
             repo.deleteReminder(reminderId)
                 .onSuccess {
                     notify("Reminder canceled")
-                    loadRemindersUpcoming() // R6 — BE7: badge refresh
+                    loadRemindersUpcoming() // R6 - BE7: badge refresh
                 }
                 .onFailure { notify(it.message ?: "Could not cancel the reminder", isError = true) }
         }
@@ -1720,7 +1720,7 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── R2-A item 5 - AI recap (web chat-room.tsx:2178-2208) ─────────
 
-    /** Live recap card content — null = no card (web `recap` state parity). */
+    /** Live recap card content - null = no card (web `recap` state parity). */
     data class RecapUi(val text: String, val basedOn: Int)
 
     private val _recap = MutableStateFlow<RecapUi?>(null)
@@ -1805,7 +1805,7 @@ class ChatRoomViewModel @Inject constructor(
     private val _locationFix = MutableStateFlow(LocationFix())
     val locationFix: StateFlow<LocationFix> = _locationFix.asStateFlow()
 
-    /** Registered one-shot update listener — removed on first fix / timeout. */
+    /** Registered one-shot update listener - removed on first fix / timeout. */
     private var locationListener: android.location.LocationListener? = null
 
     /**
@@ -1901,7 +1901,7 @@ class ChatRoomViewModel @Inject constructor(
     val convThemes: StateFlow<Map<String, ConvTheme>> = repo.convThemes
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
-    /** This room's override — null = follows the global Appearance default. */
+    /** This room's override - null = follows the global Appearance default. */
     val convTheme: ConvTheme? get() = convThemes.value[conversationId]
 
     /** Wallpaper the room renders: override ?? global prefs (web effectiveConvWallpaper). */
@@ -1917,7 +1917,7 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    /** Drop the override — the room falls back to the global default. */
+    /** Drop the override - the room falls back to the global default. */
     fun clearConvTheme() {
         viewModelScope.launch { runCatching { repo.setConvTheme(conversationId, null) } }
     }
@@ -1955,16 +1955,16 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     companion object {
-        /** Older-page size — spec §1.1 pagination cursor rhythm. */
+        /** Older-page size - spec §1.1 pagination cursor rhythm. */
         const val PAGE_SIZE = 40
 
-        /** Bounded jump-window expansion — web parity (≤14 before= rounds). */
+        /** Bounded jump-window expansion - web parity (≤14 before= rounds). */
         const val JUMP_MAX_ROUNDS = 14
 
-        /** R1-W2F — one-shot location fix honesty timeout (web geolocation 9s). */
+        /** R1-W2F - one-shot location fix honesty timeout (web geolocation 9s). */
         const val LOCATION_FIX_TIMEOUT_MS = 12_000L
 
-        /** R2-A item 5 — recap activity gate (web requestRecap: liveCount < 5). */
+        /** R2-A item 5 - recap activity gate (web requestRecap: liveCount < 5). */
         const val RECAP_MIN_MESSAGES = 5
 
         /** Web parity unfurl hint moved to PulseMedia.isUnfurlCandidate (JVM-pinned). */

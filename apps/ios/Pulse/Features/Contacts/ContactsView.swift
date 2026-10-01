@@ -168,7 +168,7 @@ struct ContactsView: View {
     }
 
     private var listFooter: some View {
-        Text("\(session.onlineUserIds.count) online · \(filtered.count) people — tap a row for the full profile; stats, safety number, block and report live there.")
+        Text("\(session.onlineUserIds.count) online · \(filtered.count) people - tap a row for the full profile; stats, safety number, block and report live there.")
             .font(.caption)
             .foregroundStyle(.secondary)
     }
@@ -452,7 +452,7 @@ final class ContactsViewModel: ObservableObject {
     func call(_ user: WireUser, session: PulseSession) {
         guard user.id != session.viewer?.id else { return }
         guard let engine = session.callEngine else {
-            errorText = "Calls aren't ready yet — try again in a moment."
+            errorText = "Calls aren't ready yet - try again in a moment."
             return
         }
         PulseHaptics.tap()
@@ -475,7 +475,7 @@ final class ContactsViewModel: ObservableObject {
     func callVideo(_ user: WireUser, session: PulseSession) {
         guard user.id != session.viewer?.id else { return }
         guard let engine = session.callEngine else {
-            errorText = "Calls aren't ready yet — try again in a moment."
+            errorText = "Calls aren't ready yet - try again in a moment."
             return
         }
         PulseHaptics.tap()

@@ -191,11 +191,11 @@ internal fun MessageActionSheet(
     onRemindMe: (() -> Unit)? = null,
     // ── R3-B item 6 - web "Convert to task" (text rows, thread roots only) ──
     onConvertToTask: (() -> Unit)? = null,
-    /** Busy while the kanban round-trip runs — the row spins + disables. */
+    /** Busy while the kanban round-trip runs - the row spins + disables. */
     taskPending: Boolean = false,
     // ── R1-W2F - F-MD-06 LLM translation (text rows only; server persists per language) ──
     onTranslate: (() -> Unit)? = null,
-    /** iOS parity — an already-translated row re-labels the action. */
+    /** iOS parity - an already-translated row re-labels the action. */
     alreadyTranslated: Boolean = false,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
@@ -501,7 +501,7 @@ private fun MemberRow(member: ConversationMember, check: Boolean) {
     }
 }
 
-/** All pinned rows of the room — tap to jump-scroll to the pin. */
+/** All pinned rows of the room - tap to jump-scroll to the pin. */
 @Composable
 internal fun PinsDialog(
     pins: List<Message>,
@@ -541,7 +541,7 @@ internal fun PinsDialog(
                                     color = PulsePalette.Emerald,
                                 )
                                 Text(
-                                    pin.body.ifBlank { if (pin.imagePath != null) "Photo" else "Document — ${pin.fileName ?: "file"}" },
+                                    pin.body.ifBlank { if (pin.imagePath != null) "Photo" else "Document - ${pin.fileName ?: "file"}" },
                                     fontSize = 13.sp,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
@@ -584,7 +584,7 @@ internal fun DeleteMessageDialog(
     )
 }
 
-/** Rounded one-line text field — forward-sheet search + room search share it. */
+/** Rounded one-line text field - forward-sheet search + room search share it. */
 @Composable
 internal fun BasicField(
     value: String,
@@ -637,7 +637,7 @@ internal fun SheetAction(
     label: String,
     onClick: () -> Unit,
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
-    /** R3-B item 6 — disabled row (web GlassMenuItem disabled parity). */
+    /** R3-B item 6 - disabled row (web GlassMenuItem disabled parity). */
     enabled: Boolean = true,
     /** Swap the leading glyph for a spinner while the action round-trips. */
     busy: Boolean = false,
@@ -664,7 +664,7 @@ internal fun SheetAction(
     }
 }
 
-/** Highlight the first matched substring — same rhythm as the chats search. */
+/** Highlight the first matched substring - same rhythm as the chats search. */
 internal fun snippetAnnotated(content: String, query: String): AnnotatedString {
     val q = query.trim()
     if (q.isEmpty()) return buildAnnotatedString { append(content) }

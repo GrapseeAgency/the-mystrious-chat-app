@@ -479,7 +479,7 @@ fun ProfileScreen(
                 Spacer(Modifier.height(14.dp))
                 Text("Ambient field (native shaders)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                 Text(
-                    "aurora · caustics · mesh · stars · liquid — the web's WebGL modes ported to AGSL",
+                    "aurora · caustics · mesh · stars · liquid - the web's WebGL modes ported to AGSL",
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.5f),
                 )
@@ -540,7 +540,7 @@ fun ProfileScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Kotlin · Compose · Hilt · Room · Ktor · Socket.IO — rebuilt natively against the same live gateway as the web app.",
+                    "Kotlin · Compose · Hilt · Room · Ktor · Socket.IO - rebuilt natively against the same live gateway as the web app.",
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.5f),
                 )
@@ -577,7 +577,7 @@ fun ProfileScreen(
                 Text("Server address", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                 Text(
                     if (savedBase.isNullOrBlank()) {
-                        "Not set — Pulse runs offline-first. Paste your Pulse web origin (the https:// address of this app's server) to go live."
+                        "Not set - Pulse runs offline-first. Paste your Pulse web origin (the https:// address of this app's server) to go live."
                     } else {
                         "REST + realtime point at:\n$savedBase"
                     },
@@ -784,10 +784,10 @@ internal fun shareProfile(
 ) {
     val handle = users.firstOrNull { it.id == viewerId }?.handle
     if (handle.isNullOrBlank()) {
-        Toast.makeText(context, "Claim a handle first — it is how people find you", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Claim a handle first - it is how people find you", Toast.LENGTH_SHORT).show()
         return
     }
-    val text = "Find me on Pulse — @$handle"
+    val text = "Find me on Pulse - @$handle"
     runCatching {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"

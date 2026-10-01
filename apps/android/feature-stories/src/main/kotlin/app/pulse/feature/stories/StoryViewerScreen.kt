@@ -61,7 +61,7 @@ import kotlinx.coroutines.launch
 private val StageBlack = EmberPalette.BackdropBase
 private val BarTrack = Color.White.copy(alpha = 0.32f)
 
-/** {gateway}/api/uploads/{path} — the image-story source (spec §wire). Shared with the composer. */
+/** {gateway}/api/uploads/{path} - the image-story source (spec §wire). Shared with the composer. */
 internal fun storyImageUrl(imagePath: String): String =
     PulseEndpoints.http("/api/uploads/" + imagePath.removePrefix("/"))
 
@@ -438,7 +438,7 @@ private fun HeaderIconButton(
     }
 }
 
-/** Image story — {gateway}/api/uploads/{path} full-screen CONTAIN + caption pill (≤3 lines). */
+/** Image story - {gateway}/api/uploads/{path} full-screen CONTAIN + caption pill (≤3 lines). */
 @Composable
 private fun ImageStage(imagePath: String, caption: String) {
     Box(Modifier.fillMaxSize().background(StageBlack)) {
@@ -467,7 +467,7 @@ private fun ImageStage(imagePath: String, caption: String) {
     }
 }
 
-/** Text story — full-bleed palette gradient, centered bold white caption, scrollable when long. */
+/** Text story - full-bleed palette gradient, centered bold white caption, scrollable when long. */
 @Composable
 private fun TextStage(background: String, caption: String) {
     val scroll = rememberScrollState()

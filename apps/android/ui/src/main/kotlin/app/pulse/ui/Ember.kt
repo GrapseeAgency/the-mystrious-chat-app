@@ -117,7 +117,7 @@ fun EmberBackdrop(
     )
 }
 
-/** Glass circle icon button — the Ember chrome unit (40-44dp, white 9% fill). */
+/** Glass circle icon button - the Ember chrome unit (40-44dp, white 9% fill). */
 @Composable
 fun EmberGlassButton(
     icon: ImageVector,

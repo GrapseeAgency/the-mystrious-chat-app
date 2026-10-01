@@ -451,7 +451,7 @@ struct StoryRingCell: View {
             }
         }
         .buttonStyle(PulseButtonStyle())
-        .accessibilityLabel(ring == .unseen ? "\(label) — new status" : label)
+        .accessibilityLabel(ring == .unseen ? "\(label) - new status" : label)
     }
 
     /// The "You" cell - white 8% circle with a centered plus glyph.

@@ -170,7 +170,7 @@ private val REPLY_HINT_START = 4.dp
 fun ChatRoomScreen(
     conversationId: String,
     viewerId: String?,
-    /** Global-search / notification jump — room scrolls + flashes on arrival. */
+    /** Global-search / notification jump - room scrolls + flashes on arrival. */
     jumpMessageId: String? = null,
     onBack: () -> Unit,
     onOpenThread: (conversationId: String, rootId: String) -> Unit,
@@ -534,7 +534,7 @@ fun ChatRoomScreen(
             viewModel.startRecording()
         } else {
             micDenied = true
-            viewModel.notify("Microphone access was denied — enable it in Settings", isError = true)
+            viewModel.notify("Microphone access was denied - enable it in Settings", isError = true)
         }
     }
     val onStartVoiceHold: () -> Unit = {
@@ -650,7 +650,7 @@ fun ChatRoomScreen(
         }
     }
 
-    /** Composer send — leading-slash drafts run the command machine first. */
+    /** Composer send - leading-slash drafts run the command machine first. */
     fun sendCurrentDraft() {
         if (draft.isBlank()) return
         val outcome = PulseSlash.applySlash(draft)
@@ -985,7 +985,7 @@ fun ChatRoomScreen(
                     shadowElevation = 6.dp,
                     modifier = Modifier.semantics {
                         contentDescription = if (missedCount.intValue > 0) {
-                            "Jump to newest messages — ${missedCount.intValue} new"
+                            "Jump to newest messages - ${missedCount.intValue} new"
                         } else {
                             "Jump to newest messages"
                         }
@@ -1110,7 +1110,7 @@ fun ChatRoomScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "Queued — will send when online",
+                            "Queued - will send when online",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -1222,7 +1222,7 @@ fun ChatRoomScreen(
                         modifier = Modifier.size(13.dp),
                     )
                     Text(
-                        "Offline — messages will queue",
+                        "Offline - messages will queue",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = 0.55f),
                     )
@@ -1390,7 +1390,7 @@ fun ChatRoomScreen(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "Slow mode — you can send again in " + slowCountdown(slowModeRemainingSec),
+                            "Slow mode - you can send again in " + slowCountdown(slowModeRemainingSec),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1435,7 +1435,7 @@ fun ChatRoomScreen(
                         Spacer(Modifier.width(6.dp))
                         Text(
                             PulseTime.listStamp(nextScheduled.scheduledAtIso) + " · " +
-                                scheduledItems.count { it.cancelledAtIso == null } + " pending — tap to manage",
+                                scheduledItems.count { it.cancelledAtIso == null } + " pending - tap to manage",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1470,7 +1470,7 @@ fun ChatRoomScreen(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "Incognito on — next message hides your name",
+                            "Incognito on - next message hides your name",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             color = PulsePalette.Emerald,
@@ -1556,7 +1556,7 @@ fun ChatRoomScreen(
                         IconButton(onClick = { viewModel.setActiveTopic(null) }) {
                             Icon(
                                 PulseIcons.X,
-                                contentDescription = "Stop filing to this topic — back to General",
+                                contentDescription = "Stop filing to this topic - back to General",
                                 tint = PulsePalette.Emerald,
                                 modifier = Modifier.size(14.dp),
                             )
@@ -1635,7 +1635,7 @@ fun ChatRoomScreen(
                                             contentDescription = if (anonNext) {
                                                 "Turn off incognito"
                                             } else {
-                                                "Incognito — next send hides your name"
+                                                "Incognito - next send hides your name"
                                             }
                                             stateDescription = if (anonNext) "Armed" else "Off"
                                         },
@@ -1764,14 +1764,14 @@ fun ChatRoomScreen(
         // ── D30/D31 permission-denied inline explainers (graceful, no crash) ──
         if (micDenied) {
             PermissionExplainer(
-                message = "Microphone access is off — voice notes need it. Hold-to-record unlocks once it's on.",
+                message = "Microphone access is off - voice notes need it. Hold-to-record unlocks once it's on.",
                 onOpenSettings = { openAppSettings(context) },
                 onDismiss = { micDenied = false },
             )
         }
         if (cameraDenied) {
             PermissionExplainer(
-                message = "Camera access is off — allow it to take photos for this chat.",
+                message = "Camera access is off - allow it to take photos for this chat.",
                 onOpenSettings = { openAppSettings(context) },
                 onDismiss = { cameraDenied = false },
             )
@@ -2256,7 +2256,7 @@ internal sealed interface TimelineRow {
         override val key: String get() = "day-$iso"
     }
 
-    /** R2-A item 4 — the unread divider (anchored at the first unread row). */
+    /** R2-A item 4 - the unread divider (anchored at the first unread row). */
     object Unread : TimelineRow {
         override val key: String get() = "unread-divider"
     }
@@ -2340,7 +2340,7 @@ private fun DaySeparator(label: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** R2-A item 4 — the unread divider (web chat-room.tsx UnreadDivider). */
+/** R2-A item 4 - the unread divider (web chat-room.tsx UnreadDivider). */
 @Composable
 private fun UnreadDivider(modifier: Modifier = Modifier) {
     Row(
@@ -2402,7 +2402,7 @@ private fun PinnedBanner(pin: Message, onJump: () -> Unit, onOpenAll: () -> Unit
                     maxLines = 1,
                 )
                 Text(
-                    pin.body.ifBlank { if (pin.imagePath != null) "Photo" else "Document — ${pin.fileName ?: "file"}" },
+                    pin.body.ifBlank { if (pin.imagePath != null) "Photo" else "Document - ${pin.fileName ?: "file"}" },
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.70f),
                     maxLines = 1,
@@ -2421,7 +2421,7 @@ private fun PinnedBanner(pin: Message, onJump: () -> Unit, onOpenAll: () -> Unit
     }
 }
 
-/** Expandable room search — server hits + the loaded window, deduped upstream. */
+/** Expandable room search - server hits + the loaded window, deduped upstream. */
 @Composable
 private fun RoomSearchBar(
     query: String,
@@ -2512,7 +2512,7 @@ private fun RoomSearchBar(
                                 }
                                 Text(
                                     snippetAnnotated(
-                                        hit.body.ifBlank { if (hit.imagePath != null) "Photo" else "Document — ${hit.fileName ?: "file"}" },
+                                        hit.body.ifBlank { if (hit.imagePath != null) "Photo" else "Document - ${hit.fileName ?: "file"}" },
                                         query,
                                     ),
                                     fontSize = 13.sp,
@@ -2557,7 +2557,7 @@ private fun AttachSheet(
     onStickers: () -> Unit,
     onScheduleSend: () -> Unit,
     onScheduledSends: () -> Unit,
-    /** null in DMs — group-gated exactly like the composer incognito toggle. */
+    /** null in DMs - group-gated exactly like the composer incognito toggle. */
     onIncognito: (() -> Unit)?,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
@@ -3162,7 +3162,7 @@ private fun RoomHeader(
             Box {
                 EmberGlassButton(
                     icon = PulseIcons.Bell,
-                    label = if (remindersCount > 0) "Reminders — $remindersCount upcoming" else "Reminders",
+                    label = if (remindersCount > 0) "Reminders - $remindersCount upcoming" else "Reminders",
                     onClick = onOpenReminders,
                 )
                 if (remindersCount > 0) {
@@ -4066,7 +4066,7 @@ internal fun TombstoneBubble() {
     }
 }
 
-/** Static waveform fallback — deterministic bars + duration (pre-Wave 2 look). */
+/** Static waveform fallback - deterministic bars + duration (pre-Wave 2 look). */
 @Composable
 private fun VoiceBubbleStatic(message: Message, contentColor: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -4236,7 +4236,7 @@ private fun VoiceBubble(
     }
 }
 
-/** "m:ss" — record bar + voice bubble time labels. */
+/** "m:ss" - record bar + voice bubble time labels. */
 private fun formatRecordTimer(ms: Long): String {
     val totalSeconds = ms / 1000
     return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
@@ -4244,7 +4244,7 @@ private fun formatRecordTimer(ms: Long): String {
 
 // ── D31 hold-to-record voice capture ────────────────────────────────────
 
-/** R2-C item 5 — mm:ss countdown for the slow-mode composer chip. */
+/** R2-C item 5 - mm:ss countdown for the slow-mode composer chip. */
 private fun slowCountdown(totalSeconds: Int): String {
     val safe = totalSeconds.coerceAtLeast(0)
     return "%d:%02d".format(safe / 60, safe % 60)
@@ -4273,7 +4273,7 @@ private fun HoldRecordSlot(
     onRecordArm: (Boolean) -> Unit,
     onRecordFinish: (Boolean) -> Unit,
     onSend: () -> Unit,
-    /** R2-C item 5 — false while slow mode counts: gestures and taps dead. */
+    /** R2-C item 5 - false while slow mode counts: gestures and taps dead. */
     enabled: Boolean = true,
 ) {
     val density = LocalDensity.current
@@ -4336,7 +4336,7 @@ private fun HoldRecordSlot(
             )
             micVisible -> Icon(
                 PulseIcons.Mic,
-                contentDescription = "Hold to record a voice note — slide left to cancel",
+                contentDescription = "Hold to record a voice note - slide left to cancel",
                 tint = Color.White.copy(alpha = if (enabled) 0.85f else 0.35f),
                 modifier = Modifier.size(20.dp),
             )
@@ -4503,7 +4503,7 @@ private fun PermissionExplainer(
     }
 }
 
-/** App-info settings page — the jump target for the permission explainers. */
+/** App-info settings page - the jump target for the permission explainers. */
 private fun openAppSettings(context: android.content.Context) {
     runCatching {
         context.startActivity(
@@ -5035,7 +5035,7 @@ private fun SafetyNumberSheetHost(
                     }
                 }
                 else -> Text(
-                    "Could not load the safety number — try again.",
+                    "Could not load the safety number - try again.",
                     color = MaterialTheme.colorScheme.error,
                     fontSize = 13.sp,
                 )

@@ -505,11 +505,11 @@ struct ChatsView: View {
 
     private var filterEmptyCopy: String {
         if viewModel.activeFolderId != nil {
-            return "This folder is empty — tap the folder button on the rail to add chats."
+            return "This folder is empty - tap the folder button on the rail to add chats."
         }
         switch prefs.chatsFilter {
-        case .unread: return "No unread chats — you are all caught up."
-        case .groups: return "No groups yet — start one from Contacts."
+        case .unread: return "No unread chats - you are all caught up."
+        case .groups: return "No groups yet - start one from Contacts."
         default: return "Nothing here yet."
         }
     }
@@ -556,7 +556,7 @@ struct ChatsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(label) — \(hint)")
+        .accessibilityLabel("\(label) - \(hint)")
     }
 
     /// R14 5-b - the real daily check-in (web spotlight runCheckin →
@@ -572,7 +572,7 @@ struct ChatsView: View {
                 let streak = result.streak ?? 1
                 session.particles.fire(kind: .confetti, count: 60)
                 PulseHaptics.success()
-                session.toasts.show("Checked in — +\(result.reward ?? 25) PC" + (streak > 1 ? " · \(streak)-day streak" : ""))
+                session.toasts.show("Checked in - +\(result.reward ?? 25) PC" + (streak > 1 ? " · \(streak)-day streak" : ""))
             } catch {
                 session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Check-in failed")
             }
@@ -1148,7 +1148,7 @@ private struct NoteToSelfCard: View {
                         .font(.system(size: 14, weight: .semibold))
                         .tracking(-0.2)
                         .foregroundStyle(.white)
-                    Text("Your private space — notes, links, ideas")
+                    Text("Your private space - notes, links, ideas")
                         .font(.system(size: 11.5))
                         .foregroundStyle(Color.white.opacity(0.55))
                 }
@@ -1192,7 +1192,7 @@ private struct NoteToSelfCard: View {
         .padding(.horizontal, 8)
         .padding(.top, 4)
         .padding(.bottom, 4)
-        .accessibilityLabel(exists ? "Open Note to Self — your private space" : "Create Note to Self — your private space")
+        .accessibilityLabel(exists ? "Open Note to Self - your private space" : "Create Note to Self - your private space")
     }
 }
 
@@ -1242,7 +1242,7 @@ private struct EntryPill: View {
         .buttonStyle(PulseButtonStyle())
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .accessibilityLabel("\(title) — \(trailing)")
+        .accessibilityLabel("\(title) - \(trailing)")
     }
 }
 
@@ -1791,7 +1791,7 @@ private struct SearchMessageRowView: View {
                 .lineLimit(1)
         } else if isFileHit && !captionMatches {
             HighlightedSnippet(
-                content: hit.fileName.map { "Document — \($0)" } ?? (content.isEmpty ? "Document" : content),
+                content: hit.fileName.map { "Document - \($0)" } ?? (content.isEmpty ? "Document" : content),
                 query: query,
             )
         } else {
@@ -1951,7 +1951,7 @@ private struct EmptyChatsCard: View {
                         .background(Capsule().fill(PulseTheme.emberSignalGradient))
                     }
                     .buttonStyle(PulseButtonStyle())
-                    .accessibilityLabel("Say hi to someone — open contacts")
+                    .accessibilityLabel("Say hi to someone - open contacts")
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 32)
@@ -2080,7 +2080,7 @@ private struct ChatActionSheet: View {
             Button("Clear chat", role: .destructive, action: { Task { await clearChat() } })
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your messages will be deleted for everyone — messages from other people stay in the chat. This cannot be undone.")
+            Text("Your messages will be deleted for everyone - messages from other people stay in the chat. This cannot be undone.")
         }
         .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
             if let shareURL {
@@ -2267,7 +2267,7 @@ private struct ChatActionSheet: View {
             await MainActor.run {
                 if let preset {
                     if preset == "always" {
-                        session.toasts.show("Muted — always")
+                        session.toasts.show("Muted - always")
                     } else {
                         let until = Date().addingTimeInterval(preset == "1w" ? 7 * 86_400 : 8 * 3_600)
                         session.toasts.show("Muted until \(PulseFormat.listStamp(until))")
@@ -2301,7 +2301,7 @@ private struct ChatActionSheet: View {
             return
         }
         await MainActor.run {
-            session.toasts.show("Chat exported — Saved \(fileURL.lastPathComponent)")
+            session.toasts.show("Chat exported - Saved \(fileURL.lastPathComponent)")
             shareURL = fileURL
         }
     }
@@ -2324,7 +2324,7 @@ private struct ChatActionSheet: View {
         }
         await MainActor.run {
             if cleared == 0 {
-                session.toasts.show("Nothing to clear — none of your messages are left in this chat.")
+                session.toasts.show("Nothing to clear - none of your messages are left in this chat.")
             } else {
                 session.toasts.show("Cleared \(cleared) message\(cleared == 1 ? "" : "s")")
             }
@@ -2343,7 +2343,7 @@ private struct ChatActionSheet: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         var lines = [
-            "Pulse — chat export",
+            "Pulse - chat export",
             "Chat: \(title)",
             "Exported: \(formatter.string(from: Date()))",
             "Messages: \(messages.count)",
@@ -2366,7 +2366,7 @@ private struct ChatActionSheet: View {
         if message.imagePath != nil { return "[photo]" }
         if message.audioPath != nil {
             if let durationMs = message.durationMs, durationMs > 0 {
-                return "[voice note — \(max(1, Int((durationMs / 1000).rounded())))s]"
+                return "[voice note - \(max(1, Int((durationMs / 1000).rounded())))s]"
             }
             return "[voice note]"
         }
@@ -2468,7 +2468,7 @@ private struct ArchivedPageView: View {
                         .frame(minWidth: 18, minHeight: 18)
                         .background(Capsule().fill(PulseTheme.emerald500.opacity(0.15)))
                 }
-                Text("Muted here — a new message moves a chat back to your inbox")
+                Text("Muted here - a new message moves a chat back to your inbox")
                     .font(.system(size: 11))
                     .foregroundStyle(PulseTheme.textTertiary)
                     .lineLimit(1)
@@ -2493,7 +2493,7 @@ private struct ArchivedPageView: View {
             Text("No archived chats")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(PulseTheme.titleOnPanel)
-            Text("Swipe left on a chat and tap Archive — it waits here. A new message brings it straight back to your inbox.")
+            Text("Swipe left on a chat and tap Archive - it waits here. A new message brings it straight back to your inbox.")
                 .font(.system(size: 13))
                 .foregroundStyle(PulseTheme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -2606,7 +2606,7 @@ final class ChatsViewModel: ObservableObject {
                     : isAudio
                         ? "Voice message"
                         : isFile
-                            ? "Document — \(last.fileName ?? "file")"
+                            ? "Document - \(last.fileName ?? "file")"
                             : collapsed
                 let mine = last.senderId == viewerId
                 let replyArrow = last.replyTo != nil ? "↩ " : ""
@@ -3040,7 +3040,7 @@ final class ChatsViewModel: ObservableObject {
             try await session.api.setMuted(conversationId: conv.id, until: until)
             if let until {
                 if until == "always" {
-                    session.toasts.show("Muted — always")
+                    session.toasts.show("Muted - always")
                 } else {
                     let stamp = Date().addingTimeInterval(until == "1w" ? 7 * 86_400 : 8 * 3_600)
                     session.toasts.show("Muted until \(PulseFormat.listStamp(stamp))")
@@ -3157,7 +3157,7 @@ final class ChatsViewModel: ObservableObject {
             session.toasts.show("\(read) chat\(read == 1 ? "" : "s") marked as read")
         }
         if failed > 0 {
-            session.toasts.show("\(failed) chat\(failed == 1 ? "" : "s") could not be marked read — try again")
+            session.toasts.show("\(failed) chat\(failed == 1 ? "" : "s") could not be marked read - try again")
         } else {
             exitSelect()
         }
