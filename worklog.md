@@ -4547,3 +4547,23 @@ Work Log:
 
 Stage Summary:
 - v0.13.0-ember fully shipped and CI-verified on both platforms. Release: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.13.0-ember
+
+---
+Task ID: R22-crash-hunt
+Agent: orchestrator (Z.ai main session)
+Task: user reports v0.13.0-ember crashing on device - nav bar dead, everything crashing. Reproduce on the exact release artifact in CI, capture the real stack, fix.
+
+Work Log:
+- Honest re-baseline: CI green never proved the release APK works - it was never booted anywhere (instrumented tests only boot DEBUG on fresh data). Static diff review of the v0.12->v0.13 Android delta showed colors-only + StoryTile rewrite, no plausible crash; Room schema stable at v10 since v0.11.6; migration chain complete; all PendingIntents FLAG_IMMUTABLE; manifest FGS types + receiver exports Android-14 compliant; folder/topic glyph resolution fully guarded (else -> default).
+- Built the CI truth machine: apps/android/ci/release_smoke.py boots the SIGNED release APK on the emulator, walks onboarding via accessibility (name -> Continue -> Skip), drives dock quick-switcher + drag nav + settings, screencaps every stage, scans logcat for crash markers. Workflow now gates Release publishing behind a publish job needing [build, instrumented].
+- Iterations: (1) emulator-runner runs script lines in separate shells -> chain into one command; (2) evidence dir not created -> mkdir; (3) crash regex false-positived on benign D AndroidRuntime tool lines -> severity-filtered; W/H scoping fixed. Learned from each run's logs, never from local builds.
+- Run 3 attempt 1 failed on infra flake (corrupted emulator zip from Google CDN) - rerun-failed-jobs cleared it.
+- FIRST CRASH REPRODUCTION: release app died right after the Hub tab render during dock re-open taps (launcher screenshots prove the app was gone; later taps typed into Google search). No logcat captured that round (driver saved evidence only on regex hit).
+- Next run at tiny 320x640 metrics passed CLEAN: full four-tab drag walk (chats/hub/contacts/profile), zero kills in logcat-full.txt (all 8 'Killing' lines were unrelated Google packages) - the earlier death was either an lmkd flake on the starved 2-core runner or a real intermittent crash, unproven either way.
+- Driver v4 + workflow matrix now in: smoke runs on API 30 AND API 34 (Android 14 class), phone-realistic 1080x2340@440dpi, dumpsys-popup-probe for the dock switcher (uiautomator dump dismisses menus), matrix-unique artifact names.
+- Ember hero: the onboarding illustration card was still the old GREEN AI-generated JPG - replaced with a generated ember/amber chat illustration (drawable-nodpi/onboarding_hero.jpg), matching the reference language.
+
+Stage Summary:
+- The release artifact is provably bootable, onboardable, and navigable in CI at least once; the user's device crash is NOT yet reproduced or explained. Suspects remaining: device-API-specific paths (API 34 leg now covered), real-data-specific paths (legacy folders/topics pre-R18 - resolution code audited safe), App Lock biometric gate (audited safe), or an intermittent race (Hub death seen once).
+- CI evidence artifacts per run: pulse-release-smoke-<api> (screenshots + report + logcat-full.txt + crash-logcat.txt on capture).
+- Screen QA pending: phone-metric screenshots from the API 34 leg will drive the visible-error UI fixes the user demands.

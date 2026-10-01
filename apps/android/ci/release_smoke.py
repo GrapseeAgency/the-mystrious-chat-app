@@ -38,8 +38,32 @@ def note(line):
 
 def wm_size():
     out = adb_ok("shell", "wm", "size").stdout
-    m = re.search(r"(\d+)x(\d+)", out)
+    # 'Override size' wins when present (wm size was overridden post-boot).
+    m = re.search(r"Override size: (\d+)x(\d+)", out) or re.search(r"Physical size: (\d+)x(\d+)", out)
     return int(m.group(1)), int(m.group(2))
+
+def dismiss_system_dialogs():
+    """API 33+ raises the POST_NOTIFICATIONS dialog at startup; it blocks every
+    tap. Tap 'Allow' (or 'Don't allow') by accessibility text when present."""
+    for _ in range(2):
+        xml = uiax_xml()
+        pos = node_bounds(xml, "Allow")
+        if pos is None:
+            pos = node_bounds(xml, "Don't allow")
+        if pos is None:
+            return
+        note("dismissing system permission dialog")
+        tap(pos)
+        time.sleep(2.0)
+
+def ime_visible():
+    out = adb("shell", "dumpsys", "input_method", timeout=60).stdout or ""
+    return "mInputShown=true" in out
+
+def dismiss_ime():
+    if ime_visible():
+        adb_ok("shell", "input", "keyevent", "4")  # BACK closes the IME first
+        time.sleep(1.5)
 
 def screen(name):
     os.makedirs(OUT, exist_ok=True)
@@ -222,6 +246,7 @@ def main():
     launch()
     screen("01-launch.png")
     note("launch pid: " + (adb("shell", "pidof", PKG).stdout.strip() or "none"))
+    dismiss_system_dialogs()
 
     # Onboarding (fresh install): name -> Continue -> Skip for now.
     def do_onboarding():
@@ -239,6 +264,8 @@ def main():
         tap_text("Skip for now", wait=4.0)
 
     stage("onboarding", do_onboarding)
+    dismiss_system_dialogs()
+    dismiss_ime()
     screen("02-main-shell.png")
     if failed:
         return finish(2)
