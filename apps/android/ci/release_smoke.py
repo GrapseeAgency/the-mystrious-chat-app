@@ -94,7 +94,7 @@ def tap_text(needle, wait=1.5):
 def alive():
     return bool(adb("shell", "pidof", PKG).stdout.strip())
 
-CRASH_MARKERS = re.compile(r"FATAL EXCEPTION|AndroidRuntime: |Force finishing activity|has died unexpectedly|Signal 11|SIGSEGV", re.IGNORECASE)
+CRASH_MARKERS = re.compile(r" E AndroidRuntime: |FATAL EXCEPTION|Force finishing activity|Process app\.pulse\.chat[^ ]* has died|has died unexpectedly", re.IGNORECASE)
 
 def crash_scan(stage):
     log = adb("logcat", "-d", "-t", "600", timeout=90).stdout or ""
@@ -126,7 +126,11 @@ def open_switcher():
     note("MISS dock pill: quick-switcher did not open at any candidate row")
     return False
 
+W = 0
+H = 0
+
 def main():
+    global W, H
     W, H = wm_size()
     note("device %dx%d" % (W, H))
     dock_y = H - int(H * 0.075)
