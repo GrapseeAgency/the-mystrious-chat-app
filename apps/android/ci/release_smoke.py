@@ -110,10 +110,23 @@ def launch():
     adb_ok("shell", "am", "start", "-W", "-n", ACT)
     time.sleep(7)
 
+def open_switcher():
+    """Tap the floating dock pill (icon-only, bottom-center). The exact
+    vertical position varies with nav-bar insets, so scan candidate rows
+    until the quick-switcher menu (a 'Hub' item) is visible."""
+    for frac in (0.075, 0.06, 0.09, 0.045):
+        y = H - int(H * frac)
+        tap((W // 2, y))
+        time.sleep(2.0)
+        if node_bounds(uiax_xml(), "Hub") is not None:
+            return True
+    note("MISS dock pill: quick-switcher did not open at any candidate row")
+    return False
+
 def main():
     W, H = wm_size()
     note("device %dx%d" % (W, H))
-    dock_y = H - int(H * 0.055)
+    dock_y = H - int(H * 0.075)
     failed = False
 
     def stage(name, fn):
@@ -152,15 +165,13 @@ def main():
 
     # Nav path 1: dock pill tap -> quick-switcher menu items (the visible nav bar).
     def nav_via_switcher():
-        tap((W // 2, dock_y))
-        time.sleep(2.0)
+        open_switcher()
         screen("03-switcher-open.png")
         for label in ("Hub", "Contacts", "Profile"):
             tap_text(label, wait=3.0)
             screen("04-tab-%s.png" % label.lower())
             note("switched to " + label)
-            tap((W // 2, dock_y))
-            time.sleep(2.0)
+            open_switcher()
 
     stage("nav-switcher", nav_via_switcher)
 
@@ -184,8 +195,7 @@ def main():
     def back_home():
         adb_ok("shell", "input", "keyevent", "4")
         time.sleep(2)
-        tap((W // 2, dock_y))
-        time.sleep(2)
+        open_switcher()
         tap_text("Chats", wait=3)
         screen("07-back-chats.png")
 

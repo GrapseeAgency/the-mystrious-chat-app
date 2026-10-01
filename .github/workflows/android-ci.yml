@@ -123,12 +123,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: |
-            cd apps/android
-            ./gradlew :app:assembleRelease -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseParallelGC" -Dorg.gradle.workers.max=2
-            adb install -r app/build/outputs/apk/release/app-release.apk
-            export PATH="$PATH:$ANDROID_HOME/platform-tools"
-            python3 ci/release_smoke.py
+          script: cd apps/android && ./gradlew :app:assembleRelease -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseParallelGC" -Dorg.gradle.workers.max=2 && adb install -r app/build/outputs/apk/release/app-release.apk && export PATH="$PATH:$ANDROID_HOME/platform-tools" && python3 ci/release_smoke.py
 
       - name: Upload instrumented test reports (always, even on failure)
         if: always()
