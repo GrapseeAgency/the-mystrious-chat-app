@@ -574,6 +574,14 @@ private fun PulseShell(
 
     fun switchTab(route: String) {
         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        // R23 hard gate: navigating to a destination that is not in the graph
+        // throws IllegalArgumentException and kills the whole shell (the
+        // release crash the R22 smoke caught). A missing route must degrade
+        // to a no-op, never a crash.
+        if (navController.graph.findNode(route) == null) {
+            android.util.Log.w("PulseNav", "switchTab: route \"$route\" not in graph; ignoring")
+            return
+        }
         navController.navigate(route) {
             popUpTo(navController.graph.startDestinationId) { saveState = true }
             launchSingleTop = true
@@ -793,6 +801,7 @@ private fun PulseShell(
                     )
                 }
             }
+            }
             composable("contacts") {
                 PulseTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
@@ -827,6 +836,7 @@ private fun PulseShell(
                     )
                 }
             }
+            }
             composable("calls") {
                 PulseTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
@@ -854,6 +864,7 @@ private fun PulseShell(
             }
             // R2-A item 6/7/8/9 - the room-info surface: automations manager,
             // webhooks manager, screen-security toggles and the photo edit.
+            }
             composable(
                 "room-info/{conversationId}",
                 arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
@@ -882,6 +893,7 @@ private fun PulseShell(
                 }
             }
             // Wave 6 - social graph: user page, add contact, profile edit, blocked list.
+            }
             composable(
                 "user/{id}",
                 arguments = listOf(navArgument("id") { type = NavType.StringType }),
@@ -894,6 +906,7 @@ private fun PulseShell(
                         onOpenRoom = { id -> navController.navigate("room/$id") },
                     )
                 }
+            }
             }
             composable("contacts/add") {
                 Box(Modifier.fillMaxSize()) {
@@ -923,6 +936,7 @@ private fun PulseShell(
                         onOpenBlocked = { navController.navigate("settings/blocked") },
                     )
                 }
+            }
             }
             composable(
                 "settings/{section}",
@@ -978,6 +992,7 @@ private fun PulseShell(
                     }
                 }
             }
+            }
             composable(
                 "room/{conversationId}?jump={jump}",
                 arguments = listOf(
@@ -1022,6 +1037,7 @@ private fun PulseShell(
                     onStartGroupCall = { kind, title -> groupCallVm.startCall(kind, title) },
                 )
             }
+            }
             composable(
                 "room/{conversationId}/thread/{rootId}",
                 arguments = listOf(
@@ -1034,6 +1050,7 @@ private fun PulseShell(
                     viewerId = viewerId,
                     onBack = { navController.popBackStack() },
                 )
+            }
             }
             composable("archived") {
                 ArchivedScreen(
@@ -1061,6 +1078,7 @@ private fun PulseShell(
             // surfaces (no dock). The nav-entry-scoped StoriesViewModel boots on
             // entry: one fresh REST fetch (REST only - zero socket for stories)
             // + 60s poll while open, so D2 expiry and D3 vanishing reconcile.
+            }
             composable(
                 "stories/viewer?start={start}",
                 arguments = listOf(
@@ -1079,6 +1097,7 @@ private fun PulseShell(
                     onClose = { navController.popBackStack() },
                     storiesVm = storiesVm,
                 )
+            }
             }
             composable("stories/compose") {
                 val storiesVm: StoriesViewModel = hiltViewModel()
@@ -1100,8 +1119,6 @@ private fun PulseShell(
                 
                 
                 }}}}}}}}}}}}
-        }
-    }
 
     // ── R4-B item 3 - the dock dispatch: one shared action bundle (tabs,
     // compose → NewChatSheet, More → Settings/Search/Saved/Stories) over the
