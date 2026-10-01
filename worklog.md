@@ -4463,3 +4463,22 @@ Work Log:
 
 Stage Summary:
 - The type-check timeout was the real EMB-I debt (file never compiled locally); the split also improves readability.
+
+---
+Task ID: R20-close
+Agent: orchestrator (Z.ai main session)
+Task: final verification - v0.12.0-native shipped with BOTH CIs green
+
+Work Log:
+- iOS CI run 36833139788: SUCCESS (unit tests incl. GRDB migration/outbox/socket round-trip + Build + Archive all green) on 7b86236 - the EMB iOS redesign now compiles AND passes the full test suite for the first time.
+- Android CI run 36833139765: SUCCESS (JVM tests + signed R8 APK).
+- Release v0.12.0-native re-published on the green SHA; asset Pulse-v0.12.0-native.apk (25,443,639 bytes) aapt2-verified: versionCode 28, versionName 0.12.0-native, minSdk 21, targetSdk 35.
+- Shipped-APK dex scan: reaction/stamp/profile strings present ("Remove your reaction", "React with", "stamp picker", "Find me on Pulse - @"); 14 emoji codepoints are the escaped STAMP/REACTION_LEGACY registry keys (data contract, never rendered).
+- Web QA (agent-browser): onboarding -> handle -> chats golden path clean in light + dark (welcome toast, stories rail, folder chips, floating dock all render; no console errors).
+
+Stage Summary:
+- SHIPPED: v0.12.0-native (versionCode 28) - Ember design language (the 4 reference screenshots: warm sunset-blur backdrop, glass chrome, hand-drawn 89-glyph PulseIcons set, floating pill nav, dark warm bubbles) + R18/R19 stable icon-id wire contract, on web + Android + iOS.
+- Emoji mandate: 0 raw emoji tree-wide (python U+1F000-1FAFF/2600-27BF/2B00-2BFF/FE0F/2764 sweep); em-dash mandate: 0 em-dashes tree-wide.
+- Smoothness: .animateItem() on chats lists (reorder/add/remove springs), PulseMotion press/tap micro-interactions, nav slide+fade transitions.
+- CI loop discipline: 5 iOS fix waves driven by CI logs (optionals, EmojiPickerSheet retirement, StoryRingCell arg order, composerRows type-check split, TextField overload order, pinned copy) - each verified via downloaded job logs.
+- Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.12.0-native
