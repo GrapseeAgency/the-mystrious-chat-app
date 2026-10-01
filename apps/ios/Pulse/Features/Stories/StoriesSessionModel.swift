@@ -1,18 +1,18 @@
 import Combine
 import Foundation
 
-/// Activity-scoped owner of the stories feed (Wave 4) — the Chats tray, the
+/// Activity-scoped owner of the stories feed (Wave 4) - the Chats tray, the
 /// dock Stories sheet, the viewer and the composer all share ONE instance
 /// (owned by [PulseSession] like the call engine), so optimistic updates
 /// (seen marks, deletes, publishes) show up everywhere at once.
 ///
 /// Transport = REST only (web parity: TanStack 60s refetchInterval + query
-/// invalidations — there are ZERO socket events for stories). Local
+/// invalidations - there are ZERO socket events for stories). Local
 /// persistence = the GRDB v6 storyCache snapshot: the tray renders instantly
 /// on cold start/offline and the next successful fetch overwrites it.
 @MainActor
 public final class StoriesSessionModel: ObservableObject {
-    /// D5 (web defect fixed): error ≠ empty — `lastError != nil` with no
+    /// D5 (web defect fixed): error ≠ empty - `lastError != nil` with no
     /// groups means the transport failed (retry offered); nil means an
     /// honestly empty feed.
     public struct Flags: Equatable {
@@ -31,7 +31,7 @@ public final class StoriesSessionModel: ObservableObject {
 
     public init(session: PulseSession) {
         self.session = session
-        // Cold-start rehydrate — instant tray from the last good snapshot.
+        // Cold-start rehydrate - instant tray from the last good snapshot.
         if let store = session.store,
            let cached = try? store.loadStoryCache(key: cacheKey),
            let data = cached.groupsJson.data(using: .utf8),
@@ -52,7 +52,7 @@ public final class StoriesSessionModel: ObservableObject {
             flags.lastError = nil
             persistCache(page)
         } else if groups.isEmpty {
-            // Nothing cached to serve — honest transport failure (D5).
+            // Nothing cached to serve - honest transport failure (D5).
             flags.loadedOnce = true
             flags.lastError = ChatsViewModel.describe(
                 PulseAPIClient.Failure(kind: .network, message: nil)
@@ -77,7 +77,7 @@ public final class StoriesSessionModel: ObservableObject {
         pollTask = nil
     }
 
-    // ── publish (composer) ──────────────────────────────────
+    // publish (composer)
 
     /// POST /api/stories → refresh. Returns the server's error copy on failure.
     @discardableResult
@@ -93,9 +93,9 @@ public final class StoriesSessionModel: ObservableObject {
         }
     }
 
-    // ── viewer actions ──────────────────────────────────────
+    // viewer actions
 
-    /// Optimistic seen-flip (D6) — the POST result lands here; local update
+    /// Optimistic seen-flip (D6) - the POST result lands here; local update
     /// happens immediately so rings react instantly, server truth reconciles
     /// on the next fetch.
     public func markViewedLocally(storyId: String, viewCount: Int?) {
@@ -124,9 +124,9 @@ public final class StoriesSessionModel: ObservableObject {
         }
     }
 
-    // ── owner viewers sheet (D7) ────────────────────────────
+    // owner viewers sheet (D7)
 
-    /// One fetch — the sheet re-issues it every ≤5s while open.
+    /// One fetch - the sheet re-issues it every ≤5s while open.
     public func loadViewers(storyId: String) async {
         viewersLoading = true
         if let list = try? await session.api.storyViewers(id: storyId) {
@@ -140,7 +140,7 @@ public final class StoriesSessionModel: ObservableObject {
         viewersLoading = false
     }
 
-    // ── internals ───────────────────────────────────────────
+    // internals
 
     private func removeLocal(_ storyId: String) {
         groups = groups.compactMap { g in
@@ -160,7 +160,7 @@ public final class StoriesSessionModel: ObservableObject {
     private func nowMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 
     /// D2 (web defect fixed): expired stories are dropped OFFLINE before any
-    /// grouping — no network probes; a group left empty disappears entirely.
+    /// grouping - no network probes; a group left empty disappears entirely.
     public static func liveGroups(_ groups: [WireStoryGroup], nowMs: Int64) -> [WireStoryGroup] {
         groups.compactMap { g in
             let stories = (g.stories ?? []).filter { (storyEpochMs($0.expiresAt)) > nowMs }

@@ -1,11 +1,9 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Hub — #/hub/c/<slug> category sub-page (R27-b).
+// Pulse Hub - #/hub/c/<slug> category sub-page (R27-b).
 // Full glass listing for one matrix category (or slug "mine" =
 // My apps, real AppInstall data). Rows carry per-app accent icon
 // tiles, live connect badges and spring entrances. Back pops the
-// hash history via backHash(). Zero mocks — install truth comes
+// hash history via backHash(). Zero mocks - install truth comes
 // from /api/hub/apps/*/install.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useMemo } from 'react'
@@ -107,7 +105,7 @@ export function HubCategoryPage({
         backLabel={`Back to Hub, from ${title}`}
       />
 
-      {/* accent identity band — the category wash sits BEHIND the glass card
+      {/* accent identity band - the category wash sits BEHIND the glass card
           (locked recipe: ambient colored wash refracting through glass) */}
       <div
         className="relative shrink-0 px-3 pb-2.5 pt-3"
@@ -185,7 +183,7 @@ export function HubCategoryPage({
               </p>
               <p className="mx-auto mt-1 max-w-[260px] text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                 {isMine
-                  ? 'You haven\u2019t connected any apps yet — open one in the matrix and tap Connect.'
+                  ? 'You haven\u2019t connected any apps yet - open one in the matrix and tap Connect.'
                   : 'Nothing lives in this category yet.'}
               </p>
             </div>

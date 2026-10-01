@@ -1,15 +1,13 @@
 import SwiftUI
 
-// ─────────────────────────────────────────────────────────────
-// Wave 6 — the folder manager (F-FD-02/03, folders-sheet.tsx parity):
-// list mode with inline rename, emoji presets, two-tap delete (2600 ms
+// Wave 6 - the folder manager (F-FD-02/03, folders-sheet.tsx parity):
+// list mode with inline rename, icon-id presets, two-tap delete (2600 ms
 // window) and a membership editor over every real chat; create form with
-// the 8 emoji presets + 24-char name. Every mutation is the REAL endpoint:
+// the 8 icon presets + 24-char name. Every mutation is the REAL endpoint:
 // POST/PATCH/DELETE /api/folders[/id] + PUT /api/folders/{id}/conversations
 // (FULL ordered replace). Toasts are the verbatim web copy.
-// ─────────────────────────────────────────────────────────────
 
-/// Membership PUT payload planner — pure, unit-tested. The saved array is
+/// Membership PUT payload planner - pure, unit-tested. The saved array is
 /// the checked set, expressed in the CHAT LIST's order (web parity: the
 /// checkbox list is the conversation list, so the folder order follows it).
 enum FolderMembership {
@@ -20,7 +18,7 @@ enum FolderMembership {
 
 struct FoldersManageSheet: View {
     @ObservedObject var session: PulseSession
-    /// The live chat list (active, non-archived) — the membership editor's
+    /// The live chat list (active, non-archived) - the membership editor's
     /// checkbox rows, in display order.
     let conversations: [WireConversationSummary]
     /// Fired after ANY mutation lands so the parent refetches folders.
@@ -35,12 +33,12 @@ struct FoldersManageSheet: View {
 
     // create form
     @State private var newName = ""
-    @State private var newEmoji = "📂"
+    @State private var newIcon = PulseFolderIconId.fallback.rawValue
 
     // rename/edit
     @State private var editingId: String?
     @State private var editName = ""
-    @State private var editEmoji: String?
+    @State private var editIcon: String?
 
     // two-tap delete (2600 ms window, PulseTwoTap)
     @State private var deleteArmedId: String?
@@ -50,7 +48,9 @@ struct FoldersManageSheet: View {
     @State private var membershipFolder: WireFolder?
     @State private var checked: Set<String> = []
 
-    static let emojiPresets = ["📂", "💼", "🎮", "❤️", "🔥", "🎯", "🎵", "🧠"]
+    /// R18-b - the 8 pickable folder icon IDS (web FOLDER_ICON_IDS), rendered
+    /// through their PulseFolderIconId SF Symbols, never as raw emoji.
+    static let iconPresets = PulseFolderIconId.allCases.map(\.rawValue)
 
     private enum Mode { case list, create }
 
@@ -95,7 +95,7 @@ struct FoldersManageSheet: View {
         .task { await reload() }
     }
 
-    // ── list mode ────────────────────────────────────────────
+    // list mode
 
     @ViewBuilder
     private var listContent: some View {
@@ -111,7 +111,7 @@ struct FoldersManageSheet: View {
                 Text("No folders yet")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(PulseTheme.titleOnPanel)
-                Text("Folders group your chats — create one to start sorting.")
+                Text("Folders group your chats - create one to start sorting.")
                     .font(.system(size: 12))
                     .foregroundStyle(PulseTheme.textSecondary)
                 Button {
@@ -158,8 +158,10 @@ struct FoldersManageSheet: View {
         let count = folder.conversationIds?.count ?? 0
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Text(editEmoji ?? folder.emoji ?? "📂")
-                    .font(.system(size: 18))
+                Image(systemName: PulseFolderIconId.normalize(editIcon ?? folder.emoji).symbolName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(PulseTheme.accent)
+                    .frame(width: 22)
                 if editing {
                     TextField("Folder name", text: $editName)
                         .textFieldStyle(.plain)
@@ -182,7 +184,7 @@ struct FoldersManageSheet: View {
                 if busyFolderId == folder.id {
                     ProgressView().controlSize(.small)
                 }
-                // reorder (position PATCH — GET returns position asc)
+                // reorder (position PATCH - GET returns position asc)
                 if editing {
                     Button {
                         PulseHaptics.tap()
@@ -214,7 +216,7 @@ struct FoldersManageSheet: View {
                     } else {
                         editingId = folder.id
                         editName = folder.name
-                        editEmoji = nil
+                        editIcon = nil
                     }
                 } label: {
                     Image(systemName: editing ? "checkmark" : "pencil")
@@ -225,7 +227,7 @@ struct FoldersManageSheet: View {
                 }
                 .buttonStyle(PulseButtonStyle())
                 .accessibilityLabel(editing ? "Save name" : "Rename \(folder.name)")
-                // Two-tap delete — first tap arms for 2600 ms, second executes.
+                // Two-tap delete - first tap arms for 2600 ms, second executes.
                 Button {
                     PulseHaptics.tap()
                     handleDeleteTap(folder)
@@ -240,24 +242,26 @@ struct FoldersManageSheet: View {
                 .accessibilityLabel(deleteArmed ? "Tap again to delete \(folder.name)" : "Delete \(folder.name)")
             }
             if editing {
-                // emoji preset row (the same 8 the create form uses)
+                // icon preset row (the same 8 the create form uses)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(Self.emojiPresets, id: \.self) { glyph in
+                        ForEach(Self.iconPresets, id: \.self) { preset in
                             Button {
                                 PulseHaptics.tap()
-                                editEmoji = glyph
+                                editIcon = preset
                             } label: {
-                                Text(glyph)
-                                    .font(.system(size: 15))
+                                Image(systemName: PulseFolderIconId(rawValue: preset)?.symbolName ?? "folder")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(editIcon == preset ? PulseTheme.accent : PulseTheme.textSecondary)
                                     .frame(width: 36, height: 36)
-                                    .background(RoundedRectangle(cornerRadius: 9).fill(editEmoji == glyph ? PulseTheme.emerald500.opacity(0.2) : PulseTheme.chipFill))
+                                    .background(RoundedRectangle(cornerRadius: 9).fill(editIcon == preset ? PulseTheme.emerald500.opacity(0.2) : PulseTheme.chipFill))
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 9)
-                                            .strokeBorder(editEmoji == glyph ? PulseTheme.accent : Color.clear, lineWidth: 1.5),
+                                            .strokeBorder(editIcon == preset ? PulseTheme.accent : Color.clear, lineWidth: 1.5),
                                     )
                             }
                             .buttonStyle(PulseButtonStyle())
+                            .accessibilityLabel("Icon \(preset)\(editIcon == preset ? ", selected" : "")")
                         }
                     }
                 }
@@ -282,13 +286,13 @@ struct FoldersManageSheet: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
     }
 
-    // ── create mode ──────────────────────────────────────────
+    // create mode
 
     private var createFill: AnyShapeStyle {
         PulseFolderDraft.isValidName(newName) ? AnyShapeStyle(PulseTheme.brandGradient) : AnyShapeStyle(PulseTheme.zinc(300))
     }
 
-    private var createEmojiRow: some View {
+    private var createIconRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Pick an icon")
                 .font(.system(size: 11, weight: .semibold))
@@ -296,22 +300,23 @@ struct FoldersManageSheet: View {
                 .foregroundStyle(PulseTheme.textSecondary)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(Self.emojiPresets, id: \.self) { glyph in
-                        emojiButton(glyph)
+                    ForEach(Self.iconPresets, id: \.self) { preset in
+                        iconButton(preset)
                     }
                 }
             }
         }
     }
 
-    private func emojiButton(_ glyph: String) -> some View {
-        let selected = newEmoji == glyph
+    private func iconButton(_ preset: String) -> some View {
+        let selected = newIcon == preset
         return Button {
             PulseHaptics.tap()
-            newEmoji = glyph
+            newIcon = preset
         } label: {
-            Text(glyph)
-                .font(.system(size: 18))
+            Image(systemName: PulseFolderIconId(rawValue: preset)?.symbolName ?? "folder")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(selected ? PulseTheme.accent : PulseTheme.textSecondary)
                 .frame(width: 46, height: 46)
                 .background(RoundedRectangle(cornerRadius: 12).fill(selected ? PulseTheme.emerald500.opacity(0.2) : PulseTheme.chipFill))
                 .overlay(
@@ -320,12 +325,12 @@ struct FoldersManageSheet: View {
                 )
         }
         .buttonStyle(PulseButtonStyle())
-        .accessibilityLabel("Icon \(glyph)\(selected ? ", selected" : "")")
+        .accessibilityLabel("Icon \(preset)\(selected ? ", selected" : "")")
     }
 
     private var createForm: some View {
         VStack(alignment: .leading, spacing: 12) {
-            createEmojiRow
+            createIconRow
             Text("Name")
                 .font(.system(size: 11, weight: .semibold))
                 .textCase(.uppercase)
@@ -367,12 +372,12 @@ struct FoldersManageSheet: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
     }
 
-    // ── membership editor ────────────────────────────────────
+    // membership editor
 
     private func membershipEditor(_ folder: WireFolder) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Chats in \(folder.emoji ?? "📂") \(folder.name)")
+                Text("Chats in \(folder.name)")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(PulseTheme.titleOnPanel)
                 Spacer()
@@ -381,7 +386,7 @@ struct FoldersManageSheet: View {
                     .foregroundStyle(PulseTheme.textTertiary)
             }
             if conversations.isEmpty {
-                Text("No chats yet — the list fills in as conversations arrive.")
+                Text("No chats yet - the list fills in as conversations arrive.")
                     .font(.system(size: 12))
                     .foregroundStyle(PulseTheme.textSecondary)
             } else {
@@ -445,7 +450,7 @@ struct FoldersManageSheet: View {
         return others.first?.name ?? "Chat"
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
     private func reload() async {
         folders = await session.api.folders() ?? folders
@@ -458,11 +463,11 @@ struct FoldersManageSheet: View {
         busyFolderId = "creating"
         defer { busyFolderId = nil }
         do {
-            let folder = try await session.api.createFolder(name: name, emoji: newEmoji)
+            let folder = try await session.api.createFolder(name: name, emoji: newIcon)
             PulseHaptics.success()
-            session.toasts.show("\(folder.emoji ?? newEmoji) Folder “\(folder.name)” created")
+            session.toasts.show("Folder \(folder.name) created")
             newName = ""
-            newEmoji = "📂"
+            newIcon = PulseFolderIconId.fallback.rawValue
             withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { mode = .list }
             await reload()
             onChanged()
@@ -474,11 +479,11 @@ struct FoldersManageSheet: View {
     private func commitEdit(_ folder: WireFolder) async {
         guard busyFolderId == nil else { return }
         let name = editName.trimmingCharacters(in: .whitespaces)
-        let emojiChanged = editEmoji != nil && editEmoji != folder.emoji
+        let emojiChanged = editIcon != nil && editIcon != folder.emoji
         let nameChanged = PulseFolderDraft.isValidName(name) && name != folder.name
         guard nameChanged || emojiChanged else {
             editingId = nil
-            editEmoji = nil
+            editIcon = nil
             return
         }
         busyFolderId = folder.id
@@ -487,13 +492,13 @@ struct FoldersManageSheet: View {
             let fresh = try await session.api.updateFolder(
                 id: folder.id,
                 name: nameChanged ? name : nil,
-                emoji: emojiChanged ? editEmoji : nil,
+                emoji: emojiChanged ? editIcon : nil,
                 position: nil,
             )
             if nameChanged { session.toasts.show("Renamed to “\(fresh.name)”") }
             PulseHaptics.success()
             editingId = nil
-            editEmoji = nil
+            editIcon = nil
             await reload()
             onChanged()
         } catch {
@@ -525,7 +530,7 @@ struct FoldersManageSheet: View {
         do {
             try await session.api.deleteFolder(id: folder.id)
             PulseHaptics.success()
-            session.toasts.show("Folder deleted — chats stay in your list")
+            session.toasts.show("Folder deleted - chats stay in your list")
             await reload()
             onChanged()
         } catch {

@@ -132,6 +132,11 @@ import app.pulse.domain.model.LinkPreviewInfo
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.domain.model.Topic
+import app.pulse.protocol.REACTION_DEFAULT
+import app.pulse.protocol.TOPIC_ICON_DEFAULT
+import app.pulse.protocol.TOPIC_ICON_IDS
+import app.pulse.protocol.reactionId
+import app.pulse.protocol.topicIconId
 import app.pulse.ui.EmberGlassButton
 import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseAvatar
@@ -139,6 +144,8 @@ import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseReactionGlyph
+import app.pulse.ui.pulseTopicGlyph
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -280,7 +287,6 @@ fun ChatRoomScreen(
     // R6 — M2: the quick-phrase manager now lives on the VM (viewModel.phrasesOpen)
     // so the rail's "manage" chip reaches it — the screen-local flag was a dead end.
     // R5-B ITEM 1 — composer emoji picker (draft-EDIT engine, distinct from stickers).
-    var emojiOpen by remember { mutableStateOf(false) }
     // R1-W2F — location share sheet (F-MD-07) + theme picker (F-FX-05).
     var locationOpen by remember { mutableStateOf(false) }
     var locationDenied by remember { mutableStateOf(false) }
@@ -616,7 +622,7 @@ fun ChatRoomScreen(
             is PulseSlash.Outcome.Send -> viewModel.send(outcome.content)
             is PulseSlash.Outcome.Effect -> viewModel.sendEffect(outcome.effect, outcome.content)
             is PulseSlash.Outcome.Error -> viewModel.notify(outcome.message, isError = true)
-            is PulseSlash.Outcome.Topic -> viewModel.createTopic(outcome.name, "💬")
+            is PulseSlash.Outcome.Topic -> viewModel.createTopic(outcome.name, TOPIC_ICON_DEFAULT)
             is PulseSlash.Outcome.Remind -> viewModel.remindMe("")
             PulseSlash.Outcome.Recap -> viewModel.requestRecap()
             PulseSlash.Outcome.Help -> helpOpen = true
@@ -886,7 +892,9 @@ fun ChatRoomScreen(
                                 onDoubleClick = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                                     {
                                         val addsHeart = message.reactions.none {
-                                            it.emoji == "❤️" && it.userId == viewerId
+                                            // Wire values are reaction ids now; legacy emoji rows
+                                            // normalize through reactionId on the compare.
+                                            reactionId(it.emoji) == REACTION_DEFAULT && it.userId == viewerId
                                         }
                                         if (addsHeart) {
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -895,7 +903,7 @@ fun ChatRoomScreen(
                                                 count = 28,
                                             )
                                         }
-                                        viewModel.react(message.id, "❤️")
+                                        viewModel.react(message.id, REACTION_DEFAULT)
                                     }
                                 } else {
                                     null
@@ -1651,35 +1659,22 @@ fun ChatRoomScreen(
                                     .padding(horizontal = 2.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                // R5-B ITEM 1 — the smile button (web chat-room.tsx:5384-5390):
-                                // opens the draft-append emoji popup, never sends.
-                                Box {
-                                    IconButton(
-                                        onClick = {
-                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            emojiOpen = !emojiOpen
-                                        },
-                                        modifier = Modifier.clip(CircleShape),
-                                    ) {
-                                        Icon(
-                                            PulseIcons.Smile,
-                                            contentDescription = "Insert emoji",
-                                            tint = Color.White.copy(alpha = 0.55f),
-                                            modifier = Modifier.size(22.dp),
-                                        )
-                                    }
-                                    if (emojiOpen) {
-                                        EmojiPickerPopup(
-                                            onPick = { emoji ->
-                                                // Append at cursor end + keep the composer
-                                                // focused (web: setInput(prev + emoji) → refocus).
-                                                draft += emoji
-                                                viewModel.onDraftChanged(draft)
-                                                composerFocus.requestFocus()
-                                            },
-                                            onDismiss = { emojiOpen = false },
-                                        )
-                                    }
+                                // R5-B ITEM 1 - the smile button now hosts the
+                                // stamp picker (R19-a retired the draft-append
+                                // emoji popup; stamps are registry ids).
+                                IconButton(
+                                    onClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        stickerOpen = true
+                                    },
+                                    modifier = Modifier.clip(CircleShape),
+                                ) {
+                                    Icon(
+                                        PulseIcons.Smile,
+                                        contentDescription = "Open stamp picker",
+                                        tint = Color.White.copy(alpha = 0.55f),
+                                        modifier = Modifier.size(22.dp),
+                                    )
                                 }
                                 BasicTextField(
                                     value = draft,
@@ -3642,8 +3637,8 @@ private fun MessageRow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 message.reactions
-                    .groupBy { it.emoji }
-                    .forEach { (emoji, list) ->
+                    .groupBy { reactionId(it.emoji) }
+                    .forEach { (id, list) ->
                         val popped by animateFloatAsState(1f, animationSpec = PulseMotion.bouncy(), label = "react")
                         Surface(
                             shape = RoundedCornerShape(999.dp),
@@ -3652,17 +3647,22 @@ private fun MessageRow(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(999.dp))
                                 .combinedClickable(
-                                    onClick = { onWhoReacted?.invoke(emoji) },
-                                    onLongClick = { onWhoReacted?.invoke(emoji) },
+                                    onClick = { onWhoReacted?.invoke(id) },
+                                    onLongClick = { onWhoReacted?.invoke(id) },
                                 ),
                         ) {
                             Row(
                                 Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
                             ) {
-                                Text(emoji, fontSize = 12.sp)
+                                Icon(
+                                    pulseReactionGlyph(id),
+                                    contentDescription = null,
+                                    tint = EmberPalette.Amber,
+                                    modifier = Modifier.size(13.dp),
+                                )
                                 if (list.size > 1) {
-                                    Spacer(Modifier.width(3.dp))
                                     Text("${list.size}", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.60f))
                                 }
                             }
@@ -4770,7 +4770,7 @@ private fun TopicBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TopicChip(
-                    emoji = "💬",
+                    emoji = TOPIC_ICON_DEFAULT,
                     label = "General",
                     count = null,
                     active = activeTopicId == null,
@@ -4781,7 +4781,7 @@ private fun TopicBar(
                 )
                 topics.forEach { topic ->
                     TopicChip(
-                        emoji = topic.emoji,
+                        emoji = topicIconId(topic.emoji),
                         label = topic.name,
                         count = topic.messageCount,
                         active = activeTopicId == topic.id,
@@ -4822,16 +4822,18 @@ private fun TopicBar(
     }
 }
 
-private val TOPIC_EMOJIS = listOf("💬", "🎨", "🚀", "🧠", "🎉", "🛠️", "📌", "☕")
-
-/** Inline topic-create panel — name field (≤32 chars) + emoji choice row. */
+/**
+ * Inline topic-create panel - name field (≤32 chars) + registry icon choice
+ * row (icon-ids.ts TOPIC_ICON_IDS); glyphs render via [pulseTopicGlyph].
+ */
+private val TOPIC_ICON_PRESETS = TOPIC_ICON_IDS
 @Composable
 private fun TopicCreatePanel(
     onCreate: (name: String, emoji: String) -> Unit,
     onCancel: () -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
-    var emoji by remember { mutableStateOf(TOPIC_EMOJIS.first()) }
+    var emoji by remember { mutableStateOf(TOPIC_ICON_DEFAULT) }
     Column(
         Modifier
             .fillMaxWidth()
@@ -4878,24 +4880,28 @@ private fun TopicCreatePanel(
         }
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TOPIC_EMOJIS.forEach { option ->
-                Text(
-                    option,
-                    fontSize = 17.sp,
-                    modifier = Modifier
+            TOPIC_ICON_PRESETS.forEach { id ->
+                Box(
+                    Modifier
                         .clip(CircleShape)
-                        .background(
-                            if (option == emoji) PulsePalette.Emerald.copy(alpha = 0.2f) else Color.Transparent,
-                        )
-                        .clickable { emoji = option }
-                        .padding(4.dp),
-                )
+                        .background(if (id == emoji) EmberPalette.Amber.copy(alpha = 0.22f) else Color.Transparent)
+                        .clickable { emoji = id }
+                        .padding(6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        pulseTopicGlyph(id),
+                        contentDescription = null,
+                        tint = if (id == emoji) EmberPalette.Amber else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
             }
         }
     }
 }
 
-/** One topic chip — emoji + label + optional count badge (99+ cap). */
+/** One topic chip - registry icon + label + optional count badge (99+ cap). */
 @Composable
 private fun TopicChip(
     emoji: String,
@@ -4916,7 +4922,12 @@ private fun TopicChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(emoji, fontSize = 13.sp)
+            Icon(
+                pulseTopicGlyph(emoji),
+                contentDescription = null,
+                tint = if (active) EmberPalette.Amber else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(13.dp),
+            )
             Text(
                 label,
                 style = MaterialTheme.typography.labelMedium,

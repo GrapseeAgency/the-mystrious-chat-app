@@ -12,32 +12,32 @@ import app.pulse.domain.model.Message
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * R6 — M4: incoming-message attention (web 2-note WebAudio ding honoring
+ * R6 - M4: incoming-message attention (web 2-note WebAudio ding honoring
  * quiet hours + per-room mute; iOS PulseSession noteIncomingAttention
- * parity). Fires ONLY while the app is foregrounded — backgrounded rooms
+ * parity). Fires ONLY while the app is foregrounded - backgrounded rooms
  * stay silent until a real push channel exists (honest limitation, same as
  * the reminder loop). Gates, in order:
  *  1. app foregrounded (MainActivity onStart/onStop flips the flag)
  *  2. NOT the viewer's own row (sender filter; optimistic echoes never ride
- *     PulseEvent.MessageReceived — the outbox swap handles those — but the
+ *     PulseEvent.MessageReceived - the outbox swap handles those - but the
  *     viewer's own automation replies do arrive and must stay silent)
- *  3. LOCAL quiet hours (ReminderAlertPolicy.quietNow — the same window the
+ *  3. LOCAL quiet hours (ReminderAlertPolicy.quietNow - the same window the
  *     reminder notifier honors)
  *  4. per-room mute (the conversation's mutedUntil window is in the future)
  *  then: ding if the DEVICE soundOn master AND the account notifSound pop
- *  are both on (web gate chain pulse-realtime-provider.tsx:602-605 —
+ *  are both on (web gate chain pulse-realtime-provider.tsx:602-605 -
  *  !muted && !quiet → playIncomingPing [device soundOn] + haptic [haptics]);
  *  vibration if prefs notifVibrate (the same Wave-8 blob ReminderAlertPolicy
  *  mirrors).
  */
 object IncomingAttention {
 
-    /** Process-foreground flag — a single activity means app-level truth. */
+    /** Process-foreground flag - a single activity means app-level truth. */
     @Volatile
     var foreground: Boolean = false
 
     /**
-     * R7 item 7 — notifPreviews mirror (Wave-8 server blob). ON → the
+     * R7 item 7 - notifPreviews mirror (Wave-8 server blob). ON → the
      * attention toast shows the full preview ("Sender: body", 80-char cap);
      * OFF → the honest generic "New message". PulseApplication keeps it live
      * alongside the ReminderAlertPolicy mirrors.
@@ -57,16 +57,16 @@ object IncomingAttention {
         }
     }
 
-    /** One PulseEvent.MessageReceived — evaluates the gate chain live. */
+    /** One PulseEvent.MessageReceived - evaluates the gate chain live. */
     fun onMessageReceived(context: Context, conversationId: String, message: Message, viewerId: String?) {
         if (!foreground) return
         if (viewerId == null || message.authorId == viewerId) return
         if (message.isDeleted) return
         if (ReminderAlertPolicy.quietNow()) return
         if ((mutedUntilMs[conversationId] ?: 0L) > System.currentTimeMillis()) return
-        // R7 item 7 — the preview line the settings row promises ("Message
+        // R7 item 7 - the preview line the settings row promises ("Message
         // text in notification-style toasts."): notification-banner semantics
-        // with the notifPreviews gate — body preview when ON, generic "New
+        // with the notifPreviews gate - body preview when ON, generic "New
         // message" when OFF (PulseWave8Logic.incomingPreviewText, the helper
         // that used to have zero callers). Quiet-hours + mute gates unchanged.
         runCatching {
@@ -81,8 +81,8 @@ object IncomingAttention {
     }
 
     /**
-     * R14 — Settings → Notifications "Preview alert" (web settings-screen.tsx
-     * Test group, :1258-1275): the REAL ding/buzz path honoring the toggles —
+     * R14 - Settings → Notifications "Preview alert" (web settings-screen.tsx
+     * Test group, :1258-1275): the REAL ding/buzz path honoring the toggles -
      * quiet hours silences honestly, the ding obeys the device soundOn master
      * (playIncomingPing parity) and the buzz obeys the haptics toggle
      * (haptic(30) parity).
@@ -92,7 +92,7 @@ object IncomingAttention {
             runCatching {
                 android.widget.Toast.makeText(
                     context,
-                    "Quiet hours active — the alert would be silenced right now.",
+                    "Quiet hours active - the alert would be silenced right now.",
                     android.widget.Toast.LENGTH_SHORT,
                 ).show()
             }
@@ -119,7 +119,7 @@ object IncomingAttention {
         }
     }
 
-    /** Short buzz — VibratorManager on 31+, legacy Vibrator service below. */
+    /** Short buzz - VibratorManager on 31+, legacy Vibrator service below. */
     private fun buzz(context: Context) {
         runCatching {
             val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

@@ -1,13 +1,12 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — Wave R1-W2D video decision logic (PURE Foundation — unit tested).
+// Pulse - Wave R1-W2D video decision logic (PURE Foundation - unit tested).
 //
 // Behavioral spec = the web `useCallSession` hook:
 //   • the wire video flag is the call's `kind` field ("voice" | "video",
-//     src/lib/call-types.ts:15) — not a separate boolean;
+//     src/lib/call-types.ts:15) - not a separate boolean;
 //   • a wanted VIDEO call degrades to VOICE BEFORE the offer when no usable
-//     camera exists (`acquireMedia` fallback, call-overlay.tsx:262-282) —
+//     camera exists (`acquireMedia` fallback, call-overlay.tsx:262-282) -
 //     the offer kind always carries the ACTUAL kind;
 //   • the callee additionally requires the offer SDP to actually declare a
 //     usable `m=video` line (a voice offer must never open the camera).
@@ -15,7 +14,6 @@ import Foundation
 // Kept free of WebRTC/AVFoundation types so PulseTests exercises the exact
 // production decision path with no device hardware (the capture itself
 // stays a hardware-gated Wave 3-HW item).
-// ─────────────────────────────────────────────────────────────
 
 /// SDP media-line inspection for the video decision (pure string logic).
 public enum PulseCallSdp {
@@ -36,7 +34,7 @@ public enum PulseCallSdp {
             sectionRejected = false
         }
 
-        // NSString-bridge line splitting (components over closure-based split —
+        // NSString-bridge line splitting (components over closure-based split -
         // the CI runner's toolchain miscompiled the Character==literal closure
         // predicates here, and the bridge path is equivalent + faster anyway).
         // components(separatedBy:) with BOTH chars treats every CR and LF as a
@@ -46,7 +44,7 @@ public enum PulseCallSdp {
             if line.hasPrefix("m=") {
                 flushSection()
                 let tokens = line.components(separatedBy: " ").filter { !$0.isEmpty }
-                // m=<media> <port> <proto> <fmt> ... — tokens[0] is the full
+                // m=<media> <port> <proto> <fmt> ... - tokens[0] is the full
                 // "m=video" token; tokens[1] is the port (0 = rejected).
                 if tokens.count >= 3, tokens[0] == "m=video" {
                     sectionIsVideo = true
@@ -79,9 +77,9 @@ public enum PulseCallVideoPolicy {
     }
 
     /// Should THIS device attach its local camera?
-    ///   • CALLER — the engine resolved the wire kind at startOutgoing, so
+    ///   • CALLER - the engine resolved the wire kind at startOutgoing, so
     ///     attach iff kind==video (offerSdp may be nil pre-offer).
-    ///   • CALLEE — additionally require the offer SDP to declare m=video:
+    ///   • CALLEE - additionally require the offer SDP to declare m=video:
     ///     a wire 'video' kind with a rejected/absent video m-line (caller
     ///     fell back mid-prompt) must not open the camera.
     /// [cameraCapable] gates both: permission-denied / no-device ⇒ audio-only.

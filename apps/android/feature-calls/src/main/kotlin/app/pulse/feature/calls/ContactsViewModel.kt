@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** Contacts tab state holder — directory from GET /api/users + live presence. */
+/** Contacts tab state holder - directory from GET /api/users + live presence. */
 @HiltViewModel
 class ContactsViewModel @Inject constructor(
     private val repo: PulseRepository,

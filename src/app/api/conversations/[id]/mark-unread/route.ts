@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/mark-unread — per-VIEWER unread dot
-// ─────────────────────────────────────────────────────────────
-// R44 — WhatsApp/Telegram "mark as unread": a participant flags a row so it
+// /api/conversations/[id]/mark-unread - per-VIEWER unread dot
+// R44 - WhatsApp/Telegram "mark as unread": a participant flags a row so it
 // re-appears with the unread badge even with nothing new to read. The dot
 // clears the next time the room is opened (the read route flips it off).
-// Self-service comfort setting — never admin-gated (mirrors R42 screenPrivacy).
+// Self-service comfort setting - never admin-gated (mirrors R42 screenPrivacy).
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -17,9 +15,9 @@ interface RouteCtx {
 
 /**
  * PATCH /api/conversations/[id]/mark-unread  body { userId, on }
- * on: boolean — true = badge my own row; false = clear it.
+ * on: boolean - true = badge my own row; false = clear it.
  * Participant-only (403 for everyone else). A viewer may only flag their
- * OWN row — userId IS the requester by construction of the call sites.
+ * OWN row - userId IS the requester by construction of the call sites.
  * → { ok: true, manualUnread: boolean } | 400 | 403 | 404
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {

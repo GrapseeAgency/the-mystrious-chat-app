@@ -14,15 +14,15 @@ import androidx.core.content.ContextCompat
 import app.pulse.core.link.PulseDeepLink
 
 /**
- * R8 Task 3-c — the TELECOM FALLBACK ring surface. When Telecom (self-managed
- * ConnectionService) is unavailable — pre-O devices, a refused registration,
- * an OEM policy rejection — the 1:1 incoming ring still surfaces through a
+ * R8 Task 3-c - the TELECOM FALLBACK ring surface. When Telecom (self-managed
+ * ConnectionService) is unavailable - pre-O devices, a refused registration,
+ * an OEM policy rejection - the 1:1 incoming ring still surfaces through a
  * full-screen-intent, high-priority CALL notification on top of the existing
  * in-app ring UI. Never a fake "system call": the notification deep-links
  * into the conversation where the ring UI + answer controls live.
  *
  * The same surface carries the remote-push call rings (FCM `kind: call|gcall`)
- * from the app module — one channel, one honest idiom.
+ * from the app module - one channel, one honest idiom.
  */
 object CallRingNotifier {
 

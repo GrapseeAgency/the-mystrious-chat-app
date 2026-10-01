@@ -9,7 +9,7 @@ not done. Do not convert any NOT TESTED row into PASS without evidence.
 Date: ____
 Operator: ____
 Code under test: v0.7.0-native (versionCode 17) — verified on device: Android ____, iPhone ____
-Gateway: ____ (REST HTTPS ☐ / WSS ☐ / transcribe route ☐)   TURN: N/A for W5 room media ☐ (see 01 §1)
+Gateway: ____ (REST HTTPS  / WSS  / transcribe route )   TURN: N/A for W5 room media  (see 01 §1)
 
 ## 1. Infrastructure
 | Check | Result | Evidence |
@@ -21,7 +21,7 @@ Gateway: ____ (REST HTTPS ☐ / WSS ☐ / transcribe route ☐)   TURN: N/A for 
 | TURN allocation (optional — W3-HW only) | | |
 
 ## 2. Voice rooms (VR-1…VR-9)
-| ID | Case | A (Android model/OS) | B (iPhone/iOS) | Topology | Expected ✔ | Actual | PASS/FAIL | Evidence |
+| ID | Case | A (Android model/OS) | B (iPhone/iOS) | Topology | Expected  | Actual | PASS/FAIL | Evidence |
 |----|------|----------------------|----------------|----------|------------|--------|-----------|----------|
 | VR-1 | join/leave | | | | | | | |
 | VR-2 | PTT hold | | | | | | | |
@@ -79,11 +79,11 @@ Gateway: ____ (REST HTTPS ☐ / WSS ☐ / transcribe route ☐)   TURN: N/A for 
 ## 7. Final status (four tiers — mandatory)
 | Area | CODE/CI VERIFIED | RELAY VERIFIED | HARDWARE VERIFIED | HARDWARE BLOCKED |
 |------|------------------|----------------|-------------------|------------------|
-| Voice rooms | ☐ pre-existing | ☐ pre-existing (20/20 E2E) | ☐ | ☐ |
-| Stage | ☐ pre-existing | ☐ pre-existing | ☐ | ☐ |
-| Space | ☐ pre-existing | ☐ pre-existing | ☐ | ☐ |
-| Captions | ☐ pre-existing | ☐ (transcribe route E2E) | ☐ | ☐ |
-| Environment battery | n/a | partial | ☐ | ☐ |
+| Voice rooms |  pre-existing |  pre-existing (20/20 E2E) |  |  |
+| Stage |  pre-existing |  pre-existing |  |  |
+| Space |  pre-existing |  pre-existing |  |  |
+| Captions |  pre-existing |  (transcribe route E2E) |  |  |
+| Environment battery | n/a | partial |  |  |
 
 ## 8. Defects found (fix ONLY the failing voice-path issue, rebuild, re-run gate)
 | # | Case | Platform | Description | Evidence | Fix commit | Re-verified |
@@ -91,6 +91,6 @@ Gateway: ____ (REST HTTPS ☐ / WSS ☐ / transcribe route ☐)   TURN: N/A for 
 
 ## 9. Gate verdict
 Wave 5 hardware validation: PASS / FAIL (circle)
-Wave 5 COMPLETE: ☐ (only when real microphone/audio behaviour is proven
+Wave 5 COMPLETE:  (only when real microphone/audio behaviour is proven
 on physical devices) · Wave 3-HW remains OPEN · Wave 6 NOT started.
 ```

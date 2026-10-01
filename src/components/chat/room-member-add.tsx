@@ -1,14 +1,12 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — add-members glass sub-view (#/room/<id>/info) — R28-b.
+// Pulse - add-members glass sub-view (#/room/<id>/info) - R28-b.
 // Full-screen slide-over INSIDE the room info page (not a route):
 // the real Pulse directory (GET /api/users) minus current members,
 // live filter, multi-select rows and a floating "Add N" action bar.
 // POST /api/conversations/[id]/members takes { requesterId, userIds }
-// (admins only server-side — the info page hides this view for
+// (admins only server-side - the info page hides this view for
 // non-admins, no dead UI), returns { conversation, added: string[] }.
 // Optimistic insert into ['conversation', id] with rollback, plus
 // ['conversations', myId] invalidation; the socket room syncs others.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useMemo, useState } from 'react'
@@ -44,7 +42,7 @@ interface AddMembersResponse {
 export interface RoomMemberAddPageProps {
   me: AppUser
   conversationId: string
-  /** member ids already in the group — excluded from the directory */
+  /** member ids already in the group - excluded from the directory */
   existingIds: ReadonlySet<string>
   reducedMotion?: boolean
   /** back to the info page */
@@ -105,7 +103,7 @@ export function RoomMemberAddPage({
       return { prev }
     },
     onSuccess: (data) => {
-      // POST /members builds the detail for the requester (me) — safe to cache directly
+      // POST /members builds the detail for the requester (me) - safe to cache directly
       queryClient.setQueryData(['conversation', conversationId], data.conversation)
       void queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
       toast.success(
@@ -116,7 +114,7 @@ export function RoomMemberAddPage({
     },
     onError: (error: Error, _vars, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(['conversation', conversationId], ctx.prev)
-      // honest server copy — 403 "Only group admins can add members.", 400/404 verbatim
+      // honest server copy - 403 "Only group admins can add members.", 400/404 verbatim
       toast.error(error.message || 'Could not add members')
     },
   })
@@ -153,7 +151,7 @@ export function RoomMemberAddPage({
       aria-label="Add members"
       className="absolute inset-0 z-[56] flex flex-col bg-zinc-100/85 backdrop-blur-2xl dark:bg-black/70"
     >
-      {/* header — back + title + live selection count */}
+      {/* header - back + title + live selection count */}
       <div className="flex min-h-14 shrink-0 items-center gap-1.5 px-2 pt-[env(safe-area-inset-top)]">
         <button
           type="button"
@@ -330,7 +328,7 @@ export function RoomMemberAddPage({
         )}
       </div>
 
-      {/* floating action bar — real POST, disabled while pending */}
+      {/* floating action bar - real POST, disabled while pending */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-zinc-100/95 via-zinc-100/70 to-transparent pt-8 pb-[calc(env(safe-area-inset-bottom)+14px)] dark:from-black/90 dark:via-black/50">
         <motion.div
           initial={reducedMotion ? false : { opacity: 0, y: 24 }}

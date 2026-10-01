@@ -1,8 +1,7 @@
 import Foundation
 import Combine
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — Wave 3 call state machine (pure, injectable clock).
+// Pulse - Wave 3 call state machine (pure, injectable clock).
 //
 // Implements the W3-PLAN shared design exactly:
 //   idle → outgoingRinging → connecting → connected → ended
@@ -15,7 +14,7 @@ import Combine
 //
 // Defensive timers (all derived from an injected `now`, never from wall
 // clocks inside this type):
-//   • ring timeout 40s  (server's 30s is authoritative — this only fires if
+//   • ring timeout 40s  (server's 30s is authoritative - this only fires if
 //     the server's call:cancel was lost)
 //   • PC connect timeout 15s after the answer
 //   • disconnected grace 10s before an answered call is torn down
@@ -24,7 +23,6 @@ import Combine
 // Idempotency: every transition is guarded by callId + current state;
 // terminal events after .ended are ignored, duplicate offers/answers are
 // ignored, and a callId can never re-ring after it terminated.
-// ─────────────────────────────────────────────────────────────
 
 public enum CallState: Equatable, Sendable {
     case idle
@@ -53,20 +51,20 @@ public struct CallEndContext: Equatable, Sendable {
 /// Inputs driving the machine. The engine maps each accepted transition to
 /// wire emits + log writes; the machine itself stays pure.
 public enum CallMachineInput: Equatable, Sendable {
-    /// Caller opens the ring (before media/offer is sent — the UI shows
+    /// Caller opens the ring (before media/offer is sent - the UI shows
     /// "Calling…" immediately, web parity).
     case startOutgoing(CallInfo)
     /// Callee receives call:offer (from idle only).
     case offerArrived(CallInfo)
-    /// Callee tapped accept — media + answer follow (incomingRinging → connecting).
+    /// Callee tapped accept - media + answer follow (incomingRinging → connecting).
     case acceptRequested
     /// Caller received call:answer (outgoingRinging → connecting).
     case answerArrived
     /// ICE/PC reached connected.
     case peerConnectionReady
-    /// ICE dropped while connected — 10s grace window starts (state holds).
+    /// ICE dropped while connected - 10s grace window starts (state holds).
     case peerConnectionDisconnected
-    /// ICE failed outright (answered calls end as completed — answered-then-ended).
+    /// ICE failed outright (answered calls end as completed - answered-then-ended).
     case peerConnectionFailed
     /// This viewer ends the call (any active state).
     case hangupRequested
@@ -74,7 +72,7 @@ public enum CallMachineInput: Equatable, Sendable {
     case hangupReceived
     /// The peer declined (caller side).
     case rejectReceived
-    /// This viewer declines an incoming ring (callee side, summary only —
+    /// This viewer declines an incoming ring (callee side, summary only -
     /// the callee NEVER writes a log row).
     case rejectRequested
     /// Ring torn down: timeout/offline/busy, or the caller's self-cancel relay.
@@ -89,9 +87,9 @@ public enum CallMachineInput: Equatable, Sendable {
     case staleTimeout
     /// Local SDP/media failure (answer apply failed, offer creation failed).
     /// Maps to a terminal state but the engine suppresses BOTH the row write
-    /// and any wire emit (web 'Call failed' parity — no row, no emit).
+    /// and any wire emit (web 'Call failed' parity - no row, no emit).
     case abortLocal
-    /// Media-permission error card dismissed before the offer was ever sent —
+    /// Media-permission error card dismissed before the offer was ever sent -
     /// straight back to idle, no end summary (web dismissError parity; the
     /// engine logs the 'missed' row itself before applying this).
     case abandon
@@ -112,7 +110,7 @@ public struct CallMachineTransition: Equatable, Sendable {
     }
 }
 
-/// Defensive timer budget (seconds) — the shared design values.
+/// Defensive timer budget (seconds) - the shared design values.
 public struct CallTimers: Equatable, Sendable {
     public var ringTimeout: TimeInterval
     public var connectTimeout: TimeInterval
@@ -140,7 +138,7 @@ public final class CallStateMachine: ObservableObject {
     @Published public private(set) var state: CallState = .idle
     /// The live call (nil while idle).
     public private(set) var call: CallInfo?
-    /// When the answer landed (start of the duration window) — nil while unanswered.
+    /// When the answer landed (start of the duration window) - nil while unanswered.
     public private(set) var answeredAt: Date?
     /// Last signaling input (offer/answer/ice/reject/cancel/hangup or transition).
     public private(set) var lastActivityAt: Date?
@@ -245,7 +243,7 @@ public final class CallStateMachine: ObservableObject {
                 staleDeadline = now.addingTimeInterval(timers.staleAfter)
                 return CallMachineTransition(from: from, to: .connected, end: nil)
             case .connected:
-                // ICE flapped to connected again during the grace window — recover.
+                // ICE flapped to connected again during the grace window - recover.
                 graceDeadline = nil
                 return .unchanged(from)
             default:
@@ -360,7 +358,7 @@ public final class CallStateMachine: ObservableObject {
         return nil
     }
 
-    // ── transition internals ─────────────────────────────────
+    // transition internals
 
     private func startOutgoing(_ info: CallInfo, from: CallState, now: Date) -> CallMachineTransition {
         guard case .idle = from else { return .unchanged(from) }

@@ -1,14 +1,14 @@
 import XCTest
 @testable import Pulse
 
-/// R3-A — pure bubble-body logic tests (web ground truth:
+/// R3-A - pure bubble-body logic tests (web ground truth:
 /// chat-room.tsx buildMentionRuns :6836-6856 + BubbleText :6858-6985,
 /// slash-palette.tsx fuzzyMatch :127-140). Fixtures mirror the web
 /// examples verbatim ("/ef co" → /effects confetti, longest-name-first,
 /// case-insensitive @tokens).
 final class PulseBubbleTextLogicTests: XCTestCase {
 
-    // ── mention runs (web buildMentionRuns parity) ────────────
+    // mention runs (web buildMentionRuns parity)
 
     func testMentionRunSplitsAroundTheToken() {
         let runs = PulseBubbleTextLogic.mentionRuns(in: "hi @Alice welcome", memberNames: ["Alice"])
@@ -53,7 +53,7 @@ final class PulseBubbleTextLogicTests: XCTestCase {
         ])
     }
 
-    // ── bubble runs (FORMAT_RE styles + mention order) ────────
+    // bubble runs (FORMAT_RE styles + mention order)
 
     func testFormattingTokensMapToStyles() {
         let runs = PulseBubbleTextLogic.bubbleRuns(
@@ -96,15 +96,15 @@ final class PulseBubbleTextLogicTests: XCTestCase {
     }
 
     func testPlainTextPassthroughStaysWhole() {
-        let runs = PulseBubbleTextLogic.bubbleRuns(in: "just words — nothing special", memberNames: ["Zed"])
-        XCTAssertEqual(runs, [PulseBubbleTextLogic.Run("just words — nothing special", .plain)])
+        let runs = PulseBubbleTextLogic.bubbleRuns(in: "just words - nothing special", memberNames: ["Zed"])
+        XCTAssertEqual(runs, [PulseBubbleTextLogic.Run("just words - nothing special", .plain)])
     }
 
     func testEmptyContentYieldsNoRuns() {
         XCTAssertEqual(PulseBubbleTextLogic.bubbleRuns(in: "", memberNames: ["Alice"]), [])
     }
 
-    // ── cache (key = message id + roster signature) ───────────
+    // cache (key = message id + roster signature)
 
     func testCacheRoundTripReturnsIdenticalRuns() {
         let first = PulseBubbleTextLogic.cachedRuns(key: "m1", content: "**hot** @Alice", memberNames: ["Alice"])
@@ -131,7 +131,7 @@ final class PulseBubbleTextLogicTests: XCTestCase {
         )
     }
 
-    // ── R4-A item 1 — URL segmenter (pulse-utils.ts:163-180 verbatim) ──
+    // R4-A item 1 - URL segmenter (pulse-utils.ts:163-180 verbatim)
 
     func testMixedTextAndUrlSplitsIntoThreeSegments() {
         let segments = PulseBubbleTextLogic.splitUrlSegments(in: "check https://pulse.chat/now out")
@@ -164,13 +164,13 @@ final class PulseBubbleTextLogicTests: XCTestCase {
 
     func testTextWithoutUrlsStaysOneSegment() {
         XCTAssertEqual(
-            PulseBubbleTextLogic.splitUrlSegments(in: "plain words only — nothing linkable"),
-            [.text("plain words only — nothing linkable")],
+            PulseBubbleTextLogic.splitUrlSegments(in: "plain words only - nothing linkable"),
+            [.text("plain words only - nothing linkable")],
         )
     }
 
     func testUrlInsideLongerTokenKeepsTheLeadingText() {
-        // The web regex has NO left boundary — "abc" stays text, the token
+        // The web regex has NO left boundary - "abc" stays text, the token
         // from https:// on is a URL (verbatim behavior, no cleverness).
         XCTAssertEqual(
             PulseBubbleTextLogic.splitUrlSegments(in: "abchttps://foo.dev"),
@@ -192,7 +192,7 @@ final class PulseBubbleTextLogicTests: XCTestCase {
     }
 
     func testSchemeMatchIsCaseInsensitive() {
-        // The `gi` flags of the web regex — the scheme match ignores case.
+        // The `gi` flags of the web regex - the scheme match ignores case.
         XCTAssertEqual(
             PulseBubbleTextLogic.splitUrlSegments(in: "HTTPS://X.DEV/Path"),
             [.url("HTTPS://X.DEV/Path")],
@@ -200,7 +200,7 @@ final class PulseBubbleTextLogicTests: XCTestCase {
     }
 
     func testBareSchemeAloneIsNotALink() {
-        // [^\s<]+ needs at least one char past "://" — "https://" alone
+        // [^\s<]+ needs at least one char past "://" - "https://" alone
         // matches nothing (web behavior).
         XCTAssertEqual(
             PulseBubbleTextLogic.splitUrlSegments(in: "https://"),
@@ -208,7 +208,7 @@ final class PulseBubbleTextLogicTests: XCTestCase {
         )
     }
 
-    // ── R4-A item 1 — segmenter composed into the run pipeline ──
+    // R4-A item 1 - segmenter composed into the run pipeline
 
     func testBubbleRunsLinkifyPlainStretchesOnly() {
         // web renderPlain order: URL segmentation rides the PLAIN stretches
@@ -224,7 +224,7 @@ final class PulseBubbleTextLogicTests: XCTestCase {
 
     func testUrlsInsideCodeAndSpoilerStayUnlinkified() {
         // Code is its own web node (renderPlain never touches it) and
-        // spoilers render detached — no link runs inside either.
+        // spoilers render detached - no link runs inside either.
         XCTAssertEqual(
             PulseBubbleTextLogic.bubbleRuns(in: "`https://x.dev`", memberNames: []),
             [PulseBubbleTextLogic.Run("https://x.dev", .code)],

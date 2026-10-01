@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Wave 3 — call history (the CALL-LOG half of the wave). Renders the
+/// Wave 3 - call history (the CALL-LOG half of the wave). Renders the
 /// single-writer REST rows cached in callLogCache, refreshed from
 /// GET /api/calls on entry. All eight directive cases:
 ///   outgoing accepted   → arrow.up + "Outgoing · duration"
@@ -11,13 +11,13 @@ import SwiftUI
 ///   incoming missed     → arrow.down.right + "Missed" (caller cancel / 30s timeout)
 ///   timeout             → caller side of the same row ("No answer")
 ///   completed           → any connected call that ended normally (duration > 0)
-/// R2-D — rows follow the web calls-page contract: "tap a row to reopen the
+/// R2-D - rows follow the web calls-page contract: "tap a row to reopen the
 /// chat" (onOpenConversation) plus a redial affordance whenever the row
 /// carries a peer (the row knows its conversation + peer denormalized).
 struct CallsHistoryView: View {
     @ObservedObject var session: PulseSession
     @Environment(\.dismiss) private var dismiss
-    /// R2-D — web calls-page.tsx `onOpenConversation(item.conversationId)`
+    /// R2-D - web calls-page.tsx `onOpenConversation(item.conversationId)`
     /// parity: the consumer closes the sheet and routes into the chat.
     var onOpenConversation: ((String) -> Void)? = nil
 
@@ -70,7 +70,7 @@ struct CallsHistoryView: View {
         }
     }
 
-    /// Cache first (instant paint), then the server (truth) — the store
+    /// Cache first (instant paint), then the server (truth) - the store
     /// prunes rows the endpoint no longer lists.
     private func refresh(showErrors: Bool) async {
         if let store = session.store, let cached = try? store.callLog() {
@@ -91,13 +91,13 @@ struct CallsHistoryView: View {
         }
     }
 
-    /// R2-D — redial: the row carries everything the outgoing call needs
+    /// R2-D - redial: the row carries everything the outgoing call needs
     /// (conversation id + denormalized peer + voice/video kind), so no
     /// conversation fetch is required. Missing engine → honest toast.
     private func redial(_ row: CallLogEntry) {
         guard redialBusyId == nil else { return }
         guard let engine = session.callEngine else {
-            session.toasts.show("Calls aren't ready yet — try again in a moment")
+            session.toasts.show("Calls aren't ready yet - try again in a moment")
             return
         }
         PulseHaptics.tap()
@@ -115,9 +115,9 @@ struct CallsHistoryView: View {
 private struct CallHistoryRow: View {
     let row: CallLogEntry
     var redialBusy: Bool = false
-    /// R2-D — reopen the chat (web calls-page row tap parity).
+    /// R2-D - reopen the chat (web calls-page row tap parity).
     var onOpen: () -> Void = {}
-    /// R2-D — place a fresh outgoing call to the row's peer.
+    /// R2-D - place a fresh outgoing call to the row's peer.
     var onRedial: () -> Void = {}
 
     var body: some View {
@@ -150,7 +150,7 @@ private struct CallHistoryRow: View {
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 } else {
-                    // Redial affordance — the arrow shows the call direction
+                    // Redial affordance - the arrow shows the call direction
                     // history; the button dials the same peer again.
                     Button {
                         onRedial()
@@ -175,7 +175,7 @@ private struct CallHistoryRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(row.peerName), \(label) — tap to reopen the chat")
+        .accessibilityLabel("\(row.peerName), \(label) - tap to reopen the chat")
     }
 
     private var initials: String {
@@ -221,7 +221,7 @@ private struct CallHistoryRow: View {
     }
 }
 
-/// m:ss / h:mm:ss — the same shape the overlay ticks with.
+/// m:ss / h:mm:ss - the same shape the overlay ticks with.
 func formatCallDuration(_ totalSec: Int) -> String {
     let s = max(0, totalSec)
     let hours = s / 3600

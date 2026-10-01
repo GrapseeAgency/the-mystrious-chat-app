@@ -6,15 +6,15 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * R6 — M5 wire parity: the conversation-detail `dmBlocked` flag (R47, web
- * src/lib/serializers.ts buildConversationDetail — a UserBlock in EITHER
+ * R6 - M5 wire parity: the conversation-detail `dmBlocked` flag (R47, web
+ * src/lib/serializers.ts buildConversationDetail - a UserBlock in EITHER
  * direction between the DM pair) decodes on the detail row, defaults to null
  * on summary-shaped rows (the repository mapping resolves null → false), and
  * tolerates unknown keys like every other wire DTO.
  */
 class R6DmBlockedWireTest {
 
-    /** Minimal detail row — the required id/isGroup plus the members array. */
+    /** Minimal detail row - the required id/isGroup plus the members array. */
     private fun rowJson(dmBlockedLine: String) = """
         {
           "id": "c-dm",
@@ -46,7 +46,7 @@ class R6DmBlockedWireTest {
 
     @Test
     fun `dmBlocked absent tolerates the summary shape and stays null`() {
-        // An empty line leaves a stray ", ," — valid only if we drop it, so
+        // An empty line leaves a stray ", ," - valid only if we drop it, so
         // build the absent variant without the dangling comma instead.
         val json = """
             {

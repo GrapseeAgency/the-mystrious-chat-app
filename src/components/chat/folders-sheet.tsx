@@ -1,26 +1,25 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — chat folders manager sheet (Task R24-a, Signal-style)
-//
-// Bottom sheet to manage chat folders: create (8-emoji preset row +
-// 24-char name), rename inline, delete with two-tap confirm, and a
-// membership editor that lists every real chat with checkboxes and
-// PUTs the full ordered membership to /api/folders/[id]/conversations.
-//
-// Data: folders via TanStack Query key ['folders', userId]; chats via
-// the caller's GET /api/conversations rows (real data, passed as
-// `conversations`). Every mutation invalidates ['folders', userId].
-//
-// Visual language follows redpacket-sheet.tsx: vaul Drawer, glass
-// zinc-950 panel, spring entrance, sr-only title, safe-area padding,
-// motion tokens exclusively from '@/lib/motion'.
-// ─────────────────────────────────────────────────────────────
+// Pulse chat folders manager sheet. Create (icon preset row + name),
+// rename inline, delete with a two-tap confirm, and edit membership
+// over PUT /api/folders/[id]/conversations. Folders load through
+// TanStack Query (key ['folders', userId]); every mutation
+// invalidates that key. Panel follows the app drawer language:
+// vaul Drawer, glass zinc-950, springs from '@/lib/motion'.
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronLeft, ChevronRight, LoaderCircle, Pencil, Plus, Trash2, X } from 'lucide-react'
-import { FOLDER_GLYPHS, PulseFolder } from '@/components/ui/icons'
+import {
+  FOLDER_ICON_GLYPHS,
+  PulseFolder,
+} from '@/components/ui/icons'
+import {
+  FOLDER_ICON_DEFAULT,
+  FOLDER_ICON_IDS,
+  folderIconId,
+  type FolderIconId,
+} from '@/lib/icon-ids'
 import { toast } from 'sonner'
 import { apiJson, conversationDisplayName } from '@/lib/pulse-utils'
 import { haptic } from '@/lib/pulse-settings'
@@ -33,13 +32,22 @@ import { Input } from '@/components/ui/input'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 
 const FOLDER_NAME_MAX = 24
-const EMOJI_PRESETS = ['📂', '💼', '🎮', '❤️', '🔥', '🎯', '🎵', '🧠'] as const
 
-const FOLDER_FALLBACK_GLYPH = FOLDER_GLYPHS['📂']
+const FOLDER_ICON_LABELS: Record<FolderIconId, string> = {
+  folder: 'Folder',
+  briefcase: 'Work',
+  game: 'Games',
+  heart: 'Favorites',
+  flame: 'Pulse',
+  target: 'Goals',
+  music: 'Music',
+  brain: 'Ideas',
+}
 
-/** Renders a persisted folder value as a real icon — never an emoji. */
-function FolderGlyphIcon({ value, className }: { value: string; className?: string }) {
-  const Glyph = (value && FOLDER_GLYPHS[value]) || FOLDER_FALLBACK_GLYPH
+/** Renders a persisted folder icon id as its designed glyph. */
+function FolderIconGlyph({ value, className }: { value: string; className?: string }) {
+  // module-scope record member access: stable component reference
+  const Glyph = FOLDER_ICON_GLYPHS[folderIconId(value)]
   return <Glyph className={className} aria-hidden />
 }
 
@@ -72,7 +80,7 @@ export function FoldersSheet({
   const reducedMotion = useReducedMotion()
   const queryClient = useQueryClient()
 
-  // ── data ───────────────────────────────────────────────────
+  // data 
   const foldersQ = useQuery({
     queryKey: ['folders', me.id],
     queryFn: async (): Promise<FolderSummary[]> => {
@@ -86,28 +94,28 @@ export function FoldersSheet({
   })
   const folders = foldersQ.data ?? []
 
-  // ── create form ────────────────────────────────────────────
+  // create form 
   const [newName, setNewName] = useState('')
-  const [newEmoji, setNewEmoji] = useState<string>('📂')
+  const [newIcon, setNewIcon] = useState<FolderIconId>(FOLDER_ICON_DEFAULT)
 
-  // ── sheet modes: list | membership editor ──────────────────
+  // sheet modes: list | membership editor 
   const [mode, setMode] = useState<'list' | 'members'>('list')
   const [editingFolder, setEditingFolder] = useState<FolderSummary | null>(null)
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
 
-  // ── inline rename + two-tap delete ─────────────────────────
+  // inline rename + two-tap delete 
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
-  // fresh manager every time the sheet opens — render-time state reset
+  // fresh manager every time the sheet opens - render-time state reset
   // (React's "adjusting state when a prop changes" pattern, no effect needed)
   const [prevOpen, setPrevOpen] = useState(open)
   if (open !== prevOpen) {
     setPrevOpen(open)
     if (open) {
       setNewName('')
-      setNewEmoji('📂')
+      setNewIcon(FOLDER_ICON_DEFAULT)
       setMode('list')
       setEditingFolder(null)
       setRenamingId(null)
@@ -124,20 +132,20 @@ export function FoldersSheet({
   const invalidateFolders = () =>
     queryClient.invalidateQueries({ queryKey: ['folders', me.id] })
 
-  // ── mutations ──────────────────────────────────────────────
+  // mutations 
   const createM = useMutation({
     mutationFn: async () =>
       apiJson<{ folder: FolderSummary }>('/api/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: me.id, name: newName.trim(), emoji: newEmoji }),
+        body: JSON.stringify({ userId: me.id, name: newName.trim(), emoji: newIcon }),
       }),
     onSuccess: (res) => {
       haptic(10)
       void invalidateFolders()
       setNewName('')
-      setNewEmoji('📂')
-      toast.success(`Folder “${res.folder.name}” created`)
+      setNewIcon(FOLDER_ICON_DEFAULT)
+      toast.success(`Folder "${res.folder.name}" created`)
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Could not create the folder.')
@@ -171,7 +179,7 @@ export function FoldersSheet({
       haptic(14)
       void invalidateFolders()
       setConfirmDeleteId(null)
-      toast.success('Folder deleted — chats stay in your list')
+      toast.success('Folder deleted - chats stay in your list')
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Could not delete the folder.')
@@ -221,7 +229,7 @@ export function FoldersSheet({
     })
   }
 
-  /** membership rows keep the caller's chat-list order — deterministic rail order */
+  /** membership rows keep the caller's chat-list order - deterministic rail order */
   const memberRows = useMemo(
     () =>
       conversations.map((conv) => ({
@@ -283,7 +291,7 @@ export function FoldersSheet({
               <p className="text-[11px] font-medium leading-tight text-zinc-500">
                 {mode === 'members'
                   ? (editingFolder?.name ?? '')
-                  : 'Filter your list — Signal-style inboxes'}
+                  : 'Filter your list - Signal-style inboxes'}
               </p>
             </div>
             <button
@@ -322,19 +330,19 @@ export function FoldersSheet({
                       New folder
                     </p>
                     <div className="flex flex-wrap gap-1.5 pb-2.5" role="group" aria-label="Folder icon">
-                      {EMOJI_PRESETS.map((emoji) => {
-                        const active = newEmoji === emoji
+                      {FOLDER_ICON_IDS.map((id) => {
+                        const active = newIcon === id
                         return (
                           <motion.button
-                            key={emoji}
+                            key={id}
                             type="button"
-                            aria-label={`Folder icon ${emoji}`}
+                            aria-label={`Folder icon ${FOLDER_ICON_LABELS[id]}`}
                             aria-pressed={active}
                             whileTap={reducedMotion ? undefined : pressTap}
                             transition={pressSpring}
                             onClick={() => {
                               haptic(4)
-                              setNewEmoji(emoji)
+                              setNewIcon(id)
                             }}
                             className={cn(
                               'flex size-10 items-center justify-center rounded-xl outline-none transition-colors',
@@ -343,7 +351,7 @@ export function FoldersSheet({
                                 : 'bg-white/5 text-zinc-300 ring-1 ring-white/10 hover:bg-white/10',
                             )}
                           >
-                            <FolderGlyphIcon value={emoji} className="size-4.5" />
+                            <FolderIconGlyph value={id} className="size-4.5" />
                           </motion.button>
                         )
                       })}
@@ -420,7 +428,7 @@ export function FoldersSheet({
                                   aria-hidden
                                   className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-emerald-300 ring-1 ring-white/10"
                                 >
-                                  <FolderGlyphIcon value={folder.emoji} className="size-4.5" />
+                                  <FolderIconGlyph value={folder.emoji} className="size-4.5" />
                                 </span>
                                 {renaming ? (
                                   <Input
@@ -531,7 +539,7 @@ export function FoldersSheet({
                                   className="px-3 pb-2 text-[11px] font-semibold text-rose-400"
                                   aria-live="polite"
                                 >
-                                  Tap the trash again to delete — the chats themselves stay.
+                                  Tap the trash again to delete. The chats themselves stay.
                                 </motion.p>
                               ) : null}
                             </motion.li>
@@ -559,7 +567,7 @@ export function FoldersSheet({
                   </p>
                   {memberRows.length === 0 ? (
                     <p className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-center text-[12.5px] text-zinc-500">
-                      You have no chats yet — start one first.
+                      You have no chats yet. Start one first.
                     </p>
                   ) : (
                     <motion.ul
@@ -582,7 +590,7 @@ export function FoldersSheet({
                               type="button"
                               role="checkbox"
                               aria-checked={checked}
-                              aria-label={`${name} — ${conv.isGroup ? 'group chat' : 'direct chat'}`}
+                              aria-label={`${name} - ${conv.isGroup ? 'group chat' : 'direct chat'}`}
                               whileTap={reducedMotion ? undefined : { scale: 0.98 }}
                               transition={pressSpring}
                               onClick={() => toggleChecked(conv.id)}

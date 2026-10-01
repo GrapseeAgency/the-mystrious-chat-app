@@ -26,12 +26,12 @@ import kotlinx.coroutines.withContext
 /**
  * The ONE active voice player for the whole app (Wave 2 spec: "Only ONE
  * active player globally"). A process-wide singleton so the room timeline AND
- * thread bubbles share the same state keyed by messageId — starting playback
+ * thread bubbles share the same state keyed by messageId - starting playback
  * on another row stops the previous one. MediaPlayer only (no media3),
  * playback rate guarded to API 23+ (`setPlaybackParams`), speed persisted via
  * the prefs store (spec §1 row 12 `voiceRate`).
  *
- * Download-first: `message.audioPath` is a wire path — the file is fetched to
+ * Download-first: `message.audioPath` is a wire path - the file is fetched to
  * the cache via [PulseRepository.downloadMedia] before `setDataSource`.
  */
 @Singleton
@@ -57,11 +57,11 @@ class VoicePlayer @Inject constructor(
     private val _playback = MutableStateFlow<Playback?>(null)
     val playback: StateFlow<Playback?> = _playback.asStateFlow()
 
-    /** Persisted speed — 1x/1.5x/2x chip reads this; applied live via [cycleRate]. */
+    /** Persisted speed - 1x/1.5x/2x chip reads this; applied live via [cycleRate]. */
     val rate: StateFlow<Float> = prefs.voiceRate
         .stateIn(scope, SharingStarted.WhileSubscribed(5_000), 1f)
 
-    /** Play/pause for a voice row — switching targets releases the previous player. */
+    /** Play/pause for a voice row - switching targets releases the previous player. */
     fun toggle(message: Message) {
         val current = _playback.value
         if (current?.messageId == message.id && player != null) {
@@ -115,7 +115,7 @@ class VoicePlayer @Inject constructor(
         prepared
             .onSuccess { mp ->
                 if (_playback.value?.messageId != messageId) {
-                    // Another toggle raced us — drop this player, keep the newest.
+                    // Another toggle raced us - drop this player, keep the newest.
                     runCatching { mp.release() }
                     return@onSuccess
                 }
@@ -141,7 +141,7 @@ class VoicePlayer @Inject constructor(
             }
     }
 
-    /** 100ms position ticker — drives the determinate waveform recoloring. */
+    /** 100ms position ticker - drives the determinate waveform recoloring. */
     private fun startTicker() {
         ticker?.cancel()
         ticker = scope.launch {
@@ -167,17 +167,17 @@ class VoicePlayer @Inject constructor(
         applyRate(next)
     }
 
-    /** API 23+ `setPlaybackParams` guard — lower APIs hide the chip entirely. */
+    /** API 23+ `setPlaybackParams` guard - lower APIs hide the chip entirely. */
     private fun applyRate(value: Float) {
         val mp = player ?: return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         runCatching {
-            // PlaybackParams.setSpeed (NOT setRate) — fluent builder-style API.
+            // PlaybackParams.setSpeed (NOT setRate) - fluent builder-style API.
             mp.playbackParams = mp.playbackParams.setSpeed(value)
         }
     }
 
-    /** Row disposal hook — the bubble leaving composition stops its audio. */
+    /** Row disposal hook - the bubble leaving composition stops its audio. */
     fun releaseIfActive(messageId: String) {
         if (_playback.value?.messageId == messageId) release()
     }

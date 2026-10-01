@@ -1,18 +1,16 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse premium UI (R22) — liquid-glass surface primitive.
+// Pulse premium UI (R22) - liquid-glass surface primitive.
 // One recipe, everywhere: frosted blur + saturation boost,
 // hairline border, inset top highlight (the "glass edge") and a
 // soft outer shadow. Use <GlassCard> for full motion support or
 // sprinkle the exported `glassSurface` class string onto any
 // existing panel that needs the same material.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { motion, type HTMLMotionProps } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
 /**
- * The liquid-glass recipe as a raw class string — for surfaces that
+ * The liquid-glass recipe as a raw class string - for surfaces that
  * can't swap to <GlassCard> (overlays, third-party wrappers, one-off divs).
  * Compose with layout classes via cn(); tailwind-merge resolves the
  * rounded-* / shadow-* overrides in favor of the later class.
@@ -43,7 +41,7 @@ export interface GlassCardProps extends Omit<HTMLMotionProps<'div'>, 'children'>
 }
 
 /**
- * GlassCard — the reusable liquid-glass panel.
+ * GlassCard - the reusable liquid-glass panel.
  *
  * All framer-motion div props pass through, so entrance animations ride the
  * shared motion tokens, e.g.:

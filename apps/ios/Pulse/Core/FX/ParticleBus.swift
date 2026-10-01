@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Shared particle celebration bus — native twin of the web's
+/// Shared particle celebration bus - native twin of the web's
 /// fireParticles() window event (confetti / hearts / stars / burst).
 /// The overlay is a full-screen Canvas that only animates while particles
 /// are alive, never blocks interaction, caps at 400 particles and no-ops
@@ -9,7 +9,7 @@ import SwiftUI
 public final class ParticleBus: ObservableObject {
     public enum Kind: String {
         case confetti, hearts, stars, burst
-        // R14 5-b — the distinct message-effect canvases (web
+        // R14 5-b - the distinct message-effect canvases (web
         // message-effects.tsx): sweeping rotating beams / expanding rings.
         case lasers, echo
     }
@@ -93,7 +93,7 @@ public final class ParticleBus: ObservableObject {
         case .confetti: return [Color(red: 0.063, green: 0.725, blue: 0.506), Color(red: 0.078, green: 0.722, blue: 0.651), Color(red: 0.545, green: 0.365, blue: 0.965), Color(red: 0.961, green: 0.620, blue: 0.043)]
         case .stars: return [Color(red: 0.92, green: 0.98, blue: 1.0), Color(red: 0.078, green: 0.722, blue: 0.651)]
         case .burst: return [Color(red: 0.063, green: 0.725, blue: 0.506), Color(red: 0.078, green: 0.722, blue: 0.651), Color(red: 0.92, green: 0.98, blue: 1.0)]
-        // R14 5-b — the web effect palettes (message-effects.tsx lasers
+        // R14 5-b - the web effect palettes (message-effects.tsx lasers
         // :121-128 "greens → ambers → pinks → violets, no blues" / echo
         // emerald rings :131-133 + paintEcho's rgba(16,185,129)).
         case .lasers: return [Color(red: 0.063, green: 0.725, blue: 0.506), Color(red: 0.961, green: 0.620, blue: 0.043), Color(red: 0.984, green: 0.445, blue: 0.522), Color(red: 0.545, green: 0.365, blue: 0.965)]
@@ -102,7 +102,7 @@ public final class ParticleBus: ObservableObject {
     }
 }
 
-/// Full-screen overlay — mount above everything with allowsHitTesting(false).
+/// Full-screen overlay - mount above everything with allowsHitTesting(false).
 public struct ParticleOverlayView: View {
     @ObservedObject var bus: ParticleBus
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -154,7 +154,7 @@ public struct ParticleOverlayView: View {
                 spin.origin = CGPoint(x: -spin.width / 2, y: -spin.height / 2)
                 item.fill(Path(spin), with: .color(bus.color(for: particle)))
             case .lasers:
-                // R14 5-b — sweeping beams (web message-effects.tsx lasers
+                // R14 5-b - sweeping beams (web message-effects.tsx lasers
                 // :121-129 + paintLasers :240-262): each particle is one beam
                 // through the origin, sweeping over the effect life.
                 let angle = particle.rotation + t * 0.85
@@ -171,7 +171,7 @@ public struct ParticleOverlayView: View {
                     style: StrokeStyle(lineWidth: max(thickness, 1.5), lineCap: .round),
                 )
             case .echo:
-                // R14 5-b — expanding rings (web message-effects.tsx echo
+                // R14 5-b - expanding rings (web message-effects.tsx echo
                 // :131-133 + paintEcho :264-286): 2-3 staggered circles
                 // growing from the origin, stroke thinning as they fade.
                 // colorSeed staggers the starts.

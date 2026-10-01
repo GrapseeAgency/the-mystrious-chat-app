@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 
 /**
- * App-wide particle-burst contract — the native translation of the web
+ * App-wide particle-burst contract - the native translation of the web
  * `pulse:particle-burst` CustomEvent (src/lib/motion.ts). Any layer can
  * request a celebration; the UI host renders it. Zero emojis in chrome,
  * celebrations are content.

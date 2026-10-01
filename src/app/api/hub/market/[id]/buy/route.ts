@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// /api/hub/market/[id]/buy — escrow-style purchase (atomic)
+// /api/hub/market/[id]/buy - escrow-style purchase (atomic)
 // Coins move seller←buyer inside one transaction; the listing flips
 // to "sold"; both ledgers + a log event are appended.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -45,7 +43,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
   // NOTE: the .catch fall-through here previously returned 200 {ok:true} on
   // INSUFFICIENT (the NextResponse became the `wallet` value and the route
-  // kept executing) — Wave 7 E2E caught it; buyers now get an honest 402.
+  // kept executing) - Wave 7 E2E caught it; buyers now get an honest 402.
   let wallet: Awaited<ReturnType<typeof db.userWallet.findUniqueOrThrow>>
   try {
     wallet = await db.$transaction(async (tx) => {
@@ -97,7 +95,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   } catch (err: unknown) {
     if (err instanceof Error && err.message === 'INSUFFICIENT') {
       return NextResponse.json(
-        { error: `Insufficient PC — this costs ${listing.price}.` },
+        { error: `Insufficient PC - this costs ${listing.price}.` },
         { status: 402 },
       )
     }

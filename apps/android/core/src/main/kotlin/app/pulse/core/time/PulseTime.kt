@@ -6,7 +6,7 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/** Wire-time helpers — the wire carries ISO-8601 timestamps ("…Z"). */
+/** Wire-time helpers - the wire carries ISO-8601 timestamps ("…Z"). */
 object PulseTime {
 
     fun parse(raw: String?): OffsetDateTime? = runCatching {
@@ -17,7 +17,7 @@ object PulseTime {
         }.getOrNull()
     }
 
-    /** "14:32" today, "Mar 3" older — list-row parity with the web inbox. */
+    /** "14:32" today, "Mar 3" older - list-row parity with the web inbox. */
     fun shortLabel(raw: String?): String {
         val t = parse(raw) ?: return ""
         val local = t.atZoneSameInstant(ZoneId.systemDefault())
@@ -28,7 +28,7 @@ object PulseTime {
         }
     }
 
-    /** "14:32" — bubble meta line. */
+    /** "14:32" - bubble meta line. */
     fun clock(raw: String?): String {
         val t = parse(raw) ?: return ""
         return t.atZoneSameInstant(ZoneId.systemDefault())
@@ -60,7 +60,7 @@ object PulseTime {
         }
     }
 
-    /** Wire ISO timestamp → epoch ms (0 when unparseable) — mute windows compare in ms. */
+    /** Wire ISO timestamp → epoch ms (0 when unparseable) - mute windows compare in ms. */
     fun epochMs(raw: String?): Long =
         parse(raw)?.toInstant()?.toEpochMilli() ?: 0L
 }

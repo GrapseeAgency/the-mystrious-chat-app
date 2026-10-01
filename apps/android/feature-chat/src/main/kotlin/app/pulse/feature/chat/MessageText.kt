@@ -36,36 +36,36 @@ import androidx.compose.ui.unit.sp
 import app.pulse.protocol.UrlSegments
 
 /**
- * F-MS-02 / F-MS-03 — bubble text formatting + jumbo-emoji detection.
+ * F-MS-02 / F-MS-03 - bubble text formatting + jumbo-emoji detection.
  *
  * Kotlin port of the web ground truth:
- *  · FORMAT_RE + BubbleText — src/components/chat/chat-room.tsx:6583-6768
- *  · isJumboEmoji + JUMBO_EMOJI_RE — src/lib/pulse-utils.ts:152-160
+ *  · FORMAT_RE + BubbleText - src/components/chat/chat-room.tsx:6583-6768
+ *  · isJumboEmoji + JUMBO_EMOJI_RE - src/lib/pulse-utils.ts:152-160
  *
  * Segment order matches the web regex exactly: multi-char tokens first so
  * ** wins over *, pre/code span newlines, the rest don't.
  */
 object MessageTextParser {
 
-    /** Web FORMAT_RE (chat-room.tsx:6583) — group order is load-bearing. */
+    /** Web FORMAT_RE (chat-room.tsx:6583) - group order is load-bearing. */
     private val FORMAT_RE = Regex(
         "```([\\s\\S]+?)```|`([^`\\n]+)`|\\*\\*([^*\\n]+?)\\*\\*|__([^_\\n]+?)__|~~([^~\\n]+?)~~|\\|\\|([^|\\n]+?)\\|\\||\\*([^*\\n]+?)\\*|_([^_\\n]+?)_|~([^~\\n]+?)~",
     )
 
     sealed interface Segment {
-        /** Rendered length — Pre segments never join the inline run. */
+        /** Rendered length - Pre segments never join the inline run. */
         val length: Int
 
         data class Plain(val text: String) : Segment {
             override val length: Int get() = text.length
         }
 
-        /** ```pre``` — block-level mono card (spans newlines). */
+        /** ```pre``` - block-level mono card (spans newlines). */
         data class Pre(val text: String) : Segment {
             override val length: Int get() = 0
         }
 
-        /** `code` — inline mono chip. */
+        /** `code` - inline mono chip. */
         data class Code(val text: String) : Segment {
             override val length: Int get() = text.length
         }
@@ -85,7 +85,7 @@ object MessageTextParser {
             override val length: Int get() = text.length
         }
 
-        /** ||spoiler|| — tap-to-reveal on the client (server stores raw). */
+        /** ||spoiler|| - tap-to-reveal on the client (server stores raw). */
         data class Spoiler(val text: String) : Segment {
             override val length: Int get() = text.length
         }
@@ -95,7 +95,7 @@ object MessageTextParser {
             override val length: Int get() = text.length
         }
 
-        /** R4-B item 1 — a bare URL piece (protocol UrlSegments split). */
+        /** R4-B item 1 - a bare URL piece (protocol UrlSegments split). */
         data class Url(val text: String) : Segment {
             override val length: Int get() = text.length
         }
@@ -103,7 +103,7 @@ object MessageTextParser {
 
     /**
      * Non-overlapping, left-to-right scan with plain gaps between matches
-     * (JS matchAll(/…/g) parity — group 1 pre · 2 code · 3 bold · 4 underline
+     * (JS matchAll(/…/g) parity - group 1 pre · 2 code · 3 bold · 4 underline
      * · 5 strike · 6 spoiler · 7 bold-single · 8 italic · 9 strike-single).
      */
     fun parse(content: String): List<Segment> {
@@ -132,9 +132,9 @@ object MessageTextParser {
         return segments
     }
 
-    // ── R3-B item 2 — @mention runs (web buildMentionRuns port) ──────────
+    // R3-B item 2 - @mention runs (web buildMentionRuns port)
 
-    /** One run of the mention split — [mention] is the matched member name (no @). */
+    /** One run of the mention split - [mention] is the matched member name (no @). */
     data class MentionRun(val text: String, val mention: String?)
 
     /**
@@ -159,7 +159,7 @@ object MessageTextParser {
         return if (runs.isEmpty()) listOf(MentionRun(content, null)) else runs
     }
 
-    // ── F-MS-03 — jumbo emoji (pulse-utils.ts:152-160 port) ─────────────
+    // F-MS-03 - jumbo emoji (pulse-utils.ts:152-160 port)
 
     /** Web cap: trimmed UTF-16 length ≤ 24 and the whole-string run {1,9}. */
     private const val MAX_JUMBO_UTF16 = 24
@@ -173,7 +173,7 @@ object MessageTextParser {
      *
      * Hand-rolled classifier instead of \p{Extended_Pictographic}: Android's
      * ICU regex only knows that property on newer devices, and minSdk is
-     * lower — the conservative range table below keeps identical behaviour
+     * lower - the conservative range table below keeps identical behaviour
      * for every realistic emoji without a compile-time crash on old runtimes.
      */
     fun isJumboEmoji(content: String): Boolean {
@@ -211,7 +211,7 @@ object MessageTextParser {
 
     /**
      * Extended_Pictographic core ranges (the blocks chat emoji are drawn
-     * from) — the conservative stand-in for the Unicode binary property.
+     * from) - the conservative stand-in for the Unicode binary property.
      */
     private fun isPictographic(cp: Int): Boolean = when (cp) {
         0x00A9, 0x00AE, 0x203C, 0x2049, 0x2122, 0x2139 -> true
@@ -261,19 +261,19 @@ object MessageTextParser {
 }
 
 /**
- * One inline piece in string order — the spoiler tap-reveal + link tap hit
+ * One inline piece in string order - the spoiler tap-reveal + link tap hit
  * test model: [spoiler] flags hidden spans, [url] carries the RAW matched
  * URL of a link piece (null everywhere else).
  */
 private data class InlineHit(val spoiler: Boolean, val url: String?, val length: Int)
 
 /**
- * F-MS-02 — styled bubble body. Pre blocks render as their own mono cards
+ * F-MS-02 - styled bubble body. Pre blocks render as their own mono cards
  * (web block-level parity); everything else flows in ONE AnnotatedString so
  * bold/italic/underline/strike/code mix inline. Spoilers keep a tap-to-reveal
- * state per occurrence (web SpoilerSpan parity — the 5px blur is approximated
+ * state per occurrence (web SpoilerSpan parity - the 5px blur is approximated
  * by an opaque tint + hidden text, the standard native spoiler treatment).
- * R4-B item 1 — plain stretches split into text/url pieces (web renderPlain
+ * R4-B item 1 - plain stretches split into text/url pieces (web renderPlain
  * parity): URL pieces render accent + underline and open an ACTION_VIEW
  * intent on tap; pre/code/spoiler spans are NEVER linkified (web only runs
  * renderPlain on the format-regex gaps).
@@ -285,15 +285,15 @@ internal fun FormattedMessageBody(
     contentColor: Color,
     modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.bodyLarge,
-    // R3-B item 2 — the room roster; @Name tokens matching a member highlight.
+    // R3-B item 2 - the room roster; @Name tokens matching a member highlight.
     memberNames: List<String> = emptyList(),
 ) {
     if (body.isEmpty()) return
 
-    // Per-message parse cache (body + roster keys) — the LazyColumn river
+    // Per-message parse cache (body + roster keys) - the LazyColumn river
     // re-composes rows on scroll without re-running either regex pass.
-    // R4-B item 1 — the URL segmenter rides the SAME cached pass (web
-    // renderPlain composes INSIDE the format gaps: plain segments only —
+    // R4-B item 1 - the URL segmenter rides the SAME cached pass (web
+    // renderPlain composes INSIDE the format gaps: plain segments only -
     // pre/code/spoiler/bold/… content is never linkified), so scrolling
     // never re-runs a regex either.
     val runs = remember(body, memberNames) {
@@ -329,9 +329,9 @@ internal fun FormattedMessageBody(
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     }
-    // R3-B item 2 — web mention chip colors verbatim (chat-room.tsx:6903):
+    // R3-B item 2 - web mention chip colors verbatim (chat-room.tsx:6903):
     // bg-emerald-500/20 + emerald-800 text in light, bg-emerald-400/25 +
-    // emerald-200 text in dark — identical on mine and their bubbles.
+    // emerald-200 text in dark - identical on mine and their bubbles.
     val darkChrome = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val mentionBg = if (darkChrome) {
         Color(0xFF34D399).copy(alpha = 0.25f)
@@ -340,7 +340,7 @@ internal fun FormattedMessageBody(
     }
     val mentionText = if (darkChrome) Color(0xFFA7F3D0) else Color(0xFF065F46)
 
-    // R4-B item 1 — web link colors verbatim (chat-room.tsx BubbleText
+    // R4-B item 1 - web link colors verbatim (chat-room.tsx BubbleText
     // renderPlain): mine → white on the emerald bubble (contentColor);
     // theirs → text-emerald-700 / dark:text-emerald-400, underlined.
     val linkColor = if (mine) {
@@ -351,7 +351,7 @@ internal fun FormattedMessageBody(
         Color(0xFF047857)
     }
 
-    // R4-B item 1 — ACTION_VIEW on a tapped link; https:// is synthesized for
+    // R4-B item 1 - ACTION_VIEW on a tapped link; https:// is synthesized for
     // bare www. values exactly like the web href, nothing else is rewritten.
     val context = LocalContext.current
     val openLink: (String) -> Unit = { raw ->
@@ -363,13 +363,13 @@ internal fun FormattedMessageBody(
         }
     }
 
-    // Spoiler reveal state — occurrence index within the whole message,
+    // Spoiler reveal state - occurrence index within the whole message,
     // counted in build order (Pre segments emit nothing inline; mention
     // runs occupy inline space but are never spoilers).
     val revealed = remember(body) { mutableStateListOf<Int>() }
     val layout = remember { mutableStateOf<TextLayoutResult?>(null) }
 
-    // Inline pieces in string order, cached with the parse — the spoiler
+    // Inline pieces in string order, cached with the parse - the spoiler
     // tap-reveal + link tap hit test walks exactly this list (flag + url +
     // length per piece).
     val inlineHits = remember(runs) {
@@ -398,7 +398,7 @@ internal fun FormattedMessageBody(
     val inline = buildAnnotatedString {
         runs.forEach { (segments, run) ->
             if (segments == null) {
-                // @mention chip — web renders "@{mention}" semibold on the
+                // @mention chip - web renders "@{mention}" semibold on the
                 // emerald chip (the run text already carries the @).
                 withStyle(
                     SpanStyle(fontWeight = FontWeight.SemiBold, background = mentionBg, color = mentionText),
@@ -447,7 +447,7 @@ internal fun FormattedMessageBody(
                         detectTapGestures { position ->
                             val result = layout.value ?: return@detectTapGestures
                             val offset = result.getOffsetForPosition(position)
-                            // Same hit-test walk as the R3 spoiler model — a
+                            // Same hit-test walk as the R3 spoiler model - a
                             // URL hit opens the link (never a spoiler reveal;
                             // spoiler text is never linkified), anything else
                             // stays a no-op so the bubble's long-press sheet

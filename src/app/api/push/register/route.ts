@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// /api/push/register — device push-transport registry (web/android/ios).
+// /api/push/register - device push-transport registry (web/android/ios).
 //
 // POST   { userId, platform: 'web'|'android'|'ios', token, endpoint? }
 //        → upsert (token unique) so re-registrations rebind the user.
@@ -7,7 +6,6 @@
 //
 // Web clients post the serialized PushSubscription JSON as `token` and the
 // endpoint URL as `endpoint`; mobile clients post their FCM/APNs token.
-// ─────────────────────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -55,7 +53,7 @@ export async function DELETE(req: Request) {
   try {
     await db.pushToken.delete({ where: { token } })
   } catch {
-    // already gone — idempotent
+    // already gone - idempotent
   }
   return NextResponse.json({ ok: true })
 }

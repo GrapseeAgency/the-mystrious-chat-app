@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Wave 1 forward — the web ForwardSheet outcome: no forward endpoint exists,
+/// Wave 1 forward - the web ForwardSheet outcome: no forward endpoint exists,
 /// so the client re-POSTs the source body (content + stored media paths,
 /// kind included) to each selected conversation (spec §1.1 "Forward").
 /// Multi-select with a local filter; the toast reports the honest count.
@@ -53,7 +53,7 @@ struct ForwardSheet: View {
         .task { await load() }
     }
 
-    // ── content ──────────────────────────────────────────────
+    // content
 
     private var searchField: some View {
         HStack(spacing: 8) {
@@ -161,7 +161,7 @@ struct ForwardSheet: View {
         .accessibilityLabel("\(isSelected ? "Deselect" : "Select") \(title(conversation))")
     }
 
-    // ── helpers ──────────────────────────────────────────────
+    // helpers
 
     private var filtered: [WireConversationSummary] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -200,10 +200,10 @@ struct ForwardSheet: View {
         }
     }
 
-    /// Re-POST the source body per target (client-side forward — there is NO
+    /// Re-POST the source body per target (client-side forward - there is NO
     /// forward endpoint). Media rides the STORED paths (no re-upload); each
-    /// target is independent — one failure never blocks the rest.
-    /// R1-W2B D28 — a target that fails with a NETWORK-class error queues
+    /// target is independent - one failure never blocks the rest.
+    /// R1-W2B D28 - a target that fails with a NETWORK-class error queues
     /// into the outbox (spec F-MS-10 offline column: "queued if offline";
     /// web pulse-outbox semantics: network failures retry on the next flush
     /// trigger, 4xx can never succeed and are honestly counted). Queued
@@ -243,11 +243,11 @@ struct ForwardSheet: View {
                     delivered += 1
                 } catch {
                     if PulseOutboxEngine.isDroppable(error) {
-                        // 4xx — retrying could never succeed (block, gone
+                        // 4xx - retrying could never succeed (block, gone
                         // room, bad upload path). Honest count, no queue lie.
                         continue
                     }
-                    // Network-class — queue the exact forward body; the
+                    // Network-class - queue the exact forward body; the
                     // engine flushes it on reconnect/foreground/heal.
                     session.enqueueOutbox(
                         conversationId: target.id,
@@ -269,7 +269,7 @@ struct ForwardSheet: View {
                 dismiss()
                 onFinished()
             } else {
-                session.toasts.show("Forward failed — check your connection")
+                session.toasts.show("Forward failed - check your connection")
             }
         }
     }

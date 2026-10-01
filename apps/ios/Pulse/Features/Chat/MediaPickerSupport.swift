@@ -3,7 +3,7 @@ import UIKit
 import PhotosUI
 import UniformTypeIdentifiers
 
-/// Wave 1 media messaging support — the pure helpers behind the composer's
+/// Wave 1 media messaging support - the pure helpers behind the composer's
 /// attach flow (spec §1.1 media upload contract):
 ///   • images are downscaled to ≤1280px and re-encoded JPEG q0.82 BEFORE the
 ///     base64 data-URL upload (web pulse-send parity),
@@ -14,15 +14,15 @@ enum PulseMediaSupport {
     /// Max image edge before the JPEG re-encode (spec §1.1, web parity).
     static let maxImageDimension: CGFloat = 1280
     static let imageQuality: CGFloat = 0.82
-    /// Document ceiling — the server rejects heavier payloads (spec §1.1).
+    /// Document ceiling - the server rejects heavier payloads (spec §1.1).
     static let maxDocumentBytes = 10 * 1024 * 1024
     /// Caption ceiling for staged media sends (≤500 chars, web parity).
     static let maxCaptionLength = 500
 
-    // ── images ───────────────────────────────────────────────
+    // images
 
     /// Re-renders the image so its longest edge is ≤ maxImageDimension and
-    /// encodes it as JPEG q0.82 — the exact bytes the data-URL carries.
+    /// encodes it as JPEG q0.82 - the exact bytes the data-URL carries.
     static func downscaledJPEGData(from data: Data) -> Data? {
         guard let image = UIImage(data: data) else { return nil }
         let longest = max(image.size.width, image.size.height)
@@ -36,9 +36,9 @@ enum PulseMediaSupport {
         return rendered.jpegData(compressionQuality: imageQuality)
     }
 
-    // ── documents ────────────────────────────────────────────
+    // documents
 
-    /// fileImporter whitelist — pdf/zip/txt/csv only (the mime map below is
+    /// fileImporter whitelist - pdf/zip/txt/csv only (the mime map below is
     /// the full upload contract; UTType(filenameExtension:) is failable so
     /// the array is built with compactMap).
     static var documentTypes: [UTType] {
@@ -86,7 +86,7 @@ struct QuickLookTarget: Identifiable {
 /// image path resolves through the gateway helper.
 enum PulseMediaOpener {
     /// Downloads a message document to the tmp directory for QuickLook.
-    /// Throws on network/write failure — callers surface the error honestly.
+    /// Throws on network/write failure - callers surface the error honestly.
     static func downloadForPreview(url: URL, fileName: String?) async throws -> URL {
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
@@ -109,7 +109,7 @@ enum PulseMediaOpener {
     }
 }
 
-/// Full-screen image lightbox — black stage, pinch + double-tap zoom,
+/// Full-screen image lightbox - black stage, pinch + double-tap zoom,
 /// caption, Done. Native mirror of the web lightbox dialog (no DOM).
 struct MediaLightboxView: View {
     let url: URL?
@@ -142,7 +142,7 @@ struct MediaLightboxView: View {
                     }
                     .ignoresSafeArea(edges: .bottom)
                 } else {
-                    Label("Unavailable", systemImage: "photo.badge.exclamationmark")
+                    Label("Unavailable", systemImage: "exclamationmark.circle.fill")
                         .foregroundStyle(.white.opacity(0.7))
                 }
                 Spacer(minLength: 0)

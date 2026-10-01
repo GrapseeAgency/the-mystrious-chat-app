@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/invite/[code] — public preview of a group invite code
-// ─────────────────────────────────────────────────────────────
+// /api/invite/[code] - public preview of a group invite code
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { normalizeInviteCode } from '@/lib/serializers'
@@ -15,7 +13,7 @@ interface RouteCtx {
 /**
  * GET /api/invite/[code]?userId=X
  * → 200 { invite: InvitePreview } | 404 unknown code
- * Safe to hit before login/creation — leaks nothing beyond the group
+ * Safe to hit before login/creation - leaks nothing beyond the group
  * name and member count. userId is optional and only feeds alreadyMember.
  */
 export async function GET(req: Request, { params }: RouteCtx) {

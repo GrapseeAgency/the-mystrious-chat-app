@@ -36,7 +36,7 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
-    // JVM unit tests — the pure viewer state machine + composer state
+    // JVM unit tests - the pure viewer state machine + composer state
     // (mirrors the :data module's JVM test stack).
     testImplementation(libs.junit4)
     testImplementation(libs.kotlinx.coroutines.test)

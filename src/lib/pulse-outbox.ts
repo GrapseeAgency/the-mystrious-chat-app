@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — offline outbox for outgoing text messages.
+// Pulse Chat - offline outbox for outgoing text messages.
 // localStorage-persisted queue: while the device is offline,
 // composed messages land here with an optimistic "queued"
 // bubble; on reconnect a flusher drains them in order.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { create } from 'zustand'
@@ -20,14 +18,14 @@ export interface QueuedMessage {
   replyToId?: string
   sender: MessageAuthor // frozen at enqueue time so flushing works room-less
   replySnapshot: ReplySnippet | null // quoted-parent preview for the queued bubble
-  queuedAt: string // ISO — display timestamp of the queued bubble
+  queuedAt: string // ISO - display timestamp of the queued bubble
   attempts: number // failed POST count (diagnostics only)
 }
 
 const MAX_QUEUE = 50
 
 interface PulseOutboxState {
-  queue: QueuedMessage[] // oldest first — drain order matters
+  queue: QueuedMessage[] // oldest first - drain order matters
   enqueue: (entry: Omit<QueuedMessage, 'attempts'>) => void
   remove: (clientId: string) => void
   bumpAttempt: (clientId: string) => void
@@ -74,7 +72,7 @@ interface SendResponse {
 /**
  * Drain every queued message in FIFO order while online.
  * Returns how many were delivered. Stops at the first failure
- * (keep temporal order — later sends must not overtake earlier ones).
+ * (keep temporal order - later sends must not overtake earlier ones).
  *
  * Cache behavior per delivery:
  * - ['messages', convId] present → swap `temp-<clientId>` for the real row

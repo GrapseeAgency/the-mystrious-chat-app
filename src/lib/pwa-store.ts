@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — PWA client store (session-only, NOT persisted).
+// Pulse Chat - PWA client store (session-only, NOT persisted).
 // Holds the deferred install prompt captured from
 // beforeinstallprompt so Profile can offer "Install Pulse".
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { create } from 'zustand'
@@ -27,7 +25,7 @@ export async function promptPwaInstall(): Promise<'accepted' | 'dismissed' | 'un
   if (!installEvent) return 'unavailable'
   setInstallEvent(null)
   try {
-    // BeforeInstallPromptEvent.prompt() — duck-typed, no public TS type needed
+    // BeforeInstallPromptEvent.prompt() - duck-typed, no public TS type needed
     await (installEvent as Event & { prompt: () => Promise<{ outcome: string }> }).prompt()
     return 'accepted'
   } catch {

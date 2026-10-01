@@ -1045,11 +1045,11 @@ private struct FolderRailView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                railPill(id: nil, emoji: nil, label: "All", count: 0)
+                railPill(id: nil, icon: nil, label: "All", count: 0)
                 ForEach(folders ?? [], id: \.id) { folder in
                     railPill(
                         id: folder.id,
-                        emoji: folder.emoji,
+                        icon: PulseFolderIconId.normalize(folder.emoji).symbolName,
                         label: folder.name,
                         count: counts[folder.id] ?? 0,
                     )
@@ -1070,14 +1070,18 @@ private struct FolderRailView: View {
         }
     }
 
-    private func railPill(id: String?, emoji: String?, label: String, count: Int) -> some View {
+    // R18 icon-id contract - the folder glyph is the registry SF Symbol for
+    // the stored icon id (stale values normalize to the default).
+    private func railPill(id: String?, icon: String?, label: String, count: Int) -> some View {
         let active = activeFolderId == id
         return Button {
             onSelectFolder(id)
         } label: {
             HStack(spacing: 6) {
-                if let emoji {
-                    Text(emoji).font(.system(size: 13))
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(active ? Color.black : Color.white.opacity(0.65))
                 }
                 Text(label)
                     .lineLimit(1)

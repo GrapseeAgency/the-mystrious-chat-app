@@ -8,7 +8,7 @@ package app.pulse.feature.voice.engine
  *    accumulating but never double-flush;
  *  • final tail: on transmit end a tail ≥16000 (1s) flushes; a SHORTER tail is
  *    skipped (the ASR would return garbage for sub-second audio);
- *  • toggle-off clears the pending audio immediately — nothing captured before
+ *  • toggle-off clears the pending audio immediately - nothing captured before
  *    the toggle survives.
  */
 class CaptionWindowAccumulator(
@@ -18,7 +18,7 @@ class CaptionWindowAccumulator(
 
     /** What the caller must do with the offered block. */
     sealed interface Offer {
-        /** Captions off — pending audio was dropped (toggle-off rule). */
+        /** Captions off - pending audio was dropped (toggle-off rule). */
         data object Cleared : Offer
         /** Captions on but the gate is closed / nothing to do. */
         data object Held : Offer
@@ -74,7 +74,7 @@ class CaptionWindowAccumulator(
         busy = false
     }
 
-    /** Toggle-off / leave — pending audio is dropped, never transcribed. */
+    /** Toggle-off / leave - pending audio is dropped, never transcribed. */
     fun clear() {
         bufferSize = 0
         busy = false
@@ -102,9 +102,9 @@ class CaptionWindowAccumulator(
     }
 
     companion object {
-        /** 4s at 16kHz — the full caption window. */
+        /** 4s at 16kHz - the full caption window. */
         const val WINDOW_SAMPLES = 64_000
-        /** 1s — the minimum flushable tail on transmit end. */
+        /** 1s - the minimum flushable tail on transmit end. */
         const val MIN_TAIL_SAMPLES = 16_000
     }
 }

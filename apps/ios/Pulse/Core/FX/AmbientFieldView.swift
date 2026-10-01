@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Native ambient field — the outcome of the web's WebGL system rebuilt with
+/// Native ambient field - the outcome of the web's WebGL system rebuilt with
 /// Apple APIs: aurora / mesh / stars run as real per-pixel Metal kernels
 /// (AmbientShader.metal via .colorEffect, iOS 17+), caustics / liquid as
 /// graceful Canvas-gradient approximations. Renders nothing for .off.
@@ -13,7 +13,7 @@ public struct AmbientFieldView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// The web starts its loop at t = 14.2 — a pleasing moment of the field.
+    /// The web starts its loop at t = 14.2 - a pleasing moment of the field.
     private let epoch = Date(timeIntervalSinceNow: -14.2)
 
     public init(mode: AmbientMode, dark: Bool, preview: Bool = false) {
@@ -38,7 +38,7 @@ public struct AmbientFieldView: View {
         .accessibilityHidden(true)
     }
 
-    // ── Metal path (aurora / mesh / stars) ───────────────────
+    // Metal path (aurora / mesh / stars)
     private var shaderField: some View {
         Group {
             if reduceMotion || preview {
@@ -78,7 +78,7 @@ public struct AmbientFieldView: View {
     }
 }
 
-/// Canvas approximations for the two fluid modes (allowed by the wave spec —
+/// Canvas approximations for the two fluid modes (allowed by the wave spec -
 /// the aurora family carries the signature look; these stay tasteful echoes).
 private struct CanvasAmbient: View {
     let mode: AmbientMode

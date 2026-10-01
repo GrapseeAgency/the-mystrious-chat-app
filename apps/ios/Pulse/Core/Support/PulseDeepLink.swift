@@ -1,6 +1,6 @@
 import Foundation
 
-/// Wave 6 deep links (F-DL) — the `pulse://` scheme the app registers in
+/// Wave 6 deep links (F-DL) - the `pulse://` scheme the app registers in
 /// project.yml. Mirrors the web hash routes:
 ///   pulse://invite/{code}   → JoinGroupSheet parity (#/join handled via ?join=)
 ///   pulse://user/{id}       → the full user page (#/user/:id)
@@ -12,21 +12,21 @@ import Foundation
 ///                             (R14 5-b; identity-less apps only)
 /// Percent-encoded path segments decode here so hand-built NFC/QR links
 /// behave exactly like in-app taps. Pure + total: anything unparseable is
-/// `.none` (the caller ignores it — no crash, no half-state).
+/// `.none` (the caller ignores it - no crash, no half-state).
 public enum PulseDeepLink: Equatable {
     case invite(code: String)
     case user(userId: String)
     case room(conversationId: String)
-    /// R10-b — the argument-less compose route (pulse://new).
+    /// R10-b - the argument-less compose route (pulse://new).
     case compose
-    /// R14 5-b — the login prefill route (pulse://login/<name>); the web
+    /// R14 5-b - the login prefill route (pulse://login/<name>); the web
     /// /?login= query equivalent (only the pulse scheme is registered, so
     /// https hosts are out of scope by registration).
     case login(name: String)
 
     public static let scheme = "pulse"
 
-    /// Parse a URL handed over by the system (onOpenURL) — scheme must be
+    /// Parse a URL handed over by the system (onOpenURL) - scheme must be
     /// `pulse`, host picks the family, the first path component is the key.
     public static func parse(_ url: URL) -> PulseDeepLink? {
         guard url.scheme?.lowercased() == scheme else { return nil }
@@ -41,7 +41,7 @@ public enum PulseDeepLink: Equatable {
         })
         guard !parts.isEmpty else { return nil }
         let kind = parts[0].lowercased()
-        // R10-b — the argument-less compose route: pulse://new (and the
+        // R10-b - the argument-less compose route: pulse://new (and the
         // pulse://compose spelling) carry no key segment. Every other
         // family needs the key below.
         if kind == "new" || kind == "compose" { return .compose }
@@ -56,7 +56,7 @@ public enum PulseDeepLink: Equatable {
         case "room", "chat", "conversation":
             return .room(conversationId: key)
         case "login":
-            // R14 5-b — the /?login=Name parity: the display name is the
+            // R14 5-b - the /?login=Name parity: the display name is the
             // key (percent-decoded above, capped at the onboarding limit).
             return .login(name: String(key.prefix(32)))
         default:

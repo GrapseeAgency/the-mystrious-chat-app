@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/invite — group invite link management
+// /api/conversations/[id]/invite - group invite link management
 // Admin-only: create (lazy), return, or regenerate the code.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { CONVERSATION_FULL_INCLUDE, generateInviteCode, notifySocket, safeJson, strField } from '@/lib/serializers'

@@ -1,13 +1,13 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 3-HW — manifest `ice` override plumbing (TURN/STUN).
+/// Wave 3-HW - manifest `ice` override plumbing (TURN/STUN).
 /// Covers: dual `urls` wire forms, credential passthrough, invalid/blank
 /// rejection (a broken manifest must never strip a working STUN set),
 /// and the offline-relaunch persistence shape (`iceJson` in the vault).
 final class PulseIceOverrideTests: XCTestCase {
     // No tearDown reset: `applyIceOverride(nil)` deliberately NEVER clears an
-    // adopted override (blank-never-clobbers, same rule as the base URLs) —
+    // adopted override (blank-never-clobbers, same rule as the base URLs) -
     // that semantic is itself asserted below.
 
     func testUrlsAsArrayWithCredentialsDecodes() throws {
@@ -76,6 +76,6 @@ final class PulseIceOverrideTests: XCTestCase {
             let iceJson: String?
         }
         let stored = try JSONDecoder().decode(StoredOverride.self, from: payload)
-        XCTAssertNil(stored.iceJson, "pre-HW vaults have no iceJson — must decode without error")
+        XCTAssertNil(stored.iceJson, "pre-HW vaults have no iceJson - must decode without error")
     }
 }

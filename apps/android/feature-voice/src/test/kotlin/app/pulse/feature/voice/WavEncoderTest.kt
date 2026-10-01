@@ -9,7 +9,7 @@ import org.junit.Test
 
 /**
  * The /api/voice/transcribe endpoint 400s on anything but the exact 44-byte
- * RIFF/WAVE header (spec §1.1 VR-7) — these are the byte-exact field proofs.
+ * RIFF/WAVE header (spec §1.1 VR-7) - these are the byte-exact field proofs.
  */
 class WavEncoderTest {
 

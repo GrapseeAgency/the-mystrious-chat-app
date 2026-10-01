@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — shared server-side helpers (used by REST routes)
+// Pulse Chat - shared server-side helpers (used by REST routes)
 // Prisma row → DTO serializers matching src/lib/types.ts,
 // input normalization, safe JSON parsing, socket relay.
-// Server-only — never import from client components.
-// ─────────────────────────────────────────────────────────────
+// Server-only - never import from client components.
 import path from 'node:path'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
@@ -18,7 +16,7 @@ import type {
   MessageReactionGroup,
 } from '@/lib/types'
 
-// ── Validation constants ────────────────────────────────────
+// Validation constants 
 export const USER_NAME_MAX = 32
 export const USERNAME_MIN = 3
 export const USERNAME_MAX = 20
@@ -45,7 +43,7 @@ export function dayKey(d: Date): string {
 }
 
 /**
- * R31-a — a chat streak is LIVE while its lastDay is today or yesterday
+ * R31-a - a chat streak is LIVE while its lastDay is today or yesterday
  * (UTC). Anything older is a dead streak: serializers report `myStreak: null`
  * so the UI never shows a flame for a broken chain.
  */
@@ -55,7 +53,7 @@ export function isLiveStreakDay(lastDay: string): boolean {
 }
 
 /**
- * R33-b — streak-at-risk: a chain whose lastDay is YESTERDAY (UTC) is still
+ * R33-b - streak-at-risk: a chain whose lastDay is YESTERDAY (UTC) is still
  * live today, but it dies at tonight's UTC midnight unless the viewer sends
  * a message today. Only chains of 2+ days are worth nudging about.
  * Returns the wire shape for the additive `deadStreak` field (null = safe).
@@ -66,11 +64,11 @@ export function atRiskStreak(lastDay: string, count: number): { count: number; l
 }
 
 /**
- * R37 — honest end-state: a chain of 2+ days whose lastDay is OLDER than
- * yesterday (UTC) — the day passed without a message, so the streak died.
+ * R37 - honest end-state: a chain of 2+ days whose lastDay is OLDER than
+ * yesterday (UTC) - the day passed without a message, so the streak died.
  * Mirrors atRiskStreak exactly: same UTC day-bucketing (dayKey), same 2+ day
  * threshold, derived from the SAME streak row (no extra query). Anything
- * still live (today/yesterday) is NOT lost — myStreak/deadStreak cover it.
+ * still live (today/yesterday) is NOT lost - myStreak/deadStreak cover it.
  * Returns the wire shape for the additive `lostStreak` field (null = none).
  */
 export function lostStreak(
@@ -93,8 +91,8 @@ export async function suggestUsername(base: string): Promise<string> {
   return `${base}${Date.now().toString(36)}`
 }
 
-/** Emoji allowed as reactions (keeps bubbles tidy). */
-export const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉'] as const
+/** Reaction ids allowed on the wire (registry lives in '@/lib/icon-ids'). */
+export { REACTION_IDS as REACTION_EMOJIS } from '@/lib/icon-ids'
 
 export const AVATAR_COLORS = [
   'emerald',
@@ -107,7 +105,7 @@ export const AVATAR_COLORS = [
   'cyan',
 ] as const
 
-// ── Input helpers ───────────────────────────────────────────
+// Input helpers 
 
 /** Trimmed string field or '' when absent / wrong type. */
 export function strField(value: unknown): string {
@@ -115,7 +113,7 @@ export function strField(value: unknown): string {
 }
 
 /**
- * Robust JSON body parser — returns {} on any failure.
+ * Robust JSON body parser - returns {} on any failure.
  * Callers validate individual fields and return 400 on bad input.
  */
 export async function safeJson(req: Request): Promise<Record<string, unknown>> {
@@ -143,7 +141,7 @@ export function parseIsoDate(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-// ── Serializers ─────────────────────────────────────────────
+// Serializers 
 
 interface UserRow {
   id: string
@@ -156,7 +154,7 @@ interface UserRow {
   statusText: string | null
   createdAt: Date
   lastSeenAt: Date
-  /** R46 — JSON prefs column (see prefs-defaults); drives privacy enforcement. */
+  /** R46 - JSON prefs column (see prefs-defaults); drives privacy enforcement. */
   preferences?: string | null
 }
 
@@ -165,9 +163,9 @@ function mapAuthor(user: UserRow): MessageAuthor {
 }
 
 export function mapUser(user: UserRow): AppUser {
-  // R46 — privacy enforcement: a user with lastSeenVisible=false has their
+  // R46 - privacy enforcement: a user with lastSeenVisible=false has their
   // last-seen stamp scrubbed at the SERIALIZATION layer (the payload never
-  // leaves the server). Own profile is scrubbed too — the owner chose to hide.
+  // leaves the server). Own profile is scrubbed too - the owner chose to hide.
   const hideStamp = prefsOfUser(user).lastSeenVisible === false
   return {
     id: user.id,
@@ -183,7 +181,7 @@ export function mapUser(user: UserRow): AppUser {
   }
 }
 
-/** Server-stored prefs of a user row (defensive — malformed JSON → defaults). */
+/** Server-stored prefs of a user row (defensive - malformed JSON → defaults). */
 function prefsOfUser(user: UserRow): PulsePrefs {
   if (!user.preferences) return DEFAULT_PREFERENCES
   try {
@@ -287,11 +285,11 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
     imagePath: message.imagePath ?? null,
     audioPath: message.audioPath ?? null,
     durationMs: message.durationMs ?? null,
-    // R40 additive — document attachments (guarded nulls, mirrors imagePath).
+    // R40 additive - document attachments (guarded nulls, mirrors imagePath).
     filePath: message.filePath ?? null,
     fileName: message.fileName ?? null,
     fileSize: message.fileSize ?? null,
-    // R43 additive — cached voice-note transcription (real ASR, guarded nulls).
+    // R43 additive - cached voice-note transcription (real ASR, guarded nulls).
     transcript: message.transcript ?? null,
     transcribedAt: message.transcribedAt ? message.transcribedAt.toISOString() : null,
     editedAt: message.editedAt ? message.editedAt.toISOString() : null,
@@ -318,17 +316,17 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
         : null,
     poll,
     translations: message.translations.map((t) => ({ lang: t.lang, text: t.text })),
-    // R39 additive — honest machine-sent marker on automation-authored bubbles.
+    // R39 additive - honest machine-sent marker on automation-authored bubbles.
     viaAutomation: message.viaAutomation ?? false,
   }
 }
 
-/** Group role of a participant row — normalizes unexpected values to "member". */
+/** Group role of a participant row - normalizes unexpected values to "member". */
 export function mapRole(role: string): 'admin' | 'member' {
   return role === 'admin' ? 'admin' : 'member'
 }
 
-/** R39 — Automation row (+creator) → AutomationSummary wire shape. */
+/** R39 - Automation row (+creator) → AutomationSummary wire shape. */
 export function mapAutomation(automation: {
   id: string
   conversationId: string
@@ -367,7 +365,7 @@ export function mapMember(participant: { lastReadAt: Date; user: UserRow; role: 
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
 
-/** Sentinel watermark for members who hide read receipts (R46) — predates
+/** Sentinel watermark for members who hide read receipts (R46) - predates
  *  every real message, so viewers' ticks always render "delivered", never
  *  "read". The hidden member's OWN watermark (unread counts) is untouched. */
 const EPOCH_ISO = '1970-01-01T00:00:00.000Z'
@@ -378,7 +376,7 @@ interface ParticipantRowForMap {
   user: UserRow
 }
 
-/** Members for a viewer's payload (R46 — read-receipts privacy enforced):
+/** Members for a viewer's payload (R46 - read-receipts privacy enforced):
  *  a member whose stored prefs disable read receipts reports an epoch
  *  watermark to everyone but themselves, so their reads stay private while
  *  their own unread math keeps working. */
@@ -450,10 +448,10 @@ export async function buildConversationSummary(
     unreadCount,
     myStreak:
       streakRow && isLiveStreakDay(streakRow.lastDay) ? { count: streakRow.count } : null,
-    // R33-b additive — derived from the SAME streak row (no extra query):
+    // R33-b additive - derived from the SAME streak row (no extra query):
     // live-but-dies-tonight chains surface the 'ends tonight' nudge.
     deadStreak: streakRow ? atRiskStreak(streakRow.lastDay, streakRow.count) : null,
-    // R37 additive — same row again: chains whose lastDay already passed are
+    // R37 additive - same row again: chains whose lastDay already passed are
     // honestly reported as lost (2+ day chains only, never beside live/at-risk).
     lostStreak: streakRow ? lostStreak(streakRow.lastDay, streakRow.count, streakRow.best) : null,
     photo: conv.photo ?? null,
@@ -463,10 +461,10 @@ export async function buildConversationSummary(
     ttlSeconds: conv.ttlSeconds,
     broadcastMode: conv.broadcastMode,
     isSelf: conv.isSelf,
-    // R44 additive — mark-as-unread: the viewer's row-badge flag (chats tab
+    // R44 additive - mark-as-unread: the viewer's row-badge flag (chats tab
     // shows the dot even when unreadCount is 0; cleared by the read route).
     myManualUnread: mine?.manualUnread ?? false,
-    // R45 additive — server-synced draft (cross-device "Draft: …" preview;
+    // R45 additive - server-synced draft (cross-device "Draft: …" preview;
     // local draft wins when present, server fills in from other devices).
     myDraft: mine?.draft ?? null,
   }
@@ -487,7 +485,7 @@ export async function buildConversationDetail(
         select: { lastDay: true, count: true, best: true },
       })
     : null
-  // R47 — DM-only dead-end flag: a UserBlock in EITHER direction between the
+  // R47 - DM-only dead-end flag: a UserBlock in EITHER direction between the
   // viewer and the other participant. Drives the composer notice; the messages
   // POST gate stays the server-authoritative enforcement either way.
   let dmBlocked = false
@@ -517,28 +515,28 @@ export async function buildConversationDetail(
       streakRow && isLiveStreakDay(streakRow.lastDay)
         ? { count: streakRow.count, best: streakRow.best }
         : null,
-    // R33-b additive — at-risk nudge + channel/group photo, same row/record.
+    // R33-b additive - at-risk nudge + channel/group photo, same row/record.
     deadStreak: streakRow ? atRiskStreak(streakRow.lastDay, streakRow.count) : null,
-    // R37 additive — honest end-state for dead chains (same streak row).
+    // R37 additive - honest end-state for dead chains (same streak row).
     lostStreak: streakRow ? lostStreak(streakRow.lastDay, streakRow.count, streakRow.best) : null,
     photo: conv.photo ?? null,
     inviteCode: conv.isGroup ? (conv.inviteCode ?? null) : null,
     ttlSeconds: conv.ttlSeconds,
     broadcastMode: conv.broadcastMode,
-    // R38 additive — Signal screen security: frost the message area while the
+    // R38 additive - Signal screen security: frost the message area while the
     // Pulse window is unfocused. Detail-level only (the room reads it here).
     screenPrivacy: conv.screenPrivacy,
-    // R42 additive — the viewer's personal screen-security flag (per-VIEWER
+    // R42 additive - the viewer's personal screen-security flag (per-VIEWER
     // veil; chat-room frosts when EITHER flag is on).
     myScreenPrivacy: mine?.screenPrivacy ?? false,
-    // R44 additive — Telegram-style slow mode (0 = off; members wait Ns
+    // R44 additive - Telegram-style slow mode (0 = off; members wait Ns
     // between sends) + the viewer's mark-as-unread flag.
     slowModeSeconds: conv.slowModeSeconds,
     myManualUnread: mine?.manualUnread ?? false,
-    // R45 additive — the viewer's server-synced composer draft (restored in
+    // R45 additive - the viewer's server-synced composer draft (restored in
     // the composer when no local draft exists for this device/tab).
     myDraft: mine?.draft ?? null,
-    // R47 additive — DM blocked-pair dead-end flag (either direction).
+    // R47 additive - DM blocked-pair dead-end flag (either direction).
     dmBlocked,
     isSelf: conv.isSelf,
     description: conv.description,
@@ -572,7 +570,7 @@ export const UPLOAD_MIME: Record<string, string> = {
   wav: 'audio/wav',
   m4a: 'audio/mp4',
   aac: 'audio/aac',
-  // R40 — document attachments.
+  // R40 - document attachments.
   pdf: 'application/pdf',
   txt: 'text/plain',
   csv: 'text/csv',
@@ -583,16 +581,16 @@ export const UPLOAD_MIME: Record<string, string> = {
 export const AUDIO_EXT_REGEX = /^[A-Za-z0-9-]+\.(webm|mp3|ogg|wav|m4a|aac)$/
 
 /**
- * R40 — document attachments (WhatsApp/Slack paradigm). Allowed doc extensions
+ * R40 - document attachments (WhatsApp/Slack paradigm). Allowed doc extensions
  * and the mime map used both for upload validation and for serving bytes.
  * Mirrors AUDIO_EXT_REGEX exactly (safe stored filename: uuid + ext).
  */
 export const DOC_EXT_REGEX = /^[A-Za-z0-9-]+\.(pdf|txt|csv|zip)$/
 
-/** Hard byte cap for document uploads (10 MB — images/audio keep their own caps). */
+/** Hard byte cap for document uploads (10 MB - images/audio keep their own caps). */
 export const DOC_MAX_BYTES = 10_485_760
 
-// ── Invite codes ────────────────────────────────────────
+// Invite codes 
 
 /** Unambiguous alphabet for invite codes (no 0/O/1/I confusion). */
 const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
@@ -612,7 +610,7 @@ export function normalizeInviteCode(value: unknown): string {
   return strField(value).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16)
 }
 
-// ── Socket relay (best-effort — never fails the API call) ──
+// Socket relay (best-effort - never fails the API call) 
 
 const SOCKET_URL = 'http://localhost:3003'
 

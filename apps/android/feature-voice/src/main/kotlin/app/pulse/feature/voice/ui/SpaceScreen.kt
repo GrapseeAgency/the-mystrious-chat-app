@@ -50,9 +50,9 @@ import app.pulse.ui.initialsOf
 import kotlin.math.roundToInt
 
 /**
- * Wave 5 — the spatial-presence surface (spec §1.3 SP-1..SP-5): a normalized
+ * Wave 5 - the spatial-presence surface (spec §1.3 SP-1..SP-5): a normalized
  * 0..1 map with tap-to-move AND drag (the 80ms client throttle matches the
- * server budget — WEB DEFECT FIX #3), an optimistic self target that
+ * server budget - WEB DEFECT FIX #3), an optimistic self target that
  * reconciles to server truth once the finger idles 300ms (FIX #4), a NEARBY
  * chip rail (≤0.18 euclidean) and an honest error state after the reconnect
  * budget (FIX #5).
@@ -81,7 +81,7 @@ fun SpaceScreen(
                 Text("Space", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
                     when (state.status) {
-                        SpaceBoardStateMachine.Status.CONNECTED -> "Connected — tap or drag to move"
+                        SpaceBoardStateMachine.Status.CONNECTED -> "Connected - tap or drag to move"
                         SpaceBoardStateMachine.Status.ERROR -> state.error ?: "The room is unreachable."
                         else -> "Connecting to the room…"
                     },
@@ -144,7 +144,7 @@ fun SpaceScreen(
                 NearbyRail(state)
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "Positions are live and temporary — stand near someone to light up their NEARBY ring.",
+                    "Positions are live and temporary - stand near someone to light up their NEARBY ring.",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
@@ -170,10 +170,10 @@ private fun SpaceMap(
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(18.dp))
             .semantics {
-                contentDescription = "Spatial map — tap or drag to move your dot"
+                contentDescription = "Spatial map - tap or drag to move your dot"
                 stateDescription = "${state.pill} in room"
             }
-            // Tap-to-move AND drag (SP-3) — the machine throttles at 80ms and
+            // Tap-to-move AND drag (SP-3) - the machine throttles at 80ms and
             // clamps into 0..1; the UI only normalizes coordinates.
             .pointerInput(state.status) {
                 if (state.status != SpaceBoardStateMachine.Status.CONNECTED) return@pointerInput
@@ -201,14 +201,14 @@ private fun SpaceMap(
             IntOffset((x * w.toPx()).roundToInt(), (y * h.toPx()).roundToInt())
         }
 
-        // Server-truth dots — everyone but me renders directly.
+        // Server-truth dots - everyone but me renders directly.
         for (player in state.players.values) {
             if (player.id == state.selfId) continue
             val nearby = player.id in state.nearbyIds
             Box(
                 at(player.x, player.y).size(18.dp).semantics {
                     contentDescription = "${player.name} at ${(player.x * 100).roundToInt()}%, ${(player.y * 100).roundToInt()}%" +
-                        if (nearby) " — nearby" else ""
+                        if (nearby) " - nearby" else ""
                 },
                 contentAlignment = Alignment.Center,
             ) {
@@ -228,7 +228,7 @@ private fun SpaceMap(
             }
         }
 
-        // My optimistic target — the ghost dot under the finger (FIX #4).
+        // My optimistic target - the ghost dot under the finger (FIX #4).
         state.myTarget?.let { target ->
             Box(
                 at(target.x, target.y)
@@ -238,7 +238,7 @@ private fun SpaceMap(
             )
         }
 
-        // Myself — halo + dot at the reconciled position.
+        // Myself - halo + dot at the reconciled position.
         val self = state.players[state.selfId]
         val selfPos = self?.let { SpaceBoardStateMachine.Point(it.x, it.y) } ?: state.myTarget
         selfPos?.let { pos ->
@@ -282,7 +282,7 @@ private fun NearbyRail(state: SpaceBoardStateMachine.State) {
     ) {
         if (nearby.isEmpty()) {
             Text(
-                "Nobody is within reach right now — walk closer.",
+                "Nobody is within reach right now - walk closer.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

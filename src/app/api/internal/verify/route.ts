@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/internal/verify — session-token check for the pulse-socket
+// /api/internal/verify - session-token check for the pulse-socket
 // mini service (Wave 8, spec §3.11 A-2). The socket relay has NO
 // database access, so it calls THIS endpoint (shared-key guarded,
 // same pattern as /api/internal/privacy) when a join carries a
@@ -11,8 +10,7 @@
 //   GET ?userId=<id>&token=<raw>   [x-pulse-key header required]
 //     → 200 { valid: boolean }
 //
-// Response is a boolean only — never reveals which part failed.
-// ─────────────────────────────────────────────────────────────
+// Response is a boolean only - never reveals which part failed.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hashSessionToken } from '@/lib/session-token'

@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * R10-a — the notification quick-reply payload kernel, pinned as a pure JVM
+ * R10-a - the notification quick-reply payload kernel, pinned as a pure JVM
  * test: parse (trim / blank rejection / server length cap), the queued verdict
  * (temp `local_` rows are outbox entries, not deliveries), and the shared
  * notification id math with PulseMessagingService.
@@ -45,7 +45,7 @@ class PulseReplyReceiverTest {
     @Test
     fun `notification id matches the messaging service scheme`() {
         // Same math PulseMessagingService uses:
-        // (conversationId).hashCode().and(0x3FFFFFFF) — reply/cancel must
+        // (conversationId).hashCode().and(0x3FFFFFFF) - reply/cancel must
         // address the SAME notification the service posted.
         val conv = "conv-42"
         assertEquals(conv.hashCode().and(0x3FFFFFFF), PulseReplyPayload.notificationId(conv))

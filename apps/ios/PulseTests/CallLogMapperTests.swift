@@ -1,11 +1,11 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 3 — the single-writer rule and the outcome→wire mapping for
+/// Wave 3 - the single-writer rule and the outcome→wire mapping for
 /// POST /api/calls, plus the 8-case history presentation.
 final class CallLogMapperTests: XCTestCase {
 
-    // ── single-writer guard ─────────────────────────────────
+    // single-writer guard
 
     func testOnlyTheCallerWrites() {
         XCTAssertTrue(CallLogMapper.shouldCallerWrite(direction: .outgoing, peerId: "peer", viewerId: "me"))
@@ -15,7 +15,7 @@ final class CallLogMapperTests: XCTestCase {
         XCTAssertFalse(CallLogMapper.shouldCallerWrite(direction: .outgoing, peerId: "peer", viewerId: ""))
     }
 
-    // ── outcome → wire status ───────────────────────────────
+    // outcome → wire status
 
     func testWireStatusMapping() {
         XCTAssertEqual(CallLogMapper.wireStatus(for: .completed), "completed")
@@ -23,7 +23,7 @@ final class CallLogMapperTests: XCTestCase {
         XCTAssertEqual(CallLogMapper.wireStatus(for: .declined), "declined")
     }
 
-    // ── POST body shape (call-types.ts parity) ─────────────
+    // POST body shape (call-types.ts parity)
 
     func testRestBodyShape() {
         let body = CallLogMapper.restBody(
@@ -42,7 +42,7 @@ final class CallLogMapperTests: XCTestCase {
         XCTAssertEqual(body["durationSec"] as? Int, 95)
     }
 
-    // ── the 8 directive cases render as designed ────────────
+    // the 8 directive cases render as designed
 
     private func entry(outgoing: Bool, status: String, duration: Int) -> CallLogEntry {
         CallLogEntry(
@@ -117,7 +117,7 @@ final class CallLogMapperTests: XCTestCase {
         XCTAssertEqual(formatCallDuration(3725), "1:02:05")
     }
 
-    // ── wire → entry tolerance ──────────────────────────────
+    // wire → entry tolerance
 
     func testEntryFromWireToleratesBadStatusAndKind() {
         let wire = WireCallLogItem(

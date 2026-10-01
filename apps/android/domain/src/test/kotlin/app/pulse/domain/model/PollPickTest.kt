@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
  * Wave-2 domain rule (spec §1 row 2): the viewer's own poll pick derives
  * from options[].votedBy ONLY. The wire myOptionId is actor-relative on
  * poll:voted relayed rows (every recipient would see the voter's pick as
- * "mine") and null on history GETs — it must be IGNORED even when set.
+ * "mine") and null on history GETs - it must be IGNORED even when set.
  */
 class PollPickTest {
 
@@ -22,7 +22,7 @@ class PollPickTest {
             PollOptionInfo(id = "optC", text = "Pizza", position = 2, voteCount = 0, votedBy = emptyList()),
         ),
         totalVotes = 3,
-        // Deliberately WRONG (points at "Tacos" while u2 voted "Ramen") —
+        // Deliberately WRONG (points at "Tacos" while u2 voted "Ramen") -
         // pickFor must never read it.
         myOptionId = "optB",
     )
@@ -49,7 +49,7 @@ class PollPickTest {
 
     @Test
     fun `myOptionId is ignored even when it names a real option`() {
-        // For EVERY viewer the pick must come from votedBy — the myOptionId
+        // For EVERY viewer the pick must come from votedBy - the myOptionId
         // field is never consulted, not even as a fallback.
         assertEquals("optA", tally.pickFor("u2"))
         assertEquals("optB", tally.pickFor("u4"))

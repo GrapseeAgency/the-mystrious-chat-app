@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// R2-D ITEM 7 — the message-info receipt split ("Seen by" vs "Delivered
+/// R2-D ITEM 7 - the message-info receipt split ("Seen by" vs "Delivered
 /// to"). Web ground truth: chat-room.tsx:5893-5960 (readMs >= msgMs, viewer
 /// excluded, NaN watermarks delivered) + Android MessageSheets.kt:379-424.
 /// Fixture watermarks are the CURRENT wire ISO shapes (fractional seconds).
@@ -54,7 +54,7 @@ final class PulseReceiptSplitTests: XCTestCase {
     }
 
     func testUnparseableCreatedAtDeliversEveryone() {
-        // The web guards Number.isNaN on BOTH sides — a broken message stamp
+        // The web guards Number.isNaN on BOTH sides - a broken message stamp
         // can never mark anyone as seen.
         let split = PulseRoomParityLogic.receiptSplit(
             members: [

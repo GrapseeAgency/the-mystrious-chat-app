@@ -1,20 +1,18 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — per-message reminders (R30-b, Beeper/Zulip-style).
+// Pulse - per-message reminders (R30-b, Beeper/Zulip-style).
 //
 // Three exports wire the whole feature into chat-room:
-//   1. <RemindersSheet> — dark glass bottom panel listing the
+//   1. <RemindersSheet> - dark glass bottom panel listing the
 //      viewer's upcoming reminders (anchored snippet or chat name,
 //      live countdown, tap-to-jump, cancel) plus a muted collapsible
 //      History group of already-fired rows.
-//   2. useReminderDueLoop(meId) — mounted once per room; polls
+//   2. useReminderDueLoop(meId) - mounted once per room; polls
 //      GET /api/reminders?due=1 every 30s (skips while the tab is
 //      hidden) and delivers each due reminder as a sonner toast with
 //      a View action, then PATCHes it fired. Idempotent: a module-
 //      level fired-id Set survives re-mounts, the server-side
 //      firedAt stamp survives reloads.
-//   3. REMINDER_JUMP_EVENT — fired by toast actions + sheet rows;
+//   3. REMINDER_JUMP_EVENT - fired by toast actions + sheet rows;
 //      chat-room listens and jumps (or toasts for other rooms).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
@@ -30,9 +28,9 @@ import { GlassMenu, GlassMenuLabel, GlassMenuSeparator } from '@/components/ui/g
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-// ── event + cache contracts ──────────────────────────────────
+// event + cache contracts 
 
-/** Fired by toast View actions + sheet rows — chat-room jumps to the anchor. */
+/** Fired by toast View actions + sheet rows - chat-room jumps to the anchor. */
 export const REMINDER_JUMP_EVENT = 'pulse:reminder-jump'
 
 export interface ReminderJumpDetail {
@@ -54,7 +52,7 @@ export async function fetchReminders(meId: string, dueOnly = false): Promise<Rem
   return res.items
 }
 
-// ── formatting helpers ───────────────────────────────────────
+// formatting helpers 
 
 const hmFormatter = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
 const weekdayFormatter = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
@@ -91,7 +89,7 @@ export function formatReminderCountdown(iso: string, now: Date = new Date()): st
   return `${dayMonthFormatter.format(target)}, ${hmFormatter.format(target)}`
 }
 
-// ── /remind relative-time parser (kept small + pure/testable) ──
+// /remind relative-time parser (kept small + pure/testable) 
 
 export interface ParsedReminder {
   note: string
@@ -141,7 +139,7 @@ export function parseRelativeReminder(arg: string, now: Date = new Date()): Pars
       },
     },
     {
-      // bare trailing token ("buy milk 30m") — a leftover "in" before the
+      // bare trailing token ("buy milk 30m") - a leftover "in" before the
       // number ("log in in 30m") is stripped from the note, not sent.
       re: new RegExp(`\\s+(\\d+)\\s*${DURATION_TOKEN}$`, 'i'),
       stripTrailingIn: true,
@@ -167,10 +165,10 @@ export function parseRelativeReminder(arg: string, now: Date = new Date()): Pars
   return null
 }
 
-// ── due-loop hook ────────────────────────────────────────────
+// due-loop hook 
 
 /**
- * Fired reminder ids — module scope so a sheet/hook re-mount can never
+ * Fired reminder ids - module scope so a sheet/hook re-mount can never
  * double-toast the same row within a session (firedAt covers reloads).
  */
 const deliveredReminderIds = new Set<string>()
@@ -178,11 +176,11 @@ const deliveredReminderIds = new Set<string>()
 const DUE_POLL_MS = 30_000
 
 /**
- * R33-b — module-level SINGLETON guard for the due loop. The first mounted
+ * R33-b - module-level SINGLETON guard for the due loop. The first mounted
  * hook instance (per user id) becomes the owner and runs the ONLY poll
  * timer; every other mounted instance (chat-room per room + the main-shell
  * mount) becomes a no-op. Multiple mounts therefore never double-poll or
- * double-toast — combined with the deliveredReminderIds Set the guarantee
+ * double-toast - combined with the deliveredReminderIds Set the guarantee
  * is belt-and-braces.
  */
 let dueLoopOwner: { meId: string } | null = null
@@ -249,7 +247,7 @@ export function useReminderDueLoop(meId: string): void {
           void queryClient.invalidateQueries({ queryKey: remindersKey(meId) })
         }
       } catch {
-        // Network hiccup — the next tick retries.
+        // Network hiccup - the next tick retries.
       } finally {
         inFlightRef.current = false
       }
@@ -272,7 +270,7 @@ export function useReminderDueLoop(meId: string): void {
   }, [meId, queryClient])
 }
 
-// ── sheet ────────────────────────────────────────────────────
+// sheet 
 
 export interface RemindersSheetProps {
   onClose: () => void
@@ -374,8 +372,8 @@ export function RemindersSheet({ onClose, myId }: RemindersSheetProps) {
           className="min-w-0 flex-1 text-left outline-none"
           aria-label={
             fired
-              ? `Fired reminder — ${reminderText(item)}`
-              : `Jump to reminder — ${reminderText(item)} in ${item.conversation.name}`
+              ? `Fired reminder - ${reminderText(item)}`
+              : `Jump to reminder - ${reminderText(item)} in ${item.conversation.name}`
           }
         >
           <span className="block truncate text-xs font-semibold text-zinc-700 dark:text-zinc-200">
@@ -395,7 +393,7 @@ export function RemindersSheet({ onClose, myId }: RemindersSheetProps) {
             </span>
             <button
               type="button"
-              aria-label={`Cancel reminder — ${reminderText(item)}`}
+              aria-label={`Cancel reminder - ${reminderText(item)}`}
               disabled={cancelReminder.isPending && cancelReminder.variables === item.id}
               onClick={() => {
                 haptic(12)
@@ -421,7 +419,7 @@ export function RemindersSheet({ onClose, myId }: RemindersSheetProps) {
 
   return (
     <>
-      {/* backdrop — tap anywhere outside to dismiss */}
+      {/* backdrop - tap anywhere outside to dismiss */}
       <motion.button
         type="button"
         aria-hidden
@@ -459,7 +457,7 @@ export function RemindersSheet({ onClose, myId }: RemindersSheetProps) {
             </div>
           ) : upcoming.length === 0 && history.length === 0 ? (
             <p className="px-4 pb-3 pt-1 text-center text-xs text-zinc-400 dark:text-zinc-500">
-              No reminders yet — long-press a message and choose Remind me.
+              No reminders yet - long-press a message and choose Remind me.
             </p>
           ) : (
             <div className="pulse-scroll min-h-0 overflow-y-auto px-1 pb-1.5">

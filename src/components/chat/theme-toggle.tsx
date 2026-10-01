@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — light/dark toggle (next-themes).
-// ─────────────────────────────────────────────────────────────
+// Pulse Chat - light/dark toggle (next-themes).
 'use client'
 
 import { useTheme } from 'next-themes'

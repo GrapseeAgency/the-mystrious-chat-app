@@ -195,10 +195,13 @@ struct ProfileView: View {
     /// Status + bio at 13pt (existing prefs values verbatim).
     private var statusBioBlock: some View {
         VStack(spacing: 6) {
+            // R18-b - stored value is an icon ID (unknown -> registry default).
             if let emoji = prefs.viewerStatusEmoji, !emoji.isEmpty {
                 HStack(spacing: 6) {
-                    Text(pulseStatusGlyphDisplay(emoji))
-                        .font(.system(size: 14))
+                    Image(systemName: PulseStatusIconId.normalize(emoji).symbolName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(PulseTheme.emberGlowTop)
+                        .accessibilityLabel(PulseStatusIconId.normalize(emoji).label)
                     if let text = prefs.viewerStatusText, !text.isEmpty {
                         Text(text)
                             .font(.system(size: 13, weight: .medium))
@@ -548,10 +551,13 @@ struct ProfileView: View {
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             emberCardHeader("Status")
+            // R18-b - stored value is an icon ID (unknown -> registry default).
             if let emoji = prefs.viewerStatusEmoji, !emoji.isEmpty {
                 HStack(spacing: 8) {
-                    Text(pulseStatusGlyphDisplay(emoji))
-                        .font(.system(size: 18))
+                    Image(systemName: PulseStatusIconId.normalize(emoji).symbolName)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(PulseTheme.emberGlowTop)
+                        .accessibilityLabel(PulseStatusIconId.normalize(emoji).label)
                     Text(prefs.viewerStatusText ?? "")
                         .font(.system(size: 13))
                         .foregroundStyle(Color.white.opacity(0.55))

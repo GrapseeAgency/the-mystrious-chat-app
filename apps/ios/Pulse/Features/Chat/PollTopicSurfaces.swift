@@ -1,15 +1,15 @@
 import SwiftUI
 
-/// Wave 2 chat surfaces — polls, topics and link previews, plus the pure
+/// Wave 2 chat surfaces - polls, topics and link previews, plus the pure
 /// decision helpers the room view model (and Wave2UITests) consume:
-///   • UnfurlTrigger — spec §1 row 8 (sender-side fire-and-forget /unfurl).
-///   • TopicHeal — spec §1 row 9 (a vanished active topic resets to General).
-///   • PollCard — spec §1 rows 2/3/4 (votedBy-derived pick, no revote,
+///   • UnfurlTrigger - spec §1 row 8 (sender-side fire-and-forget /unfurl).
+///   • TopicHeal - spec §1 row 9 (a vanished active topic resets to General).
+///   • PollCard - spec §1 rows 2/3/4 (votedBy-derived pick, no revote,
 ///     single-choice + manual close).
-///   • PollBuilderSheet — spec §1 row 5-adjacent attach flow (question ≤140,
+///   • PollBuilderSheet - spec §1 row 5-adjacent attach flow (question ≤140,
 ///     2–6 non-blank options).
-///   • TopicBar — spec §1 row 9 (General = the WHOLE room, never a row).
-///   • LinkPreviewCard — spec §1 row 8 (absent-then-arrives: until the
+///   • TopicBar - spec §1 row 9 (General = the WHOLE room, never a row).
+///   • LinkPreviewCard - spec §1 row 8 (absent-then-arrives: until the
 ///     envelope lands the row stays plain text).
 enum UnfurlTrigger {
     /// Simple contains-check (spec mandate): http(s):// or a bare www.
@@ -23,14 +23,14 @@ enum UnfurlTrigger {
 
 enum TopicHeal {
     /// `activeTopicId` that no longer exists (deleted by another member)
-    /// must reset to General (nil) — never ghost-filter the river.
+    /// must reset to General (nil) - never ghost-filter the river.
     static func healed(_ activeTopicId: String?, topics: [WireTopic]) -> String? {
         guard let activeTopicId else { return nil }
         return topics.contains(where: { $0.id == activeTopicId }) ? activeTopicId : nil
     }
 }
 
-// ── poll card ─────────────────────────────────────────────
+// poll card
 
 struct PollCard: View {
     let poll: WirePoll
@@ -40,7 +40,7 @@ struct PollCard: View {
     let onClose: (() -> Void)?
 
     private var closed: Bool { poll.closed == true }
-    /// Spec §1 row 2 — the pick comes from votedBy ONLY; myOptionId is
+    /// Spec §1 row 2 - the pick comes from votedBy ONLY; myOptionId is
     /// actor-relative on relayed rows and is never rendered.
     private var picked: String? { poll.pickFor(viewerId) }
     private var options: [WirePollOption] { poll.options ?? [] }
@@ -100,7 +100,7 @@ struct PollCard: View {
         let count = option.voteCount ?? 0
         let percent = totalVotes > 0 ? Double(count) / Double(totalVotes) : 0
         let isPicked = picked == option.id
-        // Spec §1 row 3 — no revote once picked; closed polls are frozen.
+        // Spec §1 row 3 - no revote once picked; closed polls are frozen.
         let canVote = !closed && picked == nil && viewerId != nil && onVote != nil
         let fillOpacity: Double = isPicked ? 0.4 : 0.18
         return Button {
@@ -157,9 +157,9 @@ struct PollCard: View {
     }
 }
 
-// ── poll builder ──────────────────────────────────────────
+// poll builder
 
-/// Attach-menu "New Poll" sheet — question ≤140 chars, 2–6 option rows with
+/// Attach-menu "New Poll" sheet - question ≤140 chars, 2–6 option rows with
 /// add/remove; Post enabled once the question is non-empty AND 2 options are
 /// non-blank (server-gated contract, spec §0).
 struct PollBuilderSheet: View {
@@ -229,7 +229,7 @@ struct PollBuilderSheet: View {
                 } header: {
                     Text("Options")
                 } footer: {
-                    Text("Single choice — voting closes when you end the poll.")
+                    Text("Single choice - voting closes when you end the poll.")
                 }
             }
             .navigationTitle("New poll")
@@ -255,12 +255,12 @@ struct PollBuilderSheet: View {
     }
 }
 
-// ── topic rail ────────────────────────────────────────────
+// topic rail
 
-/// Zulip-style topic chips (groups only) — "💬 General" (activeTopicId nil =
+/// Zulip-style topic chips (groups only) - "General" (activeTopicId nil =
 /// WHOLE room, spec §1 row 9), one chip per topic with a 99+-capped count
 /// badge, and a dashed "+" that opens the inline create panel
-/// (name ≤32 chars + emoji row).
+/// (name ≤32 chars + icon-id row, R18-b PulseTopicIconId registry).
 struct TopicBar: View {
     let topics: [WireTopic]
     let activeTopicId: String?
@@ -269,9 +269,11 @@ struct TopicBar: View {
 
     @State private var creating = false
     @State private var draftName = ""
-    @State private var draftEmoji = "💬"
+    @State private var draftIcon = PulseTopicIconId.fallback.rawValue
 
-    static let emojiChoices = ["💬", "🎨", "🚀", "🧠", "🎉", "🛠️", "📌", "☕"]
+    /// R18-b - the 8 pickable topic icon IDS (web TOPIC_ICON_IDS), rendered
+    /// through their PulseTopicIconId SF Symbols, never as raw emoji.
+    static let iconChoices = PulseTopicIconId.allCases.map(\.rawValue)
     static let nameLimit = 32
 
     var body: some View {
@@ -280,7 +282,8 @@ struct TopicBar: View {
                 HStack(spacing: 8) {
                     chip(active: activeTopicId == nil) {
                         HStack(spacing: 5) {
-                            Text("💬").font(.caption)
+                            Image(systemName: PulseTopicIconId.chat.symbolName)
+                                .font(.caption.weight(.semibold))
                             Text("General").font(.caption.weight(.semibold))
                         }
                     } action: {
@@ -289,7 +292,8 @@ struct TopicBar: View {
                     ForEach(topics) { topic in
                         chip(active: activeTopicId == topic.id) {
                             HStack(spacing: 5) {
-                                Text(topic.emoji ?? "💬").font(.caption)
+                                Image(systemName: PulseTopicIconId.normalize(topic.emoji).symbolName)
+                                    .font(.caption.weight(.semibold))
                                 Text(topic.name)
                                     .font(.caption.weight(.semibold))
                                     .lineLimit(1)
@@ -355,7 +359,7 @@ struct TopicBar: View {
                 Button {
                     let name = draftName.trimmingCharacters(in: .whitespaces)
                     guard !name.isEmpty else { return }
-                    onCreate(name, draftEmoji)
+                    onCreate(name, draftIcon)
                     draftName = ""
                     creating = false
                 } label: {
@@ -377,24 +381,25 @@ struct TopicBar: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(Self.emojiChoices, id: \.self) { choice in
+                    ForEach(Self.iconChoices, id: \.self) { choice in
                         Button {
-                            draftEmoji = choice
+                            draftIcon = choice
                         } label: {
-                            Text(choice)
-                                .font(.body)
+                            Image(systemName: PulseTopicIconId(rawValue: choice)?.symbolName ?? "message.fill")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(draftIcon == choice ? PulseTheme.emerald : PulseTheme.textSecondary)
                                 .padding(5)
                                 .background(
                                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .fill(draftEmoji == choice ? PulseTheme.emerald.opacity(0.18) : Color.clear)
+                                        .fill(draftIcon == choice ? PulseTheme.emerald.opacity(0.18) : Color.clear)
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .strokeBorder(draftEmoji == choice ? PulseTheme.emerald : Color.clear, lineWidth: 1.2)
+                                        .strokeBorder(draftIcon == choice ? PulseTheme.emerald : Color.clear, lineWidth: 1.2)
                                 )
                         }
                         .buttonStyle(PulseButtonStyle())
-                        .accessibilityLabel("Emoji \(choice)")
+                        .accessibilityLabel("Icon \(choice)\(draftIcon == choice ? ", selected" : "")")
                     }
                 }
             }
@@ -405,10 +410,10 @@ struct TopicBar: View {
     }
 }
 
-// ── link preview card ─────────────────────────────────────
+// link preview card
 
 /// Open-Graph card under the bubble text (suppressed on poll rows). Until
-/// the unfurl envelope lands the row stays plain text — loading/failure
+/// the unfurl envelope lands the row stays plain text - loading/failure
 /// render nothing here by design.
 struct LinkPreviewCard: View {
     let preview: WireLinkPreview

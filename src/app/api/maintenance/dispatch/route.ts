@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// /api/maintenance/dispatch — flush DUE scheduled messages.
+// /api/maintenance/dispatch - flush DUE scheduled messages.
 // Called on an interval by the socket mini-service (no DB access
 // over there), and safe to call manually. Replays each due row
 // through the exact same pipeline as a live send: real message
 // row, list bump, archive-unlock, socket relay.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapMessage, memberIdsOf, notifySocket, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
@@ -47,13 +45,13 @@ export async function POST(req: Request) {
         const row = await tx.scheduledMessage.findUnique({ where: { id } })
         if (!row || row.sentAt !== null || row.cancelledAt !== null || row.scheduledAt > new Date()) return null
 
-        // R48 — dispatch-time block guard: a DM scheduled BEFORE a block must
+        // R48 - dispatch-time block guard: a DM scheduled BEFORE a block must
         // never fire after the block lands (the send pipeline would reject it,
         // but replaying a 403 forever is worse than an honest refusal). In a
         // DM with a UserBlock in EITHER direction the row is marked cancelled
         // (cancelledAt + cancelledReason='blocked') so it leaves the queue and
-        // shows "Not sent — blocked" in the sender's scheduled list. Groups
-        // are untouched (shared groups keep working — WhatsApp semantics).
+        // shows "Not sent - blocked" in the sender's scheduled list. Groups
+        // are untouched (shared groups keep working - WhatsApp semantics).
         const conv = await tx.conversation.findUnique({
           where: { id: row.conversationId },
           select: { isGroup: true },

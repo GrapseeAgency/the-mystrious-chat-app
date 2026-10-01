@@ -1,11 +1,11 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 4 — Stories wire-parity + pure-engine + store-cache tests.
+/// Wave 4 - Stories wire-parity + pure-engine + store-cache tests.
 /// The JSON here is the exact shape GET /api/stories emits (captured from
 /// the live route), mirrored by Android's StoriesDtoParityTest.
 final class StoriesWireTests: XCTestCase {
-    // ── wire decode ──────────────────────────────────────────
+    // wire decode
 
     private let feedJSON = """
     {
@@ -83,7 +83,7 @@ final class StoriesWireTests: XCTestCase {
         XCTAssertEqual(viewers.viewers?.first?.username, "ada")
     }
 
-    // ── relative time (web storyRelativeTime parity) ─────────
+    // relative time (web storyRelativeTime parity)
 
     func testRelativeTimeStamps() {
         let now: Int64 = 1_700_000_000_000
@@ -102,7 +102,7 @@ final class StoriesWireTests: XCTestCase {
     }
 }
 
-/// The pure viewer machine — web-truth semantics + the D2/D3/D6 defect fixes.
+/// The pure viewer machine - web-truth semantics + the D2/D3/D6 defect fixes.
 final class StoryViewerMachineTests: XCTestCase {
     private let now: Int64 = 1_700_000_000_000
 
@@ -266,12 +266,12 @@ final class StoryViewerMachineTests: XCTestCase {
         let m = makeMachine([group(userId: "alice", [story(id: "a0"), story(id: "a1")])])
         m.viewMarkOk(storyId: "a0", viewCount: 1)
         // group.allSeen is server truth in the wire copy; the FLAT view flips
-        // only the marked story — the ring semantics stay per-author.
+        // only the marked story - the ring semantics stay per-author.
         XCTAssertEqual(m.state.flat.filter { $0.story.viewedByMe == true }.count, 1)
     }
 }
 
-/// Composer state — the exact client-side mirror of POST /api/stories validation.
+/// Composer state - the exact client-side mirror of POST /api/stories validation.
 final class StoryComposerStateTests: XCTestCase {
     func testTextModeCanPostRequiresNonBlankCaption() {
         var cs = StoryComposerState()

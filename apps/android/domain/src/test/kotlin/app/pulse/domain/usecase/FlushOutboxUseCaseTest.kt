@@ -1,13 +1,13 @@
 package app.pulse.domain.usecase
 
 import app.pulse.domain.model.FlushReport
-// R1-W2F — per-conversation themes (F-FX-05) in the FakeRepo stubs.
+// R1-W2F - per-conversation themes (F-FX-05) in the FakeRepo stubs.
 import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.OutboxDeliveryException
 import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.OutboxFailureClass
-// R5-B — send receipt type (message + optional streak bump).
+// R5-B - send receipt type (message + optional streak bump).
 import app.pulse.domain.model.SendReceipt
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Domain policy tests for the offline outbox drain — web flushPulseOutbox
+ * Domain policy tests for the offline outbox drain - web flushPulseOutbox
  * parity (src/lib/pulse-outbox.ts): FIFO order, stop-at-first-failure,
  * success swaps temp→real, 4xx drops, network failures bump attempts.
  */
@@ -60,7 +60,7 @@ class FlushOutboxUseCaseTest {
             Result.success(app.pulse.domain.model.HandleCheck(available = true))
         override suspend fun lookupUserByName(name: String) = Result.success<app.pulse.domain.model.User?>(null)
 
-        // ── Wave 8 — session tokens + prefs + data manager stubs ──
+        // Wave 8 - session tokens + prefs + data manager stubs
         override val pulsePrefs =
             MutableStateFlow(app.pulse.protocol.WirePulsePrefs())
         override suspend fun updatePulsePrefs(patch: app.pulse.protocol.WirePulsePrefs) = Result.success(Unit)
@@ -107,7 +107,7 @@ class FlushOutboxUseCaseTest {
         override suspend fun unblock(userId: String) = Result.success(Unit)
         override suspend fun report(userId: String, reason: String, details: String?) = Result.success(Unit)
 
-        // ── Wave 6 social graph stubs (unused by these use-case tests) ──
+        // Wave 6 social graph stubs (unused by these use-case tests)
         override suspend fun userProfile(userId: String) =
             Result.success(app.pulse.domain.model.UserProfile(id = userId, name = "n"))
         override suspend fun patchProfile(patch: app.pulse.domain.model.ProfilePatch) =
@@ -137,7 +137,7 @@ class FlushOutboxUseCaseTest {
         override suspend fun deleteFolder(folderId: String) = Result.success(Unit)
         override suspend fun setFolderConversations(folderId: String, conversationIds: List<String>) = Result.success(Unit)
 
-        // ── outbox mechanics (scripted) ─────────────────────────
+        // outbox mechanics (scripted)
         override suspend fun enqueueOutbox(entry: OutboxEntry): Result<Unit> {
             queue += entry
             return Result.success(Unit)
@@ -179,7 +179,7 @@ class FlushOutboxUseCaseTest {
         override suspend fun clearDraft(conversationId: String) {}
         override fun observeDraft(conversationId: String) = MutableStateFlow<String?>(null)
 
-        // ── Wave 1 messaging surface (unused by the outbox policy) ──
+        // Wave 1 messaging surface (unused by the outbox policy)
         override suspend fun editMessage(messageId: String, content: String) =
             Result.failure<Message>(UnsupportedOperationException())
         override suspend fun toggleMessagePin(messageId: String) =
@@ -216,7 +216,7 @@ class FlushOutboxUseCaseTest {
             Result.failure<String>(UnsupportedOperationException())
         override suspend fun threadReplyCounts(rootIds: List<String>) = emptyMap<String, Int>()
 
-        // ── REM-A stubs (group governance + scheduling + rich sends) ──
+        // REM-A stubs (group governance + scheduling + rich sends)
         override suspend fun groupMeta(conversationId: String) =
             Result.failure<app.pulse.domain.model.GroupMeta>(UnsupportedOperationException())
         override suspend fun renameGroup(conversationId: String, name: String) = Result.success(Unit)
@@ -248,7 +248,7 @@ class FlushOutboxUseCaseTest {
             topicId: String?,
         ): Result<SendReceipt> = Result.failure(UnsupportedOperationException())
 
-        // ── Wave 2 messaging depth (unused by the outbox policy) ──
+        // Wave 2 messaging depth (unused by the outbox policy)
         override suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit> =
             Result.success(Unit)
         override suspend fun transcribeMessage(messageId: String) =
@@ -262,15 +262,15 @@ class FlushOutboxUseCaseTest {
             Result.failure<Message>(UnsupportedOperationException())
         override suspend fun unfurlMessage(messageId: String) {}
 
-        // ── R1-W2F2 fix — the R1-W2A quick-phrase members this fake never
+        // R1-W2F2 fix - the R1-W2A quick-phrase members this fake never
         // implemented; PulseRepository requires them, so the domain test
-        // source set did not compile without these stubs. ──
+        // source set did not compile without these stubs.
         override suspend fun phrases() = Result.success(emptyList<app.pulse.domain.model.QuickPhrase>())
         override suspend fun addPhrase(text: String) =
             Result.failure<app.pulse.domain.model.QuickPhrase>(UnsupportedOperationException())
         override suspend fun deletePhrase(phraseId: String) = Result.success(Unit)
 
-        // ── R2-A — round-2 parity members (unused by the outbox policy) ──
+        // R2-A - round-2 parity members (unused by the outbox policy)
         override suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean) = Result.success(Unit)
         override suspend fun setGroupPhoto(conversationId: String, photoPath: String) = Result.success(Unit)
         override suspend fun automations(conversationId: String) =
@@ -290,7 +290,7 @@ class FlushOutboxUseCaseTest {
         override suspend fun aiRecap(conversationId: String) =
             Result.failure<app.pulse.protocol.AiRecapDto>(UnsupportedOperationException())
 
-        // ── R1-W2F — F-MD-06/F-FX-05 (unused by the outbox policy) ──
+        // R1-W2F - F-MD-06/F-FX-05 (unused by the outbox policy)
         override suspend fun translateMessage(messageId: String): Result<String> =
             Result.failure(UnsupportedOperationException())
         override val convThemes: kotlinx.coroutines.flow.Flow<Map<String, ConvTheme>> =
@@ -309,14 +309,14 @@ class FlushOutboxUseCaseTest {
             Result.failure<app.pulse.domain.model.Topic>(UnsupportedOperationException())
         override suspend fun deleteTopic(conversationId: String, topicId: String) = Result.success(Unit)
 
-        // ── Wave 3 call surface (unused by these use-case tests) ──
+        // Wave 3 call surface (unused by these use-case tests)
         override fun observeCallLog() = MutableStateFlow(emptyList<app.pulse.domain.model.CallLogEntry>())
         override suspend fun refreshCallLog(): Result<List<app.pulse.domain.model.CallLogEntry>> =
             Result.success(emptyList())
         override suspend fun writeCallLog(entry: app.pulse.domain.model.CallLogEntry) = Result.success(Unit)
         override suspend fun flushCallLogQueue(): Result<Int> = Result.success(0)
         override suspend fun emitCall(signal: app.pulse.domain.model.CallSignalOut) {}
-        // R8 Task 3-c — group calls + push registration (unused here).
+        // R8 Task 3-c - group calls + push registration (unused here).
         override suspend fun emitGroupCall(signal: app.pulse.domain.model.GroupCallSignalOut) {}
         override suspend fun postGroupCallRing(conversationId: String, kind: app.pulse.domain.model.CallKind): Result<Unit> =
             Result.failure(IllegalStateException("unavailable in fake"))
@@ -324,7 +324,7 @@ class FlushOutboxUseCaseTest {
             Result.success(null)
         override suspend fun registerPushToken(userId: String, token: String): Result<Unit> = Result.success(Unit)
         override suspend fun unregisterPushToken(token: String): Result<Unit> = Result.success(Unit)
-        // Wave 5 voice rooms / stage / space — the fakes never emit; recorded only where a test needs it.
+        // Wave 5 voice rooms / stage / space - the fakes never emit; recorded only where a test needs it.
         override suspend fun emitVoiceJoin(conversationId: String, user: app.pulse.protocol.PulseVoiceUser) {}
         override suspend fun emitVoiceLeave(conversationId: String) {}
         override suspend fun emitVoicePtt(conversationId: String, userId: String, on: Boolean) {}
@@ -342,7 +342,7 @@ class FlushOutboxUseCaseTest {
         override suspend fun transcribeVoice(conversationId: String, requesterId: String, audioBase64: String): Result<app.pulse.protocol.VoiceTranscriptResultDto> =
             Result.failure(IllegalStateException("fake repo never transcribes"))
 
-        // Wave 7 — collaboration & hub stubs (fakes never exercise these paths)
+        // Wave 7 - collaboration & hub stubs (fakes never exercise these paths)
         override suspend fun createRedPacket(conversationId: String, total: Long, count: Int, note: String?): Result<app.pulse.protocol.RedPacketCreateResultDto> = Result.failure(IllegalStateException("fake"))
         override suspend fun redPacket(packetId: String): Result<app.pulse.protocol.RedPacketDetailDto> = Result.failure(IllegalStateException("fake"))
         override suspend fun grabRedPacket(packetId: String): Result<app.pulse.protocol.RedPacketGrabResultDto> = Result.failure(IllegalStateException("fake"))
@@ -445,7 +445,7 @@ class FlushOutboxUseCaseTest {
 
         val report = FlushOutboxUseCase(repo)()
 
-        // "c" must NOT overtake "b" — the drain stops at the first failure.
+        // "c" must NOT overtake "b" - the drain stops at the first failure.
         assertEquals(listOf("a", "b"), repo.deliveryOrder)
         assertEquals(listOf("b"), repo.bumped)
         assertTrue(repo.dropped.isEmpty())

@@ -71,8 +71,9 @@ struct ProfileEditView: View {
     static let nameMax = 32
     static let aboutMax = 140
     static let statusMax = 48
-    /// The 11 fixed stored status values (audit 6-a — web STATUS_GLYPH_CHOICES).
-    static let statusGlyphs = ["🔥", "✨", "🎯", "☕", "🎧", "🌙", "💡", "🚀", "😴", "🍽️", "vacation"]
+    /// R18-b - the 11 stored status IDS (web STATUS_ICON_IDS); each renders
+    /// through its PulseStatusIconId SF Symbol, never as a raw emoji.
+    static let statusGlyphs = PulseStatusIconId.allCases.map(\.rawValue)
     /// The 8 avatar colors (web PULSE_COLORS).
     static let colors = ["emerald", "rose", "amber", "violet", "teal", "orange", "pink", "cyan"]
 
@@ -201,23 +202,26 @@ struct ProfileEditView: View {
     }
 
     private func glyphButton(_ glyph: String) -> some View {
-        let display = pulseStatusGlyphDisplay(glyph)
+        // R18-b - stored values are icon IDs; each renders through its
+        // PulseStatusIconId SF Symbol, never as a raw emoji.
+        let id = PulseStatusIconId.normalize(glyph)
         let selected = statusEmoji == glyph
         return Button {
             PulseHaptics.tap()
             statusEmoji = selected ? "" : glyph
         } label: {
-            Text(display)
-                .font(.system(size: 18))
+            Image(systemName: id.symbolName)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(selected ? PulseTheme.emberGlowTop : PulseTheme.textSecondary)
                 .frame(width: 44, height: 44)
-                .background(RoundedRectangle(cornerRadius: 12).fill(selected ? PulseTheme.emerald.opacity(0.16) : PulseTheme.chipFill))
+                .background(RoundedRectangle(cornerRadius: 12).fill(selected ? PulseTheme.emberGlowTop.opacity(0.16) : PulseTheme.chipFill))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(selected ? PulseTheme.accent : Color.clear, lineWidth: 2),
+                        .strokeBorder(selected ? PulseTheme.emberGlowTop : Color.clear, lineWidth: 2),
                 )
         }
         .buttonStyle(PulseButtonStyle())
-        .accessibilityLabel("\(glyph == "vacation" ? "On vacation" : display)\(selected ? ", selected" : "")")
+        .accessibilityLabel("\(id.label)\(selected ? ", selected" : "")")
     }
 
     private var colorSection: some View {

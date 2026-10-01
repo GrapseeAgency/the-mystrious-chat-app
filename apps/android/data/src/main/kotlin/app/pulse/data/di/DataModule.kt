@@ -44,7 +44,7 @@ object DataModule {
         install(ContentNegotiation) {
             ktorJson(Json { ignoreUnknownKeys = true; explicitNulls = false })
         }
-        // Fail fast instead of hanging for minutes on an unreachable gateway —
+        // Fail fast instead of hanging for minutes on an unreachable gateway -
         // the onboarding @handle probe must never outlive a blink.
         install(HttpTimeout) {
             connectTimeoutMillis = 3_000
@@ -72,7 +72,7 @@ object DataModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): PulseDatabase =
         Room.databaseBuilder(context, PulseDatabase::class.java, PulseDatabase.NAME)
-            // Destructive migration is GONE — v3→v4 (outbox + draft),
+            // Destructive migration is GONE - v3→v4 (outbox + draft),
             // v4→v5 (message media + membersJson), v5→v6 (Wave 2 depth
             // columns + topics + savedMessages), v6→v7 (Wave 3 call
             // history cache + call-log offline queue) and v7→v8 (Wave 4
@@ -85,6 +85,7 @@ object DataModule {
                 PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
+                PulseDatabase.MIGRATION_9_10,
             )
             .build()
 
@@ -119,7 +120,7 @@ object DataModule {
     @Provides
     fun provideStoryDao(db: PulseDatabase): StoryDao = db.storyDao()
 
-    /** Domain stays pure Kotlin (no javax.inject) — the graph provides use cases here. */
+    /** Domain stays pure Kotlin (no javax.inject) - the graph provides use cases here. */
     @Provides
     fun provideSendMessageUseCase(repo: PulseRepository): app.pulse.domain.usecase.SendMessageUseCase =
         app.pulse.domain.usecase.SendMessageUseCase(repo)
@@ -135,7 +136,7 @@ abstract class RepositoryModule {
     @Binds
     abstract fun bindPulseRepository(impl: PulseRepositoryImpl): PulseRepository
 
-    /** Wave 8 — session-token plumbing: DataStore persistence + Keystore cipher. */
+    /** Wave 8 - session-token plumbing: DataStore persistence + Keystore cipher. */
     @Binds
     abstract fun bindSessionTokenPersistence(
         impl: app.pulse.data.local.DataStoreSessionTokenPersistence,

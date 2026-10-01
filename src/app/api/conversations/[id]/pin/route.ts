@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/pin — per-user pinned-to-top toggle
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id]/pin - per-user pinned-to-top toggle
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

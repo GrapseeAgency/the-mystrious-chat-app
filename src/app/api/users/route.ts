@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/users — create a user, list all users (contacts)
-// ─────────────────────────────────────────────────────────────
+// /api/users - create a user, list all users (contacts)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -37,7 +35,7 @@ export async function POST(req: Request) {
     )
   }
 
-  // optional @handle — validated + collision-checked up front
+  // optional @handle - validated + collision-checked up front
   let username: string | null = null
   if (body.username !== undefined && strField(body.username).length > 0) {
     const candidate = normalizeUsername(body.username)
@@ -58,7 +56,7 @@ export async function POST(req: Request) {
     username = candidate
   }
 
-  // SQLite has no insensitive filter in Prisma — scan same-letter candidates and
+  // SQLite has no insensitive filter in Prisma - scan same-letter candidates and
   // compare folded in JS. The candidate set stays tiny at chat-app scale.
   const first = name.trim().charAt(0).toLowerCase()
   const candidates = await db.user.findMany({

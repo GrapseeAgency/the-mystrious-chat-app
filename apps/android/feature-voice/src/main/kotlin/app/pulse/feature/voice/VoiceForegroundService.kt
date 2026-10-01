@@ -13,7 +13,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 
 /**
- * Wave 5 — ongoing voice-room foreground service (manifest type `microphone`).
+ * Wave 5 - ongoing voice-room foreground service (manifest type `microphone`).
  * Android 11+ requires this to keep mic capture alive once the app leaves the
  * foreground (spec VR-11). Started when a voice room is joined, stopped on
  * leave. The notification is deliberately low-key: "Live voice room active".

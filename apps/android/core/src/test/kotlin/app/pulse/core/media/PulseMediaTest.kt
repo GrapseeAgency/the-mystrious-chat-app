@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-/** Pure media helper pins — Wave 1 spec §1.1 upload rules. */
+/** Pure media helper pins - Wave 1 spec §1.1 upload rules. */
 class PulseMediaTest {
 
     @Test
@@ -60,7 +60,7 @@ class PulseMediaTest {
     @Test
     fun `voice bubble bars match the web voiceBars LCG exactly`() {
         // Vectors generated from the web implementation (chat-room.tsx:6232 +
-        // pulse-utils.ts:59 hashString) via node — the natives must render the
+        // pulse-utils.ts:59 hashString) via node - the natives must render the
         // SAME decorative bars as the web for the same message id.
         assertEquals(
             listOf(52, 65, 97, 88, 98, 78, 36, 47, 73, 38, 43, 55, 93, 84, 41, 51, 64, 66, 85, 34, 46, 87, 38, 33, 99, 75),
@@ -73,7 +73,7 @@ class PulseMediaTest {
         // 26 bars by default (web count), heights always in the 28..100 band.
         assertEquals(26, PulseMedia.voiceBubbleBars("any-id").size)
         assertTrue(PulseMedia.voiceBubbleBars("any-id").all { it in 28..100 })
-        // Deterministic — same id, same bars, every process.
+        // Deterministic - same id, same bars, every process.
         assertEquals(PulseMedia.voiceBubbleBars("abc123"), PulseMedia.voiceBubbleBars("abc123"))
     }
 

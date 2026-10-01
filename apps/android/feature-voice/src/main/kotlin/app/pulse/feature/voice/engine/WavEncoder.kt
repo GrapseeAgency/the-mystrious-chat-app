@@ -2,7 +2,7 @@ package app.pulse.feature.voice.engine
 
 /**
  * 44-byte RIFF/WAVE writer for the live-caption windows (spec §1.1 VR-7):
- * mono, 16kHz, 16-bit PCM16LE — byteRate 32000, blockAlign 2. The exact
+ * mono, 16kHz, 16-bit PCM16LE - byteRate 32000, blockAlign 2. The exact
  * header bytes are unit-tested (the ASR endpoint 400s on anything else).
  */
 object WavEncoder {

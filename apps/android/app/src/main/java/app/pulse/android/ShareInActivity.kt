@@ -8,15 +8,15 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 
 /**
- * R10-a — system share target ("Share into Pulse"). A thin, invisible hop:
+ * R10-a - system share target ("Share into Pulse"). A thin, invisible hop:
  * the system hands us the ACTION_SEND payload, we validate it, re-address it
  * to MainActivity under a clearly-named extra pair, and finish. All real
  * work (conversation picker sheet, send/staging, lock gate) lives in the
- * shell — this activity owns NO screens.
+ * shell - this activity owns NO screens.
  *
  * Manifest: exported=true (the system must reach it), translucent theme,
  * excludeFromRecents, allowTaskReparenting=false. Filters: text/plain and
- * the image MIME family only — anything else is honestly refused with a toast.
+ * the image MIME family only - anything else is honestly refused with a toast.
  */
 class ShareInActivity : ComponentActivity() {
 
@@ -39,7 +39,7 @@ class ShareInActivity : ComponentActivity() {
                         @Suppress("DEPRECATION")
                         intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
                     }
-                // Unsupported MIME — fall through with both nulls → honest toast.
+                // Unsupported MIME - fall through with both nulls → honest toast.
             }
         }
 
@@ -59,7 +59,7 @@ class ShareInActivity : ComponentActivity() {
         } else {
             Toast.makeText(this, "Nothing here Pulse can share", Toast.LENGTH_SHORT).show()
         }
-        // The hop is done either way — never linger (NoDisplay-style).
+        // The hop is done either way - never linger (NoDisplay-style).
         finish()
     }
 

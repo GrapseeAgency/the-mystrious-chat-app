@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * R7 item 1 — the clustering kernel contract (web chat-room.tsx:1376-1393
+ * R7 item 1 - the clustering kernel contract (web chat-room.tsx:1376-1393
  * parity): sender/gap/day/anon/anonAlias break rules + head/tail wiring.
  */
 class ClusterKernelTest {
@@ -49,7 +49,7 @@ class ClusterKernelTest {
                 entry("m1", createdAtMs = t0),
                 entry("m2", createdAtMs = t0 + PulseClusterKernel.CLUSTER_WINDOW_MS),
                 // web compares against the IMMEDIATELY previous message
-                // (chat-room.tsx:1391,1393) — so the >window gap must be
+                // (chat-room.tsx:1391,1393) - so the >window gap must be
                 // measured from m2, not from m1.
                 entry("m3", createdAtMs = t0 + 2 * PulseClusterKernel.CLUSTER_WINDOW_MS + 1),
             ),

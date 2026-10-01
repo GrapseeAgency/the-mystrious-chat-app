@@ -13,7 +13,7 @@
     <cache-path
         name="camera"
         path="camera/" />
-    <!-- R1-W2H D24: exportChat writes the .txt transcript to cacheDir/exports —
+    <!-- R1-W2H D24: exportChat writes the .txt transcript to cacheDir/exports -
          served to the share sheet via MediaSupport.buildShareIntent. -->
     <cache-path
         name="exports"

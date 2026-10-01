@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.domain.model.CallKind
 import app.pulse.domain.model.GroupCallMember
-// R8 Task 3-c — the pure mesh kernels (duration format + banner copy).
+// R8 Task 3-c - the pure mesh kernels (duration format + banner copy).
 import app.pulse.protocol.GroupCallMesh
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulsePalette
@@ -51,7 +51,7 @@ import org.webrtc.EglBase
 import org.webrtc.VideoTrack
 
 /**
- * R8 Task 3-c — the full-screen native GROUP call surface, mirroring the web
+ * R8 Task 3-c - the full-screen native GROUP call surface, mirroring the web
  * GroupCallOverlay + GroupCallRingBanner (group-call-overlay.tsx:745-979):
  * participant grid (avatar tiles + remote video for video calls), self tile
  * with mic/camera state, header (title · duration · member count), honest
@@ -87,7 +87,7 @@ fun GroupCallOverlay(vm: GroupCallViewModel) {
             .semantics { contentDescription = "Group call" },
     ) {
         Column(Modifier.fillMaxSize()) {
-            // ── header (web :775-790) ────────────────────────────
+            // header (web :775-790)
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -132,7 +132,7 @@ fun GroupCallOverlay(vm: GroupCallViewModel) {
                 }
             }
 
-            // ── body: error card / ended card / the participant grid ──
+            // body: error card / ended card / the participant grid
             Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp)) {
                 val error = snapshot.error
                 val summary = snapshot.summary
@@ -149,7 +149,7 @@ fun GroupCallOverlay(vm: GroupCallViewModel) {
                 }
             }
 
-            // ── controls (web :860-891): mic · leave · camera ────
+            // controls (web :860-891): mic · leave · camera
             if (snapshot.phase != GroupCallEngine.UiPhase.ENDED && snapshot.error == null) {
                 Row(
                     Modifier
@@ -224,7 +224,7 @@ private fun ParticipantGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        // Self tile (web :816-828) — video when a camera is really attached.
+        // Self tile (web :816-828) - video when a camera is really attached.
         item(key = "self") {
             ParticipantTile(label = "You", micMuted = !snapshot.micEnabled) {
                 if (snapshot.kind == CallKind.VIDEO && localVideo != null && snapshot.cameraEnabled) {
@@ -282,7 +282,7 @@ private fun TileAvatar(name: String, colorHex: String?, modifier: Modifier = Mod
     PulseAvatar(name = name, colorHex = colorHex, size = 56.dp, modifier = modifier)
 }
 
-/** One participant tile — video fill or centered avatar + name strip (web :816-849). */
+/** One participant tile - video fill or centered avatar + name strip (web :816-849). */
 @Composable
 private fun ParticipantTile(
     label: String,
@@ -328,7 +328,7 @@ private fun ParticipantTile(
     }
 }
 
-/** Honest glass card — the error/ended surfaces (web :793-812). */
+/** Honest glass card - the error/ended surfaces (web :793-812). */
 @Composable
 private fun HonestCard(text: String, actionLabel: String, onAction: () -> Unit) {
     Column(
@@ -383,7 +383,7 @@ private fun GroupCallButton(
     }
 }
 
-/** Header status line — phase-aware (web :778-784). */
+/** Header status line - phase-aware (web :778-784). */
 internal fun groupStatusLine(snapshot: GroupCallEngine.Snapshot): String {
     val summary = snapshot.summary
     if (snapshot.phase == GroupCallEngine.UiPhase.ENDED && !summary.isNullOrBlank()) return summary

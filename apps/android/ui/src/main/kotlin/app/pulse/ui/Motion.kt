@@ -13,7 +13,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
 
 /**
- * Pulse motion tokens — the native (Compose physics) translation of the web
+ * Pulse motion tokens - the native (Compose physics) translation of the web
  * motion system (src/lib/motion.ts). Same physical language: springs over
  * durations, squash-and-stretch, faster exits than enters.
  *

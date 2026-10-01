@@ -26,7 +26,7 @@ In-memory state: `voiceRooms Map<convId, Map<userId, VoicePeer>>`, `socketVoiceR
 
 ## Verification proof
 - Service restarted: killed stale pid on :3003, `bun run dev` in mini-services/pulse-socket (bg, log /tmp/pulse-socket-dev.log). Health: `{"ok":true,"service":"pulse-socket","port":3003,"online":0,"voiceRooms":0,...}`
-- Handshake: `curl "http://localhost:3003/socket.io/?EIO=4&transport=polling"` → `0{"sid":"DYyz…","upgrades":["websocket"],…}` ✓
+- Handshake: `curl "http://localhost:3003/socket.io/?EIO=4&transport=polling"` → `0{"sid":"DYyz…","upgrades":["websocket"],…}` 
 - Node socket.io-client roundtrip (temp script, deleted after): **7/7 PASS**
   1. PASS — voice:join → voice:roster (A sees self)
   2. PASS — second join broadcasts 2-peer roster to room

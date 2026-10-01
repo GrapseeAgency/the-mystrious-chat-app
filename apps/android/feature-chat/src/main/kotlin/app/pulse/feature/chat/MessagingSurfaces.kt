@@ -54,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -63,7 +64,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.core.time.PulseTime
@@ -74,77 +74,34 @@ import app.pulse.domain.model.QuickPhrase
 import app.pulse.domain.model.ScheduledItem
 import app.pulse.protocol.PulseJson
 import app.pulse.protocol.PulseWave7Logic
+import app.pulse.protocol.reactionId
+import app.pulse.protocol.stampId
 import app.pulse.ui.PulseAvatar
+import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.pulseReactionGlyph
+import app.pulse.ui.pulseReactionLabel
+import app.pulse.ui.pulseStampGlyph
+import app.pulse.ui.pulseStampLabel
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * R1-W2A — messaging-flow surfaces (web parity, native sheets). The Android
+ * R1-W2A - messaging-flow surfaces (web parity, native sheets). The Android
  * sibling of iOS MessagingSurfaces.swift:
- *  · ReactionPickerSheet — F-MS-08/D27 the web's EXACT 24-emoji picker grid
- *  · WhoReactedSheet     — F-MS-08/D27 per-member reaction list + toggle
- *  · StickerPickerSheet  — F-MS-24/D10 the web's 5 packs × 10 stickers
- *  · StickerBubble       — F-MS-24 large-emoji sticker render (plain chrome)
- *  · SlashPalette        — F-MS-22/D43 '/'-triggered command palette
- *  · QuickPhrasesRail    — F-MS-29 composer-adjacent quick-phrase chips
+ *  · WhoReactedSheet    - F-MS-08/D27 per-member reaction list + toggle
+ *  · StickerPickerSheet - F-MS-24/D10 the web's 5 stamp packs (R19-a)
+ *  · StickerBubble      - F-MS-24 large stamp render (gradient glyph tile)
+ *  · SlashPalette       - F-MS-22/D43 '/'-triggered command palette
+ *  · QuickPhrasesRail   - F-MS-29 composer-adjacent quick-phrase chips
+ * R19-a: the old 24-emoji reaction grid and emoji sticker packs are gone -
+ * reactions and stickers both carry stable ids now and render hand-drawn
+ * glyphs (PulseIcons) over the pack gradients.
  */
-internal val REACTION_GRID_CHOICES = listOf(
-    "😀", "😂", "🥹", "😍", "😎", "🤔", "😴", "🥳",
-    "👍", "🙏", "👏", "🔥", "❤️", "💜", "✨", "🎉",
-    "🚀", "🌈", "☀️", "🌙", "☕", "🍕", "🎂", "⚽",
-)
 
 /**
- * F-MS-08/D27 — the web's exact 24-emoji extended reaction grid
- * (EMOJI_PICKER_CHOICES, pulse-utils.ts:146-150, 8-column grid).
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun ReactionPickerSheet(
-    onDismiss: () -> Unit,
-    onPick: (String) -> Unit,
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp).padding(bottom = 26.dp)) {
-            Text(
-                "React",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
-            )
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(8),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                items(REACTION_GRID_CHOICES) { emoji ->
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier
-                            .size(40.dp)
-                            .semantics { contentDescription = "React with $emoji" },
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onPick(emoji) },
-                        ) {
-                            Text(emoji, fontSize = 24.sp)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * F-MS-08/D27 — who-reacted drawer: per-member list for ONE emoji group +
+ * F-MS-08/D27 - who-reacted drawer: per-member list for ONE reaction group
+ * (the id is normalized, so legacy stored values merge into the same list) +
  * the same toggle action (web reactionInfo drawer parity).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -157,7 +114,10 @@ internal fun WhoReactedSheet(
     onDismiss: () -> Unit,
     onToggle: (String) -> Unit,
 ) {
-    val userIds = message.reactions.filter { it.emoji == emoji }.map { it.userId }.distinct()
+    // The sheet is addressed by the NORMALIZED id: legacy stored values group
+    // into the same list and the toggle sends the id back to the VM.
+    val reactionGroup = reactionId(emoji)
+    val userIds = message.reactions.filter { reactionId(it.emoji) == reactionGroup }.map { it.userId }.distinct()
     val iReacted = viewerId != null && viewerId in userIds
     val memberOf = { id: String -> conversation?.members?.firstOrNull { it.id == id } }
 
@@ -168,7 +128,12 @@ internal fun WhoReactedSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(emoji, fontSize = 20.sp)
+                Icon(
+                    pulseReactionGlyph(reactionGroup),
+                    contentDescription = pulseReactionLabel(reactionGroup),
+                    tint = EmberPalette.Amber,
+                    modifier = Modifier.size(20.dp),
+                )
                 Text(
                     "${userIds.size} ${if (userIds.size == 1) "reaction" else "reactions"}",
                     fontSize = 16.sp,
@@ -220,40 +185,83 @@ internal fun WhoReactedSheet(
                     }
                 }
             }
-            Text(
-                (if (iReacted) "Remove your reaction " else "React ") + emoji,
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
+            Row(
+                Modifier
                     .padding(horizontal = 20.dp, vertical = 8.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(PulsePalette.Emerald)
-                    .clickable { onToggle(emoji) }
+                    .background(EmberPalette.Deep)
+                    .clickable { onToggle(reactionGroup) }
                     .padding(horizontal = 14.dp, vertical = 12.dp),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    pulseReactionGlyph(reactionGroup),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    if (iReacted) "Remove your reaction" else "React with ${pulseReactionLabel(reactionGroup)}",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
         }
     }
 }
 
-// ── F-MS-24 — sticker packs (web sticker-picker.tsx:30-61 verbatim) ────────
+// F-MS-24 - stamp packs (web sticker-picker.tsx STAMP_PACKS 1:1, R19-a):
+// five packs of stable stamp ids, each tile rendered as a large hand-drawn
+// glyph on the pack gradient. The sent payload stays {emoji: <stamp id>,
+// pack: <pack name>} - the payload KEY keeps its historical name, the VALUE
+// is now the registry id.
 
-internal data class StickerPack(
+internal data class StampPack(
     val name: String,
-    val badge: String,
+    val badge: ImageVector,
+    /** Tile gradient (web tailwind from-X to-Y pairs). */
+    val gradientFrom: Color,
+    val gradientTo: Color,
     val items: List<String>,
 )
 
-internal val STICKER_PACKS: List<StickerPack> = listOf(
-    StickerPack("Pulse", "⚡️", listOf("⚡️", "🔥", "💥", "🎉", "✨", "🌟", "💫", "🚀", "🎯", "🏆")),
-    StickerPack("Faces", "😄", listOf("😂", "😍", "😎", "🤯", "😭", "😡", "🥳", "😴", "🤔", "🫠")),
-    StickerPack("Reactions", "👍", listOf("👍", "👎", "🙏", "👏", "💪", "🤝", "😅", "🫡", "🤌", "🤗")),
-    StickerPack("Love", "❤️", listOf("❤️", "🧡", "💛", "💚", "💜", "🖤", "💖", "💘", "💞", "🫶")),
-    StickerPack("Critters", "🐾", listOf("🐶", "🐱", "🐼", "🦊", "🐸", "🐵", "🦄", "🐙", "🦋", "🐢")),
+internal val STAMP_PACKS: List<StampPack> = listOf(
+    StampPack(
+        "Signal", PulseIcons.Bolt,
+        Color(0xFF34D399), Color(0xFF14B8A6), // emerald-400 -> teal-500
+        listOf("bolt", "flame", "sparkles", "rocket", "target", "star"),
+    ),
+    StampPack(
+        "Celebrate", PulseIcons.Heart,
+        Color(0xFFFB7185), Color(0xFFEC4899), // rose-400 -> pink-500
+        listOf("trophy", "crown", "gift", "cake", "music", "heart"),
+    ),
+    StampPack(
+        "Create", PulseIcons.Smile,
+        Color(0xFFFBBF24), Color(0xFFF97316), // amber-400 -> orange-500
+        listOf("palette", "camera", "mic", "gamepad", "brain", "drama"),
+    ),
+    StampPack(
+        "Nature", PulseIcons.Paw,
+        Color(0xFFA3E635), Color(0xFF22C55E), // lime-400 -> green-500
+        listOf("leaf", "moon", "drop", "planet", "coffee", "paw"),
+    ),
+    StampPack(
+        "Marks", PulseIcons.Thumb,
+        Color(0xFFA78BFA), Color(0xFFD946EF), // violet-400 -> fuchsia-500
+        listOf("smile", "pin", "sun", "shield", "key", "thumbsup", "thumbsdown"),
+    ),
 )
 
-/** Parse a sticker payload blob — null when absent/garbled (web parseSticker). */
+/** Gradient for a stamp's pack (unknown packs fall back to the Signal pair). */
+internal fun stampGradient(pack: String): List<Color> =
+    STAMP_PACKS.firstOrNull { it.name == pack }
+        ?.let { listOf(it.gradientFrom, it.gradientTo) }
+        ?: listOf(STAMP_PACKS[0].gradientFrom, STAMP_PACKS[0].gradientTo)
+
+/** Parse a sticker payload blob - null when absent/garbled (web parseSticker). */
 internal fun stickerOf(message: Message): Pair<String, String>? {
     val payload = PulseWave7Logic.stickerPayload(message.payload) ?: return null
     return payload.emoji to payload.pack
@@ -278,9 +286,11 @@ object StickerRecents {
         (0 until array.length())
             .map { array.getJSONObject(it) }
             .mapNotNull { obj ->
-                val emoji = obj.optString("emoji")
-                val pack = obj.optString("pack", "Pulse")
-                if (emoji.isEmpty()) null else emoji to pack
+                // Normalize legacy emoji recents through the stamp registry so
+                // pre-id entries render the same designed glyph everywhere.
+                val stamp = stampId(obj.optString("emoji"))
+                val pack = obj.optString("pack", "Signal")
+                stamp to pack
             }
             .take(MAX)
     }.getOrDefault(emptyList())
@@ -307,7 +317,7 @@ internal fun StickerPickerSheet(
     val context = LocalContext.current
     var packIndex by remember { mutableIntStateOf(0) }
     val recents = remember { StickerRecents.load(context) }
-    val active = STICKER_PACKS[packIndex.coerceIn(0, STICKER_PACKS.lastIndex)]
+    val active = STAMP_PACKS[packIndex.coerceIn(0, STAMP_PACKS.lastIndex)]
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 18.dp)) {
@@ -326,10 +336,10 @@ internal fun StickerPickerSheet(
                         .padding(bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    recents.forEach { (emoji, pack) ->
-                        StickerTile(emoji = emoji, pack = pack, size = 44.dp, fontSize = 20.sp) {
-                            StickerRecents.remember(context, emoji, pack)
-                            onPick(emoji, pack)
+                    recents.forEach { (stamp, pack) ->
+                        StampTile(stamp = stamp, pack = pack, size = 44.dp, glyphSize = 20.dp) {
+                            StickerRecents.remember(context, stamp, pack)
+                            onPick(stamp, pack)
                         }
                     }
                 }
@@ -338,11 +348,11 @@ internal fun StickerPickerSheet(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                STICKER_PACKS.forEachIndexed { index, pack ->
+                STAMP_PACKS.forEachIndexed { index, pack ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = if (index == packIndex) {
-                            PulsePalette.Emerald.copy(alpha = 0.16f)
+                            EmberPalette.Amber.copy(alpha = 0.16f)
                         } else {
                             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         },
@@ -352,7 +362,12 @@ internal fun StickerPickerSheet(
                             .semantics { contentDescription = "${pack.name} pack" },
                     ) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 6.dp)) {
-                            Text(pack.badge, fontSize = 17.sp)
+                            Icon(
+                                pack.badge,
+                                contentDescription = null,
+                                tint = if (index == packIndex) EmberPalette.Amber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(17.dp),
+                            )
                         }
                     }
                 }
@@ -366,16 +381,16 @@ internal fun StickerPickerSheet(
                     .fillMaxWidth()
                     .heightIn(max = 300.dp),
             ) {
-                items(active.items) { emoji ->
-                    StickerTile(emoji = emoji, pack = active.name, size = 84.dp, fontSize = 40.sp) {
-                        StickerRecents.remember(context, emoji, active.name)
-                        onPick(emoji, active.name)
+                items(active.items) { stamp ->
+                    StampTile(stamp = stamp, pack = active.name, size = 84.dp, glyphSize = 40.dp) {
+                        StickerRecents.remember(context, stamp, active.name)
+                        onPick(stamp, active.name)
                     }
                 }
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                "${active.name} pack · tap to send — stays open for combos",
+                "${active.name} pack · tap to send - stays open for combos",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(),
@@ -385,47 +400,69 @@ internal fun StickerPickerSheet(
     }
 }
 
+/**
+ * A stamp tile: the pack gradient card with the stamp's hand-drawn glyph in
+ * white (web StampTile gradient classes + designed glyph, R19-a). The tile
+ * sends the stamp ID - the raw registry value is never displayed.
+ */
 @Composable
-private fun StickerTile(
-    emoji: String,
+private fun StampTile(
+    stamp: String,
     pack: String,
     size: Dp,
-    fontSize: TextUnit,
+    glyphSize: Dp,
     onPick: () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape((size.value * 0.28f).dp),
-        color = PulsePalette.Emerald.copy(alpha = 0.10f),
+    Box(
         modifier = Modifier
             .size(size)
-            .semantics { contentDescription = "Send $emoji sticker from $pack" },
+            .clip(RoundedCornerShape((size.value * 0.28f).dp))
+            .background(Brush.linearGradient(stampGradient(pack)))
+            .clickable(onClick = onPick)
+            .semantics {
+                contentDescription = "Send the ${pulseStampLabel(stamp)} stamp from $pack"
+            },
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onPick),
-        ) {
-            Text(emoji, fontSize = fontSize)
-        }
+        Icon(
+            pulseStampGlyph(stamp),
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(glyphSize),
+        )
     }
 }
 
-/** F-MS-24 — sticker rows render as a LARGE emoji with no bubble chrome. */
+/**
+ * F-MS-24 - sticker rows render as a LARGE stamp tile with no bubble chrome.
+ * The payload value normalizes through the stamp registry, so legacy pre-id
+ * sticker messages render the same designed glyph as new ones.
+ */
 @Composable
 internal fun StickerBubble(
     message: Message,
     modifier: Modifier = Modifier,
 ) {
     val sticker = stickerOf(message)
+    val stamp = sticker?.first.orEmpty()
     Box(modifier = modifier.padding(2.dp)) {
-        Text(
-            sticker?.first?.takeIf { it.isNotEmpty() } ?: "✨",
-            fontSize = 64.sp,
-            modifier = Modifier.semantics {
-                contentDescription = "Sticker" + (sticker?.second?.let { " from $it" } ?: "")
-            },
-        )
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .clip(RoundedCornerShape(21.dp))
+                .background(Brush.linearGradient(stampGradient(sticker?.second.orEmpty())))
+                .semantics {
+                    contentDescription = "Sticker" + (sticker?.second?.let { " from $it" } ?: "")
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                pulseStampGlyph(stamp),
+                contentDescription = pulseStampLabel(stamp),
+                tint = Color.White,
+                modifier = Modifier.size(44.dp),
+            )
+        }
     }
 }
 

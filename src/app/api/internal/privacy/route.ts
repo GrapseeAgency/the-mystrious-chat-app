@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/internal/privacy — R47 privacy-flag snapshot for the
+// /api/internal/privacy - R47 privacy-flag snapshot for the
 // pulse-socket mini service. The socket relay intentionally has NO
 // database access, so it polls THIS endpoint (shared-key guarded,
 // same pattern as /api/maintenance/dispatch) before relaying
@@ -9,12 +8,11 @@
 //   GET ?ids=a,b,c   [x-pulse-key header required]
 //     → 200 { flags: { [id]: { typingVisible, presenceVisible } } }
 //
-// Semantics: unknown / missing ids are simply absent from the map —
+// Semantics: unknown / missing ids are simply absent from the map -
 // consumers fail OPEN (treat as visible) so an API hiccup never
 // blinds the whole mesh. presenceVisible is derived from the
 // Telegram-coupled "Last seen & online" toggle (lastSeenVisible);
 // typingVisible is its own R47 key.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mergePrefs } from '@/lib/prefs-defaults'

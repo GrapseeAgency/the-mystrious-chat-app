@@ -1,12 +1,11 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse NavBar (R25 → R26-e) — thirteen navigation architectures,
+// Pulse NavBar (R25 → R26-e) - thirteen navigation architectures,
 // one file. The previous 4-style router (acrylic/rail/edge/radial)
 // is DELETED; these thirteen are the shipped languages, default =
 // Floating Capsule.
 //
-// R26-e — the nav GROWS with features:
+// R26-e - the nav GROWS with features:
 // · NAV_ITEMS is the single destination registry (id, label, icon,
-//   badge?) — every architecture renders from it, so a future
+//   badge?) - every architecture renders from it, so a future
 //   feature appends ONE entry instead of a rewrite.
 // · The default capsule grows a center compose action (new-chat)
 //   and an overflow "More" button opening a compact GlassMenu
@@ -18,7 +17,6 @@
 // Every variant: spring physics from @/lib/motion, layoutId pills,
 // haptics, animated unread pops, Lucide icons only (zero emojis),
 // `will-change` GPU isolation, reduced-motion respect.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -51,10 +49,10 @@ import { GlassMenu, GlassMenuItem, GlassMenuSeparator } from '@/components/ui/gl
 export type { NavStyleId }
 export type PulseTab = 'chats' | 'hub' | 'contacts' | 'profile'
 
-/** Compat alias — pickers import NAV_STYLE_META. */
+/** Compat alias - pickers import NAV_STYLE_META. */
 export const NAV_STYLE_META = NAV_STYLES
 
-// ── R26-e destination registry ──────────────────────────────
+// R26-e destination registry 
 // Every nav architecture renders from NAV_ITEMS. Adding a feature =
 // appending one entry here (badge kinds are opt-in per item).
 export interface NavItemDef {
@@ -72,8 +70,8 @@ export const NAV_ITEMS: Array<NavItemDef> = [
   { id: 'profile', label: 'Profile', Icon: PulseProfile },
 ]
 
-/** React hook — current nav style + setter (zustand persist).
- *  Primitive + stable-function selectors (never allocate in the selector —
+/** React hook - current nav style + setter (zustand persist).
+ *  Primitive + stable-function selectors (never allocate in the selector -
  *  a fresh array here trips useSyncExternalStore's getSnapshot cache). */
 export function useNavStyle(): [NavStyleId, (s: NavStyleId) => void] {
   const style = useNavStyleStore((s) => s.style)
@@ -81,7 +79,7 @@ export function useNavStyle(): [NavStyleId, (s: NavStyleId) => void] {
   return [style, setStyle]
 }
 
-/** Which screen zone a style occupies — the shell uses this for layout. */
+/** Which screen zone a style occupies - the shell uses this for layout. */
 export function zoneFor(style: NavStyleId): 'bottom' | 'top' | 'side' | 'overlay' {
   return NAV_STYLES.find((s) => s.id === style)?.zone ?? 'bottom'
 }
@@ -101,7 +99,7 @@ function useUnread(me: AppUser): number {
   return (data ?? []).reduce((sum, c) => sum + c.unreadCount, 0)
 }
 
-/** Unread counter — pops (spring) on every value CHANGE via key remount. */
+/** Unread counter - pops (spring) on every value CHANGE via key remount. */
 function UnreadBadge({ count, className }: { count: number; className?: string }) {
   const reduced = useReducedMotion()
   if (count <= 0) return null
@@ -123,7 +121,7 @@ function UnreadBadge({ count, className }: { count: number; className?: string }
 
 /**
  * Capsule destination: press physics, wobble, active pill, staggered
- * label. Registry-driven — `badge` comes from the item definition.
+ * label. Registry-driven - `badge` comes from the item definition.
  */
 function CapsuleTab({
   id,
@@ -208,7 +206,7 @@ const GLASS_PANEL =
 const TapMenuItem = motion.create(GlassMenuItem)
 
 /**
- * R26-e overflow — "More" trigger (Ellipsis) + compact GlassMenu
+ * R26-e overflow - "More" trigger (Ellipsis) + compact GlassMenu
  * portal (Settings / Search / Saved / Stories). The menu floats via
  * a document.body portal so nav ancestors with backdrop-filter or
  * overflow-hidden can never clip it; position is measured from the
@@ -383,7 +381,7 @@ function NavOverflowButton({
   )
 }
 
-/** Center compose action — emits the existing 'new-chat' context action. */
+/** Center compose action - emits the existing 'new-chat' context action. */
 function CapsuleComposeButton({ onAction }: { onAction: (action: NavContextAction) => void }) {
   const reduced = useReducedMotion()
   return (
@@ -404,7 +402,7 @@ function CapsuleComposeButton({ onAction }: { onAction: (action: NavContextActio
   )
 }
 
-// ── 1 · capsule — Floating Capsule Navigation Bar (DEFAULT) ──
+// 1 · capsule - Floating Capsule Navigation Bar (DEFAULT) 
 
 function CapsuleNav({
   active,
@@ -461,7 +459,7 @@ function CapsuleNav({
   )
 }
 
-// ── 2 · floating-top — Floating Top Nav ──────────────────────
+// 2 · floating-top - Floating Top Nav 
 
 function FloatingTopNav({
   active,
@@ -500,7 +498,7 @@ function FloatingTopNav({
   )
 }
 
-// ── 3 · floating-dock — Dock with magnifying icons ───────────
+// 3 · floating-dock - Dock with magnifying icons 
 
 function FloatingDock({ active, onChange, unread }: TabProps) {
   const reduced = useReducedMotion()
@@ -558,7 +556,7 @@ function FloatingDock({ active, onChange, unread }: TabProps) {
   )
 }
 
-// ── 4 · pill — segmented pill with sliding fill ──────────────
+// 4 · pill - segmented pill with sliding fill 
 
 function PillNav({ active, onChange, unread }: TabProps) {
   const reduced = useReducedMotion()
@@ -612,7 +610,7 @@ function PillNav({ active, onChange, unread }: TabProps) {
   )
 }
 
-// ── 5 · bottom-bar — classic edge-to-edge bar ────────────────
+// 5 · bottom-bar - classic edge-to-edge bar 
 
 function BottomBar({ active, onChange, unread }: TabProps) {
   return (
@@ -659,7 +657,7 @@ function BottomBar({ active, onChange, unread }: TabProps) {
   )
 }
 
-// ── 6 · tab-bar — iOS-style tinted squircles ─────────────────
+// 6 · tab-bar - iOS-style tinted squircles 
 
 function TabBarNav({ active, onChange, unread }: TabProps) {
   return (
@@ -714,7 +712,7 @@ function TabBarNav({ active, onChange, unread }: TabProps) {
   )
 }
 
-// ── 7 · floating-tab-bar — detached elevated card ────────────
+// 7 · floating-tab-bar - detached elevated card 
 
 function FloatingTabBar({ active, onChange, unread }: TabProps) {
   const reduced = useReducedMotion()
@@ -781,7 +779,7 @@ function FloatingTabBar({ active, onChange, unread }: TabProps) {
   )
 }
 
-// ── 8 · command-bar — top text command strip ─────────────────
+// 8 · command-bar - top text command strip 
 
 function CommandBarNav({
   active,
@@ -868,7 +866,7 @@ function CommandBarNav({
   )
 }
 
-// ── 9 · rail — persistent vertical side rail ─────────────────
+// 9 · rail - persistent vertical side rail 
 
 function RailNav({ active, onChange, unread }: TabProps) {
   return (
@@ -920,7 +918,7 @@ function RailNav({ active, onChange, unread }: TabProps) {
   )
 }
 
-// ── 10 · island — dynamic-island expanding pill ──────────────
+// 10 · island - dynamic-island expanding pill 
 
 function IslandNav({
   active,
@@ -933,7 +931,7 @@ function IslandNav({
   const [overflowOpen, setOverflowOpen] = useState(false)
   const activeItem = NAV_ITEMS.find((t) => t.id === active) ?? NAV_ITEMS[0]
   useEffect(() => {
-    // auto-collapse pauses while the overflow glass menu is open —
+    // auto-collapse pauses while the overflow glass menu is open -
     // the menu lives inside the expanded island and must not vanish mid-read
     if (!expanded || overflowOpen) return
     const t = window.setTimeout(() => setExpanded(false), 4200)
@@ -1040,7 +1038,7 @@ function IslandNav({
   )
 }
 
-// ── 11 · radial — FAB fanning an arc ─────────────────────────
+// 11 · radial - FAB fanning an arc 
 
 function RadialNav({ active, onChange, unread }: TabProps) {
   const reduced = useReducedMotion()
@@ -1112,7 +1110,7 @@ function RadialNav({ active, onChange, unread }: TabProps) {
   )
 }
 
-// ── 12 · gesture — swipe handle + quick switcher ─────────────
+// 12 · gesture - swipe handle + quick switcher 
 
 function GestureNav({ active, onChange, unread }: TabProps) {
   const reduced = useReducedMotion()
@@ -1188,7 +1186,7 @@ function GestureNav({ active, onChange, unread }: TabProps) {
   )
 }
 
-// ── 13 · contextual-dock — adapts to the active tab ──────────
+// 13 · contextual-dock - adapts to the active tab 
 
 const CONTEXT_ACTION: Record<PulseTab, { label: string; Icon: PulseGlyph }> = {
   chats: { label: 'New chat', Icon: PulsePlus },
@@ -1253,7 +1251,7 @@ function ContextualDock({
   )
 }
 
-// ── Router ───────────────────────────────────────────────────
+// Router 
 
 interface TabProps {
   active: PulseTab
@@ -1265,11 +1263,11 @@ interface TabProps {
  * Cross-file nav actions. R26-e extends the R25 union:
  *   new-chat / new-group  · existing compose flows (main-shell handles)
  *   search / settings     · existing inline triggers (main-shell handles)
- *   saved                 · NEW — jump to the profile Saved library
- *   stories               · NEW — open the chats-tab stories viewer
+ *   saved                 · NEW - jump to the profile Saved library
+ *   stories               · NEW - open the chats-tab stories viewer
  * 'saved' and 'stories' are emitted by the nav overflow GlassMenu;
  * main-shell (lead-owned) must extend handleContextAction to wire them
- * (today its catch-all else-branch opens Settings — documented in the
+ * (today its catch-all else-branch opens Settings - documented in the
  * R26-e worklog entry).
  */
 export type NavContextAction = 'new-chat' | 'new-group' | 'search' | 'settings' | 'saved' | 'stories'

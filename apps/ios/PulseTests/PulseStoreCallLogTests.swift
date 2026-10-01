@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 3 — the call-log cache + offline single-writer queue in PulseStore:
+/// Wave 3 - the call-log cache + offline single-writer queue in PulseStore:
 /// v4→v5 migration survival, wire sync + prune, and queue dedupe semantics.
 final class PulseStoreCallLogTests: XCTestCase {
 
@@ -32,7 +32,7 @@ final class PulseStoreCallLogTests: XCTestCase {
         )
     }
 
-    // ── cache round-trip ────────────────────────────────────
+    // cache round-trip
 
     func testCallLogRoundTripAndOrdering() throws {
         let store = try makeStore()
@@ -48,7 +48,7 @@ final class PulseStoreCallLogTests: XCTestCase {
     func testServerPruneDropsRowsTheEndpointNoLongerLists() throws {
         let store = try makeStore()
         try store.upsert(callLog: [row(id: "r1"), row(id: "r2")])
-        // Server truth now only lists r2 — r1 must vanish (server cap 50).
+        // Server truth now only lists r2 - r1 must vanish (server cap 50).
         try store.syncCallLog(from: [wireCallItem(id: "r2")])
         let rows = try store.callLog()
         XCTAssertEqual(rows.map(\.id), ["r2"])
@@ -78,7 +78,7 @@ final class PulseStoreCallLogTests: XCTestCase {
         XCTAssertEqual(rows[0].peerName, "Ada Lovelace")
     }
 
-    // ── offline single-writer queue ─────────────────────────
+    // offline single-writer queue
 
     func testQueueDedupesOnIdenticalPayload() throws {
         let store = try makeStore()
@@ -113,7 +113,7 @@ final class PulseStoreCallLogTests: XCTestCase {
         XCTAssertFalse((queue.first?.payloadJson ?? "").contains("\"a\""))
     }
 
-    // ── fixture ─────────────────────────────────────────────
+    // fixture
 
     private func wireCallItem(id: String) -> WireCallLogItem {
         WireCallLogItem(

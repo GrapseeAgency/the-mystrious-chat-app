@@ -1,7 +1,6 @@
 import SwiftUI
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — W5-f space surface (spatial presence, spec §1.3).
+// Pulse - W5-f space surface (spatial presence, spec §1.3).
 // Native rebuild of web space-sheet.tsx (R24-c): the ~4/3.4 aspect
 // map with tap-to-move AND drag movement (client 80 ms throttle +
 // clamp 0..1 live in SpaceModel.localMove), the self dot with halo
@@ -9,10 +8,9 @@ import SwiftUI
 // self-position only after 300 ms of finger idle (WEB DEFECT FIX #4),
 // the NEARBY chip rail (euclidean ≤ 0.18, reused straight from the
 // model's proximity computation), the "N in room" pill, and honest
-// connecting/connected/error states — the error state is REACHABLE
+// connecting/connected/error states - the error state is REACHABLE
 // after 6 failed reconnect attempts (WEB DEFECT FIX #5; web spun
-// forever). Ephemeral presence — nothing is recorded or stored.
-// ─────────────────────────────────────────────────────────────
+// forever). Ephemeral presence - nothing is recorded or stored.
 
 struct SpaceView: View {
     @ObservedObject var model: VoiceRoomSessionModel
@@ -36,7 +34,7 @@ struct SpaceView: View {
             }
         }
         .onDisappear {
-            // SP-1 — space is presence, not membership: closing the surface
+            // SP-1 - space is presence, not membership: closing the surface
             // (or the host teardown) leaves the room. closeSurface() already
             // left it; the guard keeps this idempotent.
             if model.space.joined {
@@ -45,7 +43,7 @@ struct SpaceView: View {
         }
     }
 
-    // ── status + honest states (SP-5 / FIX #5) ───────────
+    // status + honest states (SP-5 / FIX #5)
 
     private var statusStrip: some View {
         HStack(spacing: 8) {
@@ -70,7 +68,7 @@ struct SpaceView: View {
     private var statusText: String {
         switch model.space.status {
         case .connecting: return "Connecting to the room…"
-        case .connected: return "Live — move around, get near people"
+        case .connected: return "Live - move around, get near people"
         case .error: return model.space.errorText ?? "Can't reach the room right now."
         }
     }
@@ -83,7 +81,7 @@ struct SpaceView: View {
         }
     }
 
-    /// SP-2 — the "N in room" pill (web parity: players.length).
+    /// SP-2 - the "N in room" pill (web parity: players.length).
     private var participantPill: some View {
         HStack(spacing: 4) {
             Image(systemName: "person.2.fill")
@@ -98,7 +96,7 @@ struct SpaceView: View {
         .accessibilityLabel("\(model.space.players.count) players in the space")
     }
 
-    // ── the map (SP-2 / SP-3 / FIX #4) ───────────────────
+    // the map (SP-2 / SP-3 / FIX #4)
 
     private var mapCard: some View {
         SpaceMap(
@@ -115,16 +113,16 @@ struct SpaceView: View {
         )
     }
 
-    // ── nearby rail (SP-4 — model proximity, ≤ 0.18) ─────
+    // nearby rail (SP-4 - model proximity, ≤ 0.18)
 
     private var nearbyRail: some View {
         let nearby = model.space.nearbyPlayers
         let others = model.space.players.filter { $0.id != model.space.myId }
         return Group {
             if others.isEmpty {
-                railCopy("No one else here right now — invite people to the room.")
+                railCopy("No one else here right now - invite people to the room.")
             } else if nearby.isEmpty {
-                railCopy("\(others.count) \(others.count == 1 ? "person" : "people") in the space — move closer to gather.")
+                railCopy("\(others.count) \(others.count == 1 ? "person" : "people") in the space - move closer to gather.")
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -168,12 +166,12 @@ struct SpaceView: View {
             .padding(.vertical, 6)
     }
 
-    // ── controls ─────────────────────────────────────────
+    // controls
 
     private var controls: some View {
         VStack(spacing: 12) {
             if model.space.status == .error {
-                // FIX #5 — the honest retry: reset the seat (attempts → 0)
+                // FIX #5 - the honest retry: reset the seat (attempts → 0)
                 // and re-join; the error state is recoverable, never a spin.
                 Button {
                     PulseHaptics.tap()
@@ -209,7 +207,7 @@ struct SpaceView: View {
     }
 
     private var footer: some View {
-        Text("Positions are live presence — never recorded or stored.")
+        Text("Positions are live presence - never recorded or stored.")
             .font(.caption2)
             .foregroundStyle(PulseTheme.textTertiary)
             .frame(maxWidth: .infinity)
@@ -217,12 +215,12 @@ struct SpaceView: View {
     }
 }
 
-// ── the spatial surface ──────────────────────────────────────
+// the spatial surface
 
 /// The draggable map. Rendering truth: OTHER dots sit at their server
 /// positions; the SELF dot sits at the optimistic target (instant on
 /// tap/drag) and snaps to the server self-position when the model
-/// reconciles (no local move in the last 300 ms — FIX #4).
+/// reconciles (no local move in the last 300 ms - FIX #4).
 private struct SpaceMap: View {
     let players: [SpaceModel.Player]
     let myId: String
@@ -251,7 +249,7 @@ private struct SpaceMap: View {
                 // Tap-to-move AND drag share one gesture: minimumDistance 0
                 // makes the first touch fire onChanged (tap), continued
                 // touches keep firing (drag). The 80 ms emit throttle lives
-                // in SpaceModel.localMove — the optimistic target moves
+                // in SpaceModel.localMove - the optimistic target moves
                 // EVERY event regardless of the throttle.
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in move(value.location, in: size) }
@@ -263,7 +261,7 @@ private struct SpaceMap: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(PulseTheme.hairlineStrong, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Space map — tap or drag to move")
+        .accessibilityLabel("Space map - tap or drag to move")
         .accessibilityAdjustableAction { direction in
             // Accessibility parity for the drag: vertical steps of 0.1
             // (adjustable actions expose increment/decrement only).
@@ -304,7 +302,7 @@ private struct SpaceMap: View {
         .allowsHitTesting(false)
     }
 
-    /// A peer dot — nearby peers get the emerald ring (SP-4).
+    /// A peer dot - nearby peers get the emerald ring (SP-4).
     private func playerDot(_ player: SpaceModel.Player) -> some View {
         let nearby = nearbyIds.contains(player.id)
         return VStack(spacing: 3) {
@@ -326,12 +324,12 @@ private struct SpaceMap: View {
         .accessibilityLabel("\(player.name)\(nearby ? ", nearby" : "")")
     }
 
-    /// The self dot — halo + optimistic target position (FIX #4 rendering).
+    /// The self dot - halo + optimistic target position (FIX #4 rendering).
     private var selfDot: some View {
         VStack(spacing: 3) {
             RowAvatar(name: "You", colorName: "emerald", photoPath: nil, size: 34)
                 .overlay(
-                    // The halo — a soft double ring only the self dot wears.
+                    // The halo - a soft double ring only the self dot wears.
                     Circle()
                         .strokeBorder(PulseTheme.emerald400.opacity(0.55), lineWidth: 2.5)
                         .background(Circle().fill(PulseTheme.emerald500.opacity(0.14)))
@@ -355,7 +353,7 @@ private struct SpaceMap: View {
 
     private func move(_ location: CGPoint, in size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
-        // Normalize to 0..1 (SpaceModel.localMove clamps again — the view
+        // Normalize to 0..1 (SpaceModel.localMove clamps again - the view
         // pre-clamps so a drag BEYOND the border still targets the edge).
         let x = SpaceModel.clamp01(Double(location.x / size.width))
         let y = SpaceModel.clamp01(Double(location.y / size.height))

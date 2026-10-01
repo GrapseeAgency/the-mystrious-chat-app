@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/hub/wallet/transfer — PC transfer by @handle (real ledger rows
+// /api/hub/wallet/transfer - PC transfer by @handle (real ledger rows
 // on both sides + log event). Atomic via interactive transaction.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -52,7 +50,7 @@ export async function POST(req: Request) {
   const senderWallet = sender.wallet ?? (await db.userWallet.findUniqueOrThrow({ where: { userId } }))
   if (senderWallet.coins < amount) {
     return NextResponse.json(
-      { error: `Insufficient PC — you have ${senderWallet.coins}, tried to send ${amount}.` },
+      { error: `Insufficient PC - you have ${senderWallet.coins}, tried to send ${amount}.` },
       { status: 402 },
     )
   }
@@ -101,7 +99,7 @@ export async function POST(req: Request) {
     return tx.userWallet.findUniqueOrThrow({ where: { userId } })
   }).catch((err: unknown) => {
     if (err instanceof Error && err.message === 'INSUFFICIENT') {
-      return NextResponse.json({ error: 'Insufficient PC — balance changed, try again.' }, { status: 402 })
+      return NextResponse.json({ error: 'Insufficient PC - balance changed, try again.' }, { status: 402 })
     }
     throw err
   })

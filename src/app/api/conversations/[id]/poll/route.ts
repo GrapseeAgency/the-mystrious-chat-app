@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/poll — create a live-poll message
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id]/poll - create a live-poll message
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {

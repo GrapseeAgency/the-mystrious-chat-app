@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Wave-3 call engine core — the full pinned shared-design matrix exercised
+ * Wave-3 call engine core - the full pinned shared-design matrix exercised
  * against a FAKE clock: every transition, every defensive timeout, the
  * per-callId + per-state idempotency guards and the caller-only terminal
  * mapping (answered-then-ended=completed, reject=declined,
@@ -36,7 +36,7 @@ class CallStateMachineTest {
     private fun machine(clock: FakeClock): CallStateMachine =
         CallStateMachine(clock).also { it.bind(me) }
 
-    // ── wiring guards ───────────────────────────────────────────
+    // wiring guards
 
     @Test
     fun `events before bind are ignored`() {
@@ -60,7 +60,7 @@ class CallStateMachineTest {
         assertTrue(effects.any { it is CallEffect.AcquireMedia })
     }
 
-    // ── outgoing happy path ─────────────────────────────────────
+    // outgoing happy path
 
     @Test
     fun `outgoing happy path ends completed with duration and one log row`() {
@@ -123,7 +123,7 @@ class CallStateMachineTest {
         assertTrue(sm.dispatch(CallEvent.OfferReady("v=0 offer AGAIN")).isEmpty())
     }
 
-    // ── ringing terminations ────────────────────────────────────
+    // ringing terminations
 
     @Test
     fun `remote reject maps to declined row and no cancel`() {
@@ -225,7 +225,7 @@ class CallStateMachineTest {
         assertEquals(CallStatus.MISSED, row.status)
     }
 
-    // ── incoming happy path ─────────────────────────────────────
+    // incoming happy path
 
     @Test
     fun `incoming accept flow completes and the callee never writes a row`() {
@@ -348,7 +348,7 @@ class CallStateMachineTest {
         assertEquals(CallStateMachine.MIC_DENIED_MESSAGE, sm.snapshot.value.error)
     }
 
-    // ── ICE ─────────────────────────────────────────────────────
+    // ICE
 
     @Test
     fun `ice flows both ways during ringing and connecting`() {
@@ -380,7 +380,7 @@ class CallStateMachineTest {
         assertTrue(sm.dispatch(CallEvent.IceReceived("other-call", "candidate:x", null, null)).isEmpty())
     }
 
-    // ── peer-connection lifecycle ───────────────────────────────
+    // peer-connection lifecycle
 
     @Test
     fun `connect timeout at 15s ends answered-completed with zero duration`() {
@@ -424,7 +424,7 @@ class CallStateMachineTest {
         val row = effects.filterIsInstance<CallEffect.WriteLog>().single().entry
         assertEquals(CallStatus.COMPLETED, row.status)
         // Wall time since the FIRST connect: 20 + 5 + 8 + 11 = 44s (the 5s
-        // inside the grace window counts — connectedAt never moved).
+        // inside the grace window counts - connectedAt never moved).
         assertEquals(44L, row.durationSec)
         assertEquals("Call ended", sm.snapshot.value.summary)
     }
@@ -471,17 +471,17 @@ class CallStateMachineTest {
             clock.advance(10_000)
             sm.dispatch(CallEvent.IceReceived("call-1", "candidate:$it", "0", 0))
         }
-        clock.advance(6_000) // 36s total — still inside the 40s ring window
+        clock.advance(6_000) // 36s total - still inside the 40s ring window
         assertTrue(sm.poll().isEmpty())
         assertEquals(CallState.INCOMING_RINGING, sm.snapshot.value.state)
-        // The ring deadline still wins eventually — liveness never outlives it.
+        // The ring deadline still wins eventually - liveness never outlives it.
         clock.advance(10_000) // 46s total
         val effects = sm.poll()
         assertEquals(CallState.ENDED, sm.snapshot.value.state)
         assertTrue(effects.none { it is CallEffect.WriteLog })
     }
 
-    // ── idempotency / post-terminal guards ──────────────────────
+    // idempotency / post-terminal guards
 
     @Test
     fun `duplicate answer is dropped`() {
@@ -566,7 +566,7 @@ class CallStateMachineTest {
         assertEquals(CallKind.VIDEO, (start.first() as CallEffect.AcquireMedia).kind)
     }
 
-    // ── CallLogMapper ───────────────────────────────────────────
+    // CallLogMapper
 
     @Test
     fun `call log mapper guards and maps`() {

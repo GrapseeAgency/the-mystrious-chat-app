@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/leaderboard — Twitch-style XP + activity standings
+// /api/leaderboard - Twitch-style XP + activity standings
 // (Task R24-d)
 //
 // GET ?conversationId=&userId=   (scoped)
@@ -7,15 +6,14 @@
 // GET                           (global)
 //   → rows over every user, top 50.
 //
-// Each row is a 100% real aggregate — zero mocks:
+// Each row is a 100% real aggregate - zero mocks:
 //   xp              → User.xp (messages crew feeds +2/msg, games +25 win)
 //   messageCount    → COUNT Message (non-deleted) by the user in scope
 //   gameWins        → COUNT GameMatch won by the user in scope
 //   tournamentPoints→ SUM TournamentPlayer.points in scope
 // Sort: tournamentPoints desc → gameWins desc → xp desc
 // (name asc as a deterministic final tiebreak).
-// Shape: { rows: LeaderboardRow[] } — src/lib/types.ts contract.
-// ─────────────────────────────────────────────────────────────
+// Shape: { rows: LeaderboardRow[] } - src/lib/types.ts contract.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { strField } from '@/lib/serializers'
@@ -50,7 +48,7 @@ export async function GET(req: Request) {
   const conversationId = strField(url.searchParams.get('conversationId'))
   const userId = strField(url.searchParams.get('userId'))
 
-  // ── conversation-scoped ─────────────────────────────────────
+  // conversation-scoped 
   if (conversationId) {
     if (!userId) {
       return NextResponse.json(
@@ -122,7 +120,7 @@ export async function GET(req: Request) {
     )
   }
 
-  // ── global (top 50 over every user) ─────────────────────────
+  // global (top 50 over every user) 
   const [users, messageCounts, winCounts, tpSums] = await Promise.all([
     db.user.findMany({ select: { id: true, name: true, color: true, xp: true } }),
     db.message.groupBy({

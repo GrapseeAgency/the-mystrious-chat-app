@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/scheduled — Telegram-style delayed send
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id]/scheduled - Telegram-style delayed send
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseIsoDate, safeJson, strField, MESSAGE_MAX } from '@/lib/serializers'
@@ -58,7 +56,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     )
   }
 
-  // Pending rows AND rows dispatch refused to send (cancelled) — the sender
+  // Pending rows AND rows dispatch refused to send (cancelled) - the sender
   // keeps visibility into both until they delete them.
   const rows = await db.scheduledMessage.findMany({
     where: { conversationId: id, senderId: userId, sentAt: null },

@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/messages/[id]/translate — on-demand LLM translation
+// /api/messages/[id]/translate - on-demand LLM translation
 // (Webex-style caption translation; result persisted per language)
-// ─────────────────────────────────────────────────────────────
 import ZAI from 'z-ai-web-dev-sdk'
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -88,7 +86,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
             role: 'assistant',
             content:
               `You are a precise chat-message translator. Translate the user's message into ${LANGS[lang]}. ` +
-              'Reply with ONLY the translation — no quotes, no explanations, no language name. ' +
+              'Reply with ONLY the translation - no quotes, no explanations, no language name. ' +
               'Preserve emoji and casual tone.',
           },
           { role: 'user', content: source.slice(0, 1200) },

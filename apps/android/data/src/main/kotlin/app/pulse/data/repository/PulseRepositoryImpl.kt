@@ -35,7 +35,7 @@ import app.pulse.domain.model.CallPeer
 import app.pulse.domain.model.CallSignalOut
 import app.pulse.domain.model.CallStatus
 import app.pulse.domain.model.Channel
-// R1-W2F — per-conversation themes (F-FX-05).
+// R1-W2F - per-conversation themes (F-FX-05).
 import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
@@ -158,6 +158,8 @@ import app.pulse.protocol.VoiceTranscriptPayload
 import app.pulse.protocol.VoiceTranscriptResultDto
 import app.pulse.protocol.decodeLinkPreviewDto
 import app.pulse.protocol.decodePollDto
+import app.pulse.protocol.folderIconId
+import app.pulse.protocol.topicIconId
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -188,7 +190,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
-/** Stories live exactly 24h — the same TTL the gateway stamps (route.ts STORY_TTL_MS). */
+/** Stories live exactly 24h - the same TTL the gateway stamps (route.ts STORY_TTL_MS). */
 private const val STORY_TTL_MS: Long = 24L * 60 * 60 * 1000
 
 /**
@@ -244,7 +246,7 @@ class PulseRepositoryImpl @Inject constructor(
         viewerId = userId
         startPump()
         socket.connect(userId)
-        // Wave 8 — load the persisted session token into the synchronous cache
+        // Wave 8 - load the persisted session token into the synchronous cache
         // BEFORE the refresh wave so the Bearer header rides from request one,
         // then merge the server prefs blob over the local store (server wins).
         scope.launch {
@@ -268,7 +270,7 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Wave 8 — server prefs fetch (GET /api/settings). The server blob is
+     * Wave 8 - server prefs fetch (GET /api/settings). The server blob is
      * already defaults-merged + clamped; the tolerant resolve keeps the local
      * store junk-proof even when a proxy mangles the envelope. Failure is a
      * no-op (offline-first: the local blob stays authoritative).
@@ -285,7 +287,7 @@ class PulseRepositoryImpl @Inject constructor(
 
     override val pulsePrefs: Flow<WirePulsePrefs> = prefsLocalStore.prefs
 
-    // ── R1-W2F — F-FX-05 per-conversation themes (`chat.convThemes`) ──
+    // R1-W2F - F-FX-05 per-conversation themes (`chat.convThemes`)
 
     override val convThemes: Flow<Map<String, ConvTheme>> = prefsLocalStore.convThemes
 
@@ -294,12 +296,12 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     override suspend fun updatePulsePrefs(patch: WirePulsePrefs): Result<Unit> {
-        // Optimistic FIRST — the toggle lands in the UI instantly.
+        // Optimistic FIRST - the toggle lands in the UI instantly.
         prefsLocalStore.applyLocal(patch)
         val id = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
         return when (val r = api.updateSettings(id, patch)) {
             is PulseResult.Success -> {
-                // the server response is the authoritative clamp — re-anchor
+                // the server response is the authoritative clamp - re-anchor
                 r.value.preferences?.let { prefsLocalStore.replaceFromServer(it) }
                 Result.success(Unit)
             }
@@ -312,7 +314,7 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun login(name: String): Result<User> =
         when (val r = api.login(name)) {
             is PulseResult.Success -> {
-                // ROTATION: the raw token shows up exactly once — persist it now.
+                // ROTATION: the raw token shows up exactly once - persist it now.
                 r.value.token?.let { t -> runCatching { sessionTokenStore.save(t) } }
                 val user = r.value.user
                     ?: return Result.failure(IllegalStateException("Malformed login response"))
@@ -323,24 +325,24 @@ class PulseRepositoryImpl @Inject constructor(
                 Result.failure(OnboardingError.of(r))
         }
 
-    /** Identity forget/switch — the credential must not outlive the identity. */
+    /** Identity forget/switch - the credential must not outlive the identity. */
     override suspend fun clearSessionToken() {
         sessionTokenStore.clear()
     }
 
-    /** Data & Storage — user-initiated drop of one held outbox row (no verdict event). */
+    /** Data & Storage - user-initiated drop of one held outbox row (no verdict event). */
     override suspend fun discardOutboxEntry(clientId: String) {
         outboxDao.deleteByClientId(clientId)
         messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
     }
 
-    /** Data & Storage — drop every held outbox row + its optimistic temp bubble. */
+    /** Data & Storage - drop every held outbox row + its optimistic temp bubble. */
     override suspend fun clearOutbox() {
         outboxDao.clearAll()
         messageDao.deleteAllTempMessages()
     }
 
-    /** Data & Storage — drop every composer draft at once. */
+    /** Data & Storage - drop every composer draft at once. */
     override suspend fun clearAllDrafts() {
         draftDao.clearAll()
     }
@@ -355,7 +357,7 @@ class PulseRepositoryImpl @Inject constructor(
                     is PulseSocketClient.Signal.Connection -> {
                         connectedFlow.value = signal.connected
                         if (signal.connected) {
-                            // Flush trigger: the relay came back — drain the outbox first
+                            // Flush trigger: the relay came back - drain the outbox first
                             // so queued sends overtake anything new.
                             scope.launch {
                                 runCatching { flushOutbox() }
@@ -368,7 +370,7 @@ class PulseRepositoryImpl @Inject constructor(
                         }
                     }
                     is PulseSocketClient.Signal.SessionRejected -> {
-                        // Wave 8 — the relay verified our PRESENTED token and
+                        // Wave 8 - the relay verified our PRESENTED token and
                         // refused it (rotated/invalid). Clear the credential;
                         // the app layer routes to the honest re-login flow.
                         scope.launch { runCatching { sessionTokenStore.markInvalid(signal.error) } }
@@ -415,7 +417,7 @@ class PulseRepositoryImpl @Inject constructor(
                     is PulseSocketClient.Signal.CallSignal -> eventsBus.tryEmit(
                         PulseEvent.CallSignal(callSignalToDomain(signal.signal)),
                     )
-                    // ── R8 Task 3-c — group call (mesh) signals → domain events ──
+                    // R8 Task 3-c - group call (mesh) signals → domain events
                     is PulseSocketClient.Signal.GroupCallState -> eventsBus.tryEmit(
                         PulseEvent.GroupCallSignal(signal.payload.toDomainSignal(app.pulse.protocol.GroupCallEvents.STATE)),
                     )
@@ -498,7 +500,7 @@ class PulseRepositoryImpl @Inject constructor(
             )
         }
 
-    // ── R8 Task 3-c — gcall:* socket union → the domain envelope ──
+    // R8 Task 3-c - gcall:* socket union → the domain envelope
 
     private fun GroupCallStatePayload.toDomainSignal(event: String) = app.pulse.domain.model.GroupCallSignalData(
         event = event,
@@ -540,7 +542,7 @@ class PulseRepositoryImpl @Inject constructor(
     )
 
     /**
-     * Every message:* envelope carries the authoritative row — upsert it and
+     * Every message:* envelope carries the authoritative row - upsert it and
      * fan the event out. message:deleted keeps its tombstone semantics.
      */
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
@@ -560,7 +562,7 @@ class PulseRepositoryImpl @Inject constructor(
 
     /**
      * Optimistic dedupe (spec §1.2): when a REAL row lands, every still-queued
-     * `local_` echo of the same sender+body that predates it is retired — the
+     * `local_` echo of the same sender+body that predates it is retired - the
      * flush engine's own clientId swap stays the primary reconcile path.
      */
     private suspend fun dedupeTempEchoes(real: Message) {
@@ -576,7 +578,7 @@ class PulseRepositoryImpl @Inject constructor(
 
     private var refreshScheduled = false
 
-    /** Debounced inbox refetch — keeps previews/unreads honest after live hits. */
+    /** Debounced inbox refetch - keeps previews/unreads honest after live hits. */
     private fun scheduleConversationsRefresh() {
         if (refreshScheduled) return
         refreshScheduled = true
@@ -587,7 +589,7 @@ class PulseRepositoryImpl @Inject constructor(
         }
     }
 
-    // ── reads ───────────────────────────────────────────────────
+    // reads
     override fun observeConversations(query: String): Flow<List<Conversation>> =
         conversationDao.observeAll().map { rows ->
             rows.map { it.toDomain() }
@@ -621,7 +623,7 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun refreshMessages(conversationId: String, limit: Int): Result<Unit> =
         refreshMessagesWindow(conversationId, limit = limit)
 
-    /** Wave 2 topic-filtered refresh — only rows filed under `topicId`. */
+    /** Wave 2 topic-filtered refresh - only rows filed under `topicId`. */
     override suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit> =
         refreshMessagesWindow(conversationId, topicId = topicId)
 
@@ -631,7 +633,7 @@ class PulseRepositoryImpl @Inject constructor(
         before: String? = null,
         topicId: String? = null,
     ): Result<Unit> {
-        // R2-C item 2 (D47 delta sync) — a REFRESH (no `before` page cursor,
+        // R2-C item 2 (D47 delta sync) - a REFRESH (no `before` page cursor,
         // unfiltered) rides `since=` when the Room cache already holds server
         // rows for this conversation: only the strictly-newer tail crosses
         // the wire and merges by upsert. The FIRST load (empty cache) and
@@ -655,7 +657,7 @@ class PulseRepositoryImpl @Inject constructor(
         }
     }
 
-    // ── users / identity ────────────────────────────────────────
+    // users / identity
     override suspend fun users(query: String): Result<List<User>> = when (val r = api.users()) {
         is PulseResult.Success -> Result.success(
             r.value.users.map { it.toDomain() }
@@ -667,7 +669,7 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun createIdentity(name: String, color: String?, username: String?): Result<User> =
         when (val r = api.createUser(name, color, username)) {
             is PulseResult.Success -> {
-                // Wave 8 — the create response carries the raw session token
+                // Wave 8 - the create response carries the raw session token
                 // (shown once server-side); persist it before returning.
                 r.value.token?.let { t -> runCatching { sessionTokenStore.save(t) } }
                 val user = r.value.user
@@ -676,7 +678,7 @@ class PulseRepositoryImpl @Inject constructor(
             }
             is PulseResult.Failure ->
                 when {
-                    // Definitive live-server verdicts surface untouched —
+                    // Definitive live-server verdicts surface untouched -
                     // 409 name clash / username_taken keep the web flows.
                     r.status == 400 || r.status == 409 -> Result.failure(OnboardingError.of(r))
                     // No reachable server → local identity. Onboarding completes
@@ -688,7 +690,7 @@ class PulseRepositoryImpl @Inject constructor(
                 }
         }
 
-    /** Offline identity — stable random id, kept in prefs like a server row. */
+    /** Offline identity - stable random id, kept in prefs like a server row. */
     private fun localIdentity(name: String, color: String?, username: String?): User = User(
         id = "local_" + java.util.UUID.randomUUID().toString().replace("-", "").take(12),
         name = name,
@@ -706,7 +708,7 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Success ->
                 Result.success(HandleCheck(available = r.value.available, suggestion = r.value.suggestion))
             is PulseResult.Failure ->
-                // 400 invalid / 409 taken are definitive live-server verdicts —
+                // 400 invalid / 409 taken are definitive live-server verdicts -
                 // never second-guess them. Anything else (unreachable host,
                 // route-less static CDN, 5xx) falls through to the registry.
                 if (r.status == 400 || r.status == 409) {
@@ -731,14 +733,14 @@ class PulseRepositoryImpl @Inject constructor(
                 }
             }
             is PulseResult.Failure -> {
-                // fully offline — stop paying the timeout on every keystroke
+                // fully offline - stop paying the timeout on every keystroke
                 offlineUntil = System.currentTimeMillis() + OFFLINE_BACKOFF_MS
                 Result.success(localVerdict(handle))
             }
         }
     }
 
-    /** Local rules — the last line of defense so onboarding always completes. */
+    /** Local rules - the last line of defense so onboarding always completes. */
     private fun localVerdict(handle: String): HandleCheck =
         if (handle.lowercase() in BUILT_IN_RESERVED) {
             HandleCheck(available = false, suggestion = "${handle}_")
@@ -750,7 +752,7 @@ class PulseRepositoryImpl @Inject constructor(
         when (val r = api.lookupUserByName(name)) {
             is PulseResult.Success -> Result.success(r.value.toDomain())
             is PulseResult.Failure ->
-                // 404 = the name is free — the caller decides what that means
+                // 404 = the name is free - the caller decides what that means
                 if (r.kind == PulseResult.Failure.Kind.NOT_FOUND) Result.success(null)
                 else Result.failure(OnboardingError.of(r))
         }
@@ -767,9 +769,9 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun me(): User? = null // no /me route on the wire yet — viewer lives in prefs
+    override suspend fun me(): User? = null // no /me route on the wire yet - viewer lives in prefs
 
-    // ── writes ──────────────────────────────────────────────────
+    // writes
     override suspend fun sendMessage(
         conversationId: String,
         body: String,
@@ -804,7 +806,7 @@ class PulseRepositoryImpl @Inject constructor(
             senderId = viewerId ?: "",
             content = body,
             replyToId = replyToId,
-            // THREAD REPLY rides `parentId` — NEVER conflated with replyToId (spec §1.1).
+            // THREAD REPLY rides `parentId` - NEVER conflated with replyToId (spec §1.1).
             parentId = parentId,
             // Wave 2 topic filing (spec §1 row 10): never on thread replies.
             topicId = if (parentId == null) topicId else null,
@@ -842,7 +844,7 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     /**
-     * REM-A — rich TEXT-kind send (F-MS-17/24/23): carries the incognito flag
+     * REM-A - rich TEXT-kind send (F-MS-17/24/23): carries the incognito flag
      * (group-only server-side) and the sticker/effects payload blob. Optimistic
      * echo + offline-outbox semantics mirror [sendMessage] exactly.
      */
@@ -872,7 +874,7 @@ class PulseRepositoryImpl @Inject constructor(
             threadRootId = parentId,
             topicId = topicId,
             anon = anon,
-            // R3-B item 4 — the optimistic row wears the deterministic alias
+            // R3-B item 4 - the optimistic row wears the deterministic alias
             // the server will store (web optimistic-mask parity).
             anonAlias = anonAliasPreview.takeIf { anon },
         )
@@ -903,7 +905,7 @@ class PulseRepositoryImpl @Inject constructor(
                 Result.success(receipt)
             }
             is PulseResult.Failure ->
-                // R3-B item 4 — an INCOGNITO send never queues offline: the
+                // R3-B item 4 - an INCOGNITO send never queues offline: the
                 // outbox row carries no anon flag, so a flush would post the
                 // message UN-masked. Honest retract instead of a privacy lie.
                 if (r.kind == PulseResult.Failure.Kind.NETWORK && !anon && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
@@ -933,7 +935,7 @@ class PulseRepositoryImpl @Inject constructor(
         retryAfter = f.retryAfter,
     )
 
-    // ── R5-B — send-envelope mapping (server { message, streak?, xpAwarded }) ──
+    // R5-B - send-envelope mapping (server { message, streak?, xpAwarded })
 
     /** Envelope → domain receipt: the real row + the streak bump when present. */
     private fun app.pulse.protocol.MessageSendEnvelopeDto.toReceipt(): SendReceipt = SendReceipt(
@@ -942,16 +944,16 @@ class PulseRepositoryImpl @Inject constructor(
     )
 
     /**
-     * The envelope's message row — null must fail loudly (VALIDATION), never
+     * The envelope's message row - null must fail loudly (VALIDATION), never
      * decode as an empty success (iOS R5 lesson: envelope-nil ≠ bare row).
      */
     private fun app.pulse.protocol.MessageSendEnvelopeDto.messageOrThrow(): Message =
         message?.toDomain() ?: throw IllegalStateException("VALIDATION: send response carried no message")
 
-    // ── Wave 1 messaging surface (spec §1.1 — every route exists today) ──
+    // Wave 1 messaging surface (spec §1.1 - every route exists today)
 
     /**
-     * MEDIA send — the online-only leg (spec §1.2: media is NEVER queued).
+     * MEDIA send - the online-only leg (spec §1.2: media is NEVER queued).
      * No optimistic echo: the staged card in the composer is the progress UI;
      * failures surface on it with a retry, never an outbox row.
      */
@@ -985,7 +987,7 @@ class PulseRepositoryImpl @Inject constructor(
             )
         ) {
             is PulseResult.Success -> {
-                // R5-B — media sends ride the same envelope; the streak bump is
+                // R5-B - media sends ride the same envelope; the streak bump is
                 // not surfaced here (web only toasts on the room-composer path).
                 val message = r.value.messageOrThrow()
                 messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
@@ -1010,7 +1012,7 @@ class PulseRepositoryImpl @Inject constructor(
         }
     }
 
-    /** Batched "N replies ↳" counts for the river — one grouped Room query. */
+    /** Batched "N replies ↳" counts for the river - one grouped Room query. */
     override suspend fun threadReplyCounts(rootIds: List<String>): Map<String, Int> {
         if (rootIds.isEmpty()) return emptyMap()
         return runCatching {
@@ -1018,7 +1020,7 @@ class PulseRepositoryImpl @Inject constructor(
         }.getOrDefault(emptyMap())
     }
 
-    /** The outbox queues PURE TEXT only — thread/quote sends are online-only. */
+    /** The outbox queues PURE TEXT only - thread/quote sends are online-only. */
     private fun queueableSend(replyToId: String?, parentId: String?): Boolean =
         replyToId == null && parentId == null
 
@@ -1109,10 +1111,10 @@ class PulseRepositoryImpl @Inject constructor(
 
     /**
      * Forward = re-POST the SAME body into the target conversation (no wire
-     * endpoint — spec §1.1). Media is forwarded by reusing the stored paths;
+     * endpoint - spec §1.1). Media is forwarded by reusing the stored paths;
      * the wire kind maps back through the whitelist (text|image|audio|sticker|
      * location|file). REM-A F-MS-10: a NETWORK-class failure on a PLAIN TEXT
-     * forward rides the existing outbox (kind "text") instead of dying —
+     * forward rides the existing outbox (kind "text") instead of dying -
      * media stays online-only per spec §1.2.
      */
     override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> {
@@ -1130,7 +1132,7 @@ class PulseRepositoryImpl @Inject constructor(
                 fileName = source.fileName,
                 fileSize = source.fileSize,
                 kind = wireKindOf(source.kind),
-                // R1-W2F (F-MD-07) — location pins keep their {lat,lng,label}
+                // R1-W2F (F-MD-07) - location pins keep their {lat,lng,label}
                 // payload when forwarded, so the target room renders a REAL pin.
                 payload = source.payload?.let { raw ->
                     runCatching { PulseJson.parseToJsonElement(raw) }.getOrNull()
@@ -1183,9 +1185,9 @@ class PulseRepositoryImpl @Inject constructor(
         Message.Kind.IMAGE -> "image"
         Message.Kind.VOICE -> "audio"
         Message.Kind.FILE -> "file"
-        // R1-W2F (F-MD-07) — pins re-POST with their wire kind + payload.
+        // R1-W2F (F-MD-07) - pins re-POST with their wire kind + payload.
         Message.Kind.LOCATION -> "location"
-        // VIDEO/POLL/RED_PACKET/SYSTEM are outside the send whitelist — omit
+        // VIDEO/POLL/RED_PACKET/SYSTEM are outside the send whitelist - omit
         // and let the server default to text (media fields still ride along).
         else -> null
     }
@@ -1196,7 +1198,7 @@ class PulseRepositoryImpl @Inject constructor(
             api.setDraft(conversationId, id, draft.take(MAX_DRAFT))
         }
         // Fire-and-forget: the local draft wins; the server only seeds
-        // cross-device restore — failures are silently ignored.
+        // cross-device restore - failures are silently ignored.
     }
 
     override suspend fun myRole(conversationId: String): Result<String?> =
@@ -1217,9 +1219,9 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
-    // ── REM-A group governance + scheduling (web group-info-sheet parity) ──
+    // REM-A group governance + scheduling (web group-info-sheet parity)
 
-    /** Live group meta — ALSO upserts the Room conversation cache (rename TTL etc. flow into the list). */
+    /** Live group meta - ALSO upserts the Room conversation cache (rename TTL etc. flow into the list). */
     override suspend fun groupMeta(conversationId: String): Result<GroupMeta> =
         when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
             is PulseResult.Success -> {
@@ -1235,7 +1237,7 @@ class PulseRepositoryImpl @Inject constructor(
                         screenPrivacy = dto.screenPrivacy == true,
                         myScreenPrivacy = dto.myScreenPrivacy == true,
                         inviteCode = dto.inviteCode,
-                        // R6 — M5: the server computes dmBlocked for DM details
+                        // R6 - M5: the server computes dmBlocked for DM details
                         // only (src/lib/serializers.ts buildConversationDetail).
                         dmBlocked = dto.dmBlocked == true,
                     ),
@@ -1244,7 +1246,7 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
-    /** PATCH /api/conversations/{id} — every success carries the updated detail; refresh the cache. */
+    /** PATCH /api/conversations/{id} - every success carries the updated detail; refresh the cache. */
     private suspend fun patchGroupMeta(
         conversationId: String,
         name: String? = null,
@@ -1268,7 +1270,7 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun setScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> =
         patchGroupMeta(conversationId, screenPrivacy = on)
 
-    // ── R2-A — round-2 parity (automations · webhooks · recap · privacy · photo) ──
+    // R2-A - round-2 parity (automations · webhooks · recap · privacy · photo)
 
     override suspend fun setMyScreenPrivacy(conversationId: String, on: Boolean): Result<Unit> =
         when (val r = api.setMyScreenPrivacy(conversationId, viewerId ?: "", on)) {
@@ -1433,7 +1435,7 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
-    // ── offline outbox engine (Wave 0 — web pulse-outbox parity) ────
+    // offline outbox engine (Wave 0 - web pulse-outbox parity)
 
     override suspend fun enqueueOutbox(entry: OutboxEntry): Result<Unit> = try {
         outboxDao.insert(OutboxEntity.from(entry))
@@ -1448,7 +1450,7 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun outboxPending(): List<OutboxEntry> = outboxDao.all().map { it.toEntry() }
 
-    /** ONE POST attempt — classification rides on OutboxDeliveryException. */
+    /** ONE POST attempt - classification rides on OutboxDeliveryException. */
     override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> =
         when (val r = api.sendMessage(entry.conversationId, viewerId ?: "", entry.content)) {
             is PulseResult.Success -> Result.success(r.value.messageOrThrow())
@@ -1488,7 +1490,7 @@ class PulseRepositoryImpl @Inject constructor(
 
     /**
      * Every trigger funnels here (start / reconnect / foreground / worker /
-     * self-heal). The drain policy itself is FlushOutboxUseCase — single
+     * self-heal). The drain policy itself is FlushOutboxUseCase - single
      * source of truth, unit-tested at the domain layer.
      */
     override suspend fun flushOutbox(): FlushReport = flushMutex.withLock {
@@ -1497,7 +1499,7 @@ class PulseRepositoryImpl @Inject constructor(
         report
     }
 
-    /** 20s self-heal — a pending queue never waits longer than one beat. */
+    /** 20s self-heal - a pending queue never waits longer than one beat. */
     private fun scheduleSelfHeal() {
         if (selfHealJob?.isActive == true) return
         selfHealJob = scope.launch {
@@ -1507,7 +1509,7 @@ class PulseRepositoryImpl @Inject constructor(
         }
     }
 
-    // ── drafts (Wave 0 — web pulse-drafts parity) ──────────────────
+    // drafts (Wave 0 - web pulse-drafts parity)
 
     override suspend fun saveDraft(conversationId: String, text: String) {
         val trimmed = text.take(MAX_DRAFT)
@@ -1554,7 +1556,7 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {
-        // R2-A — the relay fans typing out to `recipients` user rooms and DROPS
+        // R2-A - the relay fans typing out to `recipients` user rooms and DROPS
         // empty recipient lists (pulse-socket/index.ts: recipients.length===0 →
         // no relay). The web room computes members-minus-me (chat-room.tsx:1238)
         // for this same payload; the cached conversation row supplies the ids.
@@ -1593,7 +1595,7 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Optimistic local mutation of one cached conversation row — the flag flips
+     * Optimistic local mutation of one cached conversation row - the flag flips
      * instantly and the server call + refresh reconcile the truth afterwards.
      */
     private suspend fun mutateConversation(id: String, transform: (Conversation) -> Conversation) {
@@ -1607,7 +1609,7 @@ class PulseRepositoryImpl @Inject constructor(
             "/api/conversations/$conversationId/pin",
             PulseApi.jsonOf("userId" to (viewerId ?: "")),
         ).toResult()
-        refreshConversations() // server toggles — reconcile from truth either way
+        refreshConversations() // server toggles - reconcile from truth either way
         return result
     }
 
@@ -1626,7 +1628,7 @@ class PulseRepositoryImpl @Inject constructor(
             it.copy(mutedUntilEpoch = epoch, isMuted = epoch > System.currentTimeMillis())
         }
         val body = kotlinx.serialization.json.buildJsonObject {
-            // Explicit JsonPrimitive/JsonNull — JsonObjectBuilder.put has no
+            // Explicit JsonPrimitive/JsonNull - JsonObjectBuilder.put has no
             // String overload at the resolved serialization version.
             put("userId", kotlinx.serialization.json.JsonPrimitive(viewerId ?: ""))
             put("until", until?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull)
@@ -1659,7 +1661,7 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     // Wave 6 route fixes (audit A): block carries the ACTOR in the body, and
-    // unblock is DELETE /block?userId= — POST /unblock does NOT exist on the
+    // unblock is DELETE /block?userId= - POST /unblock does NOT exist on the
     // wire (the same defect iOS shipped; both platforms converge now).
     override suspend fun block(userId: String): Result<Unit> =
         when (val r = api.blockUser(userId, viewerId ?: "")) {
@@ -1679,7 +1681,7 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    // ── N10 home-page era ──────────────────────────────────────
+    // N10 home-page era
 
     override suspend fun createSelfChat(): Result<Conversation> =
         when (val r = api.createSelfChat(viewerId ?: "")) {
@@ -1701,8 +1703,8 @@ class PulseRepositoryImpl @Inject constructor(
         return when (val r = api.stories(viewerId ?: "")) {
             is PulseResult.Success -> {
                 // Offline cache: persist the CANONICAL wire page (pre-mapping)
-                // so a cached replay walks the exact same mapper — including
-                // the D2 expiry filter — as a live fetch.
+                // so a cached replay walks the exact same mapper - including
+                // the D2 expiry filter - as a live fetch.
                 runCatching {
                     storyDao.upsert(
                         StoryCacheEntity(
@@ -1773,7 +1775,7 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    /** Wire DTO → domain story (NO expiry filtering here — filter lives in [toDomainGroups]/the machine). */
+    /** Wire DTO → domain story (NO expiry filtering here - filter lives in [toDomainGroups]/the machine). */
     private fun StoryItemDto.toStoryItem(): StoryItem? {
         if (id.isBlank()) return null
         val created = isoToEpochMs(createdAt) ?: 0L
@@ -1794,7 +1796,7 @@ class PulseRepositoryImpl @Inject constructor(
 
     /**
      * DTO page → domain groups. WEB DEFECT D2 (client-side expiry): stories
-     * with expiresAt <= now are dropped HERE, offline, before any grouping —
+     * with expiresAt <= now are dropped HERE, offline, before any grouping -
      * no network probes. `allSeen` is recomputed over the survivors so a
      * group whose only unseen story expired reads as seen. Group order is
      * kept AS RETURNED BY THE SERVER (mine first, others by newest story).
@@ -1814,7 +1816,9 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun folders(): Result<List<FolderSummary>> = when (val r = api.folders(viewerId ?: "")) {
         is PulseResult.Success -> Result.success(
             r.value.folders.map { f ->
-                FolderSummary(id = f.id, name = f.name, emoji = f.emoji, conversationIds = f.conversationIds)
+                // R18 icon-id contract - normalize on read (stale emoji to the
+                // default) so the domain layer only ever carries registry ids.
+                FolderSummary(id = f.id, name = f.name, emoji = folderIconId(f.emoji), conversationIds = f.conversationIds)
             },
         )
         is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -1870,7 +1874,7 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun deleteMessage(messageId: String): Result<Unit> =
         when (val r = api.deleteMessage(messageId, viewerId ?: "")) {
             is PulseResult.Success -> {
-                // R2-C item 2 — the tombstone echoes back with its ORIGINAL
+                // R2-C item 2 - the tombstone echoes back with its ORIGINAL
                 // createdAt, so a since= delta refetch can never re-fetch it:
                 // upsert the deleted row here (server truth) so "Message
                 // deleted" renders immediately (the VM's refetch then rides
@@ -1890,7 +1894,7 @@ class PulseRepositoryImpl @Inject constructor(
             val fileName = "pulse-${conversationId.take(12)}-${java.time.LocalDate.now()}.txt"
             File(dir, fileName).writeText(
                 buildString {
-                    appendLine("Pulse — exported chat")
+                    appendLine("Pulse - exported chat")
                     appendLine("Conversation: $conversationId")
                     appendLine("Messages: ${history.size}")
                     appendLine("Exported: ${java.time.LocalDateTime.now()}")
@@ -1911,7 +1915,7 @@ class PulseRepositoryImpl @Inject constructor(
         var cleared = 0
         for (message in mine) {
             if (api.deleteMessage(message.id, viewerId ?: "") is PulseResult.Success) cleared += 1
-            // keep going — clear as many of my own messages as the server allows
+            // keep going - clear as many of my own messages as the server allows
         }
         if (cleared > 0) messageDao.deleteByIds(mine.map { it.id })
         scheduleConversationsRefresh()
@@ -1933,7 +1937,7 @@ class PulseRepositoryImpl @Inject constructor(
         messageDao.upsertAll(listOf(MessageEntity.from(m, reactionsJsonOf(m))))
     }
 
-    // ── Wave 2 messaging depth (spec §0/§1 — routes verified live) ────
+    // Wave 2 messaging depth (spec §0/§1 - routes verified live)
 
     override suspend fun transcribeMessage(messageId: String): Result<TranscribeOutcome> =
         when (val r = api.transcribe(messageId, viewerId ?: "")) {
@@ -1943,7 +1947,7 @@ class PulseRepositoryImpl @Inject constructor(
                     transcribedAt = PulseTime.epochMs(r.value.transcribedAt).takeIf { it > 0L },
                     cached = r.value.cached,
                 )
-                // Targeted patch — never rewrites the row's other columns;
+                // Targeted patch - never rewrites the row's other columns;
                 // Room's messages Flow re-emits the updated row.
                 messageDao.updateTranscription(
                     id = messageId,
@@ -1955,10 +1959,10 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    // ── R1-W2F — F-MD-06 translation ──────────────────────────────
+    // R1-W2F - F-MD-06 translation
 
     /**
-     * POST /api/messages/{id}/translate — server-side LLM, persisted per
+     * POST /api/messages/{id}/translate - server-side LLM, persisted per
      * language; the fresh row's `translations[0].text` is what renders.
      * Failures carry the server's honest copy (403 non-participant, 400
      * deleted/empty, 502 service down) through [apiExceptionOf].
@@ -2009,7 +2013,7 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun unfurlMessage(messageId: String) {
         // Fire-and-forget (spec §1 row 8): absent preview / failures are
-        // silently ignored — the link:preview relay covers the rest.
+        // silently ignored - the link:preview relay covers the rest.
         when (val r = api.unfurl(messageId, viewerId ?: "")) {
             is PulseResult.Success -> r.value?.let { upsertMessage(it.toDomain()) }
             is PulseResult.Failure -> Log.w(TAG, "unfurl failed: ${r.kind}: ${r.message}")
@@ -2020,7 +2024,7 @@ class PulseRepositoryImpl @Inject constructor(
         when (val r = api.savedList(viewerId ?: "")) {
             is PulseResult.Success -> {
                 val items = r.value.items
-                // 1) the carried message rows into the cache — the library
+                // 1) the carried message rows into the cache - the library
                 //    renders them offline afterwards (spec §1 row 14).
                 messageDao.upsertAll(
                     items.map { MessageEntity.from(it.message.toDomain(), reactionsJsonOf(it.message.toDomain())) },
@@ -2028,7 +2032,7 @@ class PulseRepositoryImpl @Inject constructor(
                 // 2) the savedMessages index rows.
                 val savedRows = items.map { it.toSavedEntity() }
                 savedDao.upsertAll(savedRows)
-                // 3) prune — server truth: rows it no longer lists are gone.
+                // 3) prune - server truth: rows it no longer lists are gone.
                 val keep = savedRows.map { it.messageId }.toSet()
                 val stale = savedDao.all().filter { it.messageId !in keep }.map { it.messageId }
                 if (stale.isNotEmpty()) savedDao.deleteByIds(stale)
@@ -2095,7 +2099,7 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    // ── Wave 3: native 1:1 calls — history cache + single-writer queue ──
+    // Wave 3: native 1:1 calls - history cache + single-writer queue
 
     override fun observeCallLog(): Flow<List<CallLogEntry>> =
         callLogDao.observeAll().map { rows -> rows.map { it.toDomain() } }
@@ -2105,7 +2109,7 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Success -> {
                 val items = r.value.items.map { it.toDomain() }
                 callLogDao.upsertAll(items.map { CallLogCacheEntity.from(it) })
-                // Server is truth — prune rows it no longer lists (cap 50).
+                // Server is truth - prune rows it no longer lists (cap 50).
                 callLogDao.deleteNotIn(items.map { it.id })
                 Result.success(items)
             }
@@ -2121,7 +2125,7 @@ class PulseRepositoryImpl @Inject constructor(
             put("status", entry.status.wire)
             if (entry.durationSec > 0) put("durationSec", entry.durationSec)
         }
-        // Instant local visibility — the refresh reconciles the server id later.
+        // Instant local visibility - the refresh reconciles the server id later.
         callLogDao.upsert(CallLogCacheEntity.from(entry))
         return postCallLog(payload)
     }
@@ -2131,13 +2135,13 @@ class PulseRepositoryImpl @Inject constructor(
         if (rows.isEmpty()) return Result.success(0)
         var flushed = 0
         for (row in rows) {
-            // `continue` inside an inline lambda is experimental Kotlin —
+            // `continue` inside an inline lambda is experimental Kotlin -
             // the null-check form is semantically identical and stable.
             val payload = runCatching {
                 PulseJson.parseToJsonElement(row.payloadJson).jsonObject
             }.getOrNull()
             if (payload == null) {
-                Log.w(TAG, "call-log queue row ${row.id} unparseable — dropped")
+                Log.w(TAG, "call-log queue row ${row.id} unparseable - dropped")
                 callLogDao.dequeueById(row.id)
                 continue
             }
@@ -2153,7 +2157,7 @@ class PulseRepositoryImpl @Inject constructor(
                         callLogDao.bumpAttempts(row.id)
                         return Result.success(flushed)
                     } else {
-                        // Definitive 4xx verdict — the row is dead weight.
+                        // Definitive 4xx verdict - the row is dead weight.
                         callLogDao.dequeueById(row.id)
                     }
             }
@@ -2275,7 +2279,7 @@ class PulseRepositoryImpl @Inject constructor(
         }
     }
 
-    // ── Wave 5 voice rooms / stage / space — best-effort socket emits ──
+    // Wave 5 voice rooms / stage / space - best-effort socket emits
     // Same contract as emitCall: disconnected/offline = silent no-op (the
     // engines re-join on the next connect); these NEVER throw.
 
@@ -2345,7 +2349,7 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    // ── Wave 7 — collaboration & hub ───────────────────────────
+    // Wave 7 - collaboration & hub
 
     override suspend fun createRedPacket(conversationId: String, total: Long, count: Int, note: String?): Result<RedPacketCreateResultDto> =
         when (val r = api.createRedPacket(viewerId ?: "", conversationId, total, count, note)) {
@@ -2476,7 +2480,7 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    // ── R1-W2A — quick phrases (F-MS-29) ──────────────────────────────
+    // R1-W2A - quick phrases (F-MS-29)
 
     override suspend fun phrases(): Result<List<QuickPhrase>> =
         when (val r = api.phrases(viewerId ?: "")) {
@@ -2729,7 +2733,7 @@ class PulseRepositoryImpl @Inject constructor(
             runCatching { PulseJson.decodeFromString(RemindersPageDto.serializer(), blob) }.getOrNull()
         }
 
-    // ── Wave 6 — social graph & discovery ──────────────────────
+    // Wave 6 - social graph & discovery
 
     override suspend fun userProfile(userId: String): Result<UserProfile> =
         when (val r = api.fullUser(userId)) {
@@ -2846,7 +2850,7 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun joinInvite(code: String): Result<InviteJoinOutcome> =
         when (val r = api.inviteJoin(code, viewerId ?: "")) {
             is PulseResult.Success -> {
-                // The relay bumps every participant's list — refresh ours now.
+                // The relay bumps every participant's list - refresh ours now.
                 runCatching { refreshConversations() }
                 Result.success(InviteJoinOutcome(r.value.conversationId, r.value.alreadyMember))
             }
@@ -2953,7 +2957,7 @@ class PulseRepositoryImpl @Inject constructor(
         /** Web MAX_QUEUE parity for the call-log single-writer queue. */
         const val MAX_CALL_LOG_QUEUE = 50
 
-        /** Web MAX_QUEUE parity — the outbox never holds more rows. */
+        /** Web MAX_QUEUE parity - the outbox never holds more rows. */
         const val MAX_OUTBOX = 50
 
         /** Web MAX_DRAFT parity. */
@@ -2962,7 +2966,7 @@ class PulseRepositoryImpl @Inject constructor(
         /** Self-heal beat while a flush is pending (plan §6). */
         const val SELF_HEAL_MS = 20_000L
 
-        /** Handles nobody may claim — offline safety net mirroring registry/handles.json. */
+        /** Handles nobody may claim - offline safety net mirroring registry/handles.json. */
         private val BUILT_IN_RESERVED = setOf(
             "admin", "administrator", "root", "system", "support", "help", "team",
             "official", "moderator", "mod", "pulse", "staff", "security", "noreply",
@@ -2971,7 +2975,7 @@ class PulseRepositoryImpl @Inject constructor(
     }
 }
 
-// ── wire → domain mappers (kept beside the cache they feed) ──────
+// wire → domain mappers (kept beside the cache they feed)
 
 fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
     val others = members.filter { it.id != viewerId }
@@ -3037,7 +3041,7 @@ fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
     )
 }
 
-/** myStreak/deadStreak/lostStreak are {"count": n} on the wire — tolerate ints too. */
+/** myStreak/deadStreak/lostStreak are {"count": n} on the wire - tolerate ints too. */
 private fun streakCountOf(el: kotlinx.serialization.json.JsonElement?): Int = runCatching {
     (el?.jsonObject?.get("count") as? JsonPrimitive)?.intOrNull
         ?: el?.jsonPrimitive?.intOrNull
@@ -3087,7 +3091,8 @@ fun ChannelDto.toChannel(): Channel = Channel(
 fun FolderDto.toFolderSummary(): FolderSummary = FolderSummary(
     id = id,
     name = name,
-    emoji = emoji,
+    // R18 icon-id contract - normalize on read (stale emoji to the default).
+    emoji = folderIconId(emoji),
     conversationIds = conversationIds,
 )
 
@@ -3102,7 +3107,7 @@ fun ChatMessageDto.toDomain(): Message = Message(
     editedAt = editedAt,
     deletedAt = deletedAt,
     // THREAD vs QUOTE (spec §1.1): parentId is the thread root, replyTo is
-    // the inline quote — they are DIFFERENT axes and never merged.
+    // the inline quote - they are DIFFERENT axes and never merged.
     replyToId = replyTo?.id,
     threadRootId = parentId,
     pinnedAt = pinnedAt,
@@ -3124,26 +3129,26 @@ fun ChatMessageDto.toDomain(): Message = Message(
     fileName = fileName,
     fileSize = fileSize,
     viewOnce = viewOnce == true,
-    // ── Wave 2 depth (tolerant: absent/garbled keys degrade to null) ──
+    // Wave 2 depth (tolerant: absent/garbled keys degrade to null)
     viewedAt = PulseTime.epochMs(viewedAt).takeIf { it > 0L },
     transcript = transcript,
     transcribedAt = PulseTime.epochMs(transcribedAt).takeIf { it > 0L },
-    // Poll pick derives from options[].votedBy via PollInfo.pickFor — the
+    // Poll pick derives from options[].votedBy via PollInfo.pickFor - the
     // wire myOptionId is actor-relative on relays and NEVER trusted (spec §1 row 2).
     poll = poll.decodePollDto()?.toInfo(),
     linkPreview = linkPreview.decodeLinkPreviewDto()?.toInfo(),
     topicId = topicId,
     // Wave 7 rich objects ride payload as a RAW JSON STRING (red packet / game /
-    // tournament carriers) — cards parse tolerantly via PulseWave7Logic.
+    // tournament carriers) - cards parse tolerantly via PulseWave7Logic.
     payload = payload?.toString()?.takeIf { it != "null" && it != "{}" },
-    // REM-A — incognito + disappearing (F-MS-17/19): wire carries the anon flag,
+    // REM-A - incognito + disappearing (F-MS-17/19): wire carries the anon flag,
     // the deterministic alias, and the purge deadline (ISO → epoch ms).
     anon = anon == true,
     anonAlias = anonAlias,
     expiresAtEpochMs = PulseTime.epochMs(expiresAt).takeIf { it > 0L },
 )
 
-// ── Wave 2 wire → domain mappers (saved library + topics) ──────
+// Wave 2 wire → domain mappers (saved library + topics)
 
 fun SavedItemDto.toSavedItem(): SavedItem = SavedItem(
     savedAt = PulseTime.epochMs(savedAt),
@@ -3162,7 +3167,9 @@ fun SavedItemDto.toSavedEntity(): SavedMessageEntity = SavedMessageEntity(
 fun TopicDto.toDomain(): Topic = Topic(
     id = id,
     name = name,
-    emoji = emoji,
+    // R18 icon-id contract - normalize on read so stale emoji literals or
+    // unknown values never reach the UI (they resolve to the default id).
+    emoji = topicIconId(emoji),
     lastMessageAt = PulseTime.epochMs(lastMessageAt).takeIf { it > 0L },
     messageCount = messageCount,
 )
@@ -3188,7 +3195,7 @@ private fun kindOf(wire: String): Message.Kind = when (wire) {
     "game" -> Message.Kind.GAME
     "tournament" -> Message.Kind.TOURNAMENT
     // R1-W2A (F-MS-24): sticker rows carry payload {emoji,pack} and render
-    // as large emoji — never the system-pill fallback.
+    // as large emoji - never the system-pill fallback.
     "sticker" -> Message.Kind.STICKER
     // R1-W2F (F-MD-07): pin rows carry payload {lat,lng,label}.
     "location" -> Message.Kind.LOCATION
@@ -3196,7 +3203,7 @@ private fun kindOf(wire: String): Message.Kind = when (wire) {
 }
 
 /**
- * Identity-flow failure that keeps the wire's error/code/suggestion intact —
+ * Identity-flow failure that keeps the wire's error/code/suggestion intact -
  * the onboarding screen branches on exactly these (web parity with the
  * createUserRequest 409 handling in onboarding-screen.tsx).
  */
@@ -3212,8 +3219,8 @@ class OnboardingError(
     companion object {
         fun of(f: PulseResult.Failure): OnboardingError {
             // Transport-level failures carry raw engine strings ("CLEARTEXT
-            // communication … not permitted") — humans get real copy instead.
-            val human = if (f.status == null) "Can't reach the Pulse server — check your connection." else f.message
+            // communication … not permitted") - humans get real copy instead.
+            val human = if (f.status == null) "Can't reach the Pulse server - check your connection." else f.message
             return OnboardingError(f.status, f.code, f.suggestion, human)
         }
     }

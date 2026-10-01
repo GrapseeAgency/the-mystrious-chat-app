@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// /api/hub/swap — currency exchange (PC ⇄ GEM)
+// /api/hub/swap - currency exchange (PC ⇄ GEM)
 // GET  → rates + live market stats (volume from the real ledger)
 // POST → atomic exchange with ledger rows on both legs
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

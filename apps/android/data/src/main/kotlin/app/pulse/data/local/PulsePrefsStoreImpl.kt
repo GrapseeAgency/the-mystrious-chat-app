@@ -13,11 +13,11 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-/** Shared DataStore instance — prefs + the SecureSessionStore vault live in one file. */
+/** Shared DataStore instance - prefs + the SecureSessionStore vault live in one file. */
 internal val Context.pulsePrefs by preferencesDataStore(name = "pulse.prefs")
 
 /**
- * DataStore-backed prefs — the single source of device-side settings
+ * DataStore-backed prefs - the single source of device-side settings
  * (viewer identity, ambient FX mode, dark override, reduced motion).
  * Note: the DataStore instance is shared with [SecureSessionStore] (the
  * encrypted "session.vault" key lives in this same file).
@@ -25,7 +25,7 @@ internal val Context.pulsePrefs by preferencesDataStore(name = "pulse.prefs")
 @Singleton
 class PulsePrefsStoreImpl @Inject constructor(
     @ApplicationContext private val context: Context,
-    /** R2-C — the rich prefs store (ui-theme / spotlight / whiteboard draft). */
+    /** R2-C - the rich prefs store (ui-theme / spotlight / whiteboard draft). */
     private val localStore: app.pulse.data.local.PulsePrefsLocalStore,
 ) : PulsePrefsStore {
 
@@ -41,14 +41,14 @@ class PulsePrefsStoreImpl @Inject constructor(
         val VOICE_RATE = floatPreferencesKey("voice.rate")
         /** Web parity key: pulse-voice-captions (live-caption toggle for voice rooms). */
         val VOICE_CAPTIONS = booleanPreferencesKey("voice.captions")
-        // ── Wave 8 — LOCAL settings (web pulse.settings.v1 parity) ──
+        // Wave 8 - LOCAL settings (web pulse.settings.v1 parity)
         val HAPTICS_ON = booleanPreferencesKey("pulse.settings.hapticsOn")
-        /** R14 — device-local master ding gate (web soundOn, default true). */
+        /** R14 - device-local master ding gate (web soundOn, default true). */
         val SOUND_ON = booleanPreferencesKey("pulse.settings.soundOn")
         val QUIET_HOURS_ON = booleanPreferencesKey("pulse.settings.quietHoursOn")
         val QUIET_START = stringPreferencesKey("pulse.settings.quietStart")
         val QUIET_END = stringPreferencesKey("pulse.settings.quietEnd")
-        // R10-a — biometric App lock (device-local; never rides the server blob).
+        // R10-a - biometric App lock (device-local; never rides the server blob).
         val APP_LOCK_ON = booleanPreferencesKey("pulse.settings.appLockOn")
     }
 
@@ -63,17 +63,17 @@ class PulsePrefsStoreImpl @Inject constructor(
     override val voiceRate: Flow<Float> = context.pulsePrefs.data.map { it[Keys.VOICE_RATE] ?: 1f }
     override val voiceCaptions: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.VOICE_CAPTIONS] ?: false }
 
-    // Wave 8 — local-only settings: web defaults off/22:00/07:00, haptics true.
+    // Wave 8 - local-only settings: web defaults off/22:00/07:00, haptics true.
     override val hapticsOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.HAPTICS_ON] ?: true }
 
-    // R14 — the device ding master (web pulse-settings.ts soundOn: default true).
+    // R14 - the device ding master (web pulse-settings.ts soundOn: default true).
     override val soundOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.SOUND_ON] ?: true }
 
     override val quietHoursOn: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.QUIET_HOURS_ON] ?: false }
     override val quietStart: Flow<String> = context.pulsePrefs.data.map { it[Keys.QUIET_START] ?: "22:00" }
     override val quietEnd: Flow<String> = context.pulsePrefs.data.map { it[Keys.QUIET_END] ?: "07:00" }
 
-    // R10-a — App lock defaults OFF (an honest opt-in; enabling runs one
+    // R10-a - App lock defaults OFF (an honest opt-in; enabling runs one
     // confirmation BiometricPrompt in Settings).
     override val appLockEnabled: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.APP_LOCK_ON] ?: false }
 
@@ -146,13 +146,13 @@ class PulsePrefsStoreImpl @Inject constructor(
         }
     }
 
-    // ── R2-C — design language + spotlight + whiteboard draft (delegated
-    // to the rich PulsePrefsLocalStore, which owns the web-parity keys) ──
+    // R2-C - design language + spotlight + whiteboard draft (delegated
+    // to the rich PulsePrefsLocalStore, which owns the web-parity keys)
 
     override val uiTheme: Flow<String> = localStore.uiTheme
     override suspend fun setUiTheme(id: String) = localStore.setUiTheme(id)
 
-    // R4-B item 3 — navigation style (web pulse.navStyle.v2 key, delegated).
+    // R4-B item 3 - navigation style (web pulse.navStyle.v2 key, delegated).
     override val navStyle: Flow<app.pulse.protocol.PulseNavStyle> = localStore.navStyle
     override suspend fun setNavStyle(style: app.pulse.protocol.PulseNavStyle) = localStore.setNavStyle(style)
 

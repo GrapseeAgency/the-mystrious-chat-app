@@ -388,15 +388,15 @@ private struct ContactRow: View {
         .accessibilityLabel("\(user.name), double-tap Chat to message, or open the profile from the row")
     }
 
-    /// F-CP-09 — status emoji + text rows: the status line wins (glyph +
-    /// text), otherwise the @handle, else the neutral stamp.
+    /// F-CP-09 - status rows: the stored statusEmoji is an icon ID; the row
+    /// speaks its human label (web status-glyph LABEL_BY_ID), never a raw emoji.
     private var subtitle: String {
         if let emoji = user.statusEmoji, !emoji.isEmpty {
-            let glyph = pulseStatusGlyphDisplay(emoji)
+            let id = PulseStatusIconId.normalize(emoji)
             if let text = user.statusText, !text.isEmpty {
-                return "\(glyph) \(text)"
+                return "\(id.label) \u{00B7} \(text)"
             }
-            return glyph
+            return id.label
         }
         if let text = user.statusText, !text.isEmpty { return text }
         return user.username.map { "@\($0)" } ?? "On Pulse"

@@ -1,8 +1,8 @@
 import XCTest
 @testable import Pulse
 
-/// R2-D ITEM 5 — reminder-notification tap routing. The delegate decodes the
-/// notification userInfo into PulseDeepLink.room(conversationId) — the exact
+/// R2-D ITEM 5 - reminder-notification tap routing. The delegate decodes the
+/// notification userInfo into PulseDeepLink.room(conversationId) - the exact
 /// value the pulse://room scheme (RootView F-DL handler) consumes.
 final class PulseNotificationRouteTests: XCTestCase {
 

@@ -23,7 +23,7 @@ import org.junit.Test
  * Mechanism: with NO configured gateway (honest offline-first), the old code
  * still FIRED REST requests. `PulseEndpoints.http(path)` returned a bare
  * relative path, and Ktor's URLBuilder resolved it against its implicit
- * `http://localhost` default — so the OkHttp engine attempted a cleartext
+ * `http://localhost` default - so the OkHttp engine attempted a cleartext
  * request at the phone itself and Android's network security policy (target
  * SDK 35, correctly) blocked it. Home surfaced the raw policy string under
  * "Could not reach the gateway".
@@ -119,7 +119,7 @@ class HomeGatewayGuardTest {
 
     /**
      * The REAL engine end-to-end: production uses ktor-client-okhttp. Against a
-     * hermetic loopback TCP server — unconfigured must produce ZERO requests
+     * hermetic loopback TCP server - unconfigured must produce ZERO requests
      * (this is the exact regression that produced the implicit
      * http://localhost attempt); configured must land exactly one request on
      * the configured origin and parse the real Home payload.

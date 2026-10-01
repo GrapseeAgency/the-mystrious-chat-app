@@ -43,7 +43,7 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
-    // JVM unit tests — the pure chunker/WAV/scheduler/room machines
+    // JVM unit tests - the pure chunker/WAV/scheduler/room machines
     // (mirrors the :feature-stories JVM test stack).
     testImplementation(libs.junit4)
     testImplementation(libs.kotlinx.coroutines.test)

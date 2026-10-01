@@ -1,20 +1,22 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — "Neo" icon system (R35).
-// ONE icon voice for the whole product: Phosphor, duotone-first.
-//
-//   duo    → chrome + destinations (nav, section tiles, headers)
-//   bold   → primary actions (compose, confirm)
-//   fill   → brand marks (verified seal, send)
-//   line   → inline meta (rows, timestamps, quiet affordances)
-//
-// Zero emojis in UI chrome — anything legacy that persisted an
-// emoji VALUE renders through the glyph maps below as a real
-// icon, so the data contract stays intact while nothing raw
-// ever reaches the screen.
-// ─────────────────────────────────────────────────────────────
+// Pulse icon system. One voice for the whole product: Phosphor,
+// duotone-first. Weights: duo for chrome and destinations, bold for
+// primary actions, fill for brand marks, line for inline meta.
+// Pickable glyphs (folders, topics, status) are resolved from the
+// id registries in '@/lib/icon-ids'; stored values are ids and are
+// never rendered raw.
 'use client'
 
 import type { ComponentType } from 'react'
+import {
+  type FolderIconId,
+  type ReactionId,
+  type StampId,
+  type TopicIconId,
+  folderIconId,
+  reactionId,
+  stampId,
+  topicIconId,
+} from '@/lib/icon-ids'
 import {
   Aperture,
   ArrowLeft,
@@ -24,6 +26,7 @@ import {
   Brain,
   Briefcase,
   Broadcast,
+  Camera,
   CaretLeft,
   CaretRight,
   ChatCenteredDots,
@@ -37,9 +40,12 @@ import {
   Confetti,
   CopySimple,
   Crosshair,
+  Crown,
   Database,
   DotsSixVertical,
   DotsThree,
+  Drop,
+  Eyes,
   Fire,
   FolderPlus,
   FolderSimple,
@@ -51,14 +57,20 @@ import {
   ImageSquare,
   Info,
   Kanban,
+  Key,
+  Leaf,
   Lightning,
   Lock,
   MagnifyingGlass,
+  MaskHappy,
+  MaskSad,
   Microphone,
   Monitor,
+  Moon,
   MoonStars,
   MusicNotes,
   PaperPlaneTilt,
+  PawPrint,
   Palette,
   PencilSimple,
   PersonArmsSpread,
@@ -70,12 +82,20 @@ import {
   Rocket,
   SealCheck,
   ShareNetwork,
+  Shield,
   ShieldCheck,
   SignOut,
+  Smiley,
+  SmileySad,
+  Sparkle,
   Star,
   Sun,
   Sword,
+  Cake,
+  ThumbsDown,
+  ThumbsUp,
   Trash,
+  Trophy,
   UserCircle,
   UsersThree,
   VideoCamera,
@@ -114,13 +134,13 @@ const solid = (Icon: Ph): PulseGlyph => {
   return C
 }
 
-// ── destinations (duotone — the nav voice) ────────────────────
+// Destinations (duotone, the nav voice)
 export const PulseChats = duo(ChatCircleDots)
 export const PulseHub = duo(Planet)
 export const PulseContacts = duo(UsersThree)
 export const PulseProfile = duo(UserCircle)
 
-// ── chrome actions ───────────────────────────────────────────
+// Chrome actions
 export const PulseSearch = bold(MagnifyingGlass)
 export const PulsePlus = bold(Plus)
 export const PulseSettings = duo(GearSix)
@@ -145,7 +165,7 @@ export const PulseLoader = line(CircleNotch)
 export const PulseLock = line(Lock)
 export const PulseBolt = duo(Lightning)
 
-// ── media + comms ────────────────────────────────────────────
+// Media + comms
 export const PulsePhoto = line(ImageSquare)
 export const PulseMic = line(Microphone)
 export const PulseSend = solid(PaperPlaneTilt)
@@ -155,7 +175,7 @@ export const PulsePlay = line(PlayCircle)
 export const PulseCompose = bold(PencilSimple)
 export const PulseFolderPlus = bold(FolderPlus)
 
-// ── settings section tiles ───────────────────────────────────
+// Settings section tiles
 export const PulseUser = duo(UserCircle)
 export const PulsePalette = duo(Palette)
 export const PulseChat = duo(ChatCenteredDots)
@@ -169,7 +189,7 @@ export const PulseSun = line(Sun)
 export const PulseMoon = line(MoonStars)
 export const PulseMonitor = line(Monitor)
 
-// ── marks + decorative ───────────────────────────────────────
+// Marks + decorative
 export const PulseSeal = solid(SealCheck)
 export const PulseStar = duo(Star)
 export const PulseCoins = duo(Coins)
@@ -178,29 +198,95 @@ export const PulseGift = duo(Gift)
 export const PulseSword = duo(Sword)
 export const PulseFolder = duo(FolderSimple)
 
-// ── legacy persisted-value glyph maps (emoji in, icon out) ───
-export const FOLDER_GLYPHS: Record<string, PulseGlyph> = {
-  '📂': duo(FolderSimple),
-  '💼': duo(Briefcase),
-  '🎮': duo(GameController),
-  '❤️': duo(HeartStraight),
-  '🔥': duo(Fire),
-  '🎯': duo(Crosshair),
-  '🎵': duo(MusicNotes),
-  '🧠': duo(Brain),
-}
-export const TOPIC_GLYPHS: Record<string, PulseGlyph> = {
-  '💬': duo(ChatCircle),
-  '🎨': duo(Palette),
-  '🚀': duo(Rocket),
-  '🧠': duo(Brain),
-  '🎉': duo(Confetti),
-  '🛠️': line(Wrench),
-  '📌': duo(PushPin),
-  '☕': duo(Coffee),
+export const PulseSmiley = duo(Smiley)
+export const PulseThumb = duo(ThumbsUp)
+export const PulseHeart = duo(HeartStraight)
+export const PulsePaw = duo(PawPrint)
+
+// Pickable glyph registries, keyed by the ids persisted on the wire.
+export const FOLDER_ICON_GLYPHS: Record<FolderIconId, PulseGlyph> = {
+  folder: duo(FolderSimple),
+  briefcase: duo(Briefcase),
+  game: duo(GameController),
+  heart: duo(HeartStraight),
+  flame: duo(Fire),
+  target: duo(Crosshair),
+  music: duo(MusicNotes),
+  brain: duo(Brain),
 }
 
-/** Resolve a persisted legacy value to its icon (never returns an emoji). */
-export function glyphFor(map: Record<string, PulseGlyph>, value: string | null | undefined, fallback?: PulseGlyph): PulseGlyph {
-  return (value && map[value]) || fallback || duo(FolderSimple)
+export const TOPIC_ICON_GLYPHS: Record<TopicIconId, PulseGlyph> = {
+  chat: duo(ChatCircle),
+  palette: duo(Palette),
+  rocket: duo(Rocket),
+  brain: duo(Brain),
+  confetti: duo(Confetti),
+  wrench: line(Wrench),
+  pin: duo(PushPin),
+  coffee: duo(Coffee),
+}
+
+export function folderGlyphFor(value: string | null | undefined): PulseGlyph {
+  return FOLDER_ICON_GLYPHS[folderIconId(value)]
+}
+
+export function topicGlyphFor(value: string | null | undefined): PulseGlyph {
+  return TOPIC_ICON_GLYPHS[topicIconId(value)]
+}
+
+// Reaction glyphs, keyed by the reaction id persisted on the wire.
+export const REACTION_ICON_GLYPHS: Record<ReactionId, PulseGlyph> = {
+  heart: solid(HeartStraight),
+  fire: solid(Fire),
+  laugh: solid(MaskHappy),
+  wow: solid(Eyes),
+  sad: solid(SmileySad),
+  celebrate: solid(Confetti),
+  thumbsup: solid(ThumbsUp),
+}
+
+/** Solid fill inside chips and palettes; resolved through the id registry. */
+export function reactionGlyphFor(value: string | null | undefined): PulseGlyph {
+  return REACTION_ICON_GLYPHS[reactionId(value)]
+}
+
+// Stamp glyphs (the sticker surface), keyed by the stamp id persisted
+// in the sticker message payload.
+export const STAMP_ICON_GLYPHS: Record<StampId, PulseGlyph> = {
+  bolt: duo(Lightning),
+  flame: duo(Fire),
+  sparkles: duo(Sparkle),
+  rocket: duo(Rocket),
+  target: duo(Crosshair),
+  star: duo(Star),
+  trophy: duo(Trophy),
+  crown: duo(Crown),
+  gift: duo(Gift),
+  cake: duo(Cake),
+  music: duo(MusicNotes),
+  heart: duo(HeartStraight),
+  palette: duo(Palette),
+  camera: duo(Camera),
+  mic: duo(Microphone),
+  gamepad: duo(GameController),
+  brain: duo(Brain),
+  drama: duo(MaskSad),
+  smile: duo(Smiley),
+  pin: duo(PushPin),
+  sun: duo(Sun),
+  shield: duo(Shield),
+  key: duo(Key),
+  thumbsup: duo(ThumbsUp),
+  thumbsdown: duo(ThumbsDown),
+  leaf: duo(Leaf),
+  moon: duo(Moon),
+  drop: duo(Drop),
+  planet: duo(Planet),
+  coffee: duo(Coffee),
+  paw: duo(PawPrint),
+}
+
+/** Large duotone glyph for a stamp value (legacy emoji values included). */
+export function stampGlyphFor(value: string | null | undefined): PulseGlyph {
+  return STAMP_ICON_GLYPHS[stampId(value)]
 }

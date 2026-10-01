@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 0 — Keychain round-trip. The Security.framework wrapper must be
+/// Wave 0 - Keychain round-trip. The Security.framework wrapper must be
 /// save/load/update/delete complete; simulators without a writable keychain
 /// (rare CI quirk) are skipped honestly, never failed.
 final class PulseKeychainTests: XCTestCase {
@@ -29,7 +29,7 @@ final class PulseKeychainTests: XCTestCase {
     }
 
     func testViewerIdentityEnvelopeRoundTrip() throws {
-        // Writability probe — saveViewer itself is best-effort (Void).
+        // Writability probe - saveViewer itself is best-effort (Void).
         let probeAccount = "test.probe.\(UUID().uuidString)"
         defer { PulseKeychain.shared.delete(account: probeAccount) }
         guard PulseKeychain.shared.save(Data("probe".utf8), account: probeAccount) else {

@@ -1,6 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/whiteboard — collaborative canvas sync
-// (Task R21-c "Beyond Chat" wave — Zoom/Miro-style shared board)
+// /api/conversations/[id]/whiteboard - collaborative canvas sync
+// (Task R21-c "Beyond Chat" wave - Zoom/Miro-style shared board)
 //
 // Every stroke is a REAL persisted WhiteboardStroke row so the
 // canvas survives close/reopen and syncs across members by
@@ -12,7 +11,7 @@
 //          → { strokes: [{id,userId,color,width,points:number[][],createdAt}],
 //              serverTime: epochMs, resetAt: epochMs|null }
 //          `since` omitted → full snapshot (fresh joiners).
-//          `resetAt` = latest "whiteboard-clear" LogEvent marker —
+//          `resetAt` = latest "whiteboard-clear" LogEvent marker -
 //          clients wipe their canvas whenever it changes.
 //   POST   body { requesterId, strokes: [{color,width,points}] }
 //          → 201 { ids: string[], serverTime, created: n }   (batch 1..40)
@@ -23,9 +22,8 @@
 //          → 200 { success: true, reset: true, at: epochMs }
 //          (wipes every stroke + writes the reset marker LogEvent)
 //
-// All handlers verify conversation participation — no anonymous
+// All handlers verify conversation participation - no anonymous
 // board access, no mocks, everything lands in Prisma/SQLite.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -36,7 +34,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-// ── validation bounds (mirrored by the client-side canvas) ────
+// validation bounds (mirrored by the client-side canvas) 
 const STROKES_MAX_PER_CALL = 40
 const POINTS_MIN = 2
 const POINTS_MAX = 500
@@ -66,7 +64,7 @@ async function participantGuard(
   return null
 }
 
-/** Parse the `since` query param — accepts ISO strings or epoch milliseconds. */
+/** Parse the `since` query param - accepts ISO strings or epoch milliseconds. */
 function parseSince(raw: string | null): { ok: Date | null } | { error: string } {
   if (raw === null || raw.trim() === '') return { ok: null }
   const trimmed = raw.trim()
@@ -146,7 +144,7 @@ function serializeStroke(row: {
       )
     }
   } catch {
-    // corrupt row — ship it empty rather than crashing the whole board
+    // corrupt row - ship it empty rather than crashing the whole board
   }
   return {
     id: row.id,
@@ -219,7 +217,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const guard = await participantGuard(id, requesterId)
   if (guard) return guard
 
-  // ── undo mode: remove only the caller's latest stroke ────────
+  // undo mode: remove only the caller's latest stroke 
   if (body.action === 'undo') {
     const latest = await db.whiteboardStroke.findFirst({
       where: { conversationId: id, userId: requesterId },
@@ -236,7 +234,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     })
   }
 
-  // ── insert mode: batch of 1..40 strokes ──────────────────────
+  // insert mode: batch of 1..40 strokes 
   if (!Array.isArray(body.strokes)) {
     return NextResponse.json({ error: 'strokes must be an array.' }, { status: 400 })
   }
@@ -278,7 +276,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
 /**
  * DELETE /api/conversations/[id]/whiteboard?requesterId=
- * "Clear board" — wipes every stroke and appends a whiteboard-clear
+ * "Clear board" - wipes every stroke and appends a whiteboard-clear
  * LogEvent marker; pollers see `resetAt` move and wipe their canvas.
  */
 export async function DELETE(req: Request, { params }: RouteCtx) {

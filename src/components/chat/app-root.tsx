@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — application root & boot gate.
+// Pulse Chat - application root & boot gate.
 // Waits for store hydration, validates any stored session,
 // then renders Onboarding or the main tab shell.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -104,7 +102,7 @@ function BootGate() {
   if (minDelayDone && hydrated) {
     if (!user) status = 'onboarding'
     else if (!validation.isPending && !storedUserMissing) status = 'ready'
-    else if (validation.isError) status = 'ready' // network flake — proceed optimistically
+    else if (validation.isError) status = 'ready' // network flake - proceed optimistically
   }
 
   return (
@@ -124,7 +122,7 @@ function BootGate() {
 export function AppRoot() {
   return (
     <Providers>
-      {/* global FX layers — fixed, survive route/tab switches.
+      {/* global FX layers - fixed, survive route/tab switches.
           WebGLAmbient renders the prefs-selected shader field ('off' → nothing);
           ParticleLayer suppresses itself while a WebGL mode is active (R26-e contract). */}
       <WebGLAmbient layered />

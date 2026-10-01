@@ -22,8 +22,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * R8 Task 3-c — the FCM entry point. The system only ever starts this service
- * when a FirebaseApp is initialized (PulsePush.init with baked credentials) —
+ * R8 Task 3-c - the FCM entry point. The system only ever starts this service
+ * when a FirebaseApp is initialized (PulsePush.init with baked credentials) -
  * with no config it stays dormant, which IS the fail-closed behavior.
  *
  * Push envelope (server fanout contract, src/lib/push/transport.ts):
@@ -112,8 +112,8 @@ class PulseMessagingService : FirebaseMessagingService() {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(contentPi)
             .setAutoCancel(true)
-        // R10-a — quick reply (RemoteInput): the action routes through
-        // PulseReplyReceiver → SendMessageUseCase — the SAME send path the
+        // R10-a - quick reply (RemoteInput): the action routes through
+        // PulseReplyReceiver → SendMessageUseCase - the SAME send path the
         // room composer uses, so offline replies queue in the outbox.
         if (!conversationId.isNullOrBlank()) {
             val remoteInput = androidx.core.app.RemoteInput.Builder(PulseReplyPayload.KEY_REPLY_TEXT)

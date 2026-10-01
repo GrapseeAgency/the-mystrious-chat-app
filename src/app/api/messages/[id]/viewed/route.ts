@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/messages/[id]/viewed — consume a view-once attachment
-// ─────────────────────────────────────────────────────────────
+// /api/messages/[id]/viewed - consume a view-once attachment
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {

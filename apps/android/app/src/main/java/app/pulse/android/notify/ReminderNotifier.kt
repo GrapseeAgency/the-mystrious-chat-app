@@ -21,13 +21,13 @@ import androidx.work.Data
 import java.util.concurrent.TimeUnit
 
 /**
- * Wave 7 F-RO-06 — Tier-1 local reminder notifications.
+ * Wave 7 F-RO-06 - Tier-1 local reminder notifications.
  *
  * Two independent delivery paths (spec: "local schedule fires offline; the
  * due loop polls the API when online"):
- *  1. WorkManager one-shot at remindAt — survives process death (NOT reboot;
+ *  1. WorkManager one-shot at remindAt - survives process death (NOT reboot;
  *     documented honest limitation), fires without network.
- *  2. The shell due-loop (MainActivity, 30 s foreground) — server truth,
+ *  2. The shell due-loop (MainActivity, 30 s foreground) - server truth,
  *     PATCHes firedAt after the nudge so the web sheet and other devices
  *     converge.
  *
@@ -39,7 +39,7 @@ object ReminderNotifier {
     private const val BASE_NOTIFICATION_ID = 70_000
 
     /**
-     * Wave 8 — alert prefs gate. Channels are versioned per (sound, vibrate)
+     * Wave 8 - alert prefs gate. Channels are versioned per (sound, vibrate)
      * combo because Android notification channels are create-once: the user's
      * Notifications toggles select the channel, quiet hours force the silent
      * one at show-time (a time-dependent decision channel settings can't hold).
@@ -82,10 +82,10 @@ object ReminderNotifier {
             PackageManager.PERMISSION_GRANTED
 
     /**
-     * R2-C item 6 — [conversationId] (when known) arms the contentIntent:
+     * R2-C item 6 - [conversationId] (when known) arms the contentIntent:
      * tapping the notification deep-links `pulse://room/<id>` (the Wave-6
-     * routing in MainActivity handles the rest — the notification opens the
-     * exact chat, web parity for reminder nudges). R7 item 4 — [messageId]
+     * routing in MainActivity handles the rest - the notification opens the
+     * exact chat, web parity for reminder nudges). R7 item 4 - [messageId]
      * (when the reminder anchors a message) appends the `?jump=<mid>` payload
      * so the room auto-jumps + flashes the anchored bubble on open.
      */
@@ -99,7 +99,7 @@ object ReminderNotifier {
     ) {
         ensureChannel(context)
         if (!notificationsAllowed(context)) return
-        // Wave 8 alert gate — server prefs (sound/vibrate) + LOCAL quiet hours:
+        // Wave 8 alert gate - server prefs (sound/vibrate) + LOCAL quiet hours:
         // quiet hours win over everything; otherwise the toggles pick the channel.
         val sound = ReminderAlertPolicy.soundOn && !ReminderAlertPolicy.quietNow()
         val vibrate = ReminderAlertPolicy.vibrateOn && !ReminderAlertPolicy.quietNow()
@@ -114,7 +114,7 @@ object ReminderNotifier {
                 Uri.parse(app.pulse.core.link.PulseDeepLink.roomUri(conversationId, messageId)),
             ).apply {
                     // Confined to OUR pulse:// handler (the manifest VIEW
-                    // intent-filter) — never handed to another app.
+                    // intent-filter) - never handed to another app.
                     setPackage(context.packageName)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
@@ -170,7 +170,7 @@ object ReminderNotifier {
 
     /**
      * Fires the local notification at remindAt (no network needed). Server
-     * convergence stays with the due loop — this worker NEVER PATCHes.
+     * convergence stays with the due loop - this worker NEVER PATCHes.
      */
     class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
         override suspend fun doWork(): Result {

@@ -183,9 +183,10 @@ private struct RoomMessageRow: View {
                 onDoubleTapHeart: {
                     // R47 — double-tap bubble fires the heart quick reaction (web
                     // chat-room.tsx:7265-7268 onDoubleClick parity). The SAME
-                    // react path the 6-quick-reactions context menu uses; the
-                    // hearts burst rides the VM react path.
-                    viewModel.react(message, emoji: "❤️", session: session)
+                    // react path the quick-reactions context menu uses; the
+                    // hearts burst rides the VM react path. R19-b: the react
+                    // body carries the stable registry id.
+                    viewModel.react(message, emoji: PulseReactionId.heart.rawValue, session: session)
                 },
                 isClusterHead: cluster.head,
                 onSwipeReply: {
@@ -213,11 +214,14 @@ private struct RoomMessageRow: View {
 
     @ViewBuilder
     private var contextMenu: some View {
-        ForEach(ReactionPalette.emojis, id: \.self) { emoji in
+        // R19-b - the quick reaction strip is the 7 REACTION_IDS rendered as
+        // SF Symbol glyphs; the button sends the STABLE ID (the react body
+        // key keeps its historical name).
+        ForEach(PulseReactionId.allCases, id: \.self) { reaction in
             Button {
-                viewModel.react(message, emoji: emoji, session: session)
+                viewModel.react(message, emoji: reaction.rawValue, session: session)
             } label: {
-                Text(emoji)
+                Label("\(reaction.label)", systemImage: reaction.symbolName)
             }
         }
         Button {
@@ -2661,8 +2665,14 @@ private struct MessageInfoSheet: View {
                 if let reactions = message.reactions, !reactions.isEmpty {
                     Section("Reactions") {
                         ForEach(reactions, id: \.emoji) { group in
+                            // R19-b - normalized registry symbol + label, the
+                            // wire group key is never rendered raw.
                             HStack(spacing: 8) {
-                                Text(group.emoji).font(.body)
+                                Image(systemName: PulseReactionId.normalize(group.emoji).symbolName)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(PulseTheme.emberGlowTop)
+                                Text(PulseReactionId.normalize(group.emoji).label)
+                                    .font(.subheadline)
                                 Text("\(group.count)")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
@@ -3403,8 +3413,12 @@ struct BubbleView: View {
                     PulseHaptics.tap()
                     onReactionChip?(message, group.emoji)
                 } label: {
+                    // R19-b - the chip renders the NORMALIZED reaction's SF
+                    // Symbol + count: the wire group key is never rendered raw.
                     HStack(spacing: 3) {
-                        Text(group.emoji).font(.caption)
+                        Image(systemName: PulseReactionId.normalize(group.emoji).symbolName)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(PulseTheme.emberGlowTop)
                         if group.count > 1 {
                             Text("\(group.count)")
                                 .font(.caption2.weight(.semibold))
@@ -3424,8 +3438,8 @@ struct BubbleView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(
                     onReactionChip == nil
-                        ? "\(group.count) reactions with \(group.emoji)"
-                        : "Who reacted with \(group.emoji) — \(group.count) people",
+                        ? "\(group.count) reactions with \(PulseReactionId.normalize(group.emoji).label)"
+                        : "Who reacted with \(PulseReactionId.normalize(group.emoji).label) - \(group.count) people",
                 )
             }
         }
@@ -3610,10 +3624,6 @@ struct PulseBubbleBody: View {
         }
         return blocks
     }
-}
-
-enum ReactionPalette {
-    static let emojis = ["👍", "❤️", "😂", "😮", "😢", "🎉"]
 }
 
 /// Room state holder — transport lives in PulseSession; this owns messages,
@@ -4592,7 +4602,7 @@ final class RoomViewModel: ObservableObject {
             draft = ""
             return true
         case .topic(let name):
-            createTopic(name: name, emoji: "📌", session: session)
+            createTopic(name: name, emoji: PulseTopicIconId.chat.rawValue, session: session)
             draft = ""
             return true
         case .remind:
@@ -4869,7 +4879,7 @@ final class RoomViewModel: ObservableObject {
             do {
                 let fresh = try await session.api.react(messageId: message.id, emoji: emoji)
                 upsert(fresh)
-                if emoji == "❤️" { session.particles.fire(kind: .hearts, count: 24) }
+                if emoji == PulseReactionId.heart.rawValue { session.particles.fire(kind: .hearts, count: 24) }
             } catch {
                 errorText = Self.describe(error)
             }

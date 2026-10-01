@@ -1,12 +1,12 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Pulse — remote push transport (server-side only).
+// 
+// Pulse - remote push transport (server-side only).
 //
 // One registry (`PushToken` rows) feeds THREE delivery channels:
 //   • web     → Web Push (VAPID). Fully live: keys generated locally, the
 //               browser service worker (public/sw-push.js) displays the
 //               notification even with every Pulse tab closed.
 //   • android → FCM HTTP v1. Code path complete; delivery arms the moment a
-//               Firebase service account is configured (env below) — without
+//               Firebase service account is configured (env below) - without
 //               credentials the sender FAILS CLOSED (skips, honest log), it
 //               never pretends to send.
 //   • ios     → APNs token-based (JWT/ES256). Same fail-closed contract;
@@ -16,9 +16,9 @@
 // (the socket already carries realtime events into the open app); everyone
 // else gets one push per registered device. Dead web endpoints (404/410) and
 // unregistered mobile tokens prune their registry row so the registry
-// self-heals. Push must NEVER fail a user-facing request — every call site
+// self-heals. Push must NEVER fail a user-facing request - every call site
 // is fire-and-forget.
-// ─────────────────────────────────────────────────────────────────────────────
+// 
 import 'server-only'
 import crypto from 'node:crypto'
 import { db } from '@/lib/db'
@@ -27,9 +27,9 @@ export type PushPlatform = 'web' | 'android' | 'ios'
 
 export interface PushPayload {
   kind: 'message' | 'gcall' | 'call'
-  /** Notification title — sender display name (or "Group call"). */
+  /** Notification title - sender display name (or "Group call"). */
   title: string
-  /** Notification body — preview text, or a generic line when previews are off. */
+  /** Notification body - preview text, or a generic line when previews are off. */
   body: string
   conversationId: string
   messageId?: string
@@ -39,7 +39,7 @@ export interface PushPayload {
 
 const SOCKET_URL = 'http://localhost:3003'
 
-// ── Web Push (VAPID) — live in this deployment ───────────────────────────────
+// Web Push (VAPID) - live in this deployment 
 
 let webPushLib: typeof import('web-push') | null = null
 let webPushConfigured = false
@@ -50,11 +50,11 @@ async function webPushSender(): Promise<typeof import('web-push') | null> {
     const publicKey = process.env.VAPID_PUBLIC_KEY ?? ''
     const privateKey = process.env.VAPID_PRIVATE_KEY ?? ''
     if (!publicKey || !privateKey) {
-      console.warn('[push] web: VAPID keys missing — web push disabled (fail-closed)')
+      console.warn('[push] web: VAPID keys missing - web push disabled (fail-closed)')
       webPushConfigured = false
       return null
     }
-    // Bundler interop: web-push is CJS — `.default` may be undefined under
+    // Bundler interop: web-push is CJS - `.default` may be undefined under
     // webpack/turbopack; fall back to the namespace itself.
     const mod = await import('web-push')
     const lib = ((mod as { default?: typeof mod }).default ?? mod) as typeof import('web-push')
@@ -75,7 +75,7 @@ async function webPushSender(): Promise<typeof import('web-push') | null> {
   }
 }
 
-// ── FCM HTTP v1 (service-account OAuth2, cached) ─────────────────────────────
+// FCM HTTP v1 (service-account OAuth2, cached) 
 
 let fcmAccessToken: { token: string; expiresAt: number } | null = null
 
@@ -130,7 +130,7 @@ async function fcmBearer(): Promise<string | null> {
   }
 }
 
-// ── APNs token-based provider token (ES256, cached) ──────────────────────────
+// APNs token-based provider token (ES256, cached) 
 
 let apnsProviderToken: { token: string; expiresAt: number } | null = null
 
@@ -196,7 +196,7 @@ async function apnsBearer(): Promise<string | null> {
   }
 }
 
-// ── online suppression ───────────────────────────────────────────────────────
+// online suppression 
 
 async function onlineUserIds(): Promise<Set<string>> {
   try {
@@ -210,7 +210,7 @@ async function onlineUserIds(): Promise<Set<string>> {
   }
 }
 
-// ── per-platform senders ─────────────────────────────────────────────────────
+// per-platform senders 
 
 type SendResult = { ok: boolean; pruneToken: boolean; skipped?: boolean }
 
@@ -219,7 +219,7 @@ async function sendWeb(token: string, payload: PushPayload): Promise<SendResult>
   if (!lib) return { ok: false, pruneToken: false, skipped: true }
   // Registry stores the FULL PushSubscription JSON (endpoint + keys.p256dh/auth).
   // Payload encryption needs the keys; a keys-less row still gets a payload-less
-  // notification (the service worker renders a default message — never silent).
+  // notification (the service worker renders a default message - never silent).
   let subscription: { endpoint?: string; keys?: Record<string, string> } | null = null
   try {
     const parsed = JSON.parse(token) as { endpoint?: string; keys?: Record<string, string> }
@@ -308,7 +308,7 @@ async function sendIos(token: string, payload: PushPayload): Promise<SendResult>
         aps: {
           alert: { title: payload.title, body: payload.body },
           sound: 'default',
-          // R10 — remote message pushes render the OS quick-reply action: the
+          // R10 - remote message pushes render the OS quick-reply action: the
           // iOS client registers the PULSE_MSG category (PulseQuickReply.
           // registerCategory, UNTextInputNotificationAction) and the system
           // attaches its Reply control to banners carrying this aps.category.
@@ -332,7 +332,7 @@ async function sendIos(token: string, payload: PushPayload): Promise<SendResult>
   }
 }
 
-// ── fanout ───────────────────────────────────────────────────────────────────
+// fanout 
 
 export interface FanoutReport {
   users: number

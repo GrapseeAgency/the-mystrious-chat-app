@@ -90,23 +90,21 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-// ─────────────────────────────────────────────────────────────
-// R1-W2I — PiP pane overlay (F-PI-01..03). Mirror of the web
+// R1-W2I - PiP pane overlay (F-PI-01..03). Mirror of the web
 // src/components/chat/pip-chat.tsx (PipWindow + PipChat container) and
 // pip-stack.tsx (collapsed pill stack):
 //   · one expanded draggable card (≤ PIP_MAX_PANES live panes, oldest
-//     auto-evicts — store ops above)
+//     auto-evicts - store ops above)
 //   · drag repositions with a rubber-band frame clamp (top 64 / bottom
-//     92 / margin 10 — web pip-store.ts reserves) and a magnetic settle
+//     92 / margin 10 - web pip-store.ts reserves) and a magnetic settle
 //     to the nearest horizontal edge + momentum fling (web settle())
 //   · tap on the header opens the conversation in the main shell
-//     (web pulse:open-conversation dispatch — here: the nav route)
+//     (web pulse:open-conversation dispatch - here: the nav route)
 //   · collapsed panes render as 48dp glass pills on the right edge:
 //     avatar + unread badge (9+) + close X, tap → focusPane
 //   · data = the SHARED repo caches (conversations + per-pane messages)
-//     — web "no second socket, no extra polling" rule
+//     - web "no second socket, no extra polling" rule
 // Mounted once at the app root, above the NavHost + dock (MainActivity).
-// ─────────────────────────────────────────────────────────────
 
 /** Result of one mini-pane composer send (honest toast/restore routing). */
 sealed interface PipSendResult {
@@ -118,7 +116,7 @@ sealed interface PipSendResult {
     data class Failed(val message: String) : PipSendResult
 }
 
-/** Frame geometry reserves — web pip-store.ts constants, dp on Android. */
+/** Frame geometry reserves - web pip-store.ts constants, dp on Android. */
 internal val PIP_MARGIN_X: Dp = 10.dp
 internal val PIP_TOP_RESERVE: Dp = 64.dp
 internal val PIP_BOTTOM_RESERVE: Dp = 92.dp
@@ -138,18 +136,18 @@ class PipOverlayViewModel @Inject constructor(
     val pip: PulsePiPStore,
 ) : ViewModel() {
 
-    /** Live pane state — the overlay renders from this only. */
+    /** Live pane state - the overlay renders from this only. */
     val state: StateFlow<PiPState> = pip.state
 
     /**
      * Shared conversation cache (Room, socket-refreshed by the repo's
-     * debounced inbox refetch) — the pane cards read the same stream the
+     * debounced inbox refetch) - the pane cards read the same stream the
      * chats list does (web: the same TanStack caches the main room uses).
      */
     val conversations: StateFlow<List<Conversation>> = repo.observeConversations()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** Per-pane message cache — feeds pane-local unread + the seen marker. */
+    /** Per-pane message cache - feeds pane-local unread + the seen marker. */
     private val paneMessages: StateFlow<Map<String, List<Message>>> = state
         .map { s -> s.panes.map { it.conversationId }.distinct() }
         .distinctUntilChanged()
@@ -165,7 +163,7 @@ class PipOverlayViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     /**
-     * Pane-local unread per conversation — web usePaneUnread formula:
+     * Pane-local unread per conversation - web usePaneUnread formula:
      * incoming (not mine, not pending, not deleted) messages that arrived
      * after the pane was last the focused window.
      */
@@ -182,7 +180,7 @@ class PipOverlayViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     init {
-        // Seed a freshly opened pane's message cache — web fetchQuery
+        // Seed a freshly opened pane's message cache - web fetchQuery
         // limit=30 parity (one REST pull per conversation, fire-and-forget;
         // incoming socket rows still land via the shared envelope upsert).
         viewModelScope.launch {
@@ -191,7 +189,7 @@ class PipOverlayViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { ids -> ids.forEach(::seedOnce) }
         }
-        // The expanded window is the reading surface — incoming history is
+        // The expanded window is the reading surface - incoming history is
         // seen (web onSeen on message-list change; the store's 1s guard
         // caps the writes).
         viewModelScope.launch {
@@ -221,7 +219,7 @@ class PipOverlayViewModel @Inject constructor(
         pip.setPanePosition(conversationId, nx, ny)
 
     /**
-     * The mini-pane composer rides the SAME send use case as the room —
+     * The mini-pane composer rides the SAME send use case as the room -
      * optimistic echo + outbox queue on network-class failure (web pip send
      * hits the same POST /messages as the main composer).
      */
@@ -241,7 +239,7 @@ class PipOverlayViewModel @Inject constructor(
 }
 
 /**
- * The floating pane manager — mounted once in the shell Box. Renders the
+ * The floating pane manager - mounted once in the shell Box. Renders the
  * focused card plus the compact pill stack for every collapsed pane. The
  * wrapper Box stays hit-test-transparent (no background, no pointerInput)
  * so only the panes themselves consume touches.
@@ -255,7 +253,7 @@ fun PipPaneOverlay(
     onOpenRoom: (conversationId: String) -> Unit,
     onNotice: (String) -> Unit,
     modifier: Modifier = Modifier,
-    // R4-B item 3 — extra LEFT clearance so the draggable panes never sit
+    // R4-B item 3 - extra LEFT clearance so the draggable panes never sit
     // over the rail-style navigation band (68dp rail width).
     startInset: Dp = 0.dp,
 ) {
@@ -265,7 +263,7 @@ fun PipPaneOverlay(
     val haptics = LocalHapticFeedback.current
 
     // The Android dock (108dp + system nav) is taller than web's ~76px
-    // capsule — the effective bottom reserve honors whichever is larger so
+    // capsule - the effective bottom reserve honors whichever is larger so
     // panes never collide with the dock (web bottom reserve = 92).
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomReserve = maxOf(PIP_BOTTOM_RESERVE, 108.dp + navBottom)
@@ -290,7 +288,7 @@ fun PipPaneOverlay(
         val focused = state.panes.firstOrNull { it.conversationId == state.conversationId && !it.minimized }
         val stacked = state.panes.filter { it.conversationId != state.conversationId || it.minimized }
 
-        // the band the pill stack occupies (right edge, above the dock) —
+        // the band the pill stack occupies (right edge, above the dock) -
         // right-edge snaps keep the card clear of it (web stackBand)
         val stackBand: Pair<Dp, Dp>? = if (stacked.isEmpty()) {
             null
@@ -327,9 +325,9 @@ fun PipPaneOverlay(
                     viewModel.sendFromPane(pane.conversationId, text) { result ->
                         when (result) {
                             is PipSendResult.Failed -> onNotice("Could not send from the mini chat")
-                            // the pane has no queued bubble — the notice is the
+                            // the pane has no queued bubble - the notice is the
                             // honest receipt for an outbox-queued mini send
-                            PipSendResult.Queued -> onNotice("Message queued — sends when you're back online")
+                            PipSendResult.Queued -> onNotice("Message queued - sends when you're back online")
                             PipSendResult.Delivered -> Unit
                         }
                     }
@@ -366,7 +364,7 @@ fun PipPaneOverlay(
 }
 
 /**
- * The single expanded (focused) pane — a draggable glass card. Tap the
+ * The single expanded (focused) pane - a draggable glass card. Tap the
  * header → open the conversation in the main shell; drag → reposition with
  * edge settle. Content is condensed: name + latest message preview + a
  * one-line composer through the room's own send path.
@@ -469,7 +467,7 @@ private fun PipExpandedPane(
             .pulseGlass(dark, shape, deep = true),
     ) {
         Column(Modifier.fillMaxSize()) {
-            // header — the drag handle + tap-to-open target
+            // header - the drag handle + tap-to-open target
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -546,7 +544,7 @@ private fun PipExpandedPane(
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)))
 
-            // condensed body — latest message preview (web PipBubble subset)
+            // condensed body - latest message preview (web PipBubble subset)
             Column(
                 Modifier
                     .weight(1f)
@@ -574,7 +572,7 @@ private fun PipExpandedPane(
                     Text(
                         when {
                             conversation.lastMessageDeleted -> "deleted"
-                            conversation.lastMessagePreview.isNullOrBlank() -> "No messages here yet — say hi from the mini chat."
+                            conversation.lastMessagePreview.isNullOrBlank() -> "No messages here yet - say hi from the mini chat."
                             else -> conversation.lastMessagePreview.orEmpty()
                         },
                         fontSize = 12.sp,
@@ -590,7 +588,7 @@ private fun PipExpandedPane(
                 }
             }
 
-            // compact composer — one line through the room's own send path
+            // compact composer - one line through the room's own send path
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -670,7 +668,7 @@ private fun PipExpandedPane(
 }
 
 /**
- * Collapsed pane pill — web pip-stack.tsx PipStackPill: 48dp glass circle,
+ * Collapsed pane pill - web pip-stack.tsx PipStackPill: 48dp glass circle,
  * avatar, emerald unread badge (9+) top-left, close X top-right,
  * tap → focusPane (expand + demote the rest).
  */

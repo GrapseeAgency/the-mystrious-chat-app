@@ -4,7 +4,7 @@ import './globals.css'
 import { Toaster } from '@/components/ui/toaster'
 import { Toaster as SonnerToaster } from '@/components/ui/sonner'
 
-// R35 "Neo" identity — Space Grotesk carries the whole UI (techy,
+// R35 "Neo" identity - Space Grotesk carries the whole UI (techy,
 // geometric, unmistakably not-a-default), JetBrains Mono speaks
 // for timestamps, handles, IDs and stat numerals. The legacy
 // --font-geist-* variable names are kept so every existing
@@ -22,7 +22,7 @@ const pulseMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Pulse — Chat',
+  title: 'Pulse - Chat',
   description: 'Pulse is a real-time messenger: instant delivery, presence, typing indicators, read receipts, groups and more.',
   keywords: ['Pulse', 'chat', 'messenger', 'real-time'],
   manifest: '/manifest.json',

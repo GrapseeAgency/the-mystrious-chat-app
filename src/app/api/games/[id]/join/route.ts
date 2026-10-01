@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/games/[id]/join — claim the open O seat (Task R23-b)
+// /api/games/[id]/join - claim the open O seat (Task R23-b)
 //
 //   POST body { userId }
 //   → 200 { match, playerX: {id,name,color}, playerO: {...} }
@@ -8,7 +7,6 @@
 // caller is not the X owner · the caller is a room participant.
 // Race-safe: a guarded updateMany(playerOId: null) means exactly one
 // of two simultaneous joiners wins; the loser gets 409.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -21,7 +19,7 @@ interface RouteCtx {
 
 const BOARD_SIZE = 9
 
-/** Wire shape of a match — winLine is parsed back into number[] | null. */
+/** Wire shape of a match - winLine is parsed back into number[] | null. */
 interface SerializedMatch {
   id: string
   conversationId: string
@@ -68,7 +66,7 @@ function serializeMatch(row: {
         winLine = parsed.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
       }
     } catch {
-      // corrupt row — ship null rather than crashing the card
+      // corrupt row - ship null rather than crashing the card
     }
   }
   return {
@@ -147,7 +145,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
-  // Guarded write — playerOId must still be null at write time.
+  // Guarded write - playerOId must still be null at write time.
   const updated = await db.gameMatch.updateMany({
     where: { id, status: 'active', playerOId: null },
     data: { playerOId: userId },

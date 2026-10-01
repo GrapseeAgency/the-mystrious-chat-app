@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/hub/market — open listings board (Hub → Market panel)
-// ─────────────────────────────────────────────────────────────
+// /api/hub/market - open listings board (Hub → Market panel)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

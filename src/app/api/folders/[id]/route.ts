@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/folders/[id] — single folder mutations (Task R24-a)
+// /api/folders/[id] - single folder mutations (Task R24-a)
 //
 // Contracts:
 //   PATCH  { name?, emoji?, position? }
@@ -8,13 +7,13 @@
 //            position non-negative integer. → 200 { folder } ·
 //            404 unknown folder.
 //   DELETE → removes the folder; FolderConversation entries cascade
-//            (schema onDelete: Cascade — the chats themselves are
+//            (schema onDelete: Cascade - the chats themselves are
 //            NOT touched, only membership rows). → 200 { ok: true }
 //            · 404 unknown folder.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
+import { folderIconId } from '@/lib/icon-ids'
 import type { FolderSummary } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -25,7 +24,6 @@ interface RouteCtx {
 
 const NAME_MIN = 1
 const NAME_MAX = 24
-const EMOJI_MAX = 16
 
 const FOLDER_FULL_INCLUDE = {
   entries: {
@@ -52,7 +50,7 @@ function serializeFolder(row: {
 }
 
 /**
- * PATCH /api/folders/[id] — rename / re-emoji / reorder.
+ * PATCH /api/folders/[id] - rename / re-emoji / reorder.
  * Fields are optional; only the provided ones change.
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {
@@ -78,14 +76,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   }
 
   if (body.emoji !== undefined) {
-    const emoji = strField(body.emoji)
-    if (emoji.length === 0 || emoji.length > EMOJI_MAX) {
-      return NextResponse.json(
-        { error: `emoji must be 1-${EMOJI_MAX} characters.` },
-        { status: 400 },
-      )
-    }
-    data.emoji = emoji
+    data.emoji = folderIconId(strField(body.emoji))
   }
 
   if (body.position !== undefined) {
@@ -109,7 +100,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
 }
 
 /**
- * DELETE /api/folders/[id] — cascades FolderConversation entries via
+ * DELETE /api/folders/[id] - cascades FolderConversation entries via
  * the schema-level onDelete: Cascade. Conversations survive.
  */
 export async function DELETE(_req: Request, { params }: RouteCtx) {

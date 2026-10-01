@@ -13,7 +13,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 
 /**
- * Wave 3 — ongoing-call foreground service (manifest type `microphone`).
+ * Wave 3 - ongoing-call foreground service (manifest type `microphone`).
  * Android 11+ REQUIRES this to keep mic capture alive once the app leaves
  * the foreground; it also carries the honest ongoing-call notification.
  * Started by [CallEngine] when a call begins, stopped when it ends.
@@ -31,7 +31,7 @@ class CallForegroundService : Service() {
         }
         val label = intent?.getStringExtra(EXTRA_PEER_NAME) ?: "Voice call"
         val video = intent?.getBooleanExtra(EXTRA_VIDEO, false) ?: false
-        // Wave R1-W2D — video calls declare the CAMERA foreground-service type
+        // Wave R1-W2D - video calls declare the CAMERA foreground-service type
         // alongside MICROPHONE (Android 14 requires the manifest permission +
         // the manifest service type to carry it) so capture survives the
         // app leaving the foreground exactly like the mic does.

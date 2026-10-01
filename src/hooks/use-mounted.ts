@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — SSR-safe "mounted" flag without setState effects.
-// ─────────────────────────────────────────────────────────────
+// Pulse Chat - SSR-safe "mounted" flag without setState effects.
 'use client'
 
 import { useSyncExternalStore } from 'react'

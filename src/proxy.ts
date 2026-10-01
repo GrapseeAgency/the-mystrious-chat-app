@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Session-token optional-verify proxy — Wave 8 (spec §3.11
+// Session-token optional-verify proxy - Wave 8 (spec §3.11
 // A-2: "server verifies (middleware, optional-verify during
 // migration so web keeps working)").
 //
@@ -10,10 +9,9 @@
 //     stored User.sessionTokenHash, else 401. This is what makes a
 //     native token a real credential: stale/rotated/forged tokens
 //     fail closed for the clients that present them.
-//   • /api/internal/* stays excluded — those routes are already
+//   • /api/internal/* stays excluded - those routes are already
 //     guarded by the shared x-pulse-key, and the socket relay calls
 //     /api/internal/verify WITHOUT a user Bearer by design.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse, type NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { bearerToken, hashSessionToken } from '@/lib/session-token'

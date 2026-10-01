@@ -1,6 +1,6 @@
 import UIKit
 
-/// Wave 6 avatar pipeline — PhotosPicker bytes → SQUARE CENTER-CROP ≤512px
+/// Wave 6 avatar pipeline - PhotosPicker bytes → SQUARE CENTER-CROP ≤512px
 /// JPEG q0.85 (web avatar-editor parity) → base64 data-URL for
 /// POST /api/uploads. Used by the profile editor AND the new-channel photo.
 public enum PulseAvatarImage {

@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Navigation Registry (R25) — thirteen swappable navigation
+// Pulse Navigation Registry (R25) - thirteen swappable navigation
 // architectures. The old 4-style system is deleted; these thirteen
 // are the only nav languages the app ships:
 //
@@ -18,7 +17,6 @@
 //   contextual-dock · Contextual Dock
 //
 // Persisted `pulse.navStyle.v2`; broadcast `pulse.navStyle.changed`.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { create } from 'zustand'
@@ -48,7 +46,7 @@ export interface NavStyleMeta {
 }
 
 export const NAV_STYLES: Array<NavStyleMeta> = [
-  { id: 'capsule', label: 'Floating Capsule', hint: 'Detached glass capsule dock — the default', zone: 'bottom' },
+  { id: 'capsule', label: 'Floating Capsule', hint: 'Detached glass capsule dock - the default', zone: 'bottom' },
   { id: 'floating-top', label: 'Floating Top Nav', hint: 'Capsule bar floating beneath the top edge', zone: 'top' },
   { id: 'floating-dock', label: 'Floating Dock', hint: 'Desktop-style dock with magnifying icons', zone: 'bottom' },
   { id: 'pill', label: 'Pill Navigation', hint: 'Single segmented pill with sliding fill', zone: 'bottom' },

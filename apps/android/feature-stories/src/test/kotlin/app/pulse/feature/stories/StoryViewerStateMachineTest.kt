@@ -48,7 +48,7 @@ class StoryViewerStateMachineTest {
         return m
     }
 
-    // ── start position + pending mark ───────────────────────────
+    // start position + pending mark
 
     @Test
     fun `starts at the first story of the requested author`() {
@@ -85,7 +85,7 @@ class StoryViewerStateMachineTest {
         assertTrue(m.state.value.dismissed)
     }
 
-    // ── 5000ms playback + pause/resume ──────────────────────────
+    // 5000ms playback + pause/resume
 
     @Test
     fun `ticks accrue elapsed and auto-advance at 5000ms`() {
@@ -130,7 +130,7 @@ class StoryViewerStateMachineTest {
         assertTrue("viewer must close after the last story", m.state.value.dismissed)
     }
 
-    // ── tap zones / prev boundary ───────────────────────────────
+    // tap zones / prev boundary
 
     @Test
     fun `tap prev no-ops at the very first story`() {
@@ -158,7 +158,7 @@ class StoryViewerStateMachineTest {
         assertTrue("dismissed is terminal", m.state.value.dismissed)
     }
 
-    // ── D2: expiry filtering without network ────────────────────
+    // D2: expiry filtering without network
 
     @Test
     fun `expired stories are filtered out on feed update without any probe`() {
@@ -178,7 +178,7 @@ class StoryViewerStateMachineTest {
         assertTrue("nothing survives → close", m.state.value.dismissed)
     }
 
-    // ── D3: vanished current story → nearest survivor ───────────
+    // D3: vanished current story → nearest survivor
 
     @Test
     fun `current story deleted underneath auto-advances to the nearest survivor`() {
@@ -201,7 +201,7 @@ class StoryViewerStateMachineTest {
         assertNull("server-acked seen settles the pending mark", m.state.value.pendingMark)
     }
 
-    // ── D6: optimistic mark, single retry, give-up ──────────────
+    // D6: optimistic mark, single retry, give-up
 
     @Test
     fun `view mark failure retries exactly once then gives up`() {

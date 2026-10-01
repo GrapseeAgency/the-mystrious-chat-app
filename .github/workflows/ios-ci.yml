@@ -57,14 +57,26 @@ jobs:
           echo "device=${DEVICE}" >> "$GITHUB_OUTPUT"
           echo "udid=${UDID}" >> "$GITHUB_OUTPUT"
 
-      # Compilation proof — generic destination never fails on device churn.
+      # Compilation proof - generic destination never fails on device churn.
+      # The diagnostic Xfrontends print file:line for slow expressions; the
+      # raw log tee keeps exact file:line for every error (xcbeautify drops
+      # them, which turns a compile failure into a treasure hunt).
       - name: Build (generic iOS Simulator)
         run: |
           set -o pipefail
           xcodebuild -project Pulse.xcodeproj -scheme Pulse \
             -destination 'generic/platform=iOS Simulator' build \
             SWIFT_COMPILATION_MODE=singlefile COMPILER_INDEX_STORE_ENABLE=NO \
-            CODE_SIGNING_ALLOWED=NO | xcbeautify
+            CODE_SIGNING_ALLOWED=NO \
+            OTHER_SWIFT_FLAGS='-Xfrontend -warn-long-expression-type-checking=100 -Xfrontend -warn-long-function-bodies=300' \
+            2>&1 | tee /tmp/raw-build.log | xcbeautify || true
+          echo '=== raw error scan ==='
+          grep -nE "error:|Fatal|signal [0-9]|failed due|build command" /tmp/raw-build.log | head -100 || true
+          echo '=== slow expressions ==='
+          grep -cE "warning: .*took" /tmp/raw-build.log || true
+          echo '=== verdict ==='
+          tail -5 /tmp/raw-build.log
+          grep -qE "BUILD SUCCEEDED" /tmp/raw-build.log
 
       # SocketRoundTripTests target: the iOS SDK has no Process, so the node
       # relay must be started runner-side; the simulator reaches it on loopback.

@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/members — add members · leave group
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id]/members - add members · leave group
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -174,7 +172,7 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
  * Group-only role management. ADMINS ONLY.
  * - promote member → admin: always allowed
  * - demote admin → member: allowed unless the target is the LAST admin
- *   (self-demotion included — the group must always keep at least one admin)
+ *   (self-demotion included - the group must always keep at least one admin)
  * → 200 { conversation: ConversationDetail }; relays conversation:updated.
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {
@@ -227,7 +225,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     })
     if (otherAdmins === 0) {
       return NextResponse.json(
-        { error: 'Cannot demote the last admin — promote someone else first.' },
+        { error: 'Cannot demote the last admin - promote someone else first.' },
         { status: 400 },
       )
     }

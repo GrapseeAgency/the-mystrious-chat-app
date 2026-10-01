@@ -21,7 +21,7 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestMethodOrder
 
 /**
- * REAL Socket.IO round-trip — spawns the Wave-0 node relay
+ * REAL Socket.IO round-trip - spawns the Wave-0 node relay
  * (protocol/src/test/resources/pulse-relay) and drives the same
  * io.socket:socket.io-client artifact the Android data layer ships,
  * following the production client contract (join re-emitted on EVERY
@@ -32,7 +32,7 @@ import org.junit.jupiter.api.TestMethodOrder
  *   server-side transport drop → AUTO-reconnect → join re-emitted.
  *
  * Skipped (never failed) when `node`/`npm` are missing or the relay
- * cannot start — but CI runners ship node, so this runs there.
+ * cannot start - but CI runners ship node, so this runs there.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
@@ -49,7 +49,7 @@ class SocketRoundTripTest {
     private lateinit var messageNewA: EventSink
 
     // HTTP_1_1 is REQUIRED: the JDK client's default cleartext request carries
-    // `Upgrade: h2c`, and engine.io (socket.io) swallows such requests — the
+    // `Upgrade: h2c`, and engine.io (socket.io) swallows such requests - the
     // connection is accepted but zero response bytes ever arrive.
     private val http: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
@@ -58,8 +58,8 @@ class SocketRoundTripTest {
 
     @BeforeAll
     fun startRelay() {
-        assumeTrue(runCommand("node", "--version"), "node absent — skipping the live relay round-trip")
-        assumeTrue(runCommand("npm", "--version"), "npm absent — skipping the live relay round-trip")
+        assumeTrue(runCommand("node", "--version"), "node absent - skipping the live relay round-trip")
+        assumeTrue(runCommand("npm", "--version"), "npm absent - skipping the live relay round-trip")
 
         relayDir = File(javaClass.getResource("/pulse-relay/server.js")!!.toURI()).parentFile
         if (!File(relayDir, "node_modules/socket.io").exists()) {
@@ -67,7 +67,7 @@ class SocketRoundTripTest {
                 "npm", "install", "--prefix", relayDir.absolutePath, "--no-audit", "--no-fund",
                 timeoutSeconds = 240,
             )
-            assumeTrue(installed, "npm install failed — skipping the live relay round-trip")
+            assumeTrue(installed, "npm install failed - skipping the live relay round-trip")
         }
 
         server = ProcessBuilder("node", File(relayDir, "server.js").absolutePath)
@@ -75,14 +75,14 @@ class SocketRoundTripTest {
             .redirectErrorStream(true)
             .start()
 
-        // Health probe — up to 30s, then skip (e.g. port already claimed).
+        // Health probe - up to 30s, then skip (e.g. port already claimed).
         var healthy = false
         var attempts = 0
         while (!healthy && attempts < 30) {
             attempts += 1
             if (probeHealth()) healthy = true else Thread.sleep(1_000)
         }
-        assumeTrue(healthy, "relay did not come up on :$PORT — skipping")
+        assumeTrue(healthy, "relay did not come up on :$PORT - skipping")
     }
 
     @AfterAll
@@ -123,7 +123,7 @@ class SocketRoundTripTest {
         assertEquals(setOf("alice", "bob"), ackBPayload.onlineUserIds.toSet())
 
         // Stale snapshots ({alice}-only from alice's own join, in flight across
-        // the drain) can legitimately arrive first — keep polling until a
+        // the drain) can legitimately arrive first - keep polling until a
         // broadcast carrying BOTH users lands or the deadline expires.
         var presence: PresenceSnapshotPayload? = null
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
@@ -201,22 +201,22 @@ class SocketRoundTripTest {
     @Order(5)
     fun `server-dropped transport auto-reconnects and re-emits join`() {
         // A manual client.disconnect() never auto-reconnects (socket.io
-        // semantics) — so this simulates a REAL network blip: the relay
+        // semantics) - so this simulates a REAL network blip: the relay
         // kills alice's transport server-side. reconnection=true must
         // restore the socket, and the EVENT_CONNECT handler (the production
-        // PulseSocketClient contract) must re-emit `join` — a FRESH ack
+        // PulseSocketClient contract) must re-emit `join` - a FRESH ack
         // with a NEW socket entry is the proof.
         val kicked = URI.create("$BASE/kick?userId=alice").toURL()
             .openStream().bufferedReader().use { it.readText() }
         println("DBG kick → $kicked")
         assertTrue(kicked.contains("\"kicked\":1"), "relay did not drop alice: $kicked")
 
-        val ack = checkNotNull(joinedA.poll(25)) { "no joined ack after reconnect — join was not re-emitted" }
+        val ack = checkNotNull(joinedA.poll(25)) { "no joined ack after reconnect - join was not re-emitted" }
         val payload = PulseJson.decodeFromString(JoinedAck.serializer(), ack.toString())
         assertTrue("alice" in payload.onlineUserIds)
     }
 
-    // ── plumbing ────────────────────────────────────────────────
+    // plumbing
 
     private fun newClient(): io.socket.client.Socket =
         io.socket.client.IO.socket(
@@ -256,14 +256,14 @@ class SocketRoundTripTest {
 
         fun offer(value: Any?) {
             while (!queue.offer(value)) {
-                queue.poll() // drop oldest on overflow — a test sink never backpressures
+                queue.poll() // drop oldest on overflow - a test sink never backpressures
             }
         }
 
         fun poll(timeoutSeconds: Long = 15): Any? = queue.poll(timeoutSeconds, TimeUnit.SECONDS)
 
         fun drain() {
-            // Discard the current backlog (poll exactly size() elements —
+            // Discard the current backlog (poll exactly size() elements -
             // queue.poll() can itself return a legit null payload).
             var remaining = queue.size
             while (remaining > 0) {

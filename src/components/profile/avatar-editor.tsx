@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — profile photo editor (R27-d).
+// Pulse - profile photo editor (R27-d).
 // Lives at the top of the #/profile/edit sub-page (owned by
 // profile-tab.tsx). Real upload chain, zero mocks:
 //   file → canvas center-crop square + ≤512px downscale →
@@ -9,7 +8,6 @@
 // "Remove photo" PATCHes { avatar: "" } (server nulls the column).
 // Failures surface as sonner toasts and never leave a broken
 // preview (local optimistic preview resets with the error).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useRef, useState } from 'react'
@@ -165,7 +163,7 @@ export function AvatarPhotoEditor({ me }: { me: AppUser }) {
   return (
     <ProfileSection title="Profile photo" className="mt-0">
       <div className="flex items-center gap-4 p-1.5" aria-busy={busy}>
-        {/* circular preview — photo when set, palette glyph otherwise */}
+        {/* circular preview - photo when set, palette glyph otherwise */}
         <motion.div
           key={previewSrc ?? 'palette'}
           initial={reducedMotion ? false : { scale: 0.85, opacity: 0 }}
@@ -226,7 +224,7 @@ export function AvatarPhotoEditor({ me }: { me: AppUser }) {
           ) : (
             <p className="flex items-center gap-1.5 px-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
               <UserRound className="size-3.5" aria-hidden />
-              Shows everywhere — chats, lists and your profile
+              Shows everywhere - chats, lists and your profile
             </p>
           )}
 
@@ -236,7 +234,7 @@ export function AvatarPhotoEditor({ me }: { me: AppUser }) {
         </div>
       </div>
 
-      {/* hidden picker — JPEG/PNG/WebP only, handled by the real chain above */}
+      {/* hidden picker - JPEG/PNG/WebP only, handled by the real chain above */}
       <input
         ref={inputRef}
         id="avatar-photo-input"

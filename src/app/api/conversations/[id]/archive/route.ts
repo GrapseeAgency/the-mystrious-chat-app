@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/archive — per-user archive toggle
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id]/archive - per-user archive toggle
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

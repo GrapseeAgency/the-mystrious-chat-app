@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — full-screen message effects (iMessage-grade).
+// Pulse - full-screen message effects (iMessage-grade).
 // One shared <canvas> instance; a hand-rolled rAF particle engine.
 // Effects: confetti · lasers · echo · sparkles.
-// Transform/paint only — zero layout, zero DOM churn. Honors
+// Transform/paint only - zero layout, zero DOM churn. Honors
 // reducedMotion upstream (chat-room never triggers when enabled).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect, useRef } from 'react'
@@ -42,7 +40,7 @@ const EFFECT_DURATION_MS: Record<MessageEffectName, number> = {
   sparkles: 2200,
 }
 
-/** Tasteful Pulse palette — emerald/teal/amber/rose/violet, no blues. */
+/** Tasteful Pulse palette - emerald/teal/amber/rose/violet, no blues. */
 const CONFETTI_COLORS = [
   '#10b981',
   '#14b8a6',
@@ -132,7 +130,7 @@ function buildWorld(effect: MessageEffectName, w: number, h: number, origin: Eff
     const rings: EchoRing[] = [{ delayMs: 0 }, { delayMs: 240 }, { delayMs: 480 }]
     return { confetti: [], lasers: [], rings, sparkles: [] }
   }
-  // sparkles — 40 twinkling stars clustered around the bubble origin
+  // sparkles - 40 twinkling stars clustered around the bubble origin
   const spread = Math.min(w, h) * 0.34
   const sparkleColors = ['#ffffff', '#fde68a', '#a7f3d0', '#fbcfe8', '#ddd6fe']
   const sparkles: Sparkle[] = Array.from({ length: 40 }, () => {
@@ -194,7 +192,7 @@ export function MessageEffectsLayer({
     return () => window.removeEventListener('resize', fit)
   }, [])
 
-  // the engine — one rAF loop per effect run, auto-stops, cleans up fully
+  // the engine - one rAF loop per effect run, auto-stops, cleans up fully
   useEffect(() => {
     if (active === null) return
     const canvas = canvasRef.current

@@ -32,7 +32,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
 
-    // R10-a — the "App lock" toggle runs its one-shot confirmation BiometricPrompt
+    // R10-a - the "App lock" toggle runs its one-shot confirmation BiometricPrompt
     // locally (the host activity is MainActivity, a FragmentActivity).
     implementation(libs.androidx.biometric)
 

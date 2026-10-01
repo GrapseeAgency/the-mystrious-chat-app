@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/polls/[id]/vote — cast or move a single-choice vote
-// ─────────────────────────────────────────────────────────────
+// /api/polls/[id]/vote - cast or move a single-choice vote
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -45,7 +43,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Poll not found.' }, { status: 404 })
   }
   if (poll.closedAt !== null) {
-    return NextResponse.json({ error: 'This poll has ended — votes are frozen.' }, { status: 400 })
+    return NextResponse.json({ error: 'This poll has ended - votes are frozen.' }, { status: 400 })
   }
   if (!poll.options.some((o) => o.id === optionId)) {
     return NextResponse.json({ error: 'optionId does not belong to this poll.' }, { status: 400 })

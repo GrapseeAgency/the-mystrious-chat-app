@@ -87,7 +87,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * Group info — the native rebuild of web group-info-sheet.tsx / room-info-page.tsx
+ * Group info - the native rebuild of web group-info-sheet.tsx / room-info-page.tsx
  * (REM-A P1): members with role chips, admin-only add/promote/demote/kick,
  * rename + announcement mode, the disappearing-TTL picker (F-MS-19), slow mode,
  * the admin-only invite create/regenerate + copy (pulse://invite/<code>) and
@@ -96,14 +96,14 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class GroupInfoViewModel @Inject constructor(
     savedStateHandle: androidx.lifecycle.SavedStateHandle,
-    // R2-A item 9 — the photo pick's data-URL conversion needs the app context.
+    // R2-A item 9 - the photo pick's data-URL conversion needs the app context.
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
     private val repo: PulseRepository,
 ) : ViewModel() {
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
 
-    /** THIS viewer (prefs-sourced) — drives the (you) tag + self-row guard. */
+    /** THIS viewer (prefs-sourced) - drives the (you) tag + self-row guard. */
     val viewerId: String? get() = repo.viewerId
 
     data class UiState(
@@ -114,7 +114,7 @@ class GroupInfoViewModel @Inject constructor(
         val directory: List<User> = emptyList(),
         val notice: String? = null,
         val noticeError: Boolean = false,
-        /** Set once THIS viewer successfully left — the screen pops. */
+        /** Set once THIS viewer successfully left - the screen pops. */
         val left: Boolean = false,
     )
 
@@ -158,14 +158,14 @@ class GroupInfoViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { repo.setGroupBroadcast(conversationId, on) }
                 .onSuccess {
-                    notify(if (on) "Announcement mode on — only admins can post" else "Announcement mode off")
+                    notify(if (on) "Announcement mode on - only admins can post" else "Announcement mode off")
                     load()
                 }
                 .onFailure { notify(it.message ?: "Couldn't update announcement mode", isError = true) }
         }
     }
 
-    /** F-MS-19 — server presets 0 · 86 400 · 604 800 · 2 592 000 (route truth). */
+    /** F-MS-19 - server presets 0 · 86 400 · 604 800 · 2 592 000 (route truth). */
     fun setTtl(ttlSeconds: Int) {
         viewModelScope.launch {
             repo.setDisappearingTtl(conversationId, ttlSeconds)
@@ -177,7 +177,7 @@ class GroupInfoViewModel @Inject constructor(
         }
     }
 
-    /** R44 slow mode — admin-only; presets 0/5/10/30/60/300. */
+    /** R44 slow mode - admin-only; presets 0/5/10/30/60/300. */
     fun setSlowMode(seconds: Int) {
         viewModelScope.launch {
             runCatching { repo.setSlowMode(conversationId, seconds) }
@@ -226,7 +226,7 @@ class GroupInfoViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { repo.createGroupInvite(conversationId, regenerate) }
                 .onSuccess { code ->
-                    notify(if (regenerate) "Invite link regenerated — the old one is dead" else "Invite link ready")
+                    notify(if (regenerate) "Invite link regenerated - the old one is dead" else "Invite link ready")
                     load()
                 }
                 .onFailure { notify(it.message ?: "Couldn't create the invite link", isError = true) }
@@ -239,14 +239,14 @@ class GroupInfoViewModel @Inject constructor(
                 .onSuccess { outcome ->
                     _state.value = _state.value.copy(left = true)
                     if (outcome.promotedUserId != null) {
-                        notify("You left — a new admin was promoted")
+                        notify("You left - a new admin was promoted")
                     }
                 }
                 .onFailure { notify(it.message ?: "Couldn't leave the group", isError = true) }
         }
     }
 
-    // ── R2-C item 1 — DM adaptations: conv theme + mute ─────────
+    // R2-C item 1 - DM adaptations: conv theme + mute
 
     /**
      * Per-conversation themes for the DM "Chat theme" entry (the same
@@ -255,7 +255,7 @@ class GroupInfoViewModel @Inject constructor(
     val convThemes: StateFlow<Map<String, ConvTheme>> = repo.convThemes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    /** The Appearance global wallpaper — the ConvThemeSheet fallback line. */
+    /** The Appearance global wallpaper - the ConvThemeSheet fallback line. */
     val globalWallpaper: StateFlow<String> = repo.pulsePrefs
         .map { it.wallpaper ?: "none" }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "none")
@@ -265,7 +265,7 @@ class GroupInfoViewModel @Inject constructor(
     }
 
     /**
-     * R2-C item 1 — the room-info mute row (web room-info-page.tsx:858-901
+     * R2-C item 1 - the room-info mute row (web room-info-page.tsx:858-901
      * muteMutation parity): presets 8h · 1w · always, null = unmute.
      */
     fun setMute(until: String?) {
@@ -286,7 +286,7 @@ class GroupInfoViewModel @Inject constructor(
         }
     }
 
-    // ── R2-A item 6 — AUTOMATIONS (web automations-sheet.tsx) ─────────
+    // R2-A item 6 - AUTOMATIONS (web automations-sheet.tsx)
 
     data class AutomationsUi(
         val rows: List<Automation> = emptyList(),
@@ -354,7 +354,7 @@ class GroupInfoViewModel @Inject constructor(
         }
     }
 
-    /** R41 — trigger rename-in-place (PATCH gains `trigger`). */
+    /** R41 - trigger rename-in-place (PATCH gains `trigger`). */
     fun renameAutomationTrigger(automationId: String, trigger: String) {
         if (automationId in _automations.value.busyIds) return
         _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds + automationId)
@@ -387,7 +387,7 @@ class GroupInfoViewModel @Inject constructor(
         }
     }
 
-    // ── R2-A item 7 — WEBHOOKS (web group-info-sheet.tsx WebhooksSection) ──
+    // R2-A item 7 - WEBHOOKS (web group-info-sheet.tsx WebhooksSection)
 
     data class WebhooksUi(
         val rows: List<Webhook> = emptyList(),
@@ -436,7 +436,7 @@ class GroupInfoViewModel @Inject constructor(
         }
     }
 
-    // ── R2-A item 8 — SCREEN SECURITY (web room-info-page.tsx:581-632) ──
+    // R2-A item 8 - SCREEN SECURITY (web room-info-page.tsx:581-632)
 
     /** R42 per-VIEWER veil flag (dedicated participant route). */
     fun setMyPrivacy(on: Boolean) {
@@ -462,7 +462,7 @@ class GroupInfoViewModel @Inject constructor(
         }
     }
 
-    // ── R2-A item 9 — PHOTO EDIT (web room-info-page.tsx:476-484) ─────
+    // R2-A item 9 - PHOTO EDIT (web room-info-page.tsx:476-484)
 
     private val _photoBusy = MutableStateFlow(false)
     val photoBusy: StateFlow<Boolean> = _photoBusy.asStateFlow()
@@ -470,7 +470,7 @@ class GroupInfoViewModel @Inject constructor(
     /**
      * The picked photo rides the real upload chain (/api/uploads → data-URL
      * conversion via MediaSupport, identical to staged media) and the
-     * validated path lands in the PATCH — web `setPhotoMutation` parity.
+     * validated path lands in the PATCH - web `setPhotoMutation` parity.
      */
     fun updatePhoto(uri: android.net.Uri) {
         if (_photoBusy.value) return
@@ -511,27 +511,27 @@ class GroupInfoViewModel @Inject constructor(
     }
 }
 
-/** Server TTL presets (disappearing/route.ts — off · 24h · 7d · 30d). */
+/** Server TTL presets (disappearing/route.ts - off · 24h · 7d · 30d). */
 private val TTL_PRESETS = listOf(0, 86_400, 604_800, 2_592_000)
 
-/** Server slow-mode presets (slow-mode/route.ts — off · 5 · 10 · 30 · 60 · 300). */
+/** Server slow-mode presets (slow-mode/route.ts - off · 5 · 10 · 30 · 60 · 300). */
 private val SLOW_MODE_PRESETS = listOf(0, 5, 10, 30, 60, 300)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupInfoScreen(
     onBack: () -> Unit,
-    /** Fired after a successful leave — the host pops back to the chats list. */
+    /** Fired after a successful leave - the host pops back to the chats list. */
     onLeft: () -> Unit,
     viewModel: GroupInfoViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
-    // R2-A items 6/7/8/9 — automations, webhooks, photo-busy state.
+    // R2-A items 6/7/8/9 - automations, webhooks, photo-busy state.
     val automations by viewModel.automations.collectAsStateWithLifecycle()
     val webhooks by viewModel.webhooks.collectAsStateWithLifecycle()
     val photoBusy by viewModel.photoBusy.collectAsStateWithLifecycle()
-    // R2-C item 1 — the DM room-info surface (conv theme + mute state).
+    // R2-C item 1 - the DM room-info surface (conv theme + mute state).
     val convThemes by viewModel.convThemes.collectAsStateWithLifecycle()
     val globalWallpaper by viewModel.globalWallpaper.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -542,10 +542,10 @@ fun GroupInfoScreen(
     var addMembersOpen by remember { mutableStateOf(false) }
     var leaveConfirmOpen by remember { mutableStateOf(false) }
     var kickTarget by remember { mutableStateOf<ConversationMember?>(null) }
-    // R2-C item 1 — the DM theme sheet.
+    // R2-C item 1 - the DM theme sheet.
     var themeOpen by remember { mutableStateOf(false) }
 
-    // R2-A item 9 — the admin photo picker (web room-info "Edit photo"
+    // R2-A item 9 - the admin photo picker (web room-info "Edit photo"
     // overlay): pick → upload → PATCH photo (conversion lives in the VM).
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let(viewModel::updatePhoto)
@@ -566,15 +566,15 @@ fun GroupInfoScreen(
     val meta = state.meta
     val isAdmin = meta?.isAdmin == true
     val myId = viewModel.viewerId
-    // R2-C item 1 — the DM room-info adaptation (web room-info-page.tsx
+    // R2-C item 1 - the DM room-info adaptation (web room-info-page.tsx
     // serves DMs too): partner header, TTL, screen security, theme, mute;
     // members / invite / roles / announcement / leave stay group-only.
     val isDm = conversation?.kind == Conversation.Kind.DM
     val partner = conversation?.members?.firstOrNull { it.id != myId }
 
-    // R2-C item 8 — member-list search, surfaced ONLY past 8 members
+    // R2-C item 8 - member-list search, surfaced ONLY past 8 members
     // (web room-info-page.tsx:320-331 threshold); filters name (the native
-    // member row carries no username — honest single-field filter).
+    // member row carries no username - honest single-field filter).
     var memberFilter by remember { mutableStateOf("") }
     val allMembers = conversation?.members ?: emptyList()
     val memberQuery = memberFilter.trim().lowercase()
@@ -608,7 +608,7 @@ fun GroupInfoScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // ── identity card ────────────────────────────────────
+            // identity card
             item {
                 Surface(
                     shape = RoundedCornerShape(18.dp),
@@ -617,7 +617,7 @@ fun GroupInfoScreen(
                 ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (isDm) {
-                            // R2-C item 1 — partner header: avatar + name.
+                            // R2-C item 1 - partner header: avatar + name.
                             PulseAvatar(
                                 name = partner?.name ?: conversation?.title ?: "Chat",
                                 colorHex = partner?.color ?: conversation?.accentColor,
@@ -625,7 +625,7 @@ fun GroupInfoScreen(
                                 isGroup = false,
                             )
                         } else {
-                            // R2-A item 9 — the live photo when one is set (web
+                            // R2-A item 9 - the live photo when one is set (web
                             // GroupAvatar photo parity), else the letter avatar.
                             val photo = conversation?.avatar
                             if (photo != null) {
@@ -664,7 +664,7 @@ fun GroupInfoScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        // Group-only identity controls (DMs have neither) —
+                        // Group-only identity controls (DMs have neither) -
                         // R2-A item 9 photo edit + rename, admins of ANY group.
                         if (!isDm && isAdmin) {
                             IconButton(
@@ -694,8 +694,8 @@ fun GroupInfoScreen(
                 }
             }
 
-            // ── R2-A item 8 — screen security (web room-info-page.tsx:973-1023:
-            // per-VIEWER switch first, then the room-wide switch) ──
+            // R2-A item 8 - screen security (web room-info-page.tsx:973-1023:
+            // per-VIEWER switch first, then the room-wide switch)
             item {
                 Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -720,7 +720,7 @@ fun GroupInfoScreen(
                             Column(Modifier.weight(1f)) {
                                 Text("Screen security for everyone", fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
                                 Text(
-                                    "The whole room veils — any participant can toggle it",
+                                    "The whole room veils - any participant can toggle it",
                                     fontSize = 11.5.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -734,8 +734,8 @@ fun GroupInfoScreen(
                 }
             }
 
-            // ── R2-C item 1 — mute notifications (web room-info-page.tsx
-            // :858-901 — the per-user watermark API; presets 8h · 1w · always) ──
+            // R2-C item 1 - mute notifications (web room-info-page.tsx
+            // :858-901 - the per-user watermark API; presets 8h · 1w · always)
             item {
                 val mutedUntil = conversation?.mutedUntilEpoch ?: 0
                 val isMuted = mutedUntil > System.currentTimeMillis()
@@ -773,8 +773,8 @@ fun GroupInfoScreen(
                 }
             }
 
-            // ── R2-C item 1 — DM chat theme entry (web room-info-page.tsx
-            // :1176-1200; groups reach the same sheet from the room header) ──
+            // R2-C item 1 - DM chat theme entry (web room-info-page.tsx
+            // :1176-1200; groups reach the same sheet from the room header)
             if (isDm) {
                 item {
                     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
@@ -798,7 +798,7 @@ fun GroupInfoScreen(
                 }
             }
 
-            // ── admin: invite link (groups only — DMs have no invites) ──
+            // admin: invite link (groups only - DMs have no invites)
             if (isAdmin && !isDm) {
                 item {
                     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
@@ -854,7 +854,7 @@ fun GroupInfoScreen(
                 }
             }
 
-            // ── F-MS-19 disappearing TTL picker (any participant) ──
+            // F-MS-19 disappearing TTL picker (any participant)
             item {
                 Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -893,7 +893,7 @@ fun GroupInfoScreen(
                 }
             }
 
-            // ── admin: announcement + slow mode (groups only) ────
+            // admin: announcement + slow mode (groups only)
             if (isAdmin && !isDm) {
                 item {
                     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)) {
@@ -941,7 +941,7 @@ fun GroupInfoScreen(
                 }
             }
 
-            // ── R2-A item 6 — AUTOMATIONS (admin manages; members read) ──
+            // R2-A item 6 - AUTOMATIONS (admin manages; members read)
             item {
                 AutomationsSection(
                     isAdmin = isAdmin,
@@ -954,7 +954,7 @@ fun GroupInfoScreen(
                 )
             }
 
-            // ── R2-A item 7 — WEBHOOKS (everyone reads/copies; admin creates) ──
+            // R2-A item 7 - WEBHOOKS (everyone reads/copies; admin creates)
             item {
                 WebhooksSection(
                     isAdmin = isAdmin,
@@ -968,7 +968,7 @@ fun GroupInfoScreen(
                 )
             }
 
-            // ── members (groups only — DMs render the partner header) ──
+            // members (groups only - DMs render the partner header)
             if (!isDm) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
@@ -988,7 +988,7 @@ fun GroupInfoScreen(
                         }
                     }
                 }
-                // R2-C item 8 — member search, ONLY past 8 members (web
+                // R2-C item 8 - member search, ONLY past 8 members (web
                 // room-info-page.tsx:320-331 threshold).
                 if (allMembers.size > 8) {
                     item {
@@ -1027,7 +1027,7 @@ fun GroupInfoScreen(
                                 Text("Admin", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                             }
                         }
-                        // Admin-only governance on OTHERS — hidden by role (web parity).
+                        // Admin-only governance on OTHERS - hidden by role (web parity).
                         if (isAdmin && !isMe) {
                             if (member.role == "admin") {
                                 TextButton(onClick = { viewModel.setRole(member.id, promote = false) }) {
@@ -1053,7 +1053,7 @@ fun GroupInfoScreen(
                 }
             }
 
-            // ── leave (groups only) ─────────────────────────────
+            // leave (groups only)
             if (!isDm) {
                 item {
                     Spacer(Modifier.height(8.dp))
@@ -1072,7 +1072,7 @@ fun GroupInfoScreen(
         }
     }
 
-    // ── dialogs ─────────────────────────────────────────────────
+    // dialogs
 
     if (renameOpen) {
         var name by remember { mutableStateOf(conversation?.title ?: "") }
@@ -1184,7 +1184,7 @@ fun GroupInfoScreen(
         )
     }
 
-    // R2-C item 1 — the DM chat-theme sheet (the SAME ConvThemeSheet the
+    // R2-C item 1 - the DM chat-theme sheet (the SAME ConvThemeSheet the
     // room header mounts; every tap commits through the prefs store).
     if (themeOpen) {
         ConvThemeSheet(

@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// /api/messages/[id]/unfurl — attach a real Open-Graph preview.
+// /api/messages/[id]/unfurl - attach a real Open-Graph preview.
 // Fetches the live web page (with timeout), caches metadata in the
 // LinkPreview table, links it to the message and relays it out.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -91,7 +89,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Message not found.' }, { status: 404 })
   }
   if (message.deletedAt || message.linkUrl !== null) {
-    // already consumed or nothing to do — answer with current state
+    // already consumed or nothing to do - answer with current state
     const current = await db.message.findUnique({ where: { id }, include: MESSAGE_FULL_INCLUDE })
     return NextResponse.json({ message: current ? mapMessage(current, userId) : null })
   }

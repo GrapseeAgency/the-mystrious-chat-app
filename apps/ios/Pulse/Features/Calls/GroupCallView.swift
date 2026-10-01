@@ -2,30 +2,28 @@ import Combine
 import SwiftUI
 import WebRTC
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — GROUP call surfaces (3-d; web group-call-overlay.tsx parity).
+// Pulse - GROUP call surfaces (3-d; web group-call-overlay.tsx parity).
 //
-//   GroupCallOverlayHostView — RootView-level full-screen host (mounts the
+//   GroupCallOverlayHostView - RootView-level full-screen host (mounts the
 //                              overlay whenever the engine is not idle).
-//   GroupCallView            — participant grid (LazyVGrid), self tile +
+//   GroupCallView            - participant grid (LazyVGrid), self tile +
 //                              remote tiles (video where kind=video),
 //                              header (title · status · member count),
 //                              mic/camera/leave controls, honest mic-denied
 //                              error card, ended card ('You left · M:SS').
-//   GroupCallBannerHostView  — the shell-level incoming ring banner +
-//                              the 'Ongoing group call · N in call — Join'
+//   GroupCallBannerHostView  - the shell-level incoming ring banner +
+//                              the 'Ongoing group call · N in call - Join'
 //                              banner (web mounts both at SHELL level,
 //                              main-shell.tsx :555). Suppressed while
 //                              CallKit owns the incoming presentation.
 //
-// Rendering binds PulseGroupCallEngine published state only — no call
+// Rendering binds PulseGroupCallEngine published state only - no call
 // logic lives here (single source of truth: the engine + the policy).
 // Styling follows the 1:1 CallView conventions (glass cards, emerald
 // wash, CallActionButton footer).
-// ─────────────────────────────────────────────────────────────
 
 /// Hosted by RootView (next to the 1:1 CallOverlayHostView, above the tab
-/// chrome) — mounts the group overlay whenever the engine is not idle.
+/// chrome) - mounts the group overlay whenever the engine is not idle.
 struct GroupCallOverlayHostView: View {
     @ObservedObject var engine: PulseGroupCallEngine
     let viewer: PulseViewer?
@@ -85,7 +83,7 @@ struct GroupCallView: View {
         }
     }
 
-    // ── header (title · status · member count) ───────────────
+    // header (title · status · member count)
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -132,7 +130,7 @@ struct GroupCallView: View {
         }
     }
 
-    // ── participant grid (web GroupCallOverlay parity) ───────
+    // participant grid (web GroupCallOverlay parity)
 
     private var gridColumns: [GridItem] {
         // Web gridCols: 1 tile → single column; else two (mobile width).
@@ -273,7 +271,7 @@ struct GroupCallView: View {
         .allowsHitTesting(false)
     }
 
-    // ── error / ended cards (CallView glass card parity) ─────
+    // error / ended cards (CallView glass card parity)
 
     private func errorCard(_ text: String) -> some View {
         VStack(spacing: 12) {
@@ -341,7 +339,7 @@ struct GroupCallView: View {
         .padding(.top, 22)
     }
 
-    // ── controls (mic · leave · camera) ──────────────────────
+    // controls (mic · leave · camera)
 
     private var controls: some View {
         HStack(spacing: 26) {
@@ -370,7 +368,7 @@ struct GroupCallView: View {
     }
 }
 
-// ── shell-level banners (web GroupCallRingBanner parity) ─────
+// shell-level banners (web GroupCallRingBanner parity)
 
 /// RootView-level banner host: the live incoming ring AND the
 /// 'Ongoing group call' discovery banner (both mount at shell level on
@@ -515,7 +513,7 @@ struct GroupCallBannerHostView: View {
 }
 
 /// Ring-banner pulse (web animate-ping parity; reduced-motion aware).
-/// `.task` cancels the loop with the modifier identity — no animation
+/// `.task` cancels the loop with the modifier identity - no animation
 /// leaks between banner instances.
 private struct BannerPulse: ViewModifier {
     @State private var phase = false

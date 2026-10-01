@@ -1,15 +1,13 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Hub — #/hub/app/<appId> app sub-page (R27-b).
+// Pulse Hub - #/hub/app/<appId> app sub-page (R27-b).
 // Replaces the R19-e overlay sheet with a REAL hash-routed page:
 // accent hero (brand-true gradient + icon tile + tagline), real
 // wallet chip, feature list, install/community/connectors with
 // optimistic mutations, and a related-apps rail. The "Open" action
-// keeps the existing contract — the app's community conversation
+// keeps the existing contract - the app's community conversation
 // is opened in the main chat surface via onOpenConversation.
-// appId = String(MATRIX app.n) · zero mocks — every live value
+// appId = String(MATRIX app.n) · zero mocks - every live value
 // comes from /api/hub/* → Prisma. Shared plumbing lives in
 // hub-data.tsx; glass primitives in hub-primitives.tsx.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useState } from 'react'
@@ -72,7 +70,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/chat/user-avatar'
 
-// ── shared micro-bits (page-local) ───────────────────────────
+// shared micro-bits (page-local) 
 
 /** Spring-pops whenever the value changes (join-success count pulse). */
 function CountPulse({ value, className }: { value: number; className?: string }) {
@@ -132,7 +130,7 @@ function InstallerStack({ installers, extra }: { installers: InstallInstaller[];
   )
 }
 
-// ── Tab chrome ───────────────────────────────────────────────
+// Tab chrome 
 
 type DetailTab = 'overview' | 'community' | 'connectors'
 
@@ -212,7 +210,7 @@ function DetailTabBar({
   )
 }
 
-// ── Hero (identity + live install card + actions) ────────────
+// Hero (identity + live install card + actions) 
 
 function AppHero({
   appId,
@@ -242,10 +240,10 @@ function AppHero({
   const openChat = () => {
     if (conversation) {
       onOpenConversation?.(conversation.id)
-      backHash('/hub') // the sheet used to close itself — the page pops its route
+      backHash('/hub') // the sheet used to close itself - the page pops its route
       return
     }
-    // not a member yet — join (idempotent, auto-provisions) then hand off
+    // not a member yet - join (idempotent, auto-provisions) then hand off
     join.mutate()
   }
 
@@ -327,7 +325,7 @@ function AppHero({
         </p>
       ) : null}
 
-      {/* actions — install · open · overflow */}
+      {/* actions - install · open · overflow */}
       <div className="relative mt-3 flex items-center gap-2">
         <Button
           className={cn(
@@ -394,7 +392,7 @@ function AppHero({
           )}
         </Button>
 
-        {/* overflow — real destructive actions only (mute has no server contract yet) */}
+        {/* overflow - real destructive actions only (mute has no server contract yet) */}
         <div className="relative shrink-0">
           <button
             type="button"
@@ -446,7 +444,7 @@ function AppHero({
   )
 }
 
-// ── Feature list (real matrix fields) ────────────────────────
+// Feature list (real matrix fields) 
 
 function FeatureList({ appId }: { appId: string }) {
   const app = MATRIX.find((a) => String(a.n) === appId)!
@@ -482,7 +480,7 @@ function FeatureList({ appId }: { appId: string }) {
   )
 }
 
-// ── Overview tab (blueprint fields) ──────────────────────────
+// Overview tab (blueprint fields) 
 
 function OverviewPanel({ appId, statusQ }: { appId: string; statusQ: ReturnType<typeof useAppInstallStatus> }) {
   const app = MATRIX.find((a) => String(a.n) === appId)!
@@ -504,7 +502,7 @@ function OverviewPanel({ appId, statusQ }: { appId: string; statusQ: ReturnType<
       </div>
       <div className="rounded-xl border border-dashed border-zinc-300 p-3 text-center text-[11px] text-zinc-500 dark:border-white/15">
         Pulse implements this app&apos;s nav pattern as{' '}
-        <strong className="text-emerald-600 dark:text-emerald-400">{MATRIX_TO_NAV[app.nav]}</strong> — switch it live
+        <strong className="text-emerald-600 dark:text-emerald-400">{MATRIX_TO_NAV[app.nav]}</strong> - switch it live
         from the Profile → Navigation panel.
       </div>
       {statusQ.isError ? <LoadErrorCard onRetry={() => void statusQ.refetch()} /> : null}
@@ -512,7 +510,7 @@ function OverviewPanel({ appId, statusQ }: { appId: string; statusQ: ReturnType<
   )
 }
 
-// ── Community tab ────────────────────────────────────────────
+// Community tab 
 
 function CommunitySkeleton() {
   return (
@@ -564,7 +562,7 @@ function CommunityPanel({
     )
   }
 
-  // founder moment — nobody has provisioned this app's group yet
+  // founder moment - nobody has provisioned this app's group yet
   if (!conversation) {
     return (
       <div className="glass-deep glass-sheen rounded-2xl border border-dashed border-zinc-300 p-5 text-center dark:border-white/15">
@@ -576,7 +574,7 @@ function CommunityPanel({
         </div>
         <p className="mt-2.5 text-sm font-bold">Be the first to start the community</p>
         <p className="mt-1 text-[11px] font-medium text-zinc-500">
-          No members yet — the room {fallbackName} gets created on first join.
+          No members yet - the room {fallbackName} gets created on first join.
         </p>
         <Button
           className="mt-3 h-11 w-full text-sm font-bold"
@@ -756,7 +754,7 @@ function CommunityPanel({
   )
 }
 
-// ── Connectors tab ───────────────────────────────────────────
+// Connectors tab 
 
 function ConnectorsSkeleton() {
   return (
@@ -897,7 +895,7 @@ function ConnectorsPanel({
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-[10.5px] font-medium text-zinc-500">connected</p>
-                    {/* installedAt is per-viewer truth — others get no invented date */}
+                    {/* installedAt is per-viewer truth - others get no invented date */}
                     {isViewer && installed && status.installedAt ? (
                       <p className="text-[10px] font-medium text-zinc-400">
                         {formatRelative(status.installedAt)}
@@ -919,7 +917,7 @@ function ConnectorsPanel({
   )
 }
 
-// ── Related apps rail (same category, real install dots) ─────
+// Related apps rail (same category, real install dots) 
 
 function RelatedRail({ appId }: { appId: string }) {
   const app = MATRIX.find((a) => String(a.n) === appId)!
@@ -967,7 +965,7 @@ function RelatedRail({ appId }: { appId: string }) {
   )
 }
 
-// ── Page skeleton ────────────────────────────────────────────
+// Page skeleton 
 
 function AppPageSkeleton() {
   return (
@@ -989,7 +987,7 @@ function AppPageSkeleton() {
   )
 }
 
-// ── The app sub-page ─────────────────────────────────────────
+// The app sub-page 
 
 const heroEntrance: Variants = {
   hidden: { opacity: 0, y: 16, scale: 0.985 },
@@ -1022,7 +1020,7 @@ export function AppDetailPage({
   const walletQ = useWalletMini(me.id)
   const [tab, setTab] = useState<DetailTab>('overview')
 
-  // unknown id — honest 404 state, back to the hub
+  // unknown id - honest 404 state, back to the hub
   if (!app) {
     return (
       <motion.div

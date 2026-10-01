@@ -5,9 +5,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * R3-B item 4 — JVM pins for the deterministic incognito alias. The expected
+ * R3-B item 4 - JVM pins for the deterministic incognito alias. The expected
  * strings are computed by the canonical web implementation
- * (chat-room.tsx anonStableHash / anonAliasPreview) — the exact values the
+ * (chat-room.tsx anonStableHash / anonAliasPreview) - the exact values the
  * server's messages route will store, so any drift breaks these first.
  */
 class IncognitoAliasTest {

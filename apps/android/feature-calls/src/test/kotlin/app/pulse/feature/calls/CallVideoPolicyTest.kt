@@ -7,7 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Wave R1-W2D — the PURE video decision contract (web useCallSession parity,
+ * Wave R1-W2D - the PURE video decision contract (web useCallSession parity,
  * src/components/chat/call-overlay.tsx + src/lib/call-types.ts):
  *   • the wire video flag is the call's `kind` ("voice" | "video");
  *   • a wanted video call degrades to voice BEFORE the offer without a camera;
@@ -16,7 +16,7 @@ import org.junit.Test
  */
 class CallVideoPolicyTest {
 
-    // ── offerHasVideo — SDP m=video check ────────────────────────
+    // offerHasVideo - SDP m=video check
 
     private val audioOnlySdp =
         "v=0\r\no=- 46117317 2 IN IP4 127.0.0.1\r\n" +
@@ -65,7 +65,7 @@ class CallVideoPolicyTest {
         assertFalse(CallVideoPolicy.offerHasVideo("v=0\r\nbroken-line"))
     }
 
-    // ── camera capability + kind resolution (web acquireMedia fallback) ──
+    // camera capability + kind resolution (web acquireMedia fallback)
 
     @Test
     fun `camera capable requires permission support and a device`() {
@@ -127,7 +127,7 @@ class CallVideoPolicyTest {
         )
     }
 
-    // ── shouldAttachVideo — the callee/caller camera gate ────────
+    // shouldAttachVideo - the callee/caller camera gate
 
     @Test
     fun `callee attaches video only for video kind AND usable m=video AND camera`() {
@@ -164,7 +164,7 @@ class CallVideoPolicyTest {
 
     @Test
     fun `wire says video but the offer SDP carries no usable video m-line`() {
-        // Caller fell back to voice after dispatching kind 'video' — the
+        // Caller fell back to voice after dispatching kind 'video' - the
         // honest callee answer keeps its camera closed.
         assertFalse(
             CallVideoPolicy.shouldAttachVideo(

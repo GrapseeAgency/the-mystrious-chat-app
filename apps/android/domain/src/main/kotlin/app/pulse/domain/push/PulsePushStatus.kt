@@ -1,7 +1,7 @@
 package app.pulse.domain.push
 
 /**
- * R9 — device-level remote-push status, rendered honestly by the Settings →
+ * R9 - device-level remote-push status, rendered honestly by the Settings →
  * Notifications row (feature-settings). Lives in DOMAIN because the push
  * wiring itself ([app.pulse.android.push.PulsePush]) is app-module code that
  * feature modules cannot see; :app publishes snapshots here at every state
@@ -9,7 +9,7 @@ package app.pulse.domain.push
  * FCM registration sync through the same domain seam.
  *
  * This is DEVICE state, never a user preference: nothing here is persisted,
- * nothing is faked — an unarmed build reports Off even though the toggle
+ * nothing is faked - an unarmed build reports Off even though the toggle
  * rows above it stay fully functional (they are local + server prefs).
  */
 object PulsePushStatus {
@@ -21,14 +21,14 @@ object PulsePushStatus {
         val hasToken: Boolean,
         /** A viewer identity exists to bind the token to. */
         val viewerBound: Boolean,
-        /** Wall clock of the last publish — lets the UI show staleness. */
+        /** Wall clock of the last publish - lets the UI show staleness. */
         val checkedAtMs: Long = 0L,
     )
 
     @Volatile
     private var current: Snapshot = Snapshot(armed = false, hasToken = false, viewerBound = false)
 
-    /** Set by :app at startup — re-runs the FCM registration sync. */
+    /** Set by :app at startup - re-runs the FCM registration sync. */
     @Volatile
     var resyncHook: (() -> Unit)? = null
 

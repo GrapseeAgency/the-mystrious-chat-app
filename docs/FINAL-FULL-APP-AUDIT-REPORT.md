@@ -117,7 +117,7 @@ Legend per cell: **CV** code verified (source read at HEAD) · **TV** test verif
 | F-MS-23 | Message effects | **P** — burst kinds on send/react only; incoming effect payloads (lasers/echo/sparkles) never decoded | **P** — same (ParticleBus) | CV effect contract | |
 | F-MS-24 | Sticker picker | **NF** (kind whitelist only) | **NF** | CV kind+payload | |
 | F-MS-25 | Offline outbox ≤50 FIFO | CV (Room outbox + FlushOutboxUseCase + OutboxWorker + TV) | CV (GRDB outbox + PulseOutboxEngine + TV PulseOutboxTests) | RV (W1 OFFLINE→FLUSH pass) | core offline works |
-| F-MS-26 | Delivery ticks | CV (clock→✓→Seen:1872) | CV (Seen:1307) | CV read + `message:read` | — |
+| F-MS-26 | Delivery ticks | CV (clock→→Seen:1872) | CV (Seen:1307) | CV read + `message:read` | — |
 | F-MS-27 | Typing emit 1.2 s | CV (idle stop VM:339) | CV (typingStopTask:2162) | RV (W0) | — |
 | F-MS-28 | Paging + day separators | CV (loadOlder:516, dayChip) | CV (:2002) | CV before cursor | — |
 | F-MS-29 | Quick phrases rail | **NF** | **NF** | route exists, **zero clients** — **web ground truth itself absent** → only row where all three lack the feature | |

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Full-screen story composer (Wave 4): Text/Photo pill toggle, hard 280-char
 /// caption with live counter, 8 gradient swatches (text mode), explicit Post
-/// button (Enter inserts a newline — never send-on-Enter), photo pick →
+/// button (Enter inserts a newline - never send-on-Enter), photo pick →
 /// compress (≤1280px JPEG q0.82) → upload → preview + optional caption,
 /// spinner states and user-visible errors. Success closes via [onPublished].
 struct StoryComposerView: View {
@@ -41,7 +41,7 @@ struct StoryComposerView: View {
         .photosPicker(isPresented: $pickerPresent, selection: $photoItem, matching: .images)
     }
 
-    // ── header ───────────────────────────────────────────────
+    // header
 
     private var header: some View {
         HStack(spacing: 10) {
@@ -81,7 +81,7 @@ struct StoryComposerView: View {
         }
     }
 
-    // ── mode pills ───────────────────────────────────────────
+    // mode pills
 
     private var modePills: some View {
         HStack(spacing: 0) {
@@ -114,7 +114,7 @@ struct StoryComposerView: View {
         }
     }
 
-    // ── stage ────────────────────────────────────────────────
+    // stage
 
     @ViewBuilder
     private var stage: some View {
@@ -184,7 +184,7 @@ struct StoryComposerView: View {
         }
     }
 
-    // ── caption + counter ────────────────────────────────────
+    // caption + counter
 
     private var captionRow: some View {
         HStack(spacing: 10) {
@@ -206,7 +206,7 @@ struct StoryComposerView: View {
         }
     }
 
-    // ── swatches (text mode only — wire rule) ────────────────
+    // swatches (text mode only - wire rule)
 
     private var swatches: some View {
         HStack(spacing: 10) {
@@ -241,7 +241,7 @@ struct StoryComposerView: View {
             .background(RoundedRectangle(cornerRadius: 12).fill(StoryPalette.pair(for: "rose").1.opacity(0.10)))
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
     private func post() {
         guard cs.canPost else { return }
@@ -258,12 +258,12 @@ struct StoryComposerView: View {
         }
     }
 
-    /// Pick → re-encode (≤1280px JPEG q0.82 — the exact wire policy) →
+    /// Pick → re-encode (≤1280px JPEG q0.82 - the exact wire policy) →
     /// POST /api/uploads → imagePath. Failures are visible, never silent.
     private func pickAndUpload(_ item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self),
               let jpeg = PulseMediaSupport.downscaledJPEGData(from: data) else {
-            cs = cs.withError("Couldn't read that image — try another one")
+            cs = cs.withError("Couldn't read that image - try another one")
             return
         }
         localPreview = UIImage(data: jpeg)
@@ -274,7 +274,7 @@ struct StoryComposerView: View {
             cs = cs.withImage(imagePath).withUploading(false)
         } catch {
             localPreview = nil
-            cs = cs.withUploading(false).withError("Upload failed — check your connection and retry")
+            cs = cs.withUploading(false).withError("Upload failed - check your connection and retry")
         }
     }
 }

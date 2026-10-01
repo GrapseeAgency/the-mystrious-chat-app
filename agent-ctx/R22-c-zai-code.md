@@ -1,7 +1,7 @@
 # R22-c — Pulse premium UI: FX layer, WebGL hero, glass primitives
 
 Agent: Z.ai Code (premium UI overhaul crew)
-Status: ✅ COMPLETE — gates green, contracts documented.
+Status:  COMPLETE — gates green, contracts documented.
 
 ## Files (ownership respected — nothing else touched)
 

@@ -1,12 +1,10 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — Chats tab: conversation list, search, empty state.
+// Pulse Chat - Chats tab: conversation list, search, empty state.
 // R27-e casual sweep: mute-duration strip + clear chat + .txt export
 // through the compact glass option menu (chats-actions.tsx); rows live
 // in chats-row.tsx; #/chats/archived is a REAL hash sub-page
 // (chats-archived-page.tsx) opened from the glass pill row below.
 // R34-a: Telegram multi-select (long-press → check rows → floating
 // Archive / Mute-8h / Mark-read bar) + #/calls sub-page entry.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -15,7 +13,8 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArrowRight, AtSign, BellOff, CheckCheck, ChevronRight, LoaderCircle, NotebookPen, Phone, Plus, Radio, Users, X } from 'lucide-react'
-import { PulseCompose, PulseFolderPlus, PulseSearch } from '@/components/ui/icons'
+import { FOLDER_ICON_GLYPHS, PulseCompose, PulseFolderPlus, PulseSearch } from '@/components/ui/icons'
+import { folderIconId } from '@/lib/icon-ids'
 import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, FolderSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
@@ -46,6 +45,7 @@ import type { StoryGroup, StoriesResponse } from '@/components/chat/stories-shee
 import { StoryComposerSheet } from '@/components/chat/story-composer-sheet'
 import { FoldersSheet } from '@/components/chat/folders-sheet'
 import { ConversationRow, type ConversationRowData } from '@/components/chat/chats-row'
+
 import { RowSkeleton } from '@/components/chat/chats-skeleton'
 import {
   ChatOptionsSheet,
@@ -71,7 +71,7 @@ interface SearchResponse {
 }
 
 /**
- * Snippet with the first match highlighted — clips a ≤64-char window
+ * Snippet with the first match highlighted - clips a ≤64-char window
  * around the hit so long messages stay one tidy line.
  */
 function SearchSnippet({ content, query }: { content: string; query: string }) {
@@ -107,7 +107,7 @@ function SearchSnippet({ content, query }: { content: string; query: string }) {
   )
 }
 
-/** One server-side message hit — sender avatar, chat title, highlighted snippet. */
+/** One server-side message hit - sender avatar, chat title, highlighted snippet. */
 const SearchMessageRow = memo(function SearchMessageRow({
   hit,
   query,
@@ -118,12 +118,12 @@ const SearchMessageRow = memo(function SearchMessageRow({
   onPress: (hit: SearchResultMessage) => void
 }) {
   const deleted = hit.deletedAt !== null
-  // R41 — document hits: when the caption is empty or is not itself the match,
-  // show "Document — <fileName>" so the row explains why it matched.
+  // R41 - document hits: when the caption is empty or is not itself the match,
+  // show "Document - <fileName>" so the row explains why it matched.
   const isFileHit = hit.filePath !== null
   const captionMatches = hit.content.length > 0 && hit.content.toLowerCase().includes(query.toLowerCase())
   const fileSnippet =
-    hit.fileName !== null ? `Document — ${hit.fileName}` : hit.content.length > 0 ? hit.content : 'Document'
+    hit.fileName !== null ? `Document - ${hit.fileName}` : hit.content.length > 0 ? hit.content : 'Document'
   return (
     <motion.button
       type="button"
@@ -180,7 +180,7 @@ function SearchSection({ label, count }: { label: string; count: number }) {
   )
 }
 
-// ── 24h status stories ──────────────────────────────────────
+// 24h status stories 
 
 const STORY_RING_SIZE = 56
 
@@ -224,7 +224,7 @@ const StoryRingCell = memo(function StoryRingCell({
         tap: { opacity: 1, y: 0, scale: 0.92, transition: spring.bouncy },
       }}
       onClick={onPress}
-      aria-label={ring === 'unseen' ? `${label} — new status` : label}
+      aria-label={ring === 'unseen' ? `${label} - new status` : label}
       className="flex w-16 shrink-0 snap-start flex-col items-center gap-1 rounded-2xl pb-1 pt-0.5 outline-none"
     >
       <span className="relative block" style={{ width: STORY_RING_SIZE, height: STORY_RING_SIZE }}>
@@ -275,7 +275,7 @@ export function ChatsTab({
   const typersIn = realtime.typersIn
   const onlineIds = realtime.onlineIds
 
-  // #/chats/archived + #/chats/channels sub-pages — same internal hash
+  // #/chats/archived + #/chats/channels sub-pages - same internal hash
   // pattern the settings tree uses: open = push, back = pop to '/'.
   const { path, navigate, back } = useHashNav()
   const archivedPageOpen = path === '/chats/archived'
@@ -288,20 +288,20 @@ export function ChatsTab({
     haptic(6)
     navigate('/chats/channels')
   }, [navigate])
-  // R34-a — #/calls: WhatsApp 'Calls' paradigm, same hash sub-page anatomy
+  // R34-a - #/calls: WhatsApp 'Calls' paradigm, same hash sub-page anatomy
   const callsPageOpen = path === '/calls'
   const openCallsPage = useCallback(() => {
     haptic(6)
     navigate('/calls')
   }, [navigate])
-  // R35-b — #/mentions: Discord mobile 'Mentions' tab, same hash sub-page anatomy
+  // R35-b - #/mentions: Discord mobile 'Mentions' tab, same hash sub-page anatomy
   const mentionsPageOpen = path === '/mentions'
   const openMentionsPage = useCallback(() => {
     haptic(6)
     navigate('/mentions')
   }, [navigate])
 
-  // Real mention count for the entry pill — same query key the sub-page uses,
+  // Real mention count for the entry pill - same query key the sub-page uses,
   // so the cache is warm the moment the page opens.
   const mentions = useQuery({
     queryKey: ['mentions', me.id],
@@ -330,7 +330,7 @@ export function ChatsTab({
   })
 
   /**
-   * Entrance stagger plays ONLY on the tab's first list render — the flag flips
+   * Entrance stagger plays ONLY on the tab's first list render - the flag flips
    * right after the first commit that has rows, so refetches/edits never re-animate.
    * (setState is deferred off the effect body to keep the commit clean.)
    */
@@ -346,7 +346,7 @@ export function ChatsTab({
   const allDrafts = useStore(pulseDraftsStore, (s) => s.drafts)
 
   const rows = useMemo<Array<{ conv: ConversationSummary; props: ConversationRowData }>>(() => {
-    // R24-a: Note-to-Self chats render via their dedicated card below —
+    // R24-a: Note-to-Self chats render via their dedicated card below -
     // never as a "DM with myself" row in the regular list.
     return (conversations.data ?? []).filter((conv) => !conv.isSelf).map((conv) => {
       const previewInfo = conversationPreview(conv, me.id)
@@ -419,7 +419,7 @@ export function ChatsTab({
     () => archivedRows.reduce((sum, { conv }) => sum + conv.unreadCount, 0),
     [archivedRows],
   )
-  /** R30-c — channels the viewer is subscribed to (participant row = subscription) */
+  /** R30-c - channels the viewer is subscribed to (participant row = subscription) */
   const subscribedChannelCount = useMemo(
     () => rows.filter(({ conv }) => conv.isGroup && conv.broadcastMode).length,
     [rows],
@@ -471,11 +471,11 @@ export function ChatsTab({
   })
   const serverHits = searching && deferredQuery.length >= 2 ? (serverSearch.data?.messages ?? []) : []
 
-  // ── row long-press action sheet (pin/unpin) ───────────────
+  // row long-press action sheet (pin/unpin) 
   const [sheetConv, setSheetConv] = useState<ConversationSummary | null>(null)
   const queryClient = useQueryClient()
 
-  // ── 24h status stories (ring row + viewer/composer sheets) ──
+  // 24h status stories (ring row + viewer/composer sheets) 
   const storiesQ = useQuery({
     queryKey: storiesQueryKey(me.id),
     queryFn: async (): Promise<StoriesResponse> =>
@@ -526,7 +526,7 @@ export function ChatsTab({
     },
   })
 
-  // R44 — mark as unread/read: flips the viewer's manualUnread flag
+  // R44 - mark as unread/read: flips the viewer's manualUnread flag
   // (PATCH /mark-unread); the row shows the dot until the room is opened.
   const toggleMarkUnread = useMutation({
     mutationFn: async (conv: ConversationSummary) => {
@@ -562,7 +562,7 @@ export function ChatsTab({
     },
   })
 
-  /** per-user notification mute — '8h' | '1w' | 'always' | null (PATCH /mute) */
+  /** per-user notification mute - '8h' | '1w' | 'always' | null (PATCH /mute) */
   const toggleMute = useMutation({
     mutationFn: async ({ conv, until }: { conv: ConversationSummary; until: '8h' | '1w' | 'always' | null }) => {
       return apiJson<{ ok: boolean; mutedUntil: string | null }>(
@@ -574,7 +574,7 @@ export function ChatsTab({
         },
       )
     },
-    // optimistic — the BellOff chip flips before the round-trip lands
+    // optimistic - the BellOff chip flips before the round-trip lands
     onMutate: async ({ conv, until }) => {
       await queryClient.cancelQueries({ queryKey: ['conversations', me.id] })
       const previous = queryClient.getQueryData<ConversationSummary[]>(['conversations', me.id])
@@ -599,7 +599,7 @@ export function ChatsTab({
         data.mutedUntil === null
           ? 'Notifications unmuted'
           : data.mutedUntil !== null && Date.parse(data.mutedUntil) - Date.now() > 20 * 365 * 24 * 3600 * 1000
-            ? 'Muted — always'
+            ? 'Muted - always'
             : `Muted until ${formatListStamp(data.mutedUntil as string)}`,
       )
       setSheetConv(null)
@@ -615,7 +615,7 @@ export function ChatsTab({
     },
   })
 
-  /** archive / unarchive — optimistic so the row moves instantly */
+  /** archive / unarchive - optimistic so the row moves instantly */
   const toggleArchive = useMutation({
     mutationFn: async ({ conv, archived }: { conv: ConversationSummary; archived: boolean }) => {
       return apiJson<{ ok: boolean; archived: boolean }>(
@@ -657,7 +657,7 @@ export function ChatsTab({
   })
 
   /**
-   * Clear chat — soft-delete MY OWN messages only (DELETE /api/messages/[id]
+   * Clear chat - soft-delete MY OWN messages only (DELETE /api/messages/[id]
    * is sender-gated server-side, so other people's messages honestly stay).
    * Runs sequentially through the room's full real history.
    */
@@ -674,7 +674,7 @@ export function ChatsTab({
           })
           cleared += 1
         } catch {
-          // keep going — clear as many of my own messages as the server allows
+          // keep going - clear as many of my own messages as the server allows
         }
       }
       return { cleared, total: mine.length }
@@ -682,7 +682,7 @@ export function ChatsTab({
     onSuccess: ({ cleared }) => {
       queryClient.invalidateQueries({ queryKey: ['conversations', me.id] })
       if (cleared === 0) {
-        toast.info('Nothing to clear — none of your messages are left in this chat.')
+        toast.info('Nothing to clear - none of your messages are left in this chat.')
       } else {
         toast.success(`Cleared ${cleared} ${cleared === 1 ? 'message' : 'messages'}`, {
           description: 'Your messages were deleted for everyone.',
@@ -695,7 +695,7 @@ export function ChatsTab({
     },
   })
 
-  /** Export chat — real paginated history → pulse-<room>-<date>.txt download. */
+  /** Export chat - real paginated history → pulse-<room>-<date>.txt download. */
   const exportChat = useMutation({
     mutationFn: async (conv: ConversationSummary) => {
       const history = await fetchFullHistory(conv.id)
@@ -711,7 +711,7 @@ export function ChatsTab({
 
   const openSheetFor = useCallback((conv: ConversationSummary) => setSheetConv(conv), [])
 
-  // ── R34-a Telegram-style multi-select ────────────────────────
+  // R34-a Telegram-style multi-select 
   // Long-press a row → select mode with that row checked; more taps
   // toggle; a floating glass bar runs Archive / Mute 8h / Mark read
   // over ALL selected rows through the SAME endpoints the row sheet
@@ -747,13 +747,13 @@ export function ChatsTab({
     if (searching && selectMode) exitSelect()
   }, [searching, selectMode, exitSelect])
 
-  /** the selected rows (active list only — select mode lives on the main list) */
+  /** the selected rows (active list only - select mode lives on the main list) */
   const selectedConvs = useMemo(
     () => activeRows.filter(({ conv }) => selectedIds.has(conv.id)).map(({ conv }) => conv),
     [activeRows, selectedIds],
   )
 
-  /** Archive every selected chat — same PATCH /archive the sheet + swipe use. */
+  /** Archive every selected chat - same PATCH /archive the sheet + swipe use. */
   const batchArchive = useMutation({
     mutationFn: async (convs: ConversationSummary[]) => {
       let archived = 0
@@ -798,7 +798,7 @@ export function ChatsTab({
     },
   })
 
-  /** Mute every selected chat for 8 hours — same PATCH /mute preset the sheet uses. */
+  /** Mute every selected chat for 8 hours - same PATCH /mute preset the sheet uses. */
   const batchMute8h = useMutation({
     mutationFn: async (convs: ConversationSummary[]) => {
       let muted = 0
@@ -844,7 +844,7 @@ export function ChatsTab({
   })
 
   /**
-   * Mark every selected chat read — POST /read (the same endpoint the room
+   * Mark every selected chat read - POST /read (the same endpoint the room
    * uses on open); optimistically zeroes unreadCount so the pills drop live.
    * Per-chat failures are counted honestly: full success toasts + clears the
    * selection, a partial failure toasts the misses and keeps the mode so the
@@ -866,7 +866,7 @@ export function ChatsTab({
           )
           read += 1
         } catch {
-          failed += 1 // keep going — mark as many as the server allows
+          failed += 1 // keep going - mark as many as the server allows
         }
       }
       return { read, failed }
@@ -888,7 +888,7 @@ export function ChatsTab({
       if (read > 0) toast.success(`${read} ${read === 1 ? 'chat' : 'chats'} marked as read`)
       if (failed > 0) {
         toast.error(
-          `${failed} ${failed === 1 ? 'chat' : 'chats'} could not be marked read — try again`,
+          `${failed} ${failed === 1 ? 'chat' : 'chats'} could not be marked read - try again`,
         )
       } else {
         exitSelect()
@@ -905,7 +905,7 @@ export function ChatsTab({
     },
   })
 
-  // ── R24-a Signal-style chat folders + Note to Self ─────────
+  // R24-a Signal-style chat folders + Note to Self 
   const reducedMotion = useReducedMotion()
   const [foldersOpen, setFoldersOpen] = useState(false)
   /** active rail folder (null = All) */
@@ -979,10 +979,10 @@ export function ChatsTab({
 
   return (
     <div className="absolute inset-0 flex flex-col bg-white/30 dark:bg-zinc-950/20">
-      {/* R32: root is translucent now — the ui-root aurora washes show through
+      {/* R32: root is translucent now - the ui-root aurora washes show through
           behind every row/pill, which is what makes the glass recipes read.
           (Was opaque bg-white/dark:bg-zinc-900: glass sat on a dead white.) */}
-      {/* slow conic shimmer for unseen story rings — CSS, transform-only, honors reduced-motion */}
+      {/* slow conic shimmer for unseen story rings - CSS, transform-only, honors reduced-motion */}
       <style>{`@keyframes pulse-story-spin{to{transform:rotate(360deg)}}.pulse-story-spin{animation:pulse-story-spin 6s linear infinite;will-change:transform}@media (prefers-reduced-motion:reduce){.pulse-story-spin{animation:none}}`}</style>
       {/* header */}
       <header className="shrink-0 border-b border-zinc-200 pt-[max(0px,env(safe-area-inset-top))] dark:border-zinc-800">
@@ -993,7 +993,7 @@ export function ChatsTab({
             transition={{ duration: 0.2, ease: ease.out }}
             className="flex items-center gap-2 px-3 py-2.5"
           >
-            {/* glass pill — the search icon expands into the full input */}
+            {/* glass pill - the search icon expands into the full input */}
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1250,7 +1250,7 @@ export function ChatsTab({
                 type="button"
                 role="tab"
                 aria-selected={active}
-                aria-label={`Folder ${folder.name} — ${count} ${count === 1 ? 'chat' : 'chats'}`}
+                aria-label={`Folder ${folder.name} - ${count} ${count === 1 ? 'chat' : 'chats'}`}
                 onClick={() => {
                   haptic(6)
                   setActiveFolderId(active ? null : folder.id)
@@ -1272,7 +1272,7 @@ export function ChatsTab({
                   />
                 ) : null}
                 <span className="relative z-10 flex items-center gap-1.5">
-                  <span aria-hidden>{folder.emoji}</span>
+                  <FolderRailGlyph value={folder.emoji} className="size-4" />
                   <span className="max-w-[96px] truncate">{folder.name}</span>
                   {count > 0 ? (
                     <span
@@ -1372,9 +1372,9 @@ export function ChatsTab({
           <EmptyChats onSayHi={onOpenContacts} />
         ) : (
           <div className="py-1">
-            {/* R24-a Note to Self — private notebook chat (above regular chats).
-                R32: the hero row now wears the full reference glass — deep panel,
-                diagonal sheen, specular rim — with a Lucide glyph in a glowing
+            {/* R24-a Note to Self - private notebook chat (above regular chats).
+                R32: the hero row now wears the full reference glass - deep panel,
+                diagonal sheen, specular rim - with a Lucide glyph in a glowing
                 tile (emoji retired per the no-emoji rule). */}
             <motion.button
               type="button"
@@ -1383,8 +1383,8 @@ export function ChatsTab({
               transition={pressSpring}
               aria-label={
                 selfConv
-                  ? 'Open Note to Self — your private space'
-                  : 'Create Note to Self — your private space'
+                  ? 'Open Note to Self - your private space'
+                  : 'Create Note to Self - your private space'
               }
               className="glass-deep glass-sheen mx-2 mb-1 mt-0.5 flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-colors hover:border-emerald-500/40"
             >
@@ -1400,7 +1400,7 @@ export function ChatsTab({
                   Note to Self
                 </span>
                 <span className="block truncate text-[11.5px] text-zinc-500 dark:text-zinc-400">
-                  Your private space — notes, links, ideas
+                  Your private space - notes, links, ideas
                 </span>
               </span>
               {createSelfChat.isPending ? (
@@ -1419,13 +1419,13 @@ export function ChatsTab({
                 </span>
               )}
             </motion.button>
-            {/* R35-b — Mentions entry: real @mention feed → #/mentions */}
+            {/* R35-b - Mentions entry: real @mention feed → #/mentions */}
             <motion.button
               type="button"
               whileTap={reducedMotion ? undefined : { scale: 0.985 }}
               transition={pressSpring}
               onClick={openMentionsPage}
-              aria-label={`Open mentions — ${mentionCount}`}
+              aria-label={`Open mentions - ${mentionCount}`}
               className="glass-pill mx-2 my-1 flex h-11 w-[calc(100%-16px)] items-center gap-2.5 px-3.5 text-left outline-none"
             >
               <AtSign className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
@@ -1440,13 +1440,13 @@ export function ChatsTab({
                 <ChevronRight className="size-3.5" aria-hidden />
               </span>
             </motion.button>
-            {/* R30-c — Channels entry: subscribed count → #/chats/channels */}
+            {/* R30-c - Channels entry: subscribed count → #/chats/channels */}
             <motion.button
               type="button"
               whileTap={reducedMotion ? undefined : { scale: 0.985 }}
               transition={pressSpring}
               onClick={openChannelsPage}
-              aria-label={`Open channels — ${subscribedChannelCount} subscribed`}
+              aria-label={`Open channels - ${subscribedChannelCount} subscribed`}
               className="glass-pill mx-2 my-1 flex h-11 w-[calc(100%-16px)] items-center gap-2.5 px-3.5 text-left outline-none"
             >
               <Radio className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
@@ -1456,13 +1456,13 @@ export function ChatsTab({
                 <ChevronRight className="size-3.5" aria-hidden />
               </span>
             </motion.button>
-            {/* R27-e — Archived entry: real count, always reachable → #/chats/archived */}
+            {/* R27-e - Archived entry: real count, always reachable → #/chats/archived */}
             <motion.button
               type="button"
               whileTap={reducedMotion ? undefined : { scale: 0.985 }}
               transition={pressSpring}
               onClick={openArchivedPage}
-              aria-label={`Open archived chats — ${archivedRows.length}`}
+              aria-label={`Open archived chats - ${archivedRows.length}`}
               className="glass-pill mx-2 my-1 flex h-11 w-[calc(100%-16px)] items-center gap-2.5 px-3.5 text-left outline-none"
             >
               <Archive className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
@@ -1485,7 +1485,7 @@ export function ChatsTab({
               transition={spring.soft}
               style={{ willChange: 'transform' }}
             >
-              {/* R32 rhythm: grouped list like the refs — PINNED block, then
+              {/* R32 rhythm: grouped list like the refs - PINNED block, then
                   ALL CHATS, separated by the tiny uppercase glass labels. */}
               {visibleRows.some(({ props }) => props.pinned) ? (
                 <SearchSection label="Pinned" count={visibleRows.filter(({ props }) => props.pinned).length} />
@@ -1527,10 +1527,10 @@ export function ChatsTab({
             {visibleRows.length === 0 && activeRows.length > 0 ? (
               <p className="px-8 pb-4 pt-10 text-center text-[13px] leading-relaxed text-zinc-400 dark:text-zinc-500">
                 {activeFolderId !== null
-                  ? 'This folder is empty — tap the folder button on the rail to add chats.'
+                  ? 'This folder is empty - tap the folder button on the rail to add chats.'
                   : listFilter === 'unread'
-                    ? 'No unread chats — you are all caught up.'
-                    : 'No groups yet — start one from Contacts.'}
+                    ? 'No unread chats - you are all caught up.'
+                    : 'No groups yet - start one from Contacts.'}
               </p>
             ) : null}
             {activeRows.length === 0 && archivedRows.length > 0 ? (
@@ -1544,7 +1544,7 @@ export function ChatsTab({
         )}
       </div>
 
-      {/* R34-a — Telegram-style floating glass bar over the selected rows.
+      {/* R34-a - Telegram-style floating glass bar over the selected rows.
           Staggered entrance; Archive exits the mode (rows leave the list),
           Mute 8h / Mark read keep it so the operator can keep working. */}
       <AnimatePresence>
@@ -1628,7 +1628,7 @@ export function ChatsTab({
         ) : null}
       </AnimatePresence>
 
-      {/* long-press glass option menu — pin / archive / mute strip / export / clear */}
+      {/* long-press glass option menu - pin / archive / mute strip / export / clear */}
       <ChatOptionsSheet
         conv={sheetConv}
         me={me}
@@ -1663,7 +1663,7 @@ export function ChatsTab({
         onClose={() => setSheetConv(null)}
       />
 
-      {/* #/chats/archived — real hash-routed glass sub-page */}
+      {/* #/chats/archived - real hash-routed glass sub-page */}
       <ChatsArchivedPage
         open={archivedPageOpen}
         me={me}
@@ -1677,7 +1677,7 @@ export function ChatsTab({
         onArchive={(conv) => toggleArchive.mutate({ conv, archived: conv.archivedAt === null })}
       />
 
-      {/* #/chats/channels — R30-c broadcast directory sub-page */}
+      {/* #/chats/channels - R30-c broadcast directory sub-page */}
       <ChannelsPage
         open={channelsPageOpen}
         me={me}
@@ -1685,7 +1685,7 @@ export function ChatsTab({
         onOpenConversation={(conversationId) => onOpenConversation(conversationId, null)}
       />
 
-      {/* #/calls — R34-a WhatsApp 'Calls' history sub-page */}
+      {/* #/calls - R34-a WhatsApp 'Calls' history sub-page */}
       <CallsPage
         open={callsPageOpen}
         me={me}
@@ -1693,7 +1693,7 @@ export function ChatsTab({
         onOpenConversation={(conversationId) => onOpenConversation(conversationId, null)}
       />
 
-      {/* #/mentions — R35-b Discord-style @mention feed sub-page */}
+      {/* #/mentions - R35-b Discord-style @mention feed sub-page */}
       <MentionsPage
         open={mentionsPageOpen}
         me={me}
@@ -1773,4 +1773,11 @@ function EmptyChats({ onSayHi }: { onSayHi: () => void }) {
       </div>
     </motion.div>
   )
+}
+
+/** Folder rail chip glyph: persisted id to designed icon, never raw. */
+function FolderRailGlyph({ value, className }: { value: string; className?: string }) {
+  // module-scope record member access: stable component reference
+  const Glyph = FOLDER_ICON_GLYPHS[folderIconId(value)]
+  return <Glyph className={className} aria-hidden />
 }

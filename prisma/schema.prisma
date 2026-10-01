@@ -580,7 +580,7 @@ model Topic {
   id             String       @id @default(cuid())
   conversationId String
   name           String
-  emoji          String       @default("💬")
+  emoji          String       @default("chat")
   createdById    String?
   createdAt      DateTime     @default(now())
   lastMessageAt  DateTime     @default(now()) // bumped on every filed message → topic sort
@@ -598,7 +598,7 @@ model Folder {
   id        String               @id @default(cuid())
   userId    String
   name      String
-  emoji     String               @default("📂")
+  emoji     String               @default("folder")
   position  Int                  @default(0)
   createdAt DateTime             @default(now())
   user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)

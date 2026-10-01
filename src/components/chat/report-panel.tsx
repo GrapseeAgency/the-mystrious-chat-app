@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — ReportPanel (R48): WhatsApp/Telegram-style account report.
+// Pulse - ReportPanel (R48): WhatsApp/Telegram-style account report.
 // Inline expandable panel shared by the profile sheet and the
 // profile route page. Reports are PRIVATE: the reported account is
 // never notified (server contract), the panel only shows the
 // reporter's own prior submissions as an honest hint.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useState } from 'react'
@@ -69,7 +67,7 @@ export function ReportPanel({
       void queryClient.invalidateQueries({ queryKey: ['report-pair', reporterId ?? '-', reportedId] })
       toast.success(
         data.updated
-          ? 'Report updated — thanks for the extra detail'
+          ? 'Report updated - thanks for the extra detail'
           : `Report submitted. Thanks for helping keep Pulse safe.`,
       )
       setReason(null)
@@ -94,7 +92,7 @@ export function ReportPanel({
         Report {reportedName}
       </p>
       <p className="mt-1 text-[11.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-        Tell us what&apos;s happening. Reports are private —{' '}
+        Tell us what&apos;s happening. Reports are private -{' '}
         <span className="font-semibold">{reportedName.split(' ')[0]}</span> will not be notified.
       </p>
 

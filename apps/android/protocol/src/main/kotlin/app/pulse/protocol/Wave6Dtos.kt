@@ -3,7 +3,7 @@ package app.pulse.protocol
 import kotlinx.serialization.Serializable
 
 /**
- * Wave 6 — social graph & discovery wire DTOs (users / stats / safety /
+ * Wave 6 - social graph & discovery wire DTOs (users / stats / safety /
  * blocks / reports / invites / channels). Tolerant house style: every field
  * defaulted so shape drift can never crash a surface (stories rule).
  *
@@ -22,7 +22,7 @@ import kotlinx.serialization.Serializable
 
 /**
  * The full AppUser (GET/PATCH /api/users/{id} → mapUser).
- * `lastSeenAt` is SCRUBBED server-side (null) when the owner hides it —
+ * `lastSeenAt` is SCRUBBED server-side (null) when the owner hides it -
  * surfaces must render "Last seen hidden", never a guess.
  */
 @Serializable
@@ -64,7 +64,7 @@ data class StatsEnvelopeDto(
     val stats: UserStatsDto? = null,
 )
 
-/** GET /api/users/{id}/safety?userId= — 12×5 space-joined digits + verify stamp. */
+/** GET /api/users/{id}/safety?userId= - 12×5 space-joined digits + verify stamp. */
 @Serializable
 data class SafetyStateDto(
     val peerId: String = "",
@@ -80,7 +80,7 @@ data class VerifyAckDto(
     val verifiedAt: String? = null,
 )
 
-/** GET/POST/DELETE /api/users/{id}/block — pair flag (tolerant: ok optional). */
+/** GET/POST/DELETE /api/users/{id}/block - pair flag (tolerant: ok optional). */
 @Serializable
 data class BlockStateDto(
     val ok: Boolean? = null,
@@ -145,11 +145,11 @@ data class InviteJoinResultDto(
     val alreadyMember: Boolean = false,
 )
 
-/** One channel directory row (GET /api/channels) — ChannelSummary wire shape. */
+/** One channel directory row (GET /api/channels) - ChannelSummary wire shape. */
 @Serializable
 data class ChannelDto(
     val id: String = "",
-    /** Wire is `conv.name ?? 'Channel'` — tolerated nullable anyway (mapper falls back). */
+    /** Wire is `conv.name ?? 'Channel'` - tolerated nullable anyway (mapper falls back). */
     val name: String? = null,
     val description: String? = null,
     val createdAt: String? = null,
@@ -187,7 +187,7 @@ data class UnsubscribeAckDto(
     val memberCount: Int = 0,
 )
 
-// ── Wave 6 — client-side profile rules (pure JVM, JVM-tested) ─────────
+// Wave 6 - client-side profile rules (pure JVM, JVM-tested)
 
 /**
  * Validation constants + helpers EXACTLY per the audit (web serializers.ts
@@ -210,7 +210,7 @@ object PulseProfileRules {
     /** check-username availability debounce (handle-editor.tsx HANDLE_DEBOUNCE_MS). */
     const val HANDLE_DEBOUNCE_MS = 350L
 
-    /** [a-z0-9_]{3,20} — the wire normalizeUsername rule. */
+    /** [a-z0-9_]{3,20} - the wire normalizeUsername rule. */
     const val USERNAME_REGEX = "^[a-z0-9_]{3,20}$"
 
     val usernameRegex: Regex = Regex(USERNAME_REGEX)
@@ -223,10 +223,12 @@ object PulseProfileRules {
             .replace(Regex("[^a-z0-9_]"), "")
             .take(USERNAME_MAX)
 
-    /** 11 fixed stored glyph values (profile status-glyph.tsx GLYPH_BY_VALUE keys). */
-    val STATUS_GLYPHS: List<String> = listOf(
-        "🔥", "✨", "🎯", "☕", "🎧", "🌙", "💡", "🚀", "😴", "🍽️", "vacation",
-    )
+    /**
+     * The 11 fixed stored status values = the profile status-icon id registry
+     * (web icon-ids.ts STATUS_ICON_IDS). Values are stable ids, never raw
+     * emoji - surfaces map id to glyph via app.pulse.ui.PulseIconGlyphs.
+     */
+    val STATUS_GLYPHS: List<String> = STATUS_ICON_IDS
 
     /** The 8-color avatar whitelist (pulse-utils.ts PULSE_COLORS). */
     val COLOR_WHITELIST: List<String> = listOf(
@@ -237,7 +239,7 @@ object PulseProfileRules {
 /**
  * Global-search snippet window (web spotlight parity): clip the matched
  * content to a ≤64-char window so the row shows the hit in context.
- * Start = idx-24 when idx > 28 (else 0), end = idx+query.len+28 — with
+ * Start = idx-24 when idx > 28 (else 0), end = idx+query.len+28 - with
  * cut flags so the UI renders the leading/trailing elision honestly.
  */
 data class SnippetWindow(val text: String, val leadingCut: Boolean, val trailingCut: Boolean)
@@ -257,9 +259,9 @@ fun snippetWindow(content: String, query: String, maxLen: Int = 64): SnippetWind
     )
 }
 
-// ── Wave 6 — feed badge cap + safety grid + channel/folder rules (pure) ──
+// Wave 6 - feed badge cap + safety grid + channel/folder rules (pure)
 
-/** Feed-badge label — the mentions/channels header cap ("99+" past 99). */
+/** Feed-badge label - the mentions/channels header cap ("99+" past 99). */
 fun badgeLabel(count: Int): String = if (count > 99) "99+" else "$count"
 
 /**
@@ -301,7 +303,7 @@ object PulseFolderRules {
 }
 
 /**
- * Client mirror of the /api/mentions rule — the FIRST "@FullName" token in a
+ * Client mirror of the /api/mentions rule - the FIRST "@FullName" token in a
  * snippet, case-insensitive, followed by whitespace/end/non-alphanumeric
  * (mentions-page.tsx mentionPatternFor). Returns the token bounds so the UI
  * renders the emerald chip.
@@ -317,13 +319,13 @@ fun mentionTokenRange(snippet: String, myName: String): IntRange? {
     return match?.range
 }
 
-// ── Wave 6 — composer @-suggester token math (pure, JVM-tested) ──────
+// Wave 6 - composer @-suggester token math (pure, JVM-tested)
 
 /** An active "@query" token ending at the cursor. */
 data class MentionQuery(val start: Int, val query: String)
 
 /**
- * Detect an active @mention token ending at `cursor` — boundary-safe: the @
+ * Detect an active @mention token ending at `cursor` - boundary-safe: the @
  * must start the draft or follow whitespace, and the token itself carries no
  * whitespace (it is the partial name typed so far).
  */

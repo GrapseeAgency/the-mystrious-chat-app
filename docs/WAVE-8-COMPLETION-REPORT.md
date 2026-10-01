@@ -85,7 +85,7 @@ Live E2E (`apps/qa/wave8-runtime-e2e.js`, real backend + real relay): **19 PASS 
 
 - Tag **`v0.10.0-native`**; versionCode **20**, versionName **0.10.0-native** (Android build.gradle defaults; iOS `CFBundleShortVersionString`).
 - Tag CI published the GitHub Release; asset **Pulse-v0.10.0-native.apk** 23,973,927 bytes, GitHub digest `sha256:5540c8bb29e0b96093ed79a51ec173d5310c07a744cb99ecff22c59ee080b2ec`.
-- **Byte verification:** re-downloaded from the release URL → local sha256 `5540c8bb…b2ec` == GitHub digest ✓ (also == the locally built R8 APK size class: 23,973,920 vs 23,973,927 — CI build, not byte-identical, per the non-reproducibility rule the CDN pins the CI asset).
+- **Byte verification:** re-downloaded from the release URL → local sha256 `5540c8bb…b2ec` == GitHub digest  (also == the locally built R8 APK size class: 23,973,920 vs 23,973,927 — CI build, not byte-identical, per the non-reproducibility rule the CDN pins the CI asset).
 - CDN `download/update-manifest.json` pinned (versionCode 20 / 0.10.0-native / tag asset / digest); mirror `download/Pulse.apk` swapped to the verified bytes (post-copy hash identical).
 - `gateway`/`socket` manifest fields remain `""` — the public-bridge pin is still an open operator item (unchanged by this wave, documented per directive).
 

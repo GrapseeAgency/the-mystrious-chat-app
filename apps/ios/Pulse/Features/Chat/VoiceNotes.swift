@@ -1,37 +1,37 @@
 import AVFoundation
 import SwiftUI
 
-/// Wave 2 voice notes (spec §1 rows 1/11/12/13/15) — everything behind the
+/// Wave 2 voice notes (spec §1 rows 1/11/12/13/15) - everything behind the
 /// composer's mic surface and the interactive voice bubble (D31 hold-to-
 /// record since R1-W2E):
-///   • `VoiceMath` — the pure duration/rounding contract (unit-tested) plus
+///   • `VoiceMath` - the pure duration/rounding contract (unit-tested) plus
 ///     the 10-minute auto-send ceiling.
-///   • `VoiceRecorder` — hold-to-record AAC recorder → cache file
+///   • `VoiceRecorder` - hold-to-record AAC recorder → cache file
 ///     voice-<uuid>.m4a (44.1 kHz mono, metering on for the live waveform,
-///     kind "audio" so /transcribe works — the web bug this mirrors is
+///     kind "audio" so /transcribe works - the web bug this mirrors is
 ///     sending kind text).
-///   • `VoiceWaveform` — the exact web `voiceBars` LCG for the bubbles.
-///   • `VoicePlaybackManager` — ONE active AVAudioPlayer keyed by messageId,
+///   • `VoiceWaveform` - the exact web `voiceBars` LCG for the bubbles.
+///   • `VoicePlaybackManager` - ONE active AVAudioPlayer keyed by messageId,
 ///     100 ms Timer recomputing progress (no CADisplayLink), persisted rate
 ///     chip 1x → 1.5x → 2x (UserDefaults "pulse.voiceRate").
-///   • `VoiceBubble` / `VoiceRecordingBar` / `VoiceLiveWaveform` — the UI
+///   • `VoiceBubble` / `VoiceRecordingBar` / `VoiceLiveWaveform` - the UI
 ///     surfaces (received bubble, hold bar with live bars).
 /// Neither class is actor-isolated: AVAudioRecorder/AVAudioPlayer tolerate
 /// main-actor driving, and the owning RoomViewModel deallocates on the main
-/// thread — a plain deinit teardown keeps Swift 5.10 isolation rules happy.
+/// thread - a plain deinit teardown keeps Swift 5.10 isolation rules happy.
 enum VoiceMath {
-    /// Recording floor — shorter takes are discarded (spec §1 row 11).
+    /// Recording floor - shorter takes are discarded (spec §1 row 11).
     static let minimumSendMs: Double = 600
 
-    /// Recording ceiling — the server refuses durationMs > 600000 (messages
+    /// Recording ceiling - the server refuses durationMs > 600000 (messages
     /// route "durationMs must be a number between 0 and 600000"). A hold that
     /// reaches the cap auto-sends the take instead of clipping mid-air (D31).
     static let maximumSendMs: Double = 600_000
 
-    /// Live hold-to-record waveform — number of amplitude bars rendered (D31).
+    /// Live hold-to-record waveform - number of amplitude bars rendered (D31).
     static let liveWaveformBars = 40
 
-    /// `max(1, Int((elapsed/100).rounded()*100))` — the exact web rounding:
+    /// `max(1, Int((elapsed/100).rounded()*100))` - the exact web rounding:
     /// quantize to 100 ms, never send 0.
     static func roundedDurationMs(fromElapsedMs elapsed: Double) -> Double {
         let quantized = Int((elapsed / 100).rounded() * 100)
@@ -44,14 +44,14 @@ enum VoiceMath {
     }
 }
 
-/// D31 — the exact web `voiceBars` bubble waveform (chat-room.tsx:6232),
+/// D31 - the exact web `voiceBars` bubble waveform (chat-room.tsx:6232),
 /// ported bit-for-bit so all three surfaces render IDENTICAL decorative bars
-/// for the same message id (the payload carries NO waveform — web derives it
+/// for the same message id (the payload carries NO waveform - web derives it
 /// client-side from the id, natives mirror that):
-///   1. `hashString` (pulse-utils.ts:59) — Int32-wrap h*31+code over UTF-16
+///   1. `hashString` (pulse-utils.ts:59) - Int32-wrap h*31+code over UTF-16
 ///      code units (exactly JS `charCodeAt`), then abs (Int32.min → 2^31).
-///   2. LCG loop `h = (h*1103515245 + 12345) % 2147483648` — JS `%` is fmod on
-///      DOUBLES (h*1.1e9 exceeds 2^53, so this must be Double math — Int64
+///   2. LCG loop `h = (h*1103515245 + 12345) % 2147483648` - JS `%` is fmod on
+///      DOUBLES (h*1.1e9 exceeds 2^53, so this must be Double math - Int64
 ///      would silently diverge from the web).
 ///   3. bar = round(28 + v*72) with v in 0…1 → heights 28…100 (%).
 enum VoiceWaveform {
@@ -66,7 +66,7 @@ enum VoiceWaveform {
         for _ in 0..<max(0, count) {
             h = (h * 1_103_515_245.0 + 12_345.0).truncatingRemainder(dividingBy: 2_147_483_648.0)
             let v = abs(h) / 2_147_483_648.0
-            // Web Math.round == floor(x + 0.5) — half-up toward +∞.
+            // Web Math.round == floor(x + 0.5) - half-up toward +∞.
             bars.append(Int((28.0 + v * 72.0 + 0.5).rounded(.down)))
         }
         return bars
@@ -83,13 +83,13 @@ enum VoiceRecorderError: LocalizedError {
     }
 }
 
-/// Tap-to-start recorder — the mic button STARTS immediately (web parity,
+/// Tap-to-start recorder - the mic button STARTS immediately (web parity,
 /// no hold-to-talk). Files land in tmp; the send path reads + deletes them.
 final class VoiceRecorder {
     private(set) var fileURL: URL?
     private var recorder: AVAudioRecorder?
 
-    /// Mic permission — TCC prompt on first use (NSMicrophoneUsageDescription
+    /// Mic permission - TCC prompt on first use (NSMicrophoneUsageDescription
     /// already ships in project.yml). `requestRecordPermission` is soft-
     /// deprecated on iOS 17 in favor of AVAudioApplication; the legacy call
     /// keeps the tree compiling across every runner SDK.
@@ -103,7 +103,7 @@ final class VoiceRecorder {
 
     /// Configures the session (playAndRecord so the player keeps working),
     /// builds the AAC recorder and starts metering. Throws on TCC/session
-    /// failure — the caller toasts honestly.
+    /// failure - the caller toasts honestly.
     func start() throws {
         let audio = AVAudioSession.sharedInstance()
         try audio.setCategory(.playAndRecord, mode: .default)
@@ -117,7 +117,7 @@ final class VoiceRecorder {
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
         ]
         let recorder = try AVAudioRecorder(url: url, settings: settings)
-        // D31 — metering feeds the live hold-to-record waveform bars.
+        // D31 - metering feeds the live hold-to-record waveform bars.
         recorder.isMeteringEnabled = true
         guard recorder.record() else {
             throw VoiceRecorderError.startFailed
@@ -126,7 +126,7 @@ final class VoiceRecorder {
         fileURL = url
     }
 
-    /// D31 — current input level in dB (−160…0) for the live waveform.
+    /// D31 - current input level in dB (−160…0) for the live waveform.
     /// Returns nil when no recorder is active.
     func averagePower() -> Float? {
         guard let recorder, recorder.isRecording else { return nil }
@@ -155,10 +155,10 @@ final class VoiceRecorder {
     }
 }
 
-/// RoomViewModel-owned playback — exactly one voice note sounds at a time;
+/// RoomViewModel-owned playback - exactly one voice note sounds at a time;
 /// starting another message stops the previous one. `state` drives the
 /// waveform recolor + play/pause glyph; the rate chip persists globally
-/// (spec §1 row 12 — UserDefaults "pulse.voiceRate").
+/// (spec §1 row 12 - UserDefaults "pulse.voiceRate").
 final class VoicePlaybackManager: ObservableObject {
     struct PlaybackState: Equatable {
         let messageId: String
@@ -227,7 +227,7 @@ final class VoicePlaybackManager: ObservableObject {
         startTicker()
     }
 
-    /// Mid-clip rate change (chip tap) — takes effect immediately on AVAudioPlayer.
+    /// Mid-clip rate change (chip tap) - takes effect immediately on AVAudioPlayer.
     func setRate(_ rate: Float) {
         player?.rate = rate
         if let state {
@@ -253,7 +253,7 @@ final class VoicePlaybackManager: ObservableObject {
         state = nil
     }
 
-    // 100 ms sweep — recomputes progress while playing; on natural end the
+    // 100 ms sweep - recomputes progress while playing; on natural end the
     // bars stay fully painted (progress 1) and the ticker halts.
     private func startTicker() {
         stopTicker()
@@ -291,9 +291,9 @@ final class VoicePlaybackManager: ObservableObject {
     }
 }
 
-/// The interactive voice bubble (room surface) — play/pause, deterministic
+/// The interactive voice bubble (room surface) - play/pause, deterministic
 /// 26-bar waveform recolored by progress, duration, global rate chip, and
-/// the transcript strip (italic under a hairline, or the Transcribe pill —
+/// the transcript strip (italic under a hairline, or the Transcribe pill -
 /// spec §1 row 15, never on optimistic rows).
 struct VoiceBubble: View {
     let message: WireChatMessage
@@ -307,9 +307,9 @@ struct VoiceBubble: View {
     private var isPlaying: Bool { playback?.playing == true }
     private var progress: Double { playback?.progress ?? 0 }
 
-    // Deterministic web-parity bars (D31 — same algorithm as the web bubble,
+    // Deterministic web-parity bars (D31 - same algorithm as the web bubble,
     // chat-room.tsx:6232; per-process hashValue would change every launch).
-    // The arithmetic is spelled out in typed locals — the inline version made
+    // The arithmetic is spelled out in typed locals - the inline version made
     // the Swift type-checker time out (CI r2, "unable to type-check in
     // reasonable time").
     private var bars: [CGFloat] {
@@ -408,7 +408,7 @@ struct VoiceBubble: View {
     }
 }
 
-/// Composer replacement while recording — cancel X, pulsing red dot, live
+/// Composer replacement while recording - cancel X, pulsing red dot, live
 /// m:ss timer, LIVE amplitude waveform (D31) and the release hint. The send
 /// affordance is the ALWAYS-MOUNTED trailing slot in the composer row (release
 /// to send / slide left to cancel), so this bar carries no send button.
@@ -418,7 +418,7 @@ struct VoiceRecordingBar: View {
     var amplitudes: [Double] = []
     /// True while the finger slid left past the cancel threshold.
     var cancelArmed: Bool = false
-    /// True while the take is uploading — the bar freezes with a spinner.
+    /// True while the take is uploading - the bar freezes with a spinner.
     var sending: Bool = false
     let onCancel: () -> Void
 
@@ -464,7 +464,7 @@ struct VoiceRecordingBar: View {
     }
 }
 
-/// D31 live hold-to-record waveform — one capsule bar per amplitude sample
+/// D31 live hold-to-record waveform - one capsule bar per amplitude sample
 /// (the room view model keeps the last VoiceMath.liveWaveformBars). Heights
 /// are a pure function of the recorded levels (3…18pt), nothing random.
 struct VoiceLiveWaveform: View {
@@ -483,7 +483,7 @@ struct VoiceLiveWaveform: View {
 }
 
 /// Red pulsing dot on the recording bar (Reduce Motion respected by the
-/// plain opacity fallback — the dot is content signaling, like TypingDots).
+/// plain opacity fallback - the dot is content signaling, like TypingDots).
 struct PulsingRedDot: View {
     @State private var pulsing = false
 
@@ -501,8 +501,8 @@ struct PulsingRedDot: View {
     }
 }
 
-// ── UI-side copy helpers (data layer rows are immutable; the UI patches ──
-// ── exactly one field after a POST verdict lands).                    ──
+// UI-side copy helpers (data layer rows are immutable; the UI patches
+// exactly one field after a POST verdict lands).
 
 extension WireChatMessage {
     /// POST /transcribe verdict → patched river row (store uses

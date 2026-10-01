@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Injectable time source — pure-Kotlin tests drive the machine with a fake
+ * Injectable time source - pure-Kotlin tests drive the machine with a fake
  * clock, production uses the wall clock.
  */
 fun interface CallClock {
@@ -21,7 +21,7 @@ fun interface CallClock {
 }
 
 /**
- * Immutable view of the call session — the single thing the UI renders.
+ * Immutable view of the call session - the single thing the UI renders.
  * [summary]/[error] are the ended-card and honest error-card texts
  * (web call-overlay parity); [durationSec] ticks while CONNECTED.
  */
@@ -42,12 +42,12 @@ data class CallSnapshot(
         val IDLE = CallSnapshot()
     }
 
-    /** Wire-facing convenience — true once the answer leg has begun. */
+    /** Wire-facing convenience - true once the answer leg has begun. */
     val isAnswered: Boolean get() = state == CallState.CONNECTING || state == CallState.CONNECTED
 }
 
 /**
- * Wave-3 shared design (W3-PLAN) — the COMPLETE 1:1 call flow as a pure,
+ * Wave-3 shared design (W3-PLAN) - the COMPLETE 1:1 call flow as a pure,
  * synchronous reducer. Every dispatch/poll returns the side effects the
  * owner (CallViewModel + CallEngine) must perform; the machine itself never
  * touches WebRTC, the socket or the network, so the full matrix is
@@ -56,27 +56,27 @@ data class CallSnapshot(
  * States (pinned design): idle → outgoingRinging → connecting → connected →
  * ended; idle → incomingRinging → connecting → connected → ended.
  *
- * Timeouts (all defensive — the server stays authoritative):
+ * Timeouts (all defensive - the server stays authoritative):
  *  - ring 40s (the server arms 30s and sends call:cancel first in every
  *    real case; this only guards a lost cancel);
  *  - peer-connection 15s after the answer leg starts;
  *  - disconnected grace 10s while connected before declaring the call over;
- *  - stale-state 45s with NO signaling at all (ringing/connecting only — a
+ *  - stale-state 45s with NO signaling at all (ringing/connecting only - a
  *    healthy connected call is kept alive by its duration ticker polls).
  *
- * Idempotency: every remote event is guarded per callId AND current state —
+ * Idempotency: every remote event is guarded per callId AND current state -
  * duplicates and post-terminal events are dropped without effects.
  *
  * Terminal mapping (pinned): answered-then-ended=completed(durationSec),
  * reject=declined, cancel-while-ringing/self-cancel=missed. The CALLER is
- * the single log writer — WriteLog effects only ever fire for outgoing
+ * the single log writer - WriteLog effects only ever fire for outgoing
  * calls (CallLogMapper enforces it again at the row level).
  */
 class CallStateMachine(
     private val clock: CallClock = CallClock { System.currentTimeMillis() },
 ) {
 
-    // ── wiring ──────────────────────────────────────────────────
+    // wiring
     private val _snapshot = MutableStateFlow(CallSnapshot.IDLE)
     val snapshot: StateFlow<CallSnapshot> = _snapshot.asStateFlow()
 
@@ -88,7 +88,7 @@ class CallStateMachine(
         if (meId == null) meId = viewerId
     }
 
-    // ── session bookkeeping ─────────────────────────────────────
+    // session bookkeeping
     private var callId: String? = null
     private var conversationId: String? = null
     private var peer: CallPeer? = null
@@ -112,9 +112,9 @@ class CallStateMachine(
     private var disconnectedAt = 0L
     private var staleDeadline = 0L
 
-    // ── events ──────────────────────────────────────────────────
+    // events
     sealed interface CallEvent {
-        /** Caller start — the RECORD_AUDIO permission is granted upstream. */
+        /** Caller start - the RECORD_AUDIO permission is granted upstream. */
         data class StartOutgoing(
             val conversationId: String,
             val peer: CallPeer,
@@ -142,10 +142,10 @@ class CallStateMachine(
         /** Callee accepted the ring (UI button). */
         object Accept : CallEvent
 
-        /** Mic acquired (or already granted) — the answer leg may proceed. */
+        /** Mic acquired (or already granted) - the answer leg may proceed. */
         object MediaReady : CallEvent
 
-        /** Mic denied / device failure — honest terminal, no fake UI. */
+        /** Mic denied / device failure - honest terminal, no fake UI. */
         data class MediaFailed(val reason: String) : CallEvent
 
         /** Engine produced the local answer SDP. */
@@ -177,10 +177,10 @@ class CallStateMachine(
         /** WebRTC PeerConnectionState CONNECTED. */
         object PeerConnected : CallEvent
 
-        /** WebRTC PeerConnectionState DISCONNECTED — the grace window opens. */
+        /** WebRTC PeerConnectionState DISCONNECTED - the grace window opens. */
         object PeerDisconnected : CallEvent
 
-        /** WebRTC PeerConnectionState FAILED/CLOSED — the media leg is dead. */
+        /** WebRTC PeerConnectionState FAILED/CLOSED - the media leg is dead. */
         object PeerFailed : CallEvent
 
         /** call:reject from the callee. */
@@ -196,7 +196,7 @@ class CallStateMachine(
         object Dismissed : CallEvent
     }
 
-    // ── effects ─────────────────────────────────────────────────
+    // effects
     sealed interface CallEffect {
         data class AcquireMedia(val kind: CallKind) : CallEffect
         data class CreateOffer(val kind: CallKind) : CallEffect
@@ -272,13 +272,13 @@ class CallStateMachine(
         object ReleaseMedia : CallEffect
     }
 
-    // ── dispatch ────────────────────────────────────────────────
+    // dispatch
 
     /** Reduces one event; returns the effects to perform, in order. */
     fun dispatch(event: CallEvent): List<CallEffect> {
         if (meId == null) return emptyList()
         val effects = reduce(event)
-        // Any dispatch is a liveness proof — but only ringing/connecting can
+        // Any dispatch is a liveness proof - but only ringing/connecting can
         // go stale (a healthy connected call must not die from quietness).
         if (_snapshot.value.state in RINGING_OR_CONNECTING) staleDeadline = clock.nowMs() + STALE_TIMEOUT_MS
         push()
@@ -294,7 +294,7 @@ class CallStateMachine(
         val now = clock.nowMs()
         val effects = mutableListOf<CallEffect>()
 
-        // Live duration while connected — the UI ticker reads the snapshot.
+        // Live duration while connected - the UI ticker reads the snapshot.
         if (_snapshot.value.state == CallState.CONNECTED && connectedAt > 0L) push()
 
         when (_snapshot.value.state) {
@@ -308,7 +308,7 @@ class CallStateMachine(
 
             CallState.CONNECTING ->
                 if (connectDeadline in 1..now) {
-                    // Answered but the media leg never came up — pinned
+                    // Answered but the media leg never came up - pinned
                     // mapping: answered-then-ended = completed(durationSec).
                     // The hangup frees the peer instead of leaving it hanging.
                     effects += endAnswered(summary = "Call failed")
@@ -336,7 +336,7 @@ class CallStateMachine(
         return effects
     }
 
-    // ── reducer ─────────────────────────────────────────────────
+    // reducer
     private fun reduce(event: CallEvent): List<CallEffect> {
         val me = meId ?: return emptyList()
         val state = _snapshot.value.state
@@ -381,7 +381,7 @@ class CallStateMachine(
                 if (event.from.isBlank() || event.from == me) return emptyList()
                 if (event.callId.isBlank() || event.sdp.isBlank()) return emptyList()
                 if (state != CallState.IDLE) {
-                    // Busy — reject immediately (the caller logs 'declined').
+                    // Busy - reject immediately (the caller logs 'declined').
                     return listOf(
                         CallEffect.SendReject(
                             callId = event.callId,
@@ -454,7 +454,7 @@ class CallStateMachine(
                     val offer = checkNotNull(remoteOfferSdp)
                     listOf(CallEffect.ApplyRemoteOffer(offer), CallEffect.CreateAnswer(offer))
                 }
-                // Outgoing: the mic came through — CreateOffer already ran at start.
+                // Outgoing: the mic came through - CreateOffer already ran at start.
                 else -> emptyList()
             }
 
@@ -682,7 +682,7 @@ class CallStateMachine(
         }
     }
 
-    // ── terminal helpers ────────────────────────────────────────
+    // terminal helpers
 
     /** Unanswered ending: missed (or declined via logStatus); caller writes the row. */
     private fun endUnanswered(
@@ -753,7 +753,7 @@ class CallStateMachine(
         staleDeadline = 0L
     }
 
-    // ── helpers ─────────────────────────────────────────────────
+    // helpers
 
     private fun sameCall(remote: String): Boolean = remote.isNotBlank() && remote == callId
 
@@ -769,7 +769,7 @@ class CallStateMachine(
         "call-" + now.toString(36) + "-" + (0..999999).random().toString(36)
 
     companion object {
-        /** Client-defensive ring timeout — the server arms 30s (authoritative). */
+        /** Client-defensive ring timeout - the server arms 30s (authoritative). */
         const val RING_TIMEOUT_MS = 40_000L
 
         /** PeerConnection must reach CONNECTED within 15s of the answer leg. */

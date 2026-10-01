@@ -2,17 +2,15 @@ import Combine
 import SwiftUI
 import UIKit
 
-// ─────────────────────────────────────────────────────────────
-// Wave 7 — the LIVE hub (F-HB-01…10). Replaces the static tile
+// Wave 7 - the LIVE hub (F-HB-01…10). Replaces the static tile
 // grid: real wallet + ledger, daily check-in (+25 PC base, +2/day
 // streak bonus capped +20, UTC-gated server-side), @handle
 // transfers, PC⇄GEM swap (100/80 rates + real stats), personal
 // tasks, market with atomic buy, logs stream, the 100-app matrix
 // from the bundled catalog JSON (browsable offline), install/
 // connect, app communities (auto-provisioned real conversations)
-// and My apps (fan-out per-app install state — web hub-data
+// and My apps (fan-out per-app install state - web hub-data
 // parity). Server error copy surfaces verbatim.
-// ─────────────────────────────────────────────────────────────
 
 enum HubCatalogStore {
     static func load() -> HubCatalog {
@@ -40,11 +38,11 @@ final class HubViewModel: ObservableObject {
     @Published var logs: [WireHubLog] = []
     @Published var swap: WireSwapPage?
     @Published var installs: [String: WireAppInstallState] = [:]
-    // R5-A Item 3 — install-state honesty: the fan-out marks which app ids
+    // R5-A Item 3 - install-state honesty: the fan-out marks which app ids
     // failed to load (the detail sheet shows a Retry state instead of
     // pretending "0 connected").
     @Published var installStateFailed: Set<String> = []
-    // R5-A Item 3 — per-app community state (memberCount/joined/roster) for
+    // R5-A Item 3 - per-app community state (memberCount/joined/roster) for
     // the detail sheet's Community tab (GET /api/hub/apps/{id}/community).
     @Published var communities: [String: WireAppCommunity] = [:]
     @Published var communityFailed: Set<String> = []
@@ -57,7 +55,7 @@ final class HubViewModel: ObservableObject {
         self.session = session
     }
 
-    /// R5-A Item 3 — the viewer id for the connectors roster "(you)" marks.
+    /// R5-A Item 3 - the viewer id for the connectors roster "(you)" marks.
     var viewerId: String? { session.viewer?.id }
 
     private var api: PulseAPIClient? { session.api }
@@ -83,7 +81,7 @@ final class HubViewModel: ObservableObject {
             wallet.error = nil
             guard let api = api else {
                 wallet.loading = false
-                wallet.error = "No gateway configured — set your server in Profile → Connection."
+                wallet.error = "No gateway configured - set your server in Profile → Connection."
                 return
             }
             do {
@@ -103,7 +101,7 @@ final class HubViewModel: ObservableObject {
             do {
                 let result = try await api.checkinWallet()
                 let streak = result.streak ?? 1
-                // R1-W2G D38 — F-HB-02 "Success haptic + particles". The web
+                // R1-W2G D38 - F-HB-02 "Success haptic + particles". The web
                 // check-in is toast-only (hub-tab.tsx:89-99); the native
                 // reward moment exceeds it per spec: ONE confetti burst
                 // through the shared ParticleBus (same pattern as the
@@ -112,7 +110,7 @@ final class HubViewModel: ObservableObject {
                 // check-in. The failure path stays silent.
                 session.particles.fire(kind: .confetti, count: 60)
                 PulseHaptics.success()
-                toast("Checked in — +\(result.reward ?? 25) PC" + (streak > 1 ? " · \(streak)-day streak" : ""))
+                toast("Checked in - +\(result.reward ?? 25) PC" + (streak > 1 ? " · \(streak)-day streak" : ""))
                 loadWallet()
             } catch {
                 loadWallet()
@@ -164,7 +162,7 @@ final class HubViewModel: ObservableObject {
 
     // MARK: tasks
 
-    /// R1-W2B D39 — read-through snapshot cache (Android cachedHubTasks
+    /// R1-W2B D39 - read-through snapshot cache (Android cachedHubTasks
     /// parity, PulseRepositoryImpl.kt:2340 + HubScreen.kt:240): the hub
     /// renders INSTANTLY from the wave7Cache blob ("hub:tasks:<viewerId>")
     /// before the network refresh; a successful fetch overwrites the blob
@@ -193,7 +191,7 @@ final class HubViewModel: ObservableObject {
                     )
                 }
             } catch {
-                // Offline — the cached rail stays; a cold empty start gets
+                // Offline - the cached rail stays; a cold empty start gets
                 // the honest note instead of a silent blank column.
                 if tasks.isEmpty { toast(describe(error), isError: true) }
             }
@@ -291,14 +289,14 @@ final class HubViewModel: ObservableObject {
                 installs[appId] = try await api.appInstallState(appId: appId)
                 installStateFailed.remove(appId)
             } catch {
-                // Honest failure — the sheet shows "Connection stats
+                // Honest failure - the sheet shows "Connection stats
                 // unavailable" + Retry instead of a fake zero.
                 installStateFailed.insert(appId)
             }
         }
     }
 
-    /// R5-A Item 3 — community state for the detail sheet's Community tab
+    /// R5-A Item 3 - community state for the detail sheet's Community tab
     /// (member count badge, roster, joined pill). Failures are marked so the
     /// tab can honestly offer a retry.
     func loadAppCommunity(appId: String) {
@@ -345,7 +343,7 @@ final class HubViewModel: ObservableObject {
         }
     }
 
-    /// F-HB-10 — My apps fan-out (web hub-data.tsx:61,107 parity).
+    /// F-HB-10 - My apps fan-out (web hub-data.tsx:61,107 parity).
     func loadMyApps(_ catalog: HubCatalog) {
         Task { @MainActor in
             guard let api = api else { return }
@@ -372,7 +370,7 @@ struct HubView: View {
     @State private var catalog = HubCatalog(apps: [], categories: [], taglines: [:])
     @State private var surface: HubSurface?
     @State private var expandedApp: HubCatalogApp?
-    // R1-W2G D40 — the 12 s logs ticker (house Timer.publish pattern, see
+    // R1-W2G D40 - the 12 s logs ticker (house Timer.publish pattern, see
     // VoiceRoomSessionModel) + the scene gate that pauses it while the app
     // is inactive. The subscription only exists while the logs surface is
     // mounted, so nothing leaks after the sheet closes.
@@ -451,7 +449,7 @@ struct HubView: View {
         }
     }
 
-    // ── F-HB-01 + F-HB-02 — wallet hero ──
+    // F-HB-01 + F-HB-02 - wallet hero
     private var walletHero: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -460,7 +458,7 @@ struct HubView: View {
                     .foregroundStyle(.white)
                 Spacer()
                 if vm.wallet.stale {
-                    Text("offline — cached").font(.caption2).foregroundStyle(.white.opacity(0.6))
+                    Text("offline - cached").font(.caption2).foregroundStyle(.white.opacity(0.6))
                 }
                 if vm.wallet.loading {
                     ProgressView().tint(.white)
@@ -544,9 +542,9 @@ struct HubView: View {
         case .logs:
             HubLogsList(logs: vm.logs)
                 .task { vm.loadLogs() }
-                // R1-W2G D40 — live logs: a 12 s repeating refresh while the
+                // R1-W2G D40 - live logs: a 12 s repeating refresh while the
                 // logs surface is open (web hub-tab.tsx:603-611
-                // refetchInterval 12_000 parity). Scene-gated — no hub
+                // refetchInterval 12_000 parity). Scene-gated - no hub
                 // fetches while the app is inactive; the onReceive
                 // subscription dies with the surface.
                 .onReceive(logsTicker) { _ in
@@ -629,7 +627,7 @@ private struct HubTransferSheet: View {
                     .keyboardType(.numberPad)
                 TextField("Note (optional)", text: $note)
             } footer: {
-                Text("Whole PC only — max 100,000 per transfer.")
+                Text("Whole PC only - max 100,000 per transfer.")
             }
             Button("Send") {
                 let amt = Int(amount) ?? 0
@@ -871,9 +869,9 @@ private struct HubAppsList: View {
                     }
                 }
             }
-            Section(myAppsOnly ? "Installed & connected apps" : "\(catalog.apps.count) apps · \(catalog.categories.count) categories — browsable offline") {
+            Section(myAppsOnly ? "Installed & connected apps" : "\(catalog.apps.count) apps · \(catalog.categories.count) categories - browsable offline") {
                 if visible.isEmpty {
-                    Text(myAppsOnly ? "No apps connected yet — open Mini apps to connect." : "No apps match.")
+                    Text(myAppsOnly ? "No apps connected yet - open Mini apps to connect." : "No apps match.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(visible, id: \.n) { app in
@@ -918,8 +916,7 @@ private struct HubAppsList: View {
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-// R5-A Item 3 — app detail at web depth (web app-detail-sheet.tsx
+// R5-A Item 3 - app detail at web depth (web app-detail-sheet.tsx
 // parity): Overview | Community | Connectors tab bar with count
 // badges, the installer stack (≤6 most-recent real users + "+N"
 // overflow, hidden when empty like the web InstallerStack), the
@@ -927,8 +924,7 @@ private struct HubAppsList: View {
 // hub_catalog.json, tap swaps the sheet's detail in place), the
 // CountUp-style installs figure and the web field labels. The wire
 // DTO (WireAppInstallState) already decodes installed/status/
-// installedAt/installs/installers — unknown keys stay tolerated.
-// ─────────────────────────────────────────────────────────────
+// installedAt/installs/installers - unknown keys stay tolerated.
 private struct HubAppDetailSheet: View {
     @ObservedObject var vm: HubViewModel
     let catalog: HubCatalog
@@ -985,7 +981,7 @@ private struct HubAppDetailSheet: View {
         }
     }
 
-    // ── tab bar (web DetailTabBar: label + count badge + underline) ──
+    // tab bar (web DetailTabBar: label + count badge + underline)
 
     private var tabBar: some View {
         HStack(spacing: 0) {
@@ -1031,9 +1027,9 @@ private struct HubAppDetailSheet: View {
         .accessibilityAddTraits(tab == id ? [.isSelected] : [])
     }
 
-    // ── shared bits ──────────────────────────────────────────
+    // shared bits
 
-    /// The app icon tile (first letter over emerald — existing hub style).
+    /// The app icon tile (first letter over emerald - existing hub style).
     private var iconTile: some View {
         Text(String(currentApp.name.prefix(1)))
             .font(.title3.weight(.bold))
@@ -1042,7 +1038,7 @@ private struct HubAppDetailSheet: View {
             .background(PulseTheme.emberGlowBottom, in: Circle())
     }
 
-    /// Web InstallerStack (:102-125) — up to 6 most-recent installer
+    /// Web InstallerStack (:102-125) - up to 6 most-recent installer
     /// avatars + "+N" overflow chip; hidden entirely when the list is
     /// empty (web returns null for zero installers).
     @ViewBuilder
@@ -1151,7 +1147,7 @@ private struct HubAppDetailSheet: View {
         .accessibilityLabel("Open the \(currentApp.name) community chat")
     }
 
-    // ── Overview tab ─────────────────────────────────────────
+    // Overview tab
 
     private var overviewPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1226,7 +1222,7 @@ private struct HubAppDetailSheet: View {
         )
     }
 
-    // ── related-apps rail (same category, bundled catalog) ──
+    // related-apps rail (same category, bundled catalog)
 
     @ViewBuilder
     private var relatedRail: some View {
@@ -1246,7 +1242,7 @@ private struct HubAppDetailSheet: View {
                         ForEach(Array(related), id: \.n) { relatedApp in
                             Button {
                                 PulseHaptics.tap()
-                                // Web navigates to the app page — the sheet
+                                // Web navigates to the app page - the sheet
                                 // swaps its detail in place (same catalog,
                                 // fresh state per id via .task(id:)).
                                 currentApp = relatedApp
@@ -1284,7 +1280,7 @@ private struct HubAppDetailSheet: View {
         }
     }
 
-    // ── Community tab ────────────────────────────────────────
+    // Community tab
 
     private var communityPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1295,14 +1291,14 @@ private struct HubAppDetailSheet: View {
             } else if community == nil {
                 loadingCard("Loading community")
             } else if let state = community, state.conversation == nil {
-                // Web founder moment — nobody has provisioned the group yet.
+                // Web founder moment - nobody has provisioned the group yet.
                 VStack(spacing: 8) {
                     Image(systemName: "person.3")
                         .font(.system(size: 20))
                         .foregroundStyle(.secondary)
                     Text("Be the first to start the community")
                         .font(.system(size: 13, weight: .bold))
-                    Text("No members yet — the room gets created on first join. You'll be the founding admin.")
+                    Text("No members yet - the room gets created on first join. You'll be the founding admin.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -1396,7 +1392,7 @@ private struct HubAppDetailSheet: View {
         }
     }
 
-    // ── Connectors tab ───────────────────────────────────────
+    // Connectors tab
 
     private var connectorsPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1498,7 +1494,7 @@ private struct HubAppDetailSheet: View {
                                 Text("connected")
                                     .font(.system(size: 10))
                                     .foregroundStyle(.secondary)
-                                // installedAt is per-viewer truth — others
+                                // installedAt is per-viewer truth - others
                                 // get no invented date (web rule verbatim).
                                 if isViewer, installed, let stamp = installState?.installedAt {
                                     Text(PulseFormat.hubRelativeStamp(stamp))

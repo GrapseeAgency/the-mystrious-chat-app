@@ -1,15 +1,13 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — slash-command palette (Discord/Slack/Notion-grade).
+// Pulse - slash-command palette (Discord/Slack/Notion-grade).
 // Anchored above the composer whenever the draft starts with '/'.
 // Fuzzy filtering, arrow-key + Enter navigation, Esc to dismiss,
 // tap to select. The legacy plain-text parser in chat-room keeps
-// working — the palette is a fast-path on top of it.
+// working - the palette is a fast-path on top of it.
 //
 // /whiteboard (Task R21-c) is dispatched standalone: the palette
 // fires `pulse:open-whiteboard` on window (or the onOpenWhiteboard
 // prop when provided) because the sheet lives in chat-room, which
-// wires it via useWhiteboardSheet() — see whiteboard-sheet.tsx.
-// ─────────────────────────────────────────────────────────────
+// wires it via useWhiteboardSheet() - see whiteboard-sheet.tsx.
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -53,25 +51,25 @@ export interface SlashCommandDef {
   tone: string
 }
 
-/** Window event fired by the /whiteboard entry — chat-room listens via useWhiteboardSheet(). */
+/** Window event fired by the /whiteboard entry - chat-room listens via useWhiteboardSheet(). */
 export const WHITEBOARD_OPEN_EVENT = 'pulse:open-whiteboard'
 
-// ── R23: same standalone-dispatch pattern for the new beyond-chat tools.
+//  R23: same standalone-dispatch pattern for the new beyond-chat tools.
 // The sheets/cards live in chat-room which listens via their use*Sheet hooks;
-// /game is special — chat-room POSTs /api/games (DM → peer, group → open). ──
+// /game is special - chat-room POSTs /api/games (DM → peer, group → open). 
 export const REDPACKET_OPEN_EVENT = 'pulse:open-redpacket'
 export const KANBAN_OPEN_EVENT = 'pulse:open-kanban'
 export const EVENTS_OPEN_EVENT = 'pulse:open-events'
 export const NEW_GAME_EVENT = 'pulse:new-game'
 
-// ── R24-b: topics + stage/space/tournament (wave 3) ──
-/** Fired after /topic creates a topic — detail carries the fresh TopicSummary. */
+// R24-b: topics + stage/space/tournament (wave 3) 
+/** Fired after /topic creates a topic - detail carries the fresh TopicSummary. */
 export const TOPIC_CREATED_EVENT = 'pulse:topic-created'
-/** Fired by /stage — the stage-room sheet hook (crew R24) listens internally. */
+/** Fired by /stage - the stage-room sheet hook (crew R24) listens internally. */
 export const STAGE_OPEN_EVENT = 'pulse:open-stage'
-/** Fired by /space — the spatial-space sheet hook listens internally. */
+/** Fired by /space - the spatial-space sheet hook listens internally. */
 export const SPACE_OPEN_EVENT = 'pulse:open-space'
-/** Fired by /tournament (groups only) — the tournament sheet hook listens. */
+/** Fired by /tournament (groups only) - the tournament sheet hook listens. */
 export const TOURNAMENT_OPEN_EVENT = 'pulse:open-tournament'
 
 /** Generic fire-and-forget dispatcher for the R23 sheet/game events. */
@@ -96,7 +94,7 @@ export const PULSE_SLASH_COMMANDS: readonly SlashCommandDef[] = [
   { cmd: '/me', args: '<action>', help: 'Send an italic action line', icon: UserRound, tone: 'text-emerald-500' },
   { cmd: '/shrug', args: '[text]', help: 'Append ¯\\_(ツ)_/¯', icon: PenLine, tone: 'text-teal-500' },
   { cmd: '/tableflip', args: '[text]', help: 'Append (╯°□°）╯︵ ┻━┻', icon: Armchair, tone: 'text-rose-500' },
-  { cmd: '/unflip', args: '[text]', help: 'Prefix ┬─┬ ノ( ゜-゜ノ', icon: RotateCcw, tone: 'text-amber-500' },
+  { cmd: '/unflip', args: '[text]', help: 'Prefix ┬┬ ノ( ゜-゜ノ', icon: RotateCcw, tone: 'text-amber-500' },
   { cmd: '/roll', args: '[AdM]', help: 'Roll dice, e.g. /roll 2d6', icon: Dices, tone: 'text-violet-500' },
   { cmd: '/poll', args: '', help: 'Open the live-poll builder', icon: Vote, tone: 'text-violet-500' },
   { cmd: '/schedule', args: '', help: 'Schedule this message for later', icon: CalendarClock, tone: 'text-amber-500' },
@@ -122,7 +120,7 @@ export const PULSE_SLASH_COMMANDS: readonly SlashCommandDef[] = [
 
 /**
  * Lightweight fuzzy match: true when every character of `needle`
- * appears in `haystack` in order (case-insensitive). '/ef co' → /effects confetti ✓
+ * appears in `haystack` in order (case-insensitive). '/ef co' matches /effects confetti.
  */
 function fuzzyMatch(haystack: string, needle: string): boolean {
   const h = haystack.toLowerCase()
@@ -154,7 +152,7 @@ export function SlashPalette({
   commands?: readonly SlashCommandDef[]
   onSelect: (cmd: string) => void
   onDismiss: () => void
-  /** direct wiring option — overrides the pulse:open-whiteboard event */
+  /** direct wiring option - overrides the pulse:open-whiteboard event */
   onOpenWhiteboard?: () => void
   /** rides along in the pulse:open-whiteboard event detail when known */
   conversationId?: string
@@ -166,7 +164,7 @@ export function SlashPalette({
   }, [query, commands])
 
   const [index, setIndex] = useState(0)
-  // highlight is DERIVED — filtering can shrink the list without an effect
+  // highlight is DERIVED - filtering can shrink the list without an effect
   const activeIndex = matches.length === 0 ? 0 : Math.min(index, matches.length - 1)
 
   /**

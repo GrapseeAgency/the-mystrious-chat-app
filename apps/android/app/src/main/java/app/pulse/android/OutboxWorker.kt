@@ -16,12 +16,12 @@ import dagger.hilt.components.SingletonComponent
 import app.pulse.domain.repository.PulseRepository
 
 /**
- * Wave 0 offline core — the expedited outbox flusher. The repository drains
+ * Wave 0 offline core - the expedited outbox flusher. The repository drains
  * on its own triggers (start / socket reconnect / foreground / self-heal);
  * this worker guarantees the queue ALSO drains when only the OS knows the
  * network is back (app process dead, WorkManager wakes us up).
  *
- * Dependencies come through an @EntryPoint over the repository — no
+ * Dependencies come through an @EntryPoint over the repository - no
  * hilt-work artifact needed (plan §6: "no hilt-work").
  */
 class OutboxWorker(

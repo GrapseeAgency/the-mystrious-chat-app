@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// R10-b — pure quick-action mapping + the compose deep-link route. The
+/// R10-b - pure quick-action mapping + the compose deep-link route. The
 /// scene-delivery glue (PulseSceneDelegate → pendingRoute → RootView) is
 /// UIKit/SwiftUI lifecycle code CI compiles but cannot execute here; these
 /// tests pin the pure halves the destinations depend on.
@@ -36,7 +36,7 @@ final class PulseQuickActionTests: XCTestCase {
     }
 
     func testQuickReplyCategoryStampGatesOnRoutableConversation() {
-        // A Reply action without a routable room would be a dead control —
+        // A Reply action without a routable room would be a dead control -
         // blank/nil conversation ids must never carry the category.
         XCTAssertTrue(PulseQuickReply.applies(toConversationId: "conv-1"))
         XCTAssertFalse(PulseQuickReply.applies(toConversationId: nil))

@@ -7,7 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /**
- * REAL wire DTOs — reverse-engineered from the live gateway (:81), the same
+ * REAL wire DTOs - reverse-engineered from the live gateway (:81), the same
  * JSON the Next.js API emits today. Source of truth mirrored in
  * packages/protocol/src/contracts.ts. Kotlin, Swift and TypeScript parse
  * these exact shapes.
@@ -98,13 +98,13 @@ data class SavedToggleDto(
     val saved: Boolean = false,
 )
 
-// ── R5-B: POST /api/conversations/[id]/messages response envelope ──────────
-// Server truth (messages/route.ts:704-708): { message, streak?, xpAwarded } —
+// R5-B: POST /api/conversations/[id]/messages response envelope
+// Server truth (messages/route.ts:704-708): { message, streak?, xpAwarded } -
 // streak rides ONLY when THIS send bumped the ConversationStreak row
 // (same-day re-sends omit it; restarts carry continued=false, count=1).
 
 /**
- * { count, best, continued } — the streak state AFTER the send. `continued`
+ * { count, best, continued } - the streak state AFTER the send. `continued`
  * is true when the row existed with lastDay == yesterdayUTC (the streak
  * GREW); a restart after a gap lands continued=false, count=1.
  */
@@ -116,10 +116,10 @@ data class MessageStreakDto(
 )
 
 /**
- * Tolerant send envelope — `message` unwraps from `{message:{…}}` when
+ * Tolerant send envelope - `message` unwraps from `{message:{…}}` when
  * present and falls back to the ROOT for legacy bare-row bodies (the same
  * contract as [unwrapOrRoot]; an envelope with a non-object message fails
- * loudly instead of decoding an empty row — iOS R5 lesson mirrored).
+ * loudly instead of decoding an empty row - iOS R5 lesson mirrored).
  */
 @Serializable
 data class MessageSendEnvelopeDto(
@@ -143,21 +143,21 @@ fun decodeMessageSend(json: String): MessageSendEnvelopeDto {
 
 /**
  * Web-verbatim streak nudge (chat-room.tsx:1736-1745): fires ONLY when THIS
- * send GREW the streak — `continued && count >= 2`. Same-day re-sends never
+ * send GREW the streak - `continued && count >= 2`. Same-day re-sends never
  * reach the client (no streak key) and restarts (continued=false) stay
  * silent. Copy is byte-identical to the web toast (count === 2 keeps the
  * "keep it alive" variant).
  */
 fun MessageStreakDto?.nudgeText(): String? {
     if (this == null || !continued || count < 2) return null
-    return if (count == 2) "2-day streak — keep it alive" else "$count-day streak"
+    return if (count == 2) "2-day streak - keep it alive" else "$count-day streak"
 }
 
-/** POST /api/uploads { dataUrl } → 201 { filePath, imagePath } — NOT multipart. */
+/** POST /api/uploads { dataUrl } → 201 { filePath, imagePath } - NOT multipart. */
 @Serializable
 data class UploadResultDto(
     val filePath: String? = null,
-    /** Legacy alias the image flow uses — same value as filePath for images. */
+    /** Legacy alias the image flow uses - same value as filePath for images. */
     val imagePath: String? = null,
 )
 
@@ -196,30 +196,30 @@ data class ConversationSummaryDto(
     val myStreak: JsonElement? = null,
     val deadStreak: JsonElement? = null,
     val lostStreak: JsonElement? = null,
-    // REM-A group-admin/slow-mode era — detail rows carry these (web
+    // REM-A group-admin/slow-mode era - detail rows carry these (web
     // ConversationDetail); summaries tolerate the same keys (defaulted).
-    /** Shareable join code — groups only, null = no active link. */
+    /** Shareable join code - groups only, null = no active link. */
     val inviteCode: String? = null,
-    /** R44 slow mode — members wait Ns between sends (0 = off). */
+    /** R44 slow mode - members wait Ns between sends (0 = off). */
     val slowModeSeconds: Int? = null,
     /** R38 Signal screen security (room-wide flag). */
     val screenPrivacy: Boolean? = null,
     /** R42 per-VIEWER screen security (the personal veil flag; detail rows). */
     val myScreenPrivacy: Boolean? = null,
-    // R6 — M5: R47 DM dead-end flag (detail rows, web chat-room.tsx `dmBlocked`):
-    // a UserBlock in EITHER direction between the DM pair. Detail-only —
+    // R6 - M5: R47 DM dead-end flag (detail rows, web chat-room.tsx `dmBlocked`):
+    // a UserBlock in EITHER direction between the DM pair. Detail-only -
     // summaries tolerate the key (defaulted null) exactly like screenPrivacy.
     val dmBlocked: Boolean? = null,
 )
 
-// ── REM-A group governance + scheduling DTOs ─────────────────
+// REM-A group governance + scheduling DTOs
 
 /** DELETE members (leave) / members/[userId] (kick) → { ok, remainingMembers, promotedUserId? }. */
 @Serializable
 data class GroupMutationAckDto(
     val ok: Boolean = false,
     val remainingMembers: Int = 0,
-    /** Set when the leaver was the LAST admin — succession auto-promote. */
+    /** Set when the leaver was the LAST admin - succession auto-promote. */
     val promotedUserId: String? = null,
 )
 
@@ -244,7 +244,7 @@ data class SlowModeAckDto(
 
 /**
  * One pending delayed-send row (GET/POST /api/conversations/{id}/scheduled,
- * DELETE /api/scheduled/{id} — web ScheduledItem parity, tolerant decode).
+ * DELETE /api/scheduled/{id} - web ScheduledItem parity, tolerant decode).
  */
 @Serializable
 data class ScheduledItemDto(
@@ -293,23 +293,23 @@ data class UsersPageDto(
     val users: List<UserDto> = emptyList(),
 )
 
-/** GET /api/users/check-username — live @handle availability (onboarding picker). */
+/** GET /api/users/check-username - live @handle availability (onboarding picker). */
 @Serializable
 data class UsernameCheckDto(
     val available: Boolean = false,
     val suggestion: String? = null,
 )
 
-/** GET registry/handles.json — static-CDN availability source (offline-first onboarding). */
+/** GET registry/handles.json - static-CDN availability source (offline-first onboarding). */
 @Serializable
 data class HandleRegistryDto(
     val reserved: List<String> = emptyList(),
     val taken: List<String> = emptyList(),
 )
 
-// ── N10 home-page era — search / stories / folders / mentions ────
+// N10 home-page era - search / stories / folders / mentions
 
-/** GET /api/search — one message hit with the resolved conversation title. */
+/** GET /api/search - one message hit with the resolved conversation title. */
 @Serializable
 data class SearchHitDto(
     val id: String = "",
@@ -334,7 +334,7 @@ data class SearchPageDto(
     val total: Int = 0,
 )
 
-/** GET /api/folders — Signal-style folder rail (tolerant subset). */
+/** GET /api/folders - Signal-style folder rail (tolerant subset). */
 @Serializable
 data class FolderDto(
     val id: String = "",
@@ -349,7 +349,7 @@ data class FoldersPageDto(
     val folders: List<FolderDto> = emptyList(),
 )
 
-/** GET /api/mentions — one @mention row (tolerant subset; the list pill counts only). */
+/** GET /api/mentions - one @mention row (tolerant subset; the list pill counts only). */
 @Serializable
 data class MentionDto(
     val messageId: String = "",
@@ -367,13 +367,13 @@ data class MentionsPageDto(
 )
 
 /**
- * GET /api/stories — 24h status rail. Tolerant: every field defaulted so a
+ * GET /api/stories - 24h status rail. Tolerant: every field defaulted so a
  * shape drift can never crash the whole feed (house rule).
  *
  * StoryItem wire shape (web src/app/api/stories/route.ts mapStory):
  *   { id, kind: "image"|"text", imagePath, caption, background,
  *     createdAt: ISO, expiresAt: ISO (createdAt+24h), viewCount, viewedByMe }
- * `imagePath != null` ⇒ kind is "image" — the wire kind is advisory.
+ * `imagePath != null` ⇒ kind is "image" - the wire kind is advisory.
  */
 @Serializable
 data class StoryItemDto(
@@ -381,7 +381,7 @@ data class StoryItemDto(
     val kind: String? = null,
     val imagePath: String? = null,
     val caption: String = "",
-    /** Palette key (emerald/rose/amber/violet/teal/orange/pink/cyan) — image stories are forced "emerald". */
+    /** Palette key (emerald/rose/amber/violet/teal/orange/pink/cyan) - image stories are forced "emerald". */
     val background: String = "emerald",
     val createdAt: String? = null,
     val expiresAt: String? = null,
@@ -430,13 +430,13 @@ data class StoryViewersDto(
     val viewers: List<StoryViewerDto> = emptyList(),
 )
 
-// ── Wave 2 messaging depth — polls / link previews / saved / topics / ASR ──
+// Wave 2 messaging depth - polls / link previews / saved / topics / ASR
 
 /**
  * One option of a live poll (wire shape inside message.poll.options).
- * `votedBy` carries the voter ids — the ONLY trusted source for the viewer's
+ * `votedBy` carries the voter ids - the ONLY trusted source for the viewer's
  * own pick (server myOptionId is actor-relative on relayed rows and null on
- * history GETs — spec §1 row 2).
+ * history GETs - spec §1 row 2).
  */
 @Serializable
 data class PollOptionDto(
@@ -449,7 +449,7 @@ data class PollOptionDto(
 
 /**
  * Wire poll tally (message.poll): { id, question, closed, options[],
- * totalVotes, myOptionId } — NO `multiple`, NO `closesAt` (server is
+ * totalVotes, myOptionId } - NO `multiple`, NO `closesAt` (server is
  * single-choice + manual close only).
  *
  * `myOptionId` is parsed but NEVER trusted by clients: it is computed
@@ -467,7 +467,7 @@ data class PollDto(
     val myOptionId: String? = null,
 )
 
-/** Wire Open-Graph preview (message.linkPreview) — all metadata nullable. */
+/** Wire Open-Graph preview (message.linkPreview) - all metadata nullable. */
 @Serializable
 data class LinkPreviewDto(
     val url: String,
@@ -498,12 +498,13 @@ data class SavedPageDto(
     val items: List<SavedItemDto> = emptyList(),
 )
 
-/** One Zulip-style topic chip (General is NOT a row — implicit whole room). */
+/** One Zulip-style topic chip (General is NOT a row - implicit whole room). */
 @Serializable
 data class TopicDto(
     val id: String,
     val name: String,
-    val emoji: String = "💬",
+    /** R18 icon-id contract - stable topic icon id (web icon-ids.ts default). */
+    val emoji: String = TOPIC_ICON_DEFAULT,
     val lastMessageAt: String? = null,
     val messageCount: Int = 0,
 )
@@ -514,13 +515,13 @@ data class TopicsPageDto(
     val topics: List<TopicDto> = emptyList(),
 )
 
-/** POST /api/conversations/{id}/topics → 200 existing / 201 new — { topic }. */
+/** POST /api/conversations/{id}/topics → 200 existing / 201 new - { topic }. */
 @Serializable
 data class TopicEnvelopeDto(
     val topic: TopicDto? = null,
 )
 
-// ── Wave 3 native calls — REST /api/calls (src/lib/call-types.ts parity) ──
+// Wave 3 native calls - REST /api/calls (src/lib/call-types.ts parity)
 
 /** Peer info resolved server-side for history rows (wire CallPeerInfo). */
 @Serializable
@@ -542,12 +543,12 @@ data class CallLogItemDto(
     val conversationId: String = "",
     val callerId: String = "",
     val calleeId: String = "",
-    /** "voice" | "video" — tolerant decode. */
+    /** "voice" | "video" - tolerant decode. */
     val kind: String = "voice",
-    /** "completed" | "missed" | "declined" — tolerant decode. */
+    /** "completed" | "missed" | "declined" - tolerant decode. */
     val status: String = "missed",
     val durationSec: Long = 0,
-    /** ISO-8601 startedAt — verbatim. */
+    /** ISO-8601 startedAt - verbatim. */
     val startedAt: String = "",
     val outgoing: Boolean = false,
     val peer: CallPeerInfoDto? = null,

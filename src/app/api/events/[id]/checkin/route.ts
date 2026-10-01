@@ -1,12 +1,11 @@
-// ─────────────────────────────────────────────────────────────
-// /api/events/[id]/checkin — BAND-style event attendance (R30-a)
+// /api/events/[id]/checkin - BAND-style event attendance (R30-a)
 //
 //   POST body { userId }
 //   → 200 { checkIn: { id, eventId, userId, status, checkedInAt,
 //           createdAt }, xpAwarded, checkedInCount, alreadyCheckedIn }
 //
 // Viewer resolution follows the events convention (userId in the
-// JSON body — see /api/events/[id]/rsvp). Behavior:
+// JSON body - see /api/events/[id]/rsvp). Behavior:
 //   · no RSVP row, or status 'no'          → 400 (clear error)
 //   · outside the window (start −15 min …
 //     start +2 h)                          → 409
@@ -15,13 +14,12 @@
 //   · null → set transition                → stamps checkedInAt
 //     and awards +15 XP ONCE, mirroring the User.xp increment
 //     convention of /api/conversations/[id]/messages (channel
-//     points). WalletLedger is PC/GEM-only money trail — XP is
+//     points). WalletLedger is PC/GEM-only money trail - XP is
 //     not a wallet asset, so NO ledger row is written here.
 //
 // The stamp uses updateMany guarded on checkedInAt: null so two
 // concurrent taps can never double-award XP; the loser of that
 // race reads back the winner's stamp and answers idempotently.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -35,7 +33,7 @@ interface RouteCtx {
 /** Window: opens 15 minutes before startsAt, closes 2 hours after. */
 const OPEN_BEFORE_MS = 15 * 60 * 1000
 const CLOSE_AFTER_MS = 2 * 60 * 60 * 1000
-/** Attendance bonus — matches the sheet's '+15 XP' feedback. */
+/** Attendance bonus - matches the sheet's '+15 XP' feedback. */
 const CHECKIN_XP = 15
 
 /** Wire shape for an EventRsvp row (ISO strings, per types contract). */
@@ -94,7 +92,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   }
   if (rsvp.status === 'no') {
     return NextResponse.json(
-      { error: "You RSVP'd 'Can't' — update your RSVP to check in." },
+      { error: "You RSVP'd 'Can't' - update your RSVP to check in." },
       { status: 400 },
     )
   }
@@ -118,7 +116,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
-  // Atomic stamp — only lands while checkedInAt is still null, so a
+  // Atomic stamp - only lands while checkedInAt is still null, so a
   // double-tap race awards XP exactly once (count === 1 means we won).
   const now = new Date()
   const stamped = await db.eventRsvp.updateMany({
@@ -132,7 +130,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
       await db.user.update({ where: { id: userId }, data: { xp: { increment: CHECKIN_XP } } })
       xpAwarded = true
     } catch {
-      xpAwarded = false // XP is a bonus — the attendance stamp still stands
+      xpAwarded = false // XP is a bonus - the attendance stamp still stands
     }
   }
 
@@ -144,6 +142,6 @@ export async function POST(req: Request, { params }: RouteCtx) {
     checkIn: row ? serializeRsvp(row) : null,
     xpAwarded,
     checkedInCount: await checkedInCountOf(id),
-    alreadyCheckedIn: stamped.count === 0, // lost a stamp race — the winner stamped first
+    alreadyCheckedIn: stamped.count === 0, // lost a stamp race - the winner stamped first
   })
 }

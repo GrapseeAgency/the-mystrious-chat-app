@@ -1,9 +1,8 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — W5-f voice room / stage / space PURE state machines.
+// Pulse - W5-f voice room / stage / space PURE state machines.
 //
-// Value types only — no AVFoundation, no sockets, no @Published.
+// Value types only - no AVFoundation, no sockets, no @Published.
 // VoiceRoomSessionModel (the @MainActor owner) drives them from
 // relay signals; VoiceRoomMachineTests drives them directly.
 //
@@ -13,11 +12,8 @@ import Foundation
 //   #3 voice seat for ALL roles  → StageModel.needsVoiceSeat (+ re-arm)
 //   #4 80 ms throttle + reconcile→ SpaceModel.localMove/apply
 //   #5 honest space error state  → SpaceModel.reconnectAttempts
-// ─────────────────────────────────────────────────────────────
 
-// ══════════════════════════════════════════════════════════════
-// VOICE ROOM (walkie-talkie PTT) — spec §1.1
-// ══════════════════════════════════════════════════════════════
+// VOICE ROOM (walkie-talkie PTT) - spec §1.1
 
 public struct VoiceRoomModel: Equatable, Sendable {
     public enum Status: Equatable, Sendable { case idle, joining, joined, error }
@@ -41,13 +37,13 @@ public struct VoiceRoomModel: Equatable, Sendable {
 
     public var status: Status
     public var conversationId: String?
-    /// True ONLY for the user's own walkie-talkie join (VR-1) — the
+    /// True ONLY for the user's own walkie-talkie join (VR-1) - the
     /// stage/space voice seats (FIX #3) ride the same relay seat without
     /// flipping this, so stage teardown knows whether to release it.
     public var userJoinedVoice: Bool
-    /// Server truth — REPLACED wholesale on every voice:roster (VR-2).
+    /// Server truth - REPLACED wholesale on every voice:roster (VR-2).
     public var roster: [WireVoicePeer]
-    /// Ids currently transmitting (voice:ptt on) — pruned to live peers.
+    /// Ids currently transmitting (voice:ptt on) - pruned to live peers.
     public var speakingIds: Set<String>
     /// Software gate is the source of truth (VR-6).
     public var micMuted: Bool
@@ -83,7 +79,7 @@ public struct VoiceRoomModel: Equatable, Sendable {
         self.lastResyncMs = lastResyncMs
     }
 
-    // ── lifecycle ────────────────────────────────────────
+    // lifecycle
 
     public mutating func beginJoin(conversationId: String) {
         self.conversationId = conversationId
@@ -120,9 +116,9 @@ public struct VoiceRoomModel: Equatable, Sendable {
         self.connected = connected
     }
 
-    // ── roster + ptt ─────────────────────────────────────
+    // roster + ptt
 
-    /// voice:roster — replace wholesale; prune speaking to live peers;
+    /// voice:roster - replace wholesale; prune speaking to live peers;
     /// DEFECT FIX #2: a peer that vanished loses its playback state
     /// (lastSeq → 0, queue cleared) so its REJOIN restarts audio
     /// immediately instead of blackholing behind a stale lastSeq.
@@ -137,7 +133,7 @@ public struct VoiceRoomModel: Equatable, Sendable {
         status = .joined
     }
 
-    /// voice:ptt — echoed to the sender too, so self rings glow (VR-3).
+    /// voice:ptt - echoed to the sender too, so self rings glow (VR-3).
     public mutating func applyPtt(userId: String, on: Bool) {
         if on {
             speakingIds.insert(userId)
@@ -146,7 +142,7 @@ public struct VoiceRoomModel: Equatable, Sendable {
         }
     }
 
-    // ── mute (VR-6) ──────────────────────────────────────
+    // mute (VR-6)
 
     /// Software gate truth. Returns true when a LIVE transmission had to
     /// be force-stopped (the session must also emit voice:ptt off and
@@ -161,10 +157,10 @@ public struct VoiceRoomModel: Equatable, Sendable {
         return false
     }
 
-    // ── playback playhead (VR-5) ─────────────────────────
+    // playback playhead (VR-5)
 
     public enum ChunkVerdict: Equatable, Sendable {
-        /// Stale/duplicate/corrupt — drop silently.
+        /// Stale/duplicate/corrupt - drop silently.
         case drop
         /// Schedule playback at this wall-clock ms.
         case schedule(atMs: Double)
@@ -182,13 +178,13 @@ public struct VoiceRoomModel: Equatable, Sendable {
         return .schedule(atMs: at)
     }
 
-    /// Roster-drop reset for ONE peer (the FIX #2 primitive) — also used
+    /// Roster-drop reset for ONE peer (the FIX #2 primitive) - also used
     /// when the audio engine tears a peer node down.
     public mutating func resetPeer(_ userId: String) {
         playback[userId] = nil
     }
 
-    // ── resync (VR-8) ────────────────────────────────────
+    // resync (VR-8)
 
     /// Rate-limited missing-me resync: a joined client absent from a fresh
     /// roster may re-emit voice:join at most once per 2 s.
@@ -201,7 +197,7 @@ public struct VoiceRoomModel: Equatable, Sendable {
         lastResyncMs = nowMs
     }
 
-    // ── honest status line (VR-8 / VR-10) ────────────────
+    // honest status line (VR-8 / VR-10)
 
     public var statusLine: String {
         if status == .error { return errorText ?? "Voice room unavailable" }
@@ -213,9 +209,7 @@ public struct VoiceRoomModel: Equatable, Sendable {
     }
 }
 
-// ══════════════════════════════════════════════════════════════
-// STAGE (Clubhouse hierarchy) — spec §1.2
-// ══════════════════════════════════════════════════════════════
+// STAGE (Clubhouse hierarchy) - spec §1.2
 
 public struct StageModel: Equatable, Sendable {
     public enum Role: Equatable, Sendable { case host, speaker, listener, audience }
@@ -225,17 +219,17 @@ public struct StageModel: Equatable, Sendable {
 
     public let myId: String
     public var conversationId: String?
-    /// Last stage:state — nil until the first one lands ("Syncing stage…").
+    /// Last stage:state - nil until the first one lands ("Syncing stage…").
     public var state: WireStageState?
     public var joined: Bool
     public var syncing: Bool
     /// Remembered across reconnects (ST-8: re-join keeps the role).
     public var wasHost: Bool
-    /// ST-5 teardown flag — surface closes + full local teardown.
+    /// ST-5 teardown flag - surface closes + full local teardown.
     public var ended: Bool
     /// Optimistic raise; reconciled by every stage:state.
     public var optimisticHand: Bool
-    /// DEFECT FIX #3 — EVERY joined stage member (host/speaker/listener)
+    /// DEFECT FIX #3 - EVERY joined stage member (host/speaker/listener)
     /// must hold a voice seat. Re-armed on join, on demotion, and on
     /// forced removal (the voice roster drops me while stage-joined).
     public var needsVoiceSeat: Bool
@@ -254,7 +248,7 @@ public struct StageModel: Equatable, Sendable {
         lastResyncMs = nil
     }
 
-    // ── derivations (ST-2) ───────────────────────────────
+    // derivations (ST-2)
 
     public var myRole: Role {
         guard let state else { return .audience }
@@ -271,7 +265,7 @@ public struct StageModel: Equatable, Sendable {
         return optimisticHand
     }
 
-    /// ST-7 — the host seat is empty and I am joined: "Claim host".
+    /// ST-7 - the host seat is empty and I am joined: "Claim host".
     public var canClaimHost: Bool {
         joined && state?.host == nil
     }
@@ -291,9 +285,9 @@ public struct StageModel: Equatable, Sendable {
     public var listenerRow: [WireStagePerson] { state?.listenerList ?? [] }
     public var listenerTotal: Int { state?.listenerTotal ?? 0 }
 
-    // ── lifecycle ────────────────────────────────────────
+    // lifecycle
 
-    /// ST-1 — join ALWAYS as listener (asHost only via Claim host / the
+    /// ST-1 - join ALWAYS as listener (asHost only via Claim host / the
     /// remembered wasHost on resync). Optimistic joined + syncing until
     /// the first stage:state.
     public mutating func beginJoin(conversationId: String, asHost: Bool) {
@@ -303,18 +297,18 @@ public struct StageModel: Equatable, Sendable {
         ended = false
         wasHost = asHost
         optimisticHand = false
-        needsVoiceSeat = true // FIX #3 — the seat is claimed with the join
+        needsVoiceSeat = true // FIX #3 - the seat is claimed with the join
     }
 
     public mutating func apply(state: WireStageState) {
         let previousRole = myRole
         self.state = state
         syncing = false
-        // The optimistic hand reconciles to server truth on EVERY state —
+        // The optimistic hand reconciles to server truth on EVERY state -
         // a raise the server never confirmed must not glow forever.
         optimisticHand = state.handList.contains { $0.id == myId }
         if state.host?.id == myId { wasHost = true }
-        // FIX #3 seam — a demotion (speaker → listener) means the server
+        // FIX #3 seam - a demotion (speaker → listener) means the server
         // force-removed my voice seat (stage:mute); re-arm the request so
         // the session re-emits voice:join and I keep HEARING.
         if joined, previousRole == .speaker, myRole == .listener {
@@ -322,7 +316,7 @@ public struct StageModel: Equatable, Sendable {
         }
     }
 
-    /// FIX #3 re-arm — the voice roster arrived without me while
+    /// FIX #3 re-arm - the voice roster arrived without me while
     /// stage-joined (forced removal / drop): request the seat again.
     public mutating func markVoiceSeatRemoved() {
         guard joined else { return }
@@ -350,7 +344,7 @@ public struct StageModel: Equatable, Sendable {
         lastResyncMs = nowMs
     }
 
-    /// ST-5 — stage:ended: full local teardown (the surface closes + toast
+    /// ST-5 - stage:ended: full local teardown (the surface closes + toast
     /// ride in the session model).
     public mutating func applyEnded() {
         ended = true
@@ -374,7 +368,7 @@ public struct StageModel: Equatable, Sendable {
     }
 }
 
-/// ST-5 — host-only two-tap End with a 2600 ms reset window (pure so the
+/// ST-5 - host-only two-tap End with a 2600 ms reset window (pure so the
 /// confirm semantics stay unit-testable; the view only renders it).
 public struct StageEndConfirm: Equatable, Sendable {
     public static let resetMs: Double = 2600
@@ -383,7 +377,7 @@ public struct StageEndConfirm: Equatable, Sendable {
 
     public init() {}
 
-    /// First tap arms (returns false — show "Tap again to end"); a second
+    /// First tap arms (returns false - show "Tap again to end"); a second
     /// tap inside the window fires the end (returns true); past the window
     /// the arm resets.
     public mutating func tap(nowMs: Double) -> Bool {
@@ -402,9 +396,7 @@ public struct StageEndConfirm: Equatable, Sendable {
     public var armed: Bool { firstTapMs != nil }
 }
 
-// ══════════════════════════════════════════════════════════════
-// SPACE (Gather-style spatial presence) — spec §1.3
-// ══════════════════════════════════════════════════════════════
+// SPACE (Gather-style spatial presence) - spec §1.3
 
 public struct SpaceModel: Equatable, Sendable {
     public struct Player: Equatable, Sendable, Identifiable {
@@ -435,7 +427,7 @@ public struct SpaceModel: Equatable, Sendable {
         case adopt(x: Double, y: Double)
     }
 
-    /// Client move throttle — 80 ms (WEB DEFECT FIX: web sent 90 vs the
+    /// Client move throttle - 80 ms (WEB DEFECT FIX: web sent 90 vs the
     /// server's 80; native matches the server).
     public static let throttleMs: Double = 80
     /// Server self-position overwrites the optimistic target only after
@@ -479,7 +471,7 @@ public struct SpaceModel: Equatable, Sendable {
         nearby(x: targetX, y: targetY, excluding: myId)
     }
 
-    /// SP-4 — Euclidean distance ≤ 0.18 (self excluded).
+    /// SP-4 - Euclidean distance ≤ 0.18 (self excluded).
     public func nearby(x: Double, y: Double, excluding anchorId: String) -> [Player] {
         players.filter { player in
             guard player.id != anchorId else { return false }
@@ -489,7 +481,7 @@ public struct SpaceModel: Equatable, Sendable {
         }
     }
 
-    // ── lifecycle ────────────────────────────────────────
+    // lifecycle
 
     public mutating func beginJoin() {
         joined = true
@@ -497,19 +489,19 @@ public struct SpaceModel: Equatable, Sendable {
         errorText = nil
     }
 
-    /// R1-W2G D46 — seed the optimistic target from the durable
+    /// R1-W2G D46 - seed the optimistic target from the durable
     /// last-position cache at join time (web falls back to 0.5/0.5,
     /// space-sheet.tsx:325-329). The server still wins when its state
-    /// carries a real self position — apply() only adopts non-nil rows.
+    /// carries a real self position - apply() only adopts non-nil rows.
     public mutating func seedInitialPosition(x: Double, y: Double) {
         targetX = Self.clamp01(x)
         targetY = Self.clamp01(y)
     }
 
-    /// space:state — FULL state replace (SP-5: stale players self-heal).
+    /// space:state - FULL state replace (SP-5: stale players self-heal).
     /// FIX #4: with the finger idle ≥ 300 ms, the server's self-position
     /// becomes the new optimistic target (drift + relays reconcile).
-    /// R1-W2G D46 — the server's own row wins ONLY when it carries a REAL
+    /// R1-W2G D46 - the server's own row wins ONLY when it carries a REAL
     /// position: a nil x/y (the server returned nothing for us) must not
     /// clobber the cached initial target with the 0.5 decode fallback.
     public mutating func apply(state: WireSpaceState, nowMs: Double) -> ReconcileVerdict {
@@ -533,7 +525,7 @@ public struct SpaceModel: Equatable, Sendable {
         return .keep
     }
 
-    /// SP-3 — tap/drag destination: clamp 0..1 client-side, optimistic
+    /// SP-3 - tap/drag destination: clamp 0..1 client-side, optimistic
     /// target moves instantly, and the emit is throttled to one per 80 ms.
     public mutating func localMove(x: Double, y: Double, nowMs: Double) -> MoveDecision {
         let clampedX = Self.clamp01(x)
@@ -590,7 +582,7 @@ public struct SpaceModel: Equatable, Sendable {
     }
 }
 
-/// R1-W2G D46 — one durable last-position row: JSON-encoded into
+/// R1-W2G D46 - one durable last-position row: JSON-encoded into
 /// UserDefaults under PulsePrefs.spaceLastPositionKey(roomId). The relay
 /// keeps the previous position in-memory only (mini-services/pulse-socket
 /// /index.ts:1288-1299); this is the native DURABLE twin so a rejoin
@@ -605,13 +597,11 @@ public struct SpaceLastPosition: Codable, Equatable, Sendable {
     }
 }
 
-// ══════════════════════════════════════════════════════════════
-// CAPTIONS (VR-7) — window accumulator (pure)
-// ══════════════════════════════════════════════════════════════
+// CAPTIONS (VR-7) - window accumulator (pure)
 
 /// Accumulates 16 kHz samples while transmitting + captions on:
 ///   · ≥ 64 000 samples (4 s) → flush a window (single-flight: while an
-///     ASR call is in flight, keep accumulating — the next feed flushes)
+///     ASR call is in flight, keep accumulating - the next feed flushes)
 ///   · PTT release → the tail becomes the final window only when it
 ///     carries ≥ 16 000 samples (~1 s); shorter tails are dropped
 ///   · turning captions OFF clears pending audio immediately
@@ -641,7 +631,7 @@ public struct CaptionWindowAccumulator: Equatable, Sendable {
     }
 
     /// Feed while transmitting; returns a full window when ready and no
-    /// ASR call is in flight (single-flight — otherwise keep accumulating).
+    /// ASR call is in flight (single-flight - otherwise keep accumulating).
     public mutating func feed(_ chunk: [Int16]) -> [Int16]? {
         guard enabled else { return nil }
         samples.append(contentsOf: chunk)
@@ -652,7 +642,7 @@ public struct CaptionWindowAccumulator: Equatable, Sendable {
         return window
     }
 
-    /// PTT released — final window when the tail qualifies; when an ASR
+    /// PTT released - final window when the tail qualifies; when an ASR
     /// call is still in flight the tail is dropped (honest silence).
     public mutating func takeTail() -> [Int16]? {
         guard enabled else {
@@ -665,12 +655,12 @@ public struct CaptionWindowAccumulator: Equatable, Sendable {
         return samples
     }
 
-    /// The transcribe call settled — single-flight opens again.
+    /// The transcribe call settled - single-flight opens again.
     public mutating func endFlush() {
         busy = false
     }
 
-    /// Teardown (leave / disable) — clears everything.
+    /// Teardown (leave / disable) - clears everything.
     public mutating func clear() {
         samples.removeAll()
         busy = false

@@ -3,7 +3,7 @@ package app.pulse.domain.model
 import kotlinx.serialization.Serializable
 
 /**
- * Wave-3 native calls — domain models mirroring the wire contract in
+ * Wave-3 native calls - domain models mirroring the wire contract in
  * src/lib/call-types.ts (R33-a) and the pinned W3-PLAN shared design.
  * Pure Kotlin: every wire field is restated here so :domain stays free of
  * :protocol/:data dependencies (same pattern as OutboxEntry).
@@ -15,12 +15,12 @@ enum class CallKind(val wire: String) {
     VIDEO("video");
 
     companion object {
-        /** Tolerant wire decode — anything unknown degrades to VOICE. */
+        /** Tolerant wire decode - anything unknown degrades to VOICE. */
         fun of(wire: String?): CallKind = if (wire == VIDEO.wire) VIDEO else VOICE
     }
 }
 
-/** Terminal call-log status — the CALLER's client writes every row (wire statuses). */
+/** Terminal call-log status - the CALLER's client writes every row (wire statuses). */
 enum class CallStatus(val wire: String) {
     COMPLETED("completed"),
     MISSED("missed"),
@@ -43,7 +43,7 @@ enum class CallCancelReason(val wire: String) {
     OFFLINE("offline");
 
     companion object {
-        /** Tolerant wire decode — unknown/absent degrades to CANCEL (web parity). */
+        /** Tolerant wire decode - unknown/absent degrades to CANCEL (web parity). */
         fun of(wire: String?): CallCancelReason =
             entries.firstOrNull { it.wire == wire } ?: CANCEL
     }
@@ -58,7 +58,7 @@ data class CallPeer(
     val avatar: String? = null,
 )
 
-/** Call direction — drives who is allowed to write the terminal log row. */
+/** Call direction - drives who is allowed to write the terminal log row. */
 enum class CallDirection { OUTGOING, INCOMING }
 
 /**
@@ -69,7 +69,7 @@ enum class CallDirection { OUTGOING, INCOMING }
 enum class CallState { IDLE, OUTGOING_RINGING, INCOMING_RINGING, CONNECTING, CONNECTED, ENDED }
 
 /**
- * Terminal outcome of one call session — maps 1:1 onto the wire CallStatus
+ * Terminal outcome of one call session - maps 1:1 onto the wire CallStatus
  * (completed|missed|declined) via CallLogMapper. null = ended without any
  * outcome (e.g. mic-denied incoming attempt; the caller writes that row).
  */
@@ -89,7 +89,7 @@ data class CallLogEntry(
     val kind: CallKind = CallKind.VOICE,
     val status: CallStatus = CallStatus.MISSED,
     val durationSec: Long = 0,
-    /** ISO-8601 wire timestamp (startedAt) — verbatim, displayed relatively. */
+    /** ISO-8601 wire timestamp (startedAt) - verbatim, displayed relatively. */
     val startedAt: String = "",
     /** true when the listing viewer was the caller of this row. */
     val outgoing: Boolean = false,
@@ -98,7 +98,7 @@ data class CallLogEntry(
 
 /**
  * A decoded call:* relay signal as the repository surface hands it to the
- * call engine. One tolerant shape covers every event — [kind] discriminates
+ * call engine. One tolerant shape covers every event - [kind] discriminates
  * nothing (both sides know the call), each consumer reads what it needs:
  * offer → [sdp]/[callerName]/[callerColor]/[callerAvatar], answer → [sdp],
  * ice → [candidate]/[sdpMid]/[sdpMLineIndex], cancel → [reason],
@@ -124,7 +124,7 @@ data class CallSignalData(
     val callerAvatar: String? = null,
 )
 
-/** A C→S call signal waiting to be emitted — the exact wire payload fields. */
+/** A C→S call signal waiting to be emitted - the exact wire payload fields. */
 @Serializable
 data class CallSignalOut(
     val event: String,

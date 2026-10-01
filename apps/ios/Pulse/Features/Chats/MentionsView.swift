@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Wave 6 — the mentions feed (F-SM-03, mentions-page.tsx parity): the REAL
+/// Wave 6 - the mentions feed (F-SM-03, mentions-page.tsx parity): the REAL
 /// GET /api/mentions entries (14-day window, sender≠viewer), author avatar
 /// circular, snippet with the first "@Me" token in an emerald glass chip,
-/// "Direct message" footer for DMs, honest empty copy. NO read-state/ack —
+/// "Direct message" footer for DMs, honest empty copy. NO read-state/ack -
 /// opening the page never clears the pill (count = feed length, web parity).
 struct MentionsView: View {
     @ObservedObject var session: PulseSession
@@ -52,7 +52,7 @@ struct MentionsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    // Header count badge (web h1 badge — 99+ cap), no clear-on-open.
+                    // Header count badge (web h1 badge - 99+ cap), no clear-on-open.
                     if !entries.isEmpty {
                         Text(PulseBadgeCap.cap(entries.count))
                             .font(.system(size: 10, weight: .bold))
@@ -82,7 +82,7 @@ struct MentionsView: View {
             Text("No mentions yet")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(PulseTheme.titleOnPanel)
-            Text("No mentions yet — when someone @mentions you, it shows up here.")
+            Text("No mentions yet - when someone @mentions you, it shows up here.")
                 .font(.system(size: 12.5))
                 .foregroundStyle(PulseTheme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -143,7 +143,7 @@ struct MentionsView: View {
     }
 }
 
-/// One mention row — the exact web anatomy: author circle + name, snippet
+/// One mention row - the exact web anatomy: author circle + name, snippet
 /// with the "@Me" chip, AtSign + where footer, stamp + chevron.
 private struct MentionRow: View {
     let entry: WireMentionEntry
@@ -217,7 +217,7 @@ private struct MentionRow: View {
 }
 
 /// Snippet with the first "@Me" token wrapped in an emerald glass chip
-/// (PulseMentions.firstMatch — the API regex mirror, unit-tested).
+/// (PulseMentions.firstMatch - the API regex mirror, unit-tested).
 struct MentionSnippet: View {
     let snippet: String
     let meName: String

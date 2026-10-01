@@ -118,6 +118,7 @@ import app.pulse.ui.EmberGlassButton
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseGlass
 import app.pulse.ui.PulseIcons
+import app.pulse.ui.pulseFolderGlyph
 import app.pulse.ui.PulseMonoFamily
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
@@ -1273,7 +1274,7 @@ private fun FolderRail(
     ) {
         RailPill(
             label = "All",
-            emoji = null,
+            icon = null,
             count = 0,
             active = activeFolderId == null,
             dark = dark,
@@ -1282,7 +1283,7 @@ private fun FolderRail(
         folders.forEach { folder ->
             RailPill(
                 label = folder.name,
-                emoji = folder.emoji.ifBlank { null },
+                icon = pulseFolderGlyph(folder.emoji),
                 count = folderCounts(folder.id),
                 active = activeFolderId == folder.id,
                 dark = dark,
@@ -1307,7 +1308,7 @@ private fun FolderRail(
 }
 
 @Composable
-private fun RailPill(label: String, emoji: String?, count: Int, active: Boolean, dark: Boolean, onClick: () -> Unit) {
+private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Boolean, dark: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .height(44.dp)
@@ -1315,11 +1316,20 @@ private fun RailPill(label: String, emoji: String?, count: Int, active: Boolean,
             .background(if (active) Emerald500 else Color.Transparent)
             .then(if (active) Modifier else Modifier.pulseGlass(dark, RoundedCornerShape(50)))
             .clickable(onClick = onClick)
-            .padding(horizontal = if (emoji == null) 16.dp else 14.dp),
+            .padding(horizontal = if (icon == null) 16.dp else 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (emoji != null) Text(emoji, fontSize = 14.sp)
+        // R18 icon-id contract - the folder glyph is the registry vector for
+        // the stored icon id (stale values normalize to the default).
+        if (icon != null) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (active) Color.White else Emerald600,
+                modifier = Modifier.size(14.dp),
+            )
+        }
         Text(
             label,
             fontSize = 13.sp,

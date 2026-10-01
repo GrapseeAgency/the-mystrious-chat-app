@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — "New chat" bottom sheet (vaul Drawer):
+// Pulse Chat - "New chat" bottom sheet (vaul Drawer):
 // DM mode = searchable contact list; group mode = multi-select
 // builder with live member count.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useMemo, useRef, useState } from 'react'
@@ -123,7 +121,7 @@ export function NewChatSheet({
     create.mutate({ memberIds: [...selectedIds], name: groupName.trim() })
   }
 
-  // ── R30-c: broadcast channel creation (two-field step) ──────
+  // R30-c: broadcast channel creation (two-field step) 
   const createChannel = useMutation({
     mutationFn: async (payload: { name: string; description: string; photo?: string }) => {
       return apiJson<CreateChannelResponse>('/api/channels', jsonBody({
@@ -210,7 +208,7 @@ export function NewChatSheet({
             </Button>
           </div>
 
-          {/* segmented control — R30-c adds the New channel action */}
+          {/* segmented control - R30-c adds the New channel action */}
           <div
             role="tablist"
             aria-label="Conversation type"
@@ -281,7 +279,7 @@ export function NewChatSheet({
             </div>
           ) : (
             <div className="mb-2 space-y-1.5">
-              {/* R33-b — optional channel photo: round glass tile (Camera icon)
+              {/* R33-b - optional channel photo: round glass tile (Camera icon)
                   that uploads through the real /api/uploads chain at pick time */}
               <div className="flex items-center gap-3 pb-0.5">
                 <button
@@ -315,7 +313,7 @@ export function NewChatSheet({
                     Channel photo
                   </p>
                   <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                    {channelPhoto ? 'Uploaded — shown everywhere' : 'Optional — you can add one later from the channel info'}
+                    {channelPhoto ? 'Uploaded - shown everywhere' : 'Optional - you can add one later from the channel info'}
                   </p>
                 </div>
                 {channelPhoto ? (
@@ -348,7 +346,7 @@ export function NewChatSheet({
               <Textarea
                 value={channelDescription}
                 onChange={(e) => setChannelDescription(e.target.value.slice(0, CHANNEL_DESCRIPTION_MAX))}
-                placeholder="Description — what is this channel about? (optional)"
+                placeholder="Description - what is this channel about? (optional)"
                 aria-label="Channel description"
                 rows={2}
                 className="min-h-0 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
@@ -361,7 +359,7 @@ export function NewChatSheet({
                 <p className="text-xs text-zinc-400 dark:text-zinc-500">
                   {channelDescription.length > 0
                     ? `${CHANNEL_DESCRIPTION_MAX - channelDescription.length} characters left`
-                    : 'You will be the admin — only admins can post in a channel.'}
+                    : 'You will be the admin - only admins can post in a channel.'}
                 </p>
               )}
               {/* hidden picker for the optional channel photo (R33-b) */}
@@ -380,7 +378,7 @@ export function NewChatSheet({
             </div>
           )}
 
-          {/* people list — hidden on the channel step */}
+          {/* people list - hidden on the channel step */}
           {mode !== 'channel' ? (
           <div className="pulse-scroll max-h-[46dvh] min-h-0 overflow-y-auto overscroll-contain rounded-xl">
             {users.isPending ? (

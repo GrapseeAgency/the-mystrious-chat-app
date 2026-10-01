@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * R2-C item 4 — the whiteboard pending-stroke DRAFT store logic (pure port
+ * R2-C item 4 - the whiteboard pending-stroke DRAFT store logic (pure port
  * of iOS PulseWhiteboardDraft.swift): encode/decode roundtrip, junk-tolerant
  * restore, restore-time dedupe against the server snapshot and the purge
  * math for the flush-verdict path.
@@ -22,7 +22,7 @@ class WhiteboardDraftLogicTest {
         points = points.map { listOf(it.first, it.second) },
     )
 
-    // ── encode / decode roundtrip ───────────────────────────────
+    // encode / decode roundtrip
 
     @Test
     fun `encode decode roundtrip preserves strokes oldest first`() {
@@ -53,7 +53,7 @@ class WhiteboardDraftLogicTest {
         assertTrue(PulseWhiteboardDraftLogic.decode(onlyEmpty).isEmpty())
     }
 
-    // ── restore-time dedupe (server snapshot already has the stroke) ──
+    // restore-time dedupe (server snapshot already has the stroke)
 
     @Test
     fun `droppingSynced drops draft strokes the snapshot already carries`() {
@@ -79,7 +79,7 @@ class WhiteboardDraftLogicTest {
         assertEquals(draft, PulseWhiteboardDraftLogic.droppingSynced(draft, snapshot))
     }
 
-    // ── purge math (flush verdict / undo) ───────────────────────
+    // purge math (flush verdict / undo)
 
     @Test
     fun `droppingFirst removes exactly the acknowledged batch`() {

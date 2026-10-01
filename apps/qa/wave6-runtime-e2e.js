@@ -44,8 +44,8 @@ async function main() {
   // ── Profile GET + PATCH (F-CP-04) ──────────────────────────────────────
   const prof = await api('GET', `/api/users/${A}`)
   ok('GET user profile', prof.status === 200 && prof.json.user.id === A)
-  const patch = await api('PATCH', `/api/users/${A}`, { about: 'e2e bio', statusEmoji: '🔥', statusText: 'shipping' })
-  ok('PATCH profile (bio/status)', patch.status === 200 && patch.json.user.about === 'e2e bio' && patch.json.user.statusEmoji === '🔥')
+  const patch = await api('PATCH', `/api/users/${A}`, { about: 'e2e bio', statusEmoji: '', statusText: 'shipping' })
+  ok('PATCH profile (bio/status)', patch.status === 200 && patch.json.user.about === 'e2e bio' && patch.json.user.statusEmoji === '')
   const badName = await api('PATCH', `/api/users/${A}`, { name: '' })
   ok('PATCH name=1-32 rejected on empty', badName.status === 400)
   const badHandle = await api('PATCH', `/api/users/${A}`, { username: 'Bad Handle!' })
@@ -96,7 +96,7 @@ async function main() {
   ok('invalid reason 400', repBad.status === 400)
 
   // ── Folders (F-FD-01…03) ────────────────────────────────────────────────
-  const f = await api('POST', '/api/folders', { userId: A, name: uniq('Work'), emoji: '💼' })
+  const f = await api('POST', '/api/folders', { userId: A, name: uniq('Work'), emoji: '' })
   ok('folder create 201', f.status === 201 && !!f.json.folder?.id)
   const fid = f.json.folder.id
   const conv1 = await api('POST', '/api/conversations', { creatorId: A, memberIds: [B], isGroup: false })

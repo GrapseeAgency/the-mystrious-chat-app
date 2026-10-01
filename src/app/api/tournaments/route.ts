@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/tournaments — Twitch-style seasonal ladders per room
+// /api/tournaments - Twitch-style seasonal ladders per room
 // (Task R24-d)
 //
 // POST { userId, conversationId, name, game? }
@@ -7,7 +6,7 @@
 //           message: ChatMessage }
 //   · member-guarded (403) · name 1..40 (400) · game whitelist (400)
 //   · creator is auto-joined as the first TournamentPlayer
-//   · a REAL kind:'tournament' Message row announces the season —
+//   · a REAL kind:'tournament' Message row announces the season -
 //     built with the exact same serializer include + socket relay
 //     pattern as POST /api/redpackets (mapMessage + notifySocket
 //     'message:new' + conversation updatedAt bump), so clients can
@@ -15,10 +14,9 @@
 //
 // GET ?conversationId= → { tournaments: TournamentListItem[] }
 //   · newest 5 seasons of the room (createdAt desc), each with the
-//     real player count — powers the group-info Tournament section.
+//     real player count - powers the group-info Tournament section.
 //
-// No mocks — every row lands in Prisma/SQLite.
-// ─────────────────────────────────────────────────────────────
+// No mocks - every row lands in Prisma/SQLite.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -48,7 +46,7 @@ export interface TournamentListItem {
 }
 
 /**
- * POST /api/tournaments — open a season, auto-join the creator and
+ * POST /api/tournaments - open a season, auto-join the creator and
  * announce it in the room with a real chat message.
  */
 export async function POST(req: Request) {
@@ -120,7 +118,7 @@ export async function POST(req: Request) {
       data: {
         conversationId,
         senderId: userId,
-        content: `🏆 Tournament "${name}" started`,
+        content: `Tournament "${name}" started`,
         kind: 'tournament',
         payload: JSON.stringify({ tournamentId: created.id, name, game }),
         createdAt: now,
@@ -151,7 +149,7 @@ export async function POST(req: Request) {
   const mapped = mapMessage(message, userId)
 
   // Realtime relay to every OTHER member (sender appends via the
-  // response — the sheet fires `pulse:external-message` for the
+  // response - the sheet fires `pulse:external-message` for the
   // instant local append).
   const recipients = (await memberIdsOf(conversationId)).filter((memberId) => memberId !== userId)
   await notifySocket('message:new', recipients, {
@@ -178,7 +176,7 @@ export async function POST(req: Request) {
 }
 
 /**
- * GET /api/tournaments?conversationId= — newest 5 seasons of a room
+ * GET /api/tournaments?conversationId= - newest 5 seasons of a room
  * with real player counts (read-only mirror of the games GET policy).
  */
 export async function GET(req: Request) {

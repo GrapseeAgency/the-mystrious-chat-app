@@ -1,16 +1,16 @@
 import XCTest
 @testable import Pulse
 
-/// R7 — message clustering kernel tests (web ground truth:
-/// chat-room.tsx:1367-1424 buildItems — head on first row / day change /
+/// R7 - message clustering kernel tests (web ground truth:
+/// chat-room.tsx:1367-1424 buildItems - head on first row / day change /
 /// sender change / anon-mask change / >5min gap; tail = last row OR next is
 /// head). All inputs are plain ms epochs + strings, so the suite is
 /// deterministic under test (no Date()/now inside the kernel).
 final class PulseClusterTests: XCTestCase {
 
-    // ── fixtures ─────────────────────────────────────────────
+    // fixtures
 
-    /// 2026-03-10T04:00:00Z — a mid-afternoon-in-any-real-timezone instant,
+    /// 2026-03-10T04:00:00Z - a mid-afternoon-in-any-real-timezone instant,
     /// so ±5min probes can never straddle a calendar midnight (the day-change
     /// case is probed with an exact +24h step instead).
     private let baseMs: Double = 1_773_115_200_000
@@ -33,7 +33,7 @@ final class PulseClusterTests: XCTestCase {
         )
     }
 
-    // ── the web rules ────────────────────────────────────────
+    // the web rules
 
     func testSameSenderWithinWindowIsOneCluster() {
         let out = flags(
@@ -82,7 +82,7 @@ final class PulseClusterTests: XCTestCase {
     }
 
     func testDayChangeBreaksCluster() {
-        // Exactly +24h — a different calendar day in every timezone.
+        // Exactly +24h - a different calendar day in every timezone.
         let out = flags(
             [baseMs, baseMs + 24 * 60 * minute],
             senders: ["a", "a"],
@@ -101,7 +101,7 @@ final class PulseClusterTests: XCTestCase {
     }
 
     func testTailOnLastRowAndBeforeHeads() {
-        // Gaps: 1min inside cluster one, then 5min+1ms (past the window —
+        // Gaps: 1min inside cluster one, then 5min+1ms (past the window -
         // the boundary-equals case is pinned by testWindowBoundaryIsStrictlyGreaterThan),
         // then 1min inside cluster two.
         let out = flags(

@@ -1,15 +1,15 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 2 data-layer wire tests (W2-DATA-B) — pure JSON decode checks against
+/// Wave 2 data-layer wire tests (W2-DATA-B) - pure JSON decode checks against
 /// the frozen backend contract (spec §0): poll/link-preview/saved/topic/
 /// transcribe shapes, the Wave 2 fields on WireChatMessage (populated AND
-/// absent — backward compatibility), and the `{message: null}` unfurl
+/// absent - backward compatibility), and the `{message: null}` unfurl
 /// envelope. No network, no mic.
 final class Wave2WireTests: XCTestCase {
-    // ── WirePoll — votedBy is the pick source, myOptionId is NOT ──
+    // WirePoll - votedBy is the pick source, myOptionId is NOT
 
-    /// Realistic relayed poll row (spec §0 shape) — myOptionId deliberately
+    /// Realistic relayed poll row (spec §0 shape) - myOptionId deliberately
     /// CONTRADICTS the votedBy arrays to prove the derivation ignores it.
     func testWirePollDecodesAndPickForIgnoresMyOptionId() throws {
         let json = """
@@ -27,7 +27,7 @@ final class Wave2WireTests: XCTestCase {
         XCTAssertEqual(poll.options?.first?.position, 0)
         XCTAssertEqual(poll.options?.first?.voteCount, 2)
 
-        // Spec §1 row 2 — the pick comes from votedBy ONLY. myOptionId is
+        // Spec §1 row 2 - the pick comes from votedBy ONLY. myOptionId is
         // actor-relative on relayed rows (here it names the ACTOR's pick,
         // not u1's) so it must never leak into anyone's "my vote".
         XCTAssertEqual(poll.pickFor("u1"), "opt-a")
@@ -40,7 +40,7 @@ final class Wave2WireTests: XCTestCase {
 
     func testWirePollToleratesAbsencesAndEmptyVotes() throws {
         // History GETs answer myOptionId null; older relays may omit
-        // closed/totalVotes entirely — decode must stay lossless-tolerant.
+        // closed/totalVotes entirely - decode must stay lossless-tolerant.
         let json = """
         {"id":"poll-2","question":"Lunch?",
          "options":[{"id":"o1","text":"Ramen","votedBy":[]}]}
@@ -54,7 +54,7 @@ final class Wave2WireTests: XCTestCase {
         XCTAssertNil(poll.pickFor(nil))
     }
 
-    // ── WireLinkPreview — the Open-Graph card ────────────────
+    // WireLinkPreview - the Open-Graph card
 
     func testWireLinkPreviewDecodesPopulatedAndNullish() throws {
         let json = """
@@ -79,9 +79,9 @@ final class Wave2WireTests: XCTestCase {
         XCTAssertNil(nullish.imageUrl)
     }
 
-    // ── WireSavedItem — nested conversation + message ────────
+    // WireSavedItem - nested conversation + message
 
-    /// GET /api/users/{id}/saved item — the exact nesting the route emits
+    /// GET /api/users/{id}/saved item - the exact nesting the route emits
     /// (savedAt + resolved conversation display info + full message row).
     func testWireSavedItemDecodesNestedShapes() throws {
         let json = """
@@ -112,22 +112,22 @@ final class Wave2WireTests: XCTestCase {
         XCTAssertNil(empty.items)
     }
 
-    // ── WireTopic — the Zulip-style rail row ─────────────────
+    // WireTopic - the Zulip-style rail row
 
     func testWireTopicPageAndEnvelopeDecode() throws {
         let topicJson = """
-        {"id":"t1","name":"Design","emoji":"🎨","lastMessageAt":"2026-09-08T11:00:00.000Z","messageCount":12}
+        {"id":"t1","name":"Design","emoji":"palette","lastMessageAt":"2026-09-08T11:00:00.000Z","messageCount":12}
         """
         let topic = try JSONDecoder().decode(WireTopic.self, from: Data(topicJson.utf8))
         XCTAssertEqual(topic.id, "t1")
         XCTAssertEqual(topic.name, "Design")
-        XCTAssertEqual(topic.emoji, "🎨")
+        XCTAssertEqual(topic.emoji, "palette")
         XCTAssertEqual(topic.lastMessageAt, "2026-09-08T11:00:00.000Z")
         XCTAssertEqual(topic.messageCount, 12)
 
         let page = try JSONDecoder().decode(
             WireTopicsPage.self,
-            from: Data(#"{"topics":[{"id":"t1","name":"Design","emoji":"🎨","lastMessageAt":"2026-09-08T11:00:00.000Z","messageCount":12}]}"#.utf8),
+            from: Data(#"{"topics":[{"id":"t1","name":"Design","emoji":"palette","lastMessageAt":"2026-09-08T11:00:00.000Z","messageCount":12}]}"#.utf8),
         )
         XCTAssertEqual(page.topics?.count, 1)
         let empty = try JSONDecoder().decode(WireTopicsPage.self, from: Data("{}".utf8))
@@ -136,16 +136,16 @@ final class Wave2WireTests: XCTestCase {
         // POST …/topics answers { topic } on both 200-dedupe and 201-create;
         // the envelope unwraps it (bare-object fallback stays defensive).
         let wrapped = try WireTopicEnvelope.extract(
-            from: Data(#"{"topic":{"id":"t2","name":"QA","emoji":"💬","lastMessageAt":"2026-09-08T11:30:00.000Z","messageCount":0}}"#.utf8),
+            from: Data(#"{"topic":{"id":"t2","name":"QA","emoji":"chat","lastMessageAt":"2026-09-08T11:30:00.000Z","messageCount":0}}"#.utf8),
         )
         XCTAssertEqual(wrapped.id, "t2")
         let bare = try WireTopicEnvelope.extract(
-            from: Data(#"{"id":"t2","name":"QA","emoji":"💬","lastMessageAt":"2026-09-08T11:30:00.000Z","messageCount":0}"#.utf8),
+            from: Data(#"{"id":"t2","name":"QA","emoji":"chat","lastMessageAt":"2026-09-08T11:30:00.000Z","messageCount":0}"#.utf8),
         )
         XCTAssertEqual(bare.name, "QA")
     }
 
-    // ── WireTranscribeResult + WireOk — small verdict envelopes ──
+    // WireTranscribeResult + WireOk - small verdict envelopes
 
     func testWireTranscribeResultDecode() throws {
         let fresh = try JSONDecoder().decode(
@@ -179,10 +179,10 @@ final class Wave2WireTests: XCTestCase {
         XCTAssertNil(empty.ok)
     }
 
-    // ── WireChatMessage — Wave 2 fields populated AND absent ──
+    // WireChatMessage - Wave 2 fields populated AND absent
 
     /// Every Wave 2 field populated on one row (view-once burn stamp, cached
-    /// transcript, topic filing, unfurl pair, poll card) — full-loss decode.
+    /// transcript, topic filing, unfurl pair, poll card) - full-loss decode.
     func testWireChatMessageDecodesWave2FieldsPopulated() throws {
         let json = """
         {"id":"m-wave2","conversationId":"c1","senderId":"a1",
@@ -206,7 +206,7 @@ final class Wave2WireTests: XCTestCase {
         XCTAssertEqual(msg.id, "m-wave2")
         XCTAssertEqual(msg.viewedAt, "2026-09-08T12:01:00.000Z")
         // viewedBy is a SINGLE userId string on this backend (prisma
-        // Message.viewedBy String?) — never an array.
+        // Message.viewedBy String?) - never an array.
         XCTAssertEqual(msg.viewedBy, "u9")
         XCTAssertEqual(msg.transcript, "voice text")
         XCTAssertEqual(msg.transcribedAt, "2026-09-08T12:02:00.000Z")
@@ -218,7 +218,7 @@ final class Wave2WireTests: XCTestCase {
         XCTAssertNil(msg.poll?.pickFor(nil))
     }
 
-    /// Old-relay payload with NO Wave 2 keys at all — decode must succeed
+    /// Old-relay payload with NO Wave 2 keys at all - decode must succeed
     /// with every new field nil (additive wire, backward compatible).
     func testWireChatMessageBackwardCompatibleWithoutWave2Fields() throws {
         let json = """
@@ -255,11 +255,11 @@ final class Wave2WireTests: XCTestCase {
         XCTAssertNil(msg.topicId)
     }
 
-    // ── WireMessageEnvelope — the {message: null} unfurl shape ──
+    // WireMessageEnvelope - the {message: null} unfurl shape
 
     /// POST /api/messages/{id}/unfurl answers `{ message: null }` when
     /// nothing was unfurled. The STRICT extract throws on that body (its
-    /// bare-object fallback cannot decode the wrapper) — the LENIENT
+    /// bare-object fallback cannot decode the wrapper) - the LENIENT
     /// extractOptional returns nil, which is exactly what unfurl needs.
     func testMessageEnvelopeHandlesNullMessage() throws {
         let nullBody = Data(#"{"message":null}"#.utf8)
@@ -276,7 +276,7 @@ final class Wave2WireTests: XCTestCase {
         )
         XCTAssertEqual(WireMessageEnvelope.extractOptional(from: wrapped)?.id, "m2")
 
-        // Garbage degrades to nil — never a crash.
+        // Garbage degrades to nil - never a crash.
         XCTAssertNil(WireMessageEnvelope.extractOptional(from: Data("not json".utf8)))
     }
 }

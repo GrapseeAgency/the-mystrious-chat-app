@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/messages/[id]/transcribe — real voice-note transcription (ASR)
-// ─────────────────────────────────────────────────────────────
-// R43 — "Voice notes you can read." Any conversation participant can run a
+// /api/messages/[id]/transcribe - real voice-note transcription (ASR)
+// R43 - "Voice notes you can read." Any conversation participant can run a
 // voice note through the real speech-recognition service; the transcript is
 // CACHED on the message row (transcript + transcribedAt + transcribedById) so
 // every member sees it without paying for the call again. Bytes are read with
@@ -86,7 +84,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
-  // Cache hit — the transcript is already on the row, never re-bill the ASR call.
+  // Cache hit - the transcript is already on the row, never re-bill the ASR call.
   if (message.transcript !== null && message.transcribedAt !== null) {
     return NextResponse.json({
       transcript: message.transcript,
@@ -138,7 +136,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
       error instanceof Error ? error.message : error,
     )
     return NextResponse.json(
-      { error: 'Transcription failed — the speech service could not process this audio.' },
+      { error: 'Transcription failed - the speech service could not process this audio.' },
       { status: 502 },
     )
   }

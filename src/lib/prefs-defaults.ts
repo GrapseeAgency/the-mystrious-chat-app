@@ -1,5 +1,5 @@
 /**
- * Pulse user preferences — shared shape + defaults.
+ * Pulse user preferences - shared shape + defaults.
  * Stored as a JSON string on User.preferences (SQLite has no Json type).
  * Imported by BOTH the API layer (src/app/api/settings) and the client
  * store (src/lib/prefs.ts) so validation never drifts.
@@ -29,9 +29,9 @@ export type PulsePrefs = {
   typingVisible: boolean
   /** Reduce non-essential motion (effects/parallax) app-wide. */
   reducedMotion: boolean
-  /** WebGL ambient field mode — see src/components/fx/webgl-glow.tsx (WEBGL_MODES). */
+  /** WebGL ambient field mode - see src/components/fx/webgl-glow.tsx (WEBGL_MODES). */
   'fx.webglMode'?: string
-  /** Per-conversation chat themes (R29-a) — sanitized by src/lib/conv-theme.ts. */
+  /** Per-conversation chat themes (R29-a) - sanitized by src/lib/conv-theme.ts. */
   'chat.convThemes'?: ConvThemeMap
 }
 

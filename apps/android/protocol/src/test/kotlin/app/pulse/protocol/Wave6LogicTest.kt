@@ -7,21 +7,21 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Wave 6 — social graph & discovery pure-logic tests (JVM only):
+ * Wave 6 - social graph & discovery pure-logic tests (JVM only):
  * tolerant DTO parses (shape drift can never crash), profile rules
  * (audit constants), the ≤64 search snippet window and the @suggester
  * boundary math.
  */
 class Wave6LogicTest {
 
-    // ── tolerant DTO parses ──────────────────────────────────────
+    // tolerant DTO parses
 
     @Test
     fun `full user parses the AppUser wire shape with scrubbed lastSeen`() {
         val dto = PulseJson.decodeFromString(
             UserEnvelopeDto.serializer(),
             """{"user":{"id":"u1","name":"Cara Chen","username":"cara","about":"hi","color":"emerald",
-                "avatar":"/api/uploads/a.jpg","statusEmoji":"🔥","statusText":"shipping",
+                "avatar":"/api/uploads/a.jpg","statusEmoji":"flame","statusText":"shipping",
                 "createdAt":"2024-01-02T03:04:05.000Z","lastSeenAt":null,"unknownKey":123}}""",
         )
         val u = requireNotNull(dto.user)
@@ -29,7 +29,7 @@ class Wave6LogicTest {
         assertEquals("Cara Chen", u.name)
         assertEquals("cara", u.username)
         assertNull(u.lastSeenAt)
-        assertEquals("🔥", u.statusEmoji)
+        assertEquals("flame", u.statusEmoji)
     }
 
     @Test
@@ -108,7 +108,7 @@ class Wave6LogicTest {
                 "memberCount":7,"isSubscribed":true,"unread":true,"preview":"hey…","photo":null}]}""",
         )
         val c = page.channels.single()
-        // wire may carry a null name — the mapper falls back to 'Channel'
+        // wire may carry a null name - the mapper falls back to 'Channel'
         assertEquals("Channel", c.name?.ifBlank { "Channel" } ?: "Channel")
         assertEquals(7, c.memberCount)
         assertTrue(c.isSubscribed)
@@ -127,13 +127,13 @@ class Wave6LogicTest {
     fun `folder rows parse with ordered membership`() {
         val folder = PulseJson.decodeFromString(
             FolderDto.serializer(),
-            """{"id":"f1","name":"Work","emoji":"💼","position":2,
+            """{"id":"f1","name":"Work","emoji":"briefcase","position":2,
                 "conversationIds":["c2","c1"],"extra":true}""",
         )
         assertEquals(listOf("c2", "c1"), folder.conversationIds)
     }
 
-    // ── profile rules (audit constants) ─────────────────────────
+    // profile rules (audit constants)
 
     @Test
     fun `profile rule constants match the audit exactly`() {
@@ -161,7 +161,7 @@ class Wave6LogicTest {
         assertEquals(20, PulseProfileRules.sanitizeUsernameInput("x".repeat(30)).length)
     }
 
-    // ── snippet window math (≤64 web parity) ────────────────────
+    // snippet window math (≤64 web parity)
 
     @Test
     fun `snippet window clips deep matches with leading cut`() {
@@ -198,7 +198,7 @@ class Wave6LogicTest {
         assertFalse(w.trailingCut)
     }
 
-    // ── @suggester boundary math ────────────────────────────────
+    // @suggester boundary math
 
     @Test
     fun `mention query detects an active token and respects boundaries`() {
@@ -229,7 +229,7 @@ class Wave6LogicTest {
         assertNull(mentionApply("no mention here", 15, "Cara"))
     }
 
-    // ── wave 6 second tranche: badge cap / safety grid / rules / chip ──
+    // wave 6 second tranche: badge cap / safety grid / rules / chip
 
     @Test
     fun `badge label caps at 99 plus`() {
@@ -276,7 +276,7 @@ class Wave6LogicTest {
     fun `mention token range finds the first boundary-safe token`() {
         assertEquals(0..4, mentionTokenRange("@Cara hi", "Cara"))
         assertEquals(4..13, mentionTokenRange("hey @Cara Chen, look", "Cara Chen"))
-        // NOTE: the web canonical regex has no pre-@ boundary (route.ts:113) —
+        // NOTE: the web canonical regex has no pre-@ boundary (route.ts:113) -
         // "mail@Cara" IS a server-side mention; parity over stricter guessing.
         assertNull(mentionTokenRange("@Cara", "Bob"))
         // non-alphanumeric follow still counts (regex (?=[^A-Za-z0-9]))

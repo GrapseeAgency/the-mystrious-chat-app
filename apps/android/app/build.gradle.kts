@@ -7,9 +7,9 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
-// Release channel plumbing — CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 26
-val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.11.5-native"
+// Release channel plumbing - CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 28
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.12.0-native"
 
 android {
     namespace = "app.pulse.android"
@@ -23,13 +23,13 @@ android {
         versionName = pulseVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Deployment knobs. The baked default is the repo's public HTTPS CDN —
+        // Deployment knobs. The baked default is the repo's public HTTPS CDN -
         // reachable from ANY device on earth. The old http://10.0.2.2:* emulator
         // defaults were unreachable on real phones AND cleartext (Android blocks
         // plain http → "CLEARTEXT communication not permitted"). Emulator dev:
         // -PpulseGateway=http://10.0.2.2:81 -PpulseSocket=http://10.0.2.2:3003
         buildConfigField("String", "PULSE_GATEWAY", "\"${project.findProperty("pulseGateway") ?: ""}\"")
-        // Blank socket base = realtime relay disabled (no public relay yet) —
+        // Blank socket base = realtime relay disabled (no public relay yet) -
         // the client then stays offline-first instead of reconnect-spamming a
         // dead address forever.
         buildConfigField("String", "PULSE_SOCKET", "\"${project.findProperty("pulseSocket") ?: ""}\"")
@@ -38,7 +38,7 @@ android {
     signingConfigs {
         create("release") {
             // The committed distribution keystore (GS-distribution model): every
-            // build — sandbox, CI, future waves — signs identically, so the
+            // build - sandbox, CI, future waves - signs identically, so the
             // LiveUpdater can overwrite-install without an uninstall.
             storeFile = rootProject.file("keystores/pulse-release.keystore")
             storePassword = "pulse-live-update"
@@ -46,11 +46,11 @@ android {
             keyPassword = "pulse-live-update"
             // ALL signing schemes, explicitly. AGP defaults skimp on the v1 JAR
             // signature for modern minSdks, and some ROM installers reject such
-            // APKs with "There was a problem parsing the package" — the exact
+            // APKs with "There was a problem parsing the package" - the exact
             // field report from v0.1.2. v1 costs ~20KB and removes the entire
             // class of picky-parser failures. minSdk itself is now 21 so even
             // pre-Android-8 devices can parse+install (a device below minSdk
-            // reports the SAME parse error — the last surviving cause).
+            // reports the SAME parse error - the last surviving cause).
             enableV1Signing = true
             enableV2Signing = true
             enableV3Signing = true
@@ -78,7 +78,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // java.time etc. must survive on API < 26 — desugar at final DEX time.
+        // java.time etc. must survive on API < 26 - desugar at final DEX time.
         isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions { jvmTarget = "17" }
@@ -99,12 +99,12 @@ dependencies {
     implementation(project(":feature-settings"))
 
     // SessionViewModel/OnboardingViewModel encode/decode the persisted endpoint
-    // overrides directly — :protocol exposes serialization as `implementation`,
+    // overrides directly - :protocol exposes serialization as `implementation`,
     // so :app needs the runtime on its own classpath (same coordinate).
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     implementation(libs.androidx.core.ktx)
-    // R10-a — BiometricPrompt app lock (BIOMETRIC_WEAK | DEVICE_CREDENTIAL).
+    // R10-a - BiometricPrompt app lock (BIOMETRIC_WEAK | DEVICE_CREDENTIAL).
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
@@ -122,17 +122,17 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
-    // OutboxWorker (Wave 0 offline core) — the expedited flusher lives in :app.
+    // OutboxWorker (Wave 0 offline core) - the expedited flusher lives in :app.
     implementation(libs.androidx.work.runtime)
 
-    // R8 Task 3-c — FCM remote push (client wiring). The google-services
+    // R8 Task 3-c - FCM remote push (client wiring). The google-services
     // plugin is INTENTIONALLY absent: the build stays green with no
     // google-services.json. FirebaseApp is initialized ONLY when the
     // pulse_fcm_* string credentials exist (fail-closed, feature-disabled
-    // otherwise) — see PulseApplication + PulseMessagingService.
+    // otherwise) - see PulseApplication + PulseMessagingService.
     implementation(libs.firebase.messaging)
 
-    // R10-a — the quick-reply payload parser is pinned by a pure JVM test.
+    // R10-a - the quick-reply payload parser is pinned by a pure JVM test.
     testImplementation(libs.junit4)
 
     androidTestImplementation(libs.androidx.test.core.ktx)

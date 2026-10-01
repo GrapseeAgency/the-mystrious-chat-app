@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — PWA side-effects host (no UI).
+// Pulse Chat - PWA side-effects host (no UI).
 // Registers /sw.js (offline shell), captures the install
 // prompt, and toasts offline/online/update transitions.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useEffect } from 'react'
@@ -11,7 +9,7 @@ import { usePulsePwa } from '@/lib/pwa-store'
 
 export function PwaProvider() {
   useEffect(() => {
-    // install prompt capture — must happen before any user gesture
+    // install prompt capture - must happen before any user gesture
     const onBeforeInstall = (event: Event) => {
       event.preventDefault()
       usePulsePwa.getState().setInstallEvent(event)
@@ -19,7 +17,7 @@ export function PwaProvider() {
     window.addEventListener('beforeinstallprompt', onBeforeInstall)
 
     const onOffline = () => {
-      toast.warning('You are offline — chats resume when you reconnect', {
+      toast.warning('You are offline - chats resume when you reconnect', {
         description: 'Pulse can still open from your last visit.',
       })
     }
@@ -37,7 +35,7 @@ export function PwaProvider() {
       }
     }
     // Auto-heal: when a new service worker activates it broadcasts
-    // PULSE_SW_UPDATED — hard-reload ONCE per version so a stale
+    // PULSE_SW_UPDATED - hard-reload ONCE per version so a stale
     // bundle can never linger in the tab.
     const onSwMessage = (event: MessageEvent) => {
       const data = event.data as { type?: string; cache?: string } | null
@@ -57,7 +55,7 @@ export function PwaProvider() {
           navigator.serviceWorker.addEventListener('controllerchange', onControllerChange)
         })
         .catch(() => {
-          // SW unsupported/blocked — app keeps working normally online
+          // SW unsupported/blocked - app keeps working normally online
         })
     }
 

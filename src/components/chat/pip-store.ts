@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — PiP pane store (zustand) — R28-a pane-management rework.
+// Pulse - PiP pane store (zustand) - R28-a pane-management rework.
 //
 // A floating pane = one conversation rendered as a draggable glass
 // window. Model:
@@ -22,7 +21,6 @@
 //     · conversationId → the focused (expanded) pane's conversation,
 //                        null when only the stack is showing
 //   minimize()/restore() keep their old meaning against the focused pane.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useMemo } from 'react'
@@ -34,7 +32,7 @@ import type { ChatMessage } from '@/lib/types'
 /** Max simultaneously live panes (1 expanded + rest stacked). */
 export const PIP_MAX_PANES = 3
 
-// ── frame geometry reserves (px, measured against the phone frame) ──
+// frame geometry reserves (px, measured against the phone frame) 
 /** side margin the pane keeps from the frame edges */
 export const PIP_MARGIN_X = 10
 /** below the room header (~56px + safe-area + breathing room) */
@@ -45,7 +43,7 @@ export const PIP_BOTTOM_RESERVE = 92
 export const PIP_STACK_PILL = 48
 export const PIP_STACK_GAP = 8
 
-// ── pane size clamps (mobile-first: fits a 390px frame with margins) ──
+// pane size clamps (mobile-first: fits a 390px frame with margins) 
 export const PIP_PANE_MIN_W = 220
 export const PIP_PANE_MAX_W = 276
 export const PIP_PANE_MIN_H = 300
@@ -53,7 +51,7 @@ export const PIP_PANE_MAX_H = 400
 
 /**
  * Window event dispatched when a pane's header is TAPPED (a tap, never a
- * drag): "open this conversation in the main shell". New R28-a contract —
+ * drag): "open this conversation in the main shell". New R28-a contract -
  * the shell may listen to navigate out of the current room. Harmless when
  * nothing listens (the pane is already above its own room).
  */
@@ -89,7 +87,7 @@ export interface PipPane {
   ny: number
   /** last moment this pane was the focused window (drives unread badges) */
   lastSeenAt: number
-  /** creation/last-focus timestamp — oldest pane evicts beyond the cap */
+  /** creation/last-focus timestamp - oldest pane evicts beyond the cap */
   openedAt: number
   meta: PipPaneMeta | null
 }
@@ -113,7 +111,7 @@ export interface PipGeometry {
 type PipChatState = {
   /** ≥ 1 pane exists (window and/or stack) */
   isOpen: boolean
-  /** focused (expanded) pane's conversation — null when stack-only */
+  /** focused (expanded) pane's conversation - null when stack-only */
   conversationId: string | null
   /** legacy flag: no window expanded while panes still live */
   minimized: boolean
@@ -127,7 +125,7 @@ type PipChatState = {
   minimize: () => void
   /** expand the most recently demoted stacked pane */
   restore: () => void
-  // ── R28-a pane ops ────────────────────────────────────────────
+  // R28-a pane ops 
   focusPane: (conversationId: string) => void
   closePane: (conversationId: string) => void
   setPanePosition: (conversationId: string, nx: number, ny: number) => void
@@ -209,7 +207,7 @@ export const usePipChat = create<PipChatState>()(
               },
             ]
           }
-          // cap live panes — evict the OLDEST pane that is not the focused one
+          // cap live panes - evict the OLDEST pane that is not the focused one
           while (panes.length > PIP_MAX_PANES) {
             const evictable = panes.filter((p) => p.conversationId !== conversationId)
             if (evictable.length === 0) break
@@ -347,7 +345,7 @@ export const usePipChat = create<PipChatState>()(
       name: 'pulse.pip.v2',
       version: 1,
       storage: createJSONStorage(() => localStorage),
-      // rehydrated explicitly by the PipChat container AFTER mount —
+      // rehydrated explicitly by the PipChat container AFTER mount -
       // keeps the server HTML and the first client render identical
       skipHydration: true,
       partialize: (s) => ({
@@ -378,7 +376,7 @@ export const usePipChat = create<PipChatState>()(
 
 /**
  * Live unread count for a pane, derived from the SHARED messages cache the
- * realtime provider merges socket events into — no second socket, no extra
+ * realtime provider merges socket events into - no second socket, no extra
  * fetch. Unread = incoming (not mine, not pending, not deleted) messages
  * that arrived after the pane was last the focused window.
  */

@@ -1,7 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// /api/redpackets/[id] — packet detail + LAZY REFUND (Task R23-a)
+// /api/redpackets/[id] - packet detail + LAZY REFUND (Task R23-a)
 //
-// GET ?userId=<viewer>   (viewer optional — read is open to the room URL)
+// GET ?userId=<viewer>   (viewer optional - read is open to the room URL)
 //   → { packet: { id, senderId, total, count, grabbed, note,
 //                 expiresAt, status: 'open'|'exhausted'|'expired' },
 //         senderName, grabs: [{userId, name, amount, createdAt}],
@@ -14,7 +13,6 @@
 // sender's wallet (+ WalletLedger 'redpacket_refund' + LogEvent)
 // and the packet is closed (grabbed = count) so the refund is
 // idempotent. Status is computed AFTER the refund.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { strField } from '@/lib/serializers'
@@ -29,13 +27,13 @@ function parseSlices(raw: string): number[] {
       return parsed.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
     }
   } catch {
-    // corrupt row — treat as empty; the refund math below then no-ops
+    // corrupt row - treat as empty; the refund math below then no-ops
   }
   return []
 }
 
 /** Packet load used for both passes (pre/post refund). RedPacket has no direct
- * User relation — names are resolved separately below. */
+ * User relation - names are resolved separately below. */
 function loadPacket(id: string) {
   return db.redPacket.findUnique({
     where: { id },
@@ -70,7 +68,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: 'Red packet not found.' }, { status: 404 })
   }
 
-  // LAZY REFUND — first reader after expiry settles the leftovers.
+  // LAZY REFUND - first reader after expiry settles the leftovers.
   if (new Date() > packet.expiresAt && packet.grabbed < packet.count) {
     await db.$transaction(async (tx) => {
       // Re-read inside the tx so concurrent readers settle it exactly once.

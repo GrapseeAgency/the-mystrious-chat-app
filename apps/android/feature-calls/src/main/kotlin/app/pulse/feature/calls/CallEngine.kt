@@ -58,10 +58,10 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Wave 3 — the native call engine: executes the PURE [CallStateMachine]'s
+ * Wave 3 - the native call engine: executes the PURE [CallStateMachine]'s
  * effects against the REAL platform (WebRTC peer connection, Android audio,
  * socket signaling, single-writer call log) and feeds real-world events back
- * in. One engine per process (Hilt @Singleton) — every screen overlays the
+ * in. One engine per process (Hilt @Singleton) - every screen overlays the
  * same [snapshot].
  *
  * HARDWARE GATE: mic capture, AEC, audio-focus arbitration and route changes
@@ -85,9 +85,9 @@ class CallEngine @Inject constructor(
     /** UI mirror of the mic mute toggle (source of truth: the audio track). */
     val micMuted: StateFlow<Boolean> = _micMuted.asStateFlow()
 
-    // ── video mirrors (Wave R1-W2D — real camera path, web call-overlay parity) ──
+    // video mirrors (Wave R1-W2D - real camera path, web call-overlay parity)
 
-    /** Process-lifetime EGL base — the renderers MUST share this context. */
+    /** Process-lifetime EGL base - the renderers MUST share this context. */
     private val eglBase: EglBase by lazy { EglBase.create() }
 
     /** Shared EGL context for the encoder/decoder factories + renderers. */
@@ -106,7 +106,7 @@ class CallEngine @Inject constructor(
     val videoCaptureActive: StateFlow<Boolean> = _videoCaptureActive.asStateFlow()
 
     private val _cameraEnabled = MutableStateFlow(false)
-    /** UI mirror of the camera (video) toggle — web track.enabled parity. */
+    /** UI mirror of the camera (video) toggle - web track.enabled parity. */
     val cameraEnabled: StateFlow<Boolean> = _cameraEnabled.asStateFlow()
 
     private val _videoNotice = MutableStateFlow<String?>(null)
@@ -115,7 +115,7 @@ class CallEngine @Inject constructor(
 
     private val audio = CallAudioManager(context)
 
-    // ── WebRTC handles (lazy — the factory is created on first call) ──
+    // WebRTC handles (lazy - the factory is created on first call)
     private var factory: PeerConnectionFactory? = null
     private var adm: JavaAudioDeviceModule? = null
     private var pc: PeerConnection? = null
@@ -123,7 +123,7 @@ class CallEngine @Inject constructor(
     private var localTrack: AudioTrack? = null
     private var remoteDescSet = false
 
-    // ── video handles (audio path untouched — video is strictly additive) ──
+    // video handles (audio path untouched - video is strictly additive)
     private var videoCapturer: CameraVideoCapturer? = null
     private var videoSource: VideoSource? = null
     private var videoTextureHelper: SurfaceTextureHelper? = null
@@ -131,7 +131,7 @@ class CallEngine @Inject constructor(
     private var remoteVideoTrackRef: VideoTrack? = null
     private val pendingIce = mutableListOf<IceCandidateWire>()
     private var micReleasedOnError = false
-    /** The live incoming call's raw offer SDP — gates the CALLEE's camera attach (m=video check). */
+    /** The live incoming call's raw offer SDP - gates the CALLEE's camera attach (m=video check). */
     private var lastOfferSdp: String? = null
 
     private var ticker: Job? = null
@@ -145,7 +145,7 @@ class CallEngine @Inject constructor(
                 if (event is PulseEvent.CallSignal) onCallSignal(event)
             }
         }
-        // Deadlines + duration tick — 1s cadence (machine drains its own timers).
+        // Deadlines + duration tick - 1s cadence (machine drains its own timers).
         ticker = scope.launch {
             while (isActive) {
                 delay(1_000)
@@ -154,10 +154,10 @@ class CallEngine @Inject constructor(
         }
     }
 
-    // ── public actions (UI surface) ─────────────────────────────
+    // public actions (UI surface)
 
     /**
-     * Caller entry — resolves (or creates) the DM with [peerId], then opens
+     * Caller entry - resolves (or creates) the DM with [peerId], then opens
      * the ring. The RECORD_AUDIO permission must already be granted upstream
      * (the state machine's honest MediaFailed path is the denied fallback).
      *
@@ -179,14 +179,14 @@ class CallEngine @Inject constructor(
         scope.launch {
             val conversation = resolveDm(peerId)
             if (conversation == null) {
-                Log.w(TAG, "no DM conversation for peer=$peerId — call aborted")
+                Log.w(TAG, "no DM conversation for peer=$peerId - call aborted")
                 return@launch
             }
             val cameraCapable = cameraCapable()
             val resolvedKind = CallVideoPolicy.resolveOutgoingKind(kind, cameraCapable)
             if (kind == CallKind.VIDEO && resolvedKind == CallKind.VOICE) {
-                Log.w(TAG, "video requested but no usable camera — falling back to voice")
-                _videoNotice.value = "Camera unavailable — starting a voice call"
+                Log.w(TAG, "video requested but no usable camera - falling back to voice")
+                _videoNotice.value = "Camera unavailable - starting a voice call"
             }
             perform(
                 machine.dispatch(
@@ -194,7 +194,7 @@ class CallEngine @Inject constructor(
                         conversationId = conversation.id,
                         peer = CallPeer(id = peerId, name = name, color = color, avatar = avatar),
                         kind = resolvedKind,
-                        // The callee's ring UI renders THIS identity — the
+                        // The callee's ring UI renders THIS identity - the
                         // real viewer name, never the raw id (web parity).
                         callerName = callerName ?: "Pulse user",
                         callerColor = callerColor,
@@ -226,7 +226,7 @@ class CallEngine @Inject constructor(
         perform(machine.dispatch(CallEvent.Dismissed))
     }
 
-    /** Mute/unmute the local mic track — the wire never learns about this. */
+    /** Mute/unmute the local mic track - the wire never learns about this. */
     fun toggleMute(): Boolean {
         val track = localTrack
         val next = !_micMuted.value
@@ -236,7 +236,7 @@ class CallEngine @Inject constructor(
     }
 
     /**
-     * Camera (video) toggle — web toggleCamera parity (track.enabled flip,
+     * Camera (video) toggle - web toggleCamera parity (track.enabled flip,
      * NOT capturer stop; the wire never learns about this either).
      * No-op when no camera is attached (voice call / audio-only fallback).
      */
@@ -248,7 +248,7 @@ class CallEngine @Inject constructor(
         return next
     }
 
-    /** Front ⇄ back camera flip (web has no equivalent — native bonus, honest no-op when N/A). */
+    /** Front ⇄ back camera flip (web has no equivalent - native bonus, honest no-op when N/A). */
     fun switchCamera(): Boolean {
         val capturer = videoCapturer ?: return false
         if (!_videoCaptureActive.value) return false
@@ -263,13 +263,13 @@ class CallEngine @Inject constructor(
         return _speakerOn.value
     }
 
-    // ── relay signal intake ─────────────────────────────────────
+    // relay signal intake
 
     private fun onCallSignal(event: PulseEvent.CallSignal) {
         val s = event.signal
         val callEvent = when (s.event) {
             "call:offer" -> {
-                // Stash the offer SDP for the callee's video decision — only
+                // Stash the offer SDP for the callee's video decision - only
                 // when this offer actually opens a ring (never mid-call).
                 if (machine.snapshot.value.state == CallState.IDLE) lastOfferSdp = s.sdp
                 CallEvent.IncomingOffer(
@@ -298,7 +298,7 @@ class CallEngine @Inject constructor(
         perform(machine.dispatch(callEvent))
     }
 
-    // ── effect execution ────────────────────────────────────────
+    // effect execution
 
     private fun perform(effects: List<CallEffect>) {
         for (effect in effects) {
@@ -384,13 +384,13 @@ class CallEngine @Inject constructor(
         }
     }
 
-    // ── WebRTC plumbing ─────────────────────────────────────────
+    // WebRTC plumbing
 
     /**
      * ICE servers (Wave 3-HW): the deployment manifest `ice` array (TURN with
      * credentials) wins when adopted via [PulseEndpoints.applyIceOverride];
      * otherwise the built-in Google STUN pair stays (permissive networks).
-     * Invalid manifest JSON degrades to the defaults — never a crash.
+     * Invalid manifest JSON degrades to the defaults - never a crash.
      */
     private fun iceServers(): List<PeerConnection.IceServer> {
         val raw = PulseEndpoints.iceServersJson
@@ -433,7 +433,7 @@ class CallEngine @Inject constructor(
             .setUseHardwareNoiseSuppressor(true)
             .createAudioDeviceModule()
         adm = module
-        // Video codec engines share the renderers' EGL context — required for
+        // Video codec engines share the renderers' EGL context - required for
         // real HW-accelerated video (the audio-only path never touched these).
         factory = PeerConnectionFactory.builder()
             .setAudioDeviceModule(module)
@@ -453,16 +453,16 @@ class CallEngine @Inject constructor(
         pc = factory?.createPeerConnection(rtcConfig, PeerObserver())
         localTrack?.let { track -> pc?.addTrack(track, listOf("pulse-audio")) }
         // The video track (when capture started) rides its own sendrecv
-        // m-line — UNIFIED_PLAN associates it with the peer's video m-line.
+        // m-line - UNIFIED_PLAN associates it with the peer's video m-line.
         localVideoTrackRef?.let { track -> pc?.addTrack(track, listOf("pulse-video")) }
         return pc
     }
 
     /**
-     * Mic (+ camera when the call's kind says video) capture — dispatches
+     * Mic (+ camera when the call's kind says video) capture - dispatches
      * MediaReady/MediaFailed back into the machine. Camera failure NEVER
      * fails the call: the audio path is already live and the m-line simply
-     * stays audio/recvonly — the honest audio-only fallback (web parity,
+     * stays audio/recvonly - the honest audio-only fallback (web parity,
      * call-overlay.tsx callee without a camera).
      */
     private fun acquireMedia(effect: CallEffect.AcquireMedia) {
@@ -480,13 +480,13 @@ class CallEngine @Inject constructor(
                 _micMuted.value = false
             }
             audio.acquire()
-            // Real camera path — direction decides the gate (same policy for
+            // Real camera path - direction decides the gate (same policy for
             // both sides):
-            //   CALLER — kind already resolved against camera capability at
+            //   CALLER - kind already resolved against camera capability at
             //     startOutgoing, so attach iff this is a VIDEO call;
-            //   CALLEE — additionally require the offer SDP to declare a
+            //   CALLEE - additionally require the offer SDP to declare a
             //     usable m=video line ([CallVideoPolicy.shouldAttachVideo]).
-            // Camera failure NEVER fails the call — audio continues (web parity).
+            // Camera failure NEVER fails the call - audio continues (web parity).
             val capable = cameraCapable()
             val wantVideo = if (machine.snapshot.value.direction == CallDirection.INCOMING) {
                 CallVideoPolicy.shouldAttachVideo(effect.kind, lastOfferSdp, capable)
@@ -494,14 +494,14 @@ class CallEngine @Inject constructor(
                 effect.kind == CallKind.VIDEO && capable
             }
             if (wantVideo && !attachLocalVideo()) {
-                Log.w(TAG, "camera unavailable — call continues audio-only (web fallback parity)")
+                Log.w(TAG, "camera unavailable - call continues audio-only (web fallback parity)")
             }
             CallForegroundService.ensureChannel(context)
             val snapshotNow = machine.snapshot.value
             val label = snapshotNow.peer?.name ?: "Voice call"
             CallForegroundService.start(context, label, video = _videoCaptureActive.value)
             // The peer connection must exist BEFORE CreateOffer/CreateAnswer
-            // effects run — both effects are synchronous siblings of
+            // effects run - both effects are synchronous siblings of
             // AcquireMedia in the machine's effect lists.
             ensurePeerConnection()
         }.onSuccess {
@@ -518,7 +518,7 @@ class CallEngine @Inject constructor(
             PackageManager.PERMISSION_GRANTED
 
     /**
-     * Capability probe feeding [CallVideoPolicy] — permission, Camera2 API
+     * Capability probe feeding [CallVideoPolicy] - permission, Camera2 API
      * support and at least one camera device (web: ANY usable camera).
      */
     private fun cameraCapable(): Boolean = runCatching {
@@ -539,7 +539,7 @@ class CallEngine @Inject constructor(
 
     /**
      * REAL camera capture start: Camera2 capturer → VideoSource → VideoTrack.
-     * Returns false when no camera exists / the start fails — callers keep
+     * Returns false when no camera exists / the start fails - callers keep
      * the audio path (never rethrows).
      */
     private fun attachLocalVideo(): Boolean {
@@ -569,7 +569,7 @@ class CallEngine @Inject constructor(
         }
     }
 
-    /** Remote video intake — idempotent, ignores our own local track echo. */
+    /** Remote video intake - idempotent, ignores our own local track echo. */
     private fun attachRemoteVideo(track: VideoTrack) {
         if (track === localVideoTrackRef) return
         if (remoteVideoTrackRef === track) return
@@ -661,12 +661,12 @@ class CallEngine @Inject constructor(
         pendingIce.clear()
     }
 
-    /** Tear the media leg down (idempotent — the machine releases exactly once). */
+    /** Tear the media leg down (idempotent - the machine releases exactly once). */
     private fun releaseMedia() {
         runCatching {
             pc?.close()
             pc = null
-            // ── video teardown (real capturer lifecycle) ──
+            // video teardown (real capturer lifecycle)
             runCatching { videoCapturer?.stopCapture() }
             videoCapturer = null
             videoTextureHelper?.dispose()
@@ -680,14 +680,14 @@ class CallEngine @Inject constructor(
             _videoCaptureActive.value = false
             _cameraEnabled.value = false
             _videoNotice.value = null
-            // ── audio teardown (untouched) ──
+            // audio teardown (untouched)
             runCatching { localTrack?.setEnabled(true) }
             localTrack = null
             localSource?.dispose()
             localSource = null
             adm?.release()
             adm = null
-            factory = null // factory owns ADM — rebuilding both next call is the safe lifecycle
+            factory = null // factory owns ADM - rebuilding both next call is the safe lifecycle
             remoteDescSet = false
             pendingIce.clear()
             lastOfferSdp = null
@@ -750,7 +750,7 @@ class CallEngine @Inject constructor(
         }
 
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
-            // UNIFIED_PLAN exposes the richer state — map the same truth.
+            // UNIFIED_PLAN exposes the richer state - map the same truth.
             main.post {
                 when (newState) {
                     PeerConnection.PeerConnectionState.CONNECTED ->
@@ -786,7 +786,7 @@ class CallEngine @Inject constructor(
 
     private data class IceCandidateWire(val candidate: String, val sdpMid: String?, val sdpMLineIndex: Int)
 
-    // ── DM resolution (caller entry) ────────────────────────────
+    // DM resolution (caller entry)
 
     private suspend fun resolveDm(peerId: String): Conversation? {
         val cached = repo.observeConversations().first().firstOrNull { c ->

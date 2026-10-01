@@ -1,19 +1,17 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — group events & RSVP sheet (Task R23-d "Beyond Chat" 2;
+// Pulse - group events & RSVP sheet (Task R23-d "Beyond Chat" 2;
 // R30-a adds BAND-style attendance check-in).
 // A dark bottom sheet over the chat: schedule events, RSVP
 // Going/Maybe/Can't, watch live countdowns, and CHECK IN during
 // the event window (start −15 min … start +2 h). Everything is
-// REAL — GroupEvent + EventRsvp rows via the events REST API,
+// REAL - GroupEvent + EventRsvp rows via the events REST API,
 // polled every 5s while open (paused when the tab is hidden),
 // with an optimistic RSVP/check-in patch so pills snap instantly.
 //
-// Wiring contract for chat-room (lead): mount once per room —
+// Wiring contract for chat-room (lead): mount once per room -
 //   const events = useEventsSheet(conversationId, me.id, members)
 //   ... {events.node}
 // and the /events slash entry opens it via the `pulse:open-events`
-// CustomEvent (exported here — slash-palette may import it).
-// ─────────────────────────────────────────────────────────────
+// CustomEvent (exported here - slash-palette may import it).
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -47,9 +45,9 @@ import { cn } from '@/lib/utils'
 import { spring, pressTap } from '@/lib/motion'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 
-// ── wire types (mirror of the REST contract) ─────────────────
+// wire types (mirror of the REST contract) 
 
-/** Window event fired by the /events entry — chat-room listens via useEventsSheet(). */
+/** Window event fired by the /events entry - chat-room listens via useEventsSheet(). */
 export const EVENTS_OPEN_EVENT = 'pulse:open-events'
 
 export type EventRsvpStatus = 'going' | 'maybe' | 'no'
@@ -58,7 +56,7 @@ export interface EventRsvpWire {
   userId: string
   name: string
   status: EventRsvpStatus
-  /** Attendance stamp (ISO) — null until the member checks in. */
+  /** Attendance stamp (ISO) - null until the member checks in. */
   checkedInAt: string | null
 }
 
@@ -118,7 +116,7 @@ interface DeleteResponse {
   ok: boolean
 }
 
-/** Minimal member shape — chat-room passes its room members straight in. */
+/** Minimal member shape - chat-room passes its room members straight in. */
 export interface EventMember {
   id: string
   name: string
@@ -127,7 +125,7 @@ export interface EventMember {
 
 type GroupRole = 'admin' | 'member'
 
-// ── constants ────────────────────────────────────────────────
+// constants 
 
 const POLL_MS = 5000
 /** countdown chip recompute cadence (spec: 30s interval) */
@@ -137,7 +135,7 @@ const DELETE_CONFIRM_MS = 2600
 const TITLE_MAX = 120
 const LOCATION_MAX = 200
 
-/** Check-in window — mirrors POST /api/events/[id]/checkin exactly. */
+/** Check-in window - mirrors POST /api/events/[id]/checkin exactly. */
 const CHECKIN_OPEN_BEFORE_MS = 15 * 60 * 1000
 const CHECKIN_CLOSE_AFTER_MS = 2 * 60 * 60 * 1000
 
@@ -147,7 +145,7 @@ const RSVP_CHOICES: ReadonlyArray<{ status: EventRsvpStatus; label: string }> = 
   { status: 'no', label: "Can't" },
 ]
 
-// ── pure helpers ─────────────────────────────────────────────
+// pure helpers 
 
 function tallyOf(rsvps: EventRsvpWire[]): EventCounts {
   const counts: EventCounts = { going: 0, maybe: 0, no: 0 }
@@ -177,7 +175,7 @@ function pastLabel(startsAtMs: number, nowMs: number): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-/** Local `YYYY-MM-DDTHH:mm` for tomorrow 18:00 — datetime-local default. */
+/** Local `YYYY-MM-DDTHH:mm` for tomorrow 18:00 - datetime-local default. */
 function defaultStartLocal(): string {
   const d = new Date()
   d.setDate(d.getDate() + 1)
@@ -188,7 +186,7 @@ function defaultStartLocal(): string {
 
 const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'short' })
 
-// ── shared motion variants (stagger recipe from @/lib/motion) ─
+// shared motion variants (stagger recipe from @/lib/motion)
 
 const listVariants: Variants = {
   hidden: {},
@@ -200,9 +198,9 @@ const rowVariants: Variants = {
   show: { opacity: 1, y: 0, transition: spring.soft },
 }
 
-// ── small pieces ─────────────────────────────────────────────
+// small pieces 
 
-/** Calendar-tile date badge — day number + short month. */
+/** Calendar-tile date badge - day number + short month. */
 function DateTile({ startsAtMs }: { startsAtMs: number }) {
   const d = new Date(startsAtMs)
   return (
@@ -241,7 +239,7 @@ function GoingStack({
       {shown.map((r, i) => (
         <span
           key={r.userId}
-          title={r.checkedInAt ? `${r.name} — checked in` : r.name}
+          title={r.checkedInAt ? `${r.name} - checked in` : r.name}
           className={cn(
             'relative flex size-[22px] items-center justify-center rounded-full bg-gradient-to-br text-[9px] font-bold text-white ring-2 ring-zinc-950',
             gradientFor(memberById.get(r.userId)?.color ?? 'emerald'),
@@ -269,7 +267,7 @@ function GoingStack({
   )
 }
 
-// ── component ────────────────────────────────────────────────
+// component 
 
 export function EventsSheet({
   open,
@@ -298,7 +296,7 @@ export function EventsSheet({
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [pastOpen, setPastOpen] = useState(false)
 
-  // live clock for countdown chips — recomputed every 30s while open
+  // live clock for countdown chips - recomputed every 30s while open
   const [nowMs, setNowMs] = useState(() => Date.now())
   useEffect(() => {
     if (!open) return
@@ -320,7 +318,7 @@ export function EventsSheet({
 
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
 
-  // ── data (5s poll, paused when document.hidden) ──────────────
+  // data (5s poll, paused when document.hidden) 
 
   const eventsQuery = useQuery({
     queryKey: ['events', conversationId],
@@ -370,7 +368,7 @@ export function EventsSheet({
     },
     onError: (error, _vars, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(['events', conversationId], ctx.prev)
-      toast.error(error instanceof Error ? error.message : 'RSVP failed — try again.')
+      toast.error(error instanceof Error ? error.message : 'RSVP failed - try again.')
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['events', conversationId] })
@@ -405,7 +403,7 @@ export function EventsSheet({
         method: 'POST',
         body: JSON.stringify({ userId: me.id }),
       }),
-    // optimistic: stamp my row instantly — the roster chip + dot
+    // optimistic: stamp my row instantly - the roster chip + dot
     // pop on the next render, the 5s poll confirms server truth
     onMutate: async ({ eventId }) => {
       await queryClient.cancelQueries({ queryKey: ['events', conversationId] })
@@ -430,14 +428,14 @@ export function EventsSheet({
     },
     onError: (error, _vars, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(['events', conversationId], ctx.prev)
-      toast.error(error instanceof Error ? error.message : 'Check-in failed — try again.')
+      toast.error(error instanceof Error ? error.message : 'Check-in failed - try again.')
     },
     onSuccess: (res) => {
       haptic(16)
       if (res.alreadyCheckedIn) {
         toast.info('Already checked in.')
       } else {
-        toast.success(res.xpAwarded ? 'Checked in — see you there · +15 XP' : 'Checked in — see you there')
+        toast.success(res.xpAwarded ? 'Checked in - see you there · +15 XP' : 'Checked in - see you there')
       }
     },
     onSettled: () => {
@@ -461,7 +459,7 @@ export function EventsSheet({
     },
   })
 
-  // ── derived lists (server pre-sorts: upcoming asc, past desc) ─
+  // derived lists (server pre-sorts: upcoming asc, past desc)
 
   const events = eventsQuery.data?.events ?? []
   const upcoming = useMemo(
@@ -505,13 +503,13 @@ export function EventsSheet({
 
   const statusLine = offline ? 'Reconnecting…' : `${upcoming.length} upcoming · live`
 
-  // ── row renderer (shared by upcoming + past) ─────────────────
+  // row renderer (shared by upcoming + past) 
 
   const renderRow = (e: GroupEventWire, kind: 'upcoming' | 'past') => {
     const startsAtMs = new Date(e.startsAt).getTime()
     const canDelete = me.id === e.createdById || myRole === 'admin'
     const creatorName = (e.createdById ? memberById.get(e.createdById)?.name : undefined) ?? e.createdByName
-    // ── attendance (R30-a): window, eligibility, roster count ──
+    // attendance (R30-a): window, eligibility, roster count 
     const myCheckedInAt = e.rsvps.find((r) => r.userId === me.id)?.checkedInAt ?? null
     const windowOpen =
       startsAtMs - CHECKIN_OPEN_BEFORE_MS <= nowMs && nowMs <= startsAtMs + CHECKIN_CLOSE_AFTER_MS
@@ -633,7 +631,7 @@ export function EventsSheet({
           </div>
         </div>
 
-        {/* attendance — prominent glass check-in while the window is open,
+        {/* attendance - prominent glass check-in while the window is open,
             spring-pop "Checked in" chip after, muted pre-window hint */}
         {canCheckIn ? (
           <motion.button
@@ -811,7 +809,7 @@ export function EventsSheet({
                     <CalendarDays className="size-5" aria-hidden />
                   </span>
                   <p className="max-w-[240px] text-[12.5px] font-medium leading-relaxed text-zinc-500">
-                    No events yet — schedule the first one above.
+                    No events yet - schedule the first one above.
                   </p>
                 </div>
               ) : (
@@ -828,7 +826,7 @@ export function EventsSheet({
                   </AnimatePresence>
                   {upcoming.length === 0 && events.length > 0 ? (
                     <p className="py-3 text-center text-[12px] font-medium text-zinc-500">
-                      Nothing upcoming — past events live below.
+                      Nothing upcoming - past events live below.
                     </p>
                   ) : null}
                 </motion.div>

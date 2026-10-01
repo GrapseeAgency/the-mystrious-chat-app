@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Wave 5 wire contract — C→S builders must serialize to EXACTLY the relay
+ * Wave 5 wire contract - C→S builders must serialize to EXACTLY the relay
  * shapes (mini-services/pulse-socket/index.ts), and the two S→C passthrough
  * parsers must be tolerant to the documented degrees.
  */
@@ -30,7 +30,7 @@ class VoiceRoomDtosTest {
     }
 
     @Test
-    fun `stage join carries asHost — plain entry is always false`() {
+    fun `stage join carries asHost - plain entry is always false`() {
         val json = stageJoinPayload("c1", user, asHost = false)
         assertEquals("false", (json["asHost"] as kotlinx.serialization.json.JsonPrimitive).content)
         assertEquals(user.id, ((json["user"] as kotlinx.serialization.json.JsonObject)["id"] as kotlinx.serialization.json.JsonPrimitive).content)
@@ -39,7 +39,7 @@ class VoiceRoomDtosTest {
     }
 
     @Test
-    fun `stage hand carries user-id wrapper — not a flat userId`() {
+    fun `stage hand carries user-id wrapper - not a flat userId`() {
         val json = stageHandPayload("c1", "u9", raised = true)
         val wrapped = json["user"] as kotlinx.serialization.json.JsonObject
         assertEquals("u9", (wrapped["id"] as kotlinx.serialization.json.JsonPrimitive).content)

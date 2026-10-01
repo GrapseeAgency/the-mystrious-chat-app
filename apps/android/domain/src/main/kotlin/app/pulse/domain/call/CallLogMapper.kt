@@ -10,7 +10,7 @@ import app.pulse.domain.model.CallStatus
  * Outcome → REST row mapper for POST /api/calls (web call-types.ts parity).
  *
  * SINGLE-WRITER RULE: the CALLER's client writes every terminal row exactly
- * once — the callee never writes, so no double rows are possible. The
+ * once - the callee never writes, so no double rows are possible. The
  * mapper therefore always produces outgoing=true rows (viewer = caller)
  * and refuses to produce anything when the guard cannot hold.
  */
@@ -25,9 +25,9 @@ object CallLogMapper {
 
     /**
      * One terminal row for POST /api/calls { userId, conversationId, peerId,
-     * kind, status, durationSec? }. `id`/`startedAt` stay empty — the server
+     * kind, status, durationSec? }. `id`/`startedAt` stay empty - the server
      * assigns them. Returns null when the viewer/peer/conversation guard
-     * fails (self-call, blank ids) — such attempts must never POST.
+     * fails (self-call, blank ids) - such attempts must never POST.
      */
     fun terminalRow(
         viewerId: String,

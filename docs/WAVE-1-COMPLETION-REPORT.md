@@ -18,9 +18,9 @@
 | # | Feature | Android (Kotlin/Compose) | iOS (Swift/SwiftUI) | Backend | Persistence | Offline | Test |
 |---|---|---|---|---|---|---|---|
 | 1 | Conversation list (DM/group/channel, unread, timestamps, drafts indicator, archive/mute/mark-unread/pin) | Rows + badges + filters + batch bar + Archived screen (Wave 0) + local-draft preview merge + OutboxDropped snackbar | Full row model + actions + optimistic mutators + Archived page (Wave 0) | `GET /api/conversations` + PATCH sub-resources (pre-existing) | Room conversations (`membersJson` v5) / GRDB conversations | GRDB/Room rehydrate (existing) | CI JVM + instrumented; live E2E |
-| 2 | Timeline: pagination + optimistic + ticks + day separators | `before=` cursor pages (40) merged into reactive Room flow; scroll-anchored load-older; day pills; clock→✓→✓✓ ticks (member watermarks) | `loadOlder` id-dedupe merge; day chips (existing); Sent/Seen ticks group-aware; temp-first optimistic send | `GET messages?limit=&before=` (pre-existing) | Room v5 / GRDB v3 | cached seed → network (existing) | E2E PAGINATION (before= strictly older + hasMore); CI compile |
+| 2 | Timeline: pagination + optimistic + ticks + day separators | `before=` cursor pages (40) merged into reactive Room flow; scroll-anchored load-older; day pills; clock→→ ticks (member watermarks) | `loadOlder` id-dedupe merge; day chips (existing); Sent/Seen ticks group-aware; temp-first optimistic send | `GET messages?limit=&before=` (pre-existing) | Room v5 / GRDB v3 | cached seed → network (existing) | E2E PAGINATION (before= strictly older + hasMore); CI compile |
 | 3 | Realtime: reconnect, join/leave, message:new, typing, presence, read receipts, unread updates | 27 S→C handlers (Wave 0) → reactive Room→UI; read-post debounce; re-join on reconnect | signals→PulseSession→views; `messageRead` parses real `lastReadAt` watermark; re-join on reconnect | `join`/`typing` emits + REST read + server relays | — | reconnect flush (existing) | Android JVM real relay round-trip (5/5, CI); E2E READ/RECONNECT; iOS in-sim round-trip (Wave 0-proven path) |
-| 4 | Message actions: reply, reactions, edit, delete, pin, save, forward, info | MessageActionSheet: 6 reactions (web whitelist 👍❤️😂😮😢🎉), reply, thread, edit (composer mode), copy, pin/unpin (+banner+pins dialog), save, forward (multi-target re-POST), delete (confirm), info (seen-by + reactions) | contextMenu: same 10 actions; pins banner + list sheet; MessageInfoSheet; ForwardSheet | react/edit/delete/pin/save REST (pre-existing); forward = client re-POST (web parity) | row upserts (Room/GRDB) | optimistic swap w/ revert; edits never queue | E2E REACT/EDIT(403 non-sender)/PIN/PINS/SAVE; CI compile |
+| 4 | Message actions: reply, reactions, edit, delete, pin, save, forward, info | MessageActionSheet: 6 reactions (web whitelist ), reply, thread, edit (composer mode), copy, pin/unpin (+banner+pins dialog), save, forward (multi-target re-POST), delete (confirm), info (seen-by + reactions) | contextMenu: same 10 actions; pins banner + list sheet; MessageInfoSheet; ForwardSheet | react/edit/delete/pin/save REST (pre-existing); forward = client re-POST (web parity) | row upserts (Room/GRDB) | optimistic swap w/ revert; edits never queue | E2E REACT/EDIT(403 non-sender)/PIN/PINS/SAVE; CI compile |
 | 5 | Threads | ThreadScreen (route `room/{cid}/thread/{rootId}`): parent card + replies asc + composer; send `parentId`; live reply append via Room; "N replies ↳" chips; river filters `threadRootId != null` | ThreadView sheet: same; `TempMessages.make(parentId:)`; live append via signals; count chips; river filter `parentId != nil` | `parentId` send + one-level rule (400 on nested) + `GET /messages/{id}/thread` (pre-existing) | Room `threadRootId` / GRDB v3 `parentId` + `threadReplyCounts()` | thread replies NOT queued (spec §1.2, web parity) | **E2E THREAD: reply 201 + thread-read asc + one-level 400** — correct backend behaviour, web's cache-shape bug not reproduced |
 | 6 | Drafts: local + restore + server mirror | DraftDao 600ms debounce + restore (local wins) + NEW `PATCH /conversations/{id}/draft` silent mirror (blank clears) | same + `setDraft` in debounced persistDraft | draft PATCH (pre-existing) | DraftDao / GRDB draft | local-first | E2E DRAFT mirror (`myDraft` surfaces) |
 | 7 | Offline outbox | FIFO≤50 + stop-at-first-failure + temp→real swap + 5 flush triggers (Wave 0) + dropped-entry snackbar + offline strip | engine (Wave 0) + toasts + offline strip | — | outbox tables (existing) | full chain | E2E OFFLINE→FLUSH; FlushOutboxUseCase 5/5; PulseOutboxTests 6/6 |
@@ -69,8 +69,8 @@ None to `packages/protocol/src/contracts.ts` (registry already complete). Native
 
 | Run | Trigger | Result |
 |---|---|---|
-| 34580803426 | main `fd8c0f7` | ✅ build (JVM tests incl. REAL node-relay socket round-trip + signed release APK) + instrumented (emulator launch smoke + Room v3→4→5 migration + outbox/draft DAO round-trips) |
-| 34585146573 | tag `v0.3.0-native` | ✅ build + instrumented + auto-publish Release |
+| 34580803426 | main `fd8c0f7` |  build (JVM tests incl. REAL node-relay socket round-trip + signed release APK) + instrumented (emulator launch smoke + Room v3→4→5 migration + outbox/draft DAO round-trips) |
+| 34585146573 | tag `v0.3.0-native` |  build + instrumented + auto-publish Release |
 
 Fix loop (each root-caused from runner logs): R2 D8 OutOfMemoryError on mergeExtDexRelease (Coil) → heap 2048m; R3 RoomMigrationTest needed the real 3→4→5 path; R1 PhotosUI import.
 
@@ -78,8 +78,8 @@ Fix loop (each root-caused from runner logs): R2 D8 OutOfMemoryError on mergeExt
 
 | Run | Trigger | Result |
 |---|---|---|
-| 34583545403 | main `46f449c` | ✅ build-test (**33 tests, 0 failures**) + simulator launch smoke + ✅ archive (unsigned xcarchive, structure-verified) |
-| 34585146610 | tag `v0.3.0-native` | ✅ build-test + archive |
+| 34583545403 | main `46f449c` |  build-test (**33 tests, 0 failures**) + simulator launch smoke +  archive (unsigned xcarchive, structure-verified) |
+| 34585146610 | tag `v0.3.0-native` |  build-test + archive |
 
 Fix loop: R1 PhotosUI; R2 Identifiable/TempMessages-@MainActor/type-check-split/session unwrap; R3 URL unwrap; R4–R6 Section generic-V (real cause: `PulseAvatar(colorHex:)` label mismatch — lesson: SwiftUI generic-V errors point at the poisoned child expression).
 

@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// /api/users/[id]/stats — real profile statistics (profile sheet)
+// /api/users/[id]/stats - real profile statistics (profile sheet)
 // Counts derive from the live DB: messages sent, reactions given,
 // photos shared, chats, groups, days on Pulse.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { DEFAULT_PREFERENCES, mergePrefs } from '@/lib/prefs-defaults'
@@ -39,7 +37,7 @@ export async function GET(_req: Request, { params }: RouteCtx) {
     Math.floor((Date.now() - user.createdAt.getTime()) / 86_400_000),
   )
 
-  // R46 — honor the last-seen privacy choice here too (profile sheets of
+  // R46 - honor the last-seen privacy choice here too (profile sheets of
   // users who hide it get null; the UI hides the stamp accordingly).
   let prefs = DEFAULT_PREFERENCES
   try {

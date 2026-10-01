@@ -10,7 +10,7 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Wave 5 — thin activity-scoped bridge between the voice-room surfaces and
+ * Wave 5 - thin activity-scoped bridge between the voice-room surfaces and
  * the [VoiceRoomsEngine] singleton (the CallViewModel pattern: the engine
  * owns ALL room state; ViewModels come and go with surfaces).
  */
@@ -29,14 +29,14 @@ class VoiceRoomsViewModel @Inject constructor(
 
     fun setIdentity(id: String?, name: String?, color: String?) = engine.setIdentity(id, name, color)
 
-    // ── surface control ─────────────────────────────────────────
+    // surface control
 
     fun openVoice(conversationId: String) = engine.openVoice(conversationId)
     fun openStage(conversationId: String) = engine.openStage(conversationId)
     fun openSpace(conversationId: String) = engine.openSpace(conversationId)
     fun closeSurface() = engine.closeSurface()
 
-    // ── voice room ──────────────────────────────────────────────
+    // voice room
 
     fun joinVoice(conversationId: String) = engine.joinVoice(conversationId)
     fun leaveVoice() = engine.leaveVoice()
@@ -46,7 +46,7 @@ class VoiceRoomsViewModel @Inject constructor(
     fun pttUp(heldMs: Long) = engine.pttUp(heldMs)
     fun togglePtt() = engine.togglePtt()
 
-    // ── stage ───────────────────────────────────────────────────
+    // stage
 
     fun joinStage(conversationId: String) = engine.joinStage(conversationId)
     fun claimHost() = engine.claimHost()
@@ -54,13 +54,13 @@ class VoiceRoomsViewModel @Inject constructor(
     fun approveHand(targetUserId: String) = engine.approveHand(targetUserId)
     fun demote(targetUserId: String) = engine.demote(targetUserId)
 
-    /** Two-tap end confirm — true when the second tap FIRED the end. */
+    /** Two-tap end confirm - true when the second tap FIRED the end. */
     fun endStage(): Boolean = engine.endStage()
     fun isEndConfirmArmed(): Boolean = engine.isEndConfirmArmed()
     fun disarmEndConfirm() = engine.disarmEndConfirm()
     fun leaveStage(conversationId: String) = engine.leaveStage(conversationId)
 
-    // ── space ───────────────────────────────────────────────────
+    // space
 
     fun joinSpace(conversationId: String) = engine.joinSpace(conversationId)
     fun moveSpace(x: Double, y: Double) = engine.moveSpace(x, y)

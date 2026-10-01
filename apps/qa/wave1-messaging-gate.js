@@ -121,8 +121,8 @@ async function main() {
   check('READ receipt relayed', read.status === 200 && (readEvt.userId === uidA || readEvt.message?.userId === uidA), '')
 
   // ── 8. ACTIONS: react / edit / pin / save ────────────────
-  const react = await api(`/messages/${m1.id}/react`, 'POST', { userId: uidB, emoji: '🎉' })
-  check('REACT toggle on', react.status === 200 && react.json.message?.reactions?.some((r) => r.emoji === '🎉'), '')
+  const react = await api(`/messages/${m1.id}/react`, 'POST', { userId: uidB, emoji: '' })
+  check('REACT toggle on', react.status === 200 && react.json.message?.reactions?.some((r) => r.emoji === ''), '')
   const edited = await api(`/messages/${m1.id}`, 'PATCH', { userId: uidA, content: `gate-edited-${stamp}` })
   check('EDIT (sender) 200 + editedAt', edited.status === 200 && !!edited.json.message?.editedAt, '')
   const foreignEdit = await api(`/messages/${m1.id}`, 'PATCH', { userId: uidB, content: 'nope' })

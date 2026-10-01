@@ -1,25 +1,23 @@
 import SwiftUI
 import UIKit
 
-// ─────────────────────────────────────────────────────────────
-// R2-B — integrations manager surfaces (web automations-sheet.tsx +
+// R2-B - integrations manager surfaces (web automations-sheet.tsx +
 // group-info-sheet.tsx WebhooksSection parity, native):
-//   • AutomationsSection — keyword auto-reply rules: rows + optimistic
+//   • AutomationsSection - keyword auto-reply rules: rows + optimistic
 //     enable/disable + honest delete + R41 trigger rename + create sheet.
-//   • WebhooksSection — Discord-style incoming hooks: rows + copy ingest
+//   • WebhooksSection - Discord-style incoming hooks: rows + copy ingest
 //     URL + admin delete + create sheet.
 // Data rides the REAL routes (GET/POST /api/conversations/[id]/automations,
 // PATCH/DELETE /api/automations/[id], GET/POST /api/webhooks,
-// DELETE /api/webhooks/[token]) through PulseAPIClient — no mocks.
+// DELETE /api/webhooks/[token]) through PulseAPIClient - no mocks.
 // Mounted inside GroupInfoView (the iOS room-info surface, web
 // room-info-page.tsx:1335 parity).
-// ─────────────────────────────────────────────────────────────
 
 // MARK: - Automations (R39/R41)
 
 /// The room-info "Automations" section: every rule as a row (trigger bold →
 /// reply preview, Zap hits counter, honest Switch and delete for admins),
-/// read-only for members with an honest caption. Section child — must sit
+/// read-only for members with an honest caption. Section child - must sit
 /// directly inside a List.
 struct AutomationsSection: View {
     let conversationId: String
@@ -107,7 +105,7 @@ struct AutomationsSection: View {
         } header: {
             Text(sectionTitle)
         } footer: {
-            Text("Fires once per matching message — as a reply from you.")
+            Text("Fires once per matching message - as a reply from you.")
         }
         .sheet(isPresented: $createOpen) {
             AutomationsCreateSheet(conversationId: conversationId, session: session) { created in
@@ -209,7 +207,7 @@ struct AutomationsSection: View {
         .opacity(row.enabled == false ? 0.7 : 1)
     }
 
-    /// Row meta line — "{hits} hit/hits · last {stamp} · by {name}"
+    /// Row meta line - "{hits} hit/hits · last {stamp} · by {name}"
     /// (web chat-room AutomationsSection row parity).
     private func hitsLine(_ row: WireAutomation) -> String {
         let hits = row.hits ?? 0
@@ -226,7 +224,7 @@ struct AutomationsSection: View {
         return line
     }
 
-    // ── data ─────────────────────────────────────────────────
+    // data
 
     private func load() async {
         do {
@@ -239,7 +237,7 @@ struct AutomationsSection: View {
         }
     }
 
-    /// Optimistic flip — the row flips instantly, the PATCH lands, and a
+    /// Optimistic flip - the row flips instantly, the PATCH lands, and a
     /// refusal rolls the row back with the server's verbatim error.
     private func toggle(_ row: WireAutomation, next: Bool) {
         let previous = row.enabled
@@ -272,7 +270,7 @@ struct AutomationsSection: View {
         }
     }
 
-    /// R41 — trigger rename: PATCH with the new trigger; the fresh row
+    /// R41 - trigger rename: PATCH with the new trigger; the fresh row
     /// replaces the cached one (also re-syncs hits/lastFiredAt).
     private func renameTarget() {
         guard let target = editTarget else { return }
@@ -342,7 +340,7 @@ private struct AutomationsCreateSheet: View {
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(Color.red)
                         } else {
-                            Text("Matched as a standalone word — \"pricing\" will not fire on \"pricinggg\".")
+                            Text("Matched as a standalone word - \"pricing\" will not fire on \"pricinggg\".")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
@@ -555,7 +553,7 @@ struct WebhooksSection: View {
         .padding(.vertical, 2)
     }
 
-    /// The shareable ingest URL — the gateway origin + the relative path the
+    /// The shareable ingest URL - the gateway origin + the relative path the
     /// route returns (web `${location.origin}/api/webhooks/${token}` parity).
     private func copyIngestURL(_ webhook: WireWebhook) {
         let relative = webhook.url ?? "/api/webhooks/\(webhook.token)"
@@ -591,7 +589,7 @@ struct WebhooksSection: View {
     }
 }
 
-/// Create form — name (1–32 chars, WEBHOOK_NAME_MAX), POST → 201 row.
+/// Create form - name (1–32 chars, WEBHOOK_NAME_MAX), POST → 201 row.
 private struct WebhookCreateSheet: View {
     let conversationId: String
     @ObservedObject var session: PulseSession
@@ -614,7 +612,7 @@ private struct WebhookCreateSheet: View {
                 } header: {
                     Text("Webhook name")
                 } footer: {
-                    Text("\(trimmed.count)/\(PulseRoomParityLogic.webhookNameMax) — outside services POST to its URL and drop messages into this chat as a named sender.")
+                    Text("\(trimmed.count)/\(PulseRoomParityLogic.webhookNameMax) - outside services POST to its URL and drop messages into this chat as a named sender.")
                 }
                 Section {
                     Button {
@@ -669,7 +667,7 @@ private struct WebhookCreateSheet: View {
 // MARK: - helpers
 
 extension WireAutomation {
-    /// Optimistic flip helper — mirrors the web's `{ ...r, enabled }` cache
+    /// Optimistic flip helper - mirrors the web's `{ ...r, enabled }` cache
     /// patch while the PATCH is in flight.
     func withEnabled(_ value: Bool) -> WireAutomation {
         WireAutomation(

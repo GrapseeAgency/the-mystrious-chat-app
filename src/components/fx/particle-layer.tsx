@@ -1,17 +1,16 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse premium FX (R22) — global particle layer.
+// Pulse premium FX (R22) - global particle layer.
 // A single fixed full-screen canvas that listens for the app-wide
 // `pulse:particle-burst` CustomEvent (contract in src/lib/motion.ts)
 // and renders confetti / hearts / stars / spark bursts with
 // additive ("lighter") compositing so overlapping particles glow.
 //
 // Engineering notes:
-// · ZERO idle cost — the rAF loop only runs while particles are
+// · ZERO idle cost - the rAF loop only runs while particles are
 //   alive, and is cancelled while document.hidden.
 // · Device-pixel-ratio aware backing store, ResizeObserver-driven.
 // · Hard cap of 400 simultaneous particles (oldest dropped).
 // · prefers-reduced-motion → bursts are skipped entirely.
-// · Everything lives in refs — no React state per particle.
+// · Everything lives in refs - no React state per particle.
 //
 // R26-e coordination contract: when prefs 'fx.webglMode' selects a
 // non-off ambient mode AND the WebGLAmbient canvas (webgl-glow.tsx)
@@ -20,7 +19,6 @@
 // is unavailable (or the ambient is unmounted) the burst layer keeps
 // working exactly as before. External API unchanged (mounted bare by
 // app-root.tsx).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { memo, useEffect, useRef } from 'react'
@@ -63,7 +61,7 @@ interface Particle {
   vrot: number
   /** per-frame velocity multiplier (<1 = slows down) */
   drag: number
-  /** downward acceleration (confetti) — negative = buoyant lift */
+  /** downward acceleration (confetti) - negative = buoyant lift */
   gravity: number
   /** hearts sway amplitude/phase */
   sway: number
@@ -85,7 +83,7 @@ function makeParticle(kind: ParticleKind, x: number, y: number): Particle {
   const size = rand(3, 7)
   switch (kind) {
     case 'confetti': {
-      // upward cone ± ~60° — the classic cannon
+      // upward cone ± ~60° - the classic cannon
       const angle = -Math.PI / 2 + rand(-1.05, 1.05)
       const speed = rand(4, 11.5)
       return {
@@ -152,7 +150,7 @@ function makeParticle(kind: ParticleKind, x: number, y: number): Particle {
       }
     }
     case 'burst': {
-      // radial spark lines — every direction, fast, short-lived
+      // radial spark lines - every direction, fast, short-lived
       const angle = rand(0, Math.PI * 2)
       const speed = rand(5, 13)
       return {
@@ -177,7 +175,7 @@ function makeParticle(kind: ParticleKind, x: number, y: number): Particle {
   }
 }
 
-// ── draw helpers (all run under globalCompositeOperation='lighter') ──
+// draw helpers (all run under globalCompositeOperation='lighter') 
 
 function drawConfetti(ctx: CanvasRenderingContext2D, p: Particle, alpha: number): void {
   ctx.save()
@@ -197,7 +195,7 @@ function drawHeart(ctx: CanvasRenderingContext2D, p: Particle, alpha: number, fr
   ctx.translate(p.x + swayX, p.y)
   ctx.globalAlpha = alpha
   ctx.fillStyle = p.color
-  // vector heart — no font glyph, pure path (crisp on every DPR)
+  // vector heart - no font glyph, pure path (crisp on every DPR)
   const s = p.size * 0.9
   ctx.beginPath()
   ctx.moveTo(0, s * 0.55)
@@ -247,14 +245,14 @@ function drawBurst(ctx: CanvasRenderingContext2D, p: Particle, alpha: number): v
 export const ParticleLayer = memo(function ParticleLayer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  // R26-e: same prefs key the WebGLAmbient reads — one owner of the
+  // R26-e: same prefs key the WebGLAmbient reads - one owner of the
   // full-screen FX surface at a time (and only when it truly renders).
   const webglModeRaw = usePrefs((s) => (s.prefs as unknown as Record<string, unknown>)[PREF_KEY_WEBGL_MODE])
   const ambientAlive = useWebglAmbientAvailable()
   const webglAmbientActive = isWebglMode(webglModeRaw) && webglModeRaw !== 'off' && ambientAlive
 
   useEffect(() => {
-    if (webglAmbientActive) return // WebGL ambient owns the background — layer disabled
+    if (webglAmbientActive) return // WebGL ambient owns the background - layer disabled
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
@@ -283,7 +281,7 @@ export const ParticleLayer = memo(function ParticleLayer() {
 
     const step = () => {
       ctx.clearRect(0, 0, state.w, state.h)
-      // additive compositing — overlapping particles glow like light
+      // additive compositing - overlapping particles glow like light
       ctx.globalCompositeOperation = 'lighter'
       state.frame++
       for (let i = particles.length - 1; i >= 0; i--) {
@@ -318,7 +316,7 @@ export const ParticleLayer = memo(function ParticleLayer() {
       if (particles.length > 0 && !document.hidden) {
         state.raf = requestAnimationFrame(tick)
       } else if (particles.length === 0) {
-        // loop is dead — leave a clean transparent canvas behind
+        // loop is dead - leave a clean transparent canvas behind
         ctx.clearRect(0, 0, state.w, state.h)
       }
     }

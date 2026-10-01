@@ -51,7 +51,7 @@ import app.pulse.ui.PulsePalette
 import app.pulse.ui.initialsOf
 
 /**
- * Wave 5 — the voice room surface (walkie-talkie PTT, spec §1.1 VR-1..VR-10):
+ * Wave 5 - the voice room surface (walkie-talkie PTT, spec §1.1 VR-1..VR-10):
  * roster tiles with speaking glow, the big hold/tap PTT button, mute gate +
  * banner, live captions (persisted toggle), honest connection/error states
  * and the "never recorded or stored" footer contract.
@@ -67,7 +67,7 @@ fun VoiceRoomScreen(
     val captionsOn by vm.captionsEnabled.collectAsStateWithLifecycle()
     val relayConnected by vm.connected.collectAsStateWithLifecycle()
 
-    // RECORD_AUDIO gate — Join passes through the runtime permission (house
+    // RECORD_AUDIO gate - Join passes through the runtime permission (house
     // pattern; denial keeps the honest error panel on the surface).
     val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) vm.joinVoice(conversationId)
@@ -115,7 +115,7 @@ fun VoiceRoomScreen(
                         Text("Syncing roster…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         Text(
-                            "Talk in real time — hold to speak, release to listen.",
+                            "Talk in real time - hold to speak, release to listen.",
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -334,7 +334,7 @@ private fun ControlsRow(
 }
 
 /**
- * The PTT button — hold ≥260ms talks (stop on release), a tap LATCHES (and a
+ * The PTT button - hold ≥260ms talks (stop on release), a tap LATCHES (and a
  * latched tap stops). Disabled honestly when muted / not joined / offline.
  * The aria-equivalent [stateDescription] mirrors the transmit state (VR-3).
  */
@@ -388,7 +388,7 @@ internal fun Modifier.pttHoldGesture(
             onPress = {
                 val started = System.currentTimeMillis()
                 onDown()
-                // A cancelled gesture still ends the push — never leave a
+                // A cancelled gesture still ends the push - never leave a
                 // latched transmitter behind on a system cancel.
                 tryAwaitRelease()
                 onUp(System.currentTimeMillis() - started)

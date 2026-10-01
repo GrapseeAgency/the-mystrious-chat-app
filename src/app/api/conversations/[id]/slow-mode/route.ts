@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/slow-mode — Telegram-style slow mode
-// ─────────────────────────────────────────────────────────────
-// R44 — group admins cap how often MEMBERS may send (admins are always
+// /api/conversations/[id]/slow-mode - Telegram-style slow mode
+// R44 - group admins cap how often MEMBERS may send (admins are always
 // exempt, mirroring Telegram). Enforcement lives server-side in the messages
 // POST (429 + retryAfter); this route only manages the room-wide setting.
 import { NextResponse } from 'next/server'
@@ -14,13 +12,13 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-/** Honest preset ladder — arbitrary values would fake the UX affordance. */
+/** Honest preset ladder - arbitrary values would fake the UX affordance. */
 export const SLOW_MODE_PRESETS = [0, 5, 10, 30, 60, 300] as const
 
 /**
  * PATCH /api/conversations/[id]/slow-mode  body { userId, seconds }
- * seconds: one of 0 (off) | 5 | 10 | 30 | 60 | 300 — wait window between
- * member sends. ADMIN-only (403 for members — it throttles THEM).
+ * seconds: one of 0 (off) | 5 | 10 | 30 | 60 | 300 - wait window between
+ * member sends. ADMIN-only (403 for members - it throttles THEM).
  * → { ok: true, slowModeSeconds: number } | 400 | 403 | 404
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {

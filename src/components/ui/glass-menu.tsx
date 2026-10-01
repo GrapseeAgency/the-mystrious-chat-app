@@ -1,11 +1,9 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — frosted-glass menu primitives (R26).
+// Pulse - frosted-glass menu primitives (R26).
 // The compact glass action menu from the locked design refs:
 // a slim frosted panel (heavy blur, specular top rim, deep soft
 // shadow) with icon+label rows, pill-shaped hover highlight and
 // hairline group dividers. Replaces ALL oversized action sheets.
-// Zero emojis — Lucide icons + framer-motion microinteractions.
-// ─────────────────────────────────────────────────────────────
+// Zero emojis - Lucide icons + framer-motion microinteractions.
 'use client'
 
 import { forwardRef, type ComponentPropsWithoutRef } from 'react'
@@ -27,7 +25,7 @@ interface GlassMenuProps extends HTMLMotionProps<'div'> {
 }
 
 /**
- * Frosted glass menu panel — 1px specular rim, saturate-boosted blur,
+ * Frosted glass menu panel - 1px specular rim, saturate-boosted blur,
  * soft deep shadow. Compose with <GlassMenuItem> / <GlassMenuSeparator>.
  */
 export const GlassMenu = forwardRef<HTMLDivElement, GlassMenuProps>(function GlassMenu(
@@ -107,7 +105,7 @@ export const GlassMenuItem = forwardRef<HTMLButtonElement, GlassMenuItemProps>(
   },
 )
 
-/** Hairline group divider — separates logical action clusters. */
+/** Hairline group divider - separates logical action clusters. */
 export function GlassMenuSeparator({ className }: { className?: string }) {
   return (
     <div
@@ -132,7 +130,7 @@ export function GlassMenuLabel({ className, ...props }: ComponentPropsWithoutRef
 }
 
 /**
- * Reaction quick-row — a segmented glass pill strip (the horizontal
+ * Reaction quick-row - a segmented glass pill strip (the horizontal
  * capsule cluster from the design refs). `children` should be the
  * reaction buttons themselves; keep each ≥36px for touch targets.
  */

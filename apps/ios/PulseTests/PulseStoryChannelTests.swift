@@ -1,15 +1,15 @@
 import XCTest
 @testable import Pulse
 
-/// R1-W2G — story tray + channel directory PURE logic (the audit gap:
+/// R1-W2G - story tray + channel directory PURE logic (the audit gap:
 /// "iOS has no story/channel tests"). Story side pins the offline expiry
 /// filter (StoriesSessionModel.liveGroups) and the ring partition
 /// (PulseStoryRing); channel side pins the directory kernels
-/// (PulseChannelDirectory) — ChannelsView/ChatsView behaviour without
+/// (PulseChannelDirectory) - ChannelsView/ChatsView behaviour without
 /// SwiftUI or transport, house style per Wave6LogicTests/StoriesWireTests.
 @MainActor
 final class PulseStoryChannelTests: XCTestCase {
-    // ── story fixtures ───────────────────────────────────────
+    // story fixtures
 
     private let now: Int64 = 1_700_000_000_000
 
@@ -34,7 +34,7 @@ final class PulseStoryChannelTests: XCTestCase {
         )
     }
 
-    // ── story expiry filtering (D2 tray parity, offline arithmetic) ──
+    // story expiry filtering (D2 tray parity, offline arithmetic)
 
     func testLiveGroupsDropExpiredStoriesButKeepLiveOnes() {
         let feed = [
@@ -73,7 +73,7 @@ final class PulseStoryChannelTests: XCTestCase {
         XCTAssertEqual(live.first?.stories?.first?.viewedByMe, false)
     }
 
-    // ── story ring partition (chats tray row) ────────────────
+    // story ring partition (chats tray row)
 
     func testRingPartitionSplitsOwnGroupAndKeepsFeedOrderForOthers() {
         let feed = [
@@ -94,7 +94,7 @@ final class PulseStoryChannelTests: XCTestCase {
         XCTAssertEqual(PulseStoryRing.others(feed).count, 2)
     }
 
-    // ── channel directory kernels (ChannelsView parity) ─────
+    // channel directory kernels (ChannelsView parity)
 
     private func channel(
         id: String,

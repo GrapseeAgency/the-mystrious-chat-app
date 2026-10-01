@@ -10,7 +10,7 @@ sealed interface PulseResult<out T> {
     data class Failure(
         val kind: Kind,
         val message: String? = null,
-        /** Machine code from the wire body (e.g. "username_taken") — null when absent. */
+        /** Machine code from the wire body (e.g. "username_taken") - null when absent. */
         val code: String? = null,
         /** Server-suggested alternative (username_taken flow). */
         val suggestion: String? = null,
@@ -18,7 +18,7 @@ sealed interface PulseResult<out T> {
         val status: Int? = null,
         /**
          * Slow-mode window (R44/F-MS-20): seconds the server asked us to wait
-         * on a 429 — parsed from the body's `retryAfter` (web ApiError.retryAfter
+         * on a 429 - parsed from the body's `retryAfter` (web ApiError.retryAfter
          * parity, src/lib/pulse-utils.ts). null = not a 429 / header absent.
          */
         val retryAfter: Int? = null,

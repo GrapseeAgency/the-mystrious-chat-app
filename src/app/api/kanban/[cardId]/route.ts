@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/kanban/[cardId] — single kanban card mutations (Task R23-c)
+// /api/kanban/[cardId] - single kanban card mutations (Task R23-c)
 //
 // Contracts:
 //   PATCH  body { userId, title?, column?, assigneeId? (null clears),
@@ -14,8 +13,7 @@
 //            (ConversationParticipant.role === 'admin' when the
 //            conversation isGroup). → 200 { ok: true } · 403 otherwise.
 //
-// Every write lands in Prisma/SQLite — no mocks, no shortcuts.
-// ─────────────────────────────────────────────────────────────
+// Every write lands in Prisma/SQLite - no mocks, no shortcuts.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -195,7 +193,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
 
 /**
  * DELETE /api/kanban/[cardId]?userId=
- * Card creator OR group admin only — plain members cannot remove
+ * Card creator OR group admin only - plain members cannot remove
  * other people's cards (403).
  */
 export async function DELETE(req: Request, { params }: RouteCtx) {

@@ -1,21 +1,21 @@
 import XCTest
 @testable import Pulse
 
-/// Wave 8 — wire tests (platform & hardening): the settings blob decode
+/// Wave 8 - wire tests (platform & hardening): the settings blob decode
 /// (GET/PATCH /api/settings), the session-token envelopes ({ user, token }
 /// from create + login, 404 error body verbatim), the Bearer attach seam on
 /// the API client's request-building path, and the tolerant prefs decode
-/// with unknown/missing fields. Pure XCTest — no network, no Keychain.
+/// with unknown/missing fields. Pure XCTest - no network, no Keychain.
 final class Wave8WireTests: XCTestCase {
 
     private func decode<T: Decodable>(_ type: T.Type, _ json: String, file: StaticString = #filePath, line: UInt = #line) throws -> T {
         try JSONDecoder().decode(T.self, from: Data(json.utf8))
     }
 
-    // ── settings blob (GET/PATCH /api/settings → { preferences }) ──
+    // settings blob (GET/PATCH /api/settings → { preferences })
 
     /// The live server merges defaults over the stored blob, so every key
-    /// is present in practice — but the DTO must decode the full shape.
+    /// is present in practice - but the DTO must decode the full shape.
     func testPrefsEnvelopeDecodesFullShape() throws {
         let envelope = try decode(WirePrefsEnvelope.self, """
         {"preferences":{"bubbleRadius":"pill","density":"compact","wallpaper":"aurora","notifPreviews":false,"notifSound":true,"notifVibrate":true,"lastSeenVisible":false,"readReceipts":false,"typingVisible":false,"reducedMotion":true}}
@@ -60,7 +60,7 @@ final class Wave8WireTests: XCTestCase {
         XCTAssertEqual(prefs.notifPreviews, true)
     }
 
-    /// PATCH body: only the non-nil fields ride { userId, preferences } —
+    /// PATCH body: only the non-nil fields ride { userId, preferences } -
     /// a nil field would clobber the server's stored value on merge.
     func testPatchBodyCarriesOnlySetFields() {
         let single = WirePulsePrefs(notifSound: false)
@@ -81,9 +81,9 @@ final class Wave8WireTests: XCTestCase {
         XCTAssertTrue(none.asPatchBody().isEmpty)
     }
 
-    // ── session tokens (POST /api/users, POST /api/users/login) ──
+    // session tokens (POST /api/users, POST /api/users/login)
 
-    /// 201 { user, token } — the raw 32-byte hex token rides the create
+    /// 201 { user, token } - the raw 32-byte hex token rides the create
     /// envelope and must survive intact (64 hex chars).
     func testCreateEnvelopeDecodesUserAndToken() throws {
         let token = String(repeating: "a1b2c3d4", count: 8) // 64 hex chars
@@ -98,14 +98,14 @@ final class Wave8WireTests: XCTestCase {
     }
 
     /// Tolerance: a pre-token gateway (or a server that withholds the raw
-    /// secret) omits `token` — the envelope still decodes, token nil.
+    /// secret) omits `token` - the envelope still decodes, token nil.
     func testAuthEnvelopeToleratesMissingToken() throws {
         let envelope = try decode(WireAuthEnvelope.self, #"{"user":{"id":"u1","name":"Bob"}}"#)
         XCTAssertEqual(envelope.user.id, "u1")
         XCTAssertNil(envelope.token)
     }
 
-    /// The honest 404 error body — copy verbatim from the live route:
+    /// The honest 404 error body - copy verbatim from the live route:
     /// POST /api/users/login → 404 { error: "No identity with that name
     /// on this Pulse." } (Failure.message surfaces it untouched).
     func testLoginErrorBodyVerbatim() throws {
@@ -117,7 +117,7 @@ final class Wave8WireTests: XCTestCase {
         XCTAssertEqual(missingName.error, "Name is required.")
     }
 
-    /// 401 rotation rejection body — the typed failure the session layer
+    /// 401 rotation rejection body - the typed failure the session layer
     /// reacts to (clear token + surface re-login).
     func testRotationRejectionMapsToAuthKind() {
         XCTAssertEqual(PulseAPIClient.kind(for: 401), .auth)
@@ -125,10 +125,10 @@ final class Wave8WireTests: XCTestCase {
         XCTAssertEqual(body?.error, "Session token is invalid or has been rotated. Log in again.")
     }
 
-    // ── Bearer attach seam (the request-building path) ──────
+    // Bearer attach seam (the request-building path)
 
     /// Every request built by the client with a session token carries
-    /// Authorization: Bearer <token> — asserted on the same static seam
+    /// Authorization: Bearer <token> - asserted on the same static seam
     /// the transport funnels through (PulseAPIClient.send).
     func testBearerHeaderAttachedWhenTokenPresent() {
         var request = URLRequest(url: URL(string: "https://pulse.example/api/settings?userId=u1")!)

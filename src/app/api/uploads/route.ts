@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/uploads — accept a base64 image/audio/document data URL,
+// /api/uploads - accept a base64 image/audio/document data URL,
 // store to disk (files served via GET /api/uploads/[file])
-// ─────────────────────────────────────────────────────────────
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -15,7 +13,7 @@ export const dynamic = 'force-dynamic'
 const MAX_DATA_URL_LENGTH = 4_500_000
 
 /**
- * R40 — documents ride base64 too: 10 MB hard cap on DECODED bytes.
+ * R40 - documents ride base64 too: 10 MB hard cap on DECODED bytes.
  * Base64 inflates by 4/3 (+ the small data-URL prefix), so the encoded
  * ceiling is derived, never hand-waved.
  */
@@ -58,7 +56,7 @@ export async function POST(req: Request) {
   // (cheap reject before base64 decode) and re-checked on decoded bytes.
   if (doc && dataUrl.length > MAX_DOC_DATA_URL_LENGTH) {
     return NextResponse.json(
-      { error: 'Document is too large — the limit is 10 MB.' },
+      { error: 'Document is too large - the limit is 10 MB.' },
       { status: 413 },
     )
   }
@@ -91,7 +89,7 @@ export async function POST(req: Request) {
   }
   if (doc && buffer.length > DOC_MAX_BYTES) {
     return NextResponse.json(
-      { error: 'Document is too large — the limit is 10 MB.' },
+      { error: 'Document is too large - the limit is 10 MB.' },
       { status: 413 },
     )
   }
@@ -100,7 +98,7 @@ export async function POST(req: Request) {
   const filePath = `${randomUUID()}.${ext}`
   await writeFile(path.join(UPLOADS_DIR, filePath), buffer)
 
-  // R41 — durable store: the sandbox has twice wiped files from disk while
+  // R41 - durable store: the sandbox has twice wiped files from disk while
   // DB rows persisted (avatars in R37, demo PDFs in R41). Bytes now live in
   // SQLite as the source of truth; the disk copy is a fast-path cache. A
   // store failure must never fail the upload itself.

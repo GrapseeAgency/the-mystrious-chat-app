@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — full-screen status story viewer (Instagram-style).
+// Pulse - full-screen status story viewer (Instagram-style).
 // Progress bars (5s per story, hold-to-pause), tap left/right to
 // navigate, vertical drag-to-dismiss, auto-advance, view marking
 // for others' stories, owner delete + live viewers list.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -16,7 +14,7 @@ import { apiJson, gradientFor } from '@/lib/pulse-utils'
 import { cn } from '@/lib/utils'
 import { UserAvatar } from '@/components/chat/user-avatar'
 
-// ── Shared stories contract (single source of truth for the wave) ──
+// Shared stories contract (single source of truth for the wave) 
 
 export interface StoryItem {
   id: string
@@ -41,12 +39,12 @@ export interface StoriesResponse {
   groups: StoryGroup[]
 }
 
-/** TanStack Query key contract for the stories feed — used everywhere. */
+/** TanStack Query key contract for the stories feed - used everywhere. */
 export const storiesQueryKey = (meId: string) => ['stories', meId] as const
 
 export const STORY_VIEW_MS = 5000
 
-/** "2h" / "5m" / "3d" — compact Instagram-style relative stamp. */
+/** "2h" / "5m" / "3d" - compact Instagram-style relative stamp. */
 export function storyRelativeTime(iso: string): string {
   const t = Date.parse(iso)
   if (Number.isNaN(t)) return ''
@@ -58,7 +56,7 @@ export function storyRelativeTime(iso: string): string {
   return `${Math.floor(hours / 24)}d`
 }
 
-// ── Cache patch helpers (shared with chats-tab) ─────────────
+// Cache patch helpers (shared with chats-tab) 
 
 function mutateGroupsCache(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -92,7 +90,7 @@ export function removeStoryFromCache(queryClient: ReturnType<typeof useQueryClie
   )
 }
 
-// ── Viewer ──────────────────────────────────────────────────
+// Viewer 
 
 interface StoriesSheetProps {
   me: AppUser
@@ -149,7 +147,7 @@ export function StoriesSheet({ me, groups, start, onClose }: StoriesSheetProps) 
     if (current.index > 0) goTo(flat[current.index - 1])
   }, [current, flat, goTo])
 
-  // ── progress loop (rAF; writes the active bar directly) ──
+  // progress loop (rAF; writes the active bar directly) 
   const [paused, setPaused] = useState(false)
   const barRef = useRef<HTMLDivElement | null>(null)
   const elapsedRef = useRef(0)
@@ -185,7 +183,7 @@ export function StoriesSheet({ me, groups, start, onClose }: StoriesSheetProps) 
     return () => cancelAnimationFrame(raf)
   }, [paused, dragging, viewersOpen, confirmDelete, current])
 
-  // ── mark others' stories as viewed (never my own) ────────
+  // mark others' stories as viewed (never my own) 
   const story = current?.flatItem.story ?? null
   const isMine = current?.flatItem.mine ?? false
   useEffect(() => {
@@ -204,10 +202,10 @@ export function StoriesSheet({ me, groups, start, onClose }: StoriesSheetProps) 
     }
   }, [story, isMine, me.id, queryClient])
 
-  // ── vertical drag to dismiss ─────────────────────────────
+  // vertical drag to dismiss 
   const y = useMotionValue(0)
 
-  // ── tap vs hold on the stage ─────────────────────────────
+  // tap vs hold on the stage 
   const downAtRef = useRef(0)
   const dragMovedRef = useRef(false)
 
@@ -231,7 +229,7 @@ export function StoriesSheet({ me, groups, start, onClose }: StoriesSheetProps) 
     [next, prev],
   )
 
-  // ── keyboard support (desktop QA) ────────────────────────
+  // keyboard support (desktop QA) 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -242,7 +240,7 @@ export function StoriesSheet({ me, groups, start, onClose }: StoriesSheetProps) 
     return () => document.removeEventListener('keydown', onKey)
   }, [next, prev, onClose])
 
-  // ── owner: delete ────────────────────────────────────────
+  // owner: delete 
   const handleDelete = useCallback(async () => {
     if (!story || !isMine || deleting) return
     setDeleting(true)
@@ -266,7 +264,7 @@ export function StoriesSheet({ me, groups, start, onClose }: StoriesSheetProps) 
     }
   }, [story, isMine, deleting, flat, me.id, queryClient, goTo, onClose])
 
-  // ── owner: viewers list ──────────────────────────────────
+  // owner: viewers list 
   const viewersQ = useQuery({
     queryKey: ['story-viewers', story?.id ?? 'none', me.id],
     enabled: viewersOpen && isMine && Boolean(story),
@@ -367,7 +365,7 @@ export function StoriesSheet({ me, groups, start, onClose }: StoriesSheetProps) 
               <button
                 type="button"
                 onClick={() => setViewersOpen(true)}
-                aria-label={`Viewers — ${story.viewCount}`}
+                aria-label={`Viewers - ${story.viewCount}`}
                 className="flex h-9 items-center gap-1.5 rounded-full bg-white/10 px-3 text-[12px] font-semibold text-white outline-none transition-colors hover:bg-white/20 active:scale-95"
               >
                 <Eye className="size-4" aria-hidden />

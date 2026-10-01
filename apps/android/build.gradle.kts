@@ -1,4 +1,4 @@
-// Pulse Android — root build configuration.
+// Pulse Android - root build configuration.
 // Clean Architecture layering: app → feature-* → data → domain ← core
 // domain stays pure Kotlin (no Android deps), matching the shared blueprint.
 plugins {

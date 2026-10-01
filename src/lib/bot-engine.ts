@@ -1,13 +1,11 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse bot engine — REAL deterministic command bot (server-only).
-// The bot is a genuine User row (username "pulseai" — the same row
+// Pulse bot engine - REAL deterministic command bot (server-only).
+// The bot is a genuine User row (username "pulseai" - the same row
 // the LLM companion uses) that joins conversations like anyone else.
 // It replies only when a message is a supported slash command, optionally
 // addressed through its handle ("@pulseai /roll", "pulseai, /flip") or a
 // bare handle mention ("@pulseai"). Everything it answers is computed
-// server-side or read from Prisma — zero external APIs, zero mocks.
+// server-side or read from Prisma - zero external APIs, zero mocks.
 // Never throws: callers can safely await it inside the send pipeline.
-// ─────────────────────────────────────────────────────────────
 import { db } from '@/lib/db'
 import {
   mapMessage,
@@ -17,7 +15,7 @@ import {
   notifySocket,
 } from '@/lib/serializers'
 
-/** The bot's real @handle — a User row with this username must be a participant. */
+/** The bot's real @handle - a User row with this username must be a participant. */
 export const BOT_USERNAME = 'pulseai'
 
 /** Deterministic payload marker on bot-authored messages (kind stays "text"). */
@@ -41,7 +39,7 @@ const KNOWN_COMMANDS = new Set([
 ])
 
 const HELP_TEXT = [
-  '🤖 Pulse bot — commands',
+  'Pulse bot commands',
   '/roll [N] · random 1..N (default 100)',
   '/flip · coin toss',
   '/8ball <question> · magic 8-ball',
@@ -55,7 +53,7 @@ const HELP_TEXT = [
 ].join('\n')
 
 const GREETING_TEXT =
-  "👋 I'm the Pulse bot. Send /help to see everything I can do."
+  "I'm the Pulse bot. Send /help to see everything I can do."
 
 const POLL_USAGE =
   'Usage: /poll What should we play? | Chess | Maze | Marbles'
@@ -64,7 +62,7 @@ const EIGHT_BALL_ANSWERS = [
   'It is certain.',
   'It is decidedly so.',
   'Without a doubt.',
-  'Yes — definitely.',
+  'Yes - definitely.',
   'You may rely on it.',
   'Most likely.',
   'Outlook good.',
@@ -75,7 +73,7 @@ const EIGHT_BALL_ANSWERS = [
   'Very doubtful.',
 ]
 
-// ── Trigger parsing ──────────────────────────────────────────
+// Trigger parsing 
 
 const MENTION_RE = new RegExp(`@${BOT_USERNAME}(?![a-z0-9_])`, 'i')
 const HANDLE_PREFIX_RE = new RegExp(`^${BOT_USERNAME}\\s*[,:!]\\s*`, 'i')
@@ -137,7 +135,7 @@ export function botWillRespond(content: string): boolean {
   return trigger.cmd !== null || trigger.viaHandle
 }
 
-// ── Reply-once guard (belt & braces — engine runs once per send) ──
+// Reply-once guard (belt & braces - engine runs once per send) 
 
 const REPLIED_CACHE_MAX = 500
 const repliedFor = new Set<string>()
@@ -152,7 +150,7 @@ function claimOnce(messageId: string): boolean {
   return true
 }
 
-// ── Safe math — tiny recursive-descent parser (NO eval / Function) ──
+// Safe math - tiny recursive-descent parser (NO eval / Function) 
 
 type MathTok = { t: 'num'; v: number } | { t: 'op'; v: string }
 
@@ -301,7 +299,7 @@ function formatMathResult(v: number): string {
   return Number.isInteger(v) ? String(v) : String(Number(v.toPrecision(12)))
 }
 
-// ── Bot message insertion (mirrors the real send pipeline) ────
+// Bot message insertion (mirrors the real send pipeline) 
 
 interface BotMessageData {
   content: string
@@ -366,12 +364,12 @@ async function insertBotMessage(
   })
 }
 
-// ── Command handlers (pure text builders) ─────────────────────
+// Command handlers (pure text builders) 
 
 function buildRoll(callerHandle: string, arg: string): string | null {
   if (arg.length === 0) {
     const n = 1 + Math.floor(Math.random() * 100)
-    return `🎲 ${callerHandle} rolled ${n} (1-100)`
+    return `${callerHandle} rolled ${n} (1-100)`
   }
   if (!/^\d+$/.test(arg)) {
     return `Give me a whole number from 1 to ${ROLL_MAX}, like /roll 20.`
@@ -381,12 +379,11 @@ function buildRoll(callerHandle: string, arg: string): string | null {
     return `Give me a whole number from 1 to ${ROLL_MAX}, like /roll 20.`
   }
   const n = 1 + Math.floor(Math.random() * max)
-  return `🎲 ${callerHandle} rolled ${n} (1-${max})`
+  return `${callerHandle} rolled ${n} (1-${max})`
 }
 
 function buildRps(arg: string): string | null {
-  const RPS_EMOJI = { rock: '🪨', paper: '📄', scissors: '✂️' } as const
-  type Rps = keyof typeof RPS_EMOJI
+  type Rps = 'rock' | 'paper' | 'scissors'
   const ALIASES: Record<string, Rps> = {
     rock: 'rock',
     r: 'rock',
@@ -400,14 +397,12 @@ function buildRps(arg: string): string | null {
   const pick = ALIASES[arg.toLowerCase()]
   if (!pick) return 'Play with /rps rock, /rps paper or /rps scissors.'
   const botPick = (['rock', 'paper', 'scissors'] as Rps[])[Math.floor(Math.random() * 3)]
-  const mine = `You: ${RPS_EMOJI[pick]} ${pick}`
-  const bots = `Me: ${RPS_EMOJI[botPick]} ${botPick}`
-  if (pick === botPick) return `${mine} — ${bots} → It's a draw 🤝`
-  if (BEATS[pick] === botPick) return `${mine} — ${bots} → You win! 🎉`
-  return `${mine} — ${bots} → I win! 🤖`
+  if (pick === botPick) return `You: ${pick}. Me: ${botPick}. It's a draw.`
+  if (BEATS[pick] === botPick) return `You: ${pick}. Me: ${botPick}. You win.`
+  return `You: ${pick}. Me: ${botPick}. I win.`
 }
 
-// ── Main entry point ─────────────────────────────────────────
+// Main entry point 
 
 /**
  * Evaluate a freshly-created user message for bot commands and answer
@@ -424,7 +419,7 @@ export async function maybeBotReply(
     const trigger = parseTrigger(raw)
     if (!trigger) return
     // Unknown bare slash commands stay silent (the composer's client-side
-    // slash palette owns those — /effects, /topic …). Handle mentions get
+    // slash palette owns those - /effects, /topic …). Handle mentions get
     // a deterministic pointer to /help.
     if (trigger.cmd === null && !trigger.viaHandle) return
     if (!claimOnce(userMessage.id)) return
@@ -459,7 +454,7 @@ export async function maybeBotReply(
       }
 
       case 'flip':
-        await send(`🪙 ${Math.random() < 0.5 ? 'Heads' : 'Tails'}`)
+        await send(`Coin flip: ${Math.random() < 0.5 ? 'Heads' : 'Tails'}`)
         return
 
       case '8ball': {
@@ -468,13 +463,13 @@ export async function maybeBotReply(
           return
         }
         const answer = EIGHT_BALL_ANSWERS[Math.floor(Math.random() * EIGHT_BALL_ANSWERS.length)]
-        await send(`🔮 “${trigger.arg}” — ${answer}`)
+        await send(`"${trigger.arg}" - ${answer}`)
         return
       }
 
       case 'math': {
         const result = evalMath(trigger.arg)
-        await send(result === null ? 'Invalid expression' : `🧮 ${trigger.arg} = ${formatMathResult(result)}`)
+        await send(result === null ? 'Invalid expression' : `${trigger.arg} = ${formatMathResult(result)}`)
         return
       }
 
@@ -487,7 +482,7 @@ export async function maybeBotReply(
       case 'dice': {
         const a = 1 + Math.floor(Math.random() * 6)
         const b = 1 + Math.floor(Math.random() * 6)
-        await send(`🎲 2d6 → [${a} + ${b}] = ${a + b}`)
+        await send(`2d6: ${a} + ${b} = ${a + b}`)
         return
       }
 
@@ -503,19 +498,19 @@ export async function maybeBotReply(
           second: '2-digit',
           hourCycle: 'h23',
         }).format(new Date())
-        await send(`🕒 ${formatted} (UTC)`)
+        await send(`${formatted} (UTC)`)
         return
       }
 
       case 'wallet': {
-        // Real balances for the CALLER — zeros when they never checked in.
+        // Real balances for the CALLER - zeros when they never checked in.
         const wallet = await db.userWallet.upsert({
           where: { userId: caller.id },
           create: { userId: caller.id },
           update: {},
         })
         await send(
-          `💼 ${callerHandle} — your Pulse wallet\nPC ${wallet.coins} · GEM ${wallet.gems}\nCheck-in streak: ${wallet.streak} day(s)`,
+          `${callerHandle}, your Pulse wallet\nPC ${wallet.coins} · GEM ${wallet.gems}\nCheck-in streak: ${wallet.streak} day(s)`,
         )
         return
       }
@@ -540,7 +535,7 @@ export async function maybeBotReply(
           await send("I can't post a poll while announcement mode is on.")
           return
         }
-        // Real Poll + PollOptions attached to a bot-authored message —
+        // Real Poll + PollOptions attached to a bot-authored message -
         // the exact creation pattern used by POST /api/conversations/[id]/poll.
         await insertBotMessage(conversationId, botId, {
           content: '',

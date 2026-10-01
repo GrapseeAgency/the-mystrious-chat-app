@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/hub/logs — DevOps terminal stream (Hub → Logs panel)
+// /api/hub/logs - DevOps terminal stream (Hub → Logs panel)
 // Real events written by the economy/social endpoints.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 

@@ -16,18 +16,18 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * R8 Task 3-c — the FCM remote-push wiring, FAIL-CLOSED by design.
+ * R8 Task 3-c - the FCM remote-push wiring, FAIL-CLOSED by design.
  *
  * The repo ships with EMPTY `pulse_fcm_*` string credentials and NO
  * google-services.json / google-services plugin, so the build stays green
  * with zero Firebase config. [init] only builds a [FirebaseApp] when all
  * credential strings exist (a CI/release overlay bakes them); otherwise the
- * whole feature is honestly DISABLED — no token is fetched, nothing is
+ * whole feature is honestly DISABLED - no token is fetched, nothing is
  * registered, no crash, no fake "push enabled" state anywhere.
  *
  * Registration rides the app's own repository (POST /api/push/register
  * { userId, platform: 'android', token }), retried whenever a viewer identity
- * becomes available — the shell calls [syncRegistration] on login.
+ * becomes available - the shell calls [syncRegistration] on login.
  */
 object PulsePush {
 
@@ -46,7 +46,7 @@ object PulsePush {
     var token: String? = null
 
     /**
-     * R9 — publish the honest device state for the Settings → Notifications
+     * R9 - publish the honest device state for the Settings → Notifications
      * "Remote push" row. Called at every state transition below; never faked
      * (an unarmed build publishes armed=false, period).
      */
@@ -71,7 +71,7 @@ object PulsePush {
     fun init(context: Context) {
         if (FirebaseApp.getApps(context).isNotEmpty()) {
             armed = true
-            Log.i(TAG, "Firebase already initialized — push armed")
+            Log.i(TAG, "Firebase already initialized - push armed")
             publishStatus(viewerBound = false)
             return
         }
@@ -86,7 +86,7 @@ object PulsePush {
         if (appId.isBlank() || apiKey.isBlank() || projectId.isBlank() || senderId.isBlank()) {
             Log.i(
                 TAG,
-                "Remote push DISABLED — pulse_fcm_* credentials are empty " +
+                "Remote push DISABLED - pulse_fcm_* credentials are empty " +
                     "(fail-closed: no google-services config shipped)",
             )
             publishStatus(viewerBound = false)
@@ -101,10 +101,10 @@ object PulsePush {
                 .build()
             FirebaseApp.initializeApp(context, options)
             armed = true
-            Log.i(TAG, "Firebase initialized from baked credentials — push armed")
+            Log.i(TAG, "Firebase initialized from baked credentials - push armed")
             publishStatus(viewerBound = false)
         }.onFailure {
-            Log.w(TAG, "Firebase init failed — push stays disabled (honest)", it)
+            Log.w(TAG, "Firebase init failed - push stays disabled (honest)", it)
             publishStatus(viewerBound = false)
         }
     }
@@ -162,7 +162,7 @@ object PulsePush {
         }.onFailure { Log.w(TAG, "token fetch not possible", it) }
     }
 
-    /** A new token arrived (rotation) — persist + upsert when a viewer exists. */
+    /** A new token arrived (rotation) - persist + upsert when a viewer exists. */
     fun onNewToken(repository: PulseRepository, fresh: String) {
         token = fresh
         val viewer = repository.viewerId
@@ -175,19 +175,19 @@ object PulsePush {
     }
 
     /**
-     * Sign-out / identity teardown (Task 5-d — the privacy wire): the
+     * Sign-out / identity teardown (Task 5-d - the privacy wire): the
      * registry row (token → THAT viewer) must die with the identity, or the
      * device keeps receiving the signed-out account's pushes. Fires
-     * DELETE /api/push/register { token } — token-only body, no identity
-     * needed — FIRE-AND-FORGET on the IO scope: sign-out NEVER blocks on it
+     * DELETE /api/push/register { token } - token-only body, no identity
+     * needed - FIRE-AND-FORGET on the IO scope: sign-out NEVER blocks on it
      * and NEVER fails because of it (failures are logged, honestly). The
      * stored token is cleared SYNCHRONOUSLY first so a stale token cannot be
-     * re-registered after a re-login before a fresh one arrives — the next
+     * re-registered after a re-login before a fresh one arrives - the next
      * [syncRegistration] fetches from Firebase instead.
      *
      * Honest residue: DELETE removes OUR registry row only. If the call
      * fails (offline, server down) the row lingers server-side and FCM may
-     * still deliver until the next successful register rebinds it — logged,
+     * still deliver until the next successful register rebinds it - logged,
      * never faked as success.
      */
     fun signOut(repository: PulseRepository) {
@@ -205,12 +205,12 @@ object PulsePush {
             runCatching { repository.unregisterPushToken(stored) }
                 .onSuccess { Log.i(TAG, "push token unregistered on sign-out") }
                 .onFailure {
-                    Log.w(TAG, "push unregister failed — server row may linger until the next register", it)
+                    Log.w(TAG, "push unregister failed - server row may linger until the next register", it)
                 }
         }
     }
 
-    /** Best-effort upsert — failures are logged, never surfaced as success. */
+    /** Best-effort upsert - failures are logged, never surfaced as success. */
     private fun register(repository: PulseRepository, viewer: String, token: String) {
         io.launch {
             runCatching { repository.registerPushToken(viewer, token) }

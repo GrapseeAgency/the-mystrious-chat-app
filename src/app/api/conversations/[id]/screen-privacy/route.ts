@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/screen-privacy — per-VIEWER screen security
-// ─────────────────────────────────────────────────────────────
-// R42 — the personal half of Signal's screen security. The conversation-wide
+// /api/conversations/[id]/screen-privacy - per-VIEWER screen security
+// R42 - the personal half of Signal's screen security. The conversation-wide
 // flag (PATCH /api/conversations/[id] { screenPrivacy }) frosts the room for
 // EVERY member; this route lets any participant frost their OWN view without
 // touching anyone else's. chat-room applies the veil when EITHER flag is on.
@@ -17,8 +15,8 @@ interface RouteCtx {
 
 /**
  * PATCH /api/conversations/[id]/screen-privacy  body { userId, on }
- * on: boolean — true = frost MY view while Pulse is unfocused.
- * Participant-only (403 for everyone else) — a comfort setting, never
+ * on: boolean - true = frost MY view while Pulse is unfocused.
+ * Participant-only (403 for everyone else) - a comfort setting, never
  * admin-gated (mirrors the room-wide flag's R38 gating decision).
  * → { ok: true, screenPrivacy: boolean } (the viewer's personal flag)
  */

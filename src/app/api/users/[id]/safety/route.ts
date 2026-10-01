@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/users/[id]/safety — Signal-style safety-number verification
+// /api/users/[id]/safety - Signal-style safety-number verification
 // (R35-a). `[id]` is the PEER's user id; the viewer rides along as
 // `userId` (query for GET/DELETE, JSON body for POST).
 //
@@ -10,10 +9,9 @@
 //   DELETE ?userId={viewerId} → deleteMany rows → 200 { verified: false }
 //
 // Status policy (documented judgment call): a MISSING viewer id is a
-// malformed request → 400. An id that does not exist in the directory —
-// viewer OR peer alike — is 404, so "this account is gone" is uniform for
+// malformed request → 400. An id that does not exist in the directory -
+// viewer OR peer alike - is 404, so "this account is gone" is uniform for
 // both sides of the pair.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { deriveSafetyNumber } from '@/lib/safety'
@@ -40,7 +38,7 @@ async function resolvePair(peerId: string, viewerId: string) {
   return { peerId: peer.id, viewerId: viewer.id }
 }
 
-/** GET — the pair's shared safety number + THIS viewer's verification state. */
+/** GET - the pair's shared safety number + THIS viewer's verification state. */
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id: peerId } = await params
 
@@ -64,7 +62,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   })
 }
 
-/** POST — mark the peer verified (upsert; re-verifying refreshes verifiedAt). */
+/** POST - mark the peer verified (upsert; re-verifying refreshes verifiedAt). */
 export async function POST(req: Request, { params }: RouteCtx) {
   const { id: peerId } = await params
 
@@ -87,7 +85,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   return NextResponse.json({ verified: true, verifiedAt: row.verifiedAt.toISOString() })
 }
 
-/** DELETE — reset the verification (idempotent deleteMany). */
+/** DELETE - reset the verification (idempotent deleteMany). */
 export async function DELETE(req: Request, { params }: RouteCtx) {
   const { id: peerId } = await params
 

@@ -4,7 +4,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
- * R7 item 1 — message clustering kernel (web chat-room.tsx:1376-1393 +
+ * R7 item 1 - message clustering kernel (web chat-room.tsx:1376-1393 +
  * CLUSTER_WINDOW_MS :277). Pure, UI-free: given the asc room timeline,
  * decide per message whether it OPENS a visual cluster (head) and whether it
  * CLOSES one (tail). Web truth, verbatim:
@@ -24,11 +24,11 @@ import java.time.ZoneId
  * excludes thread replies (ChatRoomViewModel messages flow filters
  * `threadRootId == null`, web `parentId !== null` filter parity) and deleted
  * rows stay in the timeline on BOTH platforms, so the kernel never needs to
- * filter — it only labels.
+ * filter - it only labels.
  */
 object PulseClusterKernel {
 
-    /** Web CLUSTER_WINDOW_MS (chat-room.tsx:277) — 5 minutes. */
+    /** Web CLUSTER_WINDOW_MS (chat-room.tsx:277) - 5 minutes. */
     const val CLUSTER_WINDOW_MS = 5 * 60 * 1000L
 
     /** One asc timeline message, reduced to the fields clustering reads. */

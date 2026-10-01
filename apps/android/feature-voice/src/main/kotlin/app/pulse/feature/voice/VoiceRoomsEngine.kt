@@ -29,15 +29,15 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Wave 5 — the session-scoped voice-rooms engine (the CallEngine pattern):
+ * Wave 5 - the session-scoped voice-rooms engine (the CallEngine pattern):
  * ONE @Singleton that owns the three pure machines (voice room / stage /
  * space), the real [VoiceRoomAudioEngine], the caption pipeline and the
  * foreground service; consumes the 7 voice/stage/space [PulseEvent] cases +
  * relay connection truth + the persisted captions pref; executes every emit
- * through [PulseRepository]. ViewModels come and go with surfaces — the room
+ * through [PulseRepository]. ViewModels come and go with surfaces - the room
  * membership survives (VR-1); the engine tears down on leave/process death.
  *
- * HARDWARE GATE: capture, playback and routing here are CODE VERIFIED only —
+ * HARDWARE GATE: capture, playback and routing here are CODE VERIFIED only -
  * perceptual audio claims are PHYSICAL DEVICE: PENDING (spec §3).
  */
 @Singleton
@@ -81,7 +81,7 @@ class VoiceRoomsEngine @Inject constructor(
     /** The wire identity every join carries (adopted from the session). */
     private var identity = PulseVoiceUser(id = repo.viewerId ?: "", name = "", username = null, color = "")
 
-    /** PTT press bookkeeping (hold ≥260ms vs tap-latch — web parity, VR-3). */
+    /** PTT press bookkeeping (hold ≥260ms vs tap-latch - web parity, VR-3). */
     private var pttPressAtMs = 0L
     private var lastVoiceResyncMs = 0L
 
@@ -115,7 +115,7 @@ class VoiceRoomsEngine @Inject constructor(
         scope.launch {
             repo.observeConnected().collect { onConnection(it) }
         }
-        // Caption TTL sweep — 1s cadence, 7s TTL (VR-7).
+        // Caption TTL sweep - 1s cadence, 7s TTL (VR-7).
         scope.launch {
             while (isActive) {
                 delay(1_000)
@@ -123,7 +123,7 @@ class VoiceRoomsEngine @Inject constructor(
             }
         }
 
-        // Audio callbacks — capture → chunker → voice:chunk, caption sink.
+        // Audio callbacks - capture → chunker → voice:chunk, caption sink.
         audio.onChunk = { seq, base64 ->
             val cid = voiceMachine.state.value.conversationId
             if (cid.isNotBlank()) scope.launch { repo.emitVoiceChunk(cid, identity.id, seq, base64) }
@@ -140,7 +140,7 @@ class VoiceRoomsEngine @Inject constructor(
         }
     }
 
-    // ── identity (adopted from MainActivity, CallEngine pattern) ──
+    // identity (adopted from MainActivity, CallEngine pattern)
 
     fun setIdentity(id: String?, name: String?, color: String?) {
         val cleanId = id.orEmpty()
@@ -150,9 +150,9 @@ class VoiceRoomsEngine @Inject constructor(
         if (changed) lastVoiceResyncMs = 0
     }
 
-    // ── surface control (the overlay host) ──────────────────────
+    // surface control (the overlay host)
 
-    /** Opens the voice room surface — membership itself needs an explicit Join (VR-1). */
+    /** Opens the voice room surface - membership itself needs an explicit Join (VR-1). */
     fun openVoice(conversationId: String) {
         _surface.value = OpenSurface(conversationId, RoomKind.VOICE)
     }
@@ -165,7 +165,7 @@ class VoiceRoomsEngine @Inject constructor(
         }
     }
 
-    /** Opening the space joins on connect (SP-1) — the machine gates the emit. */
+    /** Opening the space joins on connect (SP-1) - the machine gates the emit. */
     fun openSpace(conversationId: String) {
         _surface.value = OpenSurface(conversationId, RoomKind.SPACE)
         spaceMachine.dispatch(SpaceBoardStateMachine.Event.JoinRequested(conversationId, identity.id))
@@ -183,7 +183,7 @@ class VoiceRoomsEngine @Inject constructor(
         _surface.value = null
     }
 
-    // ── voice room actions ──────────────────────────────────────
+    // voice room actions
 
     fun joinVoice(conversationId: String) {
         voiceMachine.dispatch(VoiceRoomStateMachine.Event.JoinRequested(conversationId))
@@ -219,7 +219,7 @@ class VoiceRoomsEngine @Inject constructor(
         if (!enabled) captions.clear()
     }
 
-    /** PTT press began — the hold/tap decision happens on release (VR-3). */
+    /** PTT press began - the hold/tap decision happens on release (VR-3). */
     fun pttDown() {
         pttPressAtMs = System.currentTimeMillis()
     }
@@ -237,7 +237,7 @@ class VoiceRoomsEngine @Inject constructor(
         }
     }
 
-    /** Accessibility/keyboard entry — a pure toggle (VR-3). */
+    /** Accessibility/keyboard entry - a pure toggle (VR-3). */
     fun togglePtt() {
         val gate = currentPttGate() ?: return
         setTransmitting(!gate.transmitting)
@@ -275,7 +275,7 @@ class VoiceRoomsEngine @Inject constructor(
         return s.canTransmit && _connected.value
     }
 
-    /** Gate-driven force-stop (mute/disconnect effects) — never emits for a blank room. */
+    /** Gate-driven force-stop (mute/disconnect effects) - never emits for a blank room. */
     private fun stopTransmit(emit: Boolean) {
         if (voiceMachine.state.value.transmitting) {
             voiceMachine.dispatch(VoiceRoomStateMachine.Event.TransmitChanged(false))
@@ -285,20 +285,20 @@ class VoiceRoomsEngine @Inject constructor(
         if (emit && cid.isNotBlank()) scope.launch { runCatching { repo.emitVoicePtt(cid, identity.id, false) } }
     }
 
-    // ── stage actions ───────────────────────────────────────────
+    // stage actions
 
     fun joinStage(conversationId: String) {
         stageMachine.dispatchJoinRequested(conversationId)
         scope.launch {
             runCatching { repo.emitStageJoin(conversationId, identity, asHost = false) }
-            // FIX #3: EVERY joined stage member holds a voice seat — join it
+            // FIX #3: EVERY joined stage member holds a voice seat - join it
             // alongside the stage seat so the audience receives audio.
             runCatching { repo.emitVoiceJoin(conversationId, identity) }
         }
         audio.start()
     }
 
-    /** ST-7: the host seat is empty and I am joined — claim it via asHost:true. */
+    /** ST-7: the host seat is empty and I am joined - claim it via asHost:true. */
     fun claimHost() {
         val s = stageMachine.state.value
         if (!s.canClaimHost) return
@@ -327,7 +327,7 @@ class VoiceRoomsEngine @Inject constructor(
     }
 
     /**
-     * Two-tap End confirm (ST-5). Returns true when the second tap fired —
+     * Two-tap End confirm (ST-5). Returns true when the second tap fired -
      * the caller then closes the surface (stage:ended arrives for everyone).
      */
     fun endStage(): Boolean {
@@ -359,7 +359,7 @@ class VoiceRoomsEngine @Inject constructor(
         }
     }
 
-    // ── space actions ───────────────────────────────────────────
+    // space actions
 
     fun joinSpace(conversationId: String) {
         dispatchSpaceConnected(conversationId)
@@ -387,7 +387,7 @@ class VoiceRoomsEngine @Inject constructor(
         spaceMachine.reset()
     }
 
-    // ── S→C handlers ────────────────────────────────────────────
+    // S→C handlers
 
     private fun onVoiceRoster(payload: app.pulse.protocol.VoiceRosterPayload) {
         val peers = payload.roster.map {
@@ -444,7 +444,7 @@ class VoiceRoomsEngine @Inject constructor(
         stopTransmit(emit = false)
         stageMachine.dispatchEnded(payload.conversationId)
         audio.teardown()
-        // The stage's FIX #3 voice seat releases too — UNLESS the plain voice
+        // The stage's FIX #3 voice seat releases too - UNLESS the plain voice
         // room is independently joined for this conversation (one seat per
         // socket; the voice surface's membership must survive a stage end).
         val voice = voiceMachine.state.value
@@ -520,7 +520,7 @@ class VoiceRoomsEngine @Inject constructor(
         scope.launch { runCatching { repo.emitVoiceJoin(conversationId, identity) } }
     }
 
-    // ── captions pipeline (VR-7) ────────────────────────────────
+    // captions pipeline (VR-7)
 
     private fun onCaptionSamples(samples: ShortArray) {
         when (val offer = captions.offer(samples, voiceMachine.state.value.transmitting, _captionsEnabled.value)) {
@@ -532,7 +532,7 @@ class VoiceRoomsEngine @Inject constructor(
     /**
      * One 4s window → 44-byte WAV → POST /api/voice/transcribe (60s timeout)
      * → voice:transcript. Single-flight: [captions.busy] holds until done.
-     * Failures are honest silence — the window is never retried.
+     * Failures are honest silence - the window is never retried.
      */
     private fun transcribeWindow(samples: ShortArray) {
         scope.launch {
@@ -552,7 +552,7 @@ class VoiceRoomsEngine @Inject constructor(
 
     private fun addCaption(userId: String, text: String) {
         if (text.isBlank()) return
-        // The sender's own caption comes back through the same event — it IS
+        // The sender's own caption comes back through the same event - it IS
         // the echo (voice:transcript goes to the whole room, sender included).
         val roster = voiceMachine.state.value.roster
         val speaker = roster.firstOrNull { it.id == userId }
@@ -584,7 +584,7 @@ class VoiceRoomsEngine @Inject constructor(
         /** Two-tap End confirm window (ST-5). */
         const val STAGE_END_CONFIRM_MS = StageRoomStateMachine.END_CONFIRM_MS
 
-        /** Exposed for tests/diagnostics — 250ms wire blocks. */
+        /** Exposed for tests/diagnostics - 250ms wire blocks. */
         const val BLOCK_SAMPLES = VoicePcm.BLOCK_SAMPLES
         const val PRE_ROLL_MS = PlaybackScheduler.PRE_ROLL_MS
     }

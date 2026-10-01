@@ -6,7 +6,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * R8 Task 3-c — GROUP call signaling (mesh WebRTC), the exact `gcall:*`
+ * R8 Task 3-c - GROUP call signaling (mesh WebRTC), the exact `gcall:*`
  * contract the pulse-socket relay (mini-services/pulse-socket/index.ts) has
  * served since R8-web. Web truth: src/components/chat/group-call-overlay.tsx.
  *
@@ -37,11 +37,11 @@ object GroupCallEvents {
     const val ENDED = "gcall:ended"
     const val FULL = "gcall:full"
 
-    /** MAX_GROUP_CALL_PARTICIPANTS on the relay — join #9 gets gcall:full. */
+    /** MAX_GROUP_CALL_PARTICIPANTS on the relay - join #9 gets gcall:full. */
     const val MAX_PARTICIPANTS = 8
 }
 
-/** One member of a group call — the relay's join-ordered roster row. */
+/** One member of a group call - the relay's join-ordered roster row. */
 @Serializable
 data class GroupCallMemberDto(
     val id: String = "",
@@ -50,7 +50,7 @@ data class GroupCallMemberDto(
     val avatar: String? = null,
 )
 
-/** S→C gcall:state — the roster rides join-ordered (server sorts by joinedAt). */
+/** S→C gcall:state - the roster rides join-ordered (server sorts by joinedAt). */
 @Serializable
 data class GroupCallStatePayload(
     val callId: String = "",
@@ -61,7 +61,7 @@ data class GroupCallStatePayload(
     val members: List<GroupCallMemberDto> = emptyList(),
 )
 
-/** C→S/S→C gcall:offer — joiner → existing member, relayed to the target's user room. */
+/** C→S/S→C gcall:offer - joiner → existing member, relayed to the target's user room. */
 @Serializable
 data class GroupCallOfferDto(
     val conversationId: String = "",
@@ -72,7 +72,7 @@ data class GroupCallOfferDto(
     val sdp: String = "",
 )
 
-/** C→S/S→C gcall:answer — the targeted peer answers. */
+/** C→S/S→C gcall:answer - the targeted peer answers. */
 @Serializable
 data class GroupCallAnswerDto(
     val conversationId: String = "",
@@ -82,7 +82,7 @@ data class GroupCallAnswerDto(
     val sdp: String = "",
 )
 
-/** C→S/S→C gcall:ice — flat candidate triple, targeted relay. */
+/** C→S/S→C gcall:ice - flat candidate triple, targeted relay. */
 @Serializable
 data class GroupCallIceDto(
     val conversationId: String = "",
@@ -94,7 +94,7 @@ data class GroupCallIceDto(
     val sdpMLineIndex: Int? = null,
 )
 
-/** S→C gcall:ring — HTTP-relayed ring for ONLINE members (banner). */
+/** S→C gcall:ring - HTTP-relayed ring for ONLINE members (banner). */
 @Serializable
 data class GroupCallRingPayload(
     val type: String = "",
@@ -104,7 +104,7 @@ data class GroupCallRingPayload(
     val title: String = "",
 )
 
-/** S→C gcall:ended — the call was torn down (host/last member left, or kicked). */
+/** S→C gcall:ended - the call was torn down (host/last member left, or kicked). */
 @Serializable
 data class GroupCallEndedPayload(
     val conversationId: String = "",
@@ -112,7 +112,7 @@ data class GroupCallEndedPayload(
     val reason: String = "",
 )
 
-/** S→C gcall:full — join rejected (8 max). */
+/** S→C gcall:full - join rejected (8 max). */
 @Serializable
 data class GroupCallFullPayload(
     val conversationId: String = "",
@@ -120,9 +120,9 @@ data class GroupCallFullPayload(
     val max: Int = GroupCallEvents.MAX_PARTICIPANTS,
 )
 
-// ── wire-perfect C→S JSON builders (pure kotlinx — JVM-test friendly) ──────
+// wire-perfect C→S JSON builders (pure kotlinx - JVM-test friendly)
 
-/** gcall:join — the relay identity-gates user.id against the socket's user. */
+/** gcall:join - the relay identity-gates user.id against the socket's user. */
 fun groupCallJoinPayload(
     conversationId: String,
     kind: String,
@@ -138,7 +138,7 @@ fun groupCallJoinPayload(
     })
 }
 
-/** gcall:offer — every field the relay reads, nothing else. */
+/** gcall:offer - every field the relay reads, nothing else. */
 fun GroupCallOfferDto.toJsonObject(): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("callId", callId)
@@ -157,7 +157,7 @@ fun GroupCallAnswerDto.toJsonObject(): JsonObject = buildJsonObject {
     put("sdp", sdp)
 }
 
-/** gcall:ice — flat candidate triple exactly like call:ice (not nested). */
+/** gcall:ice - flat candidate triple exactly like call:ice (not nested). */
 fun GroupCallIceDto.toJsonObject(): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("callId", callId)
@@ -168,14 +168,14 @@ fun GroupCallIceDto.toJsonObject(): JsonObject = buildJsonObject {
     if (sdpMLineIndex != null) put("sdpMLineIndex", sdpMLineIndex)
 }
 
-/** gcall:leave — explicit exit (roster rebroadcast; last member ends the call). */
+/** gcall:leave - explicit exit (roster rebroadcast; last member ends the call). */
 fun groupCallLeavePayload(conversationId: String, from: String): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("from", from)
 }
 
 /**
- * The mesh decision kernels — every pure rule the web group-call session
+ * The mesh decision kernels - every pure rule the web group-call session
  * applies, restated for the JVM tests to pin (web-verbatim semantics from
  * src/components/chat/group-call-overlay.tsx).
  */
@@ -184,15 +184,15 @@ object GroupCallMesh {
     /**
      * MESH RULE: between any two members, the one with the lexicographically
      * SMALLER user id creates the offer (web `if (me < member.id)`). Stateless
-     * and glare-free — both sides of a pair independently agree on the roles.
+     * and glare-free - both sides of a pair independently agree on the roles.
      */
     fun shouldOffer(meId: String, peerId: String): Boolean = meId < peerId
 
     /**
      * Deterministic roster-sync plan (web applyRoster :252-312):
-     *   • `departed` — peers whose ids are NOT in the roster anymore → close
+     *   • `departed` - peers whose ids are NOT in the roster anymore → close
      *     their peer connections + drop their ICE queues + remote streams;
-     *   • `offerTo` — roster members I have NO peer connection for AND whose
+     *   • `offerTo` - roster members I have NO peer connection for AND whose
      *     id sorts BELOW mine → I create the offer for that pair.
      * Members that sort above me will offer me (their own plan says so).
      */
@@ -221,7 +221,7 @@ object GroupCallMesh {
     fun applyIceNow(pcExists: Boolean, remoteDescriptionSet: Boolean): Boolean =
         pcExists && remoteDescriptionSet
 
-    /** Web formatCallDuration — H:MM:SS past one hour, M:SS below (call-overlay.tsx:97). */
+    /** Web formatCallDuration - H:MM:SS past one hour, M:SS below (call-overlay.tsx:97). */
     fun formatDuration(totalSec: Long): String {
         val sec = maxOf(0L, totalSec)
         val h = sec / 3600
@@ -255,7 +255,7 @@ object GroupCallMesh {
     /** Ongoing banner headline (web :957-959). */
     fun ongoingTitle(memberCount: Int): String = "Ongoing group call · $memberCount in call"
 
-    /** Ongoing banner subtitle — first 3 members' first names, ", "-joined (web :940-944). */
+    /** Ongoing banner subtitle - first 3 members' first names, ", "-joined (web :940-944). */
     fun ongoingNames(members: List<GroupCallMemberDto>): String =
         members.take(3).joinToString(", ") { it.name.trim().split(" ").firstOrNull().orEmpty() }
 

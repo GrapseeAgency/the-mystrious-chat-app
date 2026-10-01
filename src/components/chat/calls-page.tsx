@@ -1,17 +1,15 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — #/calls sub-page (R34-a).
+// Pulse - #/calls sub-page (R34-a).
 // WhatsApp "Calls" tab paradigm INSIDE the chats tab, mounted
 // exactly like #/chats/channels: glass page, hash-routed
 // (navigate('/calls') opens, backHash() closes), staggered row
 // entrances, day sections (Today / Yesterday / Earlier).
-// Data is the REAL GET /api/calls log (R33-a) — no mocks:
-//   • direction arrow — PhoneOutgoing / PhoneIncoming (rose when missed)
-//   • peer avatar stays CIRCULAR (people, not things — shapes system)
+// Data is the REAL GET /api/calls log (R33-a) - no mocks:
+//   • direction arrow - PhoneOutgoing / PhoneIncoming (rose when missed)
+//   • peer avatar stays CIRCULAR (people, not things - shapes system)
 //   • Video glyph on video rows, time + duration on the right
 //   • tap a row → opens that DM via the same navigation call the
 //     chats list uses
-// Empty state is honest: no calls yet — start one from any chat.
-// ─────────────────────────────────────────────────────────────
+// Empty state is honest: no calls yet - start one from any chat.
 'use client'
 
 import { useMemo } from 'react'
@@ -43,7 +41,7 @@ export interface CallsPageProps {
   open: boolean
   me: AppUser
   onBack: () => void
-  /** open the DM a call belongs to — the same navigation call the chats list uses */
+  /** open the DM a call belongs to - the same navigation call the chats list uses */
   onOpenConversation: (conversationId: string) => void
 }
 
@@ -72,7 +70,7 @@ function dayBucketOf(iso: string, now: Date): 'today' | 'yesterday' | 'earlier' 
   return 'earlier'
 }
 
-/** Section label — same rhythm as the archived / channels pages. */
+/** Section label - same rhythm as the archived / channels pages. */
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <p className="px-3 pb-1.5 pt-4 text-[10px] font-bold tracking-[0.14em] text-zinc-400 uppercase dark:text-zinc-500">
@@ -81,7 +79,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-/** One call-history row — 56px target, direction arrow + circle peer avatar. */
+/** One call-history row - 56px target, direction arrow + circle peer avatar. */
 function CallRow({
   item,
   index,
@@ -119,7 +117,7 @@ function CallRow({
       role="row"
       aria-label={`${verb} ${kindNoun} with ${peerName}, ${formatListStamp(item.startedAt)}`}
     >
-      {/* people are CIRCLES — the shapes system only squircles things */}
+      {/* people are CIRCLES - the shapes system only squircles things */}
       <UserAvatar name={peerName} color={peerColor} avatar={peerAvatar} size={44} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14.5px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
@@ -177,7 +175,7 @@ export function CallsPage({ open, me, onBack, onOpenConversation }: CallsPagePro
 
   const items = calls.data?.items ?? []
 
-  /** Day sections — Today / Yesterday / Earlier, newest first inside each. */
+  /** Day sections - Today / Yesterday / Earlier, newest first inside each. */
   const sections = useMemo(() => {
     const now = new Date()
     const buckets: Record<'today' | 'yesterday' | 'earlier', CallLogItem[]> = {
@@ -209,7 +207,7 @@ export function CallsPage({ open, me, onBack, onOpenConversation }: CallsPagePro
           role="region"
           aria-label="Calls"
         >
-          {/* frosted sub-page header — same glass recipe as #/chats/archived */}
+          {/* frosted sub-page header - same glass recipe as #/chats/archived */}
           <header className="glass-deep glass-sheen shrink-0 border-b border-zinc-200/70 pt-[max(0px,env(safe-area-inset-top))] dark:border-white/10">
             <div className="flex items-center gap-2 px-3 py-2.5">
               <motion.button
@@ -235,7 +233,7 @@ export function CallsPage({ open, me, onBack, onOpenConversation }: CallsPagePro
                   ) : null}
                 </h1>
                 <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
-                  Voice and video history — tap a row to reopen the chat
+                  Voice and video history - tap a row to reopen the chat
                 </p>
               </div>
               {calls.isFetching ? (
@@ -289,7 +287,7 @@ export function CallsPage({ open, me, onBack, onOpenConversation }: CallsPagePro
                   No calls yet
                 </h2>
                 <p className="max-w-[260px] text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  No calls yet — start one from any chat. Tap the phone or video icon in a DM
+                  No calls yet - start one from any chat. Tap the phone or video icon in a DM
                   header and the history lands here.
                 </p>
               </motion.div>

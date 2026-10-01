@@ -4,13 +4,13 @@ package app.pulse.feature.voice.engine
  * The 250ms transmit block builder (spec §1.1 VR-4 / WEB DEFECT FIX #1).
  *
  * The web's CRITICAL defect was a transmit path that never armed its block
- * buffer — no voice:chunk ever left the browser. This chunker is the native
+ * buffer - no voice:chunk ever left the browser. This chunker is the native
  * equivalent and its unit tests are the PROOF that chunks actually flow:
  * 16kHz mono Int16 in, 4000-sample base64-bound blocks out, seq starting at 1,
  * a proportional partial flush on release, and a hard reset for new sessions.
  *
  * Seq semantics: seq is CONTINUOUS for the whole room session (join → leave),
- * NOT per transmission — restarting at 1 on every push would trip every
+ * NOT per transmission - restarting at 1 on every push would trip every
  * receiver's `seq <= lastSeq` dedupe and blackhole the audio (the exact web
  * rejoin defect the roster-reset fix answers on the receive side).
  */
@@ -23,7 +23,7 @@ class VoicePcmChunker(private val blockSize: Int = VoicePcm.BLOCK_SAMPLES) {
     private var window = ShortArray(blockSize * 2)
     private var windowSize = 0
 
-    /** Total samples accepted since the last [reset] — test/diagnostic exposure. */
+    /** Total samples accepted since the last [reset] - test/diagnostic exposure. */
     var consumedSamples: Long = 0L
         private set
 

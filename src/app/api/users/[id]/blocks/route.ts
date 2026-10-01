@@ -1,12 +1,10 @@
-// ─────────────────────────────────────────────────────────────
-// /api/users/[id]/blocks — R47 blocked-accounts list.
+// /api/users/[id]/blocks - R47 blocked-accounts list.
 // `[id]` is the owner of the block list; `?userId` must equal it
-// (self-service only — you can never read someone else's block list).
+// (self-service only - you can never read someone else's block list).
 //
 // Contract:
 //   GET ?userId={ownerId} → 200 { blocks: Array<{ id, name, username,
 //       avatar, color, blockedAt }> } | 400 | 403 | 404
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
@@ -16,7 +14,7 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-/** GET — the owner's block list, newest first. */
+/** GET - the owner's block list, newest first. */
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id: ownerId } = await params
 

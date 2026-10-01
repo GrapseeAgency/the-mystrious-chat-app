@@ -1,15 +1,13 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — conversation list row (R27-e: extracted from chats-tab
+// Pulse - conversation list row (R27-e: extracted from chats-tab
 // so the chats list AND the #/chats/archived sub-page share one
-// row implementation — same swipe chips, same presence, same motion).
+// row implementation - same swipe chips, same presence, same motion).
 // R34-a shapes/motion pass:
-//   • Discord 2026 shapes — group/channel THING avatars wear the
+//   • Discord 2026 shapes - group/channel THING avatars wear the
 //     .pulse-squircle mask (people stay circular).
-//   • Snapchat streak heat ring — a LIVE (not at-risk) myStreak ≥ 2
+//   • Snapchat streak heat ring - a LIVE (not at-risk) myStreak ≥ 2
 //     paints .streak-ring around the peer avatar (heat 1/2/3).
-//   • Telegram multi-select — selectMode turns the row into a real
+//   • Telegram multi-select - selectMode turns the row into a real
 //     checkbox (check-circle over the avatar, press toggles, drag off).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { memo, useCallback, useRef, useState } from 'react'
@@ -31,7 +29,7 @@ export interface ConversationRowProps {
   /** unsent composer draft persisted for this conversation (null = none) */
   draft: string | null
   unreadCount: number
-  /** R44: viewer flagged this row mark-as-unread — dot even at 0 unread */
+  /** R44: viewer flagged this row mark-as-unread - dot even at 0 unread */
   manualUnread?: boolean
   // avatar inputs
   dmName: string | null
@@ -46,42 +44,42 @@ export interface ConversationRowProps {
   /** R31-a: viewer's LIVE chat-streak count for this row (0/undefined = no chip) */
   streakCount?: number
   /** R33-b: live-but-dies-tonight streak (lastDay = yesterday UTC, count >= 2)
-   *  — replaces the plain flame chip with the amber "ends tonight" nudge */
+   *  - replaces the plain flame chip with the amber "ends tonight" nudge */
   streakAtRisk?: { count: number; lastDay: string } | null
   /** R37: honestly lost streak (lastDay older than yesterday UTC, count >= 2)
-   *  — muted rose chip; only shown when NO live streak and NO at-risk chip */
+   *  - muted rose chip; only shown when NO live streak and NO at-risk chip */
   streakLost?: { count: number; best: number; lastDay: string } | null
-  /** R33-b: channel/group photo path — circular image above the palette tile */
+  /** R33-b: channel/group photo path - circular image above the palette tile */
   photo?: string | null
   /** row lives in the archived sub-page (swipe chip flips to Unarchive) */
   archived: boolean
-  /** R34-a: multi-select mode — the row becomes a checkbox (press toggles) */
+  /** R34-a: multi-select mode - the row becomes a checkbox (press toggles) */
   selectMode?: boolean
   /** R34-a: checked state inside multi-select mode */
   selected?: boolean
   /** R34-a: toggle this row's selection (select mode press) */
   onToggleSelect?: () => void
-  /** R34-a: explicit handler for the ⋮ overflow button — defaults to
+  /** R34-a: explicit handler for the ⋮ overflow button - defaults to
    *  onLongPress so legacy call sites keep their exact behavior */
   onOptions?: () => void
   /** stagger slot for the initial-mount entrance (null = animate nothing) */
   entranceIndex: number | null
   onPress: () => void
   onLongPress: () => void
-  /** existing pin/unpin handler — surfaced as a swipe-left chip */
+  /** existing pin/unpin handler - surfaced as a swipe-left chip */
   onPin: () => void
-  /** existing archive/unarchive handler — surfaced as a swipe-left chip */
+  /** existing archive/unarchive handler - surfaced as a swipe-left chip */
   onArchive: () => void
 }
 
-/** Row data without the callbacks/stagger slot — what list builders construct. */
+/** Row data without the callbacks/stagger slot - what list builders construct. */
 export type ConversationRowData = Omit<
   ConversationRowProps,
   'onPress' | 'onLongPress' | 'onPin' | 'onArchive' | 'entranceIndex'
 >
 
 /**
- * R34-a — Snapchat heat level for a LIVE streak: 2-4 → 1 (warm),
+ * R34-a - Snapchat heat level for a LIVE streak: 2-4 → 1 (warm),
  * 5-9 → 2 (hot), 10+ → 3 (blazing). At-risk streaks ring nothing
  * (they keep their amber "ends tonight" chip instead).
  */
@@ -146,7 +144,7 @@ export const ConversationRow = memo(function ConversationRow({
   onArchive,
 }: ConversationRowProps) {
   // R44: manualUnread keeps the row's unread semantics alive even when the
-  // server count is 0 (the mark-as-unread dot) — one flag for all styling.
+  // server count is 0 (the mark-as-unread dot) - one flag for all styling.
   const hasUnread = unreadCount > 0 || manualUnread
   const reducedMotion = useReducedMotion()
   /** R34-a: heat ring level for a live peer streak (null = no ring) */
@@ -154,7 +152,7 @@ export const ConversationRow = memo(function ConversationRow({
     !isGroup && streakAtRisk === null && streakCount >= 2 ? streakHeatLevel(streakCount) : null
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressFiredRef = useRef(false)
-  /** true between dragStart and the click that follows release — swallows the click */
+  /** true between dragStart and the click that follows release - swallows the click */
   const draggedRef = useRef(false)
   const [swipeOpen, setSwipeOpen] = useState(false)
   const entrance = entranceIndex !== null && !reducedMotion
@@ -226,8 +224,8 @@ export const ConversationRow = memo(function ConversationRow({
       className="group relative overflow-hidden px-2"
     >
       <div className="relative">
-        {/* swipe-left glass action chips — the same pin/archive handlers the option menu uses.
-            R43: visibility+opacity gated on swipeOpen — the chips sat permanently painted
+        {/* swipe-left glass action chips - the same pin/archive handlers the option menu uses.
+            R43: visibility+opacity gated on swipeOpen - the chips sat permanently painted
             behind the translucent row, ghosting "Pin/Archive" through the glass (R42 nit). */}
         <div
           className={`absolute inset-y-1 right-2 z-0 flex items-center gap-1.5 pr-1 transition-opacity duration-150 ${
@@ -281,7 +279,7 @@ export const ConversationRow = memo(function ConversationRow({
           </motion.button>
         </div>
 
-        {/* swipeable row body — x-drag with direction lock so vertical scroll never fights */}
+        {/* swipeable row body - x-drag with direction lock so vertical scroll never fights */}
         <motion.div
           drag={selectMode ? false : 'x'}
           dragDirectionLock
@@ -372,15 +370,15 @@ export const ConversationRow = memo(function ConversationRow({
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5">
-                  {/* R33-b: streak-at-risk nudge — a 2+ day chain whose lastDay is
+                  {/* R33-b: streak-at-risk nudge - a 2+ day chain whose lastDay is
                       yesterday dies at tonight's UTC midnight; amber glass chip
                       replaces the plain flame count until a message revives it.
-                      R37: a chain whose lastDay already passed is honestly LOST —
+                      R37: a chain whose lastDay already passed is honestly LOST -
                       muted rose chip, strictly last in priority (myStreak >
                       deadStreak > lostStreak), never shown beside the others. */}
                   {streakAtRisk ? (
                     <span
-                      aria-label={`${streakAtRisk.count}-day streak ends tonight — send a message to keep it`}
+                      aria-label={`${streakAtRisk.count}-day streak ends tonight - send a message to keep it`}
                       className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-amber-500/25 dark:text-amber-400"
                     >
                       <Hourglass className="size-3" aria-hidden />
@@ -482,7 +480,7 @@ export const ConversationRow = memo(function ConversationRow({
                     initial={reducedMotion ? false : { scale: 0.6, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={spring.bouncy}
-                    aria-label={hasUnread ? `Muted — ${unreadCount} unread` : 'Muted'}
+                    aria-label={hasUnread ? `Muted - ${unreadCount} unread` : 'Muted'}
                     className={cn(
                       'flex h-[18px] shrink-0 items-center gap-1 rounded-full px-1.5 text-[10px] font-bold ring-2 ring-white dark:ring-zinc-900',
                       hasUnread
@@ -502,7 +500,7 @@ export const ConversationRow = memo(function ConversationRow({
               </div>
             </div>
           </button>
-          {/* overflow options — kept for accessibility (screen readers + keyboard);
+          {/* overflow options - kept for accessibility (screen readers + keyboard);
               hidden while multi-select owns the list (the bar replaces it) */}
           {!selectMode ? (
           <button

@@ -9,9 +9,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * Wave 5 — voice rooms / stage / space wire layer (spec WAVE5-VOICE-SPACES-
+ * Wave 5 - voice rooms / stage / space wire layer (spec WAVE5-VOICE-SPACES-
  * PARITY §0). The event-name constants live in [SocketEvents]; this file adds
- * the C→S payload builders (mirroring the Wave-3 call builder style — pure
+ * the C→S payload builders (mirroring the Wave-3 call builder style - pure
  * kotlinx JsonObject, JVM-test friendly) and the typed S→C decoders for the
  * two JsonElement passthroughs (`stage:state`, `space:state`).
  *
@@ -47,9 +47,9 @@ data class VoiceTranscriptResultDto(
     val transcript: String = "",
 )
 
-// ── C→S payload builders (wire-perfect, mirrors call* builders) ──────────
+// C→S payload builders (wire-perfect, mirrors call* builders)
 
-/** voice:join / stage:join / space:join user object — username omitted when null. */
+/** voice:join / stage:join / space:join user object - username omitted when null. */
 private fun userJson(user: PulseVoiceUser): JsonObject = buildJsonObject {
     put("id", user.id)
     put("name", user.name)
@@ -57,25 +57,25 @@ private fun userJson(user: PulseVoiceUser): JsonObject = buildJsonObject {
     put("color", user.color)
 }
 
-/** voice:join — registers this socket's seat in `voice:{conversationId}`. */
+/** voice:join - registers this socket's seat in `voice:{conversationId}`. */
 fun voiceJoinPayload(conversationId: String, user: PulseVoiceUser): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("user", userJson(user))
 }
 
-/** voice:leave — releases the seat; the relay re-broadcasts the roster. */
+/** voice:leave - releases the seat; the relay re-broadcasts the roster. */
 fun voiceLeavePayload(conversationId: String): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
 }
 
-/** voice:ptt — push-to-talk latch; identity-gated (seat must be this socket's). */
+/** voice:ptt - push-to-talk latch; identity-gated (seat must be this socket's). */
 fun voicePttPayload(conversationId: String, userId: String, on: Boolean): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("userId", userId)
     put("on", on)
 }
 
-/** voice:chunk — 16kHz Int16LE PCM base64, 4000 samples (250ms), seq starts at 1. */
+/** voice:chunk - 16kHz Int16LE PCM base64, 4000 samples (250ms), seq starts at 1. */
 fun voiceChunkPayload(conversationId: String, userId: String, seq: Long, data: String): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("userId", userId)
@@ -83,71 +83,71 @@ fun voiceChunkPayload(conversationId: String, userId: String, seq: Long, data: S
     put("data", data)
 }
 
-/** voice:transcript — ephemeral caption (server caps 280 chars, rate-limits 700ms). */
+/** voice:transcript - ephemeral caption (server caps 280 chars, rate-limits 700ms). */
 fun voiceTranscriptPayload(conversationId: String, userId: String, text: String): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("userId", userId)
     put("text", text)
 }
 
-/** stage:join — ALWAYS asHost:false on entry; asHost:true only for claim-host. */
+/** stage:join - ALWAYS asHost:false on entry; asHost:true only for claim-host. */
 fun stageJoinPayload(conversationId: String, user: PulseVoiceUser, asHost: Boolean): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("user", userJson(user))
     put("asHost", asHost)
 }
 
-/** stage:hand — listener raise/lower; the wire carries `user:{id}` (not userId). */
+/** stage:hand - listener raise/lower; the wire carries `user:{id}` (not userId). */
 fun stageHandPayload(conversationId: String, userId: String, raised: Boolean): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("user", buildJsonObject { put("id", userId) })
     put("raised", raised)
 }
 
-/** stage:approve — host promotes the hand at [targetUserId] into the speaker row. */
+/** stage:approve - host promotes the hand at [targetUserId] into the speaker row. */
 fun stageApprovePayload(conversationId: String, byUserId: String, targetUserId: String): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("byUserId", byUserId)
     put("targetUserId", targetUserId)
 }
 
-/** stage:mute — host demotes a speaker (voice seat force-removed) or dismisses a hand. */
+/** stage:mute - host demotes a speaker (voice seat force-removed) or dismisses a hand. */
 fun stageMutePayload(conversationId: String, byUserId: String, targetUserId: String): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("byUserId", byUserId)
     put("targetUserId", targetUserId)
 }
 
-/** stage:end — host-only; every member receives stage:ended. */
+/** stage:end - host-only; every member receives stage:ended. */
 fun stageEndPayload(conversationId: String, byUserId: String): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("byUserId", byUserId)
 }
 
-/** stage:leave — releases the stage seat. */
+/** stage:leave - releases the stage seat. */
 fun stageLeavePayload(conversationId: String): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
 }
 
-/** space:join — enters `space:{conversationId}` (previous position kept while alive). */
+/** space:join - enters `space:{conversationId}` (previous position kept while alive). */
 fun spaceJoinPayload(conversationId: String, user: PulseVoiceUser): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("user", userJson(user))
 }
 
-/** space:move — normalized 0..1 coords; server throttles 80ms + clamps. */
+/** space:move - normalized 0..1 coords; server throttles 80ms + clamps. */
 fun spaceMovePayload(conversationId: String, x: Double, y: Double): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
     put("x", x)
     put("y", y)
 }
 
-/** space:leave — releases the spatial seat. */
+/** space:leave - releases the spatial seat. */
 fun spaceLeavePayload(conversationId: String): JsonObject = buildJsonObject {
     put("conversationId", conversationId)
 }
 
-// ── typed S→C decoders for the two passthrough payloads ──────────────────
+// typed S→C decoders for the two passthrough payloads
 //
 // The relay emits BOTH payloads with the room object at TOP level:
 //   stage:state { conversationId, host, speakers, hands, listeners, listenerCount }
@@ -158,7 +158,7 @@ fun spaceLeavePayload(conversationId: String): JsonObject = buildJsonObject {
 // string id+name are dropped, listenerCount falls back to listeners.size,
 // and listenerCount never goes below zero.
 
-/** One stage person — host/speakers/hands/listeners rows (relay shape). */
+/** One stage person - host/speakers/hands/listeners rows (relay shape). */
 @Serializable
 data class StagePersonDto(
     val id: String = "",
@@ -166,7 +166,7 @@ data class StagePersonDto(
     val color: String = "",
 )
 
-/** Decoded stage:state — the full stage roster this device renders. */
+/** Decoded stage:state - the full stage roster this device renders. */
 @Serializable
 data class StageRoomState(
     val host: StagePersonDto?,
@@ -186,7 +186,7 @@ data class SpacePlayerDto(
     val y: Double = 0.5,
 )
 
-/** Decoded space:state — the whole board, wholesale-replaced on every event. */
+/** Decoded space:state - the whole board, wholesale-replaced on every event. */
 @Serializable
 data class SpaceBoardState(
     val players: List<SpacePlayerDto>,
@@ -195,7 +195,7 @@ data class SpaceBoardState(
 private fun stringField(obj: JsonObject, key: String): String? =
     (obj[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
-/** id+name must both be non-blank strings — everything else is dropped. */
+/** id+name must both be non-blank strings - everything else is dropped. */
 private fun personOf(obj: JsonObject): StagePersonDto? {
     val id = stringField(obj, "id")?.takeIf { it.isNotBlank() } ?: return null
     val name = stringField(obj, "name")?.takeIf { it.isNotBlank() } ?: return null

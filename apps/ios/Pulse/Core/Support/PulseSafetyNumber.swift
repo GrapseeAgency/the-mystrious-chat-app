@@ -1,6 +1,6 @@
 import Foundation
 
-/// Safety-number client split — mirrors the web's safety-sheet.tsx
+/// Safety-number client split - mirrors the web's safety-sheet.tsx
 /// `safetyGroups` exactly: the SERVER computes the deterministic 60-digit
 /// number (sha256("minId|maxId|pulse-safety-pepper-v1") mod 10^60, wire
 /// format "12×5 digits space-joined"); the client only re-splits the

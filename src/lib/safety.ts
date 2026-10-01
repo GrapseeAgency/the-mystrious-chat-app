@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — Signal-style safety numbers (R35-a).
+// Pulse - Signal-style safety numbers (R35-a).
 //
 // A safety number is the fingerprint two users compare in person to
 // confirm their channel is really end-to-end (Signal's "safety number"
@@ -8,20 +7,19 @@
 // restarts, and stable for as long as both accounts exist.
 //
 // Server-focused module: it pulls node:crypto, so do NOT import it from
-// client components — the UI renders the groups the API already formatted
+// client components - the UI renders the groups the API already formatted
 // (and can split the raw digit string itself with a trivial local helper).
 // The module stays PURE (no db import) so scripts and tests can use it too.
-// ─────────────────────────────────────────────────────────────
 import { createHash } from 'node:crypto'
 
-/** Layout — Signal's canonical format: 12 groups of 5 digits = 60 digits. */
+/** Layout - Signal's canonical format: 12 groups of 5 digits = 60 digits. */
 export const SAFETY_DIGIT_GROUPS = 12
 export const SAFETY_GROUP_DIGITS = 5
 export const SAFETY_TOTAL_DIGITS = SAFETY_DIGIT_GROUPS * SAFETY_GROUP_DIGITS
 
 /**
  * Application pepper folded into every digest so the number is meaningful
- * only inside Pulse (rotating it re-keys every pair at once — a deliberate
+ * only inside Pulse (rotating it re-keys every pair at once - a deliberate
  * operational escape hatch, never done lightly).
  */
 const SAFETY_PEPPER = 'pulse-safety-pepper-v1'
@@ -29,11 +27,11 @@ const SAFETY_PEPPER = 'pulse-safety-pepper-v1'
 /**
  * Derive the shared 60-digit safety number for a pair of user ids.
  *
- * - Symmetric: deriveSafetyNumber(a, b) === deriveSafetyNumber(b, a) — the
+ * - Symmetric: deriveSafetyNumber(a, b) === deriveSafetyNumber(b, a) - the
  *   ids are sorted before hashing, so both sides see the same number.
  * - Deterministic: plain sha256 over "min|max|pepper" (sorted with the
  *   default lexicographic order, stable for ASCII cuids) expanded to 60
- *   decimal digits via exact BigInt modulo — identical across processes,
+ *   decimal digits via exact BigInt modulo - identical across processes,
  *   restarts and machines.
  * - Not a secret: like Signal's number it is meant to be compared out loud,
  *   not kept hidden; verification is the state stored in the DB, not the
@@ -47,7 +45,7 @@ export function deriveSafetyNumber(a: string, b: string): string {
 
   // 256 bits → uniform 60-digit decimal: exact BigInt modulo 10^60,
   // zero-padded so leading zeros are preserved (the format demands
-  // exactly SAFETY_TOTAL_DIGITS digits every time). No BigInt literals —
+  // exactly SAFETY_TOTAL_DIGITS digits every time). No BigInt literals -
   // the project targets pre-ES2020; the constructor calls are equivalent.
   const modulus = BigInt(10) ** BigInt(SAFETY_TOTAL_DIGITS)
   const digits = (BigInt(`0x${digestHex}`) % modulus)

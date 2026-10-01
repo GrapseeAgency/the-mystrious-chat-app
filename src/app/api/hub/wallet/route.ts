@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/hub/wallet — wallet + ledger (Hub → Wallet panel)
-// ─────────────────────────────────────────────────────────────
+// /api/hub/wallet - wallet + ledger (Hub → Wallet panel)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dayKey } from '@/lib/serializers'

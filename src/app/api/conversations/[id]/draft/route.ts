@@ -1,13 +1,11 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/draft — server-synced composer draft
-// ─────────────────────────────────────────────────────────────
-// R45 — Telegram-style cross-device drafts: a participant's half-typed
+// /api/conversations/[id]/draft - server-synced composer draft
+// R45 - Telegram-style cross-device drafts: a participant's half-typed
 // message is persisted on THEIR participant row so it restores from any
 // device/tab and surfaces as a "Draft: …" preview in the chats list even
 // where no local draft exists. Empty string clears. The client debounces
 // writes (~600ms) and mirrors every local store mutation through this
 // route, so all existing clear/save paths sync with zero call-site churn.
-// Self-service — a viewer may only write their OWN row (userId IS the
+// Self-service - a viewer may only write their OWN row (userId IS the
 // requester by construction; mirrors mark-unread/screenPrivacy gating).
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -26,9 +24,9 @@ const MAX_DRAFT = 2000
  * GET /api/conversations/[id]/draft?userId=… → { draft: string | null }
  * Spec row F-CL-10 lists GET+PATCH; the GET serves a direct draft read for
  * clients that open a room without first fetching the full summary/detail
- * (the summary's `myDraft` stays the bulk path — same column, same shape).
+ * (the summary's `myDraft` stays the bulk path - same column, same shape).
  * Self-service: `userId` must be the requester AND a participant of the
- * conversation — the exact guard PATCH enforces. null = no draft stored.
+ * conversation - the exact guard PATCH enforces. null = no draft stored.
  */
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params

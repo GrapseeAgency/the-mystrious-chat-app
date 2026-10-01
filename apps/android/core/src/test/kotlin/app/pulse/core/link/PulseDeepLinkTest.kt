@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 /**
- * Wave 6 F-DL — deep-link parser contract: the three families, both wire
+ * Wave 6 F-DL - deep-link parser contract: the three families, both wire
  * shapes (authority vs bare ssp), alias hosts, percent decoding, and total
  * failure (null, never a throw).
  */
@@ -55,7 +55,7 @@ class PulseDeepLinkTest {
         assertEquals(PulseDeepLink.Room("C1"), PulseDeepLink.parse("PULSE://room/C1"))
     }
 
-    // ── R7 item 4 — reminder jump payload on room deep links ──
+    // R7 item 4 - reminder jump payload on room deep links
 
     @Test
     fun `roomUri builds the jump payload only when a message id is present`() {

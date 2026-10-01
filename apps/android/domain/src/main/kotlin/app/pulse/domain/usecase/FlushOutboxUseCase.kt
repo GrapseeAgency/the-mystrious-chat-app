@@ -7,7 +7,7 @@ import app.pulse.domain.model.OutboxFailureClass
 import app.pulse.domain.repository.PulseRepository
 
 /**
- * Offline outbox drain — the native port of web flushPulseOutbox
+ * Offline outbox drain - the native port of web flushPulseOutbox
  * (src/lib/pulse-outbox.ts): FIFO ≤50, deliver in order, STOP at the first
  * failure so later sends never overtake earlier ones.
  *
@@ -16,7 +16,7 @@ import app.pulse.domain.repository.PulseRepository
  *                for the real message row and deletes the outbox row;
  *  - 4xx-class → the entry is dropped permanently (row + temp bubble removed,
  *                PulseEvent.OutboxDropped emitted) and the drain stops;
- *  - network   → attempts++ (entry kept) and the drain stops — the next
+ *  - network   → attempts++ (entry kept) and the drain stops - the next
  *                trigger (reconnect/foreground/worker/self-heal) retries.
  */
 class FlushOutboxUseCase(private val repo: PulseRepository) {
@@ -40,13 +40,13 @@ class FlushOutboxUseCase(private val repo: PulseRepository) {
             } else {
                 repo.bumpOutboxAttempts(entry.clientId)
             }
-            break // stop-at-first-failure — temporal order is the contract
+            break // stop-at-first-failure - temporal order is the contract
         }
         return FlushReport(sent = sent, dropped = dropped, pending = repo.outboxPending().size)
     }
 
     companion object {
-        /** Web MAX_QUEUE parity — the drain never processes more per pass. */
+        /** Web MAX_QUEUE parity - the drain never processes more per pass. */
         const val MAX_BATCH = 50
         /** Entry shape guard shared with the repository enqueue path. */
         fun entryId(entry: OutboxEntry): String = "local_${entry.clientId}"

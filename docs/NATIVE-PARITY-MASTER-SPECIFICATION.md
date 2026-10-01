@@ -126,7 +126,7 @@ Legend: `—` = no requirement of that kind. "GW" = live Next.js gateway (same A
 | F-MS-05 | Delete for everyone → tombstone | **Add menu row to action sheet** (API + UI) | **Build** (no per-message delete UI today) | `DELETE /api/messages/{id}` | `message:deleted` (tombstone payload) | soft-delete column | Tombstone replace in cache | — | — | — | Tombstone fade |
 | F-MS-06 | Reply quote (incl. deleted variant) | Exists (reply above composer + quote bubble) | Exists | `replyToId` on send; replySnippet wire shape | — | replyTo columns | Render from cache | — | — | — | Quote scroll-jump flash (web parity) |
 | F-MS-07 | Threads ("Reply in thread", thread view) | **Build** (room thread sheet; `GET /api/messages/{id}/thread`) | **Build** | `parentId` self-rel; `GET …/thread` | `message:new` within thread | threadRootId column (GRDB has) | Thread history cached | — | Thread unread surface (follow web) | — | Sheet |
-| F-MS-08 | Reactions: 6 quick + 24 picker, grouped chips, who-reacted, toggle | Exists (6 quick; **add 24-picker + who-reacted**) | Exists (6 quick; same additions) | `POST /api/messages/{id}/react` (toggle) | `message:react` (fresh message) | reactionsJson column | Cache update | — | — | — | Bouncy pop (exists); ❤️ hearts burst (exists) |
+| F-MS-08 | Reactions: 6 quick + 24 picker, grouped chips, who-reacted, toggle | Exists (6 quick; **add 24-picker + who-reacted**) | Exists (6 quick; same additions) | `POST /api/messages/{id}/react` (toggle) | `message:react` (fresh message) | reactionsJson column | Cache update | — | — | — | Bouncy pop (exists);  hearts burst (exists) |
 | F-MS-09 | Copy text | Exists (sheet) | Exists (contextMenu) | — | — | — | — | — | — | — | Clipboard toast |
 | F-MS-10 | Forward to chat… (multi-target) | **Build** (ForwardSheet parity: pick chats → send copy) | **Build** | Re-`POST …/messages` per target | `message:new` | — | Queued if offline | — | — | — | Sheet |
 | F-MS-11 | Save/star → Saved library | **Build** (`POST /api/messages/{id}/save` + `GET /api/users/{id}/saved` page) | **Build** | save toggle + library GET | — | — | Library cached | — | — | — | — |
@@ -501,7 +501,7 @@ Web has **none** (in-app toasts + WebAudio + vibration only). Natives ship the r
 - **Shared feel, native systems:** Android Compose `animate*AsTransition` + GraphicsLayer; iOS SwiftUI `.animation`/`withAnimation` + TimelineView/Canvas. Presets locked to web values: springs snappy(560,0.85)/soft(300,0.82)/bouncy(730,0.44)/gentle(120,0.90) — **already ported on both** (`ui/Motion.kt`, `PulseFormatting.swift`); keep them the only spring sources (no ad-hoc springs).
 - **Press:** uniform 0.94 scale (`pulsePress` / `PulseButtonStyle`) on every tappable.
 - **Lists:** 28 ms stagger ×≤13 rows on first entrance (exists both).
-- **Particles:** 4 kinds (confetti/hearts/stars/burst) via existing GPU hosts; triggers: send, ❤️ react, identity create, onboarding complete, view-once burn, red-packet open, effects messages (F-MS-23).
+- **Particles:** 4 kinds (confetti/hearts/stars/burst) via existing GPU hosts; triggers: send,  react, identity create, onboarding complete, view-once burn, red-packet open, effects messages (F-MS-23).
 - **Ambient:** 6 modes, 30 fps cap, epoch t=14.2, static frame when reduced motion (exists both).
 - **Reduced motion:** honor OS setting first (Android "Remove animations" / iOS `accessibilityReduceMotion`), in-app toggle overrides on top; both FX stacks already gate — extend to new surfaces.
 - **Transitions:** tab switch = 24 pt directional slide + fade 220 ms (exists); room push = platform default (Android Compose nav transitions tuned to the same easing `CubicBezier(0.16,1,0.3,1)`; iOS default push).
@@ -584,7 +584,7 @@ Rule: an acceptance test (AT) is **done** only when executed against the live ga
 | F-MS-05 | delete row in sheet | contextMenu delete | DELETE | AT-MS-05: delete → tombstone everywhere incl. sender's other device |
 | F-MS-06 | reply UI (exists) | same | replyToId | AT-MS-06: reply → quote shows author+snippet; tapping quote scrolls to original (web parity) |
 | F-MS-07 | thread sheet | same | thread GET | AT-MS-07: reply-in-thread → thread sheet lists replies; main flow not polluted |
-| F-MS-08 | 24-picker + who-reacted | same | react POST | AT-MS-08: react with 🎉 → web sees grouped chip; long-press chip → reactor list |
+| F-MS-08 | 24-picker + who-reacted | same | react POST | AT-MS-08: react with  → web sees grouped chip; long-press chip → reactor list |
 | F-MS-09 | copy | copy | — | AT-MS-09: copy → clipboard contains raw text |
 | F-MS-10 | ForwardSheet | same | re-POST | AT-MS-10: forward to 2 chats → both get copy w/ Forwarded semantics |
 | F-MS-11 | saved toggle + library page | same | save POST / saved GET | AT-MS-11: star message → appears in Saved library; unstar removes |
@@ -716,7 +716,7 @@ Rule: an acceptance test (AT) is **done** only when executed against the live ga
 | FEATURE | ANDROID | iOS | BACKEND | ACCEPTANCE TEST |
 |---|---|---|---|---|
 | F-FD-01 | rail filter real | same | folders GET | AT-FD-01: tap folder → list filters to its conversations |
-| F-FD-02 | manage sheet | same | folders POST/PATCH/DELETE | AT-FD-02: create "Work 📂" → rename → reorder → persists |
+| F-FD-02 | manage sheet | same | folders POST/PATCH/DELETE | AT-FD-02: create "Work " → rename → reorder → persists |
 | F-FD-03 | membership assign | same | conversations PUT | AT-FD-03: assign 3 chats → folder shows exactly 3; remove 1 → 2 |
 
 ### 4.O PiP (F-PI-01…03)

@@ -1,11 +1,9 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — main shell: four-tab layout inside the phone
+// Pulse Chat - main shell: four-tab layout inside the phone
 // frame with ChatRoom rendered as a full-screen overlay, plus
 // the system chrome: a glass command bar (Spotlight search ⌘K /
 // Ctrl+K + Settings), edge-swipe tab switching, the liquid-glass
 // floating dock (acrylic style) and the Spotlight / Settings
 // overlays.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
@@ -48,7 +46,7 @@ const TAB_LABEL: Record<PulseTab, string> = {
   profile: 'Profile',
 }
 
-/** Canonical tab order — drives auto direction for slide/fade transitions. */
+/** Canonical tab order - drives auto direction for slide/fade transitions. */
 const TAB_ORDER: Array<PulseTab> = ['chats', 'hub', 'contacts', 'profile']
 
 /** Deep links that live INSIDE a tab → owning tab (R27 lead).
@@ -86,7 +84,7 @@ function makePanelVariants(reduced: boolean): Variants {
 export function MainShell({ me }: { me: AppUser }) {
   // tab + last travel direction kept together so AnimatePresence always
   // knows which way to slide (dock taps: index order · swipes: gesture).
-  // Initial tab derives from the boot hash — a deep link like #/contacts/add
+  // Initial tab derives from the boot hash - a deep link like #/contacts/add
   // or #/hub/... opens its owning tab from the very first render (R27 lead).
   const [navState, setNavState] = useState<{ tab: PulseTab; dir: 1 | -1 }>(() => ({
     tab: bootTabFromHash(),
@@ -104,10 +102,10 @@ export function MainShell({ me }: { me: AppUser }) {
   const navZone = zoneFor(navStyle)
   const [uiTheme] = useUiTheme()
   const [openConversationId, setOpenConversationId] = useState<string | null>(() => {
-    // R9 — push tap-through: a notificationclick that found NO live Pulse tab
+    // R9 - push tap-through: a notificationclick that found NO live Pulse tab
     // opens a fresh window on /?conversation=<id> (sw-push.js). Lifting the
     // param straight into the initial open-room state means the room mounts
-    // with the shell — no setState-in-effect anywhere on this path.
+    // with the shell - no setState-in-effect anywhere on this path.
     if (typeof window === 'undefined') return null
     const deepLink = new URLSearchParams(window.location.search).get('conversation')?.trim() ?? ''
     return deepLink.length > 0 && deepLink.length <= 64 ? deepLink : null
@@ -122,11 +120,11 @@ export function MainShell({ me }: { me: AppUser }) {
   // sheetMounted keeps it rendered through the vaul close animation
   const [newChatGeneration, setNewChatGeneration] = useState(0)
   const [sheetMounted, setSheetMounted] = useState(false)
-  // system overlays — Spotlight search palette + full-screen Settings tree.
+  // system overlays - Spotlight search palette + full-screen Settings tree.
   // Deep-link boot: the hash is read through a snapshot subscription (no
   // setState-in-effect) so #/settings… opens settings on ANY mount order;
   // closing settings clears the hash (SettingsScreen.closeAll → navigate('/')),
-  // which flips the snapshot back — one source of truth, zero effects.
+  // which flips the snapshot back - one source of truth, zero effects.
   const [spotlightOpen, setSpotlightOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const settingsDeepLink = useSyncExternalStore(
@@ -136,7 +134,7 @@ export function MainShell({ me }: { me: AppUser }) {
   )
   const settingsVisible = settingsOpen || settingsDeepLink
 
-  // ── R27 lead: deep-link tab boost (live) ──────────────────────
+  // R27 lead: deep-link tab boost (live) 
   // Hash changes landing on a tab-owned route (#/contacts/*, #/hub/*,
   // #/chats/*) activate that tab while no room overlay owns the screen.
   // setState runs inside the subscription callback (an external event),
@@ -154,7 +152,7 @@ export function MainShell({ me }: { me: AppUser }) {
     })
     return unsub
   }, [])
-  // ── end deep-link tab boost ───────────────────────────────────
+  // end deep-link tab boost 
   const queryClient = useQueryClient()
   const hydratePrefs = usePrefs((s) => s.hydrate)
   const reducedMotion = useReducedMotion()
@@ -164,13 +162,13 @@ export function MainShell({ me }: { me: AppUser }) {
   const swipeAnchor = useRef<{ x: number; y: number; edge: 'left' | 'right' } | null>(null)
   /** invite deep-link code lifted from ?join= (null = none pending) */
   const [pendingInviteCode, setPendingInviteCode] = useState<string | null>(() => {
-    // pure read — consumed on first render, cleaned up just after mount
+    // pure read - consumed on first render, cleaned up just after mount
     if (typeof window === 'undefined') return null
     const code = new URLSearchParams(window.location.search).get('join')?.trim().toUpperCase() ?? ''
     return code.length > 0 ? code.slice(0, 16) : null
   })
-  // R9 — push tap-through (focused-tab path): notificationclick focuses THIS
-  // tab and posts { type:'pulse:open-conversation', conversationId } — route
+  // R9 - push tap-through (focused-tab path): notificationclick focuses THIS
+  // tab and posts { type:'pulse:open-conversation', conversationId } - route
   // it into the same open-room flow from inside the event callback (never
   // the effect body). No service worker controlling the page → no-op.
   useEffect(() => {
@@ -188,8 +186,8 @@ export function MainShell({ me }: { me: AppUser }) {
     return () => navigator.serviceWorker.removeEventListener('message', onSwPushTap)
   }, [])
 
-  // R9 — strip ?conversation= once captured into open-room state (mount-only
-  // history edit, no setState — a refresh after this never re-opens the room)
+  // R9 - strip ?conversation= once captured into open-room state (mount-only
+  // history edit, no setState - a refresh after this never re-opens the room)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (!params.has('conversation')) return
@@ -199,7 +197,7 @@ export function MainShell({ me }: { me: AppUser }) {
   }, [])
 
   // strip ?join= from the URL once the sheet is up (history-only side
-  // effect — no setState here, so refresh never re-prompts)
+  // effect - no setState here, so refresh never re-prompts)
   useEffect(() => {
     if (pendingInviteCode === null) return
     const params = new URLSearchParams(window.location.search)
@@ -214,21 +212,21 @@ export function MainShell({ me }: { me: AppUser }) {
     void hydratePrefs(me.id)
   }, [hydratePrefs, me.id])
 
-  // R33-b — shell-level reminder due loop: nudges fire on EVERY tab while no
+  // R33-b - shell-level reminder due loop: nudges fire on EVERY tab while no
   // room is open. The hook is a module-level singleton (owner flag), so this
   // mount and the per-room mounts in chat-room never double-poll or
-  // double-toast — whichever mounts first owns the single 30s poll timer.
+  // double-toast - whichever mounts first owns the single 30s poll timer.
   useReminderDueLoop(me.id)
 
-  // ── R35-b: shell-level calls (closes the R33-a honest gap) ────
+  // R35-b: shell-level calls (closes the R33-a honest gap) 
   // ONE useCallSession + ONE <CallOverlay> live HERE, above every tab and
-  // overlay, so an incoming ring surfaces anywhere — Chats tab included —
+  // overlay, so an incoming ring surfaces anywhere - Chats tab included -
   // not only while the DM room is open. The open room asks the shell to
   // dial through onStartCall: the request commits as `callTarget`, the
   // hook's internal refs sync it (peer + conversation), and the effect
   // below fires the outgoing ring exactly once per request. The target
-  // deliberately STAYS set while the call lives — the hook reads it for
-  // ICE relay for the call's whole duration — and it is invisible/harmless
+  // deliberately STAYS set while the call lives - the hook reads it for
+  // ICE relay for the call's whole duration - and it is invisible/harmless
   // afterwards (the overlay only renders while state !== 'idle', and the
   // next dial always overwrites it).
   const [callTarget, setCallTarget] = useState<{
@@ -258,7 +256,7 @@ export function MainShell({ me }: { me: AppUser }) {
     }
   }, [callTarget, callSession.state, callSession.startCall])
 
-  // ── Group calls (mesh): the SAME shell-level contract — one session + one
+  //  Group calls (mesh): the SAME shell-level contract - one session + one
   // overlay, rings surface anywhere, the open group room dials through
   // onStartGroupCall. joinOngoing/joinCall never re-ring (ring already sent).
   const [groupCallTarget, setGroupCallTarget] = useState<{
@@ -317,7 +315,7 @@ export function MainShell({ me }: { me: AppUser }) {
     setTimeout(() => setNewChatOpen(true), 30)
   }
 
-  /** contextual-dock chip + R26-e overflow menu — per-tab actions wired to the same flows as the shell */
+  /** contextual-dock chip + R26-e overflow menu - per-tab actions wired to the same flows as the shell */
   const handleContextAction = useCallback((action: NavContextAction) => {
     if (action === 'new-chat') openNewChat('dm')
     else if (action === 'new-group') openNewChat('group')
@@ -334,7 +332,7 @@ export function MainShell({ me }: { me: AppUser }) {
     }
   }
 
-  // ── edge-swipe tab switching (R22) ─────────────────────────
+  // edge-swipe tab switching (R22) 
   // left edge + swipe right → previous tab · right edge + swipe left → next.
   // Pure passive listeners: no preventDefault, so vertical scroll and inner
   // carousels are never hijacked; intent cancels the moment it turns vertical.
@@ -354,7 +352,7 @@ export function MainShell({ me }: { me: AppUser }) {
     const t = e.touches[0]
     if (!t) return
     if (Math.abs(t.clientY - anchor.y) > Math.abs(t.clientX - anchor.x) + 8) {
-      swipeAnchor.current = null // vertical intent — release the gesture
+      swipeAnchor.current = null // vertical intent - release the gesture
     }
   }
 
@@ -365,7 +363,7 @@ export function MainShell({ me }: { me: AppUser }) {
     const t = e.changedTouches[0]
     if (!t) return
     const dx = t.clientX - anchor.x
-    if (Math.abs(dx) < 56) return // too short — a tap, not a swipe
+    if (Math.abs(dx) < 56) return // too short - a tap, not a swipe
     const idx = TAB_ORDER.indexOf(tab)
     if (anchor.edge === 'left' && dx > 0 && idx > 0) {
       haptic(8)
@@ -398,7 +396,7 @@ export function MainShell({ me }: { me: AppUser }) {
 
   return (
     <div data-ui={`ui-${uiTheme}`} className="ui-root relative flex h-full flex-col overflow-hidden">
-      {/* R26: the old top capsule (label + Search + Settings) is REMOVED by design —
+      {/* R26: the old top capsule (label + Search + Settings) is REMOVED by design -
           settings + search live in the nav system and hash sub-pages now. */}
 
       <div className="flex min-h-0 flex-1">
@@ -504,12 +502,12 @@ export function MainShell({ me }: { me: AppUser }) {
         </div>
       </div>
 
-      {/* R28 lead: shell-level floating panes — visible over the tabs while no
+      {/* R28 lead: shell-level floating panes - visible over the tabs while no
           room owns the screen (the room mounts its own instance inside its
           overlay, so the two never co-render). Pointer-transparent wrapper. */}
       {openConversationId === null && !settingsVisible ? <PipChat me={me} /> : null}
 
-      {/* R25 nav system — 12 architectures, one mount point. Bottom/top/overlay
+      {/* R25 nav system - 12 architectures, one mount point. Bottom/top/overlay
           zones float here; the side rail renders in the flex row above. Hidden
           while a chat room, Settings or a blocking sheet owns the screen. */}
       <AnimatePresence>
@@ -557,7 +555,7 @@ export function MainShell({ me }: { me: AppUser }) {
         />
       ) : null}
 
-      {/* Settings — full-screen tree (z-70, above tab content; dock hidden while open) */}
+      {/* Settings - full-screen tree (z-70, above tab content; dock hidden while open) */}
       <AnimatePresence>
         {settingsVisible ? (
           <SettingsScreen
@@ -578,13 +576,13 @@ export function MainShell({ me }: { me: AppUser }) {
         ) : null}
       </AnimatePresence>
 
-      {/* R35-b — the SINGLE app-wide call overlay (fixed inset-0 z-80):
+      {/* R35-b - the SINGLE app-wide call overlay (fixed inset-0 z-80):
           rises over tabs, rooms, sheets and the dock; incoming rings
           surface on any screen, outgoing dials come from the room's
           header buttons through onStartCall above. */}
       <CallOverlay session={callSession} />
 
-      {/* Group calls — ring/ongoing banner floats above content, the mesh
+      {/* Group calls - ring/ongoing banner floats above content, the mesh
           overlay is the SINGLE app-wide group call surface (z-95). */}
       <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[85] flex justify-center px-2">
         <div className="pointer-events-auto w-full max-w-md">
@@ -597,7 +595,7 @@ export function MainShell({ me }: { me: AppUser }) {
         me={{ name: me.name, color: me.color, avatar: me.avatar }}
       />
 
-      {/* Spotlight — global search palette (z-90, above everything incl. the dock) */}
+      {/* Spotlight - global search palette (z-90, above everything incl. the dock) */}
       <AnimatePresence>
         {spotlightOpen ? (
           <SpotlightOverlay

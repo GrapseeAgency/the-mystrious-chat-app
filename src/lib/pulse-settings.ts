@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — user preferences (sound / haptics).
+// Pulse Chat - user preferences (sound / haptics).
 // localStorage-persisted zustand store, usable outside React
 // via pulseSettingsStore.getState().
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { create } from 'zustand'
@@ -13,15 +11,15 @@ export type ChatsListFilter = 'all' | 'unread' | 'groups'
 interface PulseSettingsState {
   soundOn: boolean
   hapticsOn: boolean
-  /** quiet hours — silence incoming pings/haptics inside the window */
+  /** quiet hours - silence incoming pings/haptics inside the window */
   quietHoursOn: boolean
-  /** 'HH:MM' 24h local time — window start */
+  /** 'HH:MM' 24h local time - window start */
   quietStart: string
-  /** 'HH:MM' 24h local time — window end (may be < start → overnight) */
+  /** 'HH:MM' 24h local time - window end (may be < start → overnight) */
   quietEnd: string
   /** Telegram-style folder filter on the chats list */
   listFilter: ChatsListFilter
-  /** R45 — voice-note playback rate (1 | 1.5 | 2) — persisted like Telegram's speed chip */
+  /** R45 - voice-note playback rate (1 | 1.5 | 2) - persisted like Telegram's speed chip */
   voiceRate: number
   setSoundOn: (on: boolean) => void
   setHapticsOn: (on: boolean) => void
@@ -90,11 +88,11 @@ export function haptic(pattern: number = 20): void {
   try {
     vib?.vibrate?.(pattern)
   } catch {
-    // unsupported — silent
+    // unsupported - silent
   }
 }
 
-// ── Incoming-message ping (WebAudio, zero assets) ────────────
+// Incoming-message ping (WebAudio, zero assets) 
 
 let audioCtx: AudioContext | null = null
 
@@ -132,7 +130,7 @@ export function playIncomingPing(): void {
     gain.connect(ac.destination)
     const notes: Array<[number, number]> = [
       [880, 0],
-      [1174.66, 0.12], // D6 — the "dong"
+      [1174.66, 0.12], // D6 - the "dong"
     ]
     for (const [freq, offset] of notes) {
       const osc = ac.createOscillator()
@@ -143,6 +141,6 @@ export function playIncomingPing(): void {
       osc.stop(now + offset + 0.3)
     }
   } catch {
-    // audio blocked/unavailable — silent
+    // audio blocked/unavailable - silent
   }
 }

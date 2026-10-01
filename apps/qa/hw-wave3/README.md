@@ -51,6 +51,6 @@ ambiguity, and pre-fills EXPECTED from the actual Wave 3 implementation.
 - [ ] Call history verified
 - [ ] No microphone remains active after termination
 
-Only when all 11 are ✅ **with device evidence** may Wave 3 be declared
+Only when all 11 are  **with device evidence** may Wave 3 be declared
 COMPLETE. Any failure: fix only the failing call-path issue, rebuild both
 platforms, repeat the hardware gate. No Wave 4 regardless of outcome.

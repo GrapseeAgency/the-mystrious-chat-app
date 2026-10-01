@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * joiner of a fresh room), never claimed locally.
  *
  * WEB DEFECT FIX #3 seam: [needsVoiceSeat] stays TRUE for every joined role
- * (host/speaker/hand/listener) — the audience holds a voice seat too, so it
+ * (host/speaker/hand/listener) - the audience holds a voice seat too, so it
  * receives chunks and glows. A host stage:mute force-removes a demoted
  * speaker's VOICE seat server-side; [noteVoiceSeatLost] re-arms the re-join
  * (rate-limited) so the demoted member keeps HEARING while losing the mic.
@@ -27,7 +27,7 @@ class StageRoomStateMachine(
 
     private var selfId: String = selfId
 
-    /** Identity adoption — the session engine re-binds when the viewer id changes. */
+    /** Identity adoption - the session engine re-binds when the viewer id changes. */
     fun setSelfId(id: String) {
         selfId = id
     }
@@ -64,7 +64,7 @@ class StageRoomStateMachine(
         data class ResyncJoin(val conversationId: String, val asHost: Boolean) : Effect
 
         /**
-         * Forced voice-seat removal (demote) — re-emit voice:join so the
+         * Forced voice-seat removal (demote) - re-emit voice:join so the
          * demoted member keeps hearing (WEB DEFECT FIX #3, rate-limited).
          */
         data class EmitVoiceRejoin(val conversationId: String) : Effect
@@ -73,7 +73,7 @@ class StageRoomStateMachine(
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
-    /** Voice-seat re-arm rate limit — mirrors the voice-room resync budget. */
+    /** Voice-seat re-arm rate limit - mirrors the voice-room resync budget. */
     private var lastVoiceResyncMs = 0L
 
     /** Missing-stage-me resync budget (ST-8: 2500ms). */
@@ -91,7 +91,7 @@ class StageRoomStateMachine(
     }
 
     /**
-     * stage:state arrived — wholesale replace, derive my role, and produce the
+     * stage:state arrived - wholesale replace, derive my role, and produce the
      * effects (missing-me resync, forced voice-seat re-arm). Returns the
      * effects for the engine to execute.
      */
@@ -163,7 +163,7 @@ class StageRoomStateMachine(
         lastStageResyncMs = 0
     }
 
-    /** Raise/lower my hand (listener-only — the UI gates; the relay enforces too). */
+    /** Raise/lower my hand (listener-only - the UI gates; the relay enforces too). */
     fun toggleHand(): List<Effect> {
         val current = _state.value
         if (!current.joined || current.canTransmit) return emptyList()

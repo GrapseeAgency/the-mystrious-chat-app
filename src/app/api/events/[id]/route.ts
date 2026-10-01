@@ -1,12 +1,10 @@
-// ─────────────────────────────────────────────────────────────
-// /api/events/[id] — delete a group event (Task R23-d)
+// /api/events/[id] - delete a group event (Task R23-d)
 //
 //   DELETE ?userId=<member id>
 //   → { ok: true } when the caller is the event creator OR a
 //     group admin of the hosting conversation; 403 otherwise.
 //     EventRsvp rows cascade-delete with the event (schema-level
-//     onDelete: Cascade) — no orphans.
-// ─────────────────────────────────────────────────────────────
+//     onDelete: Cascade) - no orphans.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { strField } from '@/lib/serializers'
@@ -19,7 +17,7 @@ interface RouteCtx {
 
 /**
  * DELETE /api/events/[id]?userId=
- * Creator or group admin only — plain members (even participants)
+ * Creator or group admin only - plain members (even participants)
  * get a 403 with an actionable message.
  */
 export async function DELETE(req: Request, { params }: RouteCtx) {

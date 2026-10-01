@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// More → Stories — the real surface behind the dock menu. It shows the live
+/// More → Stories - the real surface behind the dock menu. It shows the live
 /// 24h status feed (shared [StoriesSessionModel]) with "My status" first;
 /// rows open the full-screen viewer, the persistent "Add status" affordance
 /// opens the composer (web-defect D1 fixed: reachable even while a story is
@@ -115,7 +115,7 @@ struct StoriesView: View {
         }
     }
 
-    // ── D1: the composer is reachable even while a story is live ──
+    // D1: the composer is reachable even while a story is live
 
     private var addStatusRow: some View {
         Button {
@@ -135,7 +135,7 @@ struct StoriesView: View {
                     Text("Add status")
                         .font(.system(size: 15.5, weight: .semibold))
                         .foregroundStyle(PulseTheme.titleOnWash)
-                    Text("Text or a photo — visible for 24 hours")
+                    Text("Text or a photo - visible for 24 hours")
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
@@ -149,7 +149,7 @@ struct StoriesView: View {
         .accessibilityLabel("Add status")
     }
 
-    // ── rows ─────────────────────────────────────────────────
+    // rows
 
     private func storyRow(_ group: WireStoryGroup) -> some View {
         let name = group.user?.name ?? "Someone"
@@ -237,7 +237,7 @@ struct StoriesView: View {
         .opacity(0.7)
     }
 
-    // ── data ─────────────────────────────────────────────────
+    // data
 
     @Environment(\.colorScheme) private var systemScheme
 

@@ -1,7 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — app-wide client providers.
+// Pulse Chat - app-wide client providers.
 // Order matters: Query → Theme → Realtime(socket+cache bridge).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useState, type ReactNode } from 'react'

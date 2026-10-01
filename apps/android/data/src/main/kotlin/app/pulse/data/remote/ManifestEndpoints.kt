@@ -15,15 +15,15 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * Manifest-driven endpoint override (Wave 0 — the deployment hook):
+ * Manifest-driven endpoint override (Wave 0 - the deployment hook):
  * `update-manifest.json` may carry non-empty `gateway` / `socket` string
  * fields next to the LiveUpdater's apk metadata. When they appear, the
- * client retargets BOTH the REST base and the realtime relay — and the
+ * client retargets BOTH the REST base and the realtime relay - and the
  * values persist in the [SecureSessionStore] vault so they survive restarts.
  *
  * Cold start order (beats any network): [applyPersisted] re-applies the
  * vault overrides first; only then does [fetchAndApply] hit the network.
- * The manifest lives on the repo CDN (raw.githubusercontent, HTTPS) — that
+ * The manifest lives on the repo CDN (raw.githubusercontent, HTTPS) - that
  * origin is probed FIRST when no gateway is configured, so ops can publish a
  * live origin with zero rebuild even from the offline-first state. Every
  * failure is silent (3s timeout) by design.
@@ -45,7 +45,7 @@ class ManifestEndpoints @Inject constructor(
     /**
      * Fetch the manifest and adopt gateway/socket when present. The current
      * distribution gateway is the repo CDN where the manifest lives under
-     * download/ — both layouts are probed, quietly.
+     * download/ - both layouts are probed, quietly.
      */
     suspend fun fetchAndApply() = withContext(Dispatchers.IO) {
         val urls = manifestProbeUrls(PulseEndpoints.gatewayHttpUrl, CDN_MANIFEST_URL)
@@ -61,7 +61,7 @@ class ManifestEndpoints @Inject constructor(
                 PulseEndpoints.applyOverride(gateway, effectiveSocket)
                 PulseEndpoints.applyIceOverride(ice)
                 persistOverrides(gateway, effectiveSocket, ice)
-                Log.i(TAG, "endpoint override adopted — gateway=$gateway socket=$effectiveSocket ice=${ice != null}")
+                Log.i(TAG, "endpoint override adopted - gateway=$gateway socket=$effectiveSocket ice=${ice != null}")
                 return@withContext
             }
         }
@@ -85,7 +85,7 @@ class ManifestEndpoints @Inject constructor(
         }
     }
 
-    /** 3s-timeout GET — returns (gateway?, socket?, ice?) with nulls on any failure. */
+    /** 3s-timeout GET - returns (gateway?, socket?, ice?) with nulls on any failure. */
     private fun fetchOverrides(url: String): Triple<String?, String?, String?> = try {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 3_000
@@ -115,16 +115,16 @@ class ManifestEndpoints @Inject constructor(
     }
 }
 
-/** The repo CDN — the one HTTPS origin hosting download/update-manifest.json
+/** The repo CDN - the one HTTPS origin hosting download/update-manifest.json
  *  without a deployed gateway (raw.githubusercontent serves static files only). */
 private const val CDN_MANIFEST_URL =
     "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/update-manifest.json"
 
 /**
- * Pure probe-order builder — unit-testable without Android.
+ * Pure probe-order builder - unit-testable without Android.
  *
  * Offline-first (blank base): ONLY the baked CDN manifest is probed. The old
- * code probed `PulseEndpoints.http("/update-manifest.json")` — a bare relative
+ * code probed `PulseEndpoints.http("/update-manifest.json")` - a bare relative
  * path that `URL(...)` can never resolve, which silently disabled the Wave-0
  * deployment hook in exactly the state it was built for (a fresh install could
  * never bootstrap a gateway published into the manifest). Configured: probe

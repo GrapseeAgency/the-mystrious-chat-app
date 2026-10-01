@@ -1,15 +1,15 @@
 package app.pulse.protocol
 
 /**
- * R4-B item 1 — URL auto-linking segmenter. Verbatim port of the web ground
+ * R4-B item 1 - URL auto-linking segmenter. Verbatim port of the web ground
  * truth splitUrlSegments (src/lib/pulse-utils.ts:163-175):
  *
  *   const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi
  *   → non-overlapping left-to-right scan, plain gaps between matches.
  *
  * Web-parity rules kept EXACTLY:
- *  · the regex is copied character-for-character (with the `i` flag —
- *    "HTTP://" and "WWW." match too) — no trailing-punctuation trimming,
+ *  · the regex is copied character-for-character (with the `i` flag -
+ *    "HTTP://" and "WWW." match too) - no trailing-punctuation trimming,
  *    no scheme synthesis here (the render layer synthesizes https:// for
  *    www. values, mirroring the web href exactly);
  *  · JS `\s` spans [\f\n\r\t\v \u00a0\u1680\u2000-\u200a\u2028\u2029
@@ -20,7 +20,7 @@ package app.pulse.protocol
  */
 object UrlSegments {
 
-    /** One segment in string order — [Url] values are the RAW match (no rewrite). */
+    /** One segment in string order - [Url] values are the RAW match (no rewrite). */
     sealed interface Segment {
         val value: String
 
@@ -37,7 +37,7 @@ object UrlSegments {
         RegexOption.IGNORE_CASE,
     )
 
-    /** [text, url, text, …] — consecutive non-URL stretches stay single Text pieces. */
+    /** [text, url, text, …] - consecutive non-URL stretches stay single Text pieces. */
     fun split(text: String): List<Segment> {
         if (text.isEmpty()) return emptyList()
         val out = mutableListOf<Segment>()

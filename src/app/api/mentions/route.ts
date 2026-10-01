@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/mentions — Discord mobile "Mentions" feed (R35-b).
+// /api/mentions - Discord mobile "Mentions" feed (R35-b).
 //
 // GET ?userId=X&limit=50 → 200 { items: MentionItem[] } newest first:
 //   { messageId, conversationId, conversationName: string|null, isGroup,
@@ -9,14 +8,14 @@
 // A message is a MENTION of viewer X when X participates in the conversation,
 // the message is not deleted, someone ELSE sent it within the last 14 days,
 // and its text mentions X by display name. Exact matching rule (also mirrored
-// client-side in mentions-page.tsx — keep the two in sync):
+// client-side in mentions-page.tsx - keep the two in sync):
 //
 //   new RegExp(`@${escapeRegex(me.name)}(?=\\s|$|[^A-Za-z0-9])`, 'i')
 //
 //   • an '@' immediately followed by the user's FULL display name,
 //   • matched case-insensitively ("@alice" mentions "Alice"),
 //   • the character right after the name must be whitespace, end-of-string,
-//     or any non-alphanumeric char — so "@AliceChen" NEVER mentions "Alice"
+//     or any non-alphanumeric char - so "@AliceChen" NEVER mentions "Alice"
 //     while "@Alice," / "@Alice!" / "@Alice" (end) all do,
 //   • applied in JS: SQLite's Prisma `contains` cannot do per-message
 //     case-insensitive + boundary matching (and `mode: 'insensitive'` is
@@ -27,8 +26,7 @@
 // recent '@'-containing messages of the 14-day window (index
 // Message@@index([conversationId, createdAt]) makes this a cheap tail scan).
 // Rooms with more than 200 '@'-bearing messages in 14 days may miss older
-// mentions — acceptable for a mentions inbox; no full-table scans.
-// ─────────────────────────────────────────────────────────────
+// mentions - acceptable for a mentions inbox; no full-table scans.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 

@@ -1,20 +1,18 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — per-conversation chat themes (R29-a).
+// Pulse - per-conversation chat themes (R29-a).
 // iMessage-style per-room wallpaper/tint stored INSIDE the existing
 // User.preferences JSON blob under the key `chat.convThemes`.
 //
 // Contract:
 //  - ConvThemeMap = Record<conversationId, { wallpaper, tint? }>
 //  - Wallpaper values use the EXACT same option set as the global
-//    Appearance setting (PulsePrefs['wallpaper'] — prefs-defaults).
+//    Appearance setting (PulsePrefs['wallpaper'] - prefs-defaults).
 //  - Tint is a per-conversation accent layered over the wallpaper
 //    glows (chat-room.tsx); the global system has no tint concept.
 //  - Effective wallpaper for a room = override ?? prefs.wallpaper.
 //    Clearing the override falls back to the global default.
 //
-// Pure functions only — imported by BOTH the client store path
+// Pure functions only - imported by BOTH the client store path
 // (prefs-defaults mergePrefs sanitization) and chat UI. No DOM.
-// ─────────────────────────────────────────────────────────────
 
 import type { PulsePrefs } from '@/lib/prefs-defaults'
 
@@ -34,7 +32,7 @@ export type ConvTheme = {
 export type ConvThemeMap = Record<string, ConvTheme>
 
 /**
- * Wallpaper options — the SAME set the global Appearance picker uses
+ * Wallpaper options - the SAME set the global Appearance picker uses
  * (prefs-defaults `WALLPAPER`). Typed against PulsePrefs['wallpaper'] so
  * the two lists can never drift apart: adding/removing a global wallpaper
  * token without updating this list is a compile error.
@@ -60,7 +58,7 @@ export const CONV_TINT_META: Record<ConvTint, { label: string; swatch: string; g
 }
 
 /**
- * Wallpaper swatch previews — byte-for-byte the same Tailwind classes the
+ * Wallpaper swatch previews - byte-for-byte the same Tailwind classes the
  * settings Appearance picker renders (settings-screen WALLPAPERS), so the
  * per-conversation picker tiles look identical to the global ones.
  */
@@ -97,13 +95,13 @@ export const WALLPAPER_META: ReadonlyArray<{
 
 /**
  * Hard cap on stored overrides. The /api/settings PATCH enforces a 4KB
- * serialized prefs budget shared with every other pref — at ~70 bytes per
+ * serialized prefs budget shared with every other pref - at ~70 bytes per
  * entry (cuid + wallpaper + tint) 48 entries stays comfortably inside it.
  * Beyond the cap the sanitizer silently drops further entries.
  */
 const MAX_CONV_THEMES = 48
 
-/** conversation ids are cuid-style tokens — keep the stored keys conservative. */
+/** conversation ids are cuid-style tokens - keep the stored keys conservative. */
 const CONV_ID_OK = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -181,7 +179,7 @@ export function applyConvTint(
 }
 
 /**
- * Pure update — merge `patch` into the conversation's stored theme and
+ * Pure update - merge `patch` into the conversation's stored theme and
  * return the full next prefs object. Does NOT persist; feed the returned
  * prefs' `chat.convThemes` key through the normal save() path.
  *
@@ -215,7 +213,7 @@ export function setConvTheme(
 }
 
 /**
- * Remove the conversation's override entirely — the room falls back to
+ * Remove the conversation's override entirely - the room falls back to
  * the global Appearance default. Returns the SAME prefs reference when
  * there is nothing to clear (cheap no-op for callers).
  */

@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Hub — shared data plumbing (R27-b). Real install/community/
+// Pulse Hub - shared data plumbing (R27-b). Real install/community/
 // wallet contracts + the shared "installed set" cache, extracted
 // from the R19-e detail sheet so the hub sub-pages (category page,
 // app page, root tiles) all read one source of truth.
-// Zero mocks — every value comes from /api/hub/* → Prisma.
-// ─────────────────────────────────────────────────────────────
+// Zero mocks - every value comes from /api/hub/* → Prisma.
 'use client'
 
 import { useEffect } from 'react'
@@ -24,11 +22,11 @@ import { cn } from '@/lib/utils'
 import { MATRIX } from '@/lib/hub-catalog'
 import { Button } from '@/components/ui/button'
 
-// ── Install API contract ─────────────────────────────────────
+// Install API contract 
 // GET    /api/hub/apps/[appId]/install?userId= → { installed, status, installedAt, installs, installers }
 // POST   /api/hub/apps/[appId]/install { userId } → { installed: true, installs }
 // DELETE /api/hub/apps/[appId]/install { userId } → { installed: false, installs }
-// (AppInstall.status is connected|muted in the schema — no mute
+// (AppInstall.status is connected|muted in the schema - no mute
 // endpoint ships yet, so the UI never fakes one.)
 
 export interface InstallInstaller {
@@ -66,7 +64,7 @@ export async function fetchInstalledSet(meId: string): Promise<string[]> {
   return results.filter((id): id is string => id !== null)
 }
 
-/** Fetch-on-demand hydration — dedupes, respects a 60s freshness window. */
+/** Fetch-on-demand hydration - dedupes, respects a 60s freshness window. */
 export function hydrateInstalledSet(qc: QueryClient, meId: string): Promise<string[]> {
   return qc.fetchQuery({
     queryKey: installedSetKey(meId),
@@ -87,7 +85,7 @@ export function patchInstalledSet(qc: QueryClient, meId: string, appId: string, 
   })
 }
 
-/** Cache-only subscription (enabled: false — data lands via hydrate/patches). */
+/** Cache-only subscription (enabled: false - data lands via hydrate/patches). */
 export function useInstalledSet(meId: string) {
   return useQuery({
     queryKey: installedSetKey(meId),
@@ -97,7 +95,7 @@ export function useInstalledSet(meId: string) {
   })
 }
 
-/** Per-app install status — GET truth; also patches the client-known set. */
+/** Per-app install status - GET truth; also patches the client-known set. */
 export function useAppInstallStatus(appId: string, meId: string) {
   const qc = useQueryClient()
   return useQuery({
@@ -173,10 +171,10 @@ export function useInstallToggle(app: { n: number; name: string }, meId: string)
   })
 }
 
-// ── Community API contract ───────────────────────────────────
+// Community API contract 
 // GET  /api/hub/apps/[appId]/community?userId= →
 //   { conversation: ConversationDetail | null, memberCount, joined }
-//   (conversation === null → nobody has joined yet — founder moment)
+//   (conversation === null → nobody has joined yet - founder moment)
 // POST /api/hub/apps/[appId]/community { userId } →
 //   { conversation: ConversationDetail, joined: true }
 //   (auto-provisions the group on first join; founder = admin)
@@ -192,7 +190,7 @@ const communityKey = (appId: string, meId: string) => ['app-community', appId, m
 export type AppCommunityQuery = ReturnType<typeof useAppCommunity>
 export type JoinCommunityMutation = ReturnType<typeof useJoinCommunity>
 
-/** Live app-community state — refetches on window focus. */
+/** Live app-community state - refetches on window focus. */
 export function useAppCommunity(appId: string, meId: string) {
   return useQuery({
     queryKey: communityKey(appId, meId),
@@ -206,7 +204,7 @@ export function useAppCommunity(appId: string, meId: string) {
 }
 
 /**
- * Join (or found) the community — POST is idempotent on the server.
+ * Join (or found) the community - POST is idempotent on the server.
  * onSuccess reconciles the query cache with server truth, teaches
  * the chat list about the room, toasts, then hands the conversation
  * id to `onJoined` (→ auto-open in the main chat surface).
@@ -248,8 +246,8 @@ export function useJoinCommunity(
   })
 }
 
-// ── Wallet (mini) contract ───────────────────────────────────
-// GET /api/hub/wallet?userId= → { wallet, ledger } — the mini query
+// Wallet (mini) contract 
+// GET /api/hub/wallet?userId= → { wallet, ledger } - the mini query
 // reuses the exact cache key the Market panel uses, so both stay
 // in sync from one network truth.
 
@@ -269,9 +267,9 @@ export function useWalletMini(meId: string) {
   })
 }
 
-// ── Shared micro-bits ────────────────────────────────────────
+// Shared micro-bits 
 
-/** 300ms count-up (framer motion values — no re-render churn). */
+/** 300ms count-up (framer motion values - no re-render churn). */
 export function CountUp({ value, className }: { value: number; className?: string }) {
   const mv = useMotionValue(0)
   const text = useTransform(mv, (v) => Math.round(v).toLocaleString())
@@ -298,7 +296,7 @@ export function SkeletonDots({ className, label = 'Loading' }: { className?: str
   )
 }
 
-/** Error card with retry — used by the sub-pages and the My apps view. */
+/** Error card with retry - used by the sub-pages and the My apps view. */
 export function LoadErrorCard({ onRetry, message }: { onRetry: () => void; message?: string }) {
   return (
     <div

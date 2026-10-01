@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Honest-toast center — one visible message at a time, auto-dismiss.
+/// Honest-toast center - one visible message at a time, auto-dismiss.
 /// The home page and the dock surface every not-yet-built feature through
 /// this (no fakes, no dead taps). Lives on the session so every surface
 /// can fire a toast without new plumbing.
@@ -26,7 +26,7 @@ public final class ToastCenter: ObservableObject {
     }
 }
 
-/// Bottom floating glass toast capsule — reads like the web sonner stack.
+/// Bottom floating glass toast capsule - reads like the web sonner stack.
 /// Hit-testing disabled so toasts never block the controls beneath them.
 struct ToastHostView: View {
     @ObservedObject var center: ToastCenter

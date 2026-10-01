@@ -2,7 +2,7 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
-/// D30 camera capture — the system camera app wrapped for SwiftUI. Captured
+/// D30 camera capture - the system camera app wrapped for SwiftUI. Captured
 /// full-resolution shots flow through the SAME pipeline the PhotosPicker path
 /// uses: `stageImage(data)` → ≤1280px JPEG q0.82 re-encode → staged card →
 /// POST /api/uploads → message with imagePath (wire-identical to web).
@@ -35,7 +35,7 @@ struct CameraPicker: UIViewControllerRepresentable {
             _ picker: UIImagePickerController,
             didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any],
         ) {
-            // Original (full-resolution) JPEG — the staged pipeline downscales.
+            // Original (full-resolution) JPEG - the staged pipeline downscales.
             if let image = info[.originalImage] as? UIImage {
                 parent.onCapture(image)
             }
@@ -48,7 +48,7 @@ struct CameraPicker: UIViewControllerRepresentable {
         }
     }
 
-    /// TCC gate — NSCameraUsageDescription already ships in project.yml
+    /// TCC gate - NSCameraUsageDescription already ships in project.yml
     /// (infoProperties). Denied callers surface the inline explainer state.
     static func requestAccess(_ completion: @escaping (Bool) -> Void) {
         AVCaptureDevice.requestAccess(for: .video) { granted in

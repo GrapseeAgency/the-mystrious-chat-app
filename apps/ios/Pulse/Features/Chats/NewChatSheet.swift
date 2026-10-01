@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The dock compose button's real surface — pick a contact for an instant DM
+/// The dock compose button's real surface - pick a contact for an instant DM
 /// or switch to Group mode (name + multi-select). Every list row is a live
 /// identity from GET /api/users (web NewChatSheet parity); creation goes
 /// through POST /api/conversations (the server folds the creator into the
@@ -63,7 +63,7 @@ struct NewChatSheet: View {
                                 title: query.isEmpty ? "No contacts yet" : "No matches",
                                 systemImage: "person.2",
                                 note: query.isEmpty
-                                    ? "Other Pulse identities appear here the moment they exist — invite someone to get going."
+                                    ? "Other Pulse identities appear here the moment they exist - invite someone to get going."
                                     : "Nobody matches \"\(query)\".",
                             )
                             Spacer()
@@ -90,7 +90,7 @@ struct NewChatSheet: View {
         .task { await load() }
     }
 
-    // ── sections ─────────────────────────────────────────────
+    // sections
 
     private var modeSegment: some View {
         Picker("Mode", selection: $mode) {
@@ -151,7 +151,7 @@ struct NewChatSheet: View {
             }
         } label: {
             HStack(spacing: 12) {
-                // Wave 0 fix — resolve through PulseTheme.photoURL like every
+                // Wave 0 fix - resolve through PulseTheme.photoURL like every
                 // other surface (relative /uploads paths hang off the gateway;
                 // the raw URL(string:) bypass broke those avatars).
                 PulseAvatar(
@@ -199,7 +199,7 @@ struct NewChatSheet: View {
             if !picked.isEmpty {
                 chipsRow
             }
-            // R14 5-b — the live member caption (web new-chat-sheet.tsx
+            // R14 5-b - the live member caption (web new-chat-sheet.tsx
             // :277-280): "N members selected" once the 3+ gate passes,
             // otherwise the honest "N of 3+ members picked" nudge.
             Text(groupCaption)
@@ -219,7 +219,7 @@ struct NewChatSheet: View {
         .animation(reduceMotion ? nil : .pulse(.pulseSnappy, reduceMotion: reduceMotion), value: picked)
     }
 
-    /// R14 5-b — selected + me (web totalMembers = selectedIds.size + 1).
+    /// R14 5-b - selected + me (web totalMembers = selectedIds.size + 1).
     private var totalMembers: Int { picked.count + 1 }
     /// The web groupValid gate: yourself plus at least 2 people.
     private var groupValid: Bool { totalMembers >= 3 }
@@ -313,9 +313,9 @@ struct NewChatSheet: View {
             }
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
-    /// R14 5-b — the Create gate now carries the web 3+ member rule
+    /// R14 5-b - the Create gate now carries the web 3+ member rule
     /// (new-chat-sheet.tsx :119 groupValid) alongside the name requirement.
     private var canCreateGroup: Bool { groupValid && !groupName.trimmingCharacters(in: .whitespaces).isEmpty }
 

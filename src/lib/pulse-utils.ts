@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — client-side shared helpers (pure, no React)
+// Pulse Chat - client-side shared helpers (pure, no React)
 // Avatar gradients, initials, time formatting, REST fetch helper.
-// ─────────────────────────────────────────────────────────────
 import type { AppUser, ConversationSummary } from '@/lib/types'
 
-// ── Colors ───────────────────────────────────────────────────
+// Colors 
 
 export type AvatarColor =
   | 'emerald'
@@ -44,7 +42,7 @@ export function gradientFor(color: string): string {
   return AVATAR_GRADIENTS[key ?? 'emerald']
 }
 
-/** Group avatars — violet-family gradients picked by hashing the conv id. */
+/** Group avatars - violet-family gradients picked by hashing the conv id. */
 const GROUP_GRADIENTS = [
   'from-violet-400 to-purple-600',
   'from-fuchsia-400 to-purple-600',
@@ -71,11 +69,11 @@ export function initialsOf(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-// ── REST fetch helper ────────────────────────────────────────
+// REST fetch helper 
 
 export class ApiError extends Error {
   readonly status: number
-  /** R44 — seconds the server asks us to wait (slow-mode 429s); null = n/a. */
+  /** R44 - seconds the server asks us to wait (slow-mode 429s); null = n/a. */
   readonly retryAfter: number | null
 
   constructor(status: number, message: string, retryAfter?: number | null) {
@@ -137,17 +135,7 @@ export function buzz(pattern: number = 20): void {
   vib?.vibrate?.(pattern)
 }
 
-// ── Messages ─────────────────────────────────────────────────
-
-/** Reaction palette shown in the message action sheet + chips. */
-export const REACTION_CHOICES = ['👍', '❤️', '😂', '😮', '😢', '🎉'] as const
-
-/** Quick composer emoji strip. */
-export const EMOJI_PICKER_CHOICES = [
-  '😀', '😂', '🥹', '😍', '😎', '🤔', '😴', '🥳',
-  '👍', '🙏', '👏', '🔥', '❤️', '💜', '✨', '🎉',
-  '🚀', '🌈', '☀️', '🌙', '☕', '🍕', '🎂', '⚽',
-] as const
+// Messages 
 
 const JUMBO_EMOJI_RE = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\s|\u200d|\ufe0f){1,9}$/u
 
@@ -174,7 +162,7 @@ export function splitUrlSegments(text: string): Array<{ kind: 'text' | 'url'; va
   return out
 }
 
-// ── Image compression (client-side, canvas-based) ────────────
+// Image compression (client-side, canvas-based) 
 
 const IMAGE_MAX_EDGE = 1280
 const IMAGE_JPEG_QUALITY = 0.82
@@ -213,7 +201,7 @@ export async function compressImageToDataUrl(file: File): Promise<string> {
   }
 }
 
-// ── Time formatting (en-US) ──────────────────────────────────
+// Time formatting (en-US) 
 
 const hmFormatter = new Intl.DateTimeFormat('en-US', {
   hour: '2-digit',
@@ -282,7 +270,7 @@ export function formatMemberSince(iso: string): string {
   return d ? monthYearFormatter.format(d) : ''
 }
 
-// ── Conversation helpers ─────────────────────────────────────
+// Conversation helpers 
 
 export interface MemberWithOptionalRead extends AppUser {
   lastReadAt?: string
@@ -325,7 +313,7 @@ export function conversationPreview(
   const collapsed = last.content.replace(/\s+/g, ' ').trim()
   const isImage = last.imagePath !== null && collapsed.length === 0
   const isAudio = !isImage && last.audioPath !== null && collapsed.length === 0
-  // R40 — kind 'file' always reads "Document — <fileName>": the fileName is the
+  // R40 - kind 'file' always reads "Document - <fileName>": the fileName is the
   // identity of a document message (the caption, if any, lives in the room).
   // Same kind-based label substitution mechanism as the image/audio branches.
   const isFile = !isImage && !isAudio && last.kind === 'file' && last.filePath !== null
@@ -335,7 +323,7 @@ export function conversationPreview(
       : isAudio
         ? 'Voice message'
         : isFile
-          ? `Document — ${last.fileName ?? 'file'}`
+          ? `Document - ${last.fileName ?? 'file'}`
           : collapsed,
     deleted: false,
     mine,

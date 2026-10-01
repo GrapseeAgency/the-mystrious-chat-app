@@ -1,6 +1,6 @@
 import Foundation
 
-/// REAL URLSession REST client — the exact routes the web app calls,
+/// REAL URLSession REST client - the exact routes the web app calls,
 /// identified by `userId` (web parity), failures mapped to the same kinds
 /// as Android's PulseResult.
 /// N3-b: additive identity / DM-create / reaction / wallet endpoints, and
@@ -11,13 +11,13 @@ public struct PulseAPIClient: Sendable {
         public enum Kind: Equatable { case network, auth, forbidden, rateLimited, notFound, validation, server, unknown }
         public let kind: Kind
         public let message: String?
-        /// N3-b — machine code from the body (e.g. "username_taken").
+        /// N3-b - machine code from the body (e.g. "username_taken").
         public var code: String?
-        /// N3-b — server-suggested alternative (username_taken flow).
+        /// N3-b - server-suggested alternative (username_taken flow).
         public var suggestion: String?
-        /// Onboarding — raw HTTP status (409 name-clash vs username-taken branches).
+        /// Onboarding - raw HTTP status (409 name-clash vs username-taken branches).
         public var status: Int?
-        /// REM-B F-MS-20 — slow-mode 429s: seconds the server asked us to
+        /// REM-B F-MS-20 - slow-mode 429s: seconds the server asked us to
         /// wait (body { error, retryAfter } or the Retry-After header).
         public var retryAfter: Int?
 
@@ -33,7 +33,7 @@ public struct PulseAPIClient: Sendable {
 
     public let baseURL: URL
     public let userId: String
-    /// Wave 8 — the raw session token from the Keychain. Every outbound
+    /// Wave 8 - the raw session token from the Keychain. Every outbound
     /// request carries `Authorization: Bearer <token>` when present; the
     /// server's optional-verify proxy accepts header-less requests (web
     /// migration parity) and 401s present-but-invalid ones (Failure.kind
@@ -49,13 +49,13 @@ public struct PulseAPIClient: Sendable {
         self.session = session
     }
 
-    /// Identity-independent client (onboarding: no viewer yet — users routes
+    /// Identity-independent client (onboarding: no viewer yet - users routes
     /// never need one).
     public init(baseURL: URL, session: URLSession = .shared) {
         self.init(baseURL: baseURL, userId: "", authToken: nil, session: session)
     }
 
-    // ── reads ────────────────────────────────────────────────
+    // reads
     public func conversations() async throws -> [WireConversationSummary] {
         let page: WireConversationsPage = try await get("/api/conversations?userId=\(userId)")
         return page.conversations
@@ -64,7 +64,7 @@ public struct PulseAPIClient: Sendable {
     /// Timeline pages: newest-first page (limit=200 default), older pages via
     /// the `before` cursor (ISO of the oldest loaded), in-conversation search
     /// via `q` (server matches content + fileName), topic-filtered views
-    /// via `topicId` (W2-DATA-B spec §0 — General is the unfiltered room) and
+    /// via `topicId` (W2-DATA-B spec §0 - General is the unfiltered room) and
     /// D47 delta-sync refreshes via `since` (only rows strictly newer).
     /// Pure query building lives in messagesPath so unit tests can pin the
     /// wire shape without network.
@@ -87,7 +87,7 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// GET /api/conversations/{id}/messages?limit=&before=&q=&topicId=&since=
-    /// — the exact pagination/search/topic contract from spec §0/§1 plus the
+    /// - the exact pagination/search/topic contract from spec §0/§1 plus the
     /// D47 delta-sync cursor: `since` is an ISO date (validated by the route,
     /// 400 on junk) returning only rows STRICTLY NEWER than it, same shape
     /// and limits. Blank search strings, topic ids AND since cursors are
@@ -117,7 +117,7 @@ public struct PulseAPIClient: Sendable {
         return path
     }
 
-    /// Percent-encoding for query VALUES — plain `.urlQueryAllowed` keeps the
+    /// Percent-encoding for query VALUES - plain `.urlQueryAllowed` keeps the
     /// reserved `&=?#+` literal, so a search string containing "&" would split
     /// into bogus params. Subtracting them forces percent-encoding.
     private static func queryEncoded(_ value: String) -> String {
@@ -125,13 +125,13 @@ public struct PulseAPIClient: Sendable {
         return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
-    /// N3-b — every identity on this Pulse (contacts + onboarding picker).
+    /// N3-b - every identity on this Pulse (contacts + onboarding picker).
     public func users() async throws -> [WireUser] {
         let page: WireUsersPage = try await get("/api/users")
         return page.users
     }
 
-    /// Onboarding — live @handle availability (web check-username).
+    /// Onboarding - live @handle availability (web check-username).
     public func checkUsername(_ username: String) async throws -> WireUsernameCheck {
         let query = username.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? username
         return try await get("/api/users/check-username?username=\(query)")
@@ -169,15 +169,15 @@ public struct PulseAPIClient: Sendable {
         }
     }
 
-    /// Handles nobody may claim — mirrors registry/handles.json (offline net).
+    /// Handles nobody may claim - mirrors registry/handles.json (offline net).
     static let reservedHandles: Set<String> = [
         "admin", "administrator", "root", "system", "support", "help", "team",
         "official", "moderator", "mod", "pulse", "staff", "security", "noreply",
         "notifications", "bot", "api", "gs",
     ]
 
-    /// Onboarding — case-insensitive name lookup ("that's me — log in").
-    /// 404 means the name is free — surfaced as nil, not an error.
+    /// Onboarding - case-insensitive name lookup ("that's me - log in").
+    /// 404 means the name is free - surfaced as nil, not an error.
     public func lookupUserByName(_ name: String) async throws -> WireUser? {
         let query = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name
         do {
@@ -188,15 +188,15 @@ public struct PulseAPIClient: Sendable {
         }
     }
 
-    /// N3-b — Hub wallet (real coins / gems / streak numbers).
+    /// N3-b - Hub wallet (real coins / gems / streak numbers).
     public func wallet() async throws -> WireWallet {
         let page: WireWalletPage = try await get("/api/hub/wallet?userId=\(userId)")
         return page.wallet ?? WireWallet(userId: nil, coins: nil, gems: nil, streak: nil, lastCheckIn: nil, checkedInToday: nil)
     }
 
-    // ── writes ───────────────────────────────────────────────
-    /// Send a message — TEXT is the default (outbox parity); thread replies
-    /// ride `parentId` (the thread-ROOT id — NEVER the inline-quote
+    // writes
+    /// Send a message - TEXT is the default (outbox parity); thread replies
+    /// ride `parentId` (the thread-ROOT id - NEVER the inline-quote
     /// replyToId, spec §1.1), media sends carry their upload paths + sizes.
     /// Only non-nil fields enter the body; `kind` defaults to text (the
     /// server whitelist is text|image|audio|sticker|location|file).
@@ -236,10 +236,10 @@ public struct PulseAPIClient: Sendable {
         ).message
     }
 
-    /// R5-A Item 5 — the same POST /api/conversations/{id}/messages wire call,
+    /// R5-A Item 5 - the same POST /api/conversations/{id}/messages wire call,
     /// returning the FULL send response: { message, streak?, xpAwarded }. The
     /// streak sibling rides ONLY when this send changed the streak (route.ts
-    /// :678-706) — the room's text-send path toasts from it (web chat-room
+    /// :678-706) - the room's text-send path toasts from it (web chat-room
     /// sendMessage.onSuccess parity); every other send path keeps the plain
     /// sendMessage wrapper above.
     public func sendMessageWithStreak(
@@ -268,12 +268,12 @@ public struct PulseAPIClient: Sendable {
         if let filePath { body["filePath"] = filePath }
         if let fileName { body["fileName"] = fileName }
         if let fileSize { body["fileSize"] = fileSize }
-        // W2-UI-B — view-once enters the body ONLY when true (server contract
+        // W2-UI-B - view-once enters the body ONLY when true (server contract
         // spec §0: viewOnce===true REQUIRES imagePath); topicId files the row
-        // under a topic (spec §1 rows 9/10 — thread replies never pass it).
+        // under a topic (spec §1 rows 9/10 - thread replies never pass it).
         if viewOnce == true { body["viewOnce"] = true }
         if let topicId { body["topicId"] = topicId }
-        // REM-B — rich-object payload (sticker {emoji,pack} / effect
+        // REM-B - rich-object payload (sticker {emoji,pack} / effect
         // {effect:…}) rides the JSON object (server serializes to the row);
         // anon is the F-MS-17 incognito flag (groups only, server clamps).
         if let payload { body["payload"] = payload }
@@ -283,81 +283,81 @@ public struct PulseAPIClient: Sendable {
     }
 
     public func markRead(conversationId: String) async throws {
-        // N10-b transport fix — POST /read requires { userId } (400 otherwise).
+        // N10-b transport fix - POST /read requires { userId } (400 otherwise).
         try await postEmpty("/api/conversations/\(conversationId)/read", body: ["userId": userId])
     }
 
-    /// N10-b transport fix — PATCH /pin { userId }; the server TOGGLES the pin
+    /// N10-b transport fix - PATCH /pin { userId }; the server TOGGLES the pin
     /// (the old POST { pinned } body was never part of the route contract).
     public func togglePin(conversationId: String) async throws {
         try await patchEmpty("/api/conversations/\(conversationId)/pin", body: ["userId": userId])
     }
 
-    /// N10-b — per-viewer notification mute with the wire preset until:
+    /// N10-b - per-viewer notification mute with the wire preset until:
     /// "8h" | "1w" | "always" | null (unmute).
     public func setMuted(conversationId: String, until preset: String?) async throws {
         let body: [String: Any] = ["userId": userId, "until": preset ?? NSNull()]
         try await patchEmpty("/api/conversations/\(conversationId)/mute", body: body)
     }
 
-    /// Boolean overload kept for older callers — true → 8h, false → unmute.
+    /// Boolean overload kept for older callers - true → 8h, false → unmute.
     public func setMuted(conversationId: String, muted: Bool) async throws {
         try await setMuted(conversationId: conversationId, until: muted ? "8h" : nil)
     }
 
-    /// N10-b transport fix — PATCH /archive { userId, archived }.
+    /// N10-b transport fix - PATCH /archive { userId, archived }.
     public func archive(conversationId: String, archived: Bool) async throws {
         try await patchEmpty("/api/conversations/\(conversationId)/archive", body: ["userId": userId, "archived": archived])
     }
 
-    /// N3-b — per-viewer unread dot (PATCH, body { userId, on }).
+    /// N3-b - per-viewer unread dot (PATCH, body { userId, on }).
     public func markUnread(conversationId: String, on: Bool) async throws {
         try await patchEmpty("/api/conversations/\(conversationId)/mark-unread", body: ["userId": userId, "on": on])
     }
 
-    /// N3-b — toggle an emoji reaction. Server replies with the FRESH message.
+    /// N3-b - toggle an emoji reaction. Server replies with the FRESH message.
     public func react(messageId: String, emoji: String) async throws -> WireChatMessage {
         let data = try await postRaw("/api/messages/\(messageId)/react", body: ["userId": userId, "emoji": emoji])
         return try WireMessageEnvelope.extract(from: data)
     }
 
-    // ── W1-DATA-B — Wave 1 message actions (spec §1.1) ─────
+    // W1-DATA-B - Wave 1 message actions (spec §1.1)
 
-    /// PATCH /api/messages/{id} {userId, content} — sender-only edit; the
+    /// PATCH /api/messages/{id} {userId, content} - sender-only edit; the
     /// server stamps editedAt and replies with the fresh row.
     public func editMessage(id: String, userId: String, content: String) async throws -> WireChatMessage {
         let data = try await patchRaw("/api/messages/\(id)", body: ["userId": userId, "content": content])
         return try WireMessageEnvelope.extract(from: data)
     }
 
-    /// POST /api/messages/{id}/pin {userId} — toggle; the {message} back
+    /// POST /api/messages/{id}/pin {userId} - toggle; the {message} back
     /// carries pinnedAt/pinnedBy when pinned, nil when unpinned.
     public func toggleMessagePin(id: String, userId: String) async throws -> WireChatMessage {
         let data = try await postRaw("/api/messages/\(id)/pin", body: ["userId": userId])
         return try WireMessageEnvelope.extract(from: data)
     }
 
-    /// POST /api/messages/{id}/save {userId} — save/star toggle → {saved}.
+    /// POST /api/messages/{id}/save {userId} - save/star toggle → {saved}.
     public func toggleMessageSave(id: String, userId: String) async throws -> Bool {
         let data = try await postRaw("/api/messages/\(id)/save", body: ["userId": userId])
         return try decoder.decode(WireSavedToggle.self, from: data).saved
     }
 
-    /// GET /api/conversations/{id}/pinned?userId= — pins list, pinnedAt asc.
+    /// GET /api/conversations/{id}/pinned?userId= - pins list, pinnedAt asc.
     public func pinnedMessages(conversationId: String, userId: String) async throws -> [WireChatMessage] {
         let page: WirePinnedPage = try await get("/api/conversations/\(conversationId)/pinned?userId=\(userId)")
         return page.messages
     }
 
-    /// GET /api/messages/{id}/thread?userId= — thread root + replies (asc).
+    /// GET /api/messages/{id}/thread?userId= - thread root + replies (asc).
     public func thread(rootId: String, userId: String) async throws -> WireThreadPage {
         try await get("/api/messages/\(rootId)/thread?userId=\(userId)")
     }
 
-    /// POST /api/uploads {dataUrl} — JSON body (NOT multipart); returns the
+    /// POST /api/uploads {dataUrl} - JSON body (NOT multipart); returns the
     /// stored filePath the message body then references. Callers downscale
     /// images (≤1280px JPEG q0.82) and stay under the size ceilings BEFORE
-    /// calling — the server rejects oversized payloads.
+    /// calling - the server rejects oversized payloads.
     public func uploadMedia(dataUrl: String) async throws -> String {
         let data = try await postRaw("/api/uploads", body: ["dataUrl": dataUrl])
         let result = try decoder.decode(WireUploadResult.self, from: data)
@@ -367,14 +367,14 @@ public struct PulseAPIClient: Sendable {
         return filePath
     }
 
-    /// PATCH /api/conversations/{id}/draft {userId, draft} — server-side draft
+    /// PATCH /api/conversations/{id}/draft {userId, draft} - server-side draft
     /// mirror ("" clears). The local draft stays authoritative; the mirror
     /// only seeds cross-device. Call sites are allowed to silent-fail this.
     public func setDraft(conversationId: String, userId: String, draft: String) async throws {
         try await patchEmpty("/api/conversations/\(conversationId)/draft", body: ["userId": userId, "draft": draft])
     }
 
-    /// GET /api/conversations/{id}?userId= — one conversation. The detail is
+    /// GET /api/conversations/{id}?userId= - one conversation. The detail is
     /// a superset of the summary shape; the tolerant envelope handles both
     /// the {conversation: …} wrapper and the bare object.
     public func conversationDetail(id: String, userId: String) async throws -> WireConversationSummary {
@@ -384,7 +384,7 @@ public struct PulseAPIClient: Sendable {
         return try WireConversationEnvelope.extract(from: data)
     }
 
-    /// N3-b — create (or dedupe into) a DM/group. Tolerant { conversation } envelope.
+    /// N3-b - create (or dedupe into) a DM/group. Tolerant { conversation } envelope.
     public func createConversation(memberIds: [String], isGroup: Bool, name: String? = nil) async throws -> WireConversationSummary {
         var body: [String: Any] = ["creatorId": userId, "memberIds": memberIds, "isGroup": isGroup]
         if let name { body["name"] = name }
@@ -392,9 +392,9 @@ public struct PulseAPIClient: Sendable {
         return try WireConversationEnvelope.extract(from: data)
     }
 
-    /// N3-b / Wave 8 — create a new identity. 409 username_taken surfaces
+    /// N3-b / Wave 8 - create a new identity. 409 username_taken surfaces
     /// code + suggestion. The 201 envelope now ALSO carries the raw session
-    /// token (`{ user, token }` — decode tolerantly, the web ignores it).
+    /// token (`{ user, token }` - decode tolerantly, the web ignores it).
     public func createAccount(name: String, color: String, username: String? = nil) async throws -> WireAuthEnvelope {
         var body: [String: Any] = ["name": name, "color": color]
         if let username, !username.isEmpty { body["username"] = username }
@@ -402,17 +402,17 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireAuthEnvelope.self, from: data)
     }
 
-    /// Wave 8 — POST /api/users/login { name } — the reclaim confirm ("log
+    /// Wave 8 - POST /api/users/login { name } - the reclaim confirm ("log
     /// in instead"). 200 { user, token } | 400 "Name is required." |
     /// 404 "No identity with that name on this Pulse." (honest copy lands
-    /// verbatim through Failure.message). Login ROTATES the stored hash —
+    /// verbatim through Failure.message). Login ROTATES the stored hash -
     /// the previous token 401s afterwards (last login wins).
     public func login(name: String) async throws -> WireAuthEnvelope {
         let data = try await postRaw("/api/users/login", body: ["name": name])
         return try decoder.decode(WireAuthEnvelope.self, from: data)
     }
 
-    // ── Wave 8 — settings blob (PulsePrefs server sync) ──────
+    // Wave 8 - settings blob (PulsePrefs server sync)
 
     /// GET /api/settings?userId= → 200 { preferences } (defaults merged
     /// server-side). 404 = identity unknown (offline-created local ids).
@@ -434,15 +434,15 @@ public struct PulseAPIClient: Sendable {
     public func block(userId target: String) async throws {
         try await postEmpty("/api/users/\(target)/block", body: ["userId": userId])
     }
-    /// WAVE-6 DEFECT FIX — the old body POSTed /api/users/{target}/unblock,
+    /// WAVE-6 DEFECT FIX - the old body POSTed /api/users/{target}/unblock,
     /// a route that does NOT exist server-side (every unblock failed). The
     /// R47 contract is DELETE /api/users/{id}/block?userId={actor} (query
-    /// param, not body — mirrors the safety route's pair convention).
+    /// param, not body - mirrors the safety route's pair convention).
     public func unblock(userId target: String) async throws {
         let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
         try await deleteEmpty("/api/users/\(target)/block?userId=\(query)", body: ["userId": userId])
     }
-    /// POST /api/users/{id}/report { userId, reason, details? } — repeat with
+    /// POST /api/users/{id}/report { userId, reason, details? } - repeat with
     /// the same reason refreshes the row → { reported, updated: true }.
     public func report(userId target: String, reason: String, details: String?) async throws -> WireReportVerdict {
         var body: [String: Any] = ["userId": userId, "reason": reason]
@@ -451,7 +451,7 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireReportVerdict.self, from: data)
     }
 
-    // ── Wave 6 — social graph & discovery (F-CP/F-SM/F-FD/F-CH) ──
+    // Wave 6 - social graph & discovery (F-CP/F-SM/F-FD/F-CH)
 
     /// GET /api/users/{id} → { user } (AppUser mirror; 404 = gone).
     public func user(_ id: String) async throws -> WireUser {
@@ -467,13 +467,13 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// GET /api/users/{id}/safety?userId={viewer} → { peerId, safetyNumber,
-    /// verified, verifiedAt } — the server-computed 12×5 number + MY state.
+    /// verified, verifiedAt } - the server-computed 12×5 number + MY state.
     public func safetyState(peerId: String) async throws -> WireSafetyState {
         let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
         return try await get("/api/users/\(peerId)/safety?userId=\(query)")
     }
 
-    /// POST /api/users/{id}/safety { userId } — upsert the verification
+    /// POST /api/users/{id}/safety { userId } - upsert the verification
     /// (re-verifying refreshes verifiedAt). No optimistic lies: callers
     /// refetch the state on settle.
     public func verifySafety(peerId: String) async throws -> WireSafetyVerdict {
@@ -481,20 +481,20 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireSafetyVerdict.self, from: data)
     }
 
-    /// DELETE /api/users/{id}/safety?userId={viewer} — unverify (deleteMany).
+    /// DELETE /api/users/{id}/safety?userId={viewer} - unverify (deleteMany).
     public func resetSafety(peerId: String) async throws {
         let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
         try await deleteEmpty("/api/users/\(peerId)/safety?userId=\(query)", body: ["userId": userId])
     }
 
-    /// GET /api/users/{id}/block?userId={actor} — pair block state.
+    /// GET /api/users/{id}/block?userId={actor} - pair block state.
     public func blockState(target: String) async throws -> Bool {
         let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
         let state: WireBlockState = try await get("/api/users/\(target)/block?userId=\(query)")
         return state.blocked
     }
 
-    /// GET /api/users/{id}/blocks?userId={self} — MY block list, newest first
+    /// GET /api/users/{id}/blocks?userId={self} - MY block list, newest first
     /// (self-service only; the server 403s any other viewer).
     public func blockedAccounts() async throws -> [WireBlockedAccount] {
         let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
@@ -502,7 +502,7 @@ public struct PulseAPIClient: Sendable {
         return page.blocks
     }
 
-    /// GET /api/users/{id}/report?userId={viewer} — MY prior submissions
+    /// GET /api/users/{id}/report?userId={viewer} - MY prior submissions
     /// about this account (private "already reported" hint).
     public func reportHistory(reportedId: String) async -> [WireReportReasonRow] {
         let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
@@ -514,7 +514,7 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// PATCH /api/users/{id} { name?, about?, color?, statusEmoji?,
-    /// statusText?, username?, avatar? } → { user }. Explicit keys only —
+    /// statusText?, username?, avatar? } → { user }. Explicit keys only -
     /// the server validates limits (name 1-32, about 1-140, statusEmoji ≤8,
     /// statusText ≤48, username 3-20 [a-z0-9_], avatar "/api/uploads/<file>").
     public func updateProfile(userId: String, body: [String: Any]) async throws -> WireUser {
@@ -522,7 +522,7 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireUserEnvelope.self, from: data).user
     }
 
-    /// GET /api/mentions?userId=&limit= — the FULL 14-day mention feed
+    /// GET /api/mentions?userId=&limit= - the FULL 14-day mention feed
     /// (entries, not just the pill count; tolerant → [] when unreachable).
     public func mentions(limit: Int = 50) async -> [WireMentionEntry] {
         guard let page: WireMentionEntriesPage = try? await get(
@@ -532,7 +532,7 @@ public struct PulseAPIClient: Sendable {
         return page.items ?? []
     }
 
-    /// GET /api/channels?userId=[&mine=1] — the broadcast directory
+    /// GET /api/channels?userId=[&mine=1] - the broadcast directory
     /// (memberCount desc, createdAt desc; viewer-aware isSubscribed/unread).
     public func channels(mineOnly: Bool = false) async throws -> [WireChannelSummary] {
         var path = "/api/channels?userId=\(userId)"
@@ -542,7 +542,7 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// POST /api/channels { userId, name(2-40), description?(≤200), photo? }
-    /// → 201 { channel } — creator lands as admin + the first post is real.
+    /// → 201 { channel } - creator lands as admin + the first post is real.
     public func createChannel(name: String, description: String, photoPath: String?) async throws -> WireChannelSummary {
         var body: [String: Any] = ["userId": userId, "name": name, "description": description]
         if let photoPath, !photoPath.isEmpty { body["photo"] = photoPath }
@@ -575,15 +575,16 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// POST /api/invite/{code}/join { userId } → { conversationId,
-    /// alreadyMember } (idempotent — already a member joins nothing).
+    /// alreadyMember } (idempotent - already a member joins nothing).
     public func joinInvite(code: String) async throws -> WireInviteJoinResult {
         let encoded = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? code
         let data = try await postRaw("/api/invite/\(encoded)/join", body: ["userId": userId])
         return try decoder.decode(WireInviteJoinResult.self, from: data)
     }
 
-    /// POST /api/folders { userId, name(1-24), emoji?(≤16, default 📂) }
-    /// → 201 { folder } (position = max+1).
+    /// POST /api/folders { userId, name(1-24), emoji?(icon id, default 'folder') }
+    /// → 201 { folder } (position = max+1). R18-b - emoji carries the
+    /// PulseFolderIconId registry value, validated server-side.
     public func createFolder(name: String, emoji: String?) async throws -> WireFolder {
         var body: [String: Any] = ["userId": userId, "name": name]
         if let emoji, !emoji.isEmpty { body["emoji"] = emoji }
@@ -601,13 +602,13 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireFolderEnvelope.self, from: data).folder
     }
 
-    /// DELETE /api/folders/{id} — cascades membership rows only; the chats
+    /// DELETE /api/folders/{id} - cascades membership rows only; the chats
     /// stay in the list. → { ok: true } (status is the contract).
     public func deleteFolder(id: String) async throws {
         try await deleteEmpty("/api/folders/\(id)", body: ["userId": userId])
     }
 
-    /// PUT /api/folders/{id}/conversations { conversationIds[] } — FULL
+    /// PUT /api/folders/{id}/conversations { conversationIds[] } - FULL
     /// ordered replace in one transaction (dups collapsed server-side,
     /// empty clears). → { folder } with the fresh membership.
     public func saveFolderMembership(folderId: String, conversationIds: [String]) async throws -> WireFolder {
@@ -615,25 +616,25 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireFolderEnvelope.self, from: data).folder
     }
 
-    // ── N10-b home-page endpoints (all degrade to nil on failure) ──
+    // N10-b home-page endpoints (all degrade to nil on failure)
 
-    /// POST /api/conversations/self { userId } — Note to Self create/dedupe.
+    /// POST /api/conversations/self { userId } - Note to Self create/dedupe.
     public func createSelfChat() async throws -> WireConversationSummary {
         let data = try await postRaw("/api/conversations/self", body: ["userId": userId])
         return try WireConversationEnvelope.extract(from: data)
     }
 
-    /// GET /api/stories?requesterId= — 24h status groups (nil = unreachable,
-    /// the UI renders only the My-status cell — honest empty, no fakes).
+    /// GET /api/stories?requesterId= - 24h status groups (nil = unreachable,
+    /// the UI renders only the My-status cell - honest empty, no fakes).
     public func stories() async -> WireStoriesPage? {
         try? await get("/api/stories?requesterId=\(userId)", as: WireStoriesPage.self)
     }
 
-    // ── Wave 4 — stories write/owner paths (REST only; zero socket) ──
+    // Wave 4 - stories write/owner paths (REST only; zero socket)
 
     /// POST /api/stories { requesterId, caption?, background?, imagePath? }
     /// → 201 { story }. Text stories carry `background` (one of the 8 palette
-    /// keys); photo stories carry `imagePath` (from /api/uploads) — the server
+    /// keys); photo stories carry `imagePath` (from /api/uploads) - the server
     /// forces "emerald" for image stories, so it is never sent.
     public func postStory(caption: String, background: String?, imagePath: String?) async throws -> WireStoryItem {
         var body: [String: Any] = ["requesterId": userId]
@@ -649,7 +650,7 @@ public struct PulseAPIClient: Sendable {
         return story
     }
 
-    /// POST /api/stories/{id}/view { requesterId } — idempotent view mark
+    /// POST /api/stories/{id}/view { requesterId } - idempotent view mark
     /// (owner short-circuits server-side without recording a self-view).
     public func markStoryViewed(id: String) async throws -> Int {
         let data = try await postRaw("/api/stories/\(id)/view", body: ["requesterId": userId])
@@ -657,7 +658,7 @@ public struct PulseAPIClient: Sendable {
         return result.viewCount ?? 0
     }
 
-    /// GET /api/stories/{id}/view?requesterId= — owner-only viewers list
+    /// GET /api/stories/{id}/view?requesterId= - owner-only viewers list
     /// (403 otherwise; oldest viewer first). Empty list on a missing key.
     public func storyViewers(id: String) async throws -> [WireStoryViewer] {
         let page: WireStoryViewersPage = try await get(
@@ -667,38 +668,38 @@ public struct PulseAPIClient: Sendable {
         return page.viewers ?? []
     }
 
-    /// DELETE /api/stories/{id} { requesterId } — owner-only (403 / 404 wire).
+    /// DELETE /api/stories/{id} { requesterId } - owner-only (403 / 404 wire).
     public func deleteStory(id: String) async throws {
         try await deleteEmpty("/api/stories/\(id)", body: ["requesterId": userId])
     }
 
-    /// GET /api/folders?userId= — chat folders (nil = unreachable → All only).
+    /// GET /api/folders?userId= - chat folders (nil = unreachable → All only).
     public func folders() async -> [WireFolder]? {
         guard let page: WireFoldersPage = try? await get("/api/folders?userId=\(userId)", as: WireFoldersPage.self) else { return nil }
         return page.folders
     }
 
-    /// GET /api/mentions?userId= — mention count for the entry pill (nil → 0).
+    /// GET /api/mentions?userId= - mention count for the entry pill (nil → 0).
     public func mentionsCount() async -> Int? {
         guard let page: WireMentionsPage = try? await get("/api/mentions?userId=\(userId)&limit=50", as: WireMentionsPage.self) else { return nil }
         return page.items?.count
     }
 
-    /// GET /api/search?userId=&q= — server message search (nil = unreachable;
-    /// the Messages section is omitted silently — local results still work).
+    /// GET /api/search?userId=&q= - server message search (nil = unreachable;
+    /// the Messages section is omitted silently - local results still work).
     public func searchMessages(_ query: String) async -> WireSearchPage? {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         return try? await get("/api/search?userId=\(userId)&q=\(encoded)", as: WireSearchPage.self)
     }
 
-    /// DELETE /api/messages/{id} { requesterId } — soft-delete MY OWN message
+    /// DELETE /api/messages/{id} { requesterId } - soft-delete MY OWN message
     /// (clear-chat; the route is sender-gated server-side).
     public func deleteOwnMessage(id: String) async throws {
         try await deleteEmpty("/api/messages/\(id)", body: ["requesterId": userId])
     }
 
     /// Every message in a room, oldest → newest (paginated via the `before`
-    /// cursor) — feeds the .txt export and the clear-chat sweep.
+    /// cursor) - feeds the .txt export and the clear-chat sweep.
     public func fullHistory(conversationId: String) async -> [WireChatMessage]? {
         var pages: [[WireChatMessage]] = []
         var before: String?
@@ -716,9 +717,9 @@ public struct PulseAPIClient: Sendable {
         return pages.reversed().flatMap { $0 }
     }
 
-    // ── W2-DATA-B — Wave 2 message depth (spec §0 contract) ─────
+    // W2-DATA-B - Wave 2 message depth (spec §0 contract)
 
-    /// POST /api/messages/{id}/transcribe {requesterId} — voice notes only
+    /// POST /api/messages/{id}/transcribe {requesterId} - voice notes only
     /// (kind "audio"). → { transcript, transcribedAt, cached } (cached:true
     /// on the second call; 422 empty ASR / 502 service down surface as
     /// Failure.validation / Failure.server).
@@ -727,11 +728,11 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireTranscribeResult.self, from: data)
     }
 
-    /// W5-f — POST /api/voice/transcribe { conversationId, requesterId,
+    /// W5-f - POST /api/voice/transcribe { conversationId, requesterId,
     /// audioBase64 } → { transcript } (≤280 chars). Live-caption ASR for
     /// PTT voice rooms (web parity, voice-room-sheet.tsx). The request
     /// carries up to a 4 s WAV window (~512 KB base64), so THIS call alone
-    /// gets a 60 s timeout — every other route keeps the ≤6 s house cap
+    /// gets a 60 s timeout - every other route keeps the ≤6 s house cap
     /// (additive `timeoutCap` on the private transport, default unchanged).
     /// Error mapping rides the shared send() kinds: 403 → .forbidden,
     /// 422 → .validation, 502 → .server, 413 (window too large) → status
@@ -745,7 +746,7 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireVoiceTranscriptResult.self, from: data)
     }
 
-    /// POST /api/messages/{id}/viewed {userId} — consume a view-once
+    /// POST /api/messages/{id}/viewed {userId} - consume a view-once
     /// attachment. Idempotent: the FIRST non-sender open stamps
     /// viewedAt/viewedBy forever; the {message} back is authoritative.
     public func markViewed(messageId: String, userId: String) async throws -> WireChatMessage {
@@ -753,7 +754,7 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extract(from: data)
     }
 
-    /// POST /api/conversations/{id}/poll {senderId, question, options} —
+    /// POST /api/conversations/{id}/poll {senderId, question, options} -
     /// single-choice poll message (2–6 non-blank options server-gated).
     /// → 201 { message } with message.poll populated.
     public func createPoll(
@@ -769,7 +770,7 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extract(from: data)
     }
 
-    /// POST /api/polls/{id}/vote {userId, optionId} — single-choice vote
+    /// POST /api/polls/{id}/vote {userId, optionId} - single-choice vote
     /// (server moves the vote on revote; closed polls answer 400).
     /// → { message } with the fresh tally.
     public func votePoll(pollId: String, userId: String, optionId: String) async throws -> WireChatMessage {
@@ -777,15 +778,15 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extract(from: data)
     }
 
-    /// POST /api/polls/{id}/close {userId} — end voting (creator only).
+    /// POST /api/polls/{id}/close {userId} - end voting (creator only).
     /// → { message } with the frozen tally.
     public func closePoll(pollId: String, userId: String) async throws -> WireChatMessage {
         let data = try await postRaw("/api/polls/\(pollId)/close", body: ["userId": userId])
         return try WireMessageEnvelope.extract(from: data)
     }
 
-    /// POST /api/messages/{id}/unfurl {userId} — attach an Open-Graph
-    /// preview. → { message: ChatMessage | null } — null is VALID (nothing
+    /// POST /api/messages/{id}/unfurl {userId} - attach an Open-Graph
+    /// preview. → { message: ChatMessage | null } - null is VALID (nothing
     /// link-ish / host unreachable), hence the lenient extract. The link
     /// arrives for everyone else via the link:preview relay envelope.
     public func unfurl(messageId: String, userId: String) async throws -> WireChatMessage? {
@@ -793,7 +794,7 @@ public struct PulseAPIClient: Sendable {
         return WireMessageEnvelope.extractOptional(from: data)
     }
 
-    /// GET /api/users/{id}/saved — saved/starred library, newest-first,
+    /// GET /api/users/{id}/saved - saved/starred library, newest-first,
     /// cap 100, NO server pagination/search (local filter is the native
     /// capability, spec §1 row 14).
     public func savedLibrary(userId: String) async throws -> [WireSavedItem] {
@@ -801,16 +802,16 @@ public struct PulseAPIClient: Sendable {
         return page.items ?? []
     }
 
-    /// GET /api/conversations/{id}/topics?userId= — the topic rail
+    /// GET /api/conversations/{id}/topics?userId= - the topic rail
     /// (participant-guarded; General is NOT a row).
     public func topics(conversationId: String, userId: String) async throws -> [WireTopic] {
         let page: WireTopicsPage = try await get("/api/conversations/\(conversationId)/topics?userId=\(userId)")
         return page.topics ?? []
     }
 
-    /// POST /api/conversations/{id}/topics {userId, name, emoji?} — create
+    /// POST /api/conversations/{id}/topics {userId, name, emoji?} - create
     /// (1..32 chars) or case-insensitive dedupe into the existing row
-    /// (200 dedupe / 201 create — both answer { topic }).
+    /// (200 dedupe / 201 create - both answer { topic }).
     public func createTopic(
         conversationId: String,
         userId: String,
@@ -823,9 +824,9 @@ public struct PulseAPIClient: Sendable {
         return try WireTopicEnvelope.extract(from: data)
     }
 
-    /// DELETE /api/topics/{id}?userId= — hard-delete a topic (creator/admin
+    /// DELETE /api/topics/{id}?userId= - hard-delete a topic (creator/admin
     /// only). Filed messages drop back to General server-side (SetNull);
-    /// → { ok: true } — the status code is the contract, the body the verdict.
+    /// → { ok: true } - the status code is the contract, the body the verdict.
     public func deleteTopic(topicId: String, userId: String) async throws {
         let query = userId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? userId
         var request = URLRequest(url: url("/api/topics/\(topicId)?userId=\(query)"))
@@ -833,9 +834,9 @@ public struct PulseAPIClient: Sendable {
         _ = try await send(request)
     }
 
-    // ── calls (W3-b — Wave 3 native calls) ───────────────────
+    // calls (W3-b - Wave 3 native calls)
 
-    /// GET /api/calls?userId=X — the viewer's call log, newest first, server
+    /// GET /api/calls?userId=X - the viewer's call log, newest first, server
     /// cap 50. Rows where the viewer was caller OR callee are merged
     /// server-side; each resolves the PEER + an `outgoing` flag.
     public func callHistory(userId: String) async throws -> [WireCallLogItem] {
@@ -854,10 +855,10 @@ public struct PulseAPIClient: Sendable {
         return try WireCallLogEnvelope.extract(from: data)
     }
 
-    // ── 3-d — push registration + group calls ────────────────
+    // 3-d - push registration + group calls
 
     /// POST /api/push/register { userId, platform: 'ios', token } → { ok, id }.
-    /// Upsert keyed by the unique token — re-registrations rebind the user.
+    /// Upsert keyed by the unique token - re-registrations rebind the user.
     public func registerPushToken(userId: String, platform: String, token: String) async throws {
         _ = try await postRaw("/api/push/register", body: [
             "userId": userId,
@@ -871,7 +872,7 @@ public struct PulseAPIClient: Sendable {
         try await deleteEmpty("/api/push/register", body: ["token": token])
     }
 
-    /// POST /api/conversations/{id}/calls/ring { userId, kind } — after the
+    /// POST /api/conversations/{id}/calls/ring { userId, kind } - after the
     /// socket gcall:join: rings ONLINE members through the relay (gcall:ring)
     /// and pushes OFFLINE ones (APNs/FCM fanout). Fire-and-forget upstream;
     /// failures surface the honest ring toast.
@@ -883,12 +884,12 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// GET /api/group-call-state?conversationId= → { callId, kind, startedAt,
-    /// members } or { members: [] } (honest empty — socket down / no call).
+    /// members } or { members: [] } (honest empty - socket down / no call).
     public func groupCallState(conversationId: String) async throws -> PulseGroupCallStateSnapshot {
         try await get("/api/group-call-state?conversationId=\(q(conversationId))")
     }
 
-    // ── Wave 7 — collaboration & hub (F-RO / F-HB) ───────────
+    // Wave 7 - collaboration & hub (F-RO / F-HB)
 
     private func q(_ id: String) -> String {
         id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
@@ -908,12 +909,12 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireRedPacketCreateResult.self, from: data)
     }
 
-    /// GET /api/redpackets/{id}?userId= — lazy refund settles on first read after expiry.
+    /// GET /api/redpackets/{id}?userId= - lazy refund settles on first read after expiry.
     public func redPacketDetail(_ packetId: String) async throws -> WireRedPacketDetail {
         try await get("/api/redpackets/\(q(packetId))?userId=\(q(userId))")
     }
 
-    /// POST /api/redpackets/{id}/grab { userId } — atomic (409s surface verbatim).
+    /// POST /api/redpackets/{id}/grab { userId } - atomic (409s surface verbatim).
     public func grabRedPacket(_ packetId: String) async throws -> WireRedPacketGrabResult {
         let data = try await postRaw("/api/redpackets/\(q(packetId))/grab", body: ["userId": userId])
         return try envelope(WireRedPacketGrabResult.self, from: data)
@@ -937,13 +938,13 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireWhiteboardPostResult.self, from: data)
     }
 
-    /// POST { action: 'undo' } — deletes only the caller's latest stroke.
+    /// POST { action: 'undo' } - deletes only the caller's latest stroke.
     public func undoWhiteboardStroke(conversationId: String) async throws -> WireWhiteboardUndoResult {
         let data = try await postRaw("/api/conversations/\(q(conversationId))/whiteboard", body: ["action": "undo", "requesterId": userId])
         return try envelope(WireWhiteboardUndoResult.self, from: data)
     }
 
-    /// DELETE ?requesterId= — clear all + resetAt watermark.
+    /// DELETE ?requesterId= - clear all + resetAt watermark.
     public func clearWhiteboard(conversationId: String) async throws -> WireWhiteboardClearResult {
         var request = URLRequest(url: url("/api/conversations/\(q(conversationId))/whiteboard?requesterId=\(q(userId))"))
         request.httpMethod = "DELETE"
@@ -981,7 +982,7 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireKanbanCardEnvelope.self, from: data).card ?? WireKanbanCard(id: cardId, conversationId: nil, title: title, column: column, position: position, assigneeId: assigneeId, assigneeName: nil, createdById: nil, createdByName: nil, createdAt: nil, updatedAt: nil, sourceMessageId: nil)
     }
 
-    /// DELETE /api/kanban/{cardId}?userId= — creator OR group admin.
+    /// DELETE /api/kanban/{cardId}?userId= - creator OR group admin.
     public func deleteKanbanCard(_ cardId: String) async throws {
         var request = URLRequest(url: url("/api/kanban/\(q(cardId))?userId=\(q(userId))"))
         request.httpMethod = "DELETE"
@@ -990,7 +991,7 @@ public struct PulseAPIClient: Sendable {
 
     // MARK: events
 
-    /// GET /api/conversations/{id}/events?userId= — upcoming asc then past desc, ≤50.
+    /// GET /api/conversations/{id}/events?userId= - upcoming asc then past desc, ≤50.
     public func events(conversationId: String) async throws -> WireEventsPage {
         try await get("/api/conversations/\(q(conversationId))/events?userId=\(q(userId))")
     }
@@ -1004,7 +1005,7 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireEventEnvelope.self, from: data).event ?? WireGroupEvent(id: "", title: title, description: description, location: location, startsAt: startsAtIso, createdById: userId, createdByName: nil, rsvps: nil, counts: nil, myStatus: nil)
     }
 
-    /// DELETE /api/events/{id}?userId= — creator OR group admin.
+    /// DELETE /api/events/{id}?userId= - creator OR group admin.
     public func deleteEvent(_ eventId: String) async throws {
         var request = URLRequest(url: url("/api/events/\(q(eventId))?userId=\(q(userId))"))
         request.httpMethod = "DELETE"
@@ -1017,7 +1018,7 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireRsvpResult.self, from: data)
     }
 
-    /// POST /api/events/{id}/checkin { userId } — window +15 XP; 409 outside window is a real failure.
+    /// POST /api/events/{id}/checkin { userId } - window +15 XP; 409 outside window is a real failure.
     public func checkinEvent(_ eventId: String) async throws -> WireCheckinResult {
         let data = try await postRaw("/api/events/\(q(eventId))/checkin", body: ["userId": userId])
         return try envelope(WireCheckinResult.self, from: data)
@@ -1025,7 +1026,7 @@ public struct PulseAPIClient: Sendable {
 
     // MARK: reminders
 
-    /// GET /api/reminders?userId=[&due=1] — due = remindAt ≤ now && firedAt null.
+    /// GET /api/reminders?userId=[&due=1] - due = remindAt ≤ now && firedAt null.
     public func reminders(dueOnly: Bool) async throws -> WireRemindersPage {
         try await get("/api/reminders?userId=\(q(userId))" + (dueOnly ? "&due=1" : ""))
     }
@@ -1040,13 +1041,13 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireReminderItem.self, from: data)
     }
 
-    /// PATCH /api/reminders/{id} { userId } — owner-only resolve.
+    /// PATCH /api/reminders/{id} { userId } - owner-only resolve.
     public func resolveReminder(_ reminderId: String) async throws -> WireReminderResolve {
         let data = try await patchRaw("/api/reminders/\(q(reminderId))", body: ["userId": userId])
         return try envelope(WireReminderResolve.self, from: data)
     }
 
-    /// DELETE /api/reminders/{id} { userId } — owner-only cancel.
+    /// DELETE /api/reminders/{id} { userId } - owner-only cancel.
     public func deleteReminder(_ reminderId: String) async throws {
         try await deleteRaw("/api/reminders/\(q(reminderId))", body: ["userId": userId])
     }
@@ -1072,7 +1073,7 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireGameDetail.self, from: data)
     }
 
-    /// POST /api/games/{id}/join { userId } — first-come O seat.
+    /// POST /api/games/{id}/join { userId } - first-come O seat.
     public func joinGame(_ matchId: String) async throws -> WireGameDetail {
         let data = try await postRaw("/api/games/\(q(matchId))/join", body: ["userId": userId])
         return try envelope(WireGameDetail.self, from: data)
@@ -1095,14 +1096,14 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireTournamentSummary.self, from: data)
     }
 
-    /// PATCH /api/tournaments/{id} { userId, status: 'finished' } — creator/admin, idempotent.
+    /// PATCH /api/tournaments/{id} { userId, status: 'finished' } - creator/admin, idempotent.
     public func finishTournament(_ tournamentId: String) async throws -> WireTournamentSummary {
         let data = try await patchRaw("/api/tournaments/\(q(tournamentId))", body: ["userId": userId, "status": "finished"])
         if let page = try? envelope(WireTournamentEnvelope.self, from: data), let t = page.tournament { return t }
         return try envelope(WireTournamentSummary.self, from: data)
     }
 
-    /// POST /api/tournaments/{id}/join { userId } — idempotent upsert.
+    /// POST /api/tournaments/{id}/join { userId } - idempotent upsert.
     public func joinTournament(_ tournamentId: String) async throws -> WireTournamentJoinResult {
         let data = try await postRaw("/api/tournaments/\(q(tournamentId))/join", body: ["userId": userId])
         return try envelope(WireTournamentJoinResult.self, from: data)
@@ -1120,12 +1121,12 @@ public struct PulseAPIClient: Sendable {
 
     // MARK: hub economy (F-HB)
 
-    /// GET /api/hub/wallet?userId=[&ledger=30] — upserts a zero wallet; ledger desc.
+    /// GET /api/hub/wallet?userId=[&ledger=30] - upserts a zero wallet; ledger desc.
     public func walletPage(ledger: Int = 30) async throws -> WireWalletPage {
         try await get("/api/hub/wallet?userId=\(q(userId))&ledger=\(ledger)")
     }
 
-    /// POST /api/hub/wallet/checkin { userId } — 409 body carries { error, wallet }.
+    /// POST /api/hub/wallet/checkin { userId } - 409 body carries { error, wallet }.
     public func checkinWallet() async throws -> WireCheckinWalletResult {
         let data = try await postRaw("/api/hub/wallet/checkin", body: ["userId": userId])
         return try envelope(WireCheckinWalletResult.self, from: data)
@@ -1162,7 +1163,7 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireHubTask.self, from: data)
     }
 
-    /// PATCH /api/hub/tasks/{id} { userId, title?, status? } — owner-only.
+    /// PATCH /api/hub/tasks/{id} { userId, title?, status? } - owner-only.
     public func updateHubTask(_ taskId: String, title: String?, status: String?) async throws -> WireHubTask {
         var body: [String: Any] = ["userId": userId]
         if let title { body["title"] = title }
@@ -1172,7 +1173,7 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireHubTask.self, from: data)
     }
 
-    /// DELETE /api/hub/tasks/{id}?userId= — owner-only.
+    /// DELETE /api/hub/tasks/{id}?userId= - owner-only.
     public func deleteHubTask(_ taskId: String) async throws {
         var request = URLRequest(url: url("/api/hub/tasks/\(q(taskId))?userId=\(q(userId))"))
         request.httpMethod = "DELETE"
@@ -1206,18 +1207,18 @@ public struct PulseAPIClient: Sendable {
         return try await get(path)
     }
 
-    /// GET /api/hub/apps/{appId}/install?userId= — appId is the numeric matrix id as a string.
+    /// GET /api/hub/apps/{appId}/install?userId= - appId is the numeric matrix id as a string.
     public func appInstallState(appId: String) async throws -> WireAppInstallState {
         try await get("/api/hub/apps/\(q(appId))/install?userId=\(q(userId))")
     }
 
-    /// POST /api/hub/apps/{appId}/install { userId } — idempotent connect.
+    /// POST /api/hub/apps/{appId}/install { userId } - idempotent connect.
     public func installApp(appId: String) async throws -> WireAppInstallResult {
         let data = try await postRaw("/api/hub/apps/\(q(appId))/install", body: ["userId": userId])
         return try envelope(WireAppInstallResult.self, from: data)
     }
 
-    /// DELETE /api/hub/apps/{appId}/install { userId } — hard remove.
+    /// DELETE /api/hub/apps/{appId}/install { userId } - hard remove.
     public func uninstallApp(appId: String) async throws -> WireAppInstallResult {
         let data = try await deleteRaw("/api/hub/apps/\(q(appId))/install", body: ["userId": userId])
         return try envelope(WireAppInstallResult.self, from: data)
@@ -1228,16 +1229,16 @@ public struct PulseAPIClient: Sendable {
         try await get("/api/hub/apps/\(q(appId))/community?userId=\(q(userId))")
     }
 
-    /// POST /api/hub/apps/{appId}/community { userId } — auto-provisions the group; founder = admin.
+    /// POST /api/hub/apps/{appId}/community { userId } - auto-provisions the group; founder = admin.
     public func joinAppCommunity(appId: String) async throws -> WireAppCommunity {
         let data = try await postRaw("/api/hub/apps/\(q(appId))/community", body: ["userId": userId])
         return try envelope(WireAppCommunity.self, from: data)
     }
 
-    // ── REM-B — group admin (web group-info-sheet.tsx parity) ──
+    // REM-B - group admin (web group-info-sheet.tsx parity)
 
     /// PATCH /api/conversations/{id} { requesterId, name?/photo?/broadcast? }
-    /// — admin-only group meta. `photo` is an "/api/uploads/<file>" path
+    /// - admin-only group meta. `photo` is an "/api/uploads/<file>" path
     /// ('' clears); `broadcast` toggles announcement mode. Verify against the
     /// live route: name 1-GROUP_NAME_MAX, photo must match the stored-path
     /// regex, 403s surface verbatim.
@@ -1258,7 +1259,7 @@ public struct PulseAPIClient: Sendable {
         return try WireConversationEnvelope.extract(from: data)
     }
 
-    /// POST /api/conversations/{id}/members { requesterId, userIds } —
+    /// POST /api/conversations/{id}/members { requesterId, userIds } -
     /// admin-only add (dups deduped server-side) → { conversation, added }.
     public func addMembers(_ conversationId: String, requesterId: String, userIds: [String]) async throws -> [String] {
         let data = try await postRaw(
@@ -1268,7 +1269,7 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireMembersAdded.self, from: data).added ?? []
     }
 
-    /// PATCH /api/conversations/{id}/members { requesterId, userId, role } —
+    /// PATCH /api/conversations/{id}/members { requesterId, userId, role } -
     /// admin-only role set ("admin" | "member"); last-admin demote 400s.
     /// → { conversation } refreshed detail.
     public func setMemberRole(_ conversationId: String, requesterId: String, userId: String, role: String) async throws -> WireConversationSummary {
@@ -1279,7 +1280,7 @@ public struct PulseAPIClient: Sendable {
         return try WireConversationEnvelope.extract(from: data)
     }
 
-    /// DELETE /api/conversations/{id}/members/{userId} { requesterId } —
+    /// DELETE /api/conversations/{id}/members/{userId} { requesterId } -
     /// kick a NON-admin member (self-kick 400, admin target 403).
     public func kickMember(_ conversationId: String, requesterId: String, userId: String) async throws {
         try await deleteEmpty(
@@ -1288,7 +1289,7 @@ public struct PulseAPIClient: Sendable {
         )
     }
 
-    /// DELETE /api/conversations/{id}/members { requesterId } — leave the
+    /// DELETE /api/conversations/{id}/members { requesterId } - leave the
     /// group (last-admin succession server-side) → { ok, remainingMembers,
     /// promotedUserId? }.
     public func leaveGroup(_ conversationId: String, requesterId: String) async throws -> WireLeaveResult {
@@ -1299,7 +1300,7 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireLeaveResult.self, from: data)
     }
 
-    /// POST /api/conversations/{id}/invite { requesterId, regenerate? } —
+    /// POST /api/conversations/{id}/invite { requesterId, regenerate? } -
     /// admin-only lazy-create/rotate → { inviteCode }. The shareable link is
     /// "pulse://invite/<code>" (deep-link F-DL) with the web's /join/<code>
     /// shape mirrored by JoinInviteSheet.
@@ -1315,7 +1316,7 @@ public struct PulseAPIClient: Sendable {
         return code
     }
 
-    /// PATCH /api/conversations/{id}/disappearing { userId, ttlSeconds } —
+    /// PATCH /api/conversations/{id}/disappearing { userId, ttlSeconds } -
     /// participant-level TTL (presets 0 · 1d · 1w · 30d server-gated).
     public func setDisappearingTtl(_ conversationId: String, userId: String, ttlSeconds: Int) async throws -> WireConversationSummary {
         let data = try await patchRaw(
@@ -1325,7 +1326,7 @@ public struct PulseAPIClient: Sendable {
         return try WireConversationEnvelope.extract(from: data)
     }
 
-    /// PATCH /api/conversations/{id}/slow-mode { userId, seconds } —
+    /// PATCH /api/conversations/{id}/slow-mode { userId, seconds } -
     /// admin-only member throttle (presets 0/5/10/30/60/300).
     public func setSlowMode(_ conversationId: String, userId: String, seconds: Int) async throws -> Int {
         let data = try await patchRaw(
@@ -1335,9 +1336,9 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireSlowModeResult.self, from: data).slowModeSeconds ?? seconds
     }
 
-    // ── REM-B F-MS-18 — scheduled sends ──────────────────────
+    // REM-B F-MS-18 - scheduled sends
 
-    /// GET /api/conversations/{id}/scheduled?userId= — the caller's OWN
+    /// GET /api/conversations/{id}/scheduled?userId= - the caller's OWN
     /// pending rows, soonest first (plus dispatch-refused ones).
     public func scheduledMessages(conversationId: String) async throws -> [WireScheduledItem] {
         let page: WireScheduledPage = try await get(
@@ -1356,17 +1357,17 @@ public struct PulseAPIClient: Sendable {
         return try envelope(WireScheduledItem.self, from: data)
     }
 
-    /// DELETE /api/scheduled/{id} { requesterId } — sender-only cancel.
+    /// DELETE /api/scheduled/{id} { requesterId } - sender-only cancel.
     public func cancelScheduled(_ id: String) async throws {
         try await deleteEmpty("/api/scheduled/\(q(id))", body: ["requesterId": userId])
     }
 
-    // ── R1-W2B — translation + quick phrases (F-MD-06 / F-MS-29) ──
+    // R1-W2B - translation + quick phrases (F-MD-06 / F-MS-29)
 
     /// POST /api/messages/{id}/translate { userId, lang? } → { message }.
     /// LLM translation persisted per language (translate/route.ts:36-120);
     /// a cached lang returns instantly, 502 = service down. The fresh row
-    /// carries message.translations — relays as translation:added to peers.
+    /// carries message.translations - relays as translation:added to peers.
     public func translateMessage(id: String, lang: String = "en") async throws -> WireChatMessage {
         let data = try await postRaw(
             "/api/messages/\(q(id))/translate",
@@ -1384,7 +1385,7 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// POST /api/users/{id}/phrases { text } → 201 { phrase } (append at
-    /// end; 400 on >120 chars or >12 rows — server copy surfaces verbatim).
+    /// end; 400 on >120 chars or >12 rows - server copy surfaces verbatim).
     public func createQuickPhrase(text: String) async throws -> WireQuickPhrase {
         let data = try await postRaw("/api/users/\(q(userId))/phrases", body: ["text": text])
         return try envelope(WirePhraseEnvelope.self, from: data).phrase
@@ -1396,10 +1397,10 @@ public struct PulseAPIClient: Sendable {
         try await deleteEmpty("/api/users/\(q(userId))/phrases?phraseId=\(q(phraseId))", body: ["userId": userId])
     }
 
-    // ── R2-B — AI recap · automations · webhooks · per-viewer veil ──
+    // R2-B - AI recap · automations · webhooks · per-viewer veil
 
     /// POST /api/ai/recap { userId, conversationId } → { recap, basedOn,
-    /// cached }. Server gates: 409 below 5 live messages, 502 LLM down —
+    /// cached }. Server gates: 409 below 5 live messages, 502 LLM down -
     /// both throw with the route's verbatim error copy (no fake text here).
     /// The recap is a live LLM call, so the timeout rides the translate cap
     /// (30 s) instead of the house 6 s fail-fast.
@@ -1433,7 +1434,7 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// PATCH /api/automations/{id} { userId, enabled?/trigger?/reply? }
-    /// → { automation } — admin-only flip / R41 trigger rename / reply edit.
+    /// → { automation } - admin-only flip / R41 trigger rename / reply edit.
     public func updateAutomation(
         _ id: String,
         enabled: Bool? = nil,
@@ -1492,7 +1493,7 @@ public struct PulseAPIClient: Sendable {
         return result.screenPrivacy ?? on
     }
 
-    // ── plumbing ─────────────────────────────────────────────
+    // plumbing
     /// URL builder that keeps query strings intact (appendingPathComponent
     /// would percent-encode "?", breaking every ?userId= route).
     private func url(_ path: String) -> URL {
@@ -1529,7 +1530,7 @@ public struct PulseAPIClient: Sendable {
         return try await send(request)
     }
 
-    /// Wave 6 — PUT with a JSON body (folder membership full-replace).
+    /// Wave 6 - PUT with a JSON body (folder membership full-replace).
     private func putRaw(_ path: String, body: [String: Any]) async throws -> Data {
         var request = URLRequest(url: url(path))
         request.httpMethod = "PUT"
@@ -1538,7 +1539,7 @@ public struct PulseAPIClient: Sendable {
         return try await send(request)
     }
 
-    /// Wave 6 — DELETE with a JSON body + decoded verdict (channel leave).
+    /// Wave 6 - DELETE with a JSON body + decoded verdict (channel leave).
     private func deleteRaw(_ path: String, body: [String: Any]) async throws -> Data {
         var request = URLRequest(url: url(path))
         request.httpMethod = "DELETE"
@@ -1577,13 +1578,13 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// Shared transport: status check + tolerant error-body enrichment.
-    /// `timeoutCap` caps the request timeout (default 6 s — the house
+    /// `timeoutCap` caps the request timeout (default 6 s - the house
     /// fail-fast rule); ONLY the voice-transcribe call raises it to 60 s.
     private func send(_ request: URLRequest, timeoutCap: TimeInterval = 6) async throws -> Data {
-        // Wave 8 — Bearer attach lives on the request-building seam
+        // Wave 8 - Bearer attach lives on the request-building seam
         // (unit-tested): every outbound call, no exceptions.
         var request = Self.authorized(request, token: authToken)
-        // Fail fast — an unreachable gateway must never spin for a minute.
+        // Fail fast - an unreachable gateway must never spin for a minute.
         request.timeoutInterval = min(request.timeoutInterval, timeoutCap)
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure(kind: .network, message: nil) }
@@ -1600,7 +1601,7 @@ public struct PulseAPIClient: Sendable {
                 retryAfter = body.retryAfter
                 if body.code == "username_taken" { kind = .validation }
             }
-            // F-MS-20 — the Retry-After header backs the body field (web
+            // F-MS-20 - the Retry-After header backs the body field (web
             // apiJson parity: body number wins, else parse the header).
             if retryAfter == nil, let raw = http.value(forHTTPHeaderField: "Retry-After"),
                let seconds = Int(raw), seconds > 0 {
@@ -1611,7 +1612,7 @@ public struct PulseAPIClient: Sendable {
         return data
     }
 
-    /// Wave 8 — the request-building auth seam (unit-tested in
+    /// Wave 8 - the request-building auth seam (unit-tested in
     /// Wave8WireTests): attaches `Authorization: Bearer <token>` when a
     /// session token exists, returns the request untouched when it does
     /// not (the server's optional-verify proxy accepts header-less calls).

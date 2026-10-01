@@ -9,11 +9,11 @@ import android.telecom.TelecomManager
 import android.net.Uri
 
 /**
- * R8 Task 3-c — self-managed PhoneAccount registration for the Pulse
+ * R8 Task 3-c - self-managed PhoneAccount registration for the Pulse
  * ConnectionService. CAPABILITY_SELF_MANAGED (API 26+) means Pulse owns the
  * whole call UX while the OS still shows the call in its call UIs; no dialer
  * role is stolen from the system app. Registration happens at app start and
- * is idempotent; ANY failure resolves to `false` — the callers then keep the
+ * is idempotent; ANY failure resolves to `false` - the callers then keep the
  * honest in-app ring + full-screen-notification fallback. Never a fake
  * success.
  */

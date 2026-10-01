@@ -5,9 +5,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * R4-B item 1 — JVM pins for the URL auto-linking segmenter. The expected
+ * R4-B item 1 - JVM pins for the URL auto-linking segmenter. The expected
  * segmentations mirror the web splitUrlSegments (pulse-utils.ts:163-175)
- * running the verbatim regex — every case below was chosen to catch a
+ * running the verbatim regex - every case below was chosen to catch a
  * "cleverness" regression (trimming, scheme rewriting, lazy matching).
  */
 class UrlSegmentsTest {
@@ -66,7 +66,7 @@ class UrlSegmentsTest {
 
     @Test
     fun `adjacent punctuation is kept INSIDE the url (no trailing trim, web parity)`() {
-        // "https://x.com." — the regex [^\s<]+ swallows the trailing dot.
+        // "https://x.com." - the regex [^\s<]+ swallows the trailing dot.
         val out = UrlSegments.split("visit https://x.com.")
         assertEquals(2, out.size)
         assertEquals("visit ", (out[0] as UrlSegments.Segment.Text).value)
@@ -86,7 +86,7 @@ class UrlSegmentsTest {
     fun `angle bracket and whitespace always end a url`() {
         val out = UrlSegments.split("<https://a.dev> https://b.dev,x")
         assertEquals("<", (out[0] as UrlSegments.Segment.Text).value)
-        // `[^\s<]+` excludes only whitespace and `<` — the trailing `>` is
+        // `[^\s<]+` excludes only whitespace and `<` - the trailing `>` is
         // part of the match, exactly like the web (no clever trimming).
         assertEquals("https://a.dev>", (out[1] as UrlSegments.Segment.Url).value)
         assertEquals(" ", (out[2] as UrlSegments.Segment.Text).value)

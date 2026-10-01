@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import Pulse
 
-/// Wave 3 — REAL signaling round trip for the call:* family against the
+/// Wave 3 - REAL signaling round trip for the call:* family against the
 /// fixture relay (identity-gated call:offer/answer/ice/reject/cancel/hangup).
 /// Same relay-discovery contract as SocketRoundTripTests: PULSE_RELAY_URL or
 /// 127.0.0.1:3995, honest XCTSkip when no relay answers /health.
@@ -42,7 +42,7 @@ final class CallSignalingRoundTripTests: XCTestCase {
 
     func testOfferAnswerIceHangupRoundTrip() async throws {
         guard let base = await Self.relayBase() else {
-            throw XCTSkip("no pulse relay on PULSE_RELAY_URL / 127.0.0.1:3995 — start Fixtures/server.js (CI does)")
+            throw XCTSkip("no pulse relay on PULSE_RELAY_URL / 127.0.0.1:3995 - start Fixtures/server.js (CI does)")
         }
 
         let offerArrived = expectation(description: "callee received call:offer")
@@ -94,7 +94,7 @@ final class CallSignalingRoundTripTests: XCTestCase {
         }
         caller.connect(userId: callerId)
         callee.connect(userId: calleeId)
-        // The relay targets `user:<id>` rooms — both parties must have JOINED
+        // The relay targets `user:<id>` rooms - both parties must have JOINED
         // before any call:* emission or the relay drops it (empty room).
         // 30s: the CI fixture cold-boots + two full handshakes; the warm
         // SocketRoundTripTests run measured 19.8s on the same runner.
@@ -132,7 +132,7 @@ final class CallSignalingRoundTripTests: XCTestCase {
             }
         }
 
-        // 1. Offer — caller → callee (identity decoration rides along).
+        // 1. Offer - caller → callee (identity decoration rides along).
         caller.emitCallSignal(
             event: "call:offer",
             payload: [
@@ -148,7 +148,7 @@ final class CallSignalingRoundTripTests: XCTestCase {
         )
         await fulfillment(of: [offerArrived], timeout: 10)
 
-        // 2. Answer — callee → caller.
+        // 2. Answer - callee → caller.
         callee.emitCallSignal(
             event: "call:answer",
             payload: [
@@ -162,7 +162,7 @@ final class CallSignalingRoundTripTests: XCTestCase {
         )
         await fulfillment(of: [answerArrived], timeout: 10)
 
-        // 3. Trickle ICE — flat candidate triple, either direction.
+        // 3. Trickle ICE - flat candidate triple, either direction.
         callee.emitCallSignal(
             event: "call:ice",
             payload: [
@@ -178,7 +178,7 @@ final class CallSignalingRoundTripTests: XCTestCase {
         )
         await fulfillment(of: [iceArrived], timeout: 10)
 
-        // 4. Hangup — durationSec rides the wire (NOT durationMs).
+        // 4. Hangup - durationSec rides the wire (NOT durationMs).
         caller.emitCallSignal(
             event: "call:hangup",
             payload: [
@@ -192,7 +192,7 @@ final class CallSignalingRoundTripTests: XCTestCase {
         )
         await fulfillment(of: [hangupArrived], timeout: 10)
 
-        // 5. Identity gate — a spoofed sender gets dropped server-side.
+        // 5. Identity gate - a spoofed sender gets dropped server-side.
         let spoofArrived = expectation(description: "spoofed offer must NOT arrive")
         spoofArrived.isInverted = true
         callee.signals = { signal in

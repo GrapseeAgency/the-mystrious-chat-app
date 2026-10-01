@@ -1,5 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/games/[id]/move — play one tic-tac-toe cell (Task R23-b)
+// /api/games/[id]/move - play one tic-tac-toe cell (Task R23-b)
 //
 //   POST body { userId, cell: 0..8 }
 //   → 200 { match, playerX: {id,name,color}, playerO: {...}|null }
@@ -12,7 +11,6 @@
 // + winLine JSON; 9 moves without a win → draw. Concurrency-safe: the
 // write is a guarded updateMany against the exact pre-move snapshot, so
 // two racing moves can never both land.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
@@ -37,7 +35,7 @@ const WIN_TRIPLES: number[][] = [
   [2, 4, 6],
 ]
 
-/** Wire shape of a match — winLine is parsed back into number[] | null. */
+/** Wire shape of a match - winLine is parsed back into number[] | null. */
 interface SerializedMatch {
   id: string
   conversationId: string
@@ -84,7 +82,7 @@ function serializeMatch(row: {
         winLine = parsed.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
       }
     } catch {
-      // corrupt row — ship null rather than crashing the card
+      // corrupt row - ship null rather than crashing the card
     }
   }
   return {
@@ -150,7 +148,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'This match is not active anymore.' }, { status: 409 })
   }
 
-  // Map the caller onto a side — non-players are rejected outright.
+  // Map the caller onto a side - non-players are rejected outright.
   let side: 'X' | 'O'
   if (match.playerXId === userId) {
     side = 'X'
@@ -185,7 +183,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
       nextStatus = side === 'X' ? 'x_won' : 'o_won'
       winnerId = userId
       winLine = JSON.stringify(triple)
-      nextTurn = side // match over — turn stays on the winning side
+      nextTurn = side // match over - turn stays on the winning side
       break
     }
   }
@@ -206,10 +204,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
     },
   })
   if (updated.count === 0) {
-    return NextResponse.json({ error: 'Board changed — try again.' }, { status: 409 })
+    return NextResponse.json({ error: 'Board changed - try again.' }, { status: 409 })
   }
 
-  // ── R24-d hooks: XP + tournament season feed ────────────────
+  // R24-d hooks: XP + tournament season feed 
   // Runs only after the guarded write landed. EVERY write here is
   // best-effort: wrapped in try/catch so a hook failure can never
   // break the move response. Win → winner +25 xp (loser unchanged);
@@ -222,7 +220,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
       const loserLocal: string | null =
         winnerLocal === null ? null : winnerLocal === match.playerXId ? match.playerOId : match.playerXId
 
-      // XP — win: +25 to the winner only · draw: +10 to both.
+      // XP - win: +25 to the winner only · draw: +10 to both.
       const xpAwards = isDraw
         ? [...new Set([match.playerXId, match.playerOId].filter((v): v is string => Boolean(v)))]
         : [userId]
@@ -233,7 +231,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
         })
       }
 
-      // Tournament feed — newest running season on this room.
+      // Tournament feed - newest running season on this room.
       let tournamentId: string | null = null
       const season = await db.tournament.findFirst({
         where: { conversationId: match.conversationId, status: 'running' },
@@ -280,7 +278,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
         }
       }
 
-      // Devops trail — one row per awarded user.
+      // Devops trail - one row per awarded user.
       for (const awardedId of xpAwards) {
         await db.logEvent.create({
           data: {

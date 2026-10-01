@@ -1,6 +1,5 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/topics — Zulip-style topic rail (R24-b)
-// "Time is a terrible information architecture" — topics give busy
+// /api/conversations/[id]/topics - Zulip-style topic rail (R24-b)
+// "Time is a terrible information architecture" - topics give busy
 // groups lightweight sub-streams WITHOUT splitting the member graph.
 // General is implicit (message.topicId === null) and lives client-side;
 // this route only manages real Topic rows.
@@ -8,18 +7,19 @@
 // Contracts:
 //   GET  ?userId=
 //        → participant-guarded (404 unknown room / 403 non-member)
-//        → { topics: TopicSummary[] } — TopicSummary = {
+//        → { topics: TopicSummary[] } - TopicSummary = {
 //            id, name, emoji, lastMessageAt: ISO, messageCount }
 //          messageCount is a REAL db.message.count({ conversationId,
 //          topicId, deletedAt: null }); sorted lastMessageAt desc.
-//   POST { userId, name (1..32 trimmed), emoji? (default '💬') }
-//        → member-guarded; case-insensitive dedupe — when the name
+//   POST { userId, name (1..32 trimmed), emoji? (topic icon id,
+//        default 'chat') }
+//        → member-guarded; case-insensitive dedupe - when the name
 //          already exists the EXISTING row comes back with 200,
 //          a fresh row is 201 TopicSummary.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
+import { topicIconId } from '@/lib/icon-ids'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,9 +29,8 @@ interface RouteCtx {
 
 const NAME_MIN = 1
 const NAME_MAX = 32
-const EMOJI_MAX = 12
 
-/** Wire shape — mirrors TopicSummary in src/lib/types.ts. */
+/** Wire shape - mirrors TopicSummary in src/lib/types.ts. */
 function serializeTopic(row: {
   id: string
   name: string
@@ -111,14 +110,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
       { status: 400 },
     )
   }
-  const emojiRaw = strField(body.emoji)
-  const emoji = emojiRaw.length > 0 ? emojiRaw : '💬'
-  if (emoji.length > EMOJI_MAX) {
-    return NextResponse.json(
-      { error: `emoji must be ${EMOJI_MAX} characters or fewer.` },
-      { status: 400 },
-    )
-  }
+  const emoji = topicIconId(strField(body.emoji))
 
   const [conv, participant] = await Promise.all([
     db.conversation.findUnique({ where: { id }, select: { id: true } }),

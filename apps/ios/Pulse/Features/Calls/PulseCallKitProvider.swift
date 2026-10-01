@@ -4,11 +4,10 @@ import PushKit
 import AVFoundation
 import Combine
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — CallKit OS call integration (3-d).
+// Pulse - CallKit OS call integration (3-d).
 //
 // What this file owns:
-//   • PulseCallKitCoordinator — observes the EXISTING call engines
+//   • PulseCallKitCoordinator - observes the EXISTING call engines
 //     (PulseCallEngine 1:1 + PulseGroupCallEngine mesh) and reports every
 //     call to the system CXProvider:
 //       incoming ring  → reportNewIncomingCall (caller name, hasVideo)
@@ -24,27 +23,26 @@ import Combine
 //     (`ownsIncomingPresentation`), the in-app ring surfaces (CallView
 //     ring + the group ring banner) are suppressed. If CallKit REFUSES
 //     the report (unsigned build / simulator), the flag lifts and the
-//     in-app ring is the fallback presenter — exactly one presenter, always.
+//     in-app ring is the fallback presenter - exactly one presenter, always.
 //
-//   • PulseVoIPRegistry — PushKit VoIP path. It only ARMS at launch; the
+//   • PulseVoIPRegistry - PushKit VoIP path. It only ARMS at launch; the
 //     report-a-call branch runs ONLY when a real VoIP push arrives. The
 //     server does NOT send VoIP pushes today (src/lib/push/transport.ts
-//     sends alert pushes only) — this path is dormant by construction and
+//     sends alert pushes only) - this path is dormant by construction and
 //     the VoIP token is deliberately NOT posted to /api/push/register (a
 //     VoIP token is useless for alert pushes). In-app foreground rings
 //     keep working through the existing engine path regardless.
 //
 // Honest limits (cannot be proven in this sandbox): CallKit presentation,
 // audio-session activation and the system mute/hold interplay are
-// device-gated — CI compiles this, only a real handset can soak it.
-// ─────────────────────────────────────────────────────────────
+// device-gated - CI compiles this, only a real handset can soak it.
 
 @MainActor
 public final class PulseCallKitCoordinator: NSObject, ObservableObject {
 
     public static let shared = PulseCallKitCoordinator()
 
-    /// True while CallKit is presenting the incoming call — the in-app ring
+    /// True while CallKit is presenting the incoming call - the in-app ring
     /// surfaces suppress themselves for that call (no double-ring).
     @Published public private(set) var ownsIncomingPresentation = false
 
@@ -92,7 +90,7 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
         return provider
     }
 
-    // ── engine attachment (RootView, idempotent per instance) ──
+    // engine attachment (RootView, idempotent per instance)
 
     public func attach(engine: PulseCallEngine) {
         guard observedEngine !== engine else { return }
@@ -120,7 +118,7 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
             .store(in: &groupCancellables)
     }
 
-    // ── 1:1 engine observation ───────────────────────────────
+    // 1:1 engine observation
 
     private func engineStateChanged(_ state: CallState) {
         guard let engine else { return }
@@ -169,7 +167,7 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
         }
     }
 
-    // ── group engine observation ─────────────────────────────
+    // group engine observation
 
     private func groupRingChanged(_ ring: PulseGroupCallEngine.Ring?) {
         if let ring {
@@ -197,7 +195,7 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
         guard let info = live, info.isGroup else { return }
         switch state {
         case .joining, .active:
-            // Answered (CallKit or banner) — the system call continues; the
+            // Answered (CallKit or banner) - the system call continues; the
             // in-app group UI is the presenter from here on.
             ownsIncomingPresentation = false
             if state == .active, !info.reportedConnected {
@@ -208,7 +206,7 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
         }
     }
 
-    // ── reporting ────────────────────────────────────────────
+    // reporting
 
     private func reportIncoming(
         callerName: String,
@@ -233,7 +231,7 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if let error {
-                    // CallKit refused (simulator / unsigned build) — lift the
+                    // CallKit refused (simulator / unsigned build) - lift the
                     // suppression so the IN-APP ring stays the presenter.
                     NSLog("Pulse CallKit: incoming report failed %@", error.localizedDescription)
                     if self.live?.uuid == uuid {
@@ -268,7 +266,7 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
                     if self.live?.uuid == uuid { self.live = nil }
                     return
                 }
-                // The system accepted the start — the call is dialing.
+                // The system accepted the start - the call is dialing.
                 self.ensureProvider().reportOutgoingCall(with: uuid, startedConnectingAt: Date())
                 if self.live?.uuid == uuid {
                     self.live?.reportedConnecting = true
@@ -284,7 +282,7 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
         ensureProvider().reportCall(with: info.uuid, endedAt: Date(), reason: reason)
     }
 
-    /// PushKit wake (PulseVoIPRegistry) — a VoIP push MUST report a call
+    /// PushKit wake (PulseVoIPRegistry) - a VoIP push MUST report a call
     /// (Apple policy). No engine is attached to these yet (the app was just
     /// woken); answering is bookkeeping + log until a VoIP transport exists
     /// server-side. The report self-clears after the ring window.
@@ -307,7 +305,7 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
         }
     }
 
-    // ── CXProviderDelegate effects (hopped from the bridge) ──
+    // CXProviderDelegate effects (hopped from the bridge)
 
     func performAnswerAction(uuid: UUID) {
         guard let info = live, info.uuid == uuid else { return }
@@ -375,14 +373,14 @@ public final class PulseCallKitCoordinator: NSObject, ObservableObject {
 
     func providerDidReset() {
         // The system tore the provider down (another provider, crash
-        // recovery) — drop bookkeeping; the engines keep their own state
+        // recovery) - drop bookkeeping; the engines keep their own state
         // and their UI remains the honest presenter.
         live = nil
         ownsIncomingPresentation = false
     }
 }
 
-// ── the CXProviderDelegate bridge ────────────────────────────
+// the CXProviderDelegate bridge
 
 /// Nonisolated bridge (PulseRTCDelegateBox / reminder-delegate pattern):
 /// CallKit invokes these on ITS queue; the engine effects hop to the main
@@ -435,7 +433,7 @@ private final class PulseCallKitProviderDelegate: NSObject, CXProviderDelegate {
     }
 
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        // CallKit activated the audio session for a reported call — apply
+        // CallKit activated the audio session for a reported call - apply
         // the voice-chat configuration HERE (idempotent with the engine's
         // own activation; the snapshot/restore pair stays consistent).
         Task { @MainActor in
@@ -449,7 +447,7 @@ private final class PulseCallKitProviderDelegate: NSObject, CXProviderDelegate {
     }
 }
 
-// ── PushKit VoIP bridge (dormant until a VoIP transport exists) ──
+// PushKit VoIP bridge (dormant until a VoIP transport exists)
 
 public final class PulseVoIPRegistry: NSObject, PKPushRegistryDelegate {
     public static let shared = PulseVoIPRegistry()
@@ -480,7 +478,7 @@ public final class PulseVoIPRegistry: NSObject, PKPushRegistryDelegate {
         // transport sends ALERT pushes; a VoIP token registered there would
         // poison the alert registry. Stored for a future VoIP transport.
         UserDefaults.standard.set(hex, forKey: Self.tokenKey)
-        NSLog("Pulse VoIP: registry token captured (%@…) — no server transport yet", String(hex.prefix(8)))
+        NSLog("Pulse VoIP: registry token captured (%@…) - no server transport yet", String(hex.prefix(8)))
     }
 
     public func pushRegistry(
@@ -502,7 +500,7 @@ public final class PulseVoIPRegistry: NSObject, PKPushRegistryDelegate {
             return
         }
         // Apple REQUIRES every received VoIP push to report a call to
-        // CallKit — this is that report (the ONLY armed branch).
+        // CallKit - this is that report (the ONLY armed branch).
         let dict = payload.dictionaryPayload
         let callerName = (dict["callerName"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Pulse call"
         let hasVideo = (dict["callKind"] as? String) == "video"

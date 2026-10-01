@@ -1,13 +1,11 @@
-// ─────────────────────────────────────────────────────────────
-// /api/automations/[id] — R39 manage one keyword auto-reply rule.
-// PATCH  { userId, enabled?, reply?, trigger? } — admin-only (creator counts
+// /api/automations/[id] - R39 manage one keyword auto-reply rule.
+// PATCH  { userId, enabled?, reply?, trigger? } - admin-only (creator counts
 //        only when they are an admin of the rule's conversation). R41: trigger
-//        is renamable after create — same validation as create (2-40 chars
+//        is renamable after create - same validation as create (2-40 chars
 //        trimmed, case-insensitive per-conversation dedupe EXCLUDING this rule
 //        → 409). 400 nothing to update / bad types · 403 non-admin · 404
 //        unknown rule.
-// DELETE ?userId= (or JSON body) — admin-only, removes the rule.
-// ─────────────────────────────────────────────────────────────
+// DELETE ?userId= (or JSON body) - admin-only, removes the rule.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapAutomation, safeJson, strField } from '@/lib/serializers'
@@ -26,7 +24,7 @@ const AUTOMATION_REPLY_MAX = 500
 
 /**
  * Shared gate: the automation must exist and the requester must be an ADMIN
- * of the rule's conversation. Being the creator alone is not enough — the
+ * of the rule's conversation. Being the creator alone is not enough - the
  * creator counts only while they still hold the admin role.
  */
 async function requireAdmin(userId: string, automationId: string) {
@@ -59,7 +57,7 @@ async function requireAdmin(userId: string, automationId: string) {
   return { automation }
 }
 
-/** PATCH — flip enabled, rewrite the reply and/or rename the trigger (R41). */
+/** PATCH - flip enabled, rewrite the reply and/or rename the trigger (R41). */
 export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id } = await params
 
@@ -74,7 +72,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   const hasTrigger = body.trigger !== undefined
   if (!hasEnabled && !hasReply && !hasTrigger) {
     return NextResponse.json(
-      { error: 'Nothing to update — provide enabled, reply and/or trigger.' },
+      { error: 'Nothing to update - provide enabled, reply and/or trigger.' },
       { status: 400 },
     )
   }
@@ -88,7 +86,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
       )
     }
   }
-  // R41 — trigger rename: same validation as create (2-40 chars after trim;
+  // R41 - trigger rename: same validation as create (2-40 chars after trim;
   // a non-string fails the length check exactly like create does).
   let trigger: string | undefined
   if (hasTrigger) {
@@ -133,7 +131,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   return NextResponse.json({ automation: mapAutomation(updated) })
 }
 
-/** DELETE — remove the rule (idempotent 404 when already gone). */
+/** DELETE - remove the rule (idempotent 404 when already gone). */
 export async function DELETE(req: Request, { params }: RouteCtx) {
   const { id } = await params
 

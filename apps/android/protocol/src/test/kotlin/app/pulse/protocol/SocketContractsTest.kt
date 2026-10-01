@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Wave-0 contract test — every socket payload DTO decodes from real JSON
+ * Wave-0 contract test - every socket payload DTO decodes from real JSON
  * fixtures shaped exactly like packages/protocol/src/contracts.ts, tolerates
  * unknown keys (forward-compat) and tolerates missing/null fields.
  */
@@ -100,7 +100,7 @@ class SocketContractsTest {
             "id": "m1", "conversationId": "c1", "senderId": "u1", "content": "hello",
             "kind": "text", "createdAt": "2026-02-14T10:00:00.000Z",
             "sender": {"id": "u1", "name": "Alice", "color": "emerald"},
-            "reactions": [{"emoji": "❤️", "userIds": ["u2"], "count": 1}],
+            "reactions": [{"emoji": "heart", "userIds": ["u2"], "count": 1}],
             "replyTo": {"id": "m0", "conversationId": "c1", "senderId": "u2", "content": "hi", "createdAt": "2026-02-14T09:59:00.000Z"},
             "someFutureFlag": {"deep": [1, 2, 3]}
           },
@@ -112,14 +112,14 @@ class SocketContractsTest {
         assertEquals("message:new", envelope.type)
         assertEquals(listOf("u2"), envelope.recipientIds)
         assertEquals("c1", envelope.conversationId)
-        // checkNotNull (not Jupiter assertNotNull — that one returns void):
+        // checkNotNull (not Jupiter assertNotNull - that one returns void):
         // a null row here IS a failure, and we need the decoded value below.
         val row = checkNotNull(envelope.message)
         assertEquals("m1", row.id)
         assertEquals("hello", row.content)
         assertEquals("Alice", row.sender?.name)
         assertEquals(1, row.reactions.size)
-        assertEquals("❤️", row.reactions.first().emoji)
+        assertEquals("heart", row.reactions.first().emoji)
         assertEquals("m0", row.replyTo?.id)
     }
 
@@ -135,7 +135,7 @@ class SocketContractsTest {
         val empty = PulseJson.decodeFromString(SocketMessageEnvelope.serializer(), "{}")
         assertEquals("", empty.type)
         assertNull(empty.message)
-        // contracts.ts: conversationId?: string — optional on the wire → null here.
+        // contracts.ts: conversationId?: string - optional on the wire → null here.
         assertNull(empty.conversationId)
     }
 
@@ -284,7 +284,7 @@ class SocketContractsTest {
         assertEquals(JsonPrimitive("u-9"), JsonPrimitive(decoded.userId))
     }
 
-    // ── Wave-3 full-fidelity call payloads — encode/decode round-trips ──
+    // Wave-3 full-fidelity call payloads - encode/decode round-trips
 
     @Test
     fun `call offer round-trips with caller identity`() {
@@ -348,7 +348,7 @@ class SocketContractsTest {
             sdpMLineIndex = 0,
         )
         val encoded = PulseJson.encodeToString(CallIceDto.serializer(), dto)
-        // WIRE truth: candidate is a flat STRING — a nested object would be wrong.
+        // WIRE truth: candidate is a flat STRING - a nested object would be wrong.
         assertTrue(encoded.contains("\"candidate\":\"candidate:"))
         val decoded = PulseJson.decodeFromString(CallIceDto.serializer(), encoded)
         assertEquals(dto, decoded)
@@ -379,7 +379,7 @@ class SocketContractsTest {
         assertEquals(declined, decoded)
 
         // The busy reject from the relayed call:reject carries no reason on the wire
-        // (relay emits the plain base quintet) — tolerant decode keeps it null.
+        // (relay emits the plain base quintet) - tolerant decode keeps it null.
         val bare = PulseJson.decodeFromString(
             CallRejectDto.serializer(),
             """{"callId":"call-1","conversationId":"c1","from":"u2","to":"u1","kind":"voice"}""",
@@ -417,7 +417,7 @@ class SocketContractsTest {
     }
 
     @Test
-    fun `call hangup round-trips durationSec — never durationMs`() {
+    fun `call hangup round-trips durationSec - never durationMs`() {
         val dto = CallHangupDto(
             callId = "call-1", conversationId = "c1", from = "u1", to = "u2",
             kind = "voice", durationSec = 42L,

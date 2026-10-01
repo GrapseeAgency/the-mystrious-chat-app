@@ -80,7 +80,7 @@ optional and only adds realism to stage/space audience counts.
 - [ ] Duplicate socket/session behaviour verified
 - [ ] Every case recorded with device, topology, expected/actual, PASS/FAIL, evidence
 
-Only when all gate items are ✅ **with device evidence** may Wave 5
+Only when all gate items are  **with device evidence** may Wave 5
 hardware validation be declared complete. Any failure: fix only the failing
 voice-path issue, rebuild both platforms, repeat the hardware gate. **No
 Wave 6 regardless of outcome.** Wave 3-HW remains OPEN and is a separate
@@ -90,10 +90,10 @@ gate.
 
 | Label | Meaning | Claimable from sandbox? |
 |-------|---------|--------------------------|
-| CODE/CI VERIFIED | Unit/JVM/XCTest + CI green | ✅ already recorded |
-| RELAY VERIFIED | Server/realtime behaviour proven against the live relay (20/20 `apps/qa/wave5-runtime-e2e.js`) | ✅ already recorded |
-| HARDWARE VERIFIED | Executed on physical devices with evidence | ❌ requires operator |
-| HARDWARE BLOCKED | Gated on missing physical hardware/hosts | ✅ current state, documented |
+| CODE/CI VERIFIED | Unit/JVM/XCTest + CI green |  already recorded |
+| RELAY VERIFIED | Server/realtime behaviour proven against the live relay (20/20 `apps/qa/wave5-runtime-e2e.js`) |  already recorded |
+| HARDWARE VERIFIED | Executed on physical devices with evidence |  requires operator |
+| HARDWARE BLOCKED | Gated on missing physical hardware/hosts |  current state, documented |
 
 Until the operator's run replaces them, every device case stays
 `NOT TESTED — BLOCKED: NO HARDWARE`. **Wave 5 is NOT COMPLETE until real

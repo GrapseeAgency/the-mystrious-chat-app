@@ -1,7 +1,7 @@
 import XCTest
 @testable import Pulse
 
-/// W5-f — Wave 5 voice rooms / stage / space WIRE tests.
+/// W5-f - Wave 5 voice rooms / stage / space WIRE tests.
 ///
 /// Proves the wire, not the UI:
 ///   · PulseSocketEvents names byte-match the relay (14 C→S + 7 S→C,
@@ -13,9 +13,9 @@ import XCTest
 ///   · the Wire* DTOs decode tolerantly (missing fields → nil/defaults,
 ///     unknown keys ignored, listenerCount falls back to listeners.count,
 ///     malformed roster entries are dropped instead of poisoning the room).
-/// Pure XCTest — no device, no sockets, no AVAudioEngine.
+/// Pure XCTest - no device, no sockets, no AVAudioEngine.
 final class VoiceRoomWireTests: XCTestCase {
-    // ── helpers ──────────────────────────────────────────
+    // helpers
 
     /// Deep-equality for the builder dictionaries (Any payloads compare
     /// field-by-field through NSObject bridging, recursively for dicts).
@@ -41,7 +41,7 @@ final class VoiceRoomWireTests: XCTestCase {
         }
     }
 
-    // ── event names (the 21 wire strings) ────────────────
+    // event names (the 21 wire strings)
 
     func testClientToServerEventNamesMatchTheRelay() {
         XCTAssertEqual(PulseSocketEvents.clientToServer.map(\.rawValue), [
@@ -58,7 +58,7 @@ final class VoiceRoomWireTests: XCTestCase {
         ])
     }
 
-    // ── C→S payload builders (exact relay shapes) ────────
+    // C→S payload builders (exact relay shapes)
 
     func testVoiceJoinPayloadCarriesPublicSafeUserDict() {
         assertPayload(
@@ -151,7 +151,7 @@ final class VoiceRoomWireTests: XCTestCase {
         )
     }
 
-    // ── S→C tolerant decode ──────────────────────────────
+    // S→C tolerant decode
 
     func testWireVoicePeerDecodesWithUnknownKeysAndMissingFields() throws {
         let full = try JSONDecoder().decode(
@@ -164,7 +164,7 @@ final class VoiceRoomWireTests: XCTestCase {
         XCTAssertEqual(full.color, "rose")
         XCTAssertEqual(full.joinedAt, 123.5)
 
-        // Missing fields degrade to nil — never a decode crash.
+        // Missing fields degrade to nil - never a decode crash.
         let sparse = try JSONDecoder().decode(WireVoicePeer.self, from: Data(#"{"id":"u2"}"#.utf8))
         XCTAssertEqual(sparse.id, "u2")
         XCTAssertNil(sparse.name)
@@ -178,8 +178,8 @@ final class VoiceRoomWireTests: XCTestCase {
             conversationId: "c1",
             rawPeers: [
                 ["id": "u1", "name": "Ada", "username": "ada", "color": "rose"],
-                ["name": "NoId"], // malformed — missing the required id
-                ["id": 42], // malformed — id of the wrong type
+                ["name": "NoId"], // malformed - missing the required id
+                ["id": 42], // malformed - id of the wrong type
                 ["id": "u2"],
             ],
         )

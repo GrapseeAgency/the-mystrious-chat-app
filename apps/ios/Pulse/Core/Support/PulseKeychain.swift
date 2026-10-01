@@ -1,10 +1,10 @@
 import Foundation
 import Security
 
-/// Keychain wrapper (kSecClassGenericPassword) — the iOS mirror of Android's
+/// Keychain wrapper (kSecClassGenericPassword) - the iOS mirror of Android's
 /// SecureSessionStore. Two Pulse accounts live here:
-///   • "viewer.identity"    — JSON envelope { viewer, token (future slot) }
-///   • "endpoints.override" — JSON { gateway, socket } from update-manifest.json
+///   • "viewer.identity"    - JSON envelope { viewer, token (future slot) }
+///   • "endpoints.override" - JSON { gateway, socket } from update-manifest.json
 /// Items use kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly (no iCloud sync,
 /// readable after first unlock so BGAppRefreshTask flushes keep working).
 /// All calls are funneled through a serial queue; errSecItemNotFound is a
@@ -15,7 +15,7 @@ public final class PulseKeychain: @unchecked Sendable {
     public static let service = "app.pulse.chat"
     public static let identityAccount = "viewer.identity"
     public static let endpointsAccount = "endpoints.override"
-    /// Wave 8 — the raw session token (POST /api/users + /api/users/login).
+    /// Wave 8 - the raw session token (POST /api/users + /api/users/login).
     /// Identity-bound: written after create/login, cleared on forget/switch
     /// and on a server-side rotation rejection (401 / join:error).
     public static let sessionTokenAccount = "session.token"
@@ -24,10 +24,10 @@ public final class PulseKeychain: @unchecked Sendable {
 
     private init() {}
 
-    // ── raw item API ─────────────────────────────────────────
+    // raw item API
 
     /// Saves (or updates) a generic-password item. Returns false when the
-    /// Keychain refuses (simulator quirk, entitlement loss) — callers decide
+    /// Keychain refuses (simulator quirk, entitlement loss) - callers decide
     /// whether that is fatal (tests skip) or best-effort (app paths).
     @discardableResult
     public func save(_ data: Data, account: String) -> Bool {
@@ -44,10 +44,10 @@ public final class PulseKeychain: @unchecked Sendable {
         queue.sync { Self.deleteItem(account: account) }
     }
 
-    // ── typed helpers ────────────────────────────────────────
+    // typed helpers
 
     /// Mirrors the viewer identity (and a future session-token slot) into the
-    /// Keychain. Best effort — UserDefaults stays the source of truth.
+    /// Keychain. Best effort - UserDefaults stays the source of truth.
     public func saveViewer(_ viewer: PulseViewer?) {
         guard let viewer else {
             delete(account: Self.identityAccount)
@@ -73,10 +73,10 @@ public final class PulseKeychain: @unchecked Sendable {
         return envelope.viewer
     }
 
-    // ── session token (Wave 8) ───────────────────────────────
+    // session token (Wave 8)
 
     /// Persists the raw session token (64 hex chars from the create/login
-    /// envelopes). Best effort like saveViewer — a refused write degrades to
+    /// envelopes). Best effort like saveViewer - a refused write degrades to
     /// token-less operation (the server accepts header-less requests).
     public func saveSessionToken(_ token: String) {
         guard !token.isEmpty else {
@@ -98,7 +98,7 @@ public final class PulseKeychain: @unchecked Sendable {
         delete(account: Self.sessionTokenAccount)
     }
 
-    // ── SecItem plumbing (queue-confined, static) ────────────
+    // SecItem plumbing (queue-confined, static)
 
     private static func baseQuery(account: String) -> [String: Any] {
         [
@@ -124,7 +124,7 @@ public final class PulseKeychain: @unchecked Sendable {
         add.merge(attributes) { _, new in new }
         let addStatus = SecItemAdd(add as CFDictionary, nil)
         if addStatus == errSecSuccess { return true }
-        // Race with a parallel add — one retry via update.
+        // Race with a parallel add - one retry via update.
         if addStatus == errSecDuplicateItem {
             return SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecSuccess
         }

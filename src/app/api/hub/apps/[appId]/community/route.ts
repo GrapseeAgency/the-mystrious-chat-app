@@ -18,7 +18,7 @@ function resolveApp(appId: string) {
 /**
  * GET /api/hub/apps/[appId]/community?userId=<id>
  * Finds the app's community group chat (Conversation.appKey).
- * Membership is EXPLICIT — only callers who POST become participants.
+ * Membership is EXPLICIT - only callers who POST become participants.
  * → 200 { conversation: ConversationDetail | null, memberCount, joined }
  */
 export async function GET(req: Request, { params }: RouteCtx) {

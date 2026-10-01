@@ -1,12 +1,12 @@
 import SwiftUI
 import PhotosUI
 
-/// REM-B P1 — group admin surface (web group-info-sheet.tsx +
+/// REM-B P1 - group admin surface (web group-info-sheet.tsx +
 /// room-info-page.tsx + room-member-add.tsx parity, native sheet):
 ///   • member roster with role chips (F-GR-02)
 ///   • add members via the full roster picker (F-GR-03, admin-only)
 ///   • promote / demote / kick with role-gated confirms (F-GR-04)
-///   • rename (+ broadcast toggle) — admin-only PATCH (F-GR-01)
+///   • rename (+ broadcast toggle) - admin-only PATCH (F-GR-01)
 ///   • invite create / regenerate + copy pulse://invite/<code> (F-GR-05)
 ///   • disappearing-TTL admin picker (F-MS-19: off · 24h · 7d · 30d)
 ///   • slow-mode admin picker (R44 presets 0/5/10/30/60/300)
@@ -15,7 +15,7 @@ import PhotosUI
 struct GroupInfoView: View {
     let conversation: WireConversationSummary
     @ObservedObject var session: PulseSession
-    /// R2-B — the room reads prefs (my veil flag) live; also lets the info
+    /// R2-B - the room reads prefs (my veil flag) live; also lets the info
     /// sheet push fresh detail (veil flag, photo) back into the room.
     @ObservedObject var prefs: PulsePrefs
     var onDetailUpdated: ((WireConversationSummary) -> Void)? = nil
@@ -37,10 +37,10 @@ struct GroupInfoView: View {
     @State private var broadcastOpen = false
     @State private var inviteCode: String?
     @State private var inviteBusy = false
-    // R2-B — group photo edit (web R33-b "Edit photo" overlay parity)
+    // R2-B - group photo edit (web R33-b "Edit photo" overlay parity)
     @State private var photoItem: PhotosPickerItem?
     @State private var photoBusy = false
-    // R2-D ITEM 9 — member-list search (web room-info-page.tsx:320-331:
+    // R2-D ITEM 9 - member-list search (web room-info-page.tsx:320-331:
     // surfaced only past 8 members, name/@handle substring, clearable).
     @State private var memberQuery = ""
 
@@ -58,7 +58,7 @@ struct GroupInfoView: View {
     }
     private var isAdmin: Bool { viewerRole == "admin" }
 
-    /// R2-D ITEM 9 — the filtered member list (web room-info-page.tsx
+    /// R2-D ITEM 9 - the filtered member list (web room-info-page.tsx
     /// :320-331 verbatim): short rooms stay unfiltered; past 8 members a
     /// non-empty query keeps name OR @handle case-insensitive matches.
     private func visibleMembers(_ detail: WireConversationSummary) -> [WireConversationMember] {
@@ -106,7 +106,7 @@ struct GroupInfoView: View {
         .task { await load() }
     }
 
-    // ── data ─────────────────────────────────────────────────
+    // data
 
     private func load() async {
         phase = detail == nil ? .loading : phase
@@ -119,15 +119,15 @@ struct GroupInfoView: View {
         }
     }
 
-    // ── content ──────────────────────────────────────────────
+    // content
 
     private func content(_ detail: WireConversationSummary) -> some View {
         return groupContentStyled3(detail)
     }
 
-    // GroupInfoView.content — R12 type-check decomposition: the original
+    // GroupInfoView.content - R12 type-check decomposition: the original
     // single builder expression exceeded Swift’s type-check budget; the
-    // view tree is VERBATIM, split only (funcs thread the detail param —
+    // view tree is VERBATIM, split only (funcs thread the detail param -
     // it shadows the optional stored `detail` property).
     private func groupContentStyled_view(_ detail: WireConversationSummary) -> some View {
         List {
@@ -170,9 +170,9 @@ struct GroupInfoView: View {
                         groupID: detail.id,
                     )
                     .overlay(alignment: .bottomTrailing) {
-                        // R33-b — "Edit photo" overlay for admins of ANY group
+                        // R33-b - "Edit photo" overlay for admins of ANY group
                         // (channels and plain groups alike; the PATCH route has
-                        // always accepted photo for every group) — opens the
+                        // always accepted photo for every group) - opens the
                         // real upload chain (pick → /api/uploads → PATCH photo).
                         if isAdmin {
                             PhotosPicker(selection: $photoItem, matching: .images) {
@@ -208,7 +208,7 @@ struct GroupInfoView: View {
 
     @ViewBuilder
     private func groupContentPart1(_ detail: WireConversationSummary) -> some View {
-            // ── admin group settings ──
+            // admin group settings
     }
 
     @ViewBuilder
@@ -258,12 +258,12 @@ struct GroupInfoView: View {
 
     @ViewBuilder
     private func groupContentPart3(_ detail: WireConversationSummary) -> some View {
-            // ── R38/R42 — screen security (comfort setting, deliberately
+            // R38/R42 - screen security (comfort setting, deliberately
     }
 
     @ViewBuilder
     private func groupContentPart4(_ detail: WireConversationSummary) -> some View {
-            // NOT admin-gated — web parity): the personal veil frosts MY
+            // NOT admin-gated - web parity): the personal veil frosts MY
     }
 
     @ViewBuilder
@@ -286,7 +286,7 @@ struct GroupInfoView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Screen security", systemImage: "eye.slash")
                             .font(.subheadline.weight(.medium))
-                        Text("Blur messages when Pulse loses focus — just for you")
+                        Text("Blur messages when Pulse loses focus - just for you")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -312,7 +312,7 @@ struct GroupInfoView: View {
 
     @ViewBuilder
     private func groupContentPart8(_ detail: WireConversationSummary) -> some View {
-            // ── invite (admin; web room-info-page parity) ──
+            // invite (admin; web room-info-page parity)
     }
 
     @ViewBuilder
@@ -357,13 +357,13 @@ struct GroupInfoView: View {
 
     @ViewBuilder
     private func groupContentPart10(_ detail: WireConversationSummary) -> some View {
-            // ── members ──
+            // members
     }
 
     @ViewBuilder
     private func groupContentPart11(_ detail: WireConversationSummary) -> some View {
             Section {
-                // R2-D ITEM 9 — the search pill (web shows it past 8 members:
+                // R2-D ITEM 9 - the search pill (web shows it past 8 members:
                 // room-info-page.tsx:1425-1459, "Search members" placeholder).
                 if detail.members.count > 8 {
                     HStack(spacing: 8) {
@@ -392,7 +392,7 @@ struct GroupInfoView: View {
                 ForEach(visibleMembers(detail), id: \.id) { member in
                     memberRow(member, detail: detail)
                 }
-                // R2-D ITEM 9 — the honest empty state (web :1604-1609 copy).
+                // R2-D ITEM 9 - the honest empty state (web :1604-1609 copy).
                 if detail.members.count > 8, visibleMembers(detail).isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
@@ -407,7 +407,7 @@ struct GroupInfoView: View {
                 Text("Members")
             } footer: {
                 if isAdmin {
-                    Text("Tap a member for admin actions — promote, demote or remove.")
+                    Text("Tap a member for admin actions - promote, demote or remove.")
                 }
             }
 
@@ -429,7 +429,7 @@ struct GroupInfoView: View {
 
     @ViewBuilder
     private func groupContentPart13(_ detail: WireConversationSummary) -> some View {
-            // ── R39 — Automations (keyword-triggered auto-replies). One
+            // R39 - Automations (keyword-triggered auto-replies). One
     }
 
     @ViewBuilder
@@ -460,7 +460,7 @@ struct GroupInfoView: View {
 
     @ViewBuilder
     private func groupContentPart18(_ detail: WireConversationSummary) -> some View {
-            // ── R2-B — Webhooks (Discord-style incoming integrations, web
+            // R2-B - Webhooks (Discord-style incoming integrations, web
     }
 
     @ViewBuilder
@@ -486,7 +486,7 @@ struct GroupInfoView: View {
 
     @ViewBuilder
     private func groupContentPart22(_ detail: WireConversationSummary) -> some View {
-            // ── leave ──
+            // leave
     }
 
     @ViewBuilder
@@ -507,7 +507,7 @@ struct GroupInfoView: View {
         .listStyle(.insetGrouped)
         .scrollDismissesKeyboard(.immediately)
         .onChange(of: photoItem) { _, item in
-            // R33-b — the picked photo flows through the avatar square
+            // R33-b - the picked photo flows through the avatar square
             // pipeline → /api/uploads → PATCH conversation photo.
             guard let item else { return }
             photoItem = nil
@@ -646,7 +646,7 @@ struct GroupInfoView: View {
                     .padding(.vertical, 3)
                     .background(Capsule().fill(member.role == "admin" ? PulseTheme.emerald.opacity(0.15) : Color.secondary.opacity(0.10)))
                     .foregroundStyle(member.role == "admin" ? PulseTheme.emeraldDeep : PulseTheme.textSecondary)
-                // kick affordance — admins can remove NON-admin members
+                // kick affordance - admins can remove NON-admin members
                 // (kicking admins is rejected server-side; web hides it too)
                 if isAdmin, member.role != "admin", member.id != viewerId {
                     Button {
@@ -668,7 +668,7 @@ struct GroupInfoView: View {
         .accessibilityLabel("\(member.name), \(member.role == "admin" ? "admin" : "member")")
     }
 
-    // ── actions ──────────────────────────────────────────────
+    // actions
 
     @State private var renameDraft = ""
 
@@ -697,7 +697,7 @@ struct GroupInfoView: View {
             do {
                 detail = try await session.api.patchConversation(conversation.id, requesterId: viewerId, broadcast: next)
                 session.noteInboxChanged()
-                session.toasts.show(next ? "Announcement mode on — only admins can post" : "Announcement mode off")
+                session.toasts.show(next ? "Announcement mode on - only admins can post" : "Announcement mode off")
             } catch {
                 session.toasts.show(RoomViewModel.describe(error))
             }
@@ -716,7 +716,7 @@ struct GroupInfoView: View {
                 let promoted = result.promotedUserId.flatMap { id in
                     detail?.members.first(where: { $0.id == id })?.name
                 }
-                session.toasts.show(promoted != nil ? "You left the group — \(promoted!) is now an admin" : "You left the group")
+                session.toasts.show(promoted != nil ? "You left the group - \(promoted!) is now an admin" : "You left the group")
             } catch {
                 session.toasts.show(RoomViewModel.describe(error))
             }
@@ -745,7 +745,7 @@ struct GroupInfoView: View {
                 session.noteInboxChanged()
 
             } catch {
-                // Honest copy — "Cannot demote the only admin…", 403s, etc.
+                // Honest copy - "Cannot demote the only admin…", 403s, etc.
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }
@@ -788,11 +788,11 @@ struct GroupInfoView: View {
         }
     }
 
-    // ── R2-B — screen security + group photo ─────────────
+    // R2-B - screen security + group photo
 
-    /// R42 — MY veil: the prefs map is the instant local write-through, the
+    /// R42 - MY veil: the prefs map is the instant local write-through, the
     /// dedicated per-viewer route is the server mirror (a comfort setting,
-    /// never admin-gated — web parity). Failures keep the local value.
+    /// never admin-gated - web parity). Failures keep the local value.
     private func setMyScreenPrivacy(_ on: Bool) {
         prefs.setScreenPrivacy(conversationId: conversation.id, on: on)
         Task {
@@ -806,7 +806,7 @@ struct GroupInfoView: View {
         }
     }
 
-    /// R38 — the room-wide switch: PATCH conversation { screenPrivacy }.
+    /// R38 - the room-wide switch: PATCH conversation { screenPrivacy }.
     /// Any participant may toggle it (deliberately not admin-gated).
     private func setRoomScreenPrivacy(_ on: Bool) {
         Task {
@@ -825,13 +825,13 @@ struct GroupInfoView: View {
         }
     }
 
-    /// R33-b — PhotosPicker → square ≤512 JPEG q0.85 → /api/uploads →
+    /// R33-b - PhotosPicker → square ≤512 JPEG q0.85 → /api/uploads →
     /// PATCH conversation { photo } → refresh the header (web parity).
     private func uploadPhoto(_ item: PhotosPickerItem) async {
         guard !photoBusy else { return }
         guard let raw = try? await item.loadTransferable(type: Data.self),
               let jpeg = PulseAvatarImage.jpegData(from: raw) else {
-            session.toasts.show("Couldn't read that image — try another one")
+            session.toasts.show("Couldn't read that image - try another one")
             return
         }
         photoBusy = true
@@ -849,7 +849,7 @@ struct GroupInfoView: View {
         }
     }
 
-    // ── preset ladders (backend-verbatim) ────────────────────
+    // preset ladders (backend-verbatim)
 
     struct Preset {
         let seconds: Int
@@ -911,9 +911,9 @@ extension GroupInfoView.MemberAction.Kind {
     }
 }
 
-// ── roster picker (web room-member-add.tsx parity) ──────────
+// roster picker (web room-member-add.tsx parity)
 
-/// Admin-only "add members" — full identity roster minus existing members,
+/// Admin-only "add members" - full identity roster minus existing members,
 /// multi-select, POST /members { userIds } in one shot.
 struct GroupMemberAddSheet: View {
     let conversationId: String

@@ -1,21 +1,19 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — 1:1 voice + video calls (R33-a, WhatsApp/Signal-style).
+// Pulse - 1:1 voice + video calls (R33-a, WhatsApp/Signal-style).
 //
 // Two exports wire the whole feature into chat-room:
-//   1. useCallSession({...}) — the call state machine: WebRTC
+//   1. useCallSession({...}) - the call state machine: WebRTC
 //      (getUserMedia + RTCPeerConnection, Google STUN), signaling over the
 //      shared socket channel (call:offer/answer/ice/reject/cancel/hangup),
 //      ring timeout handling and the SINGLE-WRITER call log rule
 //      (the CALLER's client POSTs every terminal row to /api/calls).
-//   2. <CallOverlay session={...} /> — the full-screen glass call
+//   2. <CallOverlay session={...} /> - the full-screen glass call
 //      experience: outgoing ring, incoming ring, active call (remote video
 //      full-bleed or big avatar, live duration, mic/camera toggles) and a
 //      brief ended summary card. Honest permission-error card when the mic
 //      is denied; graceful voice fallback when no camera exists.
 //
-// Mounted once per DM room — incoming calls surface while that room is open
+// Mounted once per DM room - incoming calls surface while that room is open
 // (this wave: overlay lives at chat-room level, not app level).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -30,7 +28,7 @@ import { usePulseCallChannel } from '@/components/chat/pulse-realtime-provider'
 import { UserAvatar } from '@/components/chat/user-avatar'
 import { cn } from '@/lib/utils'
 
-// ── contracts ────────────────────────────────────────────────
+// contracts 
 
 export type CallUiState = 'idle' | 'calling' | 'incoming' | 'active' | 'ended'
 
@@ -60,7 +58,7 @@ export interface CallSessionControls {
   acceptCall: () => void
   declineCall: () => void
   endCall: () => void
-  /** Close the permission/error card — logs the attempt as 'missed'. */
+  /** Close the permission/error card - logs the attempt as 'missed'. */
   dismissError: () => void
   toggleMic: () => void
   toggleCamera: () => void
@@ -85,7 +83,7 @@ interface IncomingOfferMeta {
   peer: CallPeer
 }
 
-// ── helpers ──────────────────────────────────────────────────
+// helpers 
 
 const STUN_SERVERS: RTCConfiguration = {
   iceServers: [
@@ -110,7 +108,7 @@ const CANCEL_SUMMARY: Record<CallCancelReason, string> = {
   offline: 'Peer is offline',
 }
 
-// ── the hook ─────────────────────────────────────────────────
+// the hook 
 
 export function useCallSession(options: CallSessionOptions): CallSessionControls {
   const { meId, meName, meColor = 'emerald', meAvatar = null, conversationId, peer } = options
@@ -129,7 +127,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
 
   // Mutable mirrors so the (stable) socket listener always sees fresh values.
-  // (Written inside callbacks/effects only — never during render.)
+  // (Written inside callbacks/effects only - never during render.)
   const stateRef = useRef<CallUiState>('idle')
   const callIdRef = useRef<string | null>(null)
   const kindRef = useRef<CallKind>('voice')
@@ -154,7 +152,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
     stateRef.current = state
   }, [state])
 
-  /** Fire-and-forget CallLog row — the CALLER is the single writer. */
+  /** Fire-and-forget CallLog row - the CALLER is the single writer. */
   const writeLog = useCallback(async (status: 'completed' | 'missed' | 'declined', duration = 0, callKind?: CallKind) => {
     const opts = optionsRef.current
     const target = peerRef.current
@@ -271,7 +269,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
       const name = err instanceof DOMException ? err.name : ''
       if (wanted === 'video' && (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'NotReadableError')) {
         // No usable camera → fall back to voice, never fake it.
-        toast('Camera unavailable — starting a voice call')
+        toast('Camera unavailable - starting a voice call')
         setKind('voice')
         kindRef.current = 'voice'
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -290,7 +288,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
       const target = peerRef.current
       if (!target || target.id === optionsRef.current.meId) return
       if (!callChannelConnected) {
-        toast.error('You are offline — calls need a connection')
+        toast.error('You are offline - calls need a connection')
         return
       }
 
@@ -328,7 +326,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
             callerAvatar: optionsRef.current.meAvatar,
           })
         } catch (err) {
-          // Mic denied (or unavailable) — honest error card, no fake UI.
+          // Mic denied (or unavailable) - honest error card, no fake UI.
           console.error('[call] getUserMedia failed:', err instanceof Error ? err.message : err)
           setError('Microphone access is needed for calls. Check the browser permissions and try again.')
         }
@@ -362,7 +360,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
           try {
             await pc.addIceCandidate(candidate)
           } catch {
-            // stale candidate — ICE will recover
+            // stale candidate - ICE will recover
           }
         }
         answeredRef.current = true
@@ -393,7 +391,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
     const offer = offerRef.current
     if (!offer || stateRef.current !== 'incoming') return
     haptic(12)
-    // Callee NEVER writes the row — the caller (who got call:reject) logs 'declined'.
+    // Callee NEVER writes the row - the caller (who got call:reject) logs 'declined'.
     emitCallEvent('call:reject', {
       callId: offer.callId,
       conversationId: offer.conversationId,
@@ -482,7 +480,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
     haptic(6)
   }, [])
 
-  // ── signaling listener (stable; everything via refs) ────────
+  // signaling listener (stable; everything via refs) 
   const handleCallEvent = useCallback(
     (event: string, raw: unknown) => {
       if (raw === null || typeof raw !== 'object') return
@@ -545,7 +543,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
               try {
                 await pcRef.current?.addIceCandidate(candidate)
               } catch {
-                // stale candidate — ICE recovers on its own
+                // stale candidate - ICE recovers on its own
               }
             }
             answeredRef.current = true
@@ -575,7 +573,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
         }
         if (pcRef.current && pcRef.current.remoteDescription) {
           void pcRef.current.addIceCandidate(candidate).catch(() => {
-            // stale candidate — ignore
+            // stale candidate - ignore
           })
         } else {
           pendingIceRef.current.push(candidate)
@@ -670,7 +668,7 @@ export function useCallSession(options: CallSessionOptions): CallSessionControls
   }
 }
 
-// ── the overlay ──────────────────────────────────────────────
+// the overlay 
 
 export interface CallOverlayProps {
   session: CallSessionControls
@@ -796,7 +794,7 @@ export function CallOverlay({ session }: CallOverlayProps) {
                 : `${kind} call with ${peer.name}`
           }
         >
-          {/* ambient emerald wash — matches the app's aurora language */}
+          {/* ambient emerald wash - matches the app's aurora language */}
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0"
@@ -833,7 +831,7 @@ export function CallOverlay({ session }: CallOverlayProps) {
             />
           ) : null}
 
-          {/* ── INCOMING / CALLING / ACTIVE content ── */}
+          {/*  INCOMING / CALLING / ACTIVE content  */}
           <div className="relative z-20 flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-40 pt-[max(2rem,env(safe-area-inset-top))]">
             {state === 'active' && isVideo ? (
               <div className="absolute left-0 right-0 top-[max(1rem,env(safe-area-inset-top))] flex flex-col items-center gap-0.5 px-4 text-center">
@@ -932,7 +930,7 @@ export function CallOverlay({ session }: CallOverlayProps) {
             ) : null}
           </div>
 
-          {/* ── controls ── */}
+          {/*  controls  */}
           <div className="relative z-20 px-6 pb-[max(1.75rem,env(safe-area-inset-bottom))]">
             {state === 'incoming' && !controlsDisabled ? (
               <div className="mx-auto flex w-full max-w-xs items-center justify-around">
@@ -1027,4 +1025,4 @@ export function CallOverlay({ session }: CallOverlayProps) {
   )
 }
 
-// ── overlay end ──
+// overlay end 

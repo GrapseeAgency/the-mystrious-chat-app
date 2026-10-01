@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/messages — history + send
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id]/messages - history + send
 import { NextResponse } from 'next/server'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -33,8 +31,8 @@ interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-// ── R24-b: deterministic incognito aliases (Session/SimpleX-style) ──
-// Same person + same conversation ALWAYS maps to the same alias —
+// R24-b: deterministic incognito aliases (Session/SimpleX-style) 
+// Same person + same conversation ALWAYS maps to the same alias -
 // FNV-1a over "userId:conversationId" keeps it stable across restarts.
 const ANON_ADJECTIVES = ['Swift', 'Quiet', 'Neon', 'Ember', 'Frost', 'Lucky', 'Cosmic', 'Silent'] as const
 const ANON_ANIMALS = ['Falcon', 'Otter', 'Panda', 'Wolf', 'Comet', 'Tiger', 'Raven', 'Fox'] as const
@@ -49,7 +47,7 @@ function stableHash(value: string): number {
   return hash >>> 0
 }
 
-/** "Ember the Falcon" — deterministic per (user, conversation) pair. */
+/** "Ember the Falcon" - deterministic per (user, conversation) pair. */
 function anonAliasFor(userId: string, conversationId: string): string {
   const hash = stableHash(`${userId}:${conversationId}`)
   const adjective = ANON_ADJECTIVES[hash % ANON_ADJECTIVES.length]
@@ -63,9 +61,9 @@ function anonAliasFor(userId: string, conversationId: string): string {
  *
  * Default window: the NEWEST `limit` messages, returned ascending.
  * `before=<ISO>` pages further back (messages strictly older than the ISO
- * timestamp — use the oldest message's createdAt as the cursor).
+ * timestamp - use the oldest message's createdAt as the cursor).
  * `since=<ISO>` (D47 delta sync) returns only messages strictly NEWER than
- * the cursor — same shape and limits; see the `since` comment below.
+ * the cursor - same shape and limits; see the `since` comment below.
  * `q=<text>` switches into SEARCH mode: newest-first scan of the whole
  * conversation, case-insensitive substring match on text content AND
  * document fileName (R41), soft-deleted rows excluded, capped at `limit`
@@ -119,7 +117,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   }
 
   // D47 delta sync (spec-optional addendum): `since=` is the delta-sync
-  // cursor — only messages strictly NEWER than it are returned, in the
+  // cursor - only messages strictly NEWER than it are returned, in the
   // same shape ({ messages, hasMore, total }) and under the same limits
   // as every other mode. It rides the newest-window branch below and is
   // purely ADDITIVE: existing consumers keep using `after=` untouched.
@@ -141,14 +139,14 @@ export async function GET(req: Request, { params }: RouteCtx) {
         : afterDate
       : (sinceDate ?? afterDate)
 
-  // R24-b: optional Zulip-topic filter — only alive messages filed under the
+  // R24-b: optional Zulip-topic filter - only alive messages filed under the
   // given topic. Omitted → unchanged whole-room behavior (General included).
   const topicFilterRaw = strField(url.searchParams.get('topicId'))
   const topicFilter = topicFilterRaw
     ? { topicId: topicFilterRaw, deletedAt: null as null }
     : null
 
-  // Search mode — case-insensitive substring scan (SQLite has no ICU collation,
+  // Search mode - case-insensitive substring scan (SQLite has no ICU collation,
   // so matching happens in Node over the conversation's rows). R41: a kind
   // 'file' message also matches when its document fileName contains the query
   // (same rule as the global /api/search route).
@@ -191,7 +189,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ messages: rows.map((m) => mapMessage(m)), hasMore: rows.length === limit, total })
   }
 
-  // Newest window (also the polling path — `after`/`since` narrow it when
+  // Newest window (also the polling path - `after`/`since` narrow it when
   // supplied; `since` is the D47 delta-sync alias, see the comment above).
   const [messages, total] = await Promise.all([
     db.message.findMany({
@@ -234,7 +232,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
-  // Rich message kinds — sticker packs, live location cards, documents and
+  // Rich message kinds - sticker packs, live location cards, documents and
   // full-screen effects all ride the kind+payload pair (kind defaults to "text").
   const MESSAGE_KINDS = ['text', 'image', 'audio', 'sticker', 'location', 'file'] as const
   const EFFECTS = ['confetti', 'lasers', 'echo', 'sparkles'] as const
@@ -299,7 +297,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Location messages need payload.lat/lng.' }, { status: 400 })
   }
 
-  // Optional image attachment — must reference a previously uploaded file.
+  // Optional image attachment - must reference a previously uploaded file.
   const imagePath = strField(body.imagePath)
   if (imagePath) {
     if (!/^[A-Za-z0-9-]+\.(jpg|jpeg|png|webp)$/.test(imagePath)) {
@@ -315,7 +313,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
   }
 
-  // Optional voice-note attachment — uploaded via /api/uploads first.
+  // Optional voice-note attachment - uploaded via /api/uploads first.
   const audioPath = strField(body.audioPath)
   if (audioPath) {
     if (!AUDIO_EXT_REGEX.test(audioPath)) {
@@ -342,11 +340,11 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'durationMs is only valid together with audioPath.' }, { status: 400 })
   }
 
-  // ── R40: document attachment (kind 'file') ────────────────
+  // R40: document attachment (kind 'file') 
   // filePath references a previously-uploaded document (pdf/txt/csv/zip);
   // fileName is the ORIGINAL filename for display (1–120 chars, sanitized);
   // fileSize is optional metadata (0..10 MB). Non-file kinds must NOT carry
-  // a filePath — a document can only travel inside a kind:'file' message.
+  // a filePath - a document can only travel inside a kind:'file' message.
   const rawFilePath = strField(body.filePath)
   if (rawFilePath && kind !== 'file') {
     return NextResponse.json(
@@ -388,9 +386,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
   let filePath: string | null = null
   if (rawFilePath) {
     if (!DOC_EXT_REGEX.test(rawFilePath)) {
-      return NextResponse.json({ error: 'filePath is invalid — documents must be pdf, txt, csv or zip.' }, { status: 400 })
+      return NextResponse.json({ error: 'filePath is invalid - documents must be pdf, txt, csv or zip.' }, { status: 400 })
     }
-    // R41 — the uploaded bytes may live on disk (fast path) OR in the
+    // R41 - the uploaded bytes may live on disk (fast path) OR in the
     // durable UploadedFile store (the sandbox wipes disk files while DB
     // rows persist). Accept either; reject only when NEITHER holds the file.
     let exists = false
@@ -419,7 +417,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
-  // Optional reply parent — must exist inside THIS conversation.
+  // Optional reply parent - must exist inside THIS conversation.
   const replyToId = strField(body.replyToId)
   if (replyToId) {
     const parent = await db.message.findUnique({
@@ -460,10 +458,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
     )
   }
 
-  // R47 — blocked accounts: in a DM, a UserBlock in EITHER direction ends
+  // R47 - blocked accounts: in a DM, a UserBlock in EITHER direction ends
   // the conversation. Server-authoritative 403; the composer also renders
   // a dead-end notice from detail.dmBlocked. Group chats are untouched
-  // (shared groups still work — WhatsApp semantics).
+  // (shared groups still work - WhatsApp semantics).
   if (!conv.isGroup) {
     const others = await db.conversationParticipant.findMany({
       where: { conversationId: id, userId: { not: senderId } },
@@ -488,8 +486,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
   }
 
-  // R44 — Telegram-style slow mode: members must wait slowModeSeconds between
-  // sends; admins are always exempt. The window counts the ACT of sending —
+  // R44 - Telegram-style slow mode: members must wait slowModeSeconds between
+  // sends; admins are always exempt. The window counts the ACT of sending -
   // soft-deleted messages still consume it (delete-then-resend cannot bypass),
   // while automation replies (machine-sent on the creator's behalf, R39) do
   // NOT start a new window for the member.
@@ -506,7 +504,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
         const retryAfter = Math.ceil((windowMs - elapsed) / 1000)
         return NextResponse.json(
           {
-            error: `Slow mode is on — wait ${retryAfter}s before sending again.`,
+            error: `Slow mode is on - wait ${retryAfter}s before sending again.`,
             retryAfter,
           },
           { status: 429, headers: { 'Retry-After': String(retryAfter) } },
@@ -515,7 +513,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
   }
 
-  // R24-b: optional Zulip-style topic filing — the topic must belong to THIS
+  // R24-b: optional Zulip-style topic filing - the topic must belong to THIS
   // conversation; message.topicId lands inside the create (General = null).
   const topicId = strField(body.topicId)
   if (topicId) {
@@ -528,7 +526,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
   }
 
-  // R24-b: optional anonymous send — honored in GROUP chats only (ignored for
+  // R24-b: optional anonymous send - honored in GROUP chats only (ignored for
   // DMs). The alias is deterministic per (sender, conversation) so the sender
   // keeps one consistent mask per room.
   const anonRequested = body.anon === true
@@ -548,7 +546,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
     if (root.parentId !== null) {
       return NextResponse.json(
-        { error: 'Threads are one level deep — reply to the thread root instead.' },
+        { error: 'Threads are one level deep - reply to the thread root instead.' },
         { status: 400 },
       )
     }
@@ -589,7 +587,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
       include: MESSAGE_FULL_INCLUDE,
     })
     if (topicId) {
-      // Topic rail sort key — newest filed message keeps its topic on top.
+      // Topic rail sort key - newest filed message keeps its topic on top.
       await tx.topic.update({ where: { id: topicId }, data: { lastMessageAt: now } })
     }
     if (anon) {
@@ -602,7 +600,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
         },
       })
     }
-    // Bump list ordering — @updatedAt allows an explicit value write.
+    // Bump list ordering - @updatedAt allows an explicit value write.
     await tx.conversation.update({ where: { id }, data: { updatedAt: now } })
     // Sender obviously read their own message.
     await tx.conversationParticipant.update({
@@ -610,7 +608,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
       data: { lastReadAt: now },
     })
     // A new message from the sender pulls the chat out of every OTHER
-    // member's archive (WhatsApp behaviour — archive ≠ mute).
+    // member's archive (WhatsApp behaviour - archive ≠ mute).
     await tx.conversationParticipant.updateMany({
       where: { conversationId: id, userId: { not: senderId }, archivedAt: { not: null } },
       data: { archivedAt: null },
@@ -629,7 +627,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   })
 
   // Remote push (registry-gated): members whose apps are closed hear about
-  // the message via Web Push / FCM / APNs. Fire-and-forget — never fails or
+  // the message via Web Push / FCM / APNs. Fire-and-forget - never fails or
   // slows the send. Per-RECEIVER privacy: muted members get nothing, and a
   // receiver with notifPreviews off gets a generic body, never the content.
   void (async () => {
@@ -653,14 +651,14 @@ export async function POST(req: Request, { params }: RouteCtx) {
       const senderName = senderRow?.name ?? 'Someone'
       const isGroupConv = convRow?.isGroup ?? false
       const groupName = convRow?.name ?? ''
-      // Per-kind preview line (never the full rich payload — honest snippets).
+      // Per-kind preview line (never the full rich payload - honest snippets).
       const previewBase =
         kind === 'text'
           ? content.trim().slice(0, 140)
           : kind === 'image'
-            ? '📷 Photo'
+            ? 'Photo'
             : kind === 'audio'
-              ? '🎙️ Voice message'
+              ? 'Voice message'
               : kind === 'sticker'
                 ? `Sticker ${(() => {
                     try {
@@ -671,8 +669,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
                     }
                   })()}`.trim()
                 : kind === 'file'
-                  ? '📎 Document'
-                  : '📍 Location'
+                  ? 'Document'
+                  : 'Location'
       const prefsByUser = new Map<string, boolean>()
       for (const row of memberRows) {
         let previews = true
@@ -711,7 +709,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   // Pulse bot engine: real command replies (/roll, /math, /wallet, /poll …).
   await maybeBotReply(id, { id: message.id, senderId, content })
 
-  // R39: keyword automations — AFTER the human message is stored + notified.
+  // R39: keyword automations - AFTER the human message is stored + notified.
   // Automation replies are authored directly via db with viaAutomation=true
   // and never re-enter this route, so the engine can never chain. A failure
   // here must never fail the human send (same principle as XP accounting).
@@ -719,7 +717,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     await maybeAutomationReply(id, content)
   }
 
-  // R31-a: gaming-grade daily XP cap — every real send earns XP_PER_MESSAGE
+  // R31-a: gaming-grade daily XP cap - every real send earns XP_PER_MESSAGE
   // up to XP_DAILY_CAP per UTC day (message-XP only; other XP sources keep
   // their own rules). Read-modify-write on the sender row: the race window is
   // one in-flight send per user and the bucket self-corrects at midnight UTC.
@@ -751,7 +749,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     // XP accounting must never fail a send.
   }
 
-  // R31-a: Snapchat-style chat streak — the FIRST message a user sends in a
+  // R31-a: Snapchat-style chat streak - the FIRST message a user sends in a
   // conversation each UTC day keeps it alive: lastDay === yesterday grows the
   // count, anything older restarts at 1, same-day re-sends change nothing.
   let streak: { count: number; best: number; continued: boolean } | null = null
@@ -777,14 +775,14 @@ export async function POST(req: Request, { params }: RouteCtx) {
     // Streak accounting must never fail a send either.
   }
 
-  // Additive response fields — existing clients keep reading `message`.
+  // Additive response fields - existing clients keep reading `message`.
   return NextResponse.json(
     { message: mapped, ...(streak ? { streak } : {}), xpAwarded },
     { status: 201 },
   )
 }
 
-// ── R39: keyword-triggered auto-replies (ManyChat/Landbot family) ─────
+// R39: keyword-triggered auto-replies (ManyChat/Landbot family) 
 
 /** Escape a trigger for literal regex use (no special-char surprises). */
 function escapeRegex(value: string): string {
@@ -794,7 +792,7 @@ function escapeRegex(value: string): string {
 /**
  * Match `trigger` as a STANDALONE phrase inside `content`: case-insensitive,
  * with letter/digit lookaround boundaries so "price" never matches inside
- * "pricing" or "compare prices" — but "price" matches in "what's the price?".
+ * "pricing" or "compare prices" - but "price" matches in "what's the price?".
  */
 function triggerMatches(trigger: string, content: string): boolean {
   const escaped = escapeRegex(trigger.trim())
@@ -807,7 +805,7 @@ function triggerMatches(trigger: string, content: string): boolean {
  * The reply is a real Message row authored by the rule's creator with
  * viaAutomation=true, riding the same pipeline as webhook messages (updatedAt
  * bump, archive unpin, notifySocket to the other members). Best-effort by
- * contract: any failure is logged and swallowed — a broken automation must
+ * contract: any failure is logged and swallowed - a broken automation must
  * never fail a human send. Disabled rules, non-matching content and rules in
  * conversations without any rows are all silent no-ops.
  */
@@ -854,7 +852,7 @@ async function maybeAutomationReply(conversationId: string, content: string): Pr
     })
 
     // Unlike an interactive send (sender handles self via the POST response),
-    // an automation reply is machine-sent on the creator's behalf — NO member
+    // an automation reply is machine-sent on the creator's behalf - NO member
     // has a response carrying it, so EVERY participant (author included)
     // receives the realtime event. Same notify/emit shape as the webhook path.
     const recipients = await memberIdsOf(conversationId)
@@ -865,7 +863,7 @@ async function maybeAutomationReply(conversationId: string, content: string): Pr
       conversationId,
     })
 
-    // Atomic counters — updateMany keeps the bump single-statement.
+    // Atomic counters - updateMany keeps the bump single-statement.
     await db.automation.updateMany({
       where: { id: rule.id },
       data: { hits: { increment: 1 }, lastFiredAt: now },

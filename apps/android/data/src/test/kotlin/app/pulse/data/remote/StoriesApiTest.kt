@@ -17,9 +17,9 @@ import org.junit.Test
 /**
  * Wave-4 stories REST contract (PulseApi):
  *  - the generic offline-first gate holds (unconfigured gateway → ZERO engine
- *    requests + honest NETWORK failure — the HomeGatewayGuard rule);
+ *    requests + honest NETWORK failure - the HomeGatewayGuard rule);
  *  - postStory POSTs /api/stories with the exact body the route validates
- *    (text mode: requesterId+caption+background — background NEVER on photos);
+ *    (text mode: requesterId+caption+background - background NEVER on photos);
  *  - markStoryViewed / storyViewers / deleteStory hit their exact paths with
  *    the plain requesterId identity param;
  *  - 403/404 map onto FORBIDDEN / NOT_FOUND failure kinds (owner gates).
@@ -38,7 +38,7 @@ class StoriesApiTest {
                 lastMethod = request.method.value
                 lastUrl = request.url.toString()
                 // setBody(String) with contentType json lands as TextContent
-                // (Ktor 2.x); raw bytes surface as ByteArrayContent — capture both.
+                // (Ktor 2.x); raw bytes surface as ByteArrayContent - capture both.
                 lastBody = when (val b = request.body) {
                     is io.ktor.http.content.TextContent -> b.text
                     is io.ktor.http.content.ByteArrayContent -> b.bytes().decodeToString()

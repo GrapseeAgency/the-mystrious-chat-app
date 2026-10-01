@@ -8,8 +8,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Wave 8 — SessionTokenStore logic under a FAKE cipher + FAKE persistence
- * (JVM — AndroidKeyStore needs an emulator; the real-cipher round-trip lives
+ * Wave 8 - SessionTokenStore logic under a FAKE cipher + FAKE persistence
+ * (JVM - AndroidKeyStore needs an emulator; the real-cipher round-trip lives
  * in the androidTest KeystoreSessionTokenCipherTest).
  *
  * The fake cipher is a real reversible transform (prefix + reversed payload),
@@ -68,7 +68,7 @@ class SessionTokenStoreTest {
         assertNull(reader.cached)
         assertEquals(TOKEN_64, reader.load())
         assertEquals(TOKEN_64, reader.cached)
-        // idempotent — a second load re-serves the cache
+        // idempotent - a second load re-serves the cache
         assertEquals(TOKEN_64, reader.load())
     }
 
@@ -80,7 +80,7 @@ class SessionTokenStoreTest {
         val store = SessionTokenStore(persistence, FakeCipher(broken = true))
         assertNull(store.load())
         assertNull(store.cached)
-        // self-heal is async (store scope on Dispatchers.IO) — wait deterministically
+        // self-heal is async (store scope on Dispatchers.IO) - wait deterministically
         for (i in 1..300) {
             if (persistence.backing.isEmpty()) break
             Thread.sleep(10)

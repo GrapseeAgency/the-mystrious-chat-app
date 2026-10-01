@@ -39,12 +39,12 @@ import app.pulse.domain.model.CallState
 import app.pulse.ui.initialsOf
 
 /**
- * Wave 3 — the full-screen native call surface. One composable covers the
+ * Wave 3 - the full-screen native call surface. One composable covers the
  * whole machine (incoming ring → outgoing ring → connecting → connected →
  * ended), exactly like the web call-overlay. All actions flow through
  * [CallViewModel] → [CallEngine] → the pure state machine.
  *
- * Wave R1-W2D — REAL video calls: remote video renders full-bleed, the local
+ * Wave R1-W2D - REAL video calls: remote video renders full-bleed, the local
  * camera rides a mirrored PiP tile, and video/flip controls appear only when
  * a camera is truly attached (audio-only fallback keeps the voice UI).
  */
@@ -61,7 +61,7 @@ fun CallOverlay(vm: CallViewModel) {
 
     val isVideoCall = snapshot.kind == CallKind.VIDEO
 
-    // RECORD_AUDIO (+ CAMERA for video offers) gate — every call answer
+    // RECORD_AUDIO (+ CAMERA for video offers) gate - every call answer
     // passes through here and is honest about denial (no mic ⇒ cannot answer;
     // camera denied ⇒ the engine's audio-only fallback keeps the call alive).
     val micLauncher = rememberLauncherForActivityResult(
@@ -73,7 +73,7 @@ fun CallOverlay(vm: CallViewModel) {
                 else -> Unit
             }
         } else if (snapshot.state == CallState.INCOMING_RINGING) {
-            // Can't answer without a mic — declining is the honest action.
+            // Can't answer without a mic - declining is the honest action.
             vm.decline()
         }
     }
@@ -97,7 +97,7 @@ fun CallOverlay(vm: CallViewModel) {
             .background(Color(0xE6121212))
             .semantics { contentDescription = "Call screen" },
     ) {
-        // Remote video — full-bleed behind everything (web object-cover parity);
+        // Remote video - full-bleed behind everything (web object-cover parity);
         // renders only when the peer's video track actually arrives.
         if (isVideoCall &&
             (snapshot.state == CallState.CONNECTING || snapshot.state == CallState.CONNECTED)
@@ -127,7 +127,7 @@ fun CallOverlay(vm: CallViewModel) {
                 textAlign = TextAlign.Center,
             )
             // Honest one-shot notice when a wanted video call degraded to
-            // voice (web toast 'Camera unavailable — starting a voice call').
+            // voice (web toast 'Camera unavailable - starting a voice call').
             if (videoNotice != null && snapshot.state != CallState.ENDED) {
                 Spacer(Modifier.height(10.dp))
                 Text(
@@ -157,7 +157,7 @@ fun CallOverlay(vm: CallViewModel) {
                             description = "Decline call",
                             container = Color(0xFFE11D48),
                         ) { vm.decline() }
-                        // Accept — the mic permission must be live to answer;
+                        // Accept - the mic permission must be live to answer;
                         // video offers prompt the camera too (single prompt).
                         CallButton(
                             icon = PulseIcons.Phone,
@@ -189,7 +189,7 @@ fun CallOverlay(vm: CallViewModel) {
 
                 else -> {
                     // Video controls (only when a camera is REALLY attached):
-                    // camera toggle + flip — web toggleCamera parity + native flip.
+                    // camera toggle + flip - web toggleCamera parity + native flip.
                     if (videoCaptureActive) {
                         Row(
                             modifier = Modifier
@@ -249,7 +249,7 @@ fun CallOverlay(vm: CallViewModel) {
             }
         }
 
-        // Local camera PiP — mirrored self-view tile above the controls
+        // Local camera PiP - mirrored self-view tile above the controls
         // (web bottom-28 end-4 parity). Hidden when the camera toggle is off.
         if (isVideoCall && videoCaptureActive &&
             (snapshot.state == CallState.CONNECTING || snapshot.state == CallState.CONNECTED)
@@ -266,7 +266,7 @@ fun CallOverlay(vm: CallViewModel) {
 }
 
 private fun statusLine(snapshot: CallSnapshot, micMuted: Boolean): String {
-    // Local vals — smart casts across module boundaries are not allowed.
+    // Local vals - smart casts across module boundaries are not allowed.
     val error = snapshot.error
     if (!error.isNullOrBlank()) return error
     val summary = snapshot.summary

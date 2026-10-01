@@ -1,12 +1,10 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/automations — R39 keyword auto-replies.
+// /api/conversations/[id]/automations - R39 keyword auto-replies.
 // GET  ?userId= (participant-only) → { automations: AutomationSummary[] }
 //      rows ordered createdAt desc, creator {id,name,color,avatar} included.
-// POST { userId, trigger, reply } — conversation ADMINS only (mirrors the
+// POST { userId, trigger, reply } - conversation ADMINS only (mirrors the
 //      webhook/members admin gating). Validation: trigger 2-40 chars after
 //      trim, reply 1-500 chars; same trigger (case-insensitive) in the same
 //      conversation → 409.
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapAutomation, safeJson, strField } from '@/lib/serializers'
@@ -25,7 +23,7 @@ const AUTOMATION_INCLUDE = {
   createdBy: { select: { id: true, name: true, color: true, avatar: true } },
 } as const
 
-/** GET — participant-only listing of this conversation's automation rules. */
+/** GET - participant-only listing of this conversation's automation rules. */
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params
 
@@ -59,7 +57,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
 }
 
 /**
- * POST — create an automation rule. Admin-only (403 otherwise, honest error),
+ * POST - create an automation rule. Admin-only (403 otherwise, honest error),
  * duplicate triggers (case-insensitive, per conversation) → 409.
  */
 export async function POST(req: Request, { params }: RouteCtx) {

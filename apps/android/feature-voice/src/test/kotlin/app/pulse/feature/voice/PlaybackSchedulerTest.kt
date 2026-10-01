@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Per-peer jitter playhead contract (spec §1.1 VR-5) — including WEB DEFECT
+ * Per-peer jitter playhead contract (spec §1.1 VR-5) - including WEB DEFECT
  * FIX #2: a roster-dropped peer resets its state so its REJOIN (seq restarts
  * at 1) plays immediately instead of being deduped into silence.
  */
@@ -36,7 +36,7 @@ class PlaybackSchedulerTest {
         val s = PlaybackScheduler()
         // First block at 1085 (1000+85) → nextAt 1335.
         assertEquals(1_085L, (s.decide("u1", 1, dur, 1_000) as PlaybackScheduler.Decision.Schedule).atMs)
-        // Second arrives early (now 1100): max(1185, 1335) = 1335 — no overlap.
+        // Second arrives early (now 1100): max(1185, 1335) = 1335 - no overlap.
         assertEquals(1_335L, (s.decide("u1", 2, dur, 1_100) as PlaybackScheduler.Decision.Schedule).atMs)
         // Third after a pause (now 2000): nextAt 1585 is in the past → now+85 wins.
         assertEquals(2_085L, (s.decide("u1", 3, dur, 2_000) as PlaybackScheduler.Decision.Schedule).atMs)
@@ -57,7 +57,7 @@ class PlaybackSchedulerTest {
         s.decide("u1", 1, dur, 1_000)
         s.decide("u1", 2, dur, 1_300)
         s.resetPeer("u1")
-        // Peer rejoins and the relay seq restarts at 1 — without the reset the
+        // Peer rejoins and the relay seq restarts at 1 - without the reset the
         // receiver's lastSeq=2 would blackhole every subsequent chunk.
         val d = s.decide("u1", 1, dur, nowMs = 9_000)
         assertEquals(9_085L, (d as PlaybackScheduler.Decision.Schedule).atMs)

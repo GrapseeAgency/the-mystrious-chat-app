@@ -17,13 +17,13 @@ import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestMethodOrder
 
 /**
- * LIVE parity tests — these hit the real gateway over HTTP and assert the
+ * LIVE parity tests - these hit the real gateway over HTTP and assert the
  * wire DTOs parse exactly what the Next.js API emits. Skipped (not failed)
  * when the gateway is unreachable, so CI environments without the sandbox
  * still pass.
  *
  * The conversationId probe is read from the LIVE payload itself (first group
- * conversation of the test user) — zero hardcoded fixtures.
+ * conversation of the test user) - zero hardcoded fixtures.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
@@ -33,7 +33,7 @@ class LiveGatewayParityTest {
     private val aliceId = System.getenv("PULSE_USER_ID") ?: "cmtawq3h4001ktcwn674m1frp"
 
     private val http: HttpClient = HttpClient.newBuilder()
-        .version(HttpClient.Version.HTTP_1_1) // gateway 502s h2c upgrade probes — pin HTTP/1.1
+        .version(HttpClient.Version.HTTP_1_1) // gateway 502s h2c upgrade probes - pin HTTP/1.1
         .connectTimeout(Duration.ofSeconds(3))
         .build()
 
@@ -48,7 +48,7 @@ class LiveGatewayParityTest {
         } catch (_: Exception) {
             false
         }
-        assumeTrue(up, "gateway $gateway unreachable — skipping live parity tests")
+        assumeTrue(up, "gateway $gateway unreachable - skipping live parity tests")
     }
 
     private fun get(path: String): String {

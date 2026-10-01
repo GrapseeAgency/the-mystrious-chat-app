@@ -1,11 +1,3 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — status glyph layer (R25-b).
-// The custom-status field stores a short glyph string (legacy emoji
-// values persisted by the old picker + 'vacation'). This layer renders
-// those stored values as Lucide icons ONLY, so no raw emoji ever
-// reaches the R25 UI while the persisted data contract stays intact
-// (other surfaces may still render the stored string verbatim).
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import {
@@ -22,58 +14,64 @@ import {
   Utensils,
   type LucideIcon,
 } from 'lucide-react'
+import { type StatusIconId, statusIconId } from '@/lib/icon-ids'
 
 export interface StatusGlyphChoice {
-  /** exact string persisted to `AppUser.statusEmoji` */
-  value: string
+  /** id persisted to AppUser.statusEmoji via PATCH /api/users/[id] */
+  value: StatusIconId
   icon: LucideIcon
   label: string
 }
 
-/** Module-scope record — value → Lucide icon (never an emoji). */
-const GLYPH_BY_VALUE: Record<string, LucideIcon> = {
-  '🔥': Flame,
-  '✨': Sparkles,
-  '🎯': Target,
-  '☕': Coffee,
-  '🎧': Headphones,
-  '🌙': Moon,
-  '💡': Lightbulb,
-  '🚀': Rocket,
-  '😴': BedDouble,
-  '🍽️': Utensils,
+const GLYPH_BY_ID: Record<StatusIconId, LucideIcon> = {
+  flame: Flame,
+  sparkles: Sparkles,
+  target: Target,
+  coffee: Coffee,
+  headphones: Headphones,
+  moon: Moon,
+  bulb: Lightbulb,
+  rocket: Rocket,
+  sleep: BedDouble,
+  food: Utensils,
   vacation: Plane,
 }
 
-const GLYPH_LABELS: Record<string, string> = {
-  '🔥': 'On fire',
-  '✨': 'Sparkles',
-  '🎯': 'Focused',
-  '☕': 'Coffee break',
-  '🎧': 'Listening',
-  '🌙': 'Night owl',
-  '💡': 'Ideas',
-  '🚀': 'Shipping',
-  '😴': 'Sleeping',
-  '🍽️': 'Eating',
+const LABEL_BY_ID: Record<StatusIconId, string> = {
+  flame: 'On fire',
+  sparkles: 'Sparkles',
+  target: 'Focused',
+  coffee: 'Coffee break',
+  headphones: 'Listening',
+  moon: 'Night owl',
+  bulb: 'Ideas',
+  rocket: 'Shipping',
+  sleep: 'Sleeping',
+  food: 'Eating',
   vacation: 'On vacation',
 }
 
-/** Picker choices — `value` is what the PATCH /api/users/[id] route stores. */
-export const STATUS_GLYPH_CHOICES: Array<StatusGlyphChoice> =
-  Object.keys(GLYPH_BY_VALUE).map((value) => ({
-    value,
-    icon: GLYPH_BY_VALUE[value] ?? Sparkles,
-    label: GLYPH_LABELS[value] ?? value,
-  }))
+/** Picker choices for the profile status editor. */
+export const STATUS_GLYPH_CHOICES: Array<StatusGlyphChoice> = Object.keys(
+  GLYPH_BY_ID,
+).map((id) => ({
+  value: id as StatusIconId,
+  icon: GLYPH_BY_ID[id as StatusIconId],
+  label: LABEL_BY_ID[id as StatusIconId],
+}))
 
-/** Resolve a stored status value to its Lucide icon (never returns an emoji). */
-export function statusGlyphFor(value: string | null | undefined): LucideIcon {
-  if (!value) return Sparkles
-  return GLYPH_BY_VALUE[value] ?? Sparkles
+/** Label for a stored status id; empty string when there is no status. */
+export function statusLabelFor(value: string | null | undefined): string {
+  const id = statusIconId(value)
+  return id ? LABEL_BY_ID[id] : ''
 }
 
 /** Icon for a stored status value, ready to drop into hero/status rows. */
+export function statusGlyphFor(value: string | null | undefined): LucideIcon {
+  const id = statusIconId(value)
+  return id ? GLYPH_BY_ID[id] : Sparkles
+}
+
 export function StatusGlyph({
   value,
   className,
@@ -81,7 +79,9 @@ export function StatusGlyph({
   value: string | null | undefined
   className?: string
 }) {
-  // module-scope record member access — stable component references only
-  const Icon: LucideIcon = GLYPH_BY_VALUE[value ?? ''] ?? Sparkles
+  const id = statusIconId(value)
+  if (!id) return null
+  // module-scope record member access: stable component reference
+  const Icon = GLYPH_BY_ID[id]
   return <Icon className={className} aria-hidden />
 }

@@ -12,7 +12,7 @@ pids=""
 # 清理函数：优雅关闭所有服务
 cleanup() {
     echo ""
-    echo "🛑 正在关闭所有服务..."
+    echo " 正在关闭所有服务..."
     
     # 发送 SIGTERM 信号给所有子进程
     for pid in $pids; do
@@ -41,11 +41,11 @@ cleanup() {
         fi
     done
     
-    echo "✅ 所有服务已关闭"
+    echo " 所有服务已关闭"
     exit 0
 }
 
-echo "🚀 开始启动所有服务..."
+echo " 开始启动所有服务..."
 echo ""
 
 # 切换到构建目录
@@ -63,12 +63,12 @@ if [ -d "/app/python-runtime/site-packages" ]; then
     export PATH="/app/python-runtime/site-packages/bin:$PATH"
     export PYTHONDONTWRITEBYTECODE=1
     export PYTHONUNBUFFERED=1
-    echo "🐍 已启用部署包内 Python runtime: $(python --version 2>&1)"
+    echo " 已启用部署包内 Python runtime: $(python --version 2>&1)"
 fi
 
 # 启动 Next.js 服务器
 if [ -f "./next-service-dist/server.js" ]; then
-    echo "🚀 启动 Next.js 服务器..."
+    echo " 启动 Next.js 服务器..."
     cd next-service-dist/ || exit 1
     
     # 设置环境变量
@@ -79,14 +79,14 @@ if [ -f "./next-service-dist/server.js" ]; then
 
     if [ "$DATABASE_URL" = "$DEFAULT_PACKAGED_DATABASE_URL" ]; then
         if [ ! -f "$DEFAULT_PACKAGED_DB_PATH" ]; then
-            echo "❌ 未找到打包后的数据库文件 $DEFAULT_PACKAGED_DB_PATH"
+            echo " 未找到打包后的数据库文件 $DEFAULT_PACKAGED_DB_PATH"
             echo "   为避免生产环境启动到空数据库，启动已终止"
             exit 1
         fi
 
-        echo "🗄️  当前使用打包数据库: $DEFAULT_PACKAGED_DB_PATH"
+        echo "  当前使用打包数据库: $DEFAULT_PACKAGED_DB_PATH"
     else
-        echo "🗄️  当前使用外部指定数据库: $DATABASE_URL"
+        echo "  当前使用外部指定数据库: $DATABASE_URL"
     fi
     
     # 后台启动 Next.js
@@ -97,20 +97,20 @@ if [ -f "./next-service-dist/server.js" ]; then
     # 等待一小段时间检查进程是否成功启动
     sleep 1
     if ! kill -0 "$NEXT_PID" 2>/dev/null; then
-        echo "❌ Next.js 服务器启动失败"
+        echo " Next.js 服务器启动失败"
         exit 1
     else
-        echo "✅ Next.js 服务器已启动 (PID: $NEXT_PID, Port: $PORT)"
+        echo " Next.js 服务器已启动 (PID: $NEXT_PID, Port: $PORT)"
     fi
     
     cd ../
 else
-    echo "⚠️  未找到 Next.js 服务器文件: ./next-service-dist/server.js"
+    echo "  未找到 Next.js 服务器文件: ./next-service-dist/server.js"
 fi
 
 # 启动 mini-services
 if [ -f "./mini-services-start.sh" ]; then
-    echo "🚀 启动 mini-services..."
+    echo " 启动 mini-services..."
     
     # 运行启动脚本（从根目录运行，脚本内部会处理 mini-services-dist 目录）
     sh ./mini-services-start.sh &
@@ -120,25 +120,25 @@ if [ -f "./mini-services-start.sh" ]; then
     # 等待一小段时间检查进程是否成功启动
     sleep 1
     if ! kill -0 "$MINI_PID" 2>/dev/null; then
-        echo "⚠️  mini-services 可能启动失败，但继续运行..."
+        echo "  mini-services 可能启动失败，但继续运行..."
     else
-        echo "✅ mini-services 已启动 (PID: $MINI_PID)"
+        echo " mini-services 已启动 (PID: $MINI_PID)"
     fi
 elif [ -d "./mini-services-dist" ]; then
-    echo "⚠️  未找到 mini-services 启动脚本，但目录存在"
+    echo "  未找到 mini-services 启动脚本，但目录存在"
 else
-    echo "ℹ️  mini-services 目录不存在，跳过"
+    echo "  mini-services 目录不存在，跳过"
 fi
 
 # 启动 Caddy（如果存在 Caddyfile）
-echo "🚀 启动 Caddy..."
+echo " 启动 Caddy..."
 
 # Caddy 作为前台进程运行（主进程）
-echo "✅ Caddy 已启动（前台运行）"
+echo " Caddy 已启动（前台运行）"
 echo ""
-echo "🎉 所有服务已启动！"
+echo " 所有服务已启动！"
 echo ""
-echo "💡 按 Ctrl+C 停止所有服务"
+echo " 按 Ctrl+C 停止所有服务"
 echo ""
 
 # Caddy 作为主进程运行

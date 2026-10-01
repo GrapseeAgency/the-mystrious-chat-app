@@ -1,23 +1,21 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — Wave 3 native calls: shared domain model.
+// Pulse - Wave 3 native calls: shared domain model.
 //
 // Mirrors the authoritative wire contract (src/lib/call-types.ts +
 // packages/protocol/src/contracts.ts). The relay (mini-services/
 // pulse-socket/index.ts) is the enforcement point; where contracts.ts
 // drifted from the wire (CallHangupPayload.durationMs vs the actual
-// durationSec field the relay emits) we FOLLOW THE WIRE — durationSec.
-// ─────────────────────────────────────────────────────────────
+// durationSec field the relay emits) we FOLLOW THE WIRE - durationSec.
 
 /// Audio-only vs camera call (wire CallKind). Native ships the full voice
 /// path; kind 'video' is accepted/relayed on the wire but the native UI is
-/// an audio-call UI (documented Wave 3 limitation — no camera capture).
+/// an audio-call UI (documented Wave 3 limitation - no camera capture).
 public enum CallKind: String, Equatable, Sendable, CaseIterable {
     case voice
     case video
 
-    /// Tolerant wire parse — unknown values fall back to voice (web parity:
+    /// Tolerant wire parse - unknown values fall back to voice (web parity:
     /// `payload.kind === 'video' ? 'video' : 'voice'`).
     public init(wireValue: String?) {
         self = wireValue == CallKind.video.rawValue ? .video : .voice
@@ -31,7 +29,7 @@ public enum CallCancelReason: String, Equatable, Sendable, CaseIterable {
     case busy      // callee was already ringing / in another call
     case offline   // callee had no live socket when the offer arrived
 
-    /// Tolerant wire parse — unknown strings fall back to .cancel (web parity).
+    /// Tolerant wire parse - unknown strings fall back to .cancel (web parity).
     public init(wireValue: String?) {
         self = CallCancelReason(rawValue: wireValue ?? "") ?? .cancel
     }
@@ -50,7 +48,7 @@ public enum CallDirection: String, Equatable, Sendable {
     case incoming
 }
 
-/// The person on the other end — rendered from the offer payload (incoming)
+/// The person on the other end - rendered from the offer payload (incoming)
 /// or the DM conversation/contacts (outgoing). Web CallPeer parity.
 public struct CallPeer: Equatable, Hashable, Sendable, Identifiable {
     public var id: String
@@ -89,7 +87,7 @@ public struct CallInfo: Equatable, Sendable {
     }
 }
 
-// ── call:* wire envelopes (S→C, tolerant decode from [String: Any]) ──
+// call:* wire envelopes (S→C, tolerant decode from [String: Any])
 
 /// Fields every call:* payload carries (wire CallSignalBase).
 public struct CallSignalEnvelope: Equatable, Sendable {
@@ -128,7 +126,7 @@ public struct CallSignalEnvelope: Equatable, Sendable {
     }
 }
 
-/// call:offer — caller → callee. Caller profile fields let the incoming UI
+/// call:offer - caller → callee. Caller profile fields let the incoming UI
 /// render before any REST fetch (wire CallOfferPayload).
 public struct CallOfferEnvelope: Equatable, Sendable {
     public let base: CallSignalEnvelope
@@ -151,7 +149,7 @@ public struct CallOfferEnvelope: Equatable, Sendable {
     }
 }
 
-/// call:answer — callee → caller (wire CallAnswerPayload).
+/// call:answer - callee → caller (wire CallAnswerPayload).
 public struct CallAnswerEnvelope: Equatable, Sendable {
     public let base: CallSignalEnvelope
     public let sdp: String
@@ -164,8 +162,8 @@ public struct CallAnswerEnvelope: Equatable, Sendable {
     }
 }
 
-/// call:ice — thin ICE candidate triple (JSON-safe everywhere; the relay
-/// validates `candidate` as a STRING — contracts.ts drift says object, the
+/// call:ice - thin ICE candidate triple (JSON-safe everywhere; the relay
+/// validates `candidate` as a STRING - contracts.ts drift says object, the
 /// wire says string, we follow the wire).
 public struct CallIceEnvelope: Equatable, Sendable {
     public let base: CallSignalEnvelope
@@ -193,12 +191,12 @@ public struct CallIceEnvelope: Equatable, Sendable {
     }
 }
 
-// ── call:* wire payload builders (C→S, exact relay-validated shapes) ──
+// call:* wire payload builders (C→S, exact relay-validated shapes)
 
 /// Builders for every C→S call:* event the relay accepts. Kept pure so the
 /// wire shape is pinned by unit tests, not just by the live relay.
 public enum CallWire {
-    /// Correlation id — web parity shape: `call-<base36 ms>-<8 base36 chars>`
+    /// Correlation id - web parity shape: `call-<base36 ms>-<8 base36 chars>`
     /// (the relay truncates to 64 chars).
     public static func newCallId() -> String {
         let ts = String(Int(Date().timeIntervalSince1970 * 1000), radix: 36)
@@ -315,9 +313,9 @@ public enum CallWire {
         ]
     }
 
-    /// Either party ends an ACTIVE call. durationSec — the wire field
+    /// Either party ends an ACTIVE call. durationSec - the wire field
     /// (relay emits durationSec; contracts.ts durationMs is documented
-    /// drift — advisory only, the relay computes its own value anyway).
+    /// drift - advisory only, the relay computes its own value anyway).
     public static func hangupPayload(
         callId: String,
         conversationId: String,
@@ -337,10 +335,10 @@ public enum CallWire {
     }
 }
 
-// ── formatting helpers (web overlay parity) ──────────────────
+// formatting helpers (web overlay parity)
 
 public enum CallFormat {
-    /// Web formatCallDuration — 65 → "1:05", 3675 → "1:01:15".
+    /// Web formatCallDuration - 65 → "1:05", 3675 → "1:01:15".
     public static func duration(_ totalSec: Int) -> String {
         let sec = max(0, totalSec)
         let h = sec / 3600
@@ -350,7 +348,7 @@ public enum CallFormat {
         return h > 0 ? "\(h):\(pad(m)):\(pad(s))" : "\(m):\(pad(s))"
     }
 
-    /// Web calls-page formatCallDuration — 45 → "45 sec", 750 → "12 min 30 sec",
+    /// Web calls-page formatCallDuration - 45 → "45 sec", 750 → "12 min 30 sec",
     /// 3900 → "1 h 05 min". Empty string for 0 (row renders no duration).
     public static func historyDuration(_ totalSec: Int) -> String {
         let sec = max(0, totalSec)

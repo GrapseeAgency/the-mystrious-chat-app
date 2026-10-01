@@ -1,12 +1,10 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — PiP pane stack (R28-a pane-management rework).
+// Pulse - PiP pane stack (R28-a pane-management rework).
 // Compact vertical pill stack pinned to the right edge just above
 // the composer / bottom nav capsule. Every live-but-collapsed pane
 // renders as a 48px glass pill (avatar + unread badge + close).
 // Tapping a pill expands that pane and demotes the current one
 // (focusPane demotes everyone else in the store).
-// Zero emojis — Lucide icons + motion; reduced-motion respected.
-// ─────────────────────────────────────────────────────────────
+// Zero emojis - Lucide icons + motion; reduced-motion respected.
 'use client'
 
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'

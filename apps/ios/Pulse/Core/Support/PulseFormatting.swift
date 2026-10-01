@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// Motion presets — native translations of the web spring system
+/// Motion presets - native translations of the web spring system
 /// (src/lib/motion.ts): snappy / soft / bouncy / gentle.
 extension Animation {
-    /// Tabs, press states, pills — fast settle, no wobble.
+    /// Tabs, press states, pills - fast settle, no wobble.
     public static let pulseSnappy = Animation.spring(response: 0.32, dampingFraction: 0.8)
     /// Sheets, cards, layout shifts.
     public static let pulseSoft = Animation.spring(response: 0.45, dampingFraction: 0.85)
-    /// Badges, reactions, bubbles — visible overshoot.
+    /// Badges, reactions, bubbles - visible overshoot.
     public static let pulseBouncy = Animation.spring(response: 0.3, dampingFraction: 0.55)
     /// Ambient drift.
     public static let pulseGentle = Animation.spring(response: 0.7, dampingFraction: 0.95)
@@ -18,7 +18,7 @@ extension Animation {
     }
 }
 
-/// Shared micro-interaction — scale to 0.94 on press with the snappy spring.
+/// Shared micro-interaction - scale to 0.94 on press with the snappy spring.
 public struct PulseButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -59,7 +59,7 @@ public enum PulseFormat {
         return Self.day.string(from: date)
     }
 
-    /// Web formatListStamp parity — today → "14:05" · yesterday → "Yesterday"
+    /// Web formatListStamp parity - today → "14:05" · yesterday → "Yesterday"
     /// · else "Aug 3" (the chats-list stamp the spec pins).
     public static func listStamp(_ iso: String?) -> String {
         guard let date = date(iso) else { return "" }
@@ -69,7 +69,7 @@ public enum PulseFormat {
         return Self.day.string(from: date)
     }
 
-    /// listStamp for a computed instant (mute presets — "Muted until <stamp>").
+    /// listStamp for a computed instant (mute presets - "Muted until <stamp>").
     public static func listStamp(_ date: Date) -> String {
         listStamp(isoFractional.string(from: date))
     }
@@ -83,8 +83,8 @@ public enum PulseFormat {
         return Self.separator.string(from: date)
     }
 
-    /// R14 5-b — the member-since stamp (web formatMemberSince parity,
-    /// pulse-utils.ts :280-283 — `month: 'long', year: 'numeric'`):
+    /// R14 5-b - the member-since stamp (web formatMemberSince parity,
+    /// pulse-utils.ts :280-283 - `month: 'long', year: 'numeric'`):
     /// "June 2024". Empty string on unparseable input (callers omit the line).
     public static func monthYear(_ iso: String?) -> String {
         guard let date = date(iso) else { return "" }
@@ -103,8 +103,8 @@ public enum PulseFormat {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
-    /// R2-D — slow-mode countdown chip format: m:ss at minute scale, ss
-    /// under a minute ("0:45", "2:05"). Pure, total — clamps negatives to 0.
+    /// R2-D - slow-mode countdown chip format: m:ss at minute scale, ss
+    /// under a minute ("0:45", "2:05"). Pure, total - clamps negatives to 0.
     public static func countdown(_ totalSeconds: Int) -> String {
         let s = max(0, totalSeconds)
         return String(format: "%d:%02d", s / 60, s % 60)
@@ -119,14 +119,14 @@ public enum PulseFormat {
         return joined.isEmpty ? "?" : joined.uppercased()
     }
 
-    /// R5-A Item 3 — web app-detail-sheet formatDay parity
+    /// R5-A Item 3 - web app-detail-sheet formatDay parity
     /// ("Aug 27, 2025"); pinned en_US_POSIX so tests stay deterministic.
     public static func hubDayStamp(_ iso: String?) -> String {
         guard let date = date(iso) else { return "" }
         return Self.hubDay.string(from: date)
     }
 
-    /// R5-A Item 3 — web formatRelative parity ("3h ago" family, app
+    /// R5-A Item 3 - web formatRelative parity ("3h ago" family, app
     /// detail sheet :83-93): <1m "just now" · <1h "Nm ago" · <24h "Nh ago"
     /// · <7d "Nd ago" · else the hubDayStamp.
     public static func hubRelativeStamp(_ iso: String?, now: Date = Date()) -> String {
@@ -167,7 +167,7 @@ public enum PulseFormat {
         f.dateFormat = "MMM d, yyyy"
         return f
     }()
-    // R14 5-b — the member-since stamp (web monthYearFormatter parity).
+    // R14 5-b - the member-since stamp (web monthYearFormatter parity).
     private static let monthYearFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -176,7 +176,7 @@ public enum PulseFormat {
     }()
 }
 
-/// Ambient FX modes — parity with web WEBGL_MODES. Persisted under the
+/// Ambient FX modes - parity with web WEBGL_MODES. Persisted under the
 /// same prefs key family ("fx.ambientMode", default aurora).
 public enum AmbientMode: String, CaseIterable, Identifiable {
     case off, aurora, caustics, mesh, stars, liquid

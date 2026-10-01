@@ -1,18 +1,16 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse — R39 "Automations" (keyword-triggered auto-replies).
+// Pulse - R39 "Automations" (keyword-triggered auto-replies).
 // The honest ManyChat/Landbot "bot flow" adaptation: an admin stores a
 // trigger phrase + reply; the send path lands the reply as a real
 // machine-sent message. This file carries the WHOLE surface so the
 // room-info diff stays one line:
-//   • AutomationsSection — the glass section card (rows + optimistic
+//   • AutomationsSection - the glass section card (rows + optimistic
 //     enable/disable + honest delete + create affordance).
-//   • AutomationsCreateSheet — the small glass bottom sheet with the
+//   • AutomationsCreateSheet - the small glass bottom sheet with the
 //     trigger/reply form (live validation, pending-disabled submit).
-//   • AutomationsEditSheet — R41: rename a rule's trigger after create
+//   • AutomationsEditSheet - R41: rename a rule's trigger after create
 //     (PATCH gains `trigger`; optimistic update + rollback + toast).
 // Data rides GET/POST /api/conversations/[id]/automations and
-// PATCH/DELETE /api/automations/[id] — real rows only, no mocks.
-// ─────────────────────────────────────────────────────────────
+// PATCH/DELETE /api/automations/[id] - real rows only, no mocks.
 'use client'
 
 import { useState } from 'react'
@@ -59,7 +57,7 @@ export function AutomationsSection({
 }: AutomationsSectionProps) {
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
-  /** R41 — rule whose trigger is being renamed (drives AutomationsEditSheet). */
+  /** R41 - rule whose trigger is being renamed (drives AutomationsEditSheet). */
   const [editTarget, setEditTarget] = useState<AutomationSummary | null>(null)
   const [editOpen, setEditOpen] = useState(false)
 
@@ -83,7 +81,7 @@ export function AutomationsSection({
   })
   const rows = automationsQuery.data?.automations ?? []
 
-  // Optimistic enable/disable — flips the cached row instantly, PATCHes,
+  // Optimistic enable/disable - flips the cached row instantly, PATCHes,
   // rolls back + honest toast when the server refuses.
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
@@ -130,7 +128,7 @@ export function AutomationsSection({
     },
   })
 
-  // Honest delete — no undo by design (kept simple); the row leaves the
+  // Honest delete - no undo by design (kept simple); the row leaves the
   // list optimistically and comes back if the server refuses.
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
@@ -164,7 +162,7 @@ export function AutomationsSection({
       void queryClient.invalidateQueries({ queryKey: automationsKey(conversationId) }),
   })
 
-  // R41 — optimistic trigger rename: flips the cached row instantly, PATCHes,
+  // R41 - optimistic trigger rename: flips the cached row instantly, PATCHes,
   // rolls back + the server's honest error (409 duplicate / 400 length) on refusal.
   const renameMutation = useMutation({
     mutationFn: ({ id, trigger }: { id: string; trigger: string }) =>
@@ -365,7 +363,7 @@ export function AutomationsSection({
             ))}
           </ul>
         )}
-        {/* create affordance for populated lists — admins only */}
+        {/* create affordance for populated lists - admins only */}
         {isAdmin && rows.length > 0 ? (
           <button
             type="button"
@@ -389,7 +387,7 @@ export function AutomationsSection({
         onOpenChange={setCreateOpen}
       />
 
-      {/* R41 — trigger rename sheet (unmounts after the exit animation) */}
+      {/* R41 - trigger rename sheet (unmounts after the exit animation) */}
       {editTarget ? (
         <AutomationsEditSheet
           key={editTarget.id}
@@ -459,7 +457,7 @@ function AutomationsCreateSheet({
     <AnimatePresence>
       {open ? (
         <>
-          {/* backdrop — tap anywhere outside to dismiss */}
+          {/* backdrop - tap anywhere outside to dismiss */}
           <motion.button
             type="button"
             aria-hidden
@@ -492,7 +490,7 @@ function AutomationsCreateSheet({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-zinc-900 dark:text-zinc-50">New automation</p>
                 <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                  Fires once per matching message — as a reply from you
+                  Fires once per matching message - as a reply from you
                 </p>
               </div>
             </div>
@@ -529,7 +527,7 @@ function AutomationsCreateSheet({
                 >
                   {trigger.length > 0 && triggerInvalid
                     ? `Use ${TRIGGER_MIN}-${TRIGGER_MAX} characters.`
-                    : 'Matched as a standalone word — "pricing" will not fire on "pricinggg".'}
+                    : 'Matched as a standalone word - "pricing" will not fire on "pricinggg".'}
                 </span>
               </label>
 
@@ -606,7 +604,7 @@ interface AutomationsEditSheetProps {
 }
 
 /**
- * R41 — small glass bottom sheet for renaming a rule's trigger in place.
+ * R41 - small glass bottom sheet for renaming a rule's trigger in place.
  * Same glass recipe as the create sheet; the reply stays untouched. Save is
  * disabled while the draft is invalid or unchanged; the optimistic mutation
  * (owned by the section) rolls the row back + toasts the server's honest
@@ -630,7 +628,7 @@ function AutomationsEditSheet({
     <AnimatePresence>
       {open ? (
         <>
-          {/* backdrop — tap anywhere outside to dismiss */}
+          {/* backdrop - tap anywhere outside to dismiss */}
           <motion.button
             type="button"
             aria-hidden
@@ -663,7 +661,7 @@ function AutomationsEditSheet({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-zinc-900 dark:text-zinc-50">Edit trigger</p>
                 <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                  Only the keyword moves — the reply stays unchanged
+                  Only the keyword moves - the reply stays unchanged
                 </p>
               </div>
             </div>
@@ -709,7 +707,7 @@ function AutomationsEditSheet({
               >
                 {trigger.length > 0 && triggerInvalid
                   ? `Use ${TRIGGER_MIN}-${TRIGGER_MAX} characters.`
-                  : 'Matched as a standalone word — must stay unique in this chat.'}
+                  : 'Matched as a standalone word - must stay unique in this chat.'}
               </span>
             </label>
 

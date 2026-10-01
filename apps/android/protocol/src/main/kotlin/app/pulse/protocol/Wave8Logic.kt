@@ -5,7 +5,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 
 /**
- * Wave 8 logic — the canonical port of the web's prefs pipeline:
+ * Wave 8 logic - the canonical port of the web's prefs pipeline:
  *   - src/lib/prefs-defaults.ts (DEFAULT_PREFERENCES + mergePrefs clamp rules)
  *   - src/lib/pulse-settings.ts (minutesOf + isQuietHoursNow, lines 60-83)
  * Every rule below mirrors the web line-for-line so a server blob decodes
@@ -13,13 +13,13 @@ import kotlinx.serialization.json.booleanOrNull
  */
 object PulseWave8Logic {
 
-    // ── whitelists (web prefs-defaults.ts RADIUS/DENSITY/WALLPAPER/WEBGL_MODES_OK) ──
+    // whitelists (web prefs-defaults.ts RADIUS/DENSITY/WALLPAPER/WEBGL_MODES_OK)
     val RADIUS = listOf("md", "lg", "pill")
     val DENSITY = listOf("cozy", "compact")
     val WALLPAPER = listOf("none", "aurora", "dusk", "forest", "mono")
     val WEBGL_MODES = listOf("off", "aurora", "caustics", "mesh", "stars", "liquid")
 
-    /** Defaults — web DEFAULT_PREFERENCES verbatim. */
+    /** Defaults - web DEFAULT_PREFERENCES verbatim. */
     val DEFAULTS: WirePulsePrefs = WirePulsePrefs(
         bubbleRadius = "lg",
         density = "cozy",
@@ -37,7 +37,7 @@ object PulseWave8Logic {
     /**
      * Shallow-merge a stored/partial JSON object over the defaults, silently
      * discarding anything malformed (never throws, never returns junk).
-     * Port of web mergePrefs — type-checked field-by-field, not via a
+     * Port of web mergePrefs - type-checked field-by-field, not via a
      * serializer, so wrong-typed junk ("bubbleRadius": 7) falls back exactly
      * like the web's typeof checks.
      */
@@ -48,7 +48,7 @@ object PulseWave8Logic {
         return mergePrefs(obj)
     }
 
-    /** Object overload — same rules for an already-parsed element. */
+    /** Object overload - same rules for an already-parsed element. */
     fun mergePrefs(raw: JsonObject?): WirePulsePrefs {
         if (raw == null) return DEFAULTS
         fun str(key: String, allowed: List<String>): String? {
@@ -92,7 +92,7 @@ object PulseWave8Logic {
 
     /**
      * 'HH:MM' → minutes since midnight; NaN-safe (falls back to 0).
-     * Verbatim port of web pulse-settings.ts minutesOf — the regex demands
+     * Verbatim port of web pulse-settings.ts minutesOf - the regex demands
      * 1-2 hour digits and EXACTLY 2 minute digits, then clamps (23h/59m).
      */
     fun minutesOf(hhmm: String): Int {
@@ -122,7 +122,7 @@ object PulseWave8Logic {
     }
 
     /**
-     * Runtime overload — derives "now" from the device's LOCAL clock
+     * Runtime overload - derives "now" from the device's LOCAL clock
      * (java.util.Calendar, API 21-safe; web uses Date.getHours/getMinutes).
      */
     fun isQuietHoursNow(quietHoursOn: Boolean, quietStart: String, quietEnd: String): Boolean {
@@ -132,7 +132,7 @@ object PulseWave8Logic {
         return isQuietHoursNow(quietHoursOn, quietStart, quietEnd, cur)
     }
 
-    // ── incoming attention gate (web pulse-realtime-provider.tsx:601-607 parity) ──
+    // incoming attention gate (web pulse-realtime-provider.tsx:601-607 parity)
     // Web: `if (!muted && !quiet) { playIncomingPing(); haptic(20) }` where the
     // ping honors soundOn and the haptic honors hapticsOn.
 
@@ -143,7 +143,7 @@ object PulseWave8Logic {
         quietNow: Boolean,
     ): Boolean = !quietNow && (notifSound || notifVibrate)
 
-    /** Preview line for an incoming toast — notifPreviews=false hides the body. */
+    /** Preview line for an incoming toast - notifPreviews=false hides the body. */
     fun incomingPreviewText(notifPreviews: Boolean, senderName: String, body: String): String =
         if (notifPreviews) {
             // body-only cap at 80 chars; the sender prefix rides on top so

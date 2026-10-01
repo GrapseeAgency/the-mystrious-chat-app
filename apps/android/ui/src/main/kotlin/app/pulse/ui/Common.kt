@@ -44,7 +44,7 @@ object PulsePalette {
 
     val fallbacks = listOf(Emerald, Teal, Violet, Amber, Rose)
 
-    // ── R35 Neo carbon tokens (locked spec; web globals.css .dark) ──
+    // R35 Neo carbon tokens (locked spec; web globals.css .dark)
     /** Page carbon background. */
     val NeoCarbon = Color(0xFF07090B)
     /** Elevated surface (cards, panels). */
@@ -138,7 +138,7 @@ fun PulseAvatar(
     }
 }
 
-/** Shimmer placeholder — the web's skeleton sheen, animated via a moving brush. */
+/** Shimmer placeholder - the web's skeleton sheen, animated via a moving brush. */
 fun Modifier.shimmer(): Modifier = composed {
     val transition = rememberInfiniteTransition(label = "shimmer")
     val progress by transition.animateFloat(
@@ -160,7 +160,7 @@ fun Modifier.shimmer(): Modifier = composed {
     )
 }
 
-// ── N10 glass recipe ─────────────────────────────────────────
+// N10 glass recipe
 // Compose has no backdrop blur; the established native recipe is a
 // translucent panel fill + 1dp hairline border (+ a brighter top edge when
 // a deep panel asks for the specular rim). Same recipe as ChatsScreen rows.
@@ -188,7 +188,7 @@ object PulseGlass {
     fun border(dark: Boolean): Color = if (dark) DarkBorder else LightBorder
 }
 
-/** Translucent panel + 1dp hairline — the fake-glass baseline for rows and pills. */
+/** Translucent panel + 1dp hairline - the fake-glass baseline for rows and pills. */
 fun Modifier.pulseGlass(dark: Boolean, shape: Shape, deep: Boolean = false): Modifier = this
     .clip(shape)
     .background(PulseGlass.fill(dark, deep), shape)

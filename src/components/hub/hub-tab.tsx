@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Hub — the economy/control deck (6 live panels):
+// Pulse Hub - the economy/control deck (6 live panels):
 //   Wallet · Tasks · Market · Logs · Swap · Apps (100 matrix)
-// Every panel talks to real /api/hub/* routes — zero mocks.
-// ─────────────────────────────────────────────────────────────
+// Every panel talks to real /api/hub/* routes - zero mocks.
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -65,7 +63,7 @@ const PANELS: Array<{ id: HubPanel; label: string; Icon: typeof Coins }> = [
   { id: 'apps', label: 'Apps', Icon: BadgeCheck },
 ]
 
-// ── Wallet panel ─────────────────────────────────────────────
+// Wallet panel 
 
 function WalletPanel({ me }: { me: AppUser }) {
   const qc = useQueryClient()
@@ -93,7 +91,7 @@ function WalletPanel({ me }: { me: AppUser }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: me.id }),
       }),
-    onSuccess: (data) => toast.success(`Checked in — +${data.reward} PC · ${data.streak}-day streak`),
+    onSuccess: (data) => toast.success(`Checked in - +${data.reward} PC · ${data.streak}-day streak`),
     onError: (err: Error) => toast.error(err.message),
     onSettled: invalidate,
   })
@@ -125,12 +123,12 @@ function WalletPanel({ me }: { me: AppUser }) {
         <p className="text-[11px] font-medium uppercase tracking-wider text-white/70">Pulse balance</p>
         <div className="mt-1 flex items-end gap-4">
           <div>
-            <p className="text-3xl font-bold leading-none">{wallet ? wallet.coins.toLocaleString() : '—'}</p>
+            <p className="text-3xl font-bold leading-none">{wallet ? wallet.coins.toLocaleString() : '-'}</p>
             <p className="mt-1 text-[11px] font-medium text-white/80">PC · Pulse Coins</p>
           </div>
           <div className="border-l border-white/20 pl-4">
             <p className="flex items-center gap-1 text-xl font-bold leading-none">
-              <Gem className="size-4" /> {wallet ? wallet.gems : '—'}
+              <Gem className="size-4" /> {wallet ? wallet.gems : '-'}
             </p>
             <p className="mt-1 text-[11px] font-medium text-white/80">Gems</p>
           </div>
@@ -205,7 +203,7 @@ function WalletPanel({ me }: { me: AppUser }) {
           ))}
           {(walletQ.data?.ledger.length ?? 0) === 0 ? (
             <li className="px-4 py-6 text-center text-[13px] text-zinc-500">
-              No movements yet — check in above to mint your first coins.
+              No movements yet - check in above to mint your first coins.
             </li>
           ) : null}
         </ul>
@@ -214,7 +212,7 @@ function WalletPanel({ me }: { me: AppUser }) {
   )
 }
 
-// ── Tasks panel (3-column kanban) ────────────────────────────
+// Tasks panel (3-column kanban) 
 
 const COLUMNS: Array<{ id: HubTaskItem['status']; label: string }> = [
   { id: 'todo', label: 'To do' },
@@ -340,7 +338,7 @@ function TasksPanel({ me }: { me: AppUser }) {
   )
 }
 
-// ── Market panel ─────────────────────────────────────────────
+// Market panel 
 
 function MarketPanel({ me }: { me: AppUser }) {
   const qc = useQueryClient()
@@ -393,7 +391,7 @@ function MarketPanel({ me }: { me: AppUser }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: me.id }),
       }),
-    onSuccess: () => toast.success('Purchased — coins transferred to the seller'),
+    onSuccess: () => toast.success('Purchased - coins transferred to the seller'),
     onError: (err: Error) => toast.error(err.message),
     onSettled: invalidate,
   })
@@ -444,8 +442,8 @@ function MarketPanel({ me }: { me: AppUser }) {
                 {l.description ? <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">{l.description}</p> : null}
                 <p className="mt-1 text-[11px] text-zinc-500">
                   {l.status === 'sold'
-                    ? `sold to ${l.buyer?.username ? `@${l.buyer.username}` : l.buyer?.name ?? '—'}`
-                    : `by ${l.seller?.username ? `@${l.seller.username}` : l.seller?.name ?? '—'}`}
+                    ? `sold to ${l.buyer?.username ? `@${l.buyer.username}` : l.buyer?.name ?? '-'}`
+                    : `by ${l.seller?.username ? `@${l.seller.username}` : l.seller?.name ?? '-'}`}
                   {' · '}
                   {new Date(l.createdAt).toLocaleDateString()}
                 </p>
@@ -464,7 +462,7 @@ function MarketPanel({ me }: { me: AppUser }) {
         ))}
         {(marketQ.data?.length ?? 0) === 0 ? (
           <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-center text-[13px] text-zinc-500 dark:border-white/15">
-            The board is empty — be the first seller.
+            The board is empty - be the first seller.
           </p>
         ) : null}
       </section>
@@ -472,7 +470,7 @@ function MarketPanel({ me }: { me: AppUser }) {
   )
 }
 
-// ── Swap panel ───────────────────────────────────────────────
+// Swap panel 
 
 function SwapPanel({ me }: { me: AppUser }) {
   const qc = useQueryClient()
@@ -527,11 +525,11 @@ function SwapPanel({ me }: { me: AppUser }) {
       <div className="grid grid-cols-2 gap-2">
         <div className="glass-deep glass-sheen rounded-2xl p-3">
           <p className="text-[11px] font-medium uppercase text-zinc-500">Buy rate</p>
-          <p className="mt-1 text-lg font-bold">{rate ? `${rate.pcPerGemBuy} PC → 1 GEM` : '—'}</p>
+          <p className="mt-1 text-lg font-bold">{rate ? `${rate.pcPerGemBuy} PC → 1 GEM` : '-'}</p>
         </div>
         <div className="glass-deep glass-sheen rounded-2xl p-3">
           <p className="text-[11px] font-medium uppercase text-zinc-500">Sell rate</p>
-          <p className="mt-1 text-lg font-bold">{rate ? `1 GEM → ${rate.pcPerGemSell} PC` : '—'}</p>
+          <p className="mt-1 text-lg font-bold">{rate ? `1 GEM → ${rate.pcPerGemSell} PC` : '-'}</p>
         </div>
       </div>
 
@@ -598,7 +596,7 @@ function SwapPanel({ me }: { me: AppUser }) {
   )
 }
 
-// ── Logs panel (terminal) ────────────────────────────────────
+// Logs panel (terminal) 
 
 function LogsPanel() {
   const logsQ = useQuery({
@@ -616,7 +614,7 @@ function LogsPanel() {
         <span className="size-2.5 rounded-full bg-rose-500" />
         <span className="size-2.5 rounded-full bg-amber-400" />
         <span className="size-2.5 rounded-full bg-emerald-500" />
-        <p className="ml-1 text-[11px] font-semibold text-zinc-400">pulse://logs — live event stream</p>
+        <p className="ml-1 text-[11px] font-semibold text-zinc-400">pulse://logs - live event stream</p>
       </div>
       <ul className="max-h-[26rem] divide-y divide-zinc-900 overflow-y-auto p-2 text-[11px] leading-relaxed dark:divide-white/5">
         {(logsQ.data ?? []).map((l) => (
@@ -641,14 +639,14 @@ function LogsPanel() {
           </li>
         ))}
         {(logsQ.data?.length ?? 0) === 0 ? (
-          <li className="py-8 text-center text-zinc-600">no events yet — use the economy panels to generate some</li>
+          <li className="py-8 text-center text-zinc-600">no events yet - use the economy panels to generate some</li>
         ) : null}
       </ul>
     </div>
   )
 }
 
-// ── Apps panel (100 matrix, real installs) ───────────────────
+// Apps panel (100 matrix, real installs) 
 
 /** Extra chips for MATRIX categories missing from the static chip list. */
 const EXTRA_CHIP_LABELS: Partial<Record<MatrixCategory, string>> = {
@@ -765,7 +763,7 @@ function AppTile({
 }
 
 /**
- * Apps panel — the hub root catalog surface (R27-b). Search filters the
+ * Apps panel - the hub root catalog surface (R27-b). Search filters the
  * live matrix; chips + tiles navigate REAL hash sub-pages (#/hub/c/:slug,
  * #/hub/app/:id). Install truth comes from the shared installed-set cache.
  */
@@ -815,7 +813,7 @@ function AppsPanel({ me }: { me: AppUser }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {/* real catalog search — glass pill field */}
+      {/* real catalog search - glass pill field */}
       <div className="glass-deep glass-sheen relative rounded-full">
         <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-zinc-400" aria-hidden />
         <Input
@@ -884,7 +882,7 @@ function AppsPanel({ me }: { me: AppUser }) {
   )
 }
 
-// ── Hub shell ────────────────────────────────────────────────
+// Hub shell 
 
 export function HubTab({
   me,
@@ -898,7 +896,7 @@ export function HubTab({
   const { path } = useHashRoute()
   const walletQ = useWalletMini(me.id)
 
-  // ── #/hub/* sub-page routing — handled inside the Hub tab ──
+  // #/hub/* sub-page routing - handled inside the Hub tab 
   // #/hub/c/<slug>  → category page (or "mine" = My apps)
   // #/hub/app/<id>  → app page (replaces the old detail sheet)
   const subPath = path.startsWith('/hub/') ? path.slice('/hub/'.length) : null
@@ -928,12 +926,12 @@ export function HubTab({
             <h1 className="text-[16.5px] font-bold leading-tight">Hub</h1>
             <p className="truncate text-[11px] text-zinc-500">Economy · tasks · market · the 100-app matrix</p>
           </div>
-          {/* real wallet chip — same cache key as the Wallet panel */}
+          {/* real wallet chip - same cache key as the Wallet panel */}
           {walletQ.data ? (
             <button
               type="button"
               onClick={() => setPanel('wallet')}
-              aria-label={`Wallet balance ${walletQ.data.coins} Pulse Coins — open wallet panel`}
+              aria-label={`Wallet balance ${walletQ.data.coins} Pulse Coins - open wallet panel`}
               className="glass-pill flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11px] font-bold text-emerald-700 outline-none transition-transform active:scale-95 dark:text-emerald-400"
             >
               <Coins className="size-3.5" aria-hidden />
@@ -987,7 +985,7 @@ export function HubTab({
         </motion.div>
       </div>
 
-      {/* hash-routed hub sub-pages — slide over the rails, browser back works */}
+      {/* hash-routed hub sub-pages - slide over the rails, browser back works */}
       <AnimatePresence initial={false}>
         {catSlug !== null ? (
           <HubCategoryPage key={`c-${catSlug}`} slug={catSlug} me={me} direction={direction} />

@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
  * everywhere at once.
  *
  * Transport = REST only (web parity: TanStack 60s refetchInterval + query
- * invalidations — there are ZERO socket events for stories).
+ * invalidations - there are ZERO socket events for stories).
  */
 @HiltViewModel
 class StoriesViewModel @Inject constructor(
@@ -36,7 +36,7 @@ class StoriesViewModel @Inject constructor(
 ) : ViewModel() {
 
     /**
-     * D5 (web defect): error vs empty are DISTINCT states — `error != null`
+     * D5 (web defect): error vs empty are DISTINCT states - `error != null`
      * means the transport failed with nothing to show (retry offered);
      * `error == null && loadedOnce && groups empty` is an honest empty feed.
      */
@@ -113,7 +113,7 @@ class StoriesViewModel @Inject constructor(
         startPolling()
     }
 
-    // ── publish (composer) ──────────────────────────────────────
+    // publish (composer)
 
     fun publishStory(
         caption: String,
@@ -129,7 +129,7 @@ class StoriesViewModel @Inject constructor(
                 },
                 onFailure = { failure ->
                     // Surface the server's own copy ("A status needs a photo or
-                    // some text." etc.) — honest errors, never silent drops.
+                    // some text." etc.) - honest errors, never silent drops.
                     onDone(false, failure.message ?: "Could not post your status")
                 },
             )
@@ -143,11 +143,11 @@ class StoriesViewModel @Inject constructor(
         }
     }
 
-    // ── viewer actions ──────────────────────────────────────────
+    // viewer actions
 
     /**
      * ONE view-mark attempt per call (the viewer machine drives the single
-     * retry — D6). Optimistic: the story flips to viewed locally BEFORE the
+     * retry - D6). Optimistic: the story flips to viewed locally BEFORE the
      * POST so the ring reacts instantly; the next feed fetch reconciles
      * against server truth.
      */
@@ -164,7 +164,7 @@ class StoriesViewModel @Inject constructor(
         }
     }
 
-    /** Optimistic removal — the viewer's machine reconciles via GroupsUpdated (D3). */
+    /** Optimistic removal - the viewer's machine reconciles via GroupsUpdated (D3). */
     fun deleteStory(storyId: String, onDone: (success: Boolean) -> Unit) {
         removeStoryLocal(storyId)
         viewModelScope.launch {
@@ -199,7 +199,7 @@ class StoriesViewModel @Inject constructor(
             .filter { it.stories.isNotEmpty() }
     }
 
-    // ── owner viewers sheet (D7) ────────────────────────────────
+    // owner viewers sheet (D7)
 
     private val _viewers = MutableStateFlow<List<StoryViewer>>(emptyList())
     val viewers: StateFlow<List<StoryViewer>> = _viewers.asStateFlow()
@@ -207,7 +207,7 @@ class StoriesViewModel @Inject constructor(
     private val _viewersLoading = MutableStateFlow(false)
     val viewersLoading: StateFlow<Boolean> = _viewersLoading.asStateFlow()
 
-    /** One fetch — the sheet re-issues it every 5s while open (D7 poll loop). */
+    /** One fetch - the sheet re-issues it every 5s while open (D7 poll loop). */
     fun loadViewers(storyId: String) {
         viewModelScope.launch {
             _viewersLoading.value = true

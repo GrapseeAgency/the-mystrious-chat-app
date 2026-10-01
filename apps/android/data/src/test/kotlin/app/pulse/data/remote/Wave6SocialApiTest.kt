@@ -17,7 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Wave 6 — social-graph REST contract tests (JVM, MockEngine). Locks the
+ * Wave 6 - social-graph REST contract tests (JVM, MockEngine). Locks the
  * ROUTE-FIX audit items: block carries the actor in the BODY, unblock is
  * DELETE /block?userId= (POST /unblock does not exist), report carries the
  * reporter, PATCH propagates the 409 username_taken code+suggestion.

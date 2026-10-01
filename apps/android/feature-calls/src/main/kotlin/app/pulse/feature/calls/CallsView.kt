@@ -58,7 +58,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** History VM — Room-cached mirror of GET /api/calls, refreshed on entry. */
+/** History VM - Room-cached mirror of GET /api/calls, refreshed on entry. */
 @HiltViewModel
 class CallHistoryViewModel @Inject constructor(
     private val repo: PulseRepository,
@@ -77,19 +77,19 @@ class CallHistoryViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             repo.refreshCallLog()
-                .onFailure { _notice.value = "Can't load call history — showing cached rows." }
+                .onFailure { _notice.value = "Can't load call history - showing cached rows." }
                 .onSuccess { _notice.value = null }
         }
     }
 
-    /** R3-B item 5 — the redial fallback surfaces through the same channel. */
+    /** R3-B item 5 - the redial fallback surfaces through the same channel. */
     fun notify(text: String) {
         _notice.value = text
     }
 }
 
 /**
- * Wave 3 — call history (the CALL-LOG half of the wave). Renders all eight
+ * Wave 3 - call history (the CALL-LOG half of the wave). Renders all eight
  * directive cases from the single-writer REST rows:
  *   outgoing accepted   → ↑ + "Outgoing · duration"
  *   outgoing declined   → ↑ + "Declined"
@@ -100,7 +100,7 @@ class CallHistoryViewModel @Inject constructor(
  *   timeout             → caller side of the same row ("No answer")
  *   completed           → any connected call that ended normally (duration > 0)
  *
- * R3-B item 5 — rows that carry a peer identity also carry a trailing REDIAL
+ * R3-B item 5 - rows that carry a peer identity also carry a trailing REDIAL
  * button (web calls-page.tsx rows reopen the chat; iOS rows redial): same
  * engine path as the contacts call button, RECORD_AUDIO gated first, with a
  * per-row busy spinner and the honest "Calls aren't ready yet" fallback when
@@ -110,7 +110,7 @@ class CallHistoryViewModel @Inject constructor(
 fun CallsView(
     onBack: () -> Unit,
     onOpenRoom: (String) -> Unit = {},
-    // R3-B item 5 — start an outgoing call from a history row's identity.
+    // R3-B item 5 - start an outgoing call from a history row's identity.
     onRedial: (CallLogEntry) -> Unit = {},
 ) {
     val vm: CallHistoryViewModel = androidx.hilt.navigation.compose.hiltViewModel()
@@ -273,7 +273,7 @@ private fun CallRow(
         }
         Spacer(Modifier.width(8.dp))
         if (onRedial != null) {
-            // R3-B item 5 — the redial disc: emerald disc + phone glyph,
+            // R3-B item 5 - the redial disc: emerald disc + phone glyph,
             // per-row spinner while the outgoing call is being armed.
             if (redialBusy) {
                 Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {

@@ -13,14 +13,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * R1-W2H D45 — reboot resilience for Tier-1 reminders (F-RO-06).
+ * R1-W2H D45 - reboot resilience for Tier-1 reminders (F-RO-06).
  *
  * ReminderNotifier's offline one-shots are WorkManager jobs: they survive
  * process death, but after a REBOOT the persisted work is re-run by the
- * scheduler at an unspecified time — reminders that came due while the device
+ * scheduler at an unspecified time - reminders that came due while the device
  * was off would stay silent until the app is next opened. This receiver
  * closes that window using the SAME house infra as the shell due-loop
- * (MainActivity.onStart) — no new scheduling mechanism:
+ * (MainActivity.onStart) - no new scheduling mechanism:
  *
  *   · still-future remindAt → [ReminderNotifier.schedule] re-arms the
  *     WorkManager one-shot (REPLACE policy dedupes any half-armed copy);
@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
  *
  * Reminder truth is server-side: the network is tried first, and the last
  * good snapshot cache ([PulseRepository.cachedReminders]) is the offline
- * fallback — boot-time connectivity is never guaranteed.
+ * fallback - boot-time connectivity is never guaranteed.
  *
  * DI: receivers cannot be constructor-injected; the house pattern is
  * @AndroidEntryPoint field injection (same as MainActivity), so Hilt supplies
@@ -72,26 +72,26 @@ class BootReceiver : BroadcastReceiver() {
             val remindAtMs = PulseTime.epochMs(item.remindAt)
             if (remindAtMs <= 0L) continue
             if (remindAtMs > now) {
-                // Still future — re-arm the offline one-shot (idempotent REPLACE).
-                // R2-C item 6 — the conversation rides along for the deep link.
+                // Still future - re-arm the offline one-shot (idempotent REPLACE).
+                // R2-C item 6 - the conversation rides along for the deep link.
                 ReminderNotifier.schedule(
                     context,
                     item.id,
                     item.note.ifBlank { "Reminder" },
                     remindAtMs,
                     item.conversationId.ifBlank { null },
-                    // R7 item 4 — the anchored message keeps its jump payload.
+                    // R7 item 4 - the anchored message keeps its jump payload.
                     item.messageId,
                 )
             } else if (item.firedAt == null) {
-                // Came due while the device was off — nudge now, converge after.
+                // Came due while the device was off - nudge now, converge after.
                 ReminderNotifier.show(
                     context,
                     item.id,
                     item.note.ifBlank { "Reminder" },
                     item.snippet ?: item.conversation.name,
                     item.conversationId.ifBlank { null },
-                    // R7 item 4 — the anchored message keeps its jump payload.
+                    // R7 item 4 - the anchored message keeps its jump payload.
                     item.messageId,
                 )
                 runCatching { repository.resolveReminder(item.id) }
@@ -100,7 +100,7 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     private companion object {
-        /** OEM quick-boot (HTC lineage / some emulators) — same semantics as BOOT_COMPLETED. */
+        /** OEM quick-boot (HTC lineage / some emulators) - same semantics as BOOT_COMPLETED. */
         const val ACTION_QUICKBOOT_POWERON = "android.intent.action.QUICKBOOT_POWERON"
     }
 }

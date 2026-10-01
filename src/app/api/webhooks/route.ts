@@ -1,10 +1,8 @@
-// ─────────────────────────────────────────────────────────────
-// /api/webhooks — manage Discord-style incoming webhooks.
+// /api/webhooks - manage Discord-style incoming webhooks.
 // POST   { conversationId, name, requesterId } → 201 WebhookDTO
 // GET    ?conversationId=&requesterId=         → { webhooks: WebhookDTO[] }
 // Both require the requester to be a conversation participant
 // (deletion is admin-only and lives on /api/webhooks/[token]).
-// ─────────────────────────────────────────────────────────────
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { AVATAR_COLORS, safeJson, strField } from '@/lib/serializers'
@@ -19,7 +17,7 @@ export interface WebhookDTO {
   name: string
   token: string
   avatarColor: string
-  /** relative ingest URL — pair with the app origin on the client */
+  /** relative ingest URL - pair with the app origin on the client */
   url: string
   createdAt: string // ISO
   createdBy: string
@@ -48,7 +46,7 @@ export function toWebhookDTO(row: WebhookRow): WebhookDTO {
 
 /**
  * GET /api/webhooks?conversationId=X&requesterId=Y
- * → { webhooks: WebhookDTO[] } (createdAt asc) — Y must be a participant.
+ * → { webhooks: WebhookDTO[] } (createdAt asc) - Y must be a participant.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -125,7 +123,7 @@ export async function POST(req: Request) {
     )
   }
 
-  // Colorful dots in the management card — picked from the avatar palette.
+  // Colorful dots in the management card - picked from the avatar palette.
   const avatarColor = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)]
   const created = await db.webhook.create({
     data: { conversationId, name, avatarColor, createdBy: requesterId },

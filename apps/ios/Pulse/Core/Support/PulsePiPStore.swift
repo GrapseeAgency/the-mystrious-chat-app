@@ -1,8 +1,7 @@
 import Foundation
 import Combine
 
-// ─────────────────────────────────────────────────────────────
-// Pulse — PiP pane store (R1-W2I, spec F-PI-01..03).
+// Pulse - PiP pane store (R1-W2I, spec F-PI-01..03).
 // Mirror of the web src/components/chat/pip-store.ts (zustand + persist):
 //
 // A floating pane = one conversation rendered as a draggable glass window.
@@ -22,12 +21,11 @@ import Combine
 //   isOpen      → true while ≥ 1 pane exists
 //   conversationId → the focused (expanded) pane's conversation,
 //                    null when only the stack is showing
-// Owned by PulseSession (Core/Support session layer — same home as the
+// Owned by PulseSession (Core/Support session layer - same home as the
 // call engine / stories / voice-rooms owners) and rendered by the
 // RootView-level PipPaneHostView.
-// ─────────────────────────────────────────────────────────────
 
-/// Frame geometry reserves — web pip-store.ts constants (web px ≈ iOS pt).
+/// Frame geometry reserves - web pip-store.ts constants (web px ≈ iOS pt).
 enum PipGeometry {
     /// side margin the pane keeps from the frame edges
     static let marginX: CGFloat = 10
@@ -50,7 +48,7 @@ public final class PulsePiPStore: ObservableObject {
     /// One live pane. Web PipPane parity: pane key == conversation id; nx/ny
     /// are the normalized top-left across the draggable range; lastSeenAt
     /// drives unread badges; openedAt (creation/last-focus) is the eviction
-    /// order. Web's `meta` display blob is not stored — native cards read
+    /// order. Web's `meta` display blob is not stored - native cards read
     /// the shared GRDB conversation cache (the same "shared caches, no extra
     /// fetching" rule the web pills follow).
     public struct PipPane: Codable, Equatable, Sendable {
@@ -69,7 +67,7 @@ public final class PulsePiPStore: ObservableObject {
         var minimized: Bool
     }
 
-    /// Max simultaneously live panes (1 expanded + rest stacked) — web PIP_MAX_PANES.
+    /// Max simultaneously live panes (1 expanded + rest stacked) - web PIP_MAX_PANES.
     public static let maxPanes = 3
     private static let storageKey = "pulse.pip.v2"
 
@@ -77,11 +75,11 @@ public final class PulsePiPStore: ObservableObject {
     @Published public private(set) var conversationId: String?
     @Published public private(set) var minimized = false
 
-    /// ≥ 1 pane exists (window and/or stack) — web isOpen.
+    /// ≥ 1 pane exists (window and/or stack) - web isOpen.
     public var isOpen: Bool { !panes.isEmpty }
 
     public init() {
-        // Relaunch restore — web persist.merge() parity: sanitize panes, the
+        // Relaunch restore - web persist.merge() parity: sanitize panes, the
         // focused pane must exist AND be expanded, otherwise stack-only.
         guard
             let raw = UserDefaults.standard.string(forKey: Self.storageKey),
@@ -97,9 +95,9 @@ public final class PulsePiPStore: ObservableObject {
         self.minimized = !panes.isEmpty && focused == nil
     }
 
-    // ── legacy contract ops (web usePipChat) ─────────────────────
+    // legacy contract ops (web usePipChat)
 
-    /// open (or focus) the pane for a conversation — demotes the rest.
+    /// open (or focus) the pane for a conversation - demotes the rest.
     public func open(_ conversationId: String) {
         let now = Self.nowMs()
         var next = panes.map { p in
@@ -120,7 +118,7 @@ public final class PulsePiPStore: ObservableObject {
                 )
             )
         }
-        // cap live panes — evict the OLDEST pane that is not the focused one
+        // cap live panes - evict the OLDEST pane that is not the focused one
         while next.count > Self.maxPanes {
             guard
                 let oldest = next.filter({ $0.conversationId != conversationId })
@@ -165,7 +163,7 @@ public final class PulsePiPStore: ObservableObject {
         persist()
     }
 
-    // ── R28-a pane ops (web parity) ──────────────────────────────
+    // R28-a pane ops (web parity)
 
     /// expand a specific stacked pane, demote the rest.
     public func focusPane(_ conversationId: String) {
@@ -189,7 +187,7 @@ public final class PulsePiPStore: ObservableObject {
         persist()
     }
 
-    /// persist a pane's normalized position (0..1) — web setPanePosition.
+    /// persist a pane's normalized position (0..1) - web setPanePosition.
     public func setPanePosition(_ conversationId: String, nx: Double, ny: Double) {
         guard let idx = panes.firstIndex(where: { $0.conversationId == conversationId }) else { return }
         let sx = Self.clamp01(nx)
@@ -208,7 +206,7 @@ public final class PulsePiPStore: ObservableObject {
         persist()
     }
 
-    // ── internals ────────────────────────────────────────────────
+    // internals
 
     private func persist() {
         let state = PersistedState(panes: panes, isOpen: isOpen, conversationId: conversationId, minimized: minimized)

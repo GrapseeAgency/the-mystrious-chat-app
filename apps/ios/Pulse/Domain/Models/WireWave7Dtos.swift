@@ -1,14 +1,12 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// Wave 7 — collaboration & hub wire DTOs (F-RO / F-HB).
+// Wave 7 - collaboration & hub wire DTOs (F-RO / F-HB).
 // Mirror of the live gateway JSON routes audited in worklog
-// "Task ID: 7-a" — red packets, whiteboard, kanban, events,
+// "Task ID: 7-a" - red packets, whiteboard, kanban, events,
 // reminders, games, tournaments, leaderboard, hub economy.
 // Tolerant decode: only id-critical fields stay required;
 // everything else decodes as nil/default so older relays never
 // crash the surface.
-// ─────────────────────────────────────────────────────────────
 
 // MARK: - Red packets (F-RO-02)
 
@@ -440,7 +438,7 @@ public struct WireHubLog: Codable, Hashable, Sendable {
     public let id: String?
     public let kind: String?
     public let message: String?
-    /// RAW JSON string on the wire — never parsed server-side.
+    /// RAW JSON string on the wire - never parsed server-side.
     public let meta: String?
     public let createdAt: String?
     public let user: WireHubLogUser?

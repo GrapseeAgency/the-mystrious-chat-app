@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — invite deep-link join sheet (?join=CODE).
+// Pulse Chat - invite deep-link join sheet (?join=CODE).
 // Previews the group behind the code, then joins (or jumps in
 // when the viewer is already a member). Fully DB-backed.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -123,7 +121,7 @@ export function JoinGroupSheet({
             </p>
             <p className="mt-1 max-w-[280px] text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
               {invite.alreadyMember
-                ? 'You are already in this group — jump back in?'
+                ? 'You are already in this group - jump back in?'
                 : 'You were invited to join this group on Pulse.'}
             </p>
             <Button

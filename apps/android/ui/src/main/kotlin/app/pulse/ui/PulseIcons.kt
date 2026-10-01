@@ -1228,4 +1228,57 @@ object PulseIcons {
             lineTo(17f, 10.4f)
         }
     }
+
+    /** Heart - the classic rounded-cardioid line heart. */
+    val Heart: ImageVector by lazy {
+        icon("Heart") {
+            moveTo(12f, 20.2f)
+            curveTo(11.2f, 20.2f, 3.4f, 15.6f, 3.4f, 9.6f)
+            arcToRelative(4.6f, 4.6f, 0f, false, true, 8.6f, -2.3f)
+            lineTo(12f, 7.6f)
+            lineTo(12.1f, 7.3f)
+            arcToRelative(4.6f, 4.6f, 0f, false, true, 8.6f, 2.3f)
+            curveTo(20.6f, 15.6f, 12.8f, 20.2f, 12f, 20.2f)
+            close()
+        }
+    }
+
+    /** Paw - four toe beans over a main pad. */
+    val Paw: ImageVector by lazy {
+        icon("Paw") {
+            circle(5.4f, 9.2f, 1.9f)
+            circle(18.6f, 9.2f, 1.9f)
+            circle(9.2f, 5.2f, 1.9f)
+            circle(14.8f, 5.2f, 1.9f)
+            moveTo(12f, 11.4f)
+            curveTo(15.2f, 11.4f, 18f, 13.9f, 18f, 16.6f)
+            curveTo(18f, 18.9f, 16.2f, 20.2f, 14.4f, 19.6f)
+            curveTo(13.6f, 19.3f, 12.8f, 19.2f, 12f, 19.2f)
+            curveTo(11.2f, 19.2f, 10.4f, 19.3f, 9.6f, 19.6f)
+            curveTo(7.8f, 20.2f, 6f, 18.9f, 6f, 16.6f)
+            curveTo(6f, 13.9f, 8.8f, 11.4f, 12f, 11.4f)
+            close()
+        }
+    }
+
+    /** Thumbs up - the web pulse-thumb voice. */
+    val Thumb: ImageVector by lazy {
+        icon("Thumb") {
+            moveTo(7.2f, 10.6f)
+            lineTo(7.2f, 20.2f)
+            moveTo(7.2f, 20.2f)
+            lineTo(17.2f, 20.2f)
+            arcToRelative(2.1f, 2.1f, 0f, false, false, 2f, -1.6f)
+            lineTo(20.4f, 13.4f)
+            arcToRelative(1.7f, 1.7f, 0f, false, false, -1.7f, -2.1f)
+            lineTo(14.2f, 11.3f)
+            lineTo(15f, 6.2f)
+            arcToRelative(1.6f, 1.6f, 0f, false, false, -3f, -1f)
+            lineTo(7.2f, 10.6f)
+            moveTo(7.2f, 10.6f)
+            lineTo(3.6f, 10.6f)
+            lineTo(3.6f, 20.2f)
+            lineTo(7.2f, 20.2f)
+        }
+    }
 }

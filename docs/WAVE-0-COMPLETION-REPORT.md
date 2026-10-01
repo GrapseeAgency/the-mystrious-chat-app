@@ -1,7 +1,7 @@
 # PULSE — WAVE 0 COMPLETION REPORT
 
 **Wave:** 0 — Native Foundation / Contract Completion
-**Status:** ✅ COMPLETE — all 16 mandates evidenced, all quality gates green, release shipped
+**Status:**  COMPLETE — all 16 mandates evidenced, all quality gates green, release shipped
 **Release:** [`v0.2.0-native`](https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.2.0-native) · versionCode 10 · APK sha256 `4dadcd91e1aca6f8db2e7f12a0a906dede9e4756a1bd84ae57615d12db0e7d84`
 **Scope discipline:** the 175-feature set was NOT implemented (mandate 16 honored). Wave 0 = transport, persistence, offline core, session, CI only.
 
@@ -106,10 +106,10 @@ Full changeset `46e63ee..cdf6696` (Wave 0 on `main`): **67 files, +7,149 / −27
 
 | Platform | Workflow | Result |
 |---|---|---|
-| Android | `android-ci` on `main` @ `28d74d0` (run 34554724673) | ✅ **success** — JVM tests + signed release APK artifact + emulator instrumented gate |
-| Android | `android-ci` on tag `v0.2.0-native` (run 34556442999) | ✅ build+instrumented **success** (publish step 403'd on read-scoped GITHUB_TOKEN → fixed with `permissions: contents: write`; release created via PAT from the tag build bytes) |
-| iOS | `ios-ci` on `main` @ `523c896` (run 34555428959) | ✅ **success** — build, 16 tests, launch smoke, unsigned archive |
-| iOS | `ios-ci` on tag `v0.2.0-native` (run 34556442993) | ✅ **success** |
+| Android | `android-ci` on `main` @ `28d74d0` (run 34554724673) |  **success** — JVM tests + signed release APK artifact + emulator instrumented gate |
+| Android | `android-ci` on tag `v0.2.0-native` (run 34556442999) |  build+instrumented **success** (publish step 403'd on read-scoped GITHUB_TOKEN → fixed with `permissions: contents: write`; release created via PAT from the tag build bytes) |
+| iOS | `ios-ci` on `main` @ `523c896` (run 34555428959) |  **success** — build, 16 tests, launch smoke, unsigned archive |
+| iOS | `ios-ci` on tag `v0.2.0-native` (run 34556442993) |  **success** |
 
 **Fix loop honesty (5 rounds, each root-caused from logs):**
 1. `4.json` malformed (`orders:{}` → `[]`, `fieldPaths` → `columnNames`) — Room 2.6.1 re-reads the export at compile time; + iOS GRDB publisher `Failure=Error` sink (`.replaceError(with: [])`).
@@ -121,10 +121,10 @@ Full changeset `46e63ee..cdf6696` (Wave 0 on `main`): **67 files, +7,149 / −27
 **Delivery chain:** tag `v0.2.0-native` → tag CI green → Release [386759368](https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.2.0-native) + `Pulse-v0.2.0-native.apk` (asset `uploaded`) → CDN commit `cdf6696` (`download/Pulse.apk` + `update-manifest.json` v10 + dormant `gateway`/`socket` keys).
 
 **Four-source hash rule — ALL EQUAL `4dadcd91e1aca6f8db2e7f12a0a906dede9e4756a1bd84ae57615d12db0e7d84`:**
-1. Tag CI artifact (`pulse-release-apk`, run 34556442999) ✅
-2. Release asset (`releases/download/v0.2.0-native/Pulse-v0.2.0-native.apk`) ✅
-3. Raw CDN mirror (`raw.githubusercontent.com/.../main/download/Pulse.apk`) ✅
-4. Manifest `sha256` field (live) ✅
+1. Tag CI artifact (`pulse-release-apk`, run 34556442999) 
+2. Release asset (`releases/download/v0.2.0-native/Pulse-v0.2.0-native.apk`) 
+3. Raw CDN mirror (`raw.githubusercontent.com/.../main/download/Pulse.apk`) 
+4. Manifest `sha256` field (live) 
 
 ---
 

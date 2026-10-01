@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// /api/conversations/[id]/mute — per-user notification mute
-// ─────────────────────────────────────────────────────────────
+// /api/conversations/[id]/mute - per-user notification mute
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'

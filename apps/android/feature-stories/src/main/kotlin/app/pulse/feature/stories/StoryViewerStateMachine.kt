@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.update
 
 /**
  * Pure, JVM-testable state machine behind the full-screen story viewer
- * (no Android imports — the composable is a thin renderer for it).
+ * (no Android imports - the composable is a thin renderer for it).
  *
  * Web-truth behaviors implemented here (stories-sheet.tsx semantics,
  * preserved as behavior, not implementation):
@@ -18,21 +18,21 @@ import kotlinx.coroutines.flow.update
  *  - advance crosses group boundaries; auto-closes after the last story;
  *    prev no-ops at the very first story.
  *  - D2 (web defect): expired stories (expiresAt <= now) are dropped BEFORE
- *    flattening — skipping them on advance never needs a network probe.
+ *    flattening - skipping them on advance never needs a network probe.
  *  - D3 (web defect): when the displayed story vanishes underneath (delete /
  *    expiry / server refetch), the machine auto-advances to the nearest
  *    survivor (same flat position clamped) or closes when nothing survives.
- *  - D6 (web defect): optimistic seen-marking — a non-mine story marks
+ *  - D6 (web defect): optimistic seen-marking - a non-mine story marks
  *    pendingViewMark as soon as it is DISPLAYED; one failure re-queues a
  *    single retry; a second failure gives up (the next feed fetch
  *    reconciles from the server).
  */
 /**
  * Every event the viewer screen feeds the machine (nested objects are the
- * concrete inputs — referenced as StoryViewerInput.Tick etc.).
+ * concrete inputs - referenced as StoryViewerInput.Tick etc.).
  */
 sealed interface StoryViewerInput {
-    /** Playback frame — carries wall time; elapsed accrues only while unpaused. */
+    /** Playback frame - carries wall time; elapsed accrues only while unpaused. */
     data class Tick(val nowMs: Long) : StoryViewerInput
     data object TapNext : StoryViewerInput
     data object TapPrev : StoryViewerInput
@@ -45,7 +45,7 @@ sealed interface StoryViewerInput {
 }
 
 class StoryViewerStateMachine(
-    /** Where the viewer was opened from (rail cell) — first story of that group. */
+    /** Where the viewer was opened from (rail cell) - first story of that group. */
     private val startUserId: String? = null,
 ) {
 
@@ -67,10 +67,10 @@ class StoryViewerStateMachine(
         val index: Int = 0,
         val elapsedMs: Long = 0L,
         val paused: Boolean = false,
-        /** drag-down dismiss OR finished the last story — the screen closes on this. */
+        /** drag-down dismiss OR finished the last story - the screen closes on this. */
         val dismissed: Boolean = false,
         val pendingMark: PendingViewMark? = null,
-        /** Monotonic counter — screens key effects off it instead of data classes. */
+        /** Monotonic counter - screens key effects off it instead of data classes. */
         val revision: Long = 0L,
     ) {
         val current: FlatStory? get() = flat.getOrNull(index)
@@ -93,7 +93,7 @@ class StoryViewerStateMachine(
     /** Set once the first non-empty feed lands and the start position is chosen. */
     private var started = false
 
-    /** Timestamp of the last Tick while unpaused — null = clock not armed yet. */
+    /** Timestamp of the last Tick while unpaused - null = clock not armed yet. */
     private var lastTickAt: Long? = null
 
     fun on(input: StoryViewerInput) = _state.update { prev -> reduce(prev, input) }
@@ -177,7 +177,7 @@ class StoryViewerStateMachine(
                     next.copy(pendingMark = pendingMarkFor(next))
                 }
             }
-            // Same story still live — keep position AND elapsed (no restart on refresh).
+            // Same story still live - keep position AND elapsed (no restart on refresh).
             else -> {
                 val next = state.copy(groups = groups, flat = flat, index = found)
                 if (next.current?.story?.viewedByMe == true && next.pendingMark?.storyId == currentId) {
@@ -211,7 +211,7 @@ class StoryViewerStateMachine(
         )
     }
 
-    /** D6: ONE retry — the first failure re-queues, the second gives up. */
+    /** D6: ONE retry - the first failure re-queues, the second gives up. */
     private fun onViewMarkFailed(state: State, storyId: String): State {
         val pending = state.pendingMark ?: return state
         if (pending.storyId != storyId) return state

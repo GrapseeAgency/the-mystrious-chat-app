@@ -1,7 +1,6 @@
 import Foundation
 
-// ─────────────────────────────────────────────────────────────
-// R5-A Item 2 — A–Z directory grouping (web contacts-tab.tsx
+// R5-A Item 2 - A–Z directory grouping (web contacts-tab.tsx
 // indexLetterOf :53-57 + sections memo :125-137). Pure kernel so the
 // Contacts list and its index rail stay testable:
 //   • bucket by the first character of the display name,
@@ -11,7 +10,6 @@ import Foundation
 //   • letters sort A→Z (localized), "#" sorts LAST (web parity);
 //   • original input order is preserved inside a bucket (the users
 //     API already orders by name).
-// ─────────────────────────────────────────────────────────────
 enum PulseAZIndex {
     struct Section<Item> {
         let letter: String
@@ -19,12 +17,12 @@ enum PulseAZIndex {
     }
 
     /// "ada" → "A" · "  Bob" → "B" · "3milio" → "#" · "émile" → "#" · "" → "#".
-    /// Unicode-scalar range check — no Character == closure predicates
+    /// Unicode-scalar range check - no Character == closure predicates
     /// (house rule after the R1-CLOSE r8-r12 CI runner findings).
     static func letter(for name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let first = trimmed.uppercased().unicodeScalars.first else { return "#" }
-        // U+0041 ("A") … U+005A ("Z") — the plain Latin uppercase range.
+        // U+0041 ("A") … U+005A ("Z") - the plain Latin uppercase range.
         if first.value >= 65 && first.value <= 90 { return String(first) }
         return "#"
     }

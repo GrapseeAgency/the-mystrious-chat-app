@@ -31,12 +31,12 @@ public struct PulseIceServer: Codable, Equatable {
     }
 }
 
-/// Gateway endpoints — iOS mirror of Android `PulseEndpoints`.
+/// Gateway endpoints - iOS mirror of Android `PulseEndpoints`.
 ///
 /// NO fake host is baked: a static CDN (raw.githubusercontent) cannot execute
 /// `/api/*`, so pointing REST at one is a guaranteed 404. Resolution order:
 ///   1. User-configured origin (Settings → Connection, persisted in
-///      UserDefaults) — always wins.
+///      UserDefaults) - always wins.
 ///   2. Wave 0 manifest override: `{cdn}/update-manifest.json` may carry
 ///      non-empty `gateway`/`socket` fields; when adopted they persist in the
 ///      Keychain ("endpoints.override") and re-apply on every launch, so an
@@ -49,11 +49,11 @@ public struct PulseIceServer: Codable, Equatable {
 /// The SAME origin drives realtime: PulseSocketClient appends the
 /// sandbox-gateway convention `XTransformPort=3003` per-request (the edge's
 /// `/socket.io/` path rule 308-redirects, which breaks WS upgrades; the
-/// query-param route connects, handshakes and upgrades — verified).
+/// query-param route connects, handshakes and upgrades - verified).
 public enum PulseEndpoints {
     private static let baseKey = "net.serverBase"
 
-    /// Distribution home of update-manifest.json — a static file, the one
+    /// Distribution home of update-manifest.json - a static file, the one
     /// thing the CDN can serve. Solely used for the Wave 0 override probe.
     static let cdnBase = "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main"
 
@@ -90,7 +90,7 @@ public enum PulseEndpoints {
     static var manifestGateway: String?
     static var manifestSocket: String?
 
-    /// Manifest-adopted TURN/STUN JSON (Wave 3-HW) — raw `ice` array exactly
+    /// Manifest-adopted TURN/STUN JSON (Wave 3-HW) - raw `ice` array exactly
     /// as served; nil = engines keep their built-in Google STUN defaults.
     static var manifestIceJSON: String?
 
@@ -109,7 +109,7 @@ public enum PulseEndpoints {
         return URL(string: "https://offline.pulse.unconfigured")!
     }
 
-    /// Socket.IO relay — same origin as REST; the sandbox-gateway convention
+    /// Socket.IO relay - same origin as REST; the sandbox-gateway convention
     /// `XTransformPort=3003` is appended per-request by PulseSocketClient.
     /// nil = realtime disabled (offline-first, zero reconnect spam).
     public static var socketURL: URL? {
@@ -119,7 +119,7 @@ public enum PulseEndpoints {
         return url
     }
 
-    /// Wave 1 — message media URL ({gateway}/api/uploads/{filePath|imagePath},
+    /// Wave 1 - message media URL ({gateway}/api/uploads/{filePath|imagePath},
     /// spec §1.1 "Serve"). Same resolution the web <img src> applies
     /// (mirrors PulseTheme.photoURL): absolute URLs pass through, "/"-rooted
     /// paths resolve against the gateway, bare stored paths hang off
@@ -151,7 +151,7 @@ public enum PulseEndpoints {
     }
 
     /// Applies the manifest `ice` override (Wave 3-HW). The JSON is validated
-    /// by decoding it as `[PulseIceServer]` — invalid or empty arrays are
+    /// by decoding it as `[PulseIceServer]` - invalid or empty arrays are
     /// ignored so a broken manifest can never strip a working STUN set.
     public static func applyIceOverride(_ json: String?) {
         guard let json = clean(json),
@@ -177,7 +177,7 @@ public enum PulseEndpoints {
     /// Fetches `{base}/update-manifest.json` (6s timeout) and, when it carries
     /// non-empty `gateway`/`socket` strings, applies + persists the override.
     /// `base` defaults to the distribution CDN (the manifest lives there).
-    /// Silent failure is REQUIRED — an unreachable manifest must never block
+    /// Silent failure is REQUIRED - an unreachable manifest must never block
     /// or break the launch path.
     public static func fetchManifestOverride(base: URL? = nil) async {
         let probeBase = base ?? URL(string: cdnBase)!

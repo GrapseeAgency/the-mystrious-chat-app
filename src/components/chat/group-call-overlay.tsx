@@ -1,11 +1,10 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Pulse — GROUP voice + video calls (mesh WebRTC, WhatsApp/Signal-style).
+// Pulse - GROUP voice + video calls (mesh WebRTC, WhatsApp/Signal-style).
 //
 // Signaling contract (socket service `gcall:*`):
 //   gcall:join { conversationId, kind, user:{id,name,color,avatar} }
 //   gcall:state { callId, conversationId, kind, hostId, startedAt, members[] }
-//   gcall:offer { conversationId, callId, from, to, kind, sdp }   — targeted
-//   gcall:answer { conversationId, callId, from, to, sdp }        — targeted
+//   gcall:offer { conversationId, callId, from, to, kind, sdp }   - targeted
+//   gcall:answer { conversationId, callId, from, to, sdp }        - targeted
 //   gcall:ice { conversationId, callId, from, to, candidate, sdpMid, sdpMLineIndex }
 //   gcall:leave { conversationId, from }
 //   gcall:ring (HTTP relay) · gcall:ended · gcall:full
@@ -16,15 +15,14 @@
 // RTCPeerConnection per remote member, all fed from one local MediaStream.
 //
 // Rings reach ONLINE members through the `/notify` relay (`gcall:ring`) and
-// OFFLINE members through remote push — the starting client POSTs
+// OFFLINE members through remote push - the starting client POSTs
 // /api/conversations/[id]/calls/ring which fans both out. Joining an ONGOING
 // call NEVER re-rings (ring:false path).
 //
 // Exports:
-//   useGroupCallSession({...}) — join/leave/roster/media state machine.
-//   <GroupCallOverlay session={...} /> — full-screen glass group call UI.
-//   <GroupCallRingBanner session={...} /> — incoming ring + ongoing banners.
-// ─────────────────────────────────────────────────────────────────────────────
+//   useGroupCallSession({...}) - join/leave/roster/media state machine.
+//   <GroupCallOverlay session={...} /> - full-screen glass group call UI.
+//   <GroupCallRingBanner session={...} /> - incoming ring + ongoing banners.
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -40,7 +38,7 @@ import { usePulseCallChannel } from '@/components/chat/pulse-realtime-provider'
 import { UserAvatar } from '@/components/chat/user-avatar'
 import { cn } from '@/lib/utils'
 
-// ── contracts ────────────────────────────────────────────────────────────────
+// contracts 
 
 export type GroupCallUiState = 'idle' | 'joining' | 'active' | 'ended'
 
@@ -74,9 +72,9 @@ export interface GroupCallSessionControls {
   remoteStreams: Map<string, MediaStream>
   /** Start a NEW group call in the open conversation (rings everyone). */
   startCall: (kind: CallKind) => void
-  /** Accept an incoming ring (ring already sent — never re-rings). */
+  /** Accept an incoming ring (ring already sent - never re-rings). */
   joinCall: () => void
-  /** Silently join the ONGOING call in the open room — never re-rings. */
+  /** Silently join the ONGOING call in the open room - never re-rings. */
   joinOngoing: () => void
   dismissRing: () => void
   ignoreOngoing: () => void
@@ -110,7 +108,7 @@ const STUN_SERVERS: RTCConfiguration = {
   ],
 }
 
-// ── the hook ─────────────────────────────────────────────────────────────────
+// the hook 
 
 export function useGroupCallSession(options: GroupCallSessionOptions): GroupCallSessionControls {
   const { meId, meName, meColor = 'emerald', meAvatar = null, conversationId, enabled } = options
@@ -155,7 +153,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
     setState(next)
   }, [])
 
-  // ── media ──────────────────────────────────────────────────────────────────
+  // media 
   const acquireMedia = useCallback(async (wanted: CallKind): Promise<CallKind> => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -169,7 +167,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
     } catch (err) {
       const name = err instanceof DOMException ? err.name : ''
       if (wanted === 'video' && (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'NotReadableError')) {
-        toast('Camera unavailable — joining as a voice call')
+        toast('Camera unavailable - joining as a voice call')
         setKind('voice')
         kindRef.current = 'voice'
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -311,14 +309,14 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
     [emitCallEvent, ensurePeerConnection, setStateBoth],
   )
 
-  // ── actions ────────────────────────────────────────────────────────────────
+  // actions 
   const startJoin = useCallback(
     (targetConvId: string, wanted: CallKind, ringOthers: boolean) => {
       if (!enabled) return
       if (!targetConvId) return
       if (stateRef.current !== 'idle') return
       if (!callChannelConnected) {
-        toast.error('You are offline — calls need a connection')
+        toast.error('You are offline - calls need a connection')
         return
       }
       haptic(14)
@@ -367,7 +365,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
     const target = ringRef.current
     if (!target || stateRef.current !== 'idle') return
     haptic(14)
-    // The ring already went out — joining must NOT re-ring.
+    // The ring already went out - joining must NOT re-ring.
     startJoin(target.conversationId, target.kind, false)
   }, [startJoin])
 
@@ -432,7 +430,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
     haptic(6)
   }, [])
 
-  // ── signaling listener (stable) ────────────────────────────────────────────
+  // signaling listener (stable) 
   const handleGroupCallEvent = useCallback(
     (event: string, raw: unknown) => {
       if (raw === null || typeof raw !== 'object') return
@@ -456,7 +454,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
             avatar: typeof callerObj.avatar === 'string' ? callerObj.avatar : null,
           },
         }
-        // Only ring when idle — a participant never sees their own ring.
+        // Only ring when idle - a participant never sees their own ring.
         if (stateRef.current === 'idle') {
           ringRef.current = ringPayload
           setRing(ringPayload)
@@ -518,7 +516,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
               try {
                 await pc.addIceCandidate(candidate)
               } catch {
-                // stale candidate — ICE recovers
+                // stale candidate - ICE recovers
               }
             }
           } catch (err) {
@@ -567,7 +565,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
         const pc = peersRef.current.get(from)
         if (pc && pc.remoteDescription) {
           void pc.addIceCandidate(candidate).catch(() => {
-            // stale candidate — ignore
+            // stale candidate - ignore
           })
         } else {
           const queue = pendingIceRef.current.get(from) ?? []
@@ -654,7 +652,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
           setOngoingElsewhere(false)
         }
       } catch {
-        // socket down — banner simply won't show
+        // socket down - banner simply won't show
       }
     }
     void probe()
@@ -712,7 +710,7 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
   }
 }
 
-// ── video attachment helpers ─────────────────────────────────────────────────
+// video attachment helpers 
 
 function RemoteVideo({ stream, className }: { stream: MediaStream; className?: string }) {
   const ref = useRef<HTMLVideoElement | null>(null)
@@ -740,7 +738,7 @@ function LocalVideo({ stream, className }: { stream: MediaStream; className?: st
   return <video ref={ref} autoPlay playsInline muted className={className} />
 }
 
-// ── the overlay ──────────────────────────────────────────────────────────────
+// the overlay 
 
 export function GroupCallOverlay({
   session,
@@ -826,7 +824,7 @@ export function GroupCallOverlay({
                   {!session.micEnabled && <MicOff className="h-3.5 w-3.5 text-rose-300" aria-label="Mic muted" />}
                 </div>
               </div>
-              {/* Remote tiles (audio-only members keep avatar tiles — honest) */}
+              {/* Remote tiles (audio-only members keep avatar tiles - honest) */}
               {remoteMembers.map((member) => {
                 const stream = remoteEntries.find(([id]) => id === member.id)?.[1]
                 return (
@@ -894,7 +892,7 @@ export function GroupCallOverlay({
   )
 }
 
-// ── banners (incoming ring + ongoing call) ───────────────────────────────────
+// banners (incoming ring + ongoing call) 
 
 export function GroupCallRingBanner({ session }: { session: GroupCallSessionControls }) {
   // 1. Live incoming ring.

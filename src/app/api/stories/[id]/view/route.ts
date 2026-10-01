@@ -1,9 +1,7 @@
-// ─────────────────────────────────────────────────────────────
-// /api/stories/[id]/view — viewers list + mark-as-viewed
+// /api/stories/[id]/view - viewers list + mark-as-viewed
 //
 // Raw SQL instead of typed delegates: StatusStory/StoryView were pushed
 // after the running dev server cached its Prisma client (see /api/stories).
-// ─────────────────────────────────────────────────────────────
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { Prisma } from '../../../../../../prisma/generated-client'
@@ -74,7 +72,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
 /**
  * POST /api/stories/[id]/view  body { requesterId }
  * Marks the story viewed (idempotent upsert). The owner never records a
- * self-view. Expired stories are rejected — the feed never surfaces them.
+ * self-view. Expired stories are rejected - the feed never surfaces them.
  * → { viewCount, owner?: true }
  */
 export async function POST(req: Request, { params }: RouteCtx) {
@@ -108,7 +106,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   return NextResponse.json({ viewCount })
 }
 
-/** SQLite COUNT(*) arrives as number (or bigint) — normalize. */
+/** SQLite COUNT(*) arrives as number (or bigint) - normalize. */
 async function countViews(storyId: string): Promise<number> {
   const rows = await db.$queryRaw<Array<{ n: number | bigint }>>(
     Prisma.sql`SELECT COUNT(*) as n FROM StoryView WHERE storyId = ${storyId}`,

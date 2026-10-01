@@ -1,8 +1,6 @@
-// ─────────────────────────────────────────────────────────────
-// Pulse Chat — socket.io realtime layer.
+// Pulse Chat - socket.io realtime layer.
 // Connects per logged-in user, maintains presence + typing state,
 // streams incoming events straight into the TanStack Query cache.
-// ─────────────────────────────────────────────────────────────
 'use client'
 
 import {
@@ -37,8 +35,8 @@ import {
   type TypingSignalOptions,
 } from '@/hooks/use-pulse-socket'
 
-// ── R33-a: call-signaling channel ────────────────────────────
-// A dedicated context (NOT an extension of PulseRealtimeValue — that contract
+// R33-a: call-signaling channel 
+// A dedicated context (NOT an extension of PulseRealtimeValue - that contract
 // lives in hooks/use-pulse-socket.ts which other crews consume) that gives the
 // call overlay access to the SHARED socket for `call:*` events. The provider
 // re-attaches every subscriber whenever the socket is (re)created, so a call
@@ -82,7 +80,7 @@ const TYPING_IDLE_STOP_MS = 1200
 const TYPING_REMOTE_TTL_MS = 4000
 const READ_DEBOUNCE_MS = 600
 
-// ── payload validation (relayed from our own backend, light checks) ──
+// payload validation (relayed from our own backend, light checks) 
 
 function asPresenceSnapshot(raw: unknown): PresenceSnapshot | null {
   if (raw === null || typeof raw !== 'object') return null
@@ -141,11 +139,11 @@ function asMessageEvent(raw: unknown): SocketMessageEvent | null {
   const imagePath = typeof msg.imagePath === 'string' ? msg.imagePath : null
   const audioPath = typeof msg.audioPath === 'string' ? msg.audioPath : null
   const durationMs = typeof msg.durationMs === 'number' && Number.isFinite(msg.durationMs) ? msg.durationMs : null
-  // R40 — document attachment fields ride the realtime payload too (guarded).
+  // R40 - document attachment fields ride the realtime payload too (guarded).
   const filePath = typeof msg.filePath === 'string' ? msg.filePath : null
   const fileName = typeof msg.fileName === 'string' ? msg.fileName : null
   const fileSize = typeof msg.fileSize === 'number' && Number.isFinite(msg.fileSize) ? msg.fileSize : null
-  // R43 — cached voice-note transcript rides realtime payloads too (guarded).
+  // R43 - cached voice-note transcript rides realtime payloads too (guarded).
   const transcript = typeof msg.transcript === 'string' ? msg.transcript : null
   const transcribedAt = typeof msg.transcribedAt === 'string' ? msg.transcribedAt : null
   const editedAt = typeof msg.editedAt === 'string' ? msg.editedAt : null
@@ -303,7 +301,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
   // R33-a: live call-event subscribers, re-attached on every socket (re)creation.
   const callListenersRef = useRef<Set<CallEventListener>>(new Set())
 
-  // ── helpers ────────────────────────────────────────────────
+  // helpers 
 
   const setActiveConversation = useCallback((conversationId: string | null) => {
     activeConvRef.current = conversationId
@@ -354,7 +352,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
           })
           patchReadWatermark(conversationId, myId, new Date().toISOString())
         } catch {
-          // offline — the next event or window focus retries naturally
+          // offline - the next event or window focus retries naturally
         }
       }, READ_DEBOUNCE_MS)
       readTimersRef.current.set(conversationId, timer)
@@ -393,7 +391,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     [queryClient, myId],
   )
 
-  // ── typing signals ─────────────────────────────────────────
+  // typing signals 
 
   const emitTyping = useCallback(
     (
@@ -451,7 +449,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     [emitTyping],
   )
 
-  // ── expired typer sweep ────────────────────────────────────
+  // expired typer sweep 
   useEffect(() => {
     const sweep = () => {
       setTypingMap((prev) => {
@@ -475,7 +473,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval)
   }, [])
 
-  // ── offline outbox flushing ──────────────────────────────
+  // offline outbox flushing 
   // Triggers: mount-with-pending · connectivity restored · app
   // becomes visible again · 20s self-heal while work is queued.
   const flushingRef = useRef(false)
@@ -514,13 +512,13 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     }
   }, [queryClient])
 
-  // ── socket lifecycle ───────────────────────────────────────
+  // socket lifecycle 
   useEffect(() => {
     if (!myId) return undefined
 
     const sock = io('/?XTransformPort=3003', {
       path: '/',
-      // polling first — guaranteed through the gateway; upgrades to ws when available
+      // polling first - guaranteed through the gateway; upgrades to ws when available
       transports: ['polling', 'websocket'],
       upgrade: true,
       reconnection: true,
@@ -566,11 +564,11 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
       const evt = asMessageEvent(raw)
       if (!evt) return
       mergeIncomingMessage(evt.message)
-      // R37 — live mention badges (Discord mobile pattern): when a NEW message
+      // R37 - live mention badges (Discord mobile pattern): when a NEW message
       // from someone else mentions my FULL display name, refresh the ['mentions']
-      // cache so the Chats-tab AtSign badge rises within ~1s — no page reload,
+      // cache so the Chats-tab AtSign badge rises within ~1s - no page reload,
       // no extra server push (reuses the existing message:new fan-out).
-      // Matching rule mirrors /api/mentions EXACTLY (keep in sync — also
+      // Matching rule mirrors /api/mentions EXACTLY (keep in sync - also
       // mirrored client-side in mentions-page.tsx): case-insensitive '@' +
       // full display name, followed by whitespace / end / non-alphanumeric.
       const sessionUser = getPulseUser()
@@ -594,7 +592,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
         scheduleRead(evt.message.conversationId)
       } else if (evt.message.parentId === null) {
         // attention: gentle ping + buzz while backgrounded / elsewhere
-        // (respected per-conversation mute watermark — synced by the 6s list poll —
+        // (respected per-conversation mute watermark - synced by the 6s list poll -
         // and the global client-side quiet-hours window); thread replies stay quiet
         const summaries = queryClient.getQueryData<ConversationSummary[]>(['conversations', myId])
         const until = summaries?.find((c) => c.id === evt.message.conversationId)?.mutedUntil
@@ -616,7 +614,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
       )
     }
 
-    /** Fresh full row arrived (edit/pin/tally/preview/translation/viewed) — swap it in. */
+    /** Fresh full row arrived (edit/pin/tally/preview/translation/viewed) - swap it in. */
     const onMessageReplaced = (raw: unknown) => {
       const evt = asMessageEvent(raw)
       if (!evt) return
@@ -669,7 +667,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     }
 
     // R33-a: fan every `call:*` event out to the call channel subscribers.
-    // R8: group calls ride the same channel with the `gcall:` prefix — the
+    // R8: group calls ride the same channel with the `gcall:` prefix - the
     // gate must admit BOTH or the whole mesh signaling silently dies.
     const onAnyCall = (event: string, ...args: unknown[]) => {
       if (!event.startsWith('call:') && !event.startsWith('gcall:')) return
@@ -715,7 +713,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     }
   }, [myId, mergeIncomingMessage, patchReadWatermark, scheduleRead, queryClient])
 
-  // ── context value ──────────────────────────────────────────
+  // context value 
 
   const typersIn = useCallback(
     (conversationId: string, excludeUserId?: string): TypingEntry[] => {
@@ -739,7 +737,7 @@ export function PulseRealtimeProvider({ children }: { children: ReactNode }) {
     [onlineIds, isConnected, typersIn, setActiveConversation, signalTyping, cancelTyping],
   )
 
-  // ── R33-a: call channel value (stable across socket swaps) ──
+  // R33-a: call channel value (stable across socket swaps) 
   const subscribeCallEvents = useCallback((listener: CallEventListener) => {
     callListenersRef.current.add(listener)
     return () => {

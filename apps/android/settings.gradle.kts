@@ -1,4 +1,4 @@
-// Pulse Android — module registry.
+// Pulse Android - module registry.
 pluginManagement {
     repositories {
         google()

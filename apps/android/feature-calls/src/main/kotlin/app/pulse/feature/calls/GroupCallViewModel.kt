@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * R8 Task 3-c — thin activity-scoped bridge between the group call UI and
+ * R8 Task 3-c - thin activity-scoped bridge between the group call UI and
  * the [GroupCallEngine] singleton (the engine owns ALL group-call state;
  * ViewModels come and go with screens, the call must not). Mirrors
  * [CallViewModel] for the 1:1 engine.
@@ -27,7 +27,7 @@ class GroupCallViewModel @Inject constructor(
     fun start() = engine.start()
 
     /**
-     * The shell tells the engine which conversation is OPEN — the probe +
+     * The shell tells the engine which conversation is OPEN - the probe +
      * outsider-banner gate (web openConversationId parity). Called on room
      * enter, cleared on room leave.
      */
@@ -39,10 +39,10 @@ class GroupCallViewModel @Inject constructor(
     /** Start a NEW group call in the open conversation (rings everyone). */
     fun startCall(kind: CallKind, title: String) = engine.startCall(kind, title)
 
-    /** Accept an incoming ring (ring already sent — never re-rings). */
+    /** Accept an incoming ring (ring already sent - never re-rings). */
     fun joinCall() = engine.joinCall()
 
-    /** Silently join the ONGOING call in the open room — never re-rings. */
+    /** Silently join the ONGOING call in the open room - never re-rings. */
     fun joinOngoing() = engine.joinOngoing()
 
     fun dismissRing() = engine.dismissRing()
@@ -59,6 +59,6 @@ class GroupCallViewModel @Inject constructor(
 
     fun toggleCamera(): Boolean = engine.toggleCamera()
 
-    /** Front ⇄ back flip — honest no-op without an attached camera. */
+    /** Front ⇄ back flip - honest no-op without an attached camera. */
     fun switchCamera(): Boolean = engine.switchCamera()
 }

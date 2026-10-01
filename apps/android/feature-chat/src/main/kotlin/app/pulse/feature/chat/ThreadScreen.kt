@@ -80,7 +80,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * Thread state holder — the parent (top-level) message plus its replies
+ * Thread state holder - the parent (top-level) message plus its replies
  * (asc). Send rides the ordinary wire path with `parentId = rootId` (spec
  * §1.1: threads are ordinary sends, ONE level deep, never conflated with
  * replyToId); the optimistic echo lands in Room and streams back through
@@ -90,7 +90,7 @@ import kotlinx.coroutines.launch
 class ThreadViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repo: PulseRepository,
-    /** The ONE active voice player — room + thread share the singleton. */
+    /** The ONE active voice player - room + thread share the singleton. */
     val voicePlayer: VoicePlayer,
 ) : ViewModel() {
 
@@ -109,17 +109,17 @@ class ThreadViewModel @Inject constructor(
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
-    /** The thread root — rehydrated from Room, refreshed by loadThread. */
+    /** The thread root - rehydrated from Room, refreshed by loadThread. */
     val parent: StateFlow<Message?> = repo.observeMessages(conversationId)
         .map { rows -> rows.firstOrNull { it.id == rootId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** R3-B item 2 — the room summary; its roster drives @mention highlight. */
+    /** R3-B item 2 - the room summary; its roster drives @mention highlight. */
     val conversation: StateFlow<Conversation?> = repo.observeConversations()
         .map { list -> list.firstOrNull { it.id == conversationId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** Replies asc — live Room flow (realtime appends ride message:new upserts). */
+    /** Replies asc - live Room flow (realtime appends ride message:new upserts). */
     val replies: StateFlow<List<Message>> = repo.observeThreadMessages(rootId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -149,10 +149,10 @@ class ThreadViewModel @Inject constructor(
     }
 
     /**
-     * Thread reply — `parentId = rootId` on the ordinary send path. The repo
+     * Thread reply - `parentId = rootId` on the ordinary send path. The repo
      * writes an optimistic echo (threadRootId set) that streams through the
      * replies flow; a NETWORK failure retracts it with an honest error (no
-     * outbox row — spec: thread replies not queued).
+     * outbox row - spec: thread replies not queued).
      */
     fun send(body: String) {
         viewModelScope.launch {
@@ -160,7 +160,7 @@ class ThreadViewModel @Inject constructor(
                 .onSuccess { PulseFx.fire(PulseFx.BurstKind.BURST, count = 26) }
                 .onFailure { failure ->
                     _state.value = _state.value.copy(
-                        notice = RoomNotice(failure.message ?: "Couldn't send — you appear to be offline", isError = true),
+                        notice = RoomNotice(failure.message ?: "Couldn't send - you appear to be offline", isError = true),
                     )
                 }
         }
@@ -183,7 +183,7 @@ class ThreadViewModel @Inject constructor(
         if (_state.value.notice != null) _state.value = _state.value.copy(notice = null)
     }
 
-    // ── file download + open/share (same hand-off as the room) ──
+    // file download + open/share (same hand-off as the room)
 
     fun openFile(message: Message, share: Boolean) {
         val path = message.filePath ?: return
@@ -212,7 +212,7 @@ class ThreadViewModel @Inject constructor(
         if (_state.value.openedFile != null) _state.value = _state.value.copy(openedFile = null)
     }
 
-    /** Wave 2 view-once — fire-and-forget POST /viewed (reveal is instant). */
+    /** Wave 2 view-once - fire-and-forget POST /viewed (reveal is instant). */
     fun consumeViewOnce(message: Message) {
         viewModelScope.launch { repo.markMessageViewed(message.id) }
     }
@@ -232,7 +232,7 @@ class ThreadViewModel @Inject constructor(
 }
 
 /**
- * ThreadScreen — back header, the parent bubble card, replies (asc, same
+ * ThreadScreen - back header, the parent bubble card, replies (asc, same
  * bubble renderer) and the composer. Opened from the "N replies ↳" chip or
  * "Reply in thread" (route room/{conversationId}/thread/{rootId}).
  */
@@ -245,7 +245,7 @@ fun ThreadScreen(
     val parent by viewModel.parent.collectAsStateWithLifecycle()
     val replies by viewModel.replies.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
-    // R3-B item 2 — the roster that drives @mention highlight in bubbles.
+    // R3-B item 2 - the roster that drives @mention highlight in bubbles.
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val memberNames = conversation?.memberNames.orEmpty()
 
@@ -415,14 +415,14 @@ fun ThreadScreen(
                 }
             }
 
-            // Thread replies never queue (spec §1.2) — the honesty strip only.
+            // Thread replies never queue (spec §1.2) - the honesty strip only.
             androidx.compose.animation.AnimatedVisibility(visible = state.connected == false) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
                     modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
                 ) {
                     Text(
-                        "Offline — replies need a connection and won't queue",
+                        "Offline - replies need a connection and won't queue",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -431,7 +431,7 @@ fun ThreadScreen(
             }
         }
 
-        // Composer — thread reply send (parentId rides the ordinary path).
+        // Composer - thread reply send (parentId rides the ordinary path).
         Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
@@ -494,7 +494,7 @@ fun ThreadScreen(
     }
 }
 
-/** One thread row — same renderer family as the river (tombstone/media/text). */
+/** One thread row - same renderer family as the river (tombstone/media/text). */
 @Composable
 private fun ThreadContentBubble(
     message: Message,
@@ -508,7 +508,7 @@ private fun ThreadContentBubble(
     onOpenFile: () -> Unit,
 ) {
     val mine = message.authorId == viewerId
-    // Wave 2 view-once gating — same state machine as the room river.
+    // Wave 2 view-once gating - same state machine as the room river.
     val viewOncePhoto = message.viewOnce && message.imagePath != null
     val burned = viewOncePhoto && !mine && message.viewedAt != null
     val gated = viewOncePhoto && !mine && message.viewedAt == null && !message.isDeleted
@@ -528,7 +528,7 @@ private fun ThreadContentBubble(
             onOpen = { onConsumeViewOnce(message) },
         )
         message.imagePath != null -> ImageBubble(message = message, mine = mine, onOpen = onOpenImage)
-        // R1-W2F F-MD-07 — pins render the same tappable row in threads
+        // R1-W2F F-MD-07 - pins render the same tappable row in threads
         // (threads reply on any row kind; the room render lives in the river).
         message.kind == Message.Kind.LOCATION -> LocationPinBubble(message = message, mine = mine)
         message.filePath != null || message.kind == Message.Kind.FILE -> FileBubble(
@@ -545,7 +545,7 @@ private fun ThreadContentBubble(
             onQuoteClick = null,
             voicePlayer = voicePlayer,
             onTranscribe = onTranscribe,
-            // R3-B item 2 — mentions highlight inside threads too.
+            // R3-B item 2 - mentions highlight inside threads too.
             memberNames = memberNames,
             modifier = Modifier.widthIn(max = 300.dp),
         )
