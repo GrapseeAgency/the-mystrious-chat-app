@@ -13,10 +13,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -138,6 +135,7 @@ import app.pulse.protocol.TOPIC_ICON_IDS
 import app.pulse.protocol.reactionId
 import app.pulse.protocol.topicIconId
 import app.pulse.ui.EmberGlassButton
+import app.pulse.ui.pulseInfiniteFloat
 import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseIcons
@@ -3062,11 +3060,12 @@ private fun RoomHeader(
                 AnimatedContentCompat(partnerTypingName != null) { typing ->
                     if (typing) {
                         // EMB: the typing state breathes (animated alpha on the word).
-                        val typingAlpha by rememberInfiniteTransition(label = "typingPulse").animateFloat(
+                        val typingAlpha = pulseInfiniteFloat(
                             initialValue = 0.35f,
                             targetValue = 1f,
-                            animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-                            label = "typingAlpha",
+                            durationMillis = 700,
+                            repeatMode = RepeatMode.Reverse,
+                            label = "typingPulse",
                         )
                         Text(
                             "${partnerTypingName.orEmpty()} is typing",
@@ -4377,12 +4376,12 @@ private fun RecordBarContent(
         }
         Spacer(Modifier.width(4.dp))
         // Red pulsing dot - infinite alpha breathing.
-        val pulse = rememberInfiniteTransition(label = "recordPulse")
-        val dotAlpha by pulse.animateFloat(
+        val dotAlpha = pulseInfiniteFloat(
             initialValue = 1f,
             targetValue = 0.25f,
-            animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
-            label = "recordDot",
+            durationMillis = 650,
+            repeatMode = RepeatMode.Reverse,
+            label = "recordPulse",
         )
         Box(
             Modifier

@@ -33,6 +33,9 @@ android {
         // the client then stays offline-first instead of reconnect-spamming a
         // dead address forever.
         buildConfigField("String", "PULSE_SOCKET", "\"${project.findProperty("pulseSocket") ?: ""}\"")
+        // CI release smoke: freeze infinite animations so uiautomator dumps
+        // settle (PulseMotionGate). Shipping builds default to false.
+        buildConfigField("Boolean", "PULSE_QUIET_ANIMS", "${(project.findProperty("pulseQuietAnims") ?: "false") == "true"}")
     }
 
     signingConfigs {

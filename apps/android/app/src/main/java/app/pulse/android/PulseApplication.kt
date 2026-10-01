@@ -36,6 +36,10 @@ class PulseApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        // CI release smoke gate: freeze infinite animations when the smoke
+        // artifact requests it (uiautomator idle). Shipping builds: false.
+        app.pulse.ui.PulseMotionGate.quiet = BuildConfig.PULSE_QUIET_ANIMS
+
         // Startup gateway resolution - strict precedence, zero fake hosts:
         //   1. Start OFFLINE (blank base). A static CDN can never serve /api/*
         //      - pointing REST at one is a guaranteed 404, so we simply don't.

@@ -2,6 +2,7 @@ package app.pulse.ui
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -31,6 +32,44 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
+
+/**
+ * CI quiet-animations gate. The release smoke drives the app through
+ * uiautomator, whose accessibility dumps only settle when the UI stops
+ * invalidating; infinite Compose animations never do. When the
+ * PULSE_QUIET_ANIMS build flag is on (CI smoke artifacts only), infinite
+ * animations render their initial frame and stay silent. Shipping builds
+ * default the flag to false and are untouched.
+ */
+object PulseMotionGate {
+    @Volatile
+    var quiet: Boolean = false
+}
+
+/** Frozen-able infinite float - the one primitive every looping animation rides. */
+@Composable
+fun pulseInfiniteFloat(
+    initialValue: Float,
+    targetValue: Float,
+    durationMillis: Int,
+    repeatMode: RepeatMode = RepeatMode.Restart,
+    startOffsetMillis: Int = 0,
+    label: String,
+): Float {
+    if (PulseMotionGate.quiet) return initialValue
+    val transition = rememberInfiniteTransition(label = label)
+    val value by transition.animateFloat(
+        initialValue = initialValue,
+        targetValue = targetValue,
+        animationSpec = infiniteRepeatable(
+            tween(durationMillis, easing = LinearEasing),
+            repeatMode,
+            initialStartOffset = StartOffset(startOffsetMillis),
+        ),
+        label = label,
+    )
+    return value
+}
 
 /** The web palette - one source of truth for accents (ui-theme tokens). */
 object PulsePalette {
@@ -143,12 +182,11 @@ fun PulseAvatar(
 
 /** Shimmer placeholder - the web's skeleton sheen, animated via a moving brush. */
 fun Modifier.shimmer(): Modifier = composed {
-    val transition = rememberInfiniteTransition(label = "shimmer")
-    val progress by transition.animateFloat(
+    val progress = pulseInfiniteFloat(
         initialValue = -1f,
         targetValue = 2f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Restart),
-        label = "shimmerProgress",
+        durationMillis = 1100,
+        label = "shimmer",
     )
     val base = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
     val sheen = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)

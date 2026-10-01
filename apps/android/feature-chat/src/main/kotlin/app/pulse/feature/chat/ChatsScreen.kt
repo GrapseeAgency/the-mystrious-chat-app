@@ -4,11 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.StartOffset
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -119,6 +115,7 @@ import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseGlass
 import app.pulse.ui.PulseIcons
 import app.pulse.ui.pulseFolderGlyph
+import app.pulse.ui.pulseInfiniteFloat
 import app.pulse.ui.PulseMonoFamily
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
@@ -1195,12 +1192,11 @@ private fun StoryTile(
     /** Non-null ⇒ the "+" badge is its own tap target (D1). */
     onPlus: (() -> Unit)? = null,
 ) {
-    val spin = rememberInfiniteTransition(label = "storySpin")
-    val angle by spin.animateFloat(
+    val angle = pulseInfiniteFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(6000, easing = LinearEasing)),
-        label = "storyAngle",
+        durationMillis = 6000,
+        label = "storySpin",
     )
     val scale = remember { Animatable(1f) }
     val scope = rememberCoroutineScope()
@@ -1928,12 +1924,12 @@ private fun MutedChip(hasUnread: Boolean, unread: Int) {
 /** Pulsing warm presence halo behind online DM avatars (EMB-B: ember orange). */
 @Composable
 private fun PresenceGlow() {
-    val transition = rememberInfiniteTransition(label = "presenceGlow")
-    val pulse by transition.animateFloat(
+    val pulse = pulseInfiniteFloat(
         initialValue = 0.65f,
         targetValue = 0.18f,
-        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Reverse),
-        label = "presencePulse",
+        durationMillis = 1200,
+        repeatMode = RepeatMode.Reverse,
+        label = "presenceGlow",
     )
     Box(
         Modifier
@@ -1980,16 +1976,13 @@ private fun StreakHeatRing(heat: Int) {
 private fun TypingDots() {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         repeat(3) { i ->
-            val transition = rememberInfiniteTransition(label = "typingDot$i")
-            val y by transition.animateFloat(
+            val y = pulseInfiniteFloat(
                 initialValue = 0f,
                 targetValue = -2.5f,
-                animationSpec = infiniteRepeatable(
-                    tween(450, easing = LinearEasing),
-                    RepeatMode.Reverse,
-                    initialStartOffset = StartOffset(i * 150),
-                ),
-                label = "typingY$i",
+                durationMillis = 450,
+                repeatMode = RepeatMode.Reverse,
+                startOffsetMillis = i * 150,
+                label = "typingDot$i",
             )
             Box(
                 Modifier

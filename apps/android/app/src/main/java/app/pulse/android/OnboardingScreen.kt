@@ -1,12 +1,10 @@
 package app.pulse.android
 
 import app.pulse.ui.PulseIcons
+import app.pulse.ui.pulseInfiniteFloat
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -174,15 +172,12 @@ fun OnboardingScreen(
 @Composable
 private fun OnboardingHero() {
     // webgl-glow stand-in: slow emerald breathing behind the illustration
-    val transition = rememberInfiniteTransition(label = "heroGlow")
-    val glowAlpha by transition.animateFloat(
+    val glowAlpha = pulseInfiniteFloat(
         initialValue = 0.45f,
         targetValue = 0.85f,
-        animationSpec = infiniteRepeatable(
-            tween(3600, easing = LinearEasing),
-            RepeatMode.Reverse,
-        ),
-        label = "heroGlowAlpha",
+        durationMillis = 3600,
+        repeatMode = RepeatMode.Reverse,
+        label = "heroGlow",
     )
 
     Box(
