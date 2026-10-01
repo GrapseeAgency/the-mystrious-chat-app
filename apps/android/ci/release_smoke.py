@@ -16,6 +16,9 @@ ACT = PKG + "/app.pulse.android.MainActivity"
 OUT = "release-smoke"
 os.makedirs(OUT, exist_ok=True)
 REPORT = []
+W = 0
+H = 0
+SINCE = ""  # logcat -T marker so each scan reads only fresh lines
 
 def sh(*args, timeout=60):
     return subprocess.run(list(args), capture_output=True, text=True, timeout=timeout)
@@ -47,6 +50,12 @@ def screen(name):
         return
     adb_ok("shell", "screencap", "-p", "/sdcard/" + name)
     adb_ok("pull", "/sdcard/" + name, OUT + "/" + name)
+
+def dump_logcat(name):
+    """Full logcat snapshot, ALWAYS written to the evidence dir."""
+    r = adb("logcat", "-d", timeout=120)
+    with open(OUT + "/" + name, "w", encoding="utf-8", errors="replace") as f:
+        f.write(r.stdout or "")
 
 def uiax_xml():
     """Dump the accessibility tree. Compose infinite animations can block
@@ -94,46 +103,66 @@ def tap_text(needle, wait=1.5):
 def alive():
     return bool(adb("shell", "pidof", PKG).stdout.strip())
 
-CRASH_MARKERS = re.compile(r" E AndroidRuntime: |FATAL EXCEPTION|Force finishing activity|Process app\.pulse\.chat[^ ]* has died|has died unexpectedly", re.IGNORECASE)
+CRASH_MARKERS = re.compile(
+    r" E AndroidRuntime: |FATAL EXCEPTION|Force finishing activity"
+    r"|ANR in |am_anr|am_kill|lmkd|lowmemorykiller|Killing .*app\.pulse\.chat"
+    r"|Process app\.pulse\.chat[^ ]* has died|has died unexpectedly"
+    r"|SIGSEGV|SIGABRT|tombstone",
+    re.IGNORECASE,
+)
 
 def crash_scan(stage):
-    log = adb("logcat", "-d", "-t", "600", timeout=90).stdout or ""
+    """Scan ONLY the log lines newer than the previous scan; on any hit,
+    persist the full logcat + screenshot and report a capture."""
+    cmd = ["logcat", "-d"]
+    if SINCE:
+        cmd += ["-T", SINCE]
+    log = adb(*cmd, timeout=120).stdout or ""
     hits = [ln for ln in log.splitlines() if CRASH_MARKERS.search(ln)]
+    update_since()
     if hits:
-        note("CRASH MARKERS at stage '" + stage + "': " + " | ".join(hits[:12]))
-        full = adb("logcat", "-d", timeout=120).stdout or ""
-        with open(OUT + "/crash-logcat.txt", "w", encoding="utf-8", errors="replace") as f:
-            f.write(full)
+        note("CRASH MARKERS at stage '" + stage + "' (" + str(len(hits)) + " lines):")
+        for h in hits[:15]:
+            note("    " + h.strip()[:220])
+        dump_logcat("crash-logcat.txt")
         screen("crash-" + stage + ".png")
         return True
     return False
 
+def update_since():
+    """Mark the logcat cursor at 'now' so the next scan reads only new lines."""
+    global SINCE
+    r = adb("shell", "date", "+%m-%d %H:%M:%S.000", timeout=30)
+    if r.returncode == 0 and r.stdout.strip():
+        SINCE = r.stdout.strip()
+
+def death_evidence(stage):
+    note("capturing death evidence for stage: " + stage)
+    dump_logcat("crash-logcat.txt")
+    screen("crash-" + stage + ".png")
+
 def launch():
+    adb_ok("logcat", "-c")  # clear the buffer so evidence is only this run
     adb_ok("shell", "am", "force-stop", PKG)
     adb_ok("shell", "am", "start", "-W", "-n", ACT)
     time.sleep(7)
+    update_since()
 
-def open_switcher():
-    """Tap the floating dock pill (icon-only, bottom-center). The exact
-    vertical position varies with nav-bar insets, so scan candidate rows
-    until the quick-switcher menu (a 'Hub' item) is visible."""
-    for frac in (0.075, 0.06, 0.09, 0.045):
-        y = H - int(H * frac)
-        tap((W // 2, y))
-        time.sleep(2.0)
-        if node_bounds(uiax_xml(), "Hub") is not None:
-            return True
-    note("MISS dock pill: quick-switcher did not open at any candidate row")
-    return False
+def dock_tap():
+    """One tap on the floating dock pill area (bottom-center)."""
+    tap((W // 2, H - int(H * 0.075)))
+    time.sleep(2.0)
 
-W = 0
-H = 0
+def dock_drag():
+    """Horizontal drag across the dock pill: prev/next tab (web edge-swipe parity)."""
+    y = H - int(H * 0.075)
+    adb_ok("shell", "input", "swipe", str(W // 2 - 150), str(y), str(W // 2 + 150), str(y), "250")
+    time.sleep(3.0)
 
 def main():
     global W, H
     W, H = wm_size()
     note("device %dx%d" % (W, H))
-    dock_y = H - int(H * 0.075)
     failed = False
 
     def stage(name, fn):
@@ -143,10 +172,13 @@ def main():
         time.sleep(1.0)
         if not alive():
             note("PROCESS DEAD after stage: " + name)
+            death_evidence(name)
             failed = True
-        elif crash_scan(name):
+            return False
+        if crash_scan(name):
             failed = True
-        return not failed
+            return False
+        return True
 
     launch()
     screen("01-launch.png")
@@ -169,53 +201,66 @@ def main():
 
     stage("onboarding", do_onboarding)
     screen("02-main-shell.png")
+    if failed:
+        return finish(2)
 
-    # Nav path 1: dock pill tap -> quick-switcher menu items (the visible nav bar).
+    # Deterministic tab walk via dock drag (chats -> hub -> contacts -> profile).
+    def tab_walk():
+        for i, name in enumerate(("hub", "contacts", "profile")):
+            dock_drag()
+            screen("04-drag-%s.png" % name)
+            note("dragged to " + name)
+            if not alive():
+                return
+
+    if not stage("tab-walk-drag", tab_walk):
+        return finish(2)
+
+    # Dock quick-switcher: tap the pill, menu opens; tap items by text.
     def nav_via_switcher():
-        open_switcher()
+        dock_tap()
         screen("03-switcher-open.png")
         for label in ("Hub", "Contacts", "Profile"):
-            tap_text(label, wait=3.0)
-            screen("04-tab-%s.png" % label.lower())
+            if not tap_text(label, wait=3.0):
+                return
+            screen("04-switch-%s.png" % label.lower())
             note("switched to " + label)
-            open_switcher()
+            if not alive():
+                return
+            dock_tap()
 
-    stage("nav-switcher", nav_via_switcher)
-
-    # Nav path 2: horizontal drag on the dock (prev/next tab).
-    def nav_via_drag():
-        y = dock_y
-        adb_ok("shell", "input", "swipe", str(W // 2 - 180), str(y), str(W // 2 + 180), str(y), "250")
-        time.sleep(3.0)
-        screen("05-after-drag.png")
-
-    stage("nav-drag", nav_via_drag)
+    if not stage("nav-switcher", nav_via_switcher):
+        return finish(2)
 
     # Settings entry from the chats header (icon-only button).
     def open_settings():
-        tap_text("Settings", wait=3.5)
+        if not tap_text("Settings", wait=3.5):
+            return
         screen("06-settings.png")
 
-    stage("settings", open_settings)
+    if not stage("settings", open_settings):
+        return finish(2)
 
-    # Back to chats, settle, final logcat sweep (deeper window).
+    # Back to chats, settle, final sweep.
     def back_home():
         adb_ok("shell", "input", "keyevent", "4")
         time.sleep(2)
-        open_switcher()
-        tap_text("Chats", wait=3)
         screen("07-back-chats.png")
 
-    stage("back-home", back_home)
+    if not stage("back-home", back_home):
+        return finish(2)
 
-    note("ALL STAGES DONE - scanning deep logcat")
-    if not failed and crash_scan("final"):
-        failed = True
+    note("ALL STAGES DONE - final logcat sweep")
+    if crash_scan("final"):
+        return finish(2)
+    return finish(0)
 
+def finish(code):
+    dump_logcat("logcat-full.txt")
     with open(OUT + "/report.txt", "w", encoding="utf-8") as f:
         f.write("\n".join(REPORT) + "\n")
-    note("smoke finished, crash=" + str(failed))
-    sys.exit(2 if failed else 0)
+    note("smoke finished with code " + str(code))
+    sys.exit(code)
 
 if __name__ == "__main__":
     main()
