@@ -307,7 +307,7 @@ struct ProfileView: View {
     /// scaledToFill so any capture crops like the web object-cover.
     @ViewBuilder
     private var coverBand: some View {
-        if let cover = prefs.viewer?.cover, !cover.isEmpty,
+        if let cover = prefs.viewer?.coverImage, !cover.isEmpty,
            let url = PulseTheme.photoURL(cover) {
             AsyncImage(url: url) { phase in
                 switch phase {

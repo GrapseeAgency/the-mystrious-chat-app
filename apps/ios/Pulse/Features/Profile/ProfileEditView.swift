@@ -187,12 +187,12 @@ struct ProfileEditView: View {
                     if coverUploading {
                         ProgressView()
                     } else {
-                        Text(viewer?.cover == nil ? "Add cover photo" : "Change cover")
+                        Text(viewer?.coverImage == nil ? "Add cover photo" : "Change cover")
                             .font(.footnote.weight(.semibold))
                     }
                 }
                 .tint(PulseTheme.accent)
-                if viewer?.cover != nil, !coverUploading {
+                if viewer?.coverImage != nil, !coverUploading {
                     Button(role: .destructive) {
                         Task { await removeCover() }
                     } label: {
@@ -513,7 +513,7 @@ struct ProfileEditView: View {
         }
     }
 
-    /// R50-b - cover upload: PATCHes { cover: path } through the same
+    /// R50-b - cover upload: PATCHes { coverImage: path } through the same
     /// updateProfile endpoint; the optimistic viewer mirror refreshes every
     /// surface that renders the cover band.
     private func uploadCover(_ item: PhotosPickerItem) async {
@@ -527,8 +527,8 @@ struct ProfileEditView: View {
         defer { coverUploading = false }
         do {
             let path = try await session.api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
-            let user = try await session.api.updateProfile(userId: viewer.id, body: ["cover": path])
-            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, cover: user.cover))
+            let user = try await session.api.updateProfile(userId: viewer.id, body: ["coverImage": path])
+            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, coverImage: user.coverImage))
             adopt(user)
             PulseHaptics.success()
             session.toasts.show("Cover photo updated")
@@ -537,17 +537,17 @@ struct ProfileEditView: View {
         }
     }
 
-    /// R50-b - the remove branch: PATCH { cover: "" } with optimistic mirror
+    /// R50-b - the remove branch: PATCH { coverImage: "" } with optimistic mirror
     /// + rollback (the removePhoto contract verbatim).
     private func removeCover() async {
         guard let viewer, !coverUploading else { return }
         coverUploading = true
         defer { coverUploading = false }
         let snapshot = viewer
-        prefs.setViewer(PulseViewer(id: viewer.id, name: viewer.name, username: viewer.username, color: viewer.color, avatar: viewer.avatar, cover: nil))
+        prefs.setViewer(PulseViewer(id: viewer.id, name: viewer.name, username: viewer.username, color: viewer.color, avatar: viewer.avatar, coverImage: nil))
         do {
-            let user = try await session.api.updateProfile(userId: viewer.id, body: ["cover": ""])
-            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, cover: user.cover))
+            let user = try await session.api.updateProfile(userId: viewer.id, body: ["coverImage": ""])
+            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, coverImage: user.coverImage))
             adopt(user)
             PulseHaptics.success()
             session.toasts.show("Cover photo removed")

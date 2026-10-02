@@ -36,7 +36,7 @@ final class PulseKeychainTests: XCTestCase {
             throw XCTSkip("Keychain is not writable in this environment (SecItemAdd refused)")
         }
 
-        let viewer = PulseViewer(id: "viewer-kc", name: "Keychain Viewer", username: "kcviewer", color: "emerald", avatar: nil)
+        let viewer = PulseViewer(id: "viewer-kc", name: "Keychain Viewer", username: "kcviewer", color: "emerald", avatar: nil, coverImage: nil)
         PulseKeychain.shared.saveViewer(viewer)
         XCTAssertEqual(PulseKeychain.shared.loadViewer(), viewer)
 

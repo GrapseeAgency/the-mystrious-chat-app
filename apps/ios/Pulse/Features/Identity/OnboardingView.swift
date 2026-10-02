@@ -334,6 +334,7 @@ final class OnboardingViewModel: ObservableObject {
             createdAt: nil,
             lastSeenAt: nil,
             verified: nil,
+            coverImage: nil,
         )
     }
 }
