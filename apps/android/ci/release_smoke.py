@@ -342,20 +342,29 @@ def main():
         # handle step - then Continue no longer exists and Start chatting is next.
         adb_ok("shell", "input", "keyevent", "66")
         time.sleep(2.0)
-        # R25 v11: the handle step (or the theme step) raises its own IME that
-        # again hides the buttons. Retry rounds: IME down first, THEN look for
-        # the three advance buttons. Without the IME-down pass every label
-        # MISSes and the run degenerates into blind drags (v10 evidence).
-        for _ in range(3):
-            dismiss_ime()
-            if tap_scrolling("Start chatting", wait=4.0):
-                return
-            if tap_scrolling("Skip for now", wait=4.0):
-                return
-            if tap_scrolling("Continue"):
-                time.sleep(2.0)
+        # R25 v13: advance loop. The handle step auto-focuses its field, so
+        # first close the IME (BACK only while it is truly shown - a stray
+        # BACK on an already-closed IME navigates back a step and ping-pongs,
+        # which is what v12's evidence shows). Then tap the visible advance
+        # button and only return when NO onboarding marker remains.
+        for _ in range(4):
+            if ime_visible():
+                adb_ok("shell", "input", "keyevent", "4")
+                time.sleep(1.2)
+            xml = uiax_xml()
+            pos = (node_bounds(xml, "Start chatting", exact=True)
+                   or node_bounds(xml, "Start chatting")
+                   or node_bounds(xml, "Skip for now", exact=True)
+                   or node_bounds(xml, "Continue"))
+            if pos is None:
+                time.sleep(1.5)
                 continue
-            time.sleep(1.5)
+            tap(pos)
+            time.sleep(3.0)
+            xml2 = uiax_xml()
+            if (node_bounds(xml2, "What should people call you") is None
+                    and node_bounds(xml2, "Pick your handle") is None):
+                return
 
     stage("onboarding", do_onboarding)
     dismiss_system_dialogs()
