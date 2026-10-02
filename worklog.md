@@ -4836,3 +4836,37 @@ Stage Summary:
 - The full-offline direction is honored in the design: the search filter, list, folders, stories and dock all run on local Room state with no network call in the path; outbound sends still queue as pending when offline (honest delivery).
 - User action: in-app LiveUpdater will offer v0.20.0-native (manifest pinned), or sideload from the release page; the installed v0.19 keeps working offline meanwhile.
 - Open: SDK reinstall is an operator item if local compiles are ever needed again; iOS homepage mirrors are next (same directive language).
+
+---
+Task ID: R52-login
+Agent: orchestrator (Z.ai main session)
+Task: "i could barely login on the app... even demo isn't working nothing working can't even go to the home page at all" - find and kill the app login bug.
+
+Work Log:
+- SERVER PROVEN HEALTHY FIRST: /api/health, GET /api/users, POST /api/users/login {"name":"Alice Chen"} -> 200 {user, token 64-hex}, GET /api/conversations?userId=<alice> + Bearer -> 23 rooms, socket.io handshake + verify all green through the :81 gateway. The breakage was in the app-side contract, not the server.
+- ROOT CAUSE (the demo-account rotation collision): User.sessionTokenHash held ONE hash per identity; every reclaim rotated it ("last login wins"), and proxy.ts 401'd any request carrying the stale token. The native SessionViewModel answers ANY 401 by tearing the device session down (sessionTokenStore.invalidated -> prefs.setViewer(null) -> back to onboarding). The demo identity is shared (user's phone + web preview + my QA curls all log in as Alice Chen) so every login anywhere instantly bricked every other session: "could barely login, demo isn't working, can't reach home". Verified the exact kill chain in SessionViewModel.kt init{invalidated.collect} + OnboardingViewModel.complete.
+- FIX (grace list, fail-closed intact): prisma User.legacyTokenHashes (JSON array, cap 8, newest first); login route pushes the outgoing primary hash into the grace list instead of destroying it; proxy.ts accepts primary OR grace-listed hash (one indexed OR query, quote-anchored contains, safe for fixed-length hex); /api/internal/verify (socket join auth) uses the same tokenAccepted() helper; forged tokens still 401 (proven). db pushed (additive column), prisma client regenerated, dev server bounced (listener swap after regen - the runbook bounce was needed again).
+- PROOF: two consecutive logins as Alice -> BOTH tokens authenticate /api/conversations 200 (device A old token 200, device B new token 200, forged 401); /api/internal/verify grace-listed token {"valid":true}, forged {"valid":false}. The multi-device demo login loop is dead.
+- APP HARDENING (ships in v0.21.0-native): AndroidManifest android:usesCleartextTraffic="true" (user-pasted origins may be plain HTTP; the probe's "plain HTTP may be blocked" error was a real dead end); OnboardingViewModel probe now falls back to /api/health heartbeat when /api/users is not reachable/not-shaped (probeUrl helper, same 4s timeouts, honest verdicts).
+- WEB GOLDEN PATH (agent-browser): fresh session -> "Alice Chen" -> Continue -> name-clash -> "That's me - log in instead" -> home renders (Pulse header, filters, folders, 23 rooms real data), zero page errors, zero console errors. Home itself is healthy on web.
+- RELEASE: versionCode 39 / versionName 0.21.0-native (gradle defaults), lint clean, main pushed (dad7065), tag v0.21.0-native pushed; CI runs: Android tag 37027562975, iOS tag 37027562939, Web main 37027554863, Android main 37027554620 (all in_progress at push time). Manifest + mirror refresh queued on green.
+
+Stage Summary:
+- FIXED: the app login bug - concurrent device/demo logins no longer invalidate each other; the 401 session-teardown loop is dead while fail-closed token auth is preserved.
+- SHIPPED-IN-FLIGHT: v0.21.0-native (cleartext + probe fallback) building on CI.
+- User action: update the installed app via in-app LiveUpdater to v0.21.0-native once the release publishes (or keep v0.20 - its login now WORKS too, because the destructive-rotation server bug is gone; the v0.21 APK just adds the http-origin + probe hardening).
+- Open: iOS homepage mirrors of the R51 directive; predictive-back/shared-element wave; iOS connect-gate card.
+
+---
+Task ID: R52-ship
+Agent: orchestrator (Z.ai main session)
+Task: v0.21.0-native release + CDN refresh for the login fix.
+
+Work Log:
+- CI ALL GREEN: Android tag 37027562975 (signed R8 APK + emulator smoke), iOS tag 37027562939 (build + XCTest + archive), Web main 37027554863, Android main 37027554620.
+- RELEASE v0.21.0-native published 15:44Z: Pulse-v0.21.0-native.apk 25,449,067 bytes sha256 ae948688a95dae5990b976c86ed8c05b8989beebdd5f2a02327bc62c1de6815e (versionCode 39 from gradle defaults, source-verified).
+- CDN: release asset downloaded via authenticated octet-stream, local sha256 == release digest; download/Pulse.apk mirror swapped with identical bytes; download/update-manifest.json bumped (39 / 0.21.0-native / ae948688...); pushed 75374b9; live raw manifest verified serving 39 / 0.21.0-native and the raw mirror streams the identical digest.
+
+Stage Summary:
+- The user-facing story: the server bug that made every concurrent login kill every other session is FIXED AND LIVE (web + apps on the current server benefit immediately); v0.21.0-native adds the http-origin cleartext fix + probe fallback for fresh installs.
+- Open: iOS homepage mirrors, predictive-back/shared-element wave, iOS connect-gate card.
