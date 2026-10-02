@@ -126,10 +126,12 @@ private enum class NoticeTone { EMERALD, AMBER, MUTED }
 fun OnboardingScreen(
     /** Wave 8 - honest session-rotated notice ("log in again") from the shell. */
     sessionNotice: String? = null,
+    /** R50-a - adopt a probed gateway (SessionViewModel.setServerBase wires it). */
+    onApplyServerBase: (String) -> Unit = {},
     viewModel: OnboardingViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
 
     Column(
         modifier = Modifier
@@ -158,6 +160,12 @@ fun OnboardingScreen(
             label = "onboardingStep",
         ) { step ->
             when (step) {
+                OnboardingStep.CONNECT -> ConnectStep(
+                    state = state,
+                    viewModel = viewModel,
+                    haptics = haptics,
+                    onApplyServerBase = onApplyServerBase,
+                )
                 OnboardingStep.NAME -> NameStep(state = state, viewModel = viewModel, haptics = haptics)
                 OnboardingStep.HANDLE -> HandleStep(state = state, viewModel = viewModel, haptics = haptics)
             }
@@ -239,6 +247,81 @@ private fun Wordmark() {
     }
 }
 
+// ── step 0: connect to a live Pulse server (the honest front door) ──
+
+@Composable
+private fun ConnectStep(
+    state: OnboardingUiState,
+    viewModel: OnboardingViewModel,
+    haptics: HapticFeedback,
+    onApplyServerBase: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            FieldLabel("Pulse server")
+            PulseTextField(
+                value = state.serverUrl,
+                onValueChange = viewModel::setServerUrl,
+                placeholder = "https://your-pulse-gateway",
+                keyboardType = KeyboardType.Uri,
+                autoFocus = true,
+                onGo = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    viewModel.connect(onApplyServerBase)
+                },
+            )
+            Text(
+                "Paste the same address you use to open Pulse in your browser. " +
+                    "Chat lives on a live server - offline Pulse keeps drafts only.",
+                fontSize = 11.5.sp,
+                lineHeight = 15.sp,
+                color = if (isSystemInDarkTheme()) Zinc400 else Zinc500,
+            )
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            PulsePrimaryButton(
+                text = "Connect",
+                icon = PulseIcons.ArrowRight,
+                enabled = state.serverUrl.isNotBlank() && !state.probing,
+                loading = state.probing,
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    viewModel.connect(onApplyServerBase)
+                },
+            )
+            // R50-a - the demo door: one tap lands inside the seeded demo
+            // account with its full chat history, exactly what the server
+            // probe just validated.
+            if (state.serverConnected) {
+                PulseLoginButton(
+                    text = if (state.signingIn) "Opening the demo account..." else "Explore the demo account (Alice Chen)",
+                    icon = PulseIcons.Login,
+                    loading = state.signingIn,
+                    enabled = !state.signingIn,
+                    onClick = { viewModel.demoLogin() },
+                )
+            }
+        }
+
+        if (state.connectNotice != null) {
+            NoticeLine(
+                text = state.connectNotice,
+                tone = when (state.connectNoticeTone) {
+                    ConnectNoticeTone.EMERALD -> NoticeTone.EMERALD
+                    ConnectNoticeTone.AMBER -> NoticeTone.AMBER
+                },
+            )
+        }
+
+        PulseGhostButton(
+            text = "Skip - explore offline",
+            enabled = !state.probing,
+            onClick = { viewModel.skipConnect() },
+        )
+    }
+}
+
 // ── step 1: display name + avatar color ──────────────────────
 
 @Composable
@@ -295,10 +378,31 @@ private fun NameStep(
                     onClick = { viewModel.loginInstead() },
                 )
             }
+
+            // R50-a - the demo door also lives on the name step for returning
+            // users whose gateway is already configured (they never see the
+            // connect gate). One tap, straight into the seeded demo chats.
+            if (state.serverConnected || app.pulse.core.PulseEndpoints.isConfigured) {
+                PulseLoginButton(
+                    text = if (state.signingIn) "Opening the demo account..." else "Explore the demo account (Alice Chen)",
+                    icon = PulseIcons.Login,
+                    loading = state.signingIn,
+                    enabled = !state.signingIn,
+                    onClick = { viewModel.demoLogin() },
+                )
+            }
         }
 
         if (notice != null && state.step == OnboardingStep.NAME) {
             NoticeLine(text = notice, tone = NoticeTone.AMBER)
+        } else if (state.serverConnected && state.connectNotice != null) {
+            NoticeLine(
+                text = state.connectNotice,
+                tone = when (state.connectNoticeTone) {
+                    ConnectNoticeTone.EMERALD -> NoticeTone.EMERALD
+                    ConnectNoticeTone.AMBER -> NoticeTone.AMBER
+                },
+            )
         }
     }
 }
@@ -519,7 +623,7 @@ private fun TakenLine(text: String, suggestion: String?, onUse: (String) -> Unit
 
 @Composable
 private fun SwatchRow(selected: String, onSelect: (String) -> Unit) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,

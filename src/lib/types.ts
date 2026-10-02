@@ -8,6 +8,8 @@ export interface AppUser {
   about: string
   color: string // emerald|rose|amber|violet|teal|orange|pink|cyan
   avatar: string | null // profile photo path (/uploads/<uuid>.<ext>) - null = palette avatar fallback
+  /** R50-b - profile cover background path (/api/uploads/<file>) - null = palette hero fallback */
+  cover: string | null
   statusEmoji: string | null // Discord-style custom status glyph
   statusText: string | null // Discord-style custom status line
   createdAt: string // ISO

@@ -491,7 +491,7 @@ fun HubScreen(
     // subtle haptic. The screen adds the house screen-haptic (LocalHapticFeedback,
     // the idiom every other surface uses) so the success feedback survives
     // Reduce Motion, where the host gates everything.
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     LaunchedEffect(Unit) {
         vm.checkinSuccess.collect {
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)

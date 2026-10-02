@@ -232,7 +232,7 @@ fun ChatsScreen(
     // R1-W2H D24 - the exported file path awaiting the share-sheet launch.
     var pendingShareFile by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -715,7 +715,7 @@ fun ArchivedScreen(
     // R1-W2H D24 - same export share hand-off as the main tab.
     var pendingShareFile by remember { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     val context = LocalContext.current
     LaunchedEffect(viewerId) {
         if (viewerId != null) viewModel.refresh()
@@ -1525,7 +1525,7 @@ private fun ConversationRowItem(
     onArchive: () -> Unit,
 ) {
     val dark = isPulseDarkTheme()
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val revealPx = with(density) { SWIPE_REVEAL_DP.dp.toPx() }

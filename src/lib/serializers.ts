@@ -150,6 +150,7 @@ interface UserRow {
   about: string
   color: string
   avatar: string | null
+  cover?: string | null
   statusEmoji: string | null
   statusText: string | null
   createdAt: Date
@@ -174,6 +175,7 @@ export function mapUser(user: UserRow): AppUser {
     about: user.about,
     color: user.color,
     avatar: user.avatar ?? null,
+    cover: user.cover ?? null,
     statusEmoji: user.statusEmoji ?? null,
     statusText: user.statusText ?? null,
     createdAt: user.createdAt.toISOString(),

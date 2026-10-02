@@ -89,6 +89,12 @@ struct ProfileEditView: View {
     @State private var avatarUploading = false
     @State private var avatarPreview: UIImage?
 
+    // R50-b - cover pipeline (same upload-then-PATCH contract as the avatar;
+    // the wide render crop happens at draw time, so the square capture reuses
+    // the avatar optimizer honestly).
+    @State private var coverItem: PhotosPickerItem?
+    @State private var coverUploading = false
+
     // handle editor
     @State private var handleState = HandleCheckState()
     @State private var handleCheckTask: Task<Void, Never>?
@@ -119,6 +125,11 @@ struct ProfileEditView: View {
                 guard let item else { return }
                 photoItem = nil
                 Task { await uploadAvatar(item) }
+            }
+            .onChange(of: coverItem) { _, item in
+                guard let item else { return }
+                coverItem = nil
+                Task { await uploadCover(item) }
             }
         }
         // R17 Neo - sheets at 28pt (web sheet radius parity).
@@ -166,6 +177,27 @@ struct ProfileEditView: View {
                             Text("Remove photo")
                                 .font(.footnote.weight(.semibold))
                         }
+                    }
+                }
+            }
+            // R50-b - the profile cover: upload then PATCH cover (the same
+            // wire contract web cover-editor.tsx uses).
+            HStack(spacing: 14) {
+                PhotosPicker(selection: $coverItem, matching: .images) {
+                    if coverUploading {
+                        ProgressView()
+                    } else {
+                        Text(viewer?.cover == nil ? "Add cover photo" : "Change cover")
+                            .font(.footnote.weight(.semibold))
+                    }
+                }
+                .tint(PulseTheme.accent)
+                if viewer?.cover != nil, !coverUploading {
+                    Button(role: .destructive) {
+                        Task { await removeCover() }
+                    } label: {
+                        Text("Remove cover")
+                            .font(.footnote.weight(.semibold))
                     }
                 }
             }
@@ -477,6 +509,50 @@ struct ProfileEditView: View {
             session.toasts.show("Profile updated")
         } catch {
             avatarPreview = nil
+            notice = ChatsViewModel.describe(error)
+        }
+    }
+
+    /// R50-b - cover upload: PATCHes { cover: path } through the same
+    /// updateProfile endpoint; the optimistic viewer mirror refreshes every
+    /// surface that renders the cover band.
+    private func uploadCover(_ item: PhotosPickerItem) async {
+        guard let viewer, !coverUploading else { return }
+        guard let raw = try? await item.loadTransferable(type: Data.self),
+              let jpeg = PulseAvatarImage.jpegData(from: raw) else {
+            notice = "Couldn't read that image - try another one"
+            return
+        }
+        coverUploading = true
+        defer { coverUploading = false }
+        do {
+            let path = try await session.api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
+            let user = try await session.api.updateProfile(userId: viewer.id, body: ["cover": path])
+            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, cover: user.cover))
+            adopt(user)
+            PulseHaptics.success()
+            session.toasts.show("Cover photo updated")
+        } catch {
+            notice = ChatsViewModel.describe(error)
+        }
+    }
+
+    /// R50-b - the remove branch: PATCH { cover: "" } with optimistic mirror
+    /// + rollback (the removePhoto contract verbatim).
+    private func removeCover() async {
+        guard let viewer, !coverUploading else { return }
+        coverUploading = true
+        defer { coverUploading = false }
+        let snapshot = viewer
+        prefs.setViewer(PulseViewer(id: viewer.id, name: viewer.name, username: viewer.username, color: viewer.color, avatar: viewer.avatar, cover: nil))
+        do {
+            let user = try await session.api.updateProfile(userId: viewer.id, body: ["cover": ""])
+            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, cover: user.cover))
+            adopt(user)
+            PulseHaptics.success()
+            session.toasts.show("Cover photo removed")
+        } catch {
+            prefs.setViewer(snapshot)
             notice = ChatsViewModel.describe(error)
         }
     }

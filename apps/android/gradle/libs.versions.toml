@@ -15,6 +15,7 @@ workManager = "2.9.1"
 socketIo = "2.1.0"
 datastore = "1.1.1"
 coreKtx = "1.15.0"
+splashscreen = "1.0.1"
 biometric = "1.1.0"
 coil = "2.7.0"
 webrtc = "1.3.10"
@@ -30,6 +31,7 @@ junit4 = "4.13.2"
 [libraries]
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "splashscreen" }
 # R10-a - BiometricPrompt app lock (BIOMETRIC_WEAK | DEVICE_CREDENTIAL).
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }

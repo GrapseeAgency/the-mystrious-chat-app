@@ -20,6 +20,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import app.pulse.core.PulseEndpoints
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -101,6 +105,10 @@ private val SWATCHES = listOf("#10B981", "#14B8A6", "#8B5CF6", "#F59E0B", "#FB71
 fun ProfileScreen(
     onEditProfile: () -> Unit = {},
     onOpenBlocked: () -> Unit = {},
+    // R50-c - web profile kebab parity: the profile More menu carries Hub
+    // (MainActivity routes to the hub tab) and Settings.
+    onOpenHub: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     // R16 - web profile-tab.tsx:497-508 "Saved messages" row -> the real
     // starred library (MainActivity routes this to the existing "saved" nav
     // destination - fetch / search / unsave / jump-to-message).
@@ -124,7 +132,7 @@ fun ProfileScreen(
     // R6 - M3: the forget confirmation (iOS IdentityPickerSheet "Forget this
     // viewer" semantics - destructive, so it asks first).
     var forgetConfirm by remember { mutableStateOf(false) }
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     // R16 - web profile-tab.tsx:169 `iAmOnline` (onlineIds.has(me.id)) + the
@@ -166,6 +174,22 @@ fun ProfileScreen(
                             onEditProfile()
                         },
                     )
+                    // R50-c - Hub and Settings join the kebab (web parity;
+                    // the user audit: "no hub and settings on the three dots").
+                    DropdownMenuItem(
+                        text = { Text("Hub", color = Color.White) },
+                        onClick = {
+                            kebabMenu = false
+                            onOpenHub()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Settings", color = Color.White) },
+                        onClick = {
+                            kebabMenu = false
+                            onOpenSettings()
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text("Saved messages", color = Color.White) },
                         onClick = {
@@ -185,6 +209,32 @@ fun ProfileScreen(
         }
 
         Spacer(Modifier.height(2.dp))
+
+        // R50-b - the profile cover: a real uploaded background photo rides
+        // ABOVE the identity block, melting into the ember backdrop through a
+        // bottom fade. No cover set = the clean ember stage (unchanged).
+        val coverPath = viewer?.cover
+        if (!coverPath.isNullOrBlank() && coverPath.startsWith("/api/uploads/")) {
+            AsyncImage(
+                model = PulseEndpoints.http(coverPath),
+                contentDescription = "Profile cover photo",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(132.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .drawBehind {
+                        // ember fade so the band melts into the backdrop
+                        drawRect(
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                1f to Color(0xFF1A0F0A).copy(alpha = 0.85f),
+                            ),
+                        )
+                    },
+            )
+            Spacer(Modifier.height(10.dp))
+        }
 
         // EMB identity block: centered 96dp avatar; the presence dot rides
         // bottom-right with a 2.5dp BackdropBase ground ring (the old emerald

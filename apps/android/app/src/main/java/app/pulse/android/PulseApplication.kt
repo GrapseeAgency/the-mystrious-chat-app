@@ -64,6 +64,15 @@ class PulseApplication : Application() {
             app.pulse.android.notify.IncomingAttention.previewAlert(this, hapticsOn)
         }
 
+        // R50-e - the haptics MASTER GATE: the settings toggle now drives
+        // every UI haptic too (rememberGatedHaptics reads this flag). The
+        // prefs flow is the single source; the gate defaults to ON.
+        appScope.launch {
+            prefs.hapticsOn.collect { on ->
+                app.pulse.ui.PulseHapticsGate.enabled = on
+            }
+        }
+
         // R8 Task 3-c - Telecom self-managed PhoneAccount registration at app
         // start (idempotent; a refusal is logged and the call paths fall back
         // to the in-app ring + full-screen-notification idiom).

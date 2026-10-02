@@ -129,6 +129,7 @@ struct ProfileView: View {
     /// the handle line at 13pt white 55%.
     private var identityBlock: some View {
         VStack(spacing: 8) {
+            coverBand
             avatarBadge
             HStack(spacing: 6) {
                 Text(prefs.viewer?.name ?? "No identity")
@@ -145,6 +146,33 @@ struct ProfileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
+    }
+
+    /// R50-b - the profile cover: a real uploaded background photo when set
+    /// (mirrors the web hero), absent cleanly when not. Rounded 20pt band,
+    /// scaledToFill so any capture crops like the web object-cover.
+    @ViewBuilder
+    private var coverBand: some View {
+        if let cover = prefs.viewer?.cover, !cover.isEmpty,
+           let url = PulseTheme.photoURL(cover) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                default:
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 132)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            )
+            .accessibilityLabel("Profile cover photo")
+        }
     }
 
     /// 96pt avatar; online renders the #FF9F0A dot ringed in the ground.

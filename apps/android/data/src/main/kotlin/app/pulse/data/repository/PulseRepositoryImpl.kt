@@ -2747,6 +2747,8 @@ class PulseRepositoryImpl @Inject constructor(
             patch.about?.let { put("about", it) }
             patch.color?.let { put("color", it) }
             patch.avatar?.let { put("avatar", it) }
+            // R50-b - profile cover background (explicit key, "" clears).
+            patch.cover?.let { put("cover", it) }
             patch.statusEmoji?.let { put("statusEmoji", it) }
             patch.statusText?.let { put("statusText", it) }
             // username is "explicit key" on the wire: null = untouched, "" = clear.
@@ -3069,6 +3071,7 @@ fun FullUserDto.toUserProfile(): UserProfile = UserProfile(
     about = about,
     color = color,
     avatar = avatar,
+    cover = cover,
     statusEmoji = statusEmoji,
     statusText = statusText,
     createdAtIso = createdAt,

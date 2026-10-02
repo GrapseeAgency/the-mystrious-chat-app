@@ -342,7 +342,7 @@ fun TicTacToeCard(
             // R7 item 3 - web rematch() fires haptic(6) before the POST
             // (game-tictactoe-card.tsx:217); the native TextHandleMove tick
             // rides the SAME tap the in-flight disable arms on.
-            val haptics = LocalHapticFeedback.current
+            val haptics = app.pulse.ui.rememberGatedHaptics()
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = {

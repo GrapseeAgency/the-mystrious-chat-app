@@ -249,7 +249,7 @@ fun ChatRoomScreen(
     val effectiveWallpaper = roomTheme?.wallpaper ?: prefs.wallpaper ?: "none"
 
     val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     val listScope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     val listState = rememberLazyListState()
@@ -3397,7 +3397,7 @@ private fun MessageRow(
         // OUTSIDE the bubble's combinedClickable so tap / long-press /
         // double-tap keep working; vertical list scrolling is untouched
         // (horizontal-only slop).
-        val haptics = LocalHapticFeedback.current
+        val haptics = app.pulse.ui.rememberGatedHaptics()
         val dragX = remember(message.id) { Animatable(0f) }
         val dragScope = rememberCoroutineScope()
         val density = LocalDensity.current

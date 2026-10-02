@@ -41,6 +41,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     lastSeenAt?: Date
@@ -113,6 +114,23 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
       )
     } else {
       data.avatar = avatar
+    }
+  }
+
+  // R50-b - profile cover background - explicit key; '' or null clears. Same
+  // server-managed uploads-path contract as the avatar (upload first, then
+  // PATCH the returned path).
+  if (body.cover !== undefined) {
+    const cover = strField(body.cover)
+    if (cover.length === 0) {
+      data.cover = null
+    } else if (!/^\/api\/uploads\/[A-Za-z0-9._-]{8,120}$/.test(cover)) {
+      return NextResponse.json(
+        { error: "cover must be a path returned by POST /api/uploads (e.g. /api/uploads/<uuid>.jpg), or empty to clear." },
+        { status: 400 },
+      )
+    } else {
+      data.cover = cover
     }
   }
 

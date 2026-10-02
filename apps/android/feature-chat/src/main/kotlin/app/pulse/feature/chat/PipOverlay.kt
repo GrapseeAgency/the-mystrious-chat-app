@@ -260,7 +260,7 @@ fun PipPaneOverlay(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
     val unread by viewModel.unread.collectAsStateWithLifecycle()
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
 
     // The Android dock (108dp + system nav) is taller than web's ~76px
     // capsule - the effective bottom reserve honors whichever is larger so

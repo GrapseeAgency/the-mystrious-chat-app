@@ -279,6 +279,7 @@ data class UserDto(
     val username: String? = null,
     val color: String? = null,
     val avatar: String? = null,
+    val cover: String? = null,
     val bio: String? = null,
     val lastSeen: String? = null,
     val verified: Boolean? = null,

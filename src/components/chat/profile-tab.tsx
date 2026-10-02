@@ -67,6 +67,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { UserAvatar } from '@/components/chat/user-avatar'
 import { AvatarPhotoEditor } from '@/components/profile/avatar-editor'
+import { CoverPhotoEditor } from '@/components/profile/cover-editor'
 import { ChevronRow, ProfileSection, PROFILE_CARD } from '@/components/profile/profile-primitives'
 import { STATUS_GLYPH_CHOICES, StatusGlyph } from '@/components/profile/status-glyph'
 import { HandleEditorDialog } from '@/components/profile/handle-editor'
@@ -328,10 +329,23 @@ function ProfileEditor({
         <section aria-label="Profile" className="relative">
           {/* flat identity cover with a scanline texture + signal edge */}
           <div className={cn('scan-fx relative isolate h-28 overflow-hidden sm:h-32', gradient)}>
+            {/* R50-b - the profile cover: a real uploaded background photo
+                when set, the identity-gradient band otherwise. The glass
+                sheen + signal line stay on top in both states. */}
+            {me.cover ? (
+              <img
+                src={me.cover}
+                alt=""
+                className="absolute inset-0 size-full object-cover"
+              />
+            ) : null}
             <span
               aria-hidden
               className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.16),transparent_60%),radial-gradient(130%_150%_at_88%_-12%,rgba(255,255,255,0.2),transparent_55%)]"
             />
+            {me.cover ? (
+              <span aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
+            ) : null}
             {/* the signal line - hairline bright edge grounding the cover */}
             <span
               aria-hidden
@@ -589,6 +603,8 @@ function ProfileEditor({
                   <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-4">
                     {/* R27-d - profile photo editor above the identity fields */}
                     <AvatarPhotoEditor me={me} />
+
+                    <CoverPhotoEditor me={me} />
 
                     <ProfileSection title="Identity" className="mt-6">
                       <div className="space-y-3 p-1.5">

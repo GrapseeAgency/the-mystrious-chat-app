@@ -69,6 +69,9 @@ struct PulseDockContext {
     let onCalls: () -> Void
     let onSaved: () -> Void
     let onStories: () -> Void
+    // R50-c - the profile More-menu parity: Hub joins the dock menu on every
+    // nav style (the user audit: the three dots only had Settings).
+    var onHub: () -> Void = {}
 }
 
 // ── shared unread badge (web UnreadBadge :105-122) ──────────
@@ -790,6 +793,7 @@ struct RailDock: View {
             // narrow to anchor the glass popover; the dock menu is the only
             // Settings entry on iOS so the affordance must exist.
             Menu {
+                Button { context.onHub() } label: { Label("Hub", systemImage: "globe.americas") }
                 Button { context.onSettings() } label: { Label("Settings", systemImage: "gearshape") }
                 Button { context.onSearch() } label: { Label("Search", systemImage: "magnifyingglass") }
                 Button { context.onCalls() } label: { Label("Calls", systemImage: "phone") }
@@ -1441,6 +1445,7 @@ struct GestureDock: View {
         .overlay(alignment: .topTrailing) {
             // iOS deviation: the dock menu is the only Settings entry.
             Menu {
+                Button { context.onHub() } label: { Label("Hub", systemImage: "globe.americas") }
                 Button { context.onSettings() } label: { Label("Settings", systemImage: "gearshape") }
                 Button { context.onSearch() } label: { Label("Search", systemImage: "magnifyingglass") }
                 Button { context.onCalls() } label: { Label("Calls", systemImage: "phone") }

@@ -5448,6 +5448,7 @@ export namespace Prisma {
     about: string | null
     color: string | null
     avatar: string | null
+    cover: string | null
     statusEmoji: string | null
     statusText: string | null
     preferences: string | null
@@ -5466,6 +5467,7 @@ export namespace Prisma {
     about: string | null
     color: string | null
     avatar: string | null
+    cover: string | null
     statusEmoji: string | null
     statusText: string | null
     preferences: string | null
@@ -5484,6 +5486,7 @@ export namespace Prisma {
     about: number
     color: number
     avatar: number
+    cover: number
     statusEmoji: number
     statusText: number
     preferences: number
@@ -5514,6 +5517,7 @@ export namespace Prisma {
     about?: true
     color?: true
     avatar?: true
+    cover?: true
     statusEmoji?: true
     statusText?: true
     preferences?: true
@@ -5532,6 +5536,7 @@ export namespace Prisma {
     about?: true
     color?: true
     avatar?: true
+    cover?: true
     statusEmoji?: true
     statusText?: true
     preferences?: true
@@ -5550,6 +5555,7 @@ export namespace Prisma {
     about?: true
     color?: true
     avatar?: true
+    cover?: true
     statusEmoji?: true
     statusText?: true
     preferences?: true
@@ -5655,6 +5661,7 @@ export namespace Prisma {
     about: string
     color: string
     avatar: string | null
+    cover: string | null
     statusEmoji: string | null
     statusText: string | null
     preferences: string | null
@@ -5692,6 +5699,7 @@ export namespace Prisma {
     about?: boolean
     color?: boolean
     avatar?: boolean
+    cover?: boolean
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
@@ -5733,6 +5741,7 @@ export namespace Prisma {
     about?: boolean
     color?: boolean
     avatar?: boolean
+    cover?: boolean
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
@@ -5751,6 +5760,7 @@ export namespace Prisma {
     about?: boolean
     color?: boolean
     avatar?: boolean
+    cover?: boolean
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
@@ -5769,6 +5779,7 @@ export namespace Prisma {
     about?: boolean
     color?: boolean
     avatar?: boolean
+    cover?: boolean
     statusEmoji?: boolean
     statusText?: boolean
     preferences?: boolean
@@ -5780,7 +5791,7 @@ export namespace Prisma {
     xpDay?: boolean
   }
 
-  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "statusEmoji" | "statusText" | "preferences" | "sessionTokenHash" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
+  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "cover" | "statusEmoji" | "statusText" | "preferences" | "sessionTokenHash" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
   export type UserInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     appInstalls?: boolean | User$appInstallsArgs<ExtArgs>
     wallet?: boolean | User$walletArgs<ExtArgs>
@@ -5842,6 +5853,7 @@ export namespace Prisma {
       about: string
       color: string
       avatar: string | null
+      cover: string | null
       statusEmoji: string | null
       statusText: string | null
       preferences: string | null
@@ -6302,6 +6314,7 @@ export namespace Prisma {
     readonly about: FieldRef<"User", 'String'>
     readonly color: FieldRef<"User", 'String'>
     readonly avatar: FieldRef<"User", 'String'>
+    readonly cover: FieldRef<"User", 'String'>
     readonly statusEmoji: FieldRef<"User", 'String'>
     readonly statusText: FieldRef<"User", 'String'>
     readonly preferences: FieldRef<"User", 'String'>
@@ -54318,6 +54331,7 @@ export namespace Prisma {
     about: 'about',
     color: 'color',
     avatar: 'avatar',
+    cover: 'cover',
     statusEmoji: 'statusEmoji',
     statusText: 'statusText',
     preferences: 'preferences',
@@ -54972,6 +54986,7 @@ export namespace Prisma {
     about?: StringFilter<"User"> | string
     color?: StringFilter<"User"> | string
     avatar?: StringNullableFilter<"User"> | string | null
+    cover?: StringNullableFilter<"User"> | string | null
     statusEmoji?: StringNullableFilter<"User"> | string | null
     statusText?: StringNullableFilter<"User"> | string | null
     preferences?: StringNullableFilter<"User"> | string | null
@@ -55012,6 +55027,7 @@ export namespace Prisma {
     about?: SortOrder
     color?: SortOrder
     avatar?: SortOrderInput | SortOrder
+    cover?: SortOrderInput | SortOrder
     statusEmoji?: SortOrderInput | SortOrder
     statusText?: SortOrderInput | SortOrder
     preferences?: SortOrderInput | SortOrder
@@ -55055,6 +55071,7 @@ export namespace Prisma {
     about?: StringFilter<"User"> | string
     color?: StringFilter<"User"> | string
     avatar?: StringNullableFilter<"User"> | string | null
+    cover?: StringNullableFilter<"User"> | string | null
     statusEmoji?: StringNullableFilter<"User"> | string | null
     statusText?: StringNullableFilter<"User"> | string | null
     preferences?: StringNullableFilter<"User"> | string | null
@@ -55095,6 +55112,7 @@ export namespace Prisma {
     about?: SortOrder
     color?: SortOrder
     avatar?: SortOrderInput | SortOrder
+    cover?: SortOrderInput | SortOrder
     statusEmoji?: SortOrderInput | SortOrder
     statusText?: SortOrderInput | SortOrder
     preferences?: SortOrderInput | SortOrder
@@ -55121,6 +55139,7 @@ export namespace Prisma {
     about?: StringWithAggregatesFilter<"User"> | string
     color?: StringWithAggregatesFilter<"User"> | string
     avatar?: StringNullableWithAggregatesFilter<"User"> | string | null
+    cover?: StringNullableWithAggregatesFilter<"User"> | string | null
     statusEmoji?: StringNullableWithAggregatesFilter<"User"> | string | null
     statusText?: StringNullableWithAggregatesFilter<"User"> | string | null
     preferences?: StringNullableWithAggregatesFilter<"User"> | string | null
@@ -58115,6 +58134,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -58155,6 +58175,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -58195,6 +58216,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -58235,6 +58257,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -58275,6 +58298,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -58293,6 +58317,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -58311,6 +58336,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -61694,6 +61720,7 @@ export namespace Prisma {
     about?: SortOrder
     color?: SortOrder
     avatar?: SortOrder
+    cover?: SortOrder
     statusEmoji?: SortOrder
     statusText?: SortOrder
     preferences?: SortOrder
@@ -61717,6 +61744,7 @@ export namespace Prisma {
     about?: SortOrder
     color?: SortOrder
     avatar?: SortOrder
+    cover?: SortOrder
     statusEmoji?: SortOrder
     statusText?: SortOrder
     preferences?: SortOrder
@@ -61735,6 +61763,7 @@ export namespace Prisma {
     about?: SortOrder
     color?: SortOrder
     avatar?: SortOrder
+    cover?: SortOrder
     statusEmoji?: SortOrder
     statusText?: SortOrder
     preferences?: SortOrder
@@ -67989,6 +68018,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68028,6 +68058,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68072,6 +68103,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68111,6 +68143,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68166,6 +68199,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68205,6 +68239,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68255,6 +68290,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68294,6 +68330,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68333,6 +68370,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68372,6 +68410,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68416,6 +68455,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68455,6 +68495,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68510,6 +68551,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68549,6 +68591,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68599,6 +68642,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68638,6 +68682,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68677,6 +68722,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68716,6 +68762,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68771,6 +68818,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68810,6 +68858,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68849,6 +68898,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68888,6 +68938,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -68943,6 +68994,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -68982,6 +69034,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69021,6 +69074,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69060,6 +69114,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69115,6 +69170,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69154,6 +69210,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69193,6 +69250,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69232,6 +69290,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69287,6 +69346,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69326,6 +69386,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69365,6 +69426,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69404,6 +69466,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69459,6 +69522,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69498,6 +69562,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69537,6 +69602,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69576,6 +69642,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69631,6 +69698,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69670,6 +69738,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69709,6 +69778,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69748,6 +69818,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69803,6 +69874,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69842,6 +69914,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -69881,6 +69954,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69920,6 +69994,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -69964,6 +70039,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -70003,6 +70079,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -70058,6 +70135,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70097,6 +70175,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70147,6 +70226,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70186,6 +70266,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70225,6 +70306,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -70264,6 +70346,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -70319,6 +70402,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70358,6 +70442,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70397,6 +70482,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -70436,6 +70522,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -70491,6 +70578,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -70530,6 +70618,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -71319,6 +71408,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -71358,6 +71448,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -71478,6 +71569,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -71517,6 +71609,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -71680,6 +71773,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -71719,6 +71813,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -71795,6 +71890,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -71834,6 +71930,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -71955,6 +72052,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -71994,6 +72092,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -72108,6 +72207,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -72147,6 +72247,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -72251,6 +72352,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -72290,6 +72392,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -72919,6 +73022,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -72958,6 +73062,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -73837,6 +73942,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -73876,6 +73982,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -74016,6 +74123,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -74055,6 +74163,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -74995,6 +75104,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -75034,6 +75144,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -75110,6 +75221,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -75149,6 +75261,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -75576,6 +75689,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -75615,6 +75729,7 @@ export namespace Prisma {
     about?: string
     color?: string
     avatar?: string | null
+    cover?: string | null
     statusEmoji?: string | null
     statusText?: string | null
     preferences?: string | null
@@ -75703,6 +75818,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
@@ -75742,6 +75858,7 @@ export namespace Prisma {
     about?: StringFieldUpdateOperationsInput | string
     color?: StringFieldUpdateOperationsInput | string
     avatar?: NullableStringFieldUpdateOperationsInput | string | null
+    cover?: NullableStringFieldUpdateOperationsInput | string | null
     statusEmoji?: NullableStringFieldUpdateOperationsInput | string | null
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null

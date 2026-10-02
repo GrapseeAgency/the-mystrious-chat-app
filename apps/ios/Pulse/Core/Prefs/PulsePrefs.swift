@@ -8,17 +8,19 @@ public struct PulseViewer: Codable, Equatable {
     public var username: String?
     public var color: String?
     public var avatar: String?
+    public var cover: String?
 
-    public init(id: String, name: String, username: String? = nil, color: String? = nil, avatar: String? = nil) {
+    public init(id: String, name: String, username: String? = nil, color: String? = nil, avatar: String? = nil, cover: String? = nil) {
         self.id = id
         self.name = name
         self.username = username
         self.color = color
         self.avatar = avatar
+        self.cover = cover
     }
 
     init(from wire: WireUser) {
-        self.init(id: wire.id, name: wire.name, username: wire.username, color: wire.color, avatar: wire.avatar)
+        self.init(id: wire.id, name: wire.name, username: wire.username, color: wire.color, avatar: wire.avatar, cover: wire.cover)
     }
 }
 

@@ -86,7 +86,7 @@ fun ContactsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val presence by viewModel.presence.collectAsStateWithLifecycle()
     val dmResult by viewModel.dmResult.collectAsStateWithLifecycle()
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
 
     var filter by remember { mutableStateOf("") }
     var safetyTarget by remember { mutableStateOf<User?>(null) }
@@ -341,7 +341,7 @@ private fun ContactRow(
     onOpenProfile: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
 
     Surface(
         shape = RoundedCornerShape(20.dp),

@@ -388,7 +388,7 @@ fun AccountSection(onBack: () -> Unit, onEditProfile: () -> Unit, viewModel: Set
     val viewerId by viewModel.viewerId.collectAsStateWithLifecycle()
     val viewerName by viewModel.viewerName.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     SectionScaffold("Account", onBack) {
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -603,7 +603,7 @@ fun AppearanceSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltVie
         // nav-registry.ts labels/hints verbatim, now ALL 13 styles): 2-column
         // card grid, selection ring like the wallpaper swatches. The value
         // strings ride the SAME `pulse.navStyle.v2` key the web persists.
-        val haptics = LocalHapticFeedback.current
+        val haptics = app.pulse.ui.rememberGatedHaptics()
         Text(
             "Navigation style",
             fontSize = 12.sp,
@@ -714,7 +714,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
     // R14 gap 10 - the default list filter (web settings-screen.tsx:1065-1083
     // "Default list filter" picker): same device key the chats chips write.
     val listFilter by viewModel.chatsListFilter.collectAsStateWithLifecycle()
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     SectionScaffold("Chat", onBack) {
         SegPicker(
             "Default list filter",
@@ -1177,7 +1177,7 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
     val footprint by viewModel.footprint.collectAsStateWithLifecycle()
     val footprintStats by viewModel.footprintStats.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(Unit) {
         viewModel.refreshFootprint()

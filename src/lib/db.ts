@@ -30,14 +30,16 @@ import { PrismaClient } from '../../prisma/generated-client'
 // v15 - R47: bumped AFTER the UserBlock model push + client regen (post-regen rule).
 // v16 - R48: bumped AFTER the AccountReport model + ScheduledMessage.cancelledAt
 // push + client regen (post-regen rule - key change must FOLLOW the regen).
+// v17 - R50-b: bumped AFTER the User.cover column push + client regen
+// (post-regen rule - key change must FOLLOW the regen).
 const globalForPrisma = globalThis as unknown as {
-  prismaV16: PrismaClient | undefined
+  prismaV17: PrismaClient | undefined
 }
 
 export const db =
-  globalForPrisma.prismaV16 ??
+  globalForPrisma.prismaV17 ??
   new PrismaClient({
     log: ['query'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV16 = db
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prismaV17 = db

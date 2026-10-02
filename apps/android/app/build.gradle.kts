@@ -8,8 +8,8 @@ plugins {
 }
 
 // Release channel plumbing - CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 28
-val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.12.0-native"
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 37
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.19.0-native"
 
 android {
     namespace = "app.pulse.android"
@@ -104,6 +104,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
     // R10-a - BiometricPrompt app lock (BIOMETRIC_WEAK | DEVICE_CREDENTIAL).
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.activity.compose)

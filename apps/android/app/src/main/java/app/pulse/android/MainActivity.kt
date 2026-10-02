@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
@@ -321,6 +322,9 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // R50-e - the modern launch: branded splash (windowSplashScreenBackground
+        // carbon) that hands off to Theme.Pulse via postSplashScreenTheme.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         handleIntent(intent)
         // True edge-to-edge with NO system scrims: the app surface (ambient field)
@@ -472,7 +476,12 @@ fun PulseRoot(
             )
 
             if (onboarding) {
-                OnboardingScreen(sessionNotice = sessionNotice)
+                OnboardingScreen(
+                    sessionNotice = sessionNotice,
+                    // R50-a - the connect gate adopts the probed gateway through
+                    // the session (PulseEndpoints + prefs persistence).
+                    onApplyServerBase = { base -> session.setServerBase(base) },
+                )
             } else {
                 PulseShell(
                     viewerId = viewerId,
@@ -562,7 +571,7 @@ private fun PulseShell(
 
     // R8 Task 3-c - one-shot group-call notices (web toasts) ride the shell
     // snackbar host (declared below honest()).
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var moreMenuOpen by remember { mutableStateOf(false) }
@@ -871,6 +880,10 @@ private fun PulseShell(
                     ProfileScreen(
                         onEditProfile = { navController.navigate("profile/edit") },
                         onOpenBlocked = { navController.navigate("settings/blocked") },
+                        // R50-c - kebab parity: Hub jumps to the hub tab,
+                        // Settings opens the settings root.
+                        onOpenHub = { switchTab("hub") },
+                        onOpenSettings = { navController.navigate("settings") },
                         // R16 - web profile-tab.tsx:497-508: the profile tab's
                         // "Saved messages" row lands on the real starred library.
                         onOpenSaved = { navController.navigate("saved") },
@@ -1484,7 +1497,7 @@ private fun DockTabButton(
     reducedMotion: Boolean = false,
     onSelect: () -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     // web wobble - icon rotates [0, -8, 6, 0]° when a tab becomes active
     val rotate = remember { Animatable(0f) }
     LaunchedEffect(active) {
@@ -1568,7 +1581,7 @@ private fun DockUnreadBadge(count: Int, dark: Boolean) {
 
 @Composable
 private fun ComposeDockButton(onCompose: () -> Unit, size: Dp = 46.dp) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     Box(
         Modifier
             .size(size)
@@ -1597,7 +1610,7 @@ private fun MoreDockButton(
     onSettings: () -> Unit = {},
     onDeferred: (String) -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     Box {
         Box(
             Modifier
@@ -1716,7 +1729,7 @@ private fun BarTabItem(
     iconSize: Dp = 22.dp,
     onSelect: () -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     val tint = if (active) dockActiveTint else dockInactiveTint(dark)
     Column(
         modifier
@@ -1856,7 +1869,7 @@ private fun PillTabItem(
     modifier: Modifier = Modifier,
     onSelect: () -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     // web PillNav: the active segment sits ON the emerald fill → white ink.
     val tint = if (active) Color.White else dockInactiveTint(dark)
     Column(
@@ -2203,7 +2216,7 @@ private fun RailTabItem(
     dark: Boolean,
     onSelect: () -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     val tint = if (active) dockActiveTint else dockInactiveTint(dark)
     Column(
         Modifier
@@ -2316,7 +2329,7 @@ private fun IslandDock(
     onMoreMenuChange: (Boolean) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     // web auto-collapse (4200 ms), paused while the More menu is open -
     // the menu lives inside the expanded island and must not vanish.
     LaunchedEffect(expanded, moreMenuOpen) {
@@ -2452,7 +2465,7 @@ private fun FloatingDockDock(
     moreMenuOpen: Boolean,
     onMoreMenuChange: (Boolean) -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     Box(
         modifier
             .fillMaxWidth()
@@ -2524,7 +2537,7 @@ private fun CommandBarDock(
     moreMenuOpen: Boolean,
     onMoreMenuChange: (Boolean) -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     Column(
         modifier
             .fillMaxWidth()
@@ -2638,7 +2651,7 @@ private fun RadialDock(
     moreMenuOpen: Boolean,
     onMoreMenuChange: (Boolean) -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     var open by remember { mutableStateOf(false) }
     // FAB press → destinations fan out on an arc above (web RadialNav).
     LaunchedEffect(open, moreMenuOpen) {
@@ -2740,7 +2753,7 @@ private fun GestureDock(
     dark: Boolean,
     actions: DockActions,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     var switcherOpen by remember { mutableStateOf(false) }
     Box(
         modifier
@@ -2824,7 +2837,7 @@ private fun ContextualDockDock(
     moreMenuOpen: Boolean,
     onMoreMenuChange: (Boolean) -> Unit,
 ) {
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     // web ContextualDock: the trailing action adapts to the active tab
     // (nav-router.tsx:1193-1240 - New chat / Search / New group / Settings).
     val (chipLabel, chipIcon, chipAction) = when (active) {

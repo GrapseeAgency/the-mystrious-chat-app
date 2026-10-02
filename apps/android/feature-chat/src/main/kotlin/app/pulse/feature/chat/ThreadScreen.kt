@@ -250,7 +250,7 @@ fun ThreadScreen(
     val memberNames = conversation?.memberNames.orEmpty()
 
     val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
+    val haptics = app.pulse.ui.rememberGatedHaptics()
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
 

@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 // Pulse onboarding - two steps, web parity (onboarding-screen.tsx):
@@ -25,7 +26,7 @@ import kotlinx.coroutines.launch
 //      availability via GET /api/users/check-username (debounced),
 //      skippable. Creates the real account via POST /api/users.
 
-enum class OnboardingStep { NAME, HANDLE }
+enum class OnboardingStep { CONNECT, NAME, HANDLE }
 
 const val NAME_MAX = 32
 const val USERNAME_MIN = 3
@@ -59,6 +60,15 @@ data class OnboardingUiState(
     val name: String = "",
     val color: String = "emerald",
     val nameTaken: Boolean = false,
+    // R50-a - connect gate (the offline-first honest front door)
+    /** True once a live probe confirmed the candidate server answers. */
+    val serverConnected: Boolean = false,
+    /** The base URL the user is typing on the connect gate. */
+    val serverUrl: String = "",
+    val probing: Boolean = false,
+    /** Connect-gate status line (probe result / demo login errors). */
+    val connectNotice: String? = null,
+    val connectNoticeTone: ConnectNoticeTone = ConnectNoticeTone.AMBER,
     // handle step
     val handle: String = "",
     val checking: Boolean = false,
@@ -73,6 +83,12 @@ data class OnboardingUiState(
     val notice: String? = null,
 )
 
+/** Tone of the connect-gate status line (emerald = good news). */
+enum class ConnectNoticeTone { EMERALD, AMBER }
+
+/** The seeded demo identity the connect gate offers after a live probe. */
+const val DEMO_ACCOUNT_NAME = "Alice Chen"
+
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
     private val repo: PulseRepository,
@@ -84,6 +100,140 @@ class OnboardingViewModel @Inject constructor(
     val state: StateFlow<OnboardingUiState> = _state.asStateFlow()
 
     private var checkJob: Job? = null
+
+    init {
+        // R50-a - a fresh install with no gateway configured must NOT land on
+        // the name step (every request there fails as a bare "server error").
+        // The honest front door is the connect gate; a persisted serverBase
+        // (or a manifest-adopted origin) skips straight past it.
+        viewModelScope.launch {
+            val stored = runCatching { prefs.serverBase.first() }.getOrNull()
+            val configured = app.pulse.core.PulseEndpoints.isConfigured || !stored.isNullOrBlank()
+            _state.value = _state.value.copy(
+                step = if (configured) OnboardingStep.NAME else OnboardingStep.CONNECT,
+                serverUrl = stored ?: app.pulse.core.PulseEndpoints.gatewayHttpUrl,
+            )
+        }
+    }
+
+    // R50-a - connect gate
+
+    fun setServerUrl(value: String) {
+        _state.value = _state.value.copy(serverUrl = value.take(200), connectNotice = null)
+    }
+
+    /**
+     * Normalize a candidate base the way PulseEndpoints.applyBase expects:
+     * trimmed, no trailing slash, http(s) scheme defaulted to https when the
+     * user left it off (a bare "host:port" is still accepted verbatim there).
+     */
+    private fun normalizeBase(raw: String): String? {
+        val trimmed = raw.trim().trimEnd('/')
+        if (trimmed.isEmpty()) return null
+        return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) trimmed
+        else "https://$trimmed"
+    }
+
+    /**
+     * Live probe of a CANDIDATE base without touching the global endpoints:
+     * GET <base>/api/users must answer 200 with a JSON body carrying the
+     * users array. Same dependency-free HttpURLConnection pattern the
+     * deployment-manifest fetcher uses (4s timeouts, honest verdict).
+     */
+    private fun probeBase(base: String): Pair<Boolean, String> = try {
+        val conn = java.net.URL("$base/api/users").openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 4_000
+        conn.readTimeout = 4_000
+        conn.instanceFollowRedirects = true
+        try {
+            val code = conn.responseCode
+            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.use { it.readText() } ?: ""
+            if (code in 200..299 && body.contains("users")) {
+                true to "Connected. This is a live Pulse server."
+            } else {
+                false to "That host answered but it is not a Pulse gateway (HTTP $code)."
+            }
+        } finally {
+            conn.disconnect()
+        }
+    } catch (e: java.net.UnknownHostException) {
+        false to "Host not found - check the address and your network."
+    } catch (e: java.io.IOException) {
+        false to "Could not reach that host - plain HTTP may be blocked, try https."
+    } catch (e: Exception) {
+        false to "Probe failed: ${e.message ?: "unknown error"}"
+    }
+
+    /**
+     * Connect: probe the candidate base, adopt it for REST + realtime
+     * (SessionViewModel.setServerBase persists it AND points the endpoints),
+     * then advance to the name step where the demo login waits.
+     */
+    fun connect(onConnected: () -> Unit) {
+        val s = _state.value
+        if (s.probing) return
+        val base = normalizeBase(s.serverUrl) ?: run {
+            _state.value = _state.value.copy(
+                connectNotice = "Paste the address of a Pulse gateway (https://...).",
+                connectNoticeTone = ConnectNoticeTone.AMBER,
+            )
+            return
+        }
+        viewModelScope.launch {
+            _state.value = _state.value.copy(probing = true, connectNotice = null)
+            val (ok, message) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                probeBase(base)
+            }
+            if (ok) {
+                onConnected()
+                _state.value = _state.value.copy(
+                    probing = false,
+                    serverConnected = true,
+                    step = OnboardingStep.NAME,
+                    connectNotice = message,
+                    connectNoticeTone = ConnectNoticeTone.EMERALD,
+                )
+            } else {
+                _state.value = _state.value.copy(
+                    probing = false,
+                    connectNotice = message,
+                    connectNoticeTone = ConnectNoticeTone.AMBER,
+                )
+            }
+        }
+    }
+
+    /** Explore offline - the honest offline-first path stays available. */
+    fun skipConnect() {
+        if (_state.value.probing) return
+        _state.value = _state.value.copy(step = OnboardingStep.NAME)
+    }
+
+    /**
+     * R50-a - one-tap demo login: reclaim the seeded demo identity through
+     * the SAME POST /api/users/login chain the "log in instead" flow uses
+     * (token rotate, vault persist, repo.start) - the shell then opens
+     * straight onto the rich demo chats.
+     */
+    fun demoLogin() {
+        val s = _state.value
+        if (s.signingIn) return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(signingIn = true, connectNotice = null)
+            repo.login(DEMO_ACCOUNT_NAME).fold(
+                onSuccess = { user -> complete(user) },
+                onFailure = { error ->
+                    _state.value = _state.value.copy(
+                        signingIn = false,
+                        connectNotice = (error as? OnboardingError)?.message
+                            ?: "Network error - connect to a live Pulse server first.",
+                        connectNoticeTone = ConnectNoticeTone.AMBER,
+                    )
+                },
+            )
+        }
+    }
 
     fun setName(value: String) {
         _state.value = _state.value.copy(

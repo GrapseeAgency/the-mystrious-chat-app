@@ -101,6 +101,7 @@ class ProfileEditViewModel @Inject constructor(
         val handle: String = "",
         val color: String = "emerald",
         val avatar: String? = null,
+        val cover: String? = null,
         val statusEmoji: String = "",
         val statusText: String = "",
         val saving: Boolean = false,
@@ -110,6 +111,10 @@ class ProfileEditViewModel @Inject constructor(
         val uploading: Boolean = false,
         /** R14 gap 8 - the remove-photo PATCH in flight. */
         val removing: Boolean = false,
+        /** R50-b - the cover upload PATCH in flight. */
+        val coverUploading: Boolean = false,
+        /** R50-b - the remove-cover PATCH in flight. */
+        val coverRemoving: Boolean = false,
     )
 
     private val _state = MutableStateFlow(State())
@@ -126,6 +131,7 @@ class ProfileEditViewModel @Inject constructor(
                 handle = me?.handle.orEmpty(),
                 color = me?.color ?: "emerald",
                 avatar = me?.avatar,
+                cover = me?.cover,
                 // Normalize on read: stale/unknown values (legacy emoji) never
                 // ride along - the editor seeds a registry id or nothing.
                 statusEmoji = statusIconIdOrNull(me?.statusEmoji).orEmpty(),
@@ -199,6 +205,45 @@ class ProfileEditViewModel @Inject constructor(
         }
     }
 
+    /** R50-b - stage a cover upload, mirroring uploadAvatar exactly. */
+    fun uploadCover(dataUrl: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(coverUploading = true, error = null)
+            repo.uploadMedia(dataUrl)
+                .onSuccess { path ->
+                    _state.value = _state.value.copy(coverUploading = false, cover = path)
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(coverUploading = false, error = e.message ?: "Upload failed - try again")
+                }
+        }
+    }
+
+    /**
+     * R50-b - "Remove cover": an immediate PATCH /api/users/{id} with
+     * cover:"" - the server nulls the column - with the same optimistic
+     * preview + rollback contract the avatar remove path honors.
+     */
+    fun removeCover() {
+        val s = _state.value
+        if (s.userId == null || s.saving || s.coverRemoving || s.coverUploading) return
+        val previous = s.cover
+        viewModelScope.launch {
+            _state.value = s.copy(coverRemoving = true, error = null, cover = null)
+            repo.patchProfile(ProfilePatch(cover = ""))
+                .onSuccess {
+                    _state.value = _state.value.copy(coverRemoving = false, notice = "Cover photo removed")
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        coverRemoving = false,
+                        cover = previous,
+                        error = e.message ?: "Could not remove your cover",
+                    )
+                }
+        }
+    }
+
     /**
      * R14 gap 8 - "Remove photo" (web avatar-editor.tsx runRemovePhoto):
      * an immediate PATCH /api/users/{id} with avatar:"" - the server nulls
@@ -236,6 +281,7 @@ class ProfileEditViewModel @Inject constructor(
                 about = s.bio.ifBlank { null },
                 color = s.color,
                 avatar = s.avatar,
+                cover = s.cover,
                 statusEmoji = s.statusEmoji,
                 statusText = s.statusText,
                 username = s.handle,
@@ -294,6 +340,37 @@ fun ProfileEditScreen(
                 }
                 "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
             }.getOrNull()?.let(viewModel::uploadAvatar)
+        }
+    }
+
+    // R50-b - cover picker: 2:1 landscape band biased toward the top third
+    // (the web cropWindow placement), long edge capped at 1280px.
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val source = BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
+                val targetRatio = 2f
+                var cropW = source.width
+                var cropH = (source.width / targetRatio).toInt()
+                if (cropH > source.height) {
+                    cropH = source.height
+                    cropW = (source.height * targetRatio).toInt()
+                }
+                if (cropW < 1 || cropH < 1) error("empty image")
+                val cropX = (source.width - cropW) / 2
+                val cropY = ((source.height - cropH) * 0.35f).toInt().coerceIn(0, source.height - cropH)
+                val band = Bitmap.createBitmap(source, cropX, cropY, cropW, cropH)
+                val scaled = if (band.width > 1280) {
+                    Bitmap.createScaledBitmap(band, 1280, (band.height * (1280f / band.width)).toInt().coerceAtLeast(1), true)
+                } else {
+                    band
+                }
+                val bytes = ByteArrayOutputStream().use { out ->
+                    scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                    out.toByteArray()
+                }
+                "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+            }.getOrNull()?.let(viewModel::uploadCover)
         }
     }
 
@@ -360,6 +437,60 @@ fun ProfileEditScreen(
             }
         }
         Spacer(Modifier.height(16.dp))
+
+        // R50-b - cover photo: the profile background the hero renders. A
+        // 2:1 band with the same upload-then-PATCH contract as the avatar.
+        Text("Cover photo", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Spacer(Modifier.height(6.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(140.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable {
+                    if (!state.coverUploading && !state.coverRemoving) {
+                        coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
+                },
+        ) {
+            val coverPath = state.cover
+            if (coverPath != null && coverPath.startsWith("/api/uploads/")) {
+                AsyncImage(
+                    model = PulseEndpoints.http(coverPath),
+                    contentDescription = "Your cover photo",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Column(
+                    Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text("Add cover photo", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "Wide 2:1 crop, ≤1280 px - shown behind your profile",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+            if (state.coverUploading) {
+                Box(
+                    Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator(color = Color.White) }
+            }
+        }
+        if (state.cover != null) {
+            TextButton(
+                onClick = viewModel::removeCover,
+                enabled = !state.coverRemoving && !state.coverUploading && !state.saving,
+            ) {
+                Text("Remove cover", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+            }
+        }
 
         OutlinedTextField(
             value = state.name,

@@ -453,6 +453,8 @@ struct RootView: View {
             onCalls: { callsOpen = true },
             onSaved: { savedLibraryOpen = true },
             onStories: { storiesOpen = true },
+            // R50-c - Hub joins the dock menu (tab jump, same as the dock tab).
+            onHub: { switchTab(.hub) },
         )
     }
 
@@ -512,6 +514,7 @@ struct RootView: View {
                 onSaved: { savedLibraryOpen = true },
                 onStories: { storiesOpen = true },
                 onCalls: { callsOpen = true },
+                onHub: { switchTab(.hub) },
             )
         case .floatingTop, .commandBar, .rail:
             // Top/side styles render in their own inset channels.
@@ -612,6 +615,8 @@ private struct CapsuleDock: View {
     var onStories: () -> Void = {}
     // R3-A item 9 - More → Calls (the real history page).
     var onCalls: () -> Void = {}
+    // R50-c - More → Hub (tab jump parity with the shared dock context).
+    var onHub: () -> Void = {}
 
     @State private var moreOpen = false
     @State private var wobbling: PulseTab?
@@ -739,6 +744,9 @@ private struct CapsuleDock: View {
 
     private var moreMenu: some View {
         VStack(alignment: .leading, spacing: 2) {
+            moreItem("Hub", icon: "globe.americas") {
+                onHub()
+            }
             moreItem("Settings", icon: "gearshape.fill") {
                 onSettings()
             }
