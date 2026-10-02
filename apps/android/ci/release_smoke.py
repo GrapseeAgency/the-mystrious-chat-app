@@ -80,7 +80,7 @@ def tap_scrolling(needle, wait=2.0, max_swipes=4):
             time.sleep(wait)
             return True
         if i < max_swipes:
-            adb_ok("shell", "input", "swipe", str(W // 2), int(H * 0.7), str(W // 2), int(H * 0.35), "300")
+            adb_ok("shell", "input", "swipe", str(W // 2), str(int(H * 0.7)), str(W // 2), str(int(H * 0.35)), "300")
             time.sleep(1.2)
     note("MISS node after scrolling: " + needle)
     return False
@@ -360,6 +360,12 @@ def main():
     stage("onboarding", do_onboarding)
     dismiss_system_dialogs()
     dismiss_ime()
+
+    def in_shell():
+        xml = uiax_xml()
+        return (node_bounds(xml, "What should people call you") is None
+                and node_bounds(xml, "Pick your handle") is None)
+
     # Belt: any IME residue gone. NEVER send BACK while onboarding owns the
     # screen - there BACK exits the whole activity (v10's launcher-detour).
     if in_shell():
@@ -371,11 +377,6 @@ def main():
 
     # Deterministic tab walk via dock drag (chats -> calls -> hub -> profile).
     # Skip entirely when onboarding never finished (drags would hit its UX).
-    def in_shell():
-        xml = uiax_xml()
-        return (node_bounds(xml, "What should people call you") is None
-                and node_bounds(xml, "Pick your handle") is None)
-
     def tab_walk():
         if not in_shell():
             note("shell not detected; skipping drag walk")
