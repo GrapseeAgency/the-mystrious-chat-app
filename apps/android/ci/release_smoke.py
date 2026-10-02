@@ -54,15 +54,18 @@ def wm_size():
 def dismiss_system_dialogs():
     """API 33+ raises the POST_NOTIFICATIONS dialog at startup; it blocks every
     tap. Tap the exact 'Allow' button (NOT the dialog title, which also says
-    Allow) or 'Don't allow' when present."""
-    for _ in range(2):
+    Allow) or 'Don't allow' when present. System ANR prompts ('Close app' /
+    'Wait') get 'Wait' - never kill anything."""
+    for _ in range(3):
         xml = uiax_xml()
         pos = node_bounds(xml, "Allow", exact=True)
         if pos is None:
             pos = node_bounds(xml, "Don't allow", exact=True)
         if pos is None:
+            pos = node_bounds(xml, "Wait", exact=True)
+        if pos is None:
             return
-        note("dismissing system permission dialog")
+        note("dismissing system dialog")
         tap(pos)
         time.sleep(2.0)
 
@@ -320,11 +323,11 @@ def main():
     def do_onboarding():
         field = None
         for _ in range(3):
+            dismiss_system_dialogs()
             xml = uiax_xml()
             field = node_bounds(xml, "What should people call you")
             if field is not None:
                 break
-            dismiss_system_dialogs()
             time.sleep(1.5)
         if field is None:
             note("onboarding not detected (existing install or different state); continuing")
@@ -339,16 +342,28 @@ def main():
         # handle step - then Continue no longer exists and Start chatting is next.
         adb_ok("shell", "input", "keyevent", "66")
         time.sleep(2.0)
-        if not tap_scrolling("Start chatting", wait=4.0):
-            if not tap_scrolling("Skip for now", wait=4.0):
-                if not tap_scrolling("Continue"):
-                    return
-                tap_scrolling("Start chatting", wait=4.0)
+        # R25 v11: the handle step (or the theme step) raises its own IME that
+        # again hides the buttons. Retry rounds: IME down first, THEN look for
+        # the three advance buttons. Without the IME-down pass every label
+        # MISSes and the run degenerates into blind drags (v10 evidence).
+        for _ in range(3):
+            dismiss_ime()
+            if tap_scrolling("Start chatting", wait=4.0):
+                return
+            if tap_scrolling("Skip for now", wait=4.0):
+                return
+            if tap_scrolling("Continue"):
+                time.sleep(2.0)
+                continue
+            time.sleep(1.5)
 
     stage("onboarding", do_onboarding)
     dismiss_system_dialogs()
     dismiss_ime()
-    adb_ok("shell", "input", "keyevent", "4")  # belt: any IME residue gone
+    # Belt: any IME residue gone. NEVER send BACK while onboarding owns the
+    # screen - there BACK exits the whole activity (v10's launcher-detour).
+    if in_shell():
+        adb_ok("shell", "input", "keyevent", "4")
     time.sleep(1.5)
     screen("02-main-shell.png")
     if failed:
