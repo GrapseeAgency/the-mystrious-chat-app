@@ -152,7 +152,7 @@ function DisappearingSlider({
           animate={{ left: `${labelPct}%` }}
           transition={slideTransition}
           style={{ x: '-50%' }}
-          className="absolute top-0 whitespace-nowrap rounded-full bg-emerald-500/15 px-1.5 py-px text-[9.5px] font-bold text-emerald-600 ring-1 ring-inset ring-emerald-500/25 dark:text-emerald-400"
+          className="absolute top-0 whitespace-nowrap rounded-full bg-amber-500/15 px-1.5 py-px text-[9.5px] font-bold text-amber-700 ring-1 ring-inset ring-amber-500/25 dark:text-amber-400"
         >
           {TTL_STOP_LABELS[shownIdx]}
         </motion.span>
@@ -197,7 +197,7 @@ function DisappearingSlider({
         {/* resting track + emerald fill up to the thumb */}
         <div className="absolute top-1/2 h-1.5 w-full -translate-y-1/2 rounded-full bg-zinc-900/[0.07] dark:bg-white/10" />
         <div
-          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-emerald-500/60 to-emerald-500 transition-[width] duration-150"
+          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-gradient-to-r from-amber-500/60 to-amber-500 transition-[width] duration-150"
           style={{ width: `${stopPct}%` }}
         />
         {/* tick stops */}
@@ -206,7 +206,7 @@ function DisappearingSlider({
             key={idx}
             className={cn(
               'absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white dark:ring-zinc-900',
-              idx <= shownIdx ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600',
+              idx <= shownIdx ? 'bg-amber-500' : 'bg-zinc-300 dark:bg-zinc-600',
             )}
             style={{ left: `${(idx / (TTL_STOPS.length - 1)) * 100}%` }}
           />
@@ -219,7 +219,7 @@ function DisappearingSlider({
           style={{ x: '-50%', y: '-50%' }}
           className="absolute top-1/2 z-10 flex size-5 items-center justify-center rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.28)] ring-1 ring-black/10 dark:bg-zinc-100"
         >
-          <span className="block size-2 rounded-full bg-emerald-500" />
+          <span className="block size-2 rounded-full bg-amber-500" />
         </motion.span>
       </div>
 
@@ -234,8 +234,8 @@ function DisappearingSlider({
             className={cn(
               'h-7 rounded-full text-[11px] font-bold outline-none transition-colors active:scale-95 disabled:opacity-50',
               idx === shownIdx
-                ? 'bg-emerald-500/15 text-emerald-700 ring-1 ring-emerald-400 dark:text-emerald-300'
-                : 'bg-zinc-900/[0.05] text-zinc-600 hover:bg-emerald-500/15 hover:text-emerald-700 dark:bg-white/[0.07] dark:text-zinc-300 dark:hover:text-emerald-400',
+                ? 'bg-amber-500/15 text-amber-700 ring-1 ring-amber-400 dark:text-amber-300'
+                : 'bg-zinc-900/[0.05] text-zinc-600 hover:bg-amber-500/15 hover:text-amber-700 dark:bg-white/[0.07] dark:text-zinc-300 dark:hover:text-amber-400',
             )}
           >
             {TTL_STOP_LABELS[idx]}
@@ -758,7 +758,7 @@ export function RoomInfoPage({
                       haptic(8)
                       photoInputRef.current?.click()
                     }}
-                    className="glass-pill absolute -right-1 -bottom-1 z-10 flex size-8 items-center justify-center rounded-full text-emerald-600 shadow-md outline-none transition-transform active:scale-90 disabled:opacity-60 dark:text-emerald-400"
+                    className="glass-pill absolute -right-1 -bottom-1 z-10 flex size-8 items-center justify-center rounded-full text-amber-700 shadow-md outline-none transition-transform active:scale-90 disabled:opacity-60 dark:text-amber-400"
                   >
                     {photoBusy || setPhotoMutation.isPending ? (
                       <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
@@ -808,7 +808,7 @@ export function RoomInfoPage({
                   </span>
                 ) : null}
                 {detail && detail.ttlSeconds > 0 ? (
-                  <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                  <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
                     <Timer className="size-3" aria-hidden />
                     Disappearing · {ttlLabel(detail.ttlSeconds)}
                   </span>
@@ -829,7 +829,7 @@ export function RoomInfoPage({
               key={tile.label}
               className="glass-deep glass-sheen flex flex-col items-center gap-0.5 rounded-2xl px-2 py-3"
             >
-              <tile.icon className="size-4 text-emerald-500" aria-hidden />
+              <tile.icon className="size-4 text-amber-600" aria-hidden />
               <span className="text-base font-bold tabular-nums text-zinc-900 dark:text-zinc-50">
                 {tile.value}
               </span>
@@ -854,7 +854,7 @@ export function RoomInfoPage({
           {/* mute - real per-user watermark API */}
           <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
             {isMuted ? (
-              <VolumeX className="size-4 shrink-0 text-emerald-500" aria-hidden />
+              <VolumeX className="size-4 shrink-0 text-amber-600" aria-hidden />
             ) : (
               <BellOff className="size-4 shrink-0 text-zinc-400" aria-hidden />
             )}
@@ -873,7 +873,7 @@ export function RoomInfoPage({
                 type="button"
                 disabled={muteMutation.isPending}
                 onClick={() => muteMutation.mutate(null)}
-                className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 disabled:opacity-50 dark:text-emerald-400"
+                className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-amber-700 outline-none transition-transform active:scale-95 disabled:opacity-50 dark:text-amber-400"
               >
                 Unmute
               </button>
@@ -885,7 +885,7 @@ export function RoomInfoPage({
                     type="button"
                     disabled={muteMutation.isPending}
                     onClick={() => muteMutation.mutate(preset)}
-                    className="h-8 rounded-full bg-zinc-900/[0.05] px-2.5 text-[11px] font-bold text-zinc-600 outline-none transition-transform hover:bg-emerald-500/15 hover:text-emerald-700 active:scale-95 disabled:opacity-50 dark:bg-white/[0.07] dark:text-zinc-300 dark:hover:text-emerald-400"
+                    className="h-8 rounded-full bg-zinc-900/[0.05] px-2.5 text-[11px] font-bold text-zinc-600 outline-none transition-transform hover:bg-amber-500/15 hover:text-amber-700 active:scale-95 disabled:opacity-50 dark:bg-white/[0.07] dark:text-zinc-300 dark:hover:text-amber-400"
                   >
                     {preset === 'always' ? 'Always' : preset}
                   </button>
@@ -905,7 +905,7 @@ export function RoomInfoPage({
               <Timer
                 className={cn(
                   'size-4 shrink-0',
-                  (detail?.ttlSeconds ?? 0) > 0 ? 'text-emerald-500' : 'text-zinc-400',
+                  (detail?.ttlSeconds ?? 0) > 0 ? 'text-amber-600' : 'text-zinc-400',
                 )}
                 aria-hidden
               />
@@ -925,7 +925,7 @@ export function RoomInfoPage({
                 className={cn(
                   'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold',
                   (detail?.ttlSeconds ?? 0) > 0
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
                     : 'bg-zinc-900/[0.05] text-zinc-500 dark:bg-white/[0.07] dark:text-zinc-400',
                 )}
               >
@@ -973,7 +973,7 @@ export function RoomInfoPage({
               switch. Both flags OR together inside the room. */}
           <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
             {detail?.myScreenPrivacy ? (
-              <ShieldCheck className="size-4 shrink-0 text-emerald-500" aria-hidden />
+              <ShieldCheck className="size-4 shrink-0 text-amber-600" aria-hidden />
             ) : (
               <EyeOff className="size-4 shrink-0 text-zinc-400" aria-hidden />
             )}
@@ -998,7 +998,7 @@ export function RoomInfoPage({
               toggle it (deliberately NOT admin-gated; a comfort setting). */}
           <div className="glass-row-hover flex items-center gap-3 rounded-2xl px-3 py-2.5">
             {detail?.screenPrivacy ? (
-              <ShieldCheck className="size-4 shrink-0 text-emerald-500" aria-hidden />
+              <ShieldCheck className="size-4 shrink-0 text-amber-600" aria-hidden />
             ) : (
               <EyeOff className="size-4 shrink-0 text-zinc-400" aria-hidden />
             )}
@@ -1028,7 +1028,7 @@ export function RoomInfoPage({
                 <Gauge
                   className={cn(
                     'size-4 shrink-0',
-                    (detail?.slowModeSeconds ?? 0) > 0 ? 'text-emerald-500' : 'text-zinc-400',
+                    (detail?.slowModeSeconds ?? 0) > 0 ? 'text-amber-600' : 'text-zinc-400',
                   )}
                   aria-hidden
                 />
@@ -1052,7 +1052,7 @@ export function RoomInfoPage({
                   className={cn(
                     'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold',
                     (detail?.slowModeSeconds ?? 0) > 0
-                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
                       : 'bg-zinc-900/[0.05] text-zinc-500 dark:bg-white/[0.07] dark:text-zinc-400',
                   )}
                 >
@@ -1105,7 +1105,7 @@ export function RoomInfoPage({
                             className={cn(
                               'rounded-full px-3 py-1.5 text-xs font-semibold outline-none transition-all active:scale-95 disabled:opacity-50',
                               active
-                                ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-600/30'
+                                ? 'bg-amber-500 text-white shadow-sm shadow-amber-600/30'
                                 : 'bg-zinc-900/[0.05] text-zinc-600 hover:bg-zinc-900/[0.08] dark:bg-white/[0.07] dark:text-zinc-300 dark:hover:bg-white/[0.1]',
                             )}
                           >
@@ -1184,7 +1184,7 @@ export function RoomInfoPage({
                 haptic(8)
                 setThemeOpen((v) => !v)
               }}
-              className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 dark:text-emerald-400"
+              className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-amber-700 outline-none transition-transform active:scale-95 dark:text-amber-400"
             >
               {themeOpen ? 'Close' : 'Customize'}
             </button>
@@ -1224,7 +1224,7 @@ export function RoomInfoPage({
                   if (detail?.inviteCode) void copyInvite(detail.inviteCode)
                   else inviteMutation.mutate()
                 }}
-                className="glass-pill flex h-8 shrink-0 items-center gap-1 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 disabled:opacity-50 dark:text-emerald-400"
+                className="glass-pill flex h-8 shrink-0 items-center gap-1 px-3 text-xs font-bold text-amber-700 outline-none transition-transform active:scale-95 disabled:opacity-50 dark:text-amber-400"
               >
                 {inviteMutation.isPending ? (
                   <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
@@ -1247,7 +1247,7 @@ export function RoomInfoPage({
               }}
               className="glass-row-hover flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none"
             >
-              <UserRoundPlus className="size-4 shrink-0 text-emerald-500" aria-hidden />
+              <UserRoundPlus className="size-4 shrink-0 text-amber-600" aria-hidden />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">
                   Add members
@@ -1367,7 +1367,7 @@ export function RoomInfoPage({
                 <ShieldCheck
                   className={cn(
                     'size-4 shrink-0',
-                    safetyQuery.data?.verified ? 'text-emerald-500' : 'text-zinc-400',
+                    safetyQuery.data?.verified ? 'text-amber-600' : 'text-zinc-400',
                   )}
                   aria-hidden
                 />
@@ -1384,7 +1384,7 @@ export function RoomInfoPage({
                     …
                   </span>
                 ) : safetyQuery.data?.verified ? (
-                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
                     <BadgeCheck className="size-3" aria-hidden />
                     Verified
                   </span>
@@ -1534,7 +1534,7 @@ export function RoomInfoPage({
                               haptic(8)
                               roleMutation.mutate({ userId: member.id, action: 'promote' })
                             }}
-                            className="flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold text-zinc-400 outline-none transition-all hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-95 disabled:opacity-40 dark:text-zinc-500 dark:hover:text-emerald-400"
+                            className="flex h-8 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold text-zinc-400 outline-none transition-all hover:bg-amber-500/10 hover:text-amber-700 active:scale-95 disabled:opacity-40 dark:text-zinc-500 dark:hover:text-amber-400"
                           >
                             {rolePendingHere ? (
                               <LoaderCircle className="size-3 animate-spin" aria-hidden />

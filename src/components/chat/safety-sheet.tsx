@@ -223,7 +223,7 @@ function SafetySheetInner({
           {verified ? (
             <>
               <span
-                className="mx-auto flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400"
+                className="mx-auto flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-700 dark:text-amber-400"
                 aria-label="Contact verified"
               >
                 <BadgeCheck className="size-3.5" aria-hidden />
@@ -258,7 +258,7 @@ function SafetySheetInner({
                 haptic(8)
                 verifyMutation.mutate()
               }}
-              className="flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-full bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/25 outline-none transition-all hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-60"
+              className="flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-full bg-amber-500 text-sm font-bold text-white shadow-md shadow-amber-600/25 outline-none transition-all hover:bg-amber-500/90 active:scale-[0.98] disabled:opacity-60"
             >
               {verifyMutation.isPending ? (
                 <LoaderCircle className="size-4 animate-spin" aria-hidden />

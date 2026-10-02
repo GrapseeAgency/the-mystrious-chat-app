@@ -83,7 +83,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
           <header className="flex items-center gap-2.5">
             <span
               aria-hidden
-              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_10px_24px_-10px_rgba(16,185,129,0.8)]"
+              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 shadow-[0_10px_24px_-10px_rgba(245,158,11,0.8)]"
             >
               <Trophy className="size-5 text-white" aria-hidden />
             </span>
@@ -100,7 +100,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
                 haptic(10)
                 onClose()
               }}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-emerald-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-amber-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
             >
               <X className="size-4.5" aria-hidden />
             </button>
@@ -120,7 +120,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
               <button
                 type="button"
                 onClick={() => void rowsQ.refetch()}
-                className="mt-2 rounded-full border border-white/15 px-4 py-1.5 text-[12px] font-bold text-zinc-200 outline-none ring-emerald-400/60 focus-visible:ring-2"
+                className="mt-2 rounded-full border border-white/15 px-4 py-1.5 text-[12px] font-bold text-zinc-200 outline-none ring-amber-400/60 focus-visible:ring-2"
               >
                 Try again
               </button>
@@ -149,7 +149,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
                     className={cn(
                       'rounded-2xl border px-3 py-2.5',
                       isMe
-                        ? 'border-emerald-400/60 bg-emerald-500/10 ring-1 ring-emerald-400/40'
+                        ? 'border-amber-400/60 bg-amber-500/10 ring-1 ring-amber-400/40'
                         : 'border-white/10 bg-white/[0.04]',
                     )}
                     aria-current={isMe ? 'true' : undefined}
@@ -177,7 +177,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
                         <p className="flex items-center gap-1.5 truncate text-[13.5px] font-bold text-zinc-100">
                           <span className="truncate">{row.name}</span>
                           {isMe ? (
-                            <span className="shrink-0 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300">
+                            <span className="shrink-0 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-300">
                               You
                             </span>
                           ) : null}
@@ -186,7 +186,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
                         <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                           <motion.div
                             aria-hidden
-                            className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600"
+                            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-600"
                             initial={reducedMotion ? { width: `${pct}%` } : { width: 0 }}
                             animate={{ width: `${pct}%` }}
                             transition={spring.soft}
@@ -195,7 +195,7 @@ function Sheet({ open, onClose, conversationId, meId }: {
                         </div>
                       </div>
                       <span className="shrink-0 text-right">
-                        <span className="block text-[14px] font-extrabold tabular-nums leading-tight text-emerald-400">
+                        <span className="block text-[14px] font-extrabold tabular-nums leading-tight text-amber-400">
                           {row.xp}
                         </span>
                         <span className="block text-[9.5px] font-bold uppercase tracking-wide text-zinc-500">

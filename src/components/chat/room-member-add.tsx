@@ -177,7 +177,7 @@ export function RoomMemberAddPage({
           className={cn(
             'glass-pill mr-1 flex h-7 shrink-0 items-center px-2.5 text-[11px] font-bold tabular-nums transition-colors',
             selected.size > 0
-              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
               : 'text-zinc-400 dark:text-zinc-500',
           )}
         >
@@ -246,7 +246,7 @@ export function RoomMemberAddPage({
           <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center">
             <div
               aria-hidden
-              className="glass-sheen flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400/15 to-emerald-600/10 text-emerald-500 dark:from-emerald-400/10 dark:to-emerald-600/5"
+              className="glass-sheen flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400/15 to-amber-600/10 text-amber-600 dark:from-amber-400/10 dark:to-amber-600/5"
             >
               {query.length > 0 ? (
                 <SearchX className="size-6" aria-hidden />
@@ -291,7 +291,7 @@ export function RoomMemberAddPage({
                       onClick={() => toggle(user.id)}
                       className={cn(
                         'glass-row-hover flex min-h-[56px] w-full items-center gap-3 rounded-2xl px-2 py-2 text-left outline-none transition-colors',
-                        isSelected && 'bg-emerald-500/[0.08]',
+                        isSelected && 'bg-amber-500/[0.08]',
                       )}
                     >
                       <UserAvatar
@@ -313,7 +313,7 @@ export function RoomMemberAddPage({
                         className={cn(
                           'flex size-7 shrink-0 items-center justify-center rounded-full border transition-all duration-150',
                           isSelected
-                            ? 'border-emerald-500 bg-emerald-500 text-white'
+                            ? 'border-amber-500 bg-amber-500 text-white'
                             : 'border-zinc-300 bg-transparent text-transparent dark:border-zinc-600',
                         )}
                       >
@@ -343,7 +343,7 @@ export function RoomMemberAddPage({
             className={cn(
               'glass-deep glass-sheen flex h-12 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-bold outline-none transition-transform active:scale-[0.97]',
               selected.size > 0 && !busy
-                ? 'bg-emerald-500/90 text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-500 disabled:opacity-60'
+                ? 'bg-amber-500/90 text-white shadow-lg shadow-amber-500/20 hover:bg-amber-500 disabled:opacity-60'
                 : 'text-zinc-400 disabled:opacity-70 dark:text-zinc-500',
             )}
           >

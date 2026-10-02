@@ -35,7 +35,7 @@ const IS_NEW_WINDOW_MS = 30_000
 /** Pulsing emerald presence halo behind online avatars (spring.gentle loop). */
 function PresenceGlow({ reduced }: { reduced: boolean }) {
   if (reduced) {
-    return <span aria-hidden className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/50" />
+    return <span aria-hidden className="absolute -inset-[3px] rounded-full ring-2 ring-amber-400/50" />
   }
   return (
     <motion.span
@@ -43,7 +43,7 @@ function PresenceGlow({ reduced }: { reduced: boolean }) {
       initial={{ scale: 1, opacity: 0.65 }}
       animate={{ scale: 1.14, opacity: 0.18 }}
       transition={{ ...spring.gentle, repeat: Infinity, repeatType: 'reverse' }}
-      className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/60 shadow-[0_0_14px_rgba(16,185,129,0.35)]"
+      className="absolute -inset-[3px] rounded-full ring-2 ring-amber-400/60 shadow-[0_0_14px_rgba(245,158,11,0.35)]"
     />
   )
 }
@@ -230,7 +230,7 @@ export function ContactsTab({
                   }}
                   whileTap={reducedMotion ? undefined : { scale: 0.94 }}
                   transition={pressSpring}
-                  className="glass-pill flex h-10 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-bold text-emerald-600 outline-none hover:bg-emerald-500/10 active:scale-95 dark:text-emerald-400"
+                  className="glass-pill flex h-10 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-bold text-amber-700 outline-none hover:bg-amber-500/10 active:scale-95 dark:text-amber-400"
                 >
                   <UserPlus className="size-4" aria-hidden />
                   Add contact
@@ -350,7 +350,7 @@ export function ContactsTab({
                           <motion.span
                             layoutId="contacts-rail-bubble"
                             transition={spring.bouncy}
-                            className="absolute inset-0 rounded-full bg-emerald-500/20 ring-1 ring-emerald-500/40"
+                            className="absolute inset-0 rounded-full bg-amber-500/20 ring-1 ring-amber-500/40"
                             aria-hidden
                           />
                         ) : null}
@@ -358,7 +358,7 @@ export function ContactsTab({
                           className={cn(
                             'relative text-[9px] font-bold leading-none tabular-nums',
                             active
-                              ? 'text-emerald-600 dark:text-emerald-400'
+                              ? 'text-amber-700 dark:text-amber-400'
                               : 'text-zinc-400 dark:text-zinc-500',
                           )}
                         >
@@ -424,7 +424,7 @@ function PersonRow({
               {person.name}
             </span>
             {person.username ? (
-              <span className="truncate text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+              <span className="truncate text-[10px] font-semibold text-amber-700 dark:text-amber-400">
                 @{person.username}
               </span>
             ) : null}
@@ -435,13 +435,13 @@ function PersonRow({
                 transition={spring.bouncy}
                 className="inline-flex"
               >
-                <span className="inline-flex h-4 items-center rounded-full bg-emerald-100 px-1.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
+                <span className="inline-flex h-4 items-center rounded-full bg-amber-100 px-1.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
                   New
                 </span>
               </motion.span>
             ) : null}
             {sharesDm ? (
-              <span className="inline-flex h-4 shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 text-[9px] font-bold uppercase tracking-wide text-emerald-600 ring-1 ring-emerald-500/20 dark:text-emerald-400">
+              <span className="inline-flex h-4 shrink-0 items-center gap-1 rounded-full bg-amber-500/10 px-1.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-400">
                 <MessageCircle className="size-2.5" aria-hidden />
                 Chat
               </span>
@@ -475,8 +475,8 @@ function RowSkeleton() {
 function EmptyPeople() {
   return (
     <div className="mx-3 mt-2 flex flex-col items-center gap-3 rounded-3xl border border-dashed border-zinc-200 p-8 text-center dark:border-zinc-700">
-      <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-500/10">
-        <UsersRound className="size-7 text-emerald-500" aria-hidden />
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-amber-500/10">
+        <UsersRound className="size-7 text-amber-600" aria-hidden />
       </div>
       <div>
         <p className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">It&apos;s quiet in here</p>

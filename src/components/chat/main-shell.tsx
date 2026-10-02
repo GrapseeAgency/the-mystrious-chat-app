@@ -480,6 +480,8 @@ export function MainShell({ me }: { me: AppUser }) {
                   setJumpMessageId(messageId)
                   setOpenConversationId(conversationId)
                 }}
+                onOpenHub={() => changeTab('hub')}
+                onOpenSettings={() => setSettingsOpen(true)}
               />
             ) : null}
           </motion.div>

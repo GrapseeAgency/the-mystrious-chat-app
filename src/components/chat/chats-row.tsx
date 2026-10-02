@@ -97,7 +97,7 @@ const SWIPE_OPEN_THRESHOLD_PX = 56
 /** Pulsing emerald presence halo behind online avatars (spring.gentle loop). */
 function PresenceGlow({ reduced }: { reduced: boolean }) {
   if (reduced) {
-    return <span aria-hidden className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/50" />
+    return <span aria-hidden className="absolute -inset-[3px] rounded-full ring-2 ring-amber-400/50" />
   }
   return (
     <motion.span
@@ -105,7 +105,7 @@ function PresenceGlow({ reduced }: { reduced: boolean }) {
       initial={{ scale: 1, opacity: 0.65 }}
       animate={{ scale: 1.14, opacity: 0.18 }}
       transition={{ ...spring.gentle, repeat: Infinity, repeatType: 'reverse' }}
-      className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/60 shadow-[0_0_14px_rgba(16,185,129,0.35)]"
+      className="absolute -inset-[3px] rounded-full ring-2 ring-amber-400/60 shadow-[0_0_14px_rgba(245,158,11,0.35)]"
     />
   )
 }
@@ -249,7 +249,7 @@ export const ConversationRow = memo(function ConversationRow({
             {pinned ? (
               <PinOff className="size-[18px] text-amber-500" aria-hidden />
             ) : (
-              <Pin className="size-[18px] text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <Pin className="size-[18px] text-amber-700 dark:text-amber-400" aria-hidden />
             )}
             <span className="text-[9px] font-semibold text-zinc-500 dark:text-zinc-400">
               {pinned ? 'Unpin' : 'Pin'}
@@ -306,7 +306,7 @@ export const ConversationRow = memo(function ConversationRow({
             className="relative flex w-full touch-manipulation items-center gap-3 overflow-hidden rounded-2xl bg-white/80 px-2 py-2.5 text-left outline-none ring-1 ring-inset ring-white/40 dark:bg-zinc-900/70 dark:ring-white/[0.06]"
           >
             {pinned ? (
-              <span aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl bg-emerald-500/[0.045] dark:bg-emerald-500/[0.06]" />
+              <span aria-hidden className="pointer-events-none absolute inset-0 rounded-2xl bg-amber-500/[0.045] dark:bg-amber-500/[0.06]" />
             ) : null}
             <span
               aria-hidden
@@ -342,7 +342,7 @@ export const ConversationRow = memo(function ConversationRow({
                     className={cn(
                       'flex size-6 items-center justify-center rounded-full ring-2 backdrop-blur-sm transition-colors',
                       selected
-                        ? 'bg-emerald-500 ring-white/70 dark:ring-white/25'
+                        ? 'bg-amber-500 ring-white/70 dark:ring-white/25'
                         : 'bg-zinc-900/35 ring-white/60 dark:bg-zinc-950/50 dark:ring-white/30',
                     )}
                   >
@@ -356,7 +356,7 @@ export const ConversationRow = memo(function ConversationRow({
               <div className="flex items-baseline justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-1">
                   {pinned ? (
-                    <Pin className="size-3 shrink-0 fill-emerald-500 text-emerald-500" aria-label="Pinned" />
+                    <Pin className="size-3 shrink-0 fill-amber-500 text-amber-600" aria-label="Pinned" />
                   ) : null}
                   <span
                     className={cn(
@@ -409,7 +409,7 @@ export const ConversationRow = memo(function ConversationRow({
                     className={cn(
                       'shrink-0 text-[11px]',
                       hasUnread
-                        ? 'font-semibold text-emerald-600 dark:text-emerald-400'
+                        ? 'font-semibold text-amber-700 dark:text-amber-400'
                         : 'text-zinc-400 dark:text-zinc-500',
                     )}
                   >
@@ -419,14 +419,14 @@ export const ConversationRow = memo(function ConversationRow({
               </div>
               <div className="mt-0.5 flex items-center justify-between gap-2">
                 {typing ? (
-                  <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium italic text-emerald-600 dark:text-emerald-400">
+                  <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium italic text-amber-700 dark:text-amber-400">
                     <span className="inline-flex items-center gap-0.5" aria-hidden>
                       {[0, 1, 2].map((i) => (
                         <motion.span
                           key={i}
                           animate={{ y: [0, -2.5, 0], opacity: [0.45, 1, 0.45] }}
                           transition={{ repeat: Infinity, duration: 0.9, delay: i * 0.15, ease: 'easeInOut' }}
-                          className="size-[3.5px] rounded-full bg-emerald-500"
+                          className="size-[3.5px] rounded-full bg-amber-500"
                         />
                       ))}
                     </span>
@@ -458,7 +458,7 @@ export const ConversationRow = memo(function ConversationRow({
                       initial={reducedMotion ? false : { scale: 0 }}
                       animate={{ scale: 1 }}
                       transition={spring.bouncy}
-                      className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-emerald-600/40 ring-2 ring-white dark:ring-zinc-900"
+                      className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white shadow-sm shadow-amber-600/40 ring-2 ring-white dark:ring-zinc-900"
                     >
                       {unreadCount > 99 ? '99+' : unreadCount}
                     </motion.span>
@@ -469,7 +469,7 @@ export const ConversationRow = memo(function ConversationRow({
                       animate={{ scale: 1 }}
                       transition={spring.bouncy}
                       aria-label="Marked as unread"
-                      className="mx-[3px] flex size-3 shrink-0 items-center justify-center rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/40 ring-2 ring-white dark:ring-zinc-900"
+                      className="mx-[3px] flex size-3 shrink-0 items-center justify-center rounded-full bg-amber-500 shadow-sm shadow-amber-600/40 ring-2 ring-white dark:ring-zinc-900"
                     >
                       <span className="sr-only">Marked as unread</span>
                     </motion.span>

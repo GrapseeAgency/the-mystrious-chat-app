@@ -111,7 +111,7 @@ function PipStackPill({
         {unread > 0 ? (
           <span
             aria-label={`${unread} unread`}
-            className="absolute -left-1 -top-1 grid min-w-5 place-items-center rounded-full border-2 border-white bg-emerald-500 px-1 text-[10px] font-bold leading-4 text-white shadow-sm dark:border-zinc-900"
+            className="absolute -left-1 -top-1 grid min-w-5 place-items-center rounded-full border-2 border-white bg-amber-500 px-1 text-[10px] font-bold leading-4 text-white shadow-sm dark:border-zinc-900"
           >
             {unread > 9 ? '9+' : unread}
           </span>

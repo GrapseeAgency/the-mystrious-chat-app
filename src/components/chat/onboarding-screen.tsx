@@ -276,19 +276,19 @@ export function OnboardingScreen() {
         <div className="relative overflow-hidden rounded-3xl">
           <WebglGlow className="absolute inset-0" intensity={0.85} />
           <Image
-            src="/onboarding-hero.png"
+            src="/onboarding-hero-ember.png"
             alt="Pulse messenger illustration"
             width={196}
             height={196}
             priority
-            className="relative rounded-3xl shadow-lg shadow-emerald-500/10"
+            className="relative rounded-3xl shadow-lg shadow-amber-500/10"
           />
         </div>
 
         <div className="text-center">
           <h1 className="flex items-center justify-center gap-1.5 text-[26px] font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
             Pulse
-            <span aria-hidden className="inline-block size-2 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600" />
+            <span aria-hidden className="inline-block size-2 rounded-full bg-gradient-to-br from-amber-400 to-amber-600" />
           </h1>
           <p className="mt-1 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">
             Your conversations, instantly alive.
@@ -330,7 +330,7 @@ export function OnboardingScreen() {
                     enterKeyHint="go"
                     aria-invalid={nameTaken || undefined}
                     className={cn(
-                      'h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800',
+                      'h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800',
                       nameTaken && 'border-amber-400 focus-visible:ring-amber-500/50 dark:border-amber-500/60',
                     )}
                   />
@@ -366,7 +366,7 @@ export function OnboardingScreen() {
                             'flex size-9 items-center justify-center rounded-full bg-gradient-to-br shadow-sm outline-none transition-transform active:scale-90',
                             AVATAR_GRADIENTS[c],
                             selected
-                              ? 'ring-2 ring-emerald-600 ring-offset-2 ring-offset-white dark:ring-offset-zinc-900 scale-105'
+                              ? 'ring-2 ring-amber-600 ring-offset-2 ring-offset-white dark:ring-offset-zinc-900 scale-105'
                               : 'hover:scale-105',
                           )}
                         >
@@ -380,7 +380,7 @@ export function OnboardingScreen() {
                 <Button
                   type="submit"
                   disabled={!validName || pending}
-                  className="h-12 w-full rounded-xl bg-emerald-600 text-[15px] font-semibold tracking-tight text-white shadow-md shadow-emerald-600/20 transition-all hover:bg-emerald-500 active:scale-[0.98]"
+                  className="h-12 w-full rounded-xl bg-amber-600 text-[15px] font-semibold tracking-tight text-white shadow-md shadow-amber-600/20 transition-all hover:bg-amber-500 active:scale-[0.98]"
                 >
                   Continue
                   <ArrowRight className="size-4" aria-hidden />
@@ -391,7 +391,7 @@ export function OnboardingScreen() {
                     type="button"
                     disabled={!validName || login.isPending}
                     onClick={() => login.mutate()}
-                    className="h-11 w-full rounded-xl border border-emerald-500/50 bg-emerald-500/10 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-500/20 active:scale-[0.98] dark:text-emerald-400"
+                    className="h-11 w-full rounded-xl border border-amber-500/50 bg-amber-500/10 text-sm font-semibold text-amber-700 transition-colors hover:bg-amber-500/20 active:scale-[0.98] dark:text-amber-400"
                   >
                     {login.isPending ? (
                       <>
@@ -481,7 +481,7 @@ export function OnboardingScreen() {
                       aria-invalid={(checkTaken || serverTaken !== null) || undefined}
                       aria-describedby="handle-availability"
                       className={cn(
-                        'h-11 rounded-xl border-zinc-200 bg-zinc-50 pl-8 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800',
+                        'h-11 rounded-xl border-zinc-200 bg-zinc-50 pl-8 text-[15px] focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800',
                         (checkTaken || serverTaken !== null) &&
                           'border-amber-400 focus-visible:ring-amber-500/50 dark:border-amber-500/60',
                       )}
@@ -512,7 +512,7 @@ export function OnboardingScreen() {
                       <motion.span
                         initial={{ opacity: 0, y: -3 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"
+                        className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400"
                       >
                         <Check className="size-3.5" strokeWidth={3} aria-hidden />
                         @{trimmedHandle} is free!
@@ -563,7 +563,7 @@ export function OnboardingScreen() {
                   <Button
                     type="submit"
                     disabled={!validHandle || checking || checkTaken || pending || serverTaken !== null}
-                    className="h-12 w-full rounded-xl bg-emerald-600 text-[15px] font-semibold tracking-tight text-white shadow-md shadow-emerald-600/20 transition-all hover:bg-emerald-500 active:scale-[0.98]"
+                    className="h-12 w-full rounded-xl bg-amber-600 text-[15px] font-semibold tracking-tight text-white shadow-md shadow-amber-600/20 transition-all hover:bg-amber-500 active:scale-[0.98]"
                   >
                     {pending ? (
                       <>
@@ -594,7 +594,7 @@ export function OnboardingScreen() {
 
         <div className="mt-1 w-full rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/60">
           <p className="flex items-start gap-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-            <Sparkles className="mt-0.5 size-3.5 shrink-0 text-emerald-500" aria-hidden />
+            <Sparkles className="mt-0.5 size-3.5 shrink-0 text-amber-600" aria-hidden />
             Tip: open this preview in two browser tabs to watch messages fly between accounts.
           </p>
         </div>

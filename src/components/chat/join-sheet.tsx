@@ -127,7 +127,7 @@ export function JoinGroupSheet({
             <Button
               disabled={join.isPending}
               onClick={() => (invite.alreadyMember ? onJoined(invite.conversationId) : join.mutate())}
-              className="mt-3 h-11 w-full rounded-xl bg-emerald-600 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 transition-all hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-60"
+              className="mt-3 h-11 w-full rounded-xl bg-amber-600 text-sm font-semibold text-white shadow-md shadow-amber-600/20 transition-all hover:bg-amber-500 active:scale-[0.98] disabled:opacity-60"
             >
               {join.isPending ? (
                 <>

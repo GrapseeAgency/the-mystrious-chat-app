@@ -44,73 +44,79 @@
 }
 
 :root {
+  /* Ember light - warm paper field, burnt-ember signal. Tokens mirror
+     the ui-glass light language so shadcn primitives (buttons, menus,
+     switches) speak the SAME language as the glass chrome. */
   --radius: 0.875rem;
-  --background: #f5f8f6;
-  --foreground: #0c1210;
-  --card: #ffffff;
-  --card-foreground: #0c1210;
-  --popover: #ffffff;
-  --popover-foreground: #0c1210;
-  --primary: #0c1210;
-  --primary-foreground: #f5f8f6;
-  --secondary: #edf2ee;
-  --secondary-foreground: #0c1210;
-  --muted: #edf2ee;
-  --muted-foreground: #5c6f65;
-  --accent: #e2f4ea;
-  --accent-foreground: #065f46;
+  --background: #fbf6f0;
+  --foreground: #241a12;
+  --card: #fffdf9;
+  --card-foreground: #241a12;
+  --popover: #fffdf9;
+  --popover-foreground: #241a12;
+  --primary: #c9762b;
+  --primary-foreground: #fff8f0;
+  --secondary: #f3eade;
+  --secondary-foreground: #241a12;
+  --muted: #f1e8dd;
+  --muted-foreground: #7a6a58;
+  --accent: #f6e3cd;
+  --accent-foreground: #7a4310;
   --destructive: #e5484d;
-  --border: rgba(12, 18, 16, 0.1);
-  --input: rgba(12, 18, 16, 0.12);
-  --ring: rgba(5, 150, 105, 0.45);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: #f5f8f6;
-  --sidebar-foreground: #0c1210;
-  --sidebar-primary: #0c1210;
-  --sidebar-primary-foreground: #f5f8f6;
-  --sidebar-accent: #edf2ee;
-  --sidebar-accent-foreground: #0c1210;
-  --sidebar-border: rgba(12, 18, 16, 0.1);
-  --sidebar-ring: rgba(5, 150, 105, 0.45);
+  --border: rgba(42, 30, 20, 0.1);
+  --input: rgba(42, 30, 20, 0.12);
+  --ring: rgba(201, 118, 43, 0.45);
+  --chart-1: #c9762b;
+  --chart-2: #e08a3c;
+  --chart-3: #f5d90a;
+  --chart-4: #f43f5e;
+  --chart-5: #8b5cf6;
+  --sidebar: #fbf6f0;
+  --sidebar-foreground: #241a12;
+  --sidebar-primary: #c9762b;
+  --sidebar-primary-foreground: #fff8f0;
+  --sidebar-accent: #f3eade;
+  --sidebar-accent-foreground: #241a12;
+  --sidebar-border: rgba(42, 30, 20, 0.1);
+  --sidebar-ring: rgba(201, 118, 43, 0.45);
 }
 
 .dark {
-  /* R35 Neo carbon — green-cast near-black, neon mint signal */
-  --background: #07090b;
-  --foreground: #ecf4ef;
-  --card: #0d1211;
-  --card-foreground: #ecf4ef;
-  --popover: #0d1211;
-  --popover-foreground: #ecf4ef;
-  --primary: #2be8a6;
-  --primary-foreground: #04120c;
-  --secondary: #161c1a;
-  --secondary-foreground: #d7e4dd;
-  --muted: #121816;
-  --muted-foreground: #8ca398;
-  --accent: #182020;
-  --accent-foreground: #ecf4ef;
+  /* Ember dark - warm near-black field, amber signal. One language with
+     the ui-glass dark tokens (--ui-page-bg #150F0B, panels #1E1610,
+     --ui-accent #FFB86B): the whole app reads as a single design in
+     dark mode, which is the DEFAULT mode. */
+  --background: #150f0b;
+  --foreground: #f5ede4;
+  --card: #1e1610;
+  --card-foreground: #f5ede4;
+  --popover: #1e1610;
+  --popover-foreground: #f5ede4;
+  --primary: #ffb86b;
+  --primary-foreground: #241304;
+  --secondary: #241c15;
+  --secondary-foreground: #eddfce;
+  --muted: #1d1611;
+  --muted-foreground: #a78f77;
+  --accent: #2a1d12;
+  --accent-foreground: #ffd9ad;
   --destructive: #ff5c6c;
   --border: rgba(255, 255, 255, 0.08);
   --input: rgba(255, 255, 255, 0.1);
-  --ring: rgba(43, 232, 166, 0.55);
-  --chart-1: #2be8a6;
-  --chart-2: #ff5ca8;
+  --ring: rgba(255, 184, 107, 0.55);
+  --chart-1: #ffb86b;
+  --chart-2: #ff7a3d;
   --chart-3: #f5d90a;
-  --chart-4: #9d7bff;
-  --chart-5: #5eead4;
-  --sidebar: #0d1211;
-  --sidebar-foreground: #ecf4ef;
-  --sidebar-primary: #2be8a6;
-  --sidebar-primary-foreground: #04120c;
-  --sidebar-accent: #182020;
-  --sidebar-accent-foreground: #ecf4ef;
+  --chart-4: #ff5ca8;
+  --chart-5: #e08a3c;
+  --sidebar: #1e1610;
+  --sidebar-foreground: #f5ede4;
+  --sidebar-primary: #ffb86b;
+  --sidebar-primary-foreground: #241304;
+  --sidebar-accent: #2a1d12;
+  --sidebar-accent-foreground: #ffd9ad;
   --sidebar-border: rgba(255, 255, 255, 0.08);
-  --sidebar-ring: rgba(43, 232, 166, 0.55);
+  --sidebar-ring: rgba(255, 184, 107, 0.55);
 }
 
 @layer base {
@@ -431,7 +437,7 @@
     background-color: rgb(161 161 170 / 0.35);
   }
   .dark .pulse-scroll::-webkit-scrollbar-thumb {
-    background-color: rgba(43, 232, 166, 0.22);
+    background-color: rgba(255, 184, 107, 0.22);
   }
 
   /* ── R35 Neo utilities — the 2050 signal language ── */
@@ -443,16 +449,16 @@
     letter-spacing: -0.02em;
   }
 
-  /* Neon signal ring — for active/selected chrome only */
+  /* Signal ring - active/selected chrome, ember amber */
   .neon-ring {
     box-shadow:
-      0 0 0 1px rgba(43, 232, 166, 0.4),
-      0 0 20px -4px rgba(43, 232, 166, 0.5);
+      0 0 0 1px rgba(201, 118, 43, 0.4),
+      0 0 20px -4px rgba(201, 118, 43, 0.5);
   }
   .dark .neon-ring {
     box-shadow:
-      0 0 0 1px rgba(43, 232, 166, 0.5),
-      0 0 26px -2px rgba(43, 232, 166, 0.55);
+      0 0 0 1px rgba(255, 184, 107, 0.5),
+      0 0 26px -2px rgba(255, 184, 107, 0.55);
   }
 
   /* Scanline texture layer for hero covers (static, GPU-cheap) */

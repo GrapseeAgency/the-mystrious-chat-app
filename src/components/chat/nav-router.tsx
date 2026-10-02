@@ -110,7 +110,7 @@ function UnreadBadge({ count, className }: { count: number; className?: string }
       animate={{ scale: 1, opacity: 1 }}
       transition={reduced ? { duration: 0 } : spring.bouncy}
       className={cn(
-        'pointer-events-none absolute -right-2.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 px-1.5 text-[10px] font-bold text-white shadow-[0_4px_12px_-2px_rgba(16,185,129,0.65)] ring-2 ring-white dark:ring-zinc-900',
+        'pointer-events-none absolute -right-2.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-red-500 px-1.5 text-[10px] font-bold text-white shadow-[0_4px_12px_-2px_rgba(244,63,94,0.65)] ring-2 ring-white dark:ring-zinc-900',
         className,
       )}
     >
@@ -158,13 +158,13 @@ function CapsuleTab({
       onClick={press}
       whileTap={reduced ? undefined : { scale: 0.88, y: 1 }}
       transition={reduced ? { duration: 0 } : spring.bouncy}
-      className="relative flex min-h-[52px] flex-1 touch-manipulation select-none flex-col items-center justify-center gap-[3px] rounded-[22px] outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+      className="relative flex min-h-[52px] flex-1 touch-manipulation select-none flex-col items-center justify-center gap-[3px] rounded-[22px] outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
     >
       {active ? (
         <motion.span
           layoutId={layoutId}
           transition={reduced ? { duration: 0 } : spring.snappy}
-          className="absolute inset-0 rounded-[22px] bg-gradient-to-b from-emerald-500/20 to-emerald-500/[0.06] shadow-[0_6px_20px_-6px_rgba(16,185,129,0.55)] ring-1 ring-inset ring-emerald-500/30 dark:from-emerald-400/[0.16] dark:to-emerald-400/[0.05] dark:ring-emerald-400/25"
+          className="absolute inset-0 rounded-[22px] bg-gradient-to-b from-amber-500/20 to-amber-500/[0.06] shadow-[0_6px_20px_-6px_rgba(245,158,11,0.55)] ring-1 ring-inset ring-amber-500/30 dark:from-amber-400/[0.16] dark:to-amber-400/[0.05] dark:ring-amber-400/25"
           style={{ willChange: 'transform' }}
         />
       ) : null}
@@ -177,7 +177,7 @@ function CapsuleTab({
           <Icon
             className={cn(
               'size-[22px] transition-colors duration-200',
-              active ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+              active ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
             )}
             strokeWidth={active ? 2.2 : 1.8}
             aria-hidden
@@ -190,7 +190,7 @@ function CapsuleTab({
         transition={{ ...(reduced ? { duration: 0 } : spring.bouncy), delay: reduced ? 0 : stagger(1, 0.02) }}
         className={cn(
           'text-[10px] leading-none transition-colors duration-200',
-          active ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'font-medium text-zinc-500 dark:text-zinc-400',
+          active ? 'font-semibold text-amber-700 dark:text-amber-400' : 'font-medium text-zinc-500 dark:text-zinc-400',
         )}
       >
         {label}
@@ -287,7 +287,7 @@ function NavOverflowButton({
         transition={pressSpring}
         className={cn(
           'flex shrink-0 touch-manipulation select-none items-center justify-center rounded-full text-zinc-500 outline-none transition-colors',
-          'hover:bg-zinc-900/[0.05] focus-visible:ring-2 focus-visible:ring-emerald-500/60',
+          'hover:bg-zinc-900/[0.05] focus-visible:ring-2 focus-visible:ring-amber-500/60',
           'dark:text-zinc-400 dark:hover:bg-white/[0.07]',
           showLabel
             ? 'min-h-[46px] flex-1 flex-col gap-0.5 rounded-3xl text-[9px] font-semibold'
@@ -394,7 +394,7 @@ function CapsuleComposeButton({ onAction }: { onAction: (action: NavContextActio
       }}
       whileTap={reduced ? undefined : pressTap}
       transition={pressSpring}
-      className="mx-0.5 flex size-[46px] shrink-0 touch-manipulation select-none items-center justify-center self-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-[0_8px_22px_-6px_rgba(16,185,129,0.7)] outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+      className="mx-0.5 flex size-[46px] shrink-0 touch-manipulation select-none items-center justify-center self-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-[0_8px_22px_-6px_rgba(245,158,11,0.7)] outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
       style={{ willChange: 'transform' }}
     >
       <PulsePlus className="size-5" aria-hidden />
@@ -528,20 +528,20 @@ function FloatingDock({ active, onChange, unread }: TabProps) {
               whileHover={reduced ? undefined : { scale: 1.22, y: -6 }}
               whileTap={reduced ? undefined : { scale: 0.9 }}
               transition={reduced ? { duration: 0 } : spring.bouncy}
-              className="relative flex size-12 touch-manipulation items-center justify-center rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+              className="relative flex size-12 touch-manipulation items-center justify-center rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
             >
               {active === item.id ? (
                 <motion.span
                   layoutId="nav-dock-pill"
                   transition={reduced ? { duration: 0 } : spring.snappy}
-                  className="absolute inset-0 rounded-2xl bg-gradient-to-b from-emerald-500/25 to-emerald-500/[0.08] ring-1 ring-inset ring-emerald-500/40"
+                  className="absolute inset-0 rounded-2xl bg-gradient-to-b from-amber-500/25 to-amber-500/[0.08] ring-1 ring-inset ring-amber-500/40"
                 />
               ) : null}
               <span className="relative">
                 <item.Icon
                   className={cn(
                     'size-6 transition-colors',
-                    active === item.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+                    active === item.id ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
                   )}
                   strokeWidth={active === item.id ? 2.2 : 1.8}
                   aria-hidden
@@ -585,7 +585,7 @@ function PillNav({ active, onChange, unread }: TabProps) {
                 onChange(item.id)
               }}
               className={cn(
-                'relative flex min-h-[44px] flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-full px-2 text-[11px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-emerald-500/60',
+                'relative flex min-h-[44px] flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-full px-2 text-[11px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-amber-500/60',
                 isActive ? 'text-white' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
               )}
             >
@@ -593,7 +593,7 @@ function PillNav({ active, onChange, unread }: TabProps) {
                 <motion.span
                   layoutId="nav-pill-fill"
                   transition={reduced ? { duration: 0 } : spring.snappy}
-                  className="absolute inset-0 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 shadow-[0_6px_18px_-4px_rgba(16,185,129,0.7)]"
+                  className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-600 to-orange-600 shadow-[0_6px_18px_-4px_rgba(245,158,11,0.7)]"
                   style={{ willChange: 'transform' }}
                 />
               ) : null}
@@ -634,7 +634,7 @@ function BottomBar({ active, onChange, unread }: TabProps) {
             }}
             className={cn(
               'relative flex min-h-[56px] flex-1 touch-manipulation flex-col items-center justify-center gap-1 pt-1.5 text-[10px] font-semibold outline-none transition-colors',
-              isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+              isActive ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
             )}
           >
             <span className="relative">
@@ -646,7 +646,7 @@ function BottomBar({ active, onChange, unread }: TabProps) {
               <motion.span
                 layoutId="nav-bottombar-dot"
                 transition={spring.snappy}
-                className="absolute top-0 h-[3px] w-8 rounded-b-full bg-emerald-500"
+                className="absolute top-0 h-[3px] w-8 rounded-b-full bg-amber-500"
                 style={{ willChange: 'transform' }}
               />
             ) : null}
@@ -687,7 +687,7 @@ function TabBarNav({ active, onChange, unread }: TabProps) {
               <motion.span
                 layoutId="nav-tabbar-squircle"
                 transition={spring.snappy}
-                className="absolute inset-x-3 inset-y-1 rounded-2xl bg-emerald-500/15 ring-1 ring-inset ring-emerald-500/25 dark:bg-emerald-400/10"
+                className="absolute inset-x-3 inset-y-1 rounded-2xl bg-amber-500/15 ring-1 ring-inset ring-amber-500/25 dark:bg-amber-400/10"
                 style={{ willChange: 'transform' }}
               />
             ) : null}
@@ -695,14 +695,14 @@ function TabBarNav({ active, onChange, unread }: TabProps) {
               <item.Icon
                 className={cn(
                   'size-[21px] transition-colors',
-                  isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+                  isActive ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
                 )}
                 strokeWidth={isActive ? 2.2 : 1.8}
                 aria-hidden
               />
               {item.badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
             </span>
-            <span className={cn('relative', isActive && 'font-semibold text-emerald-600 dark:text-emerald-400')}>
+            <span className={cn('relative', isActive && 'font-semibold text-amber-700 dark:text-amber-400')}>
               {item.label}
             </span>
           </motion.button>
@@ -748,7 +748,7 @@ function FloatingTabBar({ active, onChange, unread }: TabProps) {
                 <motion.span
                   layoutId="nav-ftab-card"
                   transition={reduced ? { duration: 0 } : spring.snappy}
-                  className="absolute inset-0 rounded-[20px] bg-gradient-to-b from-white to-zinc-50 shadow-[0_10px_24px_-8px_rgba(16,185,129,0.45),0_2px_6px_rgba(0,0,0,0.08)] ring-1 ring-emerald-500/30 dark:from-zinc-800 dark:to-zinc-900"
+                  className="absolute inset-0 rounded-[20px] bg-gradient-to-b from-white to-zinc-50 shadow-[0_10px_24px_-8px_rgba(245,158,11,0.45),0_2px_6px_rgba(0,0,0,0.08)] ring-1 ring-amber-500/30 dark:from-zinc-800 dark:to-zinc-900"
                   style={{ willChange: 'transform' }}
                 />
               ) : null}
@@ -756,7 +756,7 @@ function FloatingTabBar({ active, onChange, unread }: TabProps) {
                 <item.Icon
                   className={cn(
                     'size-[21px] transition-colors',
-                    isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+                    isActive ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
                   )}
                   strokeWidth={isActive ? 2.2 : 1.8}
                   aria-hidden
@@ -766,7 +766,7 @@ function FloatingTabBar({ active, onChange, unread }: TabProps) {
               <span
                 className={cn(
                   'relative transition-colors',
-                  isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+                  isActive ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
                 )}
               >
                 {item.label}
@@ -830,14 +830,14 @@ function CommandBarNav({
                 }}
                 className={cn(
                   'relative min-h-[40px] touch-manipulation rounded-full px-3 text-[12px] font-semibold outline-none transition-colors',
-                  isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+                  isActive ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
                 )}
               >
                 {isActive ? (
                   <motion.span
                     layoutId="nav-cmd-underline"
                     transition={reduced ? { duration: 0 } : spring.snappy}
-                    className="absolute inset-x-2 -bottom-0.5 h-[2.5px] rounded-full bg-emerald-500"
+                    className="absolute inset-x-2 -bottom-0.5 h-[2.5px] rounded-full bg-amber-500"
                     style={{ willChange: 'transform' }}
                   />
                 ) : null}
@@ -858,7 +858,7 @@ function CommandBarNav({
           className="relative flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
         >
           <PulseSettings className="size-4" aria-hidden />
-          {unread > 0 ? <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-emerald-500" /> : null}
+          {unread > 0 ? <span aria-hidden className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-amber-500" /> : null}
         </motion.button>
         <NavOverflowButton placement="below" onAction={onContextAction} buttonClassName="size-9" />
       </motion.nav>
@@ -875,7 +875,7 @@ function RailNav({ active, onChange, unread }: TabProps) {
       aria-label="Main navigation (rail)"
       className="z-[45] flex w-[68px] shrink-0 flex-col items-center gap-1 border-r border-zinc-200/70 bg-white/60 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/60"
     >
-      <div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-sm font-black text-white shadow-[0_6px_16px_-4px_rgba(16,185,129,0.7)]">
+      <div className="mb-3 flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 text-sm font-black text-white shadow-[0_6px_16px_-4px_rgba(245,158,11,0.7)]">
         P
       </div>
       {NAV_ITEMS.map((item) => {
@@ -895,14 +895,14 @@ function RailNav({ active, onChange, unread }: TabProps) {
             }}
             className={cn(
               'relative flex w-14 flex-col items-center gap-1 rounded-2xl py-2.5 text-[9px] font-semibold outline-none transition-colors',
-              isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
+              isActive ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
             )}
           >
             {isActive ? (
               <motion.span
                 layoutId="nav-rail-bar"
                 transition={spring.snappy}
-                className="absolute -left-[13px] top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-emerald-500"
+                className="absolute -left-[13px] top-1/2 h-7 w-1 -translate-y-1/2 rounded-r-full bg-amber-500"
                 style={{ willChange: 'transform' }}
               />
             ) : null}
@@ -984,14 +984,14 @@ function IslandNav({
                     <motion.span
                       layoutId="nav-island-pill"
                       transition={spring.snappy}
-                      className="absolute inset-1 rounded-3xl bg-emerald-500/18 ring-1 ring-inset ring-emerald-500/30"
+                      className="absolute inset-1 rounded-3xl bg-amber-500/18 ring-1 ring-inset ring-amber-500/30"
                     />
                   ) : null}
                   <span className="relative">
                     <item.Icon
                       className={cn(
                         'size-5',
-                        active === item.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+                        active === item.id ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
                       )}
                       aria-hidden
                     />
@@ -1025,7 +1025,7 @@ function IslandNav({
               className="flex items-center gap-2 px-3"
             >
               <span className="relative">
-                <activeItem.Icon className="size-[22px] text-emerald-600 dark:text-emerald-400" aria-hidden />
+                <activeItem.Icon className="size-[22px] text-amber-700 dark:text-amber-400" aria-hidden />
                 {active === 'chats' ? <UnreadBadge count={unread} /> : null}
               </span>
               <span className="text-[12px] font-semibold text-zinc-700 dark:text-zinc-200">{activeItem.label}</span>
@@ -1079,7 +1079,7 @@ function RadialNav({ active, onChange, unread }: TabProps) {
                   className="absolute bottom-6 left-1/2 flex size-[68px] -translate-x-1/2 flex-col items-center justify-center gap-0.5 rounded-full border border-white/40 bg-white/85 text-[9px] font-bold text-zinc-800 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/90 dark:text-white"
                 >
                   <span className="relative">
-                    <item.Icon className={cn('size-5', active === item.id && 'text-emerald-500')} aria-hidden />
+                    <item.Icon className={cn('size-5', active === item.id && 'text-amber-600')} aria-hidden />
                     {item.badge === 'chats-unread' ? <UnreadBadge count={unread} /> : null}
                   </span>
                   {item.label}
@@ -1100,7 +1100,7 @@ function RadialNav({ active, onChange, unread }: TabProps) {
           whileTap={{ scale: 0.92 }}
           animate={{ rotate: open ? 45 : 0 }}
           transition={spring.snappy}
-          className="pointer-events-auto flex size-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-[0_10px_36px_-6px_rgba(16,185,129,0.65)]"
+          className="pointer-events-auto flex size-14 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-600 text-white shadow-[0_10px_36px_-6px_rgba(245,158,11,0.65)]"
           style={{ willChange: 'transform' }}
         >
           <PulsePlus className="size-6" aria-hidden />
@@ -1146,14 +1146,14 @@ function GestureNav({ active, onChange, unread }: TabProps) {
                   <motion.span
                     layoutId="nav-gesture-pill"
                     transition={spring.snappy}
-                    className="absolute inset-0 rounded-2xl bg-emerald-500/18 ring-1 ring-inset ring-emerald-500/30"
+                    className="absolute inset-0 rounded-2xl bg-amber-500/18 ring-1 ring-inset ring-amber-500/30"
                   />
                 ) : null}
                 <span className="relative">
                   <item.Icon
                     className={cn(
                       'size-5',
-                      active === item.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+                      active === item.id ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
                     )}
                     aria-hidden
                   />
@@ -1178,7 +1178,7 @@ function GestureNav({ active, onChange, unread }: TabProps) {
         <span
           className={cn(
             'h-[5px] rounded-full transition-all duration-300',
-            open ? 'w-16 bg-emerald-500' : 'w-24 bg-zinc-400 dark:bg-zinc-600',
+            open ? 'w-16 bg-amber-500' : 'w-24 bg-zinc-400 dark:bg-zinc-600',
           )}
         />
       </motion.button>
@@ -1240,7 +1240,7 @@ function ContextualDock({
                 active === 'chats' ? 'new-chat' : active === 'hub' ? 'search' : active === 'contacts' ? 'new-group' : 'settings',
               )
             }}
-            className="ml-0.5 flex h-[52px] shrink-0 items-center gap-1.5 rounded-[20px] bg-gradient-to-br from-emerald-500 to-teal-600 px-3 text-[11px] font-bold text-white shadow-[0_8px_22px_-6px_rgba(16,185,129,0.7)]"
+            className="ml-0.5 flex h-[52px] shrink-0 items-center gap-1.5 rounded-[20px] bg-gradient-to-br from-amber-500 to-orange-600 px-3 text-[11px] font-bold text-white shadow-[0_8px_22px_-6px_rgba(245,158,11,0.7)]"
           >
             <ctx.Icon className="size-4" aria-hidden />
             <span className="hidden sm:inline">{ctx.label}</span>

@@ -398,7 +398,7 @@ function UserPageBody({
                 aria-hidden
                 className={cn(
                   'size-2 shrink-0 rounded-full',
-                  online ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-zinc-300 dark:bg-zinc-600',
+                  online ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'bg-zinc-300 dark:bg-zinc-600',
                 )}
               />
               <span className="truncate text-[11px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
@@ -414,7 +414,7 @@ function UserPageBody({
             <h1 className="flex items-center gap-1.5 text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
               <span className="truncate">{user.name}</span>
               <span title="Registered member" aria-label="Registered member" className="shrink-0">
-                <BadgeCheck className="size-5 fill-[var(--ui-accent,#10b981)] text-white dark:text-zinc-900" aria-hidden />
+                <BadgeCheck className="size-5 fill-[var(--ui-accent,#c9762b)] text-white dark:text-zinc-900" aria-hidden />
               </span>
             </h1>
             {user.username ? (
@@ -424,7 +424,7 @@ function UserPageBody({
                 whileTap={reducedMotion ? undefined : pressTap}
                 transition={pressSpring}
                 aria-label={`Copy handle @${user.username}`}
-                className="glass-pill mt-2 flex min-h-[30px] items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold text-[var(--ui-accent,#10b981)] outline-none"
+                className="glass-pill mt-2 flex min-h-[30px] items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold text-[var(--ui-accent,#c9762b)] outline-none"
               >
                 {handleCopied ? (
                   <>
@@ -450,7 +450,7 @@ function UserPageBody({
               className="mt-3 flex items-center gap-1.5 text-[13px] font-semibold text-zinc-700 dark:text-zinc-200"
             >
               {user.statusEmoji ? (
-                <StatusGlyph value={user.statusEmoji} className="size-4 text-[var(--ui-accent,#10b981)]" />
+                <StatusGlyph value={user.statusEmoji} className="size-4 text-[var(--ui-accent,#c9762b)]" />
               ) : null}
               {user.statusText}
             </motion.p>
@@ -539,8 +539,8 @@ function UserPageBody({
                   transition={pressSpring}
                   className="glass-row-hover flex min-h-[52px] w-full items-center gap-3 rounded-2xl px-2 py-1.5 text-left outline-none"
                 >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/10">
-                    <MessageCircle className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-500/10">
+                    <MessageCircle className="size-4 text-amber-700 dark:text-amber-400" aria-hidden />
                   </span>
                   <span className="min-w-0 flex-1 text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">
                     Continue direct chat
@@ -558,7 +558,7 @@ function UserPageBody({
           >
             <motion.div whileTap={reducedMotion ? undefined : { scale: 0.98 }} transition={pressSpring} className="flex-1">
               <Button
-                className="h-12 w-full rounded-2xl bg-[var(--ui-accent,#10b981)] text-sm font-bold text-white hover:opacity-90"
+                className="h-12 w-full rounded-2xl bg-[var(--ui-accent,#c9762b)] text-sm font-bold text-white hover:opacity-90"
                 onClick={() => startDm.mutate()}
                 disabled={!me || startDm.isPending}
               >

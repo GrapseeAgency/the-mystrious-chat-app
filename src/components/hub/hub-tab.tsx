@@ -118,7 +118,11 @@ function WalletPanel({ me }: { me: AppUser }) {
   return (
     <div className="flex flex-col gap-4">
       {/* balance hero */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 p-5 text-white shadow-lg">
+      {/* balance hero - ember gradient from the design language tokens */}
+      <div
+        className="relative overflow-hidden rounded-2xl p-5 text-white shadow-lg"
+        style={{ background: 'linear-gradient(135deg, var(--ui-accent, #C9762B) 0%, var(--ui-accent-2, #E08A3C) 55%, #A85423 100%)' }}
+      >
         <div className="absolute -right-6 -top-8 size-28 rounded-full bg-white/10 blur-xl" />
         <p className="text-[11px] font-medium uppercase tracking-wider text-white/70">Pulse balance</p>
         <div className="mt-1 flex items-end gap-4">
@@ -137,7 +141,7 @@ function WalletPanel({ me }: { me: AppUser }) {
           size="sm"
           disabled={checkin.isPending || wallet?.checkedInToday}
           onClick={() => checkin.mutate()}
-          className="mt-4 w-full bg-white font-semibold text-emerald-700 hover:bg-white/90 disabled:opacity-60"
+          className="mt-4 w-full bg-white font-semibold text-amber-700 hover:bg-white/90 disabled:opacity-60"
         >
           {wallet?.checkedInToday ? (
             <>Checked in today · streak {wallet.streak}</>
@@ -152,7 +156,7 @@ function WalletPanel({ me }: { me: AppUser }) {
       {/* transfer */}
       <section aria-label="Transfer coins" className="glass-deep glass-sheen rounded-2xl p-4">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-          <Send className="size-4 text-emerald-600" /> Send coins by @handle
+          <Send className="size-4 text-amber-700" /> Send coins by @handle
         </h3>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Input
@@ -187,7 +191,7 @@ function WalletPanel({ me }: { me: AppUser }) {
           {(walletQ.data?.ledger ?? []).map((row) => (
             <li key={row.id} className="glass-row-hover flex items-center gap-3 px-4 py-2.5">
               {row.amount >= 0 ? (
-                <ArrowDownToLine className="size-4 shrink-0 text-emerald-600" />
+                <ArrowDownToLine className="size-4 shrink-0 text-amber-700" />
               ) : (
                 <ArrowUpFromLine className="size-4 shrink-0 text-rose-500" />
               )}
@@ -195,7 +199,7 @@ function WalletPanel({ me }: { me: AppUser }) {
                 <p className="truncate text-[13px] font-medium">{row.note || row.kind}</p>
                 <p className="text-[11px] text-zinc-500">{new Date(row.createdAt).toLocaleString()}</p>
               </div>
-              <p className={cn('text-sm font-bold tabular-nums', row.amount >= 0 ? 'text-emerald-600' : 'text-rose-500')}>
+              <p className={cn('text-sm font-bold tabular-nums', row.amount >= 0 ? 'text-amber-700' : 'text-rose-500')}>
                 {row.amount >= 0 ? '+' : ''}
                 {row.amount} {row.asset}
               </p>
@@ -307,7 +311,7 @@ function TasksPanel({ me }: { me: AppUser }) {
                     <button
                       type="button"
                       aria-label="Advance status"
-                      className="text-[10px] font-semibold text-emerald-600 hover:underline"
+                      className="text-[10px] font-semibold text-amber-700 hover:underline"
                       onClick={() =>
                         move.mutate({ id: t.id, status: t.status === 'todo' ? 'doing' : t.status === 'doing' ? 'done' : 'todo' })
                       }
@@ -400,7 +404,7 @@ function MarketPanel({ me }: { me: AppUser }) {
     <div className="flex flex-col gap-3">
       <section aria-label="Create listing" className="glass-deep glass-sheen rounded-2xl p-4">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold">
-          <CircleDollarSign className="size-4 text-emerald-600" /> Sell something
+          <CircleDollarSign className="size-4 text-amber-700" /> Sell something
           {walletQ.data ? <span className="ml-auto text-xs font-medium text-zinc-500">you: {walletQ.data.coins} PC</span> : null}
         </h3>
         <form
@@ -449,7 +453,7 @@ function MarketPanel({ me }: { me: AppUser }) {
                 </p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1.5">
-                <p className="text-sm font-bold text-emerald-600">{l.price} PC</p>
+                <p className="text-sm font-bold text-amber-700">{l.price} PC</p>
                 {l.status === 'open' && !l.mine ? (
                   <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs" disabled={buy.isPending} onClick={() => buy.mutate(l.id)}>
                     Buy
@@ -567,7 +571,7 @@ function SwapPanel({ me }: { me: AppUser }) {
               )}
             >
               {direction === opt.id ? (
-                <motion.span layoutId="swap-tab" className="absolute inset-0 rounded-lg bg-emerald-600" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />
+                <motion.span layoutId="swap-tab" className="absolute inset-0 rounded-lg bg-amber-600" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />
               ) : null}
               <span className="relative">{opt.label}</span>
             </button>
@@ -581,7 +585,7 @@ function SwapPanel({ me }: { me: AppUser }) {
           inputMode="numeric"
           className="mt-3 h-10 text-center text-lg font-bold"
         />
-        {hint && Number(amount) > 0 ? <p className="mt-1.5 text-center text-xs font-medium text-emerald-600">{hint}</p> : null}
+        {hint && Number(amount) > 0 ? <p className="mt-1.5 text-center text-xs font-medium text-amber-700">{hint}</p> : null}
 
         <Button className="mt-3 w-full" disabled={swap.isPending || !amount} onClick={() => swap.mutate()}>
           <Repeat className="mr-1.5 size-4" /> {swap.isPending ? 'Exchanging…' : 'Exchange'}
@@ -613,7 +617,7 @@ function LogsPanel() {
       <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2 dark:border-white/10">
         <span className="size-2.5 rounded-full bg-rose-500" />
         <span className="size-2.5 rounded-full bg-amber-400" />
-        <span className="size-2.5 rounded-full bg-emerald-500" />
+        <span className="size-2.5 rounded-full bg-amber-500" />
         <p className="ml-1 text-[11px] font-semibold text-zinc-400">pulse://logs - live event stream</p>
       </div>
       <ul className="max-h-[26rem] divide-y divide-zinc-900 overflow-y-auto p-2 text-[11px] leading-relaxed dark:divide-white/5">
@@ -623,8 +627,8 @@ function LogsPanel() {
             <span
               className={cn(
                 'shrink-0 font-semibold uppercase',
-                l.kind === 'checkin' && 'text-emerald-400',
-                l.kind === 'transfer' && 'text-cyan-400',
+                l.kind === 'checkin' && 'text-amber-400',
+                l.kind === 'transfer' && 'text-orange-400',
                 l.kind === 'swap' && 'text-violet-400',
                 l.kind === 'market' && 'text-amber-400',
                 l.kind !== 'checkin' && l.kind !== 'transfer' && l.kind !== 'swap' && l.kind !== 'market' && 'text-zinc-400',
@@ -670,17 +674,17 @@ function ConnectedChip({ appName, pending, onToggle }: { appName: string; pendin
       aria-pressed="true"
       aria-label={`Disconnect ${appName}`}
       className={cn(
-        'relative inline-flex h-8 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 text-[11px] font-bold text-emerald-700 outline-none transition-colors active:scale-[0.97] dark:text-emerald-400',
+        'relative inline-flex h-8 items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 text-[11px] font-bold text-amber-700 outline-none transition-colors active:scale-[0.97] dark:text-amber-400',
         'after:absolute after:-inset-1.5 after:content-[\'\']', // extends the touch target past 44px
-        'focus-visible:ring-2 focus-visible:ring-emerald-500/60 disabled:opacity-60',
+        'focus-visible:ring-2 focus-visible:ring-amber-500/60 disabled:opacity-60',
       )}
     >
       {pending ? (
         <Loader2 className="size-3 animate-spin" aria-hidden />
       ) : (
         <span className="relative flex size-1.5">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-60" />
-          <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-500 opacity-60" />
+          <span className="relative inline-flex size-1.5 rounded-full bg-amber-500" />
         </span>
       )}
       Connected
@@ -701,9 +705,9 @@ function ConnectChip({ appName, pending, onToggle }: { appName: string; pending:
       aria-pressed="false"
       aria-label={`Connect ${appName}`}
       className={cn(
-        'relative inline-flex h-8 items-center gap-1 rounded-full border border-zinc-200 px-3 text-[11px] font-bold text-zinc-600 outline-none transition-colors hover:border-emerald-400 hover:text-emerald-600 active:scale-[0.97] dark:border-white/15 dark:text-zinc-300 dark:hover:border-emerald-500/50 dark:hover:text-emerald-400',
+        'relative inline-flex h-8 items-center gap-1 rounded-full border border-zinc-200 px-3 text-[11px] font-bold text-zinc-600 outline-none transition-colors hover:border-amber-400 hover:text-amber-700 active:scale-[0.97] dark:border-white/15 dark:text-zinc-300 dark:hover:border-amber-500/50 dark:hover:text-amber-400',
         'after:absolute after:-inset-1.5 after:content-[\'\']', // extends the touch target past 44px
-        'focus-visible:ring-2 focus-visible:ring-emerald-500/60 disabled:opacity-60',
+        'focus-visible:ring-2 focus-visible:ring-amber-500/60 disabled:opacity-60',
       )}
     >
       {pending ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <Plus className="size-3" aria-hidden />}
@@ -739,13 +743,13 @@ function AppTile({
         }}
         className={cn(
           'group w-full cursor-pointer rounded-xl border p-3 text-left shadow-sm outline-none transition-all active:scale-[0.97]',
-          'border-zinc-200/80 bg-white hover:border-emerald-400 focus-visible:ring-2 focus-visible:ring-emerald-500/60',
-          'dark:border-white/10 dark:bg-zinc-900/70 dark:hover:border-emerald-500/50',
+          'border-zinc-200/80 bg-white hover:border-amber-400 focus-visible:ring-2 focus-visible:ring-amber-500/60',
+          'dark:border-white/10 dark:bg-zinc-900/70 dark:hover:border-amber-500/50',
         )}
       >
         <div className="flex items-center justify-between gap-1.5">
           <p className="truncate text-[13px] font-bold">{app.name}</p>
-          <ChevronRight className="size-3.5 shrink-0 text-zinc-400 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-600" />
+          <ChevronRight className="size-3.5 shrink-0 text-zinc-400 transition-transform group-hover:translate-x-0.5 group-hover:text-amber-700" />
         </div>
         <p className="mt-0.5 truncate text-[10px] font-medium text-zinc-500">
           #{String(app.n).padStart(3, '0')} · {app.category.split(' /')[0]}
@@ -821,7 +825,7 @@ function AppsPanel({ me }: { me: AppUser }) {
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search 100 platforms…"
           aria-label="Search the app catalog"
-          className="h-11 rounded-full border-transparent bg-transparent pl-10 shadow-none focus-visible:ring-1 focus-visible:ring-emerald-500/50 dark:bg-transparent"
+          className="h-11 rounded-full border-transparent bg-transparent pl-10 shadow-none focus-visible:ring-1 focus-visible:ring-amber-500/50 dark:bg-transparent"
         />
       </div>
 
@@ -834,7 +838,7 @@ function AppsPanel({ me }: { me: AppUser }) {
           }}
           aria-label="Open my connected apps"
           className={cn(
-            'relative shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-500/20 active:scale-[0.97] dark:text-emerald-400',
+            'relative shrink-0 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-700 transition-colors hover:bg-amber-500/20 active:scale-[0.97] dark:text-amber-400',
             'after:absolute after:-inset-1 after:content-[""]', // extends the touch target past 44px
           )}
         >
@@ -850,7 +854,7 @@ function AppsPanel({ me }: { me: AppUser }) {
             }}
             aria-label={`Open the ${chip.label} category`}
             className={cn(
-              'relative shrink-0 rounded-full border border-zinc-200 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 transition-colors hover:border-emerald-400 active:scale-[0.97] dark:border-white/15 dark:bg-white/5 dark:text-zinc-300 dark:hover:border-emerald-500/50',
+              'relative shrink-0 rounded-full border border-zinc-200 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 transition-colors hover:border-amber-400 active:scale-[0.97] dark:border-white/15 dark:bg-white/5 dark:text-zinc-300 dark:hover:border-amber-500/50',
               'after:absolute after:-inset-1 after:content-[""]', // extends the touch target past 44px
             )}
           >
@@ -918,7 +922,8 @@ export function HubTab({
         <div className="flex items-center gap-2.5">
           <div
             aria-hidden
-            className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md"
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl text-white shadow-md"
+            style={{ background: 'linear-gradient(135deg, var(--ui-accent, #C9762B), var(--ui-accent-2, #E08A3C))' }}
           >
             <Flame className="size-[18px]" />
           </div>
@@ -932,11 +937,11 @@ export function HubTab({
               type="button"
               onClick={() => setPanel('wallet')}
               aria-label={`Wallet balance ${walletQ.data.coins} Pulse Coins - open wallet panel`}
-              className="glass-pill flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11px] font-bold text-emerald-700 outline-none transition-transform active:scale-95 dark:text-emerald-400"
+              className="glass-pill flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11px] font-bold text-amber-700 outline-none transition-transform active:scale-95 dark:text-amber-400"
             >
               <Coins className="size-3.5" aria-hidden />
               {walletQ.data.coins.toLocaleString()} PC
-              <span className="ml-0.5 inline-flex items-center gap-0.5 text-sky-500 dark:text-sky-400">
+              <span className="ml-0.5 inline-flex items-center gap-0.5 text-violet-500 dark:text-violet-400">
                 <Gem className="size-3" aria-hidden />
                 {walletQ.data.gems}
               </span>
@@ -961,11 +966,11 @@ export function HubTab({
               className={cn(
                 'relative flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold transition-colors',
                 'after:absolute after:-inset-1 after:content-[""]', // extends the touch target past 44px
-                panel === id ? 'text-white' : 'text-zinc-600 hover:text-emerald-600 dark:text-zinc-300',
+                panel === id ? 'text-white' : 'text-zinc-600 hover:text-amber-700 dark:text-zinc-300',
               )}
             >
               {panel === id ? (
-                <motion.span layoutId="hub-panel-pill" className="absolute inset-0 rounded-full bg-emerald-600" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />
+                <motion.span layoutId="hub-panel-pill" className="absolute inset-0 rounded-full bg-amber-600" transition={{ type: 'spring', stiffness: 500, damping: 35 }} />
               ) : null}
               <Icon className="relative size-3.5" />
               <span className="relative">{label}</span>

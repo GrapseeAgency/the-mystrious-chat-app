@@ -177,13 +177,13 @@ export function ConnectedBadge({ appName, className }: { appName: string; classN
       transition={spring.bouncy}
       aria-label={`${appName} connected`}
       className={cn(
-        'relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 text-[11px] font-bold text-emerald-700 dark:text-emerald-400',
+        'relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 text-[11px] font-bold text-amber-700 dark:text-amber-400',
         className,
       )}
     >
       <span className="relative flex size-1.5">
-        <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-60" />
-        <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+        <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-500 opacity-60" />
+        <span className="relative inline-flex size-1.5 rounded-full bg-amber-500" />
       </span>
       Connected
     </motion.span>

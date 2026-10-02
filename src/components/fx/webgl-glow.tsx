@@ -129,16 +129,18 @@ void main() {
   float b2 = curtain(uv, aspect, t * 1.25, 0.47, 0.13, 2.9, -0.32, 0.20);
   float b3 = curtain(uv, aspect, t * 0.8, 0.33, 0.08, 3.7, 0.24, 0.12);
 
-  vec3 emerald = vec3(0.063, 0.725, 0.506);
-  vec3 teal    = vec3(0.078, 0.722, 0.651);
-  vec3 violet  = vec3(0.545, 0.365, 0.965);
+  // EMB-B ember palette - the DEFAULT ambient field speaks the same warm
+  // language as the chrome (amber signal, deep ember bleed, violet ember).
+  vec3 amber  = vec3(1.0, 0.722, 0.42);
+  vec3 ember  = vec3(1.0, 0.478, 0.239);
+  vec3 violet = vec3(0.545, 0.365, 0.965);
 
-  vec3 darkCol = vec3(0.012, 0.045, 0.038);
-  darkCol += emerald * b1 * 0.85 + teal * b2 * 0.70 + violet * b3 * 0.45;
+  vec3 darkCol = vec3(0.043, 0.028, 0.018);
+  darkCol += amber * b1 * 0.85 + ember * b2 * 0.70 + violet * b3 * 0.35;
   darkCol = 1.0 - exp(-darkCol * u_intensity * 1.7);
 
-  vec3 lightCol = vec3(0.965, 0.976, 0.972);
-  lightCol -= (emerald * b1 * 0.16 + teal * b2 * 0.12 + violet * b3 * 0.08) * u_intensity;
+  vec3 lightCol = vec3(0.984, 0.965, 0.941);
+  lightCol -= (amber * b1 * 0.16 + ember * b2 * 0.12 + violet * b3 * 0.08) * u_intensity;
 
   vec3 col = mix(lightCol, darkCol, u_dark);
   vec2 q = v_uv - 0.5;

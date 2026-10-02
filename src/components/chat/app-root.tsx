@@ -11,6 +11,7 @@ import type { AppUser } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
 import { ApiError, apiJson } from '@/lib/pulse-utils'
 import { Providers } from '@/components/chat/providers'
+import { UiThemeAttr } from '@/components/chat/ui-theme-attr'
 import { OnboardingScreen } from '@/components/chat/onboarding-screen'
 import { MainShell } from '@/components/chat/main-shell'
 import UserRoutePage from '@/components/chat/user-route-page'
@@ -31,7 +32,7 @@ function Splash({ visible }: { visible: boolean }) {
           key="splash"
           initial={{ opacity: 1 }}
           exit={{ opacity: 0, transition: { duration: 0.25 } }}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-100 dark:bg-zinc-950"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-[#f5eee6] dark:bg-[#150f0b]"
           role="status"
           aria-label="Loading Pulse"
         >
@@ -39,7 +40,7 @@ function Splash({ visible }: { visible: boolean }) {
             <motion.div
               animate={{ scale: [1, 1.08, 1] }}
               transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
-              className="flex size-20 items-center justify-center rounded-[1.75rem] bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-lg shadow-emerald-500/30"
+              className="flex size-20 items-center justify-center rounded-[1.75rem] bg-gradient-to-br from-amber-400 to-amber-600 shadow-lg shadow-amber-500/30"
             >
               <MessageCircleHeart className="size-10 text-white" aria-hidden />
             </motion.div>
@@ -59,8 +60,8 @@ function Splash({ visible }: { visible: boolean }) {
 
 function PhoneFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-dvh w-full items-stretch justify-center bg-zinc-100 sm:items-center dark:bg-zinc-950">
-      <div className="w-full sm:w-[420px] h-dvh sm:h-[860px] sm:max-h-[92vh] sm:rounded-[2.5rem] sm:border sm:border-zinc-200 sm:shadow-2xl overflow-hidden relative flex flex-col bg-white dark:bg-zinc-900 dark:sm:border-zinc-800">
+    <div className="flex min-h-dvh w-full items-stretch justify-center bg-[#f5eee6] sm:items-center dark:bg-[#0d0906]">
+      <div className="w-full sm:w-[420px] h-dvh sm:h-[860px] sm:max-h-[92vh] sm:rounded-[2.5rem] sm:border sm:border-zinc-200 sm:shadow-2xl overflow-hidden relative flex flex-col bg-background dark:sm:border-white/10">
         {children}
       </div>
     </div>
@@ -122,6 +123,9 @@ function BootGate() {
 export function AppRoot() {
   return (
     <Providers>
+      {/* the active design language rides on <body data-ui=...> so every
+          surface - tabs, overlays, portals - speaks one token set */}
+      <UiThemeAttr />
       {/* global FX layers - fixed, survive route/tab switches.
           WebGLAmbient renders the prefs-selected shader field ('off' → nothing);
           ParticleLayer suppresses itself while a WebGL mode is active (R26-e contract). */}

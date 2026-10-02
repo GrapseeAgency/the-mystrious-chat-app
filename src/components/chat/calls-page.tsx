@@ -135,10 +135,10 @@ function CallRow({
             aria-hidden
             className={cn(
               'flex size-5 shrink-0 items-center justify-center rounded-full',
-              missed ? 'bg-rose-500/10' : 'bg-emerald-500/10',
+              missed ? 'bg-rose-500/10' : 'bg-amber-500/10',
             )}
           >
-            <Arrow className={cn('size-3', missed ? 'text-rose-500 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')} />
+            <Arrow className={cn('size-3', missed ? 'text-rose-500 dark:text-rose-400' : 'text-amber-700 dark:text-amber-400')} />
           </span>
           <span className="truncate">
             {verb} {kindNoun}
@@ -227,7 +227,7 @@ export function CallsPage({ open, me, onBack, onOpenConversation }: CallsPagePro
                 <h1 className="flex items-center gap-2 truncate text-[17px] font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
                   Calls
                   {items.length > 0 ? (
-                    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-500/15 px-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500/15 px-1.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
                       {items.length > 99 ? '99+' : items.length}
                     </span>
                   ) : null}
@@ -237,7 +237,7 @@ export function CallsPage({ open, me, onBack, onOpenConversation }: CallsPagePro
                 </p>
               </div>
               {calls.isFetching ? (
-                <LoaderCircle className="size-4 shrink-0 animate-spin text-emerald-500" aria-hidden />
+                <LoaderCircle className="size-4 shrink-0 animate-spin text-amber-600" aria-hidden />
               ) : null}
             </div>
           </header>
@@ -268,7 +268,7 @@ export function CallsPage({ open, me, onBack, onOpenConversation }: CallsPagePro
                 <button
                   type="button"
                   onClick={() => void calls.refetch()}
-                  className="glass-pill h-9 px-4 text-xs font-bold text-emerald-600 outline-none dark:text-emerald-400"
+                  className="glass-pill h-9 px-4 text-xs font-bold text-amber-700 outline-none dark:text-amber-400"
                 >
                   Try again
                 </button>

@@ -174,7 +174,7 @@ function DetailTabBar({
             className={cn(
               'relative flex h-11 min-w-[44px] flex-1 items-center justify-center gap-1.5 text-[12.5px] font-semibold transition-colors',
               selected
-                ? 'text-emerald-600 dark:text-emerald-400'
+                ? 'text-amber-700 dark:text-amber-400'
                 : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200',
             )}
           >
@@ -198,7 +198,7 @@ function DetailTabBar({
             {selected ? (
               <motion.span
                 layoutId="app-detail-tab-underline"
-                className="absolute inset-x-4 bottom-0 h-[2.5px] rounded-full bg-gradient-to-r from-emerald-400 to-teal-500"
+                className="absolute inset-x-4 bottom-0 h-[2.5px] rounded-full bg-gradient-to-r from-amber-400 to-orange-500"
                 transition={{ type: 'spring', stiffness: 500, damping: 36 }}
                 aria-hidden
               />
@@ -280,11 +280,11 @@ function AppHero({
             </span>
             {wallet ? (
               <span
-                className="glass-pill inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-400"
+                className="glass-pill inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[10px] font-bold text-amber-700 dark:text-amber-400"
                 aria-label={`Wallet balance ${wallet.coins} Pulse Coins`}
               >
                 <Coins className="size-3" aria-hidden /> {wallet.coins.toLocaleString()} PC
-                <Gem className="ml-1 size-3 text-sky-500" aria-hidden /> {wallet.gems}
+                <Gem className="ml-1 size-3 text-violet-500" aria-hidden /> {wallet.gems}
               </span>
             ) : (
               <SkeletonDots className="h-7 items-center px-1" label="Loading wallet" />
@@ -304,7 +304,7 @@ function AppHero({
             <p className="text-[11px] font-medium text-rose-500">Connection stats unavailable</p>
           ) : (
             <>
-              <p className="flex items-baseline gap-1.5 text-2xl font-black leading-none tabular-nums text-emerald-600 dark:text-emerald-400">
+              <p className="flex items-baseline gap-1.5 text-2xl font-black leading-none tabular-nums text-amber-700 dark:text-amber-400">
                 <CountUp value={status.installs} />
                 <Users className="size-4 translate-y-0.5" aria-hidden />
               </p>
@@ -320,7 +320,7 @@ function AppHero({
         />
       </div>
       {installed && status?.installedAt ? (
-        <p className="relative mt-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+        <p className="relative mt-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
           Connected on {formatDay(status.installedAt)}
         </p>
       ) : null}
@@ -331,7 +331,7 @@ function AppHero({
           className={cn(
             'h-11 flex-1 text-sm font-bold',
             installed &&
-              'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300',
+              'border-amber-500/50 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300',
           )}
           variant={installed ? 'outline' : 'default'}
           disabled={toggle.isPending || statusQ.isLoading}
@@ -356,8 +356,8 @@ function AppHero({
                 animate={{ scale: [1.7, 1] }}
                 transition={{ type: 'spring', stiffness: 500, damping: 18 }}
               >
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-50" />
-                <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-500 opacity-50" />
+                <span className="relative inline-flex size-2 rounded-full bg-amber-500" />
               </motion.span>
               <Check className="mr-0.5 size-4" aria-hidden />
               Connected
@@ -468,9 +468,9 @@ function FeatureList({ appId }: { appId: string }) {
             className="flex items-start gap-2.5 px-4 py-2.5"
           >
             {i === features.length - 1 ? (
-              <Sparkles className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <Sparkles className="mt-0.5 size-3.5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
             ) : (
-              <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <Check className="mt-0.5 size-3.5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
             )}
             <span className="text-[12.5px] font-medium leading-snug text-zinc-700 dark:text-zinc-200">{f}</span>
           </motion.li>
@@ -494,15 +494,15 @@ function OverviewPanel({ appId, statusQ }: { appId: string; statusQ: ReturnType<
         <p className="text-[11px] font-semibold uppercase text-zinc-500">Input toolkit</p>
         <p className="mt-1 text-sm font-medium">{app.input}</p>
       </div>
-      <div className="glass-deep glass-sheen rounded-xl border-emerald-300/60 p-3 dark:border-emerald-500/30">
-        <p className="text-[11px] font-semibold uppercase text-emerald-700 dark:text-emerald-400">
+      <div className="glass-deep glass-sheen rounded-xl border-amber-300/60 p-3 dark:border-amber-500/30">
+        <p className="text-[11px] font-semibold uppercase text-amber-700 dark:text-amber-400">
           Secret UI architecture feature
         </p>
         <p className="mt-1 text-sm font-medium">{app.secret}</p>
       </div>
       <div className="rounded-xl border border-dashed border-zinc-300 p-3 text-center text-[11px] text-zinc-500 dark:border-white/15">
         Pulse implements this app&apos;s nav pattern as{' '}
-        <strong className="text-emerald-600 dark:text-emerald-400">{MATRIX_TO_NAV[app.nav]}</strong> - switch it live
+        <strong className="text-amber-700 dark:text-amber-400">{MATRIX_TO_NAV[app.nav]}</strong> - switch it live
         from the Profile → Navigation panel.
       </div>
       {statusQ.isError ? <LoadErrorCard onRetry={() => void statusQ.refetch()} /> : null}
@@ -592,7 +592,7 @@ function CommunityPanel({
             </>
           )}
         </Button>
-        <p className="mt-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+        <p className="mt-2 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
           You&apos;ll be the founding admin.
         </p>
       </div>
@@ -617,7 +617,7 @@ function CommunityPanel({
                 className={cn(
                   'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold',
                   joined
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400'
                     : 'border-zinc-300 text-zinc-500 dark:border-white/15 dark:text-zinc-400',
                 )}
               >
@@ -636,7 +636,7 @@ function CommunityPanel({
           <p className="flex items-baseline gap-1.5">
             <CountPulse
               value={memberCount}
-              className="text-2xl font-black leading-none tabular-nums text-emerald-600 dark:text-emerald-400"
+              className="text-2xl font-black leading-none tabular-nums text-amber-700 dark:text-amber-400"
             />
             <span className="text-[11px] font-medium text-zinc-500">
               member{memberCount === 1 ? '' : 's'}
@@ -715,7 +715,7 @@ function CommunityPanel({
       >
         <div className="flex items-center justify-between border-b border-zinc-200/70 px-4 py-2.5 dark:border-white/[0.06]">
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-zinc-500">Members</p>
-          <span className="text-[12px] font-black tabular-nums text-emerald-600 dark:text-emerald-400">
+          <span className="text-[12px] font-black tabular-nums text-amber-700 dark:text-amber-400">
             {conversation.members.length}
           </span>
         </div>
@@ -737,7 +737,7 @@ function CommunityPanel({
                 </p>
               </div>
               {m.role === 'admin' ? (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
                   <Crown className="size-3" aria-hidden /> Admin
                 </span>
               ) : null}
@@ -799,7 +799,7 @@ function ConnectorsPanel({
       <div
         className={cn(
           'glass-deep glass-sheen rounded-2xl p-4',
-          installed && 'border-emerald-300/60 dark:border-emerald-500/30',
+          installed && 'border-amber-300/60 dark:border-amber-500/30',
         )}
       >
         <div className="flex items-center gap-3">
@@ -819,7 +819,7 @@ function ConnectorsPanel({
             className={cn(
               'h-11 min-w-[108px] text-[12.5px] font-bold',
               installed &&
-                'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300',
+                'border-amber-500/50 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300',
             )}
             variant={installed ? 'outline' : 'default'}
             disabled={toggle.isPending || statusQ.isLoading}
@@ -871,7 +871,7 @@ function ConnectorsPanel({
             </p>
             <CountUp
               value={status.installs}
-              className="text-[12px] font-black tabular-nums text-emerald-600 dark:text-emerald-400"
+              className="text-[12px] font-black tabular-nums text-amber-700 dark:text-amber-400"
             />
           </div>
           <motion.div className="divide-y divide-zinc-200/60 dark:divide-white/[0.05]">
@@ -931,7 +931,7 @@ function RelatedRail({ appId }: { appId: string }) {
         <button
           type="button"
           onClick={() => navigateHash(`/hub/c/${slugForCategory(app.category)}`)}
-          className="text-[11px] font-bold text-emerald-600 outline-none hover:underline dark:text-emerald-400"
+          className="text-[11px] font-bold text-amber-700 outline-none hover:underline dark:text-amber-400"
           aria-label={`Open the ${app.category} category page`}
         >
           See all
@@ -952,7 +952,7 @@ function RelatedRail({ appId }: { appId: string }) {
                 navigateHash(`/hub/app/${r.n}`)
               }}
               aria-label={`Open ${r.name} page`}
-              className="glass-deep glass-sheen glass-row-hover flex w-[104px] flex-col items-center gap-1.5 rounded-2xl px-2 py-3 outline-none transition-transform active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+              className="glass-deep glass-sheen glass-row-hover flex w-[104px] flex-col items-center gap-1.5 rounded-2xl px-2 py-3 outline-none transition-transform active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-amber-500/60"
             >
               <AppIconTile app={r} size={44} />
               <span className="w-full truncate text-center text-[11.5px] font-bold">{r.name}</span>

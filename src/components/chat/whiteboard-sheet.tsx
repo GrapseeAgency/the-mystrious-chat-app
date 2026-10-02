@@ -69,7 +69,7 @@ const STROKES_CAP = 2000
 const POINTS_MAX_PER_STROKE = 500
 
 const STROKE_COLORS = [
-  { id: 'emerald', value: '#10b981', label: 'Emerald' },
+  { id: 'emerald', value: '#c9762b', label: 'Emerald' },
   { id: 'rose', value: '#f43f5e', label: 'Rose' },
   { id: 'amber', value: '#f59e0b', label: 'Amber' },
   { id: 'violet', value: '#8b5cf6', label: 'Violet' },
@@ -655,7 +655,7 @@ export function WhiteboardSheet({
         >
           {/* header */}
           <header className="flex shrink-0 items-center gap-2.5 border-b border-white/10 px-4 pb-3 pt-1">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-400">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400">
               <Presentation className="size-4" aria-hidden />
             </span>
             <div className="min-w-0 flex-1">
@@ -665,7 +665,7 @@ export function WhiteboardSheet({
                   aria-hidden
                   className={cn(
                     'size-1.5 rounded-full',
-                    offline ? 'bg-rose-500' : synced ? 'animate-pulse bg-emerald-400' : 'bg-amber-400',
+                    offline ? 'bg-rose-500' : synced ? 'animate-pulse bg-amber-400' : 'bg-amber-400',
                   )}
                 />
                 {statusLine}
@@ -678,7 +678,7 @@ export function WhiteboardSheet({
                 haptic(10)
                 onClose()
               }}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-emerald-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-amber-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
             >
               <X className="size-4.5" aria-hidden />
             </button>
@@ -711,7 +711,7 @@ export function WhiteboardSheet({
                 role="status"
                 aria-label="Loading the board"
               >
-                <LoaderCircle className="size-7 animate-spin text-emerald-400" aria-hidden />
+                <LoaderCircle className="size-7 animate-spin text-amber-400" aria-hidden />
                 <p className="text-[13px] font-medium text-zinc-500">Loading the board…</p>
               </div>
             ) : strokeCount === 0 ? (
@@ -748,7 +748,7 @@ export function WhiteboardSheet({
                     className={cn(
                       'flex size-9 items-center justify-center rounded-full outline-none transition-all duration-150 active:scale-90',
                       color === c.value
-                        ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-zinc-950'
+                        ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-zinc-950'
                         : 'ring-1 ring-white/15 hover:ring-white/30',
                     )}
                   >
@@ -773,7 +773,7 @@ export function WhiteboardSheet({
                     className={cn(
                       'flex size-9 items-center justify-center rounded-full outline-none transition-all duration-150 active:scale-90',
                       width === w
-                        ? 'bg-emerald-500/15 ring-2 ring-emerald-400'
+                        ? 'bg-amber-500/15 ring-2 ring-amber-400'
                         : 'ring-1 ring-white/15 hover:ring-white/30',
                     )}
                   >
@@ -792,7 +792,7 @@ export function WhiteboardSheet({
                 aria-label="Undo my last stroke"
                 onClick={() => void undoMine()}
                 disabled={undoBusy}
-                className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 text-[13px] font-bold text-zinc-100 outline-none ring-emerald-400/60 transition-all duration-150 hover:bg-white/10 focus-visible:ring-2 active:scale-[0.98] disabled:opacity-50"
+                className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 text-[13px] font-bold text-zinc-100 outline-none ring-amber-400/60 transition-all duration-150 hover:bg-white/10 focus-visible:ring-2 active:scale-[0.98] disabled:opacity-50"
               >
                 <Undo2 className="size-4" aria-hidden />
                 Undo
@@ -803,7 +803,7 @@ export function WhiteboardSheet({
                 onClick={() => void clearBoard()}
                 disabled={clearBusy}
                 className={cn(
-                  'flex h-11 flex-1 items-center justify-center gap-1.5 rounded-2xl text-[13px] font-bold outline-none ring-emerald-400/60 transition-all duration-150 focus-visible:ring-2 active:scale-[0.98] disabled:opacity-50',
+                  'flex h-11 flex-1 items-center justify-center gap-1.5 rounded-2xl text-[13px] font-bold outline-none ring-amber-400/60 transition-all duration-150 focus-visible:ring-2 active:scale-[0.98] disabled:opacity-50',
                   confirmClear
                     ? 'bg-rose-500 text-white shadow-lg shadow-rose-600/25'
                     : 'border border-white/10 bg-white/5 text-rose-400 hover:bg-rose-500/10',

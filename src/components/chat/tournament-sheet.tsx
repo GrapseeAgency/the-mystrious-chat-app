@@ -142,7 +142,7 @@ export function TournamentSheet({
           <header className="flex items-center gap-2.5">
             <span
               aria-hidden
-              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_10px_24px_-10px_rgba(16,185,129,0.8)]"
+              className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 shadow-[0_10px_24px_-10px_rgba(245,158,11,0.8)]"
             >
               <Trophy className="size-5 text-white" aria-hidden />
             </span>
@@ -159,7 +159,7 @@ export function TournamentSheet({
                 haptic(10)
                 onClose()
               }}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-emerald-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-amber-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
             >
               <X className="size-4.5" aria-hidden />
             </button>
@@ -185,7 +185,7 @@ export function TournamentSheet({
               aria-label="Tournament name"
               aria-invalid={(name !== '' && !valid) || undefined}
               enterKeyHint="done"
-              className="h-12 rounded-2xl border-white/10 bg-white/5 text-[15px] font-bold text-zinc-50 placeholder:text-zinc-600 focus-visible:border-emerald-400/60 focus-visible:ring-emerald-400/30"
+              className="h-12 rounded-2xl border-white/10 bg-white/5 text-[15px] font-bold text-zinc-50 placeholder:text-zinc-600 focus-visible:border-amber-400/60 focus-visible:ring-amber-400/30"
             />
             {name !== '' && !valid ? (
               <p className="text-[11.5px] font-medium text-rose-400">
@@ -200,14 +200,14 @@ export function TournamentSheet({
               Game
             </span>
             <div
-              className="flex h-12 items-center gap-2.5 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-3.5"
+              className="flex h-12 items-center gap-2.5 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-3.5"
               role="group"
               aria-label="Season game"
             >
-              <span aria-hidden className="text-xl leading-none text-emerald-300">
+              <span aria-hidden className="text-xl leading-none text-amber-300">
                 <Swords className="size-5" />
               </span>
-              <span className="flex-1 text-[14px] font-bold text-emerald-300">Tic-tac-toe</span>
+              <span className="flex-1 text-[14px] font-bold text-amber-300">Tic-tac-toe</span>
               <span className="flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-zinc-400">
                 <Lock className="size-3" aria-hidden />
                 Only game
@@ -230,8 +230,8 @@ export function TournamentSheet({
             type="submit"
             disabled={!valid || pending}
             className={cn(
-              'h-12 w-full rounded-2xl border-0 bg-gradient-to-r from-emerald-500 to-emerald-600',
-              'text-[15px] font-bold text-white shadow-[0_14px_32px_-12px_rgba(16,185,129,0.8)]',
+              'h-12 w-full rounded-2xl border-0 bg-gradient-to-r from-amber-500 to-amber-600',
+              'text-[15px] font-bold text-white shadow-[0_14px_32px_-12px_rgba(245,158,11,0.8)]',
               'transition-transform active:scale-[0.98] disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-400 disabled:shadow-none',
             )}
             aria-label="Start tournament"

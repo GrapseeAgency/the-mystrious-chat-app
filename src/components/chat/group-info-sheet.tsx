@@ -483,7 +483,7 @@ function ActionTile({
         wide && 'flex-[1.4]',
         destructive
           ? 'border-destructive/25 bg-destructive/5 text-destructive hover:bg-destructive/10'
-          : 'border-zinc-200 bg-white text-zinc-700 shadow-sm hover:border-emerald-300 hover:bg-emerald-500/5 hover:text-emerald-700 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-emerald-500/40 dark:hover:text-emerald-400',
+          : 'border-zinc-200 bg-white text-zinc-700 shadow-sm hover:border-amber-300 hover:bg-amber-500/5 hover:text-amber-700 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-200 dark:hover:border-amber-500/40 dark:hover:text-amber-400',
       )}
     >
       {icon}
@@ -629,7 +629,7 @@ function WebhooksSection({
           type="button"
           variant="outline"
           onClick={() => setCreateOpen(true)}
-          className="mt-2 h-11 w-full rounded-xl border-emerald-500/40 text-sm font-semibold text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800 active:scale-[0.98] dark:text-emerald-400 dark:hover:text-emerald-300"
+          className="mt-2 h-11 w-full rounded-xl border-amber-500/40 text-sm font-semibold text-amber-700 hover:bg-amber-500/10 hover:text-emerald-800 active:scale-[0.98] dark:text-amber-400 dark:hover:text-amber-300"
         >
           <Plus className="size-4" aria-hidden />
           Create webhook
@@ -688,7 +688,7 @@ function WebhookRow({
         whileTap={{ scale: 0.88 }}
         onClick={() => void onCopy(webhook)}
         aria-label={`Copy ${webhook.name} webhook URL`}
-        className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-200/70 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-emerald-500/50 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+        className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-200/70 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-amber-500/50 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
       >
         <Copy className="size-4" aria-hidden />
       </motion.button>
@@ -766,7 +766,7 @@ function WebhookCreateModal({
             autoComplete="off"
             enterKeyHint="done"
             aria-invalid={trimmed.length === 0 || undefined}
-            className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+            className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
           />
           <p className="text-right text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
             {trimmed.length}/{WEBHOOK_NAME_MAX}
@@ -784,7 +784,7 @@ function WebhookCreateModal({
           <Button
             type="submit"
             disabled={!valid || create.isPending}
-            className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+            className="h-10 flex-1 rounded-xl bg-amber-600 text-sm font-semibold text-white hover:bg-amber-500 active:scale-[0.98]"
           >
             {create.isPending ? (
               <LoaderCircle className="size-4 animate-spin" aria-hidden />
@@ -937,10 +937,10 @@ function LeaderboardSection({
               <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">
                 {row.name}
                 {row.userId === meId ? (
-                  <span className="font-medium text-emerald-600 dark:text-emerald-400"> · you</span>
+                  <span className="font-medium text-amber-700 dark:text-amber-400"> · you</span>
                 ) : null}
               </span>
-              <span className="shrink-0 text-[12px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+              <span className="shrink-0 text-[12px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
                 {row.xp} XP
               </span>
             </div>
@@ -953,7 +953,7 @@ function LeaderboardSection({
         variant="outline"
         onClick={openSheet}
         aria-label="View full leaderboard"
-        className="mt-2 h-11 w-full rounded-xl border-emerald-500/40 text-sm font-semibold text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800 active:scale-[0.98] dark:text-emerald-400 dark:hover:text-emerald-300"
+        className="mt-2 h-11 w-full rounded-xl border-amber-500/40 text-sm font-semibold text-amber-700 hover:bg-amber-500/10 hover:text-emerald-800 active:scale-[0.98] dark:text-amber-400 dark:hover:text-amber-300"
       >
         <BarChart3 className="size-4" aria-hidden />
         View full leaderboard
@@ -1044,7 +1044,7 @@ function TournamentSection({
                 key={season.id}
                 className="flex min-h-[52px] items-center gap-3 rounded-xl px-2 py-1.5"
               >
-                <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600">
+                <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600">
                   <Trophy className="size-4 text-white" aria-hidden />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -1061,7 +1061,7 @@ function TournamentSection({
                   className={cn(
                     'flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide',
                     running
-                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
                       : 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400',
                   )}
                 >
@@ -1069,7 +1069,7 @@ function TournamentSection({
                     aria-hidden
                     className={cn(
                       'size-1.5 rounded-full',
-                      running ? 'animate-pulse bg-emerald-500' : 'bg-zinc-400',
+                      running ? 'animate-pulse bg-amber-500' : 'bg-zinc-400',
                     )}
                   />
                   {running ? 'Running' : 'Finished'}
@@ -1085,7 +1085,7 @@ function TournamentSection({
         variant="outline"
         onClick={openSheet}
         aria-label="Start tournament"
-        className="mt-2 h-11 w-full rounded-xl border-emerald-500/40 text-sm font-semibold text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-800 active:scale-[0.98] dark:text-emerald-400 dark:hover:text-emerald-300"
+        className="mt-2 h-11 w-full rounded-xl border-amber-500/40 text-sm font-semibold text-amber-700 hover:bg-amber-500/10 hover:text-emerald-800 active:scale-[0.98] dark:text-amber-400 dark:hover:text-amber-300"
       >
         <Plus className="size-4" aria-hidden />
         Start tournament
@@ -1125,14 +1125,14 @@ function MemberRow({
             openProfile()
           }
         }}
-        className="flex min-h-[60px] w-full cursor-pointer items-center gap-3 rounded-xl px-2 py-2 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-emerald-500/50 active:bg-white dark:hover:bg-zinc-800 dark:active:bg-zinc-700/60"
+        className="flex min-h-[60px] w-full cursor-pointer items-center gap-3 rounded-xl px-2 py-2 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-amber-500/50 active:bg-white dark:hover:bg-zinc-800 dark:active:bg-zinc-700/60"
       >
         <UserAvatar name={member.name} color={member.color} size={44} />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
             <span className="truncate">{member.name}</span>
             {isMe ? (
-              <span className="shrink-0 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+              <span className="shrink-0 text-[11px] font-medium text-amber-700 dark:text-amber-400">
                 you
               </span>
             ) : null}
@@ -1279,7 +1279,7 @@ function DmInfoBody({
         <button
           type="button"
           onClick={() => onOpenProfile(other)}
-          className="w-full rounded-2xl border border-zinc-200 bg-white p-3.5 text-left outline-none transition-colors hover:border-emerald-300 dark:border-zinc-800 dark:bg-zinc-800/60 dark:hover:border-emerald-500/40"
+          className="w-full rounded-2xl border border-zinc-200 bg-white p-3.5 text-left outline-none transition-colors hover:border-amber-300 dark:border-zinc-800 dark:bg-zinc-800/60 dark:hover:border-amber-500/40"
         >
           <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">About</p>
           <p className="mt-1 text-sm leading-relaxed text-zinc-700 dark:text-zinc-200">{other.about}</p>
@@ -1466,7 +1466,7 @@ function RenameModal({
             autoComplete="off"
             enterKeyHint="done"
             aria-invalid={trimmed.length === 0 || undefined}
-            className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+            className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
           />
           <p className="text-right text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
             {trimmed.length}/{GROUP_NAME_MAX}
@@ -1484,7 +1484,7 @@ function RenameModal({
           <Button
             type="submit"
             disabled={!valid || rename.isPending}
-            className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+            className="h-10 flex-1 rounded-xl bg-amber-600 text-sm font-semibold text-white hover:bg-amber-500 active:scale-[0.98]"
           >
             {rename.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : 'Save name'}
           </Button>
@@ -1602,7 +1602,7 @@ function AddMembersModal({
             placeholder="Search people…"
             aria-label="Search people to add"
             autoComplete="off"
-            className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+            className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
           />
         </div>
 
@@ -1639,7 +1639,7 @@ function AddMembersModal({
                     checked={checked}
                     onCheckedChange={() => toggle(user.id)}
                     aria-label={`Add ${user.name}`}
-                    className="data-[state=checked]:border-emerald-600 data-[state=checked]:bg-emerald-600"
+                    className="data-[state=checked]:border-amber-600 data-[state=checked]:bg-amber-600"
                   />
                   <UserAvatar name={user.name} color={user.color} size={36} />
                   <span className="min-w-0 flex-1">
@@ -1653,7 +1653,7 @@ function AddMembersModal({
                     ) : null}
                   </span>
                   {checked ? (
-                    <Check className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                    <Check className="size-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
                   ) : null}
                 </label>
               )
@@ -1674,7 +1674,7 @@ function AddMembersModal({
             type="button"
             disabled={selected.size === 0 || addMembers.isPending}
             onClick={() => addMembers.mutate([...selected])}
-            className="h-10 flex-[1.4] rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+            className="h-10 flex-[1.4] rounded-xl bg-amber-600 text-sm font-semibold text-white hover:bg-amber-500 active:scale-[0.98]"
           >
             {addMembers.isPending ? (
               <LoaderCircle className="size-4 animate-spin" aria-hidden />
@@ -1844,7 +1844,7 @@ function MemberActionHost({
             <Button
               onClick={() => setRole.mutate({ userId: target.id, role: 'admin' })}
               disabled={setRole.isPending}
-              className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+              className="h-10 flex-1 rounded-xl bg-amber-600 text-sm font-semibold text-white hover:bg-amber-500 active:scale-[0.98]"
             >
               {setRole.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : 'Promote'}
             </Button>
@@ -1871,7 +1871,7 @@ function MemberActionHost({
             <Button
               onClick={() => setRole.mutate({ userId: target.id, role: 'member' })}
               disabled={setRole.isPending}
-              className="h-10 flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-500 active:scale-[0.98]"
+              className="h-10 flex-1 rounded-xl bg-amber-600 text-sm font-semibold text-white hover:bg-amber-500 active:scale-[0.98]"
             >
               {setRole.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : 'Demote'}
             </Button>

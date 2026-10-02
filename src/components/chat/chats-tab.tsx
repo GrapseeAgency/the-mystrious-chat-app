@@ -94,7 +94,7 @@ function SearchSnippet({ content, query }: { content: string; query: string }) {
       {idx >= 0 ? (
         <>
           {body.slice(0, localIdx)}
-          <mark className="rounded bg-emerald-500/20 px-0.5 font-semibold text-emerald-700 dark:bg-emerald-500/25 dark:text-emerald-300">
+          <mark className="rounded bg-amber-500/20 px-0.5 font-semibold text-amber-700 dark:bg-amber-500/25 dark:text-amber-300">
             {body.slice(localIdx, localIdx + q.length)}
           </mark>
           {body.slice(localIdx + q.length)}
@@ -172,7 +172,7 @@ function SearchSection({ label, count }: { label: string; count: number }) {
       <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
         {label}
       </span>
-      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500/15 px-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/15 px-1.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
         {count > 99 ? '99+' : count}
       </span>
       <span aria-hidden className="h-px flex-1 bg-zinc-100 dark:bg-zinc-800" />
@@ -231,7 +231,7 @@ const StoryRingCell = memo(function StoryRingCell({
         {ring === 'unseen' ? (
           <span
             aria-hidden
-            className="pulse-story-spin absolute inset-0 rounded-full [background:conic-gradient(from_0deg,#34d399,#14b8a6,#6ee7b7,#10b981,#34d399)]"
+            className="pulse-story-spin absolute inset-0 rounded-full [background:conic-gradient(from_0deg,#34d399,#e08a3c,#6ee7b7,#c9762b,#34d399)]"
           />
         ) : (
           <span
@@ -246,7 +246,7 @@ const StoryRingCell = memo(function StoryRingCell({
           <UserAvatar name={name} color={color} size={inner} />
         </span>
         {plus ? (
-          <span className="absolute -right-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full bg-emerald-500 text-white ring-2 ring-white dark:ring-zinc-900">
+          <span className="absolute -right-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full bg-amber-500 text-white ring-2 ring-white dark:ring-zinc-900">
             <Plus className="size-3" strokeWidth={3} aria-hidden />
           </span>
         ) : null}
@@ -1004,7 +1004,7 @@ export function ChatsTab({
                 aria-hidden
                 animate={{ opacity: searchFocused ? 1 : 0 }}
                 transition={spring.soft}
-                className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.25)] ring-2 ring-emerald-500/50"
+                className="pointer-events-none absolute inset-0 rounded-full shadow-[0_0_20px_rgba(245,158,11,0.25)] ring-2 ring-amber-500/50"
               />
               <PulseSearch className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
               <motion.div
@@ -1057,7 +1057,7 @@ export function ChatsTab({
                   onClick={closeSearch}
                   className={cn(
                     'size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300',
-                    searchFocused && searchQuery && 'text-emerald-600 dark:text-emerald-400',
+                    searchFocused && searchQuery && 'text-amber-700 dark:text-amber-400',
                   )}
                 >
                   <X className="size-5" aria-hidden />
@@ -1084,14 +1084,14 @@ export function ChatsTab({
             </motion.button>
             <h1 className="mr-auto flex items-center gap-1.5 pl-1 text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
               Pulse
-              <span aria-hidden className="inline-block size-1.5 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600" />
+              <span aria-hidden className="inline-block size-1.5 rounded-full bg-gradient-to-br from-amber-400 to-amber-600" />
             </h1>
             <Button
               variant="ghost"
               size="icon"
               aria-label="Open calls"
               onClick={openCallsPage}
-              className="size-10 rounded-full text-zinc-500 hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-95 dark:hover:text-emerald-400"
+              className="size-10 rounded-full text-zinc-500 hover:bg-amber-500/10 hover:text-amber-700 active:scale-95 dark:hover:text-amber-400"
             >
               <Phone className="size-[19px]" aria-hidden />
             </Button>
@@ -1100,7 +1100,7 @@ export function ChatsTab({
               size="icon"
               aria-label="New chat"
               onClick={onRequestNewChat}
-              className="size-10 rounded-full text-zinc-500 hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-95 dark:hover:text-emerald-400"
+              className="size-10 rounded-full text-zinc-500 hover:bg-amber-500/10 hover:text-amber-700 active:scale-95 dark:hover:text-amber-400"
             >
               <PulseCompose className="size-[19px]" aria-hidden />
             </Button>
@@ -1161,12 +1161,12 @@ export function ChatsTab({
                   <motion.span
                     layoutId="chats-filter-pill"
                     transition={spring.snappy}
-                    className="absolute inset-0 rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/25"
+                    className="absolute inset-0 rounded-full bg-amber-500 shadow-sm shadow-amber-600/25"
                   />
                 ) : null}
                 <span className="relative z-10 flex items-center gap-1">
                   {f.label === 'Unread' && unreadTotal > 0 && !active ? (
-                    <span className="flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-emerald-500/20 px-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+                    <span className="flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-amber-500/20 px-1 text-[9px] font-bold text-amber-700 dark:text-amber-400">
                       {unreadTotal > 99 ? '99+' : unreadTotal}
                     </span>
                   ) : null}
@@ -1236,7 +1236,7 @@ export function ChatsTab({
               <motion.span
                 layoutId="folders-rail-pill"
                 transition={spring.snappy}
-                className="absolute inset-0 rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/25"
+                className="absolute inset-0 rounded-full bg-amber-500 shadow-sm shadow-amber-600/25"
               />
             ) : null}
             <span className="relative z-10">All</span>
@@ -1268,7 +1268,7 @@ export function ChatsTab({
                   <motion.span
                     layoutId="folders-rail-pill"
                     transition={spring.snappy}
-                    className="absolute inset-0 rounded-full bg-emerald-500 shadow-sm shadow-emerald-600/25"
+                    className="absolute inset-0 rounded-full bg-amber-500 shadow-sm shadow-amber-600/25"
                   />
                 ) : null}
                 <span className="relative z-10 flex items-center gap-1.5">
@@ -1280,7 +1280,7 @@ export function ChatsTab({
                         'flex h-[15px] min-w-[15px] items-center justify-center rounded-full px-1 text-[9px] font-bold',
                         active
                           ? 'bg-white/25 text-white'
-                          : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400',
+                          : 'bg-amber-500/20 text-amber-700 dark:text-amber-400',
                       )}
                     >
                       {count > 99 ? '99+' : count}
@@ -1299,7 +1299,7 @@ export function ChatsTab({
             }}
             whileTap={reducedMotion ? undefined : pressTap}
             transition={pressSpring}
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-500 ring-1 ring-zinc-200/70 backdrop-blur-xl outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 focus-visible:ring-2 focus-visible:ring-emerald-500/60 dark:bg-zinc-900/60 dark:text-zinc-400 dark:ring-white/10 dark:hover:bg-zinc-800/70 dark:hover:text-emerald-400"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-white/70 text-zinc-500 ring-1 ring-zinc-200/70 backdrop-blur-xl outline-none transition-colors hover:bg-zinc-100 hover:text-amber-700 focus-visible:ring-2 focus-visible:ring-amber-500/60 dark:bg-zinc-900/60 dark:text-zinc-400 dark:ring-white/10 dark:hover:bg-zinc-800/70 dark:hover:text-amber-400"
           >
             <PulseFolderPlus className="size-[18px]" aria-hidden />
           </motion.button>
@@ -1335,7 +1335,7 @@ export function ChatsTab({
             {deferredQuery.length >= 2 ? (
               serverSearch.isPending ? (
                 <div className="flex items-center justify-center gap-2 py-6" role="status" aria-label="Searching messages">
-                  <LoaderCircle className="size-4 animate-spin text-emerald-500" aria-hidden />
+                  <LoaderCircle className="size-4 animate-spin text-amber-600" aria-hidden />
                   <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Searching messages…</span>
                 </div>
               ) : serverHits.length > 0 ? (
@@ -1386,11 +1386,11 @@ export function ChatsTab({
                   ? 'Open Note to Self - your private space'
                   : 'Create Note to Self - your private space'
               }
-              className="glass-deep glass-sheen mx-2 mb-1 mt-0.5 flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-colors hover:border-emerald-500/40"
+              className="glass-deep glass-sheen mx-2 mb-1 mt-0.5 flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-colors hover:border-amber-500/40"
             >
               <span
                 aria-hidden
-                className="relative flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-sm shadow-emerald-600/30"
+                className="relative flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 text-white shadow-sm shadow-amber-600/30"
               >
                 <NotebookPen className="size-[17px]" aria-hidden />
                 <span className="pointer-events-none absolute inset-0 rounded-xl bg-[radial-gradient(80%_60%_at_50%_0%,rgba(255,255,255,0.55),transparent_70%)]" />
@@ -1404,14 +1404,14 @@ export function ChatsTab({
                 </span>
               </span>
               {createSelfChat.isPending ? (
-                <LoaderCircle className="size-4 shrink-0 animate-spin text-emerald-500" aria-hidden />
+                <LoaderCircle className="size-4 shrink-0 animate-spin text-amber-600" aria-hidden />
               ) : (
                 <span
                   className={cn(
                     'flex shrink-0 items-center gap-0.5 rounded-full py-1 pl-2 pr-1 text-[11px] font-bold',
                     selfConv
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'bg-emerald-500 text-white shadow-sm shadow-emerald-600/30',
+                      ? 'text-amber-700 dark:text-amber-400'
+                      : 'bg-amber-500 text-white shadow-sm shadow-amber-600/30',
                   )}
                 >
                   {selfConv ? 'Open' : 'Create'}
@@ -1428,10 +1428,10 @@ export function ChatsTab({
               aria-label={`Open mentions - ${mentionCount}`}
               className="glass-pill mx-2 my-1 flex h-11 w-[calc(100%-16px)] items-center gap-2.5 px-3.5 text-left outline-none"
             >
-              <AtSign className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <AtSign className="size-[18px] shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
               <span className="text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">Mentions</span>
               {mentionCount > 0 ? (
-                <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+                <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
                   {mentionCount > 99 ? '99+' : mentionCount}
                 </span>
               ) : null}
@@ -1449,7 +1449,7 @@ export function ChatsTab({
               aria-label={`Open channels - ${subscribedChannelCount} subscribed`}
               className="glass-pill mx-2 my-1 flex h-11 w-[calc(100%-16px)] items-center gap-2.5 px-3.5 text-left outline-none"
             >
-              <Radio className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <Radio className="size-[18px] shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
               <span className="text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">Channels</span>
               <span className="ml-auto flex items-center gap-0.5 text-xs text-zinc-400 dark:text-zinc-500">
                 {subscribedChannelCount === 1 ? '1 channel' : `${subscribedChannelCount} channels`}
@@ -1465,10 +1465,10 @@ export function ChatsTab({
               aria-label={`Open archived chats - ${archivedRows.length}`}
               className="glass-pill mx-2 my-1 flex h-11 w-[calc(100%-16px)] items-center gap-2.5 px-3.5 text-left outline-none"
             >
-              <Archive className="size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <Archive className="size-[18px] shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
               <span className="text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">Archived</span>
               {archivedUnread > 0 ? (
-                <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+                <span className="flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
                   {archivedUnread > 99 ? '99+' : archivedUnread}
                 </span>
               ) : null}
@@ -1601,7 +1601,7 @@ export function ChatsTab({
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ ...spring.soft, delay: reducedMotion ? 0 : 0.05 + i * 0.045 }}
                   whileTap={reducedMotion ? undefined : pressTap}
-                  className="flex size-10 items-center justify-center rounded-full text-zinc-600 outline-none transition-colors hover:bg-emerald-500/15 hover:text-emerald-700 disabled:opacity-40 dark:text-zinc-300 dark:hover:text-emerald-300"
+                  className="flex size-10 items-center justify-center rounded-full text-zinc-600 outline-none transition-colors hover:bg-amber-500/15 hover:text-amber-700 disabled:opacity-40 dark:text-zinc-300 dark:hover:text-amber-300"
                 >
                   {action.pending ? (
                     <LoaderCircle className="size-[18px] animate-spin" aria-hidden />
@@ -1745,10 +1745,10 @@ function EmptyChats({ onSayHi }: { onSayHi: () => void }) {
       <div className="glass-deep glass-sheen relative flex w-full max-w-[300px] flex-col items-center gap-4 rounded-[28px] px-6 py-8">
         <span
           aria-hidden
-          className="pointer-events-none absolute -top-10 left-1/2 size-40 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.28),transparent_65%)] blur-md"
+          className="pointer-events-none absolute -top-10 left-1/2 size-40 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.28),transparent_65%)] blur-md"
         />
         <Image
-          src="/empty-chats.png"
+          src="/empty-chats-ember.png"
           alt="No conversations illustration"
           width={144}
           height={144}
@@ -1765,7 +1765,7 @@ function EmptyChats({ onSayHi }: { onSayHi: () => void }) {
         <Button
           onClick={onSayHi}
           variant="outline"
-          className="glass-pill relative h-10 gap-1.5 rounded-full border-emerald-500/40 px-5 text-sm font-semibold text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-400 active:scale-[0.98]"
+          className="glass-pill relative h-10 gap-1.5 rounded-full border-amber-500/40 px-5 text-sm font-semibold text-amber-700 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-400 active:scale-[0.98]"
         >
           Say hi to someone
           <ArrowRight className="size-4" aria-hidden />

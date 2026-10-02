@@ -159,7 +159,7 @@ export function ForwardSheet({
           <div className="flex items-center justify-between pb-1">
             <div>
               <DrawerTitle className="flex items-center gap-1.5 text-base font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-                <Forward className="size-4 text-emerald-500" aria-hidden />
+                <Forward className="size-4 text-amber-600" aria-hidden />
                 Forward to…
               </DrawerTitle>
               <DrawerDescription className="sr-only">
@@ -192,7 +192,7 @@ export function ForwardSheet({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search chats…"
               aria-label="Search chats"
-              className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+              className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
             />
           </div>
 
@@ -219,7 +219,7 @@ export function ForwardSheet({
                       className={cn(
                         'flex w-full items-center gap-3 rounded-xl p-2.5 text-left outline-none transition-colors',
                         picked
-                          ? 'bg-emerald-500/10 ring-1 ring-emerald-400/60'
+                          ? 'bg-amber-500/10 ring-1 ring-amber-400/60'
                           : 'bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800/60 dark:hover:bg-zinc-800',
                       )}
                     >
@@ -243,7 +243,7 @@ export function ForwardSheet({
                         className={cn(
                           'flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
                           picked
-                            ? 'border-emerald-500 bg-emerald-500 text-white'
+                            ? 'border-amber-500 bg-amber-500 text-white'
                             : 'border-zinc-300 dark:border-zinc-600',
                         )}
                         aria-hidden
@@ -261,7 +261,7 @@ export function ForwardSheet({
           <Button
             disabled={pickedIds.length === 0 || forward.isPending}
             onClick={() => forward.mutate(pickedIds)}
-            className="mt-2 h-11 w-full gap-2 rounded-2xl bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/20 hover:bg-emerald-500/90 disabled:opacity-50"
+            className="mt-2 h-11 w-full gap-2 rounded-2xl bg-amber-500 text-sm font-bold text-white shadow-md shadow-amber-600/20 hover:bg-amber-500/90 disabled:opacity-50"
           >
             {forward.isPending ? (
               <>

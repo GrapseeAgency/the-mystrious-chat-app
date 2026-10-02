@@ -396,8 +396,8 @@ function wallpaperGlows(wallpaper: PulsePrefs['wallpaper'], dark: boolean): [str
   switch (wallpaper) {
     case 'aurora':
       return dark
-        ? ['rgba(16,185,129,0.12)', 'rgba(139,92,246,0.09)']
-        : ['rgba(16,185,129,0.11)', 'rgba(139,92,246,0.07)']
+        ? ['rgba(245,158,11,0.12)', 'rgba(139,92,246,0.09)']
+        : ['rgba(245,158,11,0.11)', 'rgba(139,92,246,0.07)']
     case 'dusk':
       return dark
         ? ['rgba(245,158,11,0.10)', 'rgba(244,63,94,0.09)']
@@ -411,8 +411,8 @@ function wallpaperGlows(wallpaper: PulsePrefs['wallpaper'], dark: boolean): [str
     case 'none':
     default:
       return dark
-        ? ['rgba(16,185,129,0.055)', 'rgba(20,184,166,0.04)']
-        : ['rgba(16,185,129,0.05)', 'rgba(20,184,166,0.035)']
+        ? ['rgba(245,158,11,0.055)', 'rgba(20,184,166,0.04)']
+        : ['rgba(245,158,11,0.05)', 'rgba(20,184,166,0.035)']
   }
 }
 
@@ -2597,7 +2597,7 @@ export function ChatRoom({
             label: 'Document',
             help: 'Share a PDF, TXT, CSV or ZIP',
             icon: FileText,
-            tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+            tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
             disabled: broadcastLocked || sendingDoc,
             run: () => {
               setTray(false)
@@ -2635,7 +2635,7 @@ export function ChatRoom({
             label: 'Whiteboard',
             help: 'Sketch together on one canvas',
             icon: Presentation,
-            tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+            tone: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
             disabled: false,
             run: () => {
               setTray(false)
@@ -2673,7 +2673,7 @@ export function ChatRoom({
             label: 'Stage',
             help: 'Live audio stage for the room',
             icon: Podcast,
-            tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+            tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
             disabled: false,
             run: () => {
               setTray(false)
@@ -2726,7 +2726,7 @@ export function ChatRoom({
             label: 'Kanban',
             help: 'Group tasks on a board',
             icon: SquareKanban,
-            tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+            tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
             disabled: false,
             run: () => {
               setTray(false)
@@ -2737,7 +2737,7 @@ export function ChatRoom({
             label: 'Topic',
             help: 'File the chat under a topic',
             icon: MessagesSquare,
-            tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+            tone: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
             disabled: false,
             groupOnly: true,
             run: () => {
@@ -2768,7 +2768,7 @@ export function ChatRoom({
             label: 'Commands',
             help: 'Every slash command',
             icon: Dices,
-            tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+            tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
             disabled: false,
             run: () => {
               setTray(false)
@@ -2779,7 +2779,7 @@ export function ChatRoom({
             label: 'Location',
             help: 'Drop a live map pin',
             icon: MapPin,
-            tone: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+            tone: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
             disabled: broadcastLocked,
             run: () => {
               setTray(false)
@@ -2791,7 +2791,7 @@ export function ChatRoom({
             help: anonNext ? 'Armed - next send is anonymous' : 'Next send hides your name',
             icon: VenetianMask,
             tone: anonNext
-              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
               : 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400',
             disabled: false,
             groupOnly: true,
@@ -3925,7 +3925,7 @@ export function ChatRoom({
             <span className="truncate">{headerTitle}</span>
             {isBroadcast ? (
               <span
-                className="flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-600 dark:text-emerald-400"
+                className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-400"
                 aria-label="Broadcast channel - only admins can post"
               >
                 <Radio className="size-2.5" aria-hidden />
@@ -3946,7 +3946,7 @@ export function ChatRoom({
               className={cn(
                 'truncate text-[11px]',
                 typerLabel.length > 0
-                  ? 'font-medium text-emerald-600 italic dark:text-emerald-400'
+                  ? 'font-medium text-amber-700 italic dark:text-amber-400'
                   : 'text-zinc-500 dark:text-zinc-400',
               )}
             >
@@ -3971,7 +3971,7 @@ export function ChatRoom({
             className={cn(
               'relative size-10 shrink-0 rounded-full active:scale-95',
               safety.data?.verified
-                ? 'bg-emerald-500/[0.07] text-emerald-500 ring-1 ring-inset ring-emerald-500/40 hover:bg-emerald-500/[0.12] hover:text-emerald-500'
+                ? 'bg-amber-500/[0.07] text-amber-600 ring-1 ring-inset ring-amber-500/40 hover:bg-amber-500/[0.12] hover:text-amber-600'
                 : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300',
             )}
           >
@@ -4070,7 +4070,7 @@ export function ChatRoom({
           }}
           className={cn(
             'size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300',
-            pipConversationId !== null && 'text-emerald-600 dark:text-emerald-400',
+            pipConversationId !== null && 'text-amber-700 dark:text-amber-400',
           )}
         >
           <PictureInPicture2 className="size-5" aria-hidden />
@@ -4105,7 +4105,7 @@ export function ChatRoom({
         >
           <Bell className="size-5" aria-hidden />
           {upcomingReminderCount > 0 ? (
-            <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold leading-none text-white">
+            <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold leading-none text-white">
               {upcomingReminderCount > 9 ? '9+' : upcomingReminderCount}
             </span>
           ) : null}
@@ -4121,7 +4121,7 @@ export function ChatRoom({
           }}
           className={cn(
             'size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300',
-            voice.inRoom && 'text-emerald-600 dark:text-emerald-400',
+            voice.inRoom && 'text-amber-700 dark:text-amber-400',
           )}
         >
           <Mic className="size-5" aria-hidden />
@@ -4181,7 +4181,7 @@ export function ChatRoom({
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
                 >
-                  <Search className="size-4 text-emerald-500" aria-hidden />
+                  <Search className="size-4 text-amber-600" aria-hidden />
                   Search messages
                 </button>
                 <button
@@ -4218,7 +4218,7 @@ export function ChatRoom({
                     onClick={() => toggleRoomMute.mutate(null)}
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
                   >
-                    <VolumeX className="size-4 text-emerald-500" aria-hidden />
+                    <VolumeX className="size-4 text-amber-600" aria-hidden />
                     Unmute notifications
                   </button>
                 ) : muteChoicesOpen ? (
@@ -4238,7 +4238,7 @@ export function ChatRoom({
                           role="menuitem"
                           disabled={toggleRoomMute.isPending}
                           onClick={() => toggleRoomMute.mutate(preset.until)}
-                          className="h-8 flex-1 rounded-lg bg-zinc-100 text-xs font-semibold text-zinc-700 outline-none transition-colors hover:bg-emerald-500/15 hover:text-emerald-700 active:scale-95 disabled:opacity-50 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-emerald-500/20 dark:hover:text-emerald-400"
+                          className="h-8 flex-1 rounded-lg bg-zinc-100 text-xs font-semibold text-zinc-700 outline-none transition-colors hover:bg-amber-500/15 hover:text-amber-700 active:scale-95 disabled:opacity-50 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-amber-500/20 dark:hover:text-amber-400"
                         >
                           {preset.label}
                         </button>
@@ -4273,8 +4273,8 @@ export function ChatRoom({
                           className={cn(
                             'h-8 rounded-lg text-xs font-semibold outline-none transition-colors active:scale-95 disabled:opacity-50',
                             ttlSeconds === t
-                              ? 'bg-emerald-500/15 text-emerald-700 ring-1 ring-emerald-400 dark:text-emerald-300'
-                              : 'bg-zinc-100 text-zinc-700 hover:bg-emerald-500/15 hover:text-emerald-700 dark:bg-zinc-700 dark:text-zinc-200',
+                              ? 'bg-amber-500/15 text-amber-700 ring-1 ring-amber-400 dark:text-amber-300'
+                              : 'bg-zinc-100 text-zinc-700 hover:bg-amber-500/15 hover:text-amber-700 dark:bg-zinc-700 dark:text-zinc-200',
                           )}
                         >
                           {t === 0 ? 'Off' : t === 86_400 ? '24h' : t === 604_800 ? '7d' : '30d'}
@@ -4289,10 +4289,10 @@ export function ChatRoom({
                     onClick={() => setTtlChoicesOpen(true)}
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
                   >
-                    <Timer className={cn('size-4', ttlSeconds > 0 ? 'text-emerald-500' : 'text-zinc-400')} aria-hidden />
+                    <Timer className={cn('size-4', ttlSeconds > 0 ? 'text-amber-600' : 'text-zinc-400')} aria-hidden />
                     Disappearing messages
                     {ttlSeconds > 0 ? (
-                      <span className="ml-auto rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase text-emerald-600 dark:text-emerald-400">
+                      <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-px text-[9px] font-bold uppercase text-amber-700 dark:text-amber-400">
                         {ttlSeconds === 86_400 ? '24h' : ttlSeconds === 604_800 ? '7d' : '30d'}
                       </span>
                     ) : null}
@@ -4319,12 +4319,12 @@ export function ChatRoom({
               setVoiceOpen(true)
             }}
             aria-label={`Reopen live voice room - ${voice.roster.length} ${voice.roster.length === 1 ? 'participant' : 'participants'}`}
-            className="absolute top-[calc(3.75rem+env(safe-area-inset-top))] left-1/2 z-30 flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-zinc-950/85 py-1.5 pr-3 pl-2.5 text-xs font-bold text-emerald-300 shadow-lg shadow-emerald-950/40 backdrop-blur-md outline-none active:scale-95"
+            className="absolute top-[calc(3.75rem+env(safe-area-inset-top))] left-1/2 z-30 flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-zinc-950/85 py-1.5 pr-3 pl-2.5 text-xs font-bold text-amber-300 shadow-lg shadow-amber-950/40 backdrop-blur-md outline-none active:scale-95"
             style={{ willChange: 'transform' }}
           >
             <span className="relative flex size-2" aria-hidden>
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" style={{ animationDuration: '1.4s' }} />
-              <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-75" style={{ animationDuration: '1.4s' }} />
+              <span className="relative inline-flex size-2 rounded-full bg-amber-400" />
             </span>
             <Mic className="size-3.5" aria-hidden />
             Voice · {voice.roster.length} live
@@ -4346,11 +4346,11 @@ export function ChatRoom({
           aria-label={`Open pinned messages - ${pinnedCount} pinned`}
           className="glass-sheen relative flex shrink-0 items-center gap-2 border-b border-zinc-200/70 bg-white/60 px-3 py-1.5 text-left backdrop-blur-xl transition-colors hover:bg-white/80 dark:border-zinc-700/70 dark:bg-zinc-900/60 dark:hover:bg-zinc-900/80"
         >
-          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/10" aria-hidden>
-            <Pin className="size-3 rotate-45 text-emerald-500" />
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/10" aria-hidden>
+            <Pin className="size-3 rotate-45 text-amber-600" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
               Pinned{pinnedCount > 1 ? ` · ${pinnedCount}` : ''}
             </span>
             <span className="block truncate text-xs text-zinc-600 dark:text-zinc-300">
@@ -4405,11 +4405,11 @@ export function ChatRoom({
               <div className="glass-deep glass-sheen relative flex w-full max-w-[280px] flex-col items-center gap-3 rounded-[28px] px-6 py-8">
                 <span
                   aria-hidden
-                  className="pointer-events-none absolute -top-8 left-1/2 size-32 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(16,185,129,0.3),transparent_65%)] blur-md"
+                  className="pointer-events-none absolute -top-8 left-1/2 size-32 -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.3),transparent_65%)] blur-md"
                 />
                 <div
                   aria-hidden
-                  className="relative flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400/20 to-emerald-600/10 text-emerald-500 ring-1 ring-inset ring-white/40 dark:from-emerald-400/15 dark:to-emerald-600/5 dark:ring-white/10"
+                  className="relative flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-amber-400/20 to-amber-600/10 text-amber-600 ring-1 ring-inset ring-white/40 dark:from-amber-400/15 dark:to-amber-600/5 dark:ring-white/10"
                 >
                   <SendHorizontal className="size-7 -rotate-45" />
                 </div>
@@ -4429,7 +4429,7 @@ export function ChatRoom({
                     type="button"
                     disabled={loadingOlder}
                     onClick={() => void loadOlder()}
-                    className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-zinc-500 shadow-sm outline-none backdrop-blur transition-colors hover:border-emerald-300 hover:text-emerald-600 active:scale-95 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-400 dark:hover:border-emerald-500/50 dark:hover:text-emerald-400"
+                    className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-zinc-500 shadow-sm outline-none backdrop-blur transition-colors hover:border-amber-300 hover:text-amber-700 active:scale-95 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-400 dark:hover:border-amber-500/50 dark:hover:text-amber-400"
                   >
                     {loadingOlder ? (
                       <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
@@ -4462,11 +4462,11 @@ export function ChatRoom({
                     role="separator"
                     aria-label="Unread messages"
                   >
-                    <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
-                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-emerald-600 backdrop-blur-sm dark:text-emerald-400">
+                    <span className="h-px flex-1 bg-amber-400/50 dark:bg-amber-500/40" />
+                    <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-amber-700 backdrop-blur-sm dark:text-amber-400">
                       UNREAD
                     </span>
-                    <span className="h-px flex-1 bg-emerald-400/50 dark:bg-emerald-500/40" />
+                    <span className="h-px flex-1 bg-amber-400/50 dark:bg-amber-500/40" />
                   </motion.div>
                 ) : (
                   <MessageRow
@@ -4582,7 +4582,7 @@ export function ChatRoom({
                   scrollToBottom(true)
                 }}
                 style={{ willChange: 'transform' }}
-                className="sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full bg-emerald-500 py-2 pr-3.5 pl-3 text-xs font-semibold text-white shadow-lg shadow-emerald-600/30 outline-none"
+                className="sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full bg-amber-500 py-2 pr-3.5 pl-3 text-xs font-semibold text-white shadow-lg shadow-amber-600/30 outline-none"
               >
                 New messages
                 <ArrowDown className="size-3.5" aria-hidden />
@@ -4592,7 +4592,7 @@ export function ChatRoom({
                     initial={prefs.reducedMotion ? false : { scale: 0.4, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={spring.bouncy}
-                    className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-emerald-600"
+                    className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-amber-700"
                   >
                     {missedCount > 99 ? '99+' : missedCount}
                   </motion.span>
@@ -4620,8 +4620,8 @@ export function ChatRoom({
             style={{ transition: prefs.reducedMotion ? undefined : 'opacity 180ms ease' }}
           >
             <div className="glass-deep glass-sheen relative flex w-full max-w-[260px] flex-col items-center gap-2.5 rounded-3xl px-6 py-7 text-center">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-emerald-500/10">
-                <EyeOff className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-amber-500/10">
+                <EyeOff className="size-5 text-amber-700 dark:text-amber-400" aria-hidden />
               </span>
               <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
                 Screen security is on
@@ -4706,7 +4706,7 @@ export function ChatRoom({
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30">
+              <div className="mb-2 flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30">
                 <MessagesSquare className="size-3.5 shrink-0" aria-hidden />
                 <span className="min-w-0 flex-1 truncate">Filing to #{activeTopic.name}</span>
                 <button
@@ -4735,9 +4735,9 @@ export function ChatRoom({
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-emerald-500 bg-zinc-100 py-2 pr-2 pl-2.5 dark:bg-zinc-800">
+              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-amber-500 bg-zinc-100 py-2 pr-2 pl-2.5 dark:bg-zinc-800">
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  <p className="text-xs font-bold text-amber-700 dark:text-amber-400">
                     Replying to {replyTo.sender.id === me.id ? 'yourself' : replyTo.sender.name}
                   </p>
                   <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
@@ -4798,7 +4798,7 @@ export function ChatRoom({
                 aria-live="polite"
                 className="mb-2 flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1.5 text-[11px] font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-white/[0.06] dark:text-zinc-300 dark:ring-white/10"
               >
-                <Gauge className="size-3.5 shrink-0 text-emerald-500" aria-hidden />
+                <Gauge className="size-3.5 shrink-0 text-amber-600" aria-hidden />
                 Slow mode - you can send again in {slowRemaining}s
               </div>
             </motion.div>
@@ -4843,7 +4843,7 @@ export function ChatRoom({
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-400/40 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/40">
+              <div className="mb-2 flex items-center gap-2 rounded-full bg-amber-500/15 px-3 py-1.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-400/40 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/40">
                 <motion.span
                   initial={prefs.reducedMotion ? false : { scale: 1 }}
                   animate={prefs.reducedMotion ? undefined : { scale: [1, 1.16, 1] }}
@@ -4908,7 +4908,7 @@ export function ChatRoom({
                           .then(() => toast.success('Recap copied'))
                           .catch(() => toast.error('Could not copy the recap'))
                       }}
-                      className="glass-pill flex h-7 shrink-0 items-center gap-1 px-2.5 text-[11px] font-bold text-emerald-600 outline-none transition-transform active:scale-95 dark:text-emerald-400"
+                      className="glass-pill flex h-7 shrink-0 items-center gap-1 px-2.5 text-[11px] font-bold text-amber-700 outline-none transition-transform active:scale-95 dark:text-amber-400"
                     >
                       <Copy className="size-3" aria-hidden />
                       Copy
@@ -5064,7 +5064,7 @@ export function ChatRoom({
 
         {broadcastLocked ? (
           <div className="glass-deep glass-sheen flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-            <Lock className="size-4 shrink-0 text-emerald-500" aria-hidden />
+            <Lock className="size-4 shrink-0 text-amber-600" aria-hidden />
             Only admins can post
           </div>
         ) : null}
@@ -5097,7 +5097,7 @@ export function ChatRoom({
                 whileTap={{ scale: 0.94 }}
                 transition={spring.snappy}
                 onClick={() => insertQuickPhrase(phrase.text)}
-                className="glass-pill max-w-[220px] shrink-0 truncate rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-zinc-600 outline-none transition-colors hover:text-emerald-600 dark:text-zinc-300 dark:hover:text-emerald-400"
+                className="glass-pill max-w-[220px] shrink-0 truncate rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-zinc-600 outline-none transition-colors hover:text-amber-700 dark:text-zinc-300 dark:hover:text-amber-400"
               >
                 {phrase.text}
               </motion.button>
@@ -5118,8 +5118,8 @@ export function ChatRoom({
                   transition={spring.snappy}
                   className={
                     phrases.length === 0
-                      ? 'glass-pill flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-zinc-500 outline-none transition-colors hover:text-emerald-600 dark:text-zinc-400 dark:hover:text-emerald-400'
-                      : 'glass-pill flex size-7 shrink-0 items-center justify-center text-zinc-500 outline-none transition-colors hover:text-emerald-600 dark:text-zinc-400 dark:hover:text-emerald-400'
+                      ? 'glass-pill flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-zinc-500 outline-none transition-colors hover:text-amber-700 dark:text-zinc-400 dark:hover:text-amber-400'
+                      : 'glass-pill flex size-7 shrink-0 items-center justify-center text-zinc-500 outline-none transition-colors hover:text-amber-700 dark:text-zinc-400 dark:hover:text-amber-400'
                   }
                 >
                   {phrases.length === 0 ? (
@@ -5229,7 +5229,7 @@ export function ChatRoom({
             initial={false}
             animate={{ opacity: composerFocus ? 1 : 0, scale: composerFocus ? 1 : 0.985 }}
             transition={spring.soft}
-            className="pointer-events-none absolute inset-0 rounded-[26px] ring-2 ring-inset ring-emerald-500/40"
+            className="pointer-events-none absolute inset-0 rounded-[26px] ring-2 ring-inset ring-amber-500/40"
           />
           {/* slash-command palette (Discord/Slack-style) - fast-path over the plain parser */}
           {!editing && !recording ? (
@@ -5257,7 +5257,7 @@ export function ChatRoom({
                   className={cn(
                     'flex w-full items-center gap-2.5 px-3 py-2 text-left outline-none transition-colors',
                     i === 0
-                      ? 'bg-emerald-50 dark:bg-emerald-500/10'
+                      ? 'bg-emerald-50 dark:bg-amber-500/10'
                       : 'hover:bg-zinc-100 dark:hover:bg-zinc-700',
                   )}
                 >
@@ -5339,7 +5339,7 @@ export function ChatRoom({
                 onClick={() => finishRecording(true)}
                 whileTap={sendingVoice ? undefined : { scale: 0.9 }}
                 transition={pressSpring}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-md shadow-emerald-600/25 outline-none transition-colors hover:brightness-105 disabled:opacity-60"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-md shadow-amber-600/25 outline-none transition-colors hover:brightness-105 disabled:opacity-60"
               >
                 {sendingVoice ? (
                   <LoaderCircle className="size-5 animate-spin" aria-hidden />
@@ -5367,7 +5367,7 @@ export function ChatRoom({
                   'flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-colors',
                   trayOpen
                     ? 'bg-zinc-900/5 text-zinc-700 dark:bg-white/10 dark:text-zinc-200'
-                    : 'text-zinc-400 hover:bg-zinc-100 hover:text-emerald-600 dark:hover:bg-zinc-800',
+                    : 'text-zinc-400 hover:bg-zinc-100 hover:text-amber-700 dark:hover:bg-zinc-800',
                 )}
               >
                 <Plus className="size-6" aria-hidden />
@@ -5380,7 +5380,7 @@ export function ChatRoom({
                 onClick={() => fileInputRef.current?.click()}
                 whileTap={sendingImage || broadcastLocked ? undefined : { scale: 0.88 }}
                 transition={spring.snappy}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-emerald-400"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-700 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-amber-400"
               >
                 {sendingImage ? (
                   <LoaderCircle className="size-5 animate-spin" aria-hidden />
@@ -5424,7 +5424,7 @@ export function ChatRoom({
                   whileTap={pressTap}
                   transition={pressSpring}
                   disabled={slowRemaining > 0}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 outline-none transition-colors hover:bg-emerald-500/10 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-emerald-400"
+                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 outline-none transition-colors hover:bg-amber-500/10 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-amber-400"
                 >
                   <motion.span
                     key={sendPop}
@@ -5447,7 +5447,7 @@ export function ChatRoom({
                   className={cn(
                     'flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-colors',
                     input.trim().length > 0
-                      ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                      ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-md shadow-amber-600/30'
                       : 'bg-zinc-200 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500',
                   )}
                 >
@@ -5746,7 +5746,7 @@ export function ChatRoom({
                   }}
                   placeholder="Add a caption…"
                   aria-label="Photo caption"
-                  className="h-11 flex-1 rounded-2xl border-zinc-200 bg-zinc-100 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+                  className="h-11 flex-1 rounded-2xl border-zinc-200 bg-zinc-100 text-sm focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
                 />
                 <span
                   aria-hidden
@@ -5772,7 +5772,7 @@ export function ChatRoom({
                 <Button
                   disabled={sendMessage.isPending}
                   onClick={sendCaptionedImage}
-                  className="h-11 flex-[1.6] gap-1.5 rounded-2xl bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90"
+                  className="h-11 flex-[1.6] gap-1.5 rounded-2xl bg-amber-500 text-sm font-bold text-white shadow-md shadow-amber-600/25 hover:bg-amber-500/90"
                 >
                   {sendMessage.isPending ? (
                     <LoaderCircle className="size-4 animate-spin" aria-hidden />
@@ -5831,7 +5831,7 @@ export function ChatRoom({
               <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
                 {(() => {
                   const InfoGlyph = reactionGlyphFor(reactionInfo.emoji)
-                  return <InfoGlyph className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                  return <InfoGlyph className="size-5 text-amber-700 dark:text-amber-400" aria-hidden />
                 })()}
                 {(() => {
                   const group = reactionInfo.message.reactions.find((g) => g.emoji === reactionInfo.emoji)
@@ -5878,7 +5878,7 @@ export function ChatRoom({
                   handleToggleReaction(reactionInfo.message.id, reactionInfo.emoji)
                   setReactionInfo(null)
                 }}
-                className="mt-1 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-bold text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-60"
+                className="mt-1 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-amber-500 text-sm font-bold text-white outline-none transition-transform hover:bg-amber-500/90 active:scale-[0.98] disabled:opacity-60"
               >
                 {(() => {
                   const ToggleGlyph = reactionGlyphFor(reactionInfo.emoji)
@@ -5914,7 +5914,7 @@ export function ChatRoom({
             return (
             <div className="pb-2">
               <div className="flex items-center justify-center gap-2 pb-1 pt-1">
-                <CheckCheck className="size-4 text-emerald-500" aria-hidden />
+                <CheckCheck className="size-4 text-amber-600" aria-hidden />
                 <p className="text-sm font-bold text-zinc-800 dark:text-zinc-100">
                   {allRead ? 'Seen by everyone' : 'Message info'}
                 </p>
@@ -5958,7 +5958,7 @@ export function ChatRoom({
                               {realtime.onlineIds.has(member.id) ? (
                                 <span
                                   aria-label="Online now"
-                                  className="ml-1.5 inline-block size-1.5 rounded-full bg-emerald-500 align-middle"
+                                  className="ml-1.5 inline-block size-1.5 rounded-full bg-amber-500 align-middle"
                                 />
                               ) : null}
                             </span>
@@ -5967,8 +5967,8 @@ export function ChatRoom({
                             </span>
                           </span>
                           {read ? (
-                            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
-                              <CheckCheck className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-amber-500/15">
+                              <CheckCheck className="size-3.5 text-amber-700 dark:text-amber-400" aria-hidden />
                             </span>
                           ) : (
                             <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
@@ -6138,7 +6138,7 @@ export function ChatRoom({
         <DialogContent className="max-w-[320px] gap-3 rounded-2xl p-4 sm:left-1/2 sm:translate-x-[-50%] dark:bg-zinc-900">
           <DialogHeader className="text-left">
             <DialogTitle className="flex items-center gap-1.5 text-sm font-bold tracking-tight">
-              <Dices className="size-4 text-teal-500" aria-hidden />
+              <Dices className="size-4 text-orange-500" aria-hidden />
               Slash commands
             </DialogTitle>
             <DialogDescription className="text-xs">
@@ -6148,7 +6148,7 @@ export function ChatRoom({
           <ul className="space-y-1.5">
             {SLASH_COMMANDS.map((c) => (
               <li key={c.cmd} className="flex items-baseline gap-2 rounded-lg bg-zinc-50 px-2 py-1.5 dark:bg-zinc-800/70">
-                <code className="shrink-0 font-mono text-[12px] font-bold text-emerald-700 dark:text-emerald-400">
+                <code className="shrink-0 font-mono text-[12px] font-bold text-amber-700 dark:text-amber-400">
                   {c.cmd}
                   {c.args ? <span className="font-normal text-zinc-400"> {c.args}</span> : null}
                 </code>
@@ -6334,11 +6334,11 @@ function MessageActionMenu({
                   className={cn(
                     'flex size-9 items-center justify-center rounded-full text-xl outline-none transition-colors',
                     active
-                      ? 'bg-emerald-500/15 ring-1 ring-inset ring-emerald-400/50'
+                      ? 'bg-amber-500/15 ring-1 ring-inset ring-amber-400/50'
                       : 'hover:bg-zinc-900/[0.06] dark:hover:bg-white/[0.08]',
                   )}
                 >
-                  <ReactionGlyph className="size-5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                  <ReactionGlyph className="size-5 text-amber-700 dark:text-amber-400" aria-hidden />
                 </motion.button>
               )
             })}
@@ -6503,7 +6503,7 @@ function FileBubble({
       aria-label={`Download ${name}`}
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        'flex w-[232px] max-w-full items-center gap-2.5 rounded-xl p-2 outline-none transition-transform focus-visible:ring-2 focus-visible:ring-emerald-500/50 active:scale-[0.985]',
+        'flex w-[232px] max-w-full items-center gap-2.5 rounded-xl p-2 outline-none transition-transform focus-visible:ring-2 focus-visible:ring-amber-500/50 active:scale-[0.985]',
         pending && 'opacity-80',
       )}
     >
@@ -6513,7 +6513,7 @@ function FileBubble({
           'flex size-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset',
           mine
             ? 'bg-white/20 text-white ring-white/30'
-            : 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:bg-emerald-500/15 dark:text-emerald-400',
+            : 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:bg-amber-500/15 dark:text-amber-400',
         )}
       >
         <FileText className="size-5" />
@@ -6594,7 +6594,7 @@ function VoiceBubble({
         onClick={toggle}
         className={cn(
           'flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition-transform active:scale-90',
-          mine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-emerald-500 text-white hover:bg-emerald-500/90',
+          mine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-amber-500 text-white hover:bg-amber-500/90',
         )}
       >
         {playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4 translate-x-[1px]" aria-hidden />}
@@ -6611,7 +6611,7 @@ function VoiceBubble({
                   played
                     ? mine
                       ? 'bg-white'
-                      : 'bg-emerald-500'
+                      : 'bg-amber-500'
                     : mine
                       ? 'bg-white/35'
                       : 'bg-zinc-300 dark:bg-zinc-600',
@@ -6628,8 +6628,8 @@ function VoiceBubble({
           'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums outline-none transition-transform active:scale-90',
           mine
             ? 'bg-white/20 text-white hover:bg-white/30'
-            : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400',
-          rate !== 1 && (mine ? 'ring-1 ring-white/40' : 'ring-1 ring-emerald-500/40'),
+            : 'bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400',
+          rate !== 1 && (mine ? 'ring-1 ring-white/40' : 'ring-1 ring-amber-500/40'),
         )}
       >
         {rate}x
@@ -6702,7 +6702,7 @@ function VoiceTranscriptStrip({
         )}
       >
         <AudioLines
-          className={cn('mt-0.5 size-3.5 shrink-0', mine ? 'text-white/75' : 'text-emerald-600 dark:text-emerald-400/80')}
+          className={cn('mt-0.5 size-3.5 shrink-0', mine ? 'text-white/75' : 'text-amber-700 dark:text-amber-400/80')}
           aria-hidden
         />
         <p
@@ -6891,7 +6891,7 @@ function BubbleText({
             'underline underline-offset-2',
             mine
               ? 'text-white decoration-white/60 hover:decoration-white'
-              : 'text-emerald-700 decoration-emerald-400/60 hover:decoration-emerald-600 dark:text-emerald-400',
+              : 'text-amber-700 decoration-amber-400/60 hover:decoration-amber-600 dark:text-amber-400',
           )}
         >
           {seg.value}
@@ -6907,7 +6907,7 @@ function BubbleText({
       nodes.push(
         <span
           key={`men-${key++}`}
-          className="rounded bg-emerald-500/20 px-1 font-semibold text-emerald-800 dark:bg-emerald-400/25 dark:text-emerald-200"
+          className="rounded bg-amber-500/20 px-1 font-semibold text-emerald-800 dark:bg-amber-400/25 dark:text-amber-200"
         >
           @{run.mention}
         </span>,
@@ -7011,7 +7011,7 @@ function PollCard({
       <p
         className={cn(
           'mb-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider',
-          mine ? 'text-white/75' : 'text-emerald-600 dark:text-emerald-400',
+          mine ? 'text-white/75' : 'text-amber-700 dark:text-amber-400',
         )}
       >
         <Vote className="size-3" aria-hidden />
@@ -7039,8 +7039,8 @@ function PollCard({
                 'relative block w-full overflow-hidden rounded-lg border px-2 py-1.5 text-left outline-none transition-colors',
                 mine
                   ? 'border-white/25 hover:bg-white/10'
-                  : 'border-zinc-200 hover:border-emerald-300 hover:bg-emerald-500/5 dark:border-zinc-600 dark:hover:border-emerald-500/60 dark:hover:bg-emerald-500/10',
-                picked && (mine ? 'border-white bg-black/15' : 'border-emerald-400 bg-emerald-500/10'),
+                  : 'border-zinc-200 hover:border-amber-300 hover:bg-amber-500/5 dark:border-zinc-600 dark:hover:border-amber-500/60 dark:hover:bg-amber-500/10',
+                picked && (mine ? 'border-white bg-black/15' : 'border-amber-400 bg-amber-500/10'),
                 poll.closed && 'cursor-default',
               )}
             >
@@ -7049,12 +7049,12 @@ function PollCard({
                 style={{ width: `${pct}%` }}
                 className={cn(
                   'absolute inset-y-0 left-0 transition-all duration-500',
-                  mine ? 'bg-black/25' : 'bg-emerald-500/15 dark:bg-emerald-400/20',
+                  mine ? 'bg-black/25' : 'bg-amber-500/15 dark:bg-amber-400/20',
                 )}
               />
               <span className="relative flex items-center justify-between gap-2">
                 <span className={cn('flex min-w-0 items-center gap-1 text-[13px]', mine ? 'text-white' : 'text-zinc-800 dark:text-zinc-100')}>
-                  <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-full border', picked ? (mine ? 'border-white bg-white text-emerald-600' : 'border-emerald-500 bg-emerald-500 text-white') : mine ? 'border-white/50 text-transparent' : 'border-zinc-400 text-transparent dark:border-zinc-500')}>
+                  <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-full border', picked ? (mine ? 'border-white bg-white text-amber-700' : 'border-amber-500 bg-amber-500 text-white') : mine ? 'border-white/50 text-transparent' : 'border-zinc-400 text-transparent dark:border-zinc-500')}>
                     <Check className="size-2.5" strokeWidth={4} aria-hidden />
                   </span>
                   <span className="truncate font-medium">{option.text}</span>
@@ -7158,7 +7158,7 @@ function TranslationLine({
             'flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold outline-none transition-colors',
             mine
               ? 'bg-white/20 text-white/90 hover:bg-white/30'
-              : 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400',
+              : 'bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400',
           )}
         >
           <Globe className="size-3" aria-hidden />
@@ -7170,7 +7170,7 @@ function TranslationLine({
             'mt-0.5 rounded-lg border-l-2 px-2 py-1 text-[12.5px] italic leading-snug',
             mine
               ? 'border-white/50 bg-black/15 text-white/90'
-              : 'border-emerald-400 bg-emerald-500/5 text-zinc-600 dark:border-emerald-500/70 dark:bg-emerald-500/10 dark:text-zinc-300',
+              : 'border-amber-400 bg-amber-500/5 text-zinc-600 dark:border-amber-500/70 dark:bg-amber-500/10 dark:text-zinc-300',
           )}
         >
           {first.text}
@@ -7320,7 +7320,7 @@ const MessageRow = memo(function MessageRow({
 
       <div className={cn('flex max-w-[78%] flex-col', mine ? 'items-end' : 'items-start')}>
         {!mine && isGroup && head && !deleted ? (
-          <span className="mb-0.5 ml-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+          <span className="mb-0.5 ml-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
             {senderLabel}
           </span>
         ) : null}
@@ -7330,7 +7330,7 @@ const MessageRow = memo(function MessageRow({
             <motion.span
               aria-hidden
               initial={false}
-              className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-emerald-500/10 p-1 text-emerald-500"
+              className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-amber-500/10 p-1 text-amber-600"
               style={{ opacity: hintOpacity, scale: hintScale, pointerEvents: 'none' }}
             >
               <Reply className="size-4" />
@@ -7339,7 +7339,7 @@ const MessageRow = memo(function MessageRow({
             <motion.span
               aria-hidden
               initial={false}
-              className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-emerald-500/10 p-1 text-emerald-500"
+              className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-amber-500/10 p-1 text-amber-600"
               style={{ opacity: hintOpacity, scale: hintScale, pointerEvents: 'none' }}
             >
               <Reply className="size-4" />
@@ -7422,7 +7422,7 @@ const MessageRow = memo(function MessageRow({
               ),
             !deleted && !plainChrome && (mine
               ? cn(
-                  `${BUBBLE_RADIUS[bubbleRadius]} rounded-br-md bg-emerald-500 text-white`,
+                  `${BUBBLE_RADIUS[bubbleRadius]} rounded-br-md bg-amber-500 text-white`,
                   queued && 'ring-1 ring-inset ring-white/40 opacity-95', // queued: dashed-feel cue
                   mentionsMe && 'ring-2 ring-inset ring-amber-300/80', // you were mentioned
                 )
@@ -7434,7 +7434,7 @@ const MessageRow = memo(function MessageRow({
                 )),
             interactive
               ? cn(
-                  'cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500/50 active:brightness-95',
+                  'cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-500/50 active:brightness-95',
                   jumbo && 'rounded-2xl',
                 )
               : '',
@@ -7465,14 +7465,14 @@ const MessageRow = memo(function MessageRow({
                     'mb-1 block w-full rounded-md border-l-[3px] px-2 py-1 text-left outline-none transition-colors',
                     mine
                       ? 'border-white/70 bg-black/10 hover:bg-black/15'
-                      : 'border-emerald-400 bg-zinc-100 hover:bg-zinc-200/70 dark:border-emerald-500/80 dark:bg-zinc-700/60 dark:hover:bg-zinc-700',
+                      : 'border-amber-400 bg-zinc-100 hover:bg-zinc-200/70 dark:border-amber-500/80 dark:bg-zinc-700/60 dark:hover:bg-zinc-700',
                     message.replyTo.deleted ? '' : 'cursor-pointer active:scale-[0.99]',
                   )}
                 >
                   <p
                     className={cn(
                       'text-[11px] font-bold',
-                      mine ? 'text-white/90' : 'text-emerald-700 dark:text-emerald-400',
+                      mine ? 'text-white/90' : 'text-amber-700 dark:text-amber-400',
                     )}
                   >
                     {message.replyTo.deleted
@@ -7720,13 +7720,13 @@ const MessageRow = memo(function MessageRow({
                   className={cn(
                     'flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] shadow-sm backdrop-blur transition-transform active:scale-90',
                     iReacted
-                      ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-500/70 dark:bg-emerald-500/15'
+                      ? 'border-amber-400 bg-emerald-50 dark:border-amber-500/70 dark:bg-amber-500/15'
                       : 'border-zinc-200 bg-white/95 dark:border-zinc-600 dark:bg-zinc-800/95',
                   )}
                 >
                   {(() => {
                     const ChipGlyph = reactionGlyphFor(group.emoji)
-                    return <ChipGlyph className="size-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                    return <ChipGlyph className="size-3.5 text-amber-700 dark:text-amber-400" aria-hidden />
                   })()}
                   {group.count > 1 ? (
                     <motion.span
@@ -7737,7 +7737,7 @@ const MessageRow = memo(function MessageRow({
                       className={cn(
                         'font-semibold',
                         iReacted
-                          ? 'text-emerald-700 dark:text-emerald-300'
+                          ? 'text-amber-700 dark:text-amber-300'
                           : 'text-zinc-500 dark:text-zinc-300',
                       )}
                     >
@@ -7765,8 +7765,8 @@ const MessageRow = memo(function MessageRow({
             className={cn(
               'mt-0.5 flex max-w-[78%] items-center gap-1 rounded-full border bg-white/95 px-2 py-0.5 text-[10.5px] font-semibold shadow-sm outline-none transition-colors active:scale-95',
               mine
-                ? 'mr-auto ml-0 border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-400 dark:hover:bg-emerald-500/10'
-                : 'ml-auto mr-0 border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500/40 dark:text-emerald-400 dark:hover:bg-emerald-500/10',
+                ? 'mr-auto ml-0 border-amber-200 text-amber-700 hover:bg-emerald-50 dark:border-amber-500/40 dark:text-amber-400 dark:hover:bg-amber-500/10'
+                : 'ml-auto mr-0 border-amber-200 text-amber-700 hover:bg-emerald-50 dark:border-amber-500/40 dark:text-amber-400 dark:hover:bg-amber-500/10',
             )}
           >
             <CornerDownRight className="size-3" aria-hidden />
@@ -8001,7 +8001,7 @@ function InfoDialog({
                       }
                       if (e.key === 'Escape') setEditingName(false)
                     }}
-                    className="h-8 min-w-0 flex-1 rounded-lg border border-emerald-300 bg-white px-2 text-sm font-semibold outline-none focus:border-emerald-500 dark:border-emerald-500/50 dark:bg-zinc-800 dark:text-zinc-100"
+                    className="h-8 min-w-0 flex-1 rounded-lg border border-amber-300 bg-white px-2 text-sm font-semibold outline-none focus:border-amber-500 dark:border-amber-500/50 dark:bg-zinc-800 dark:text-zinc-100"
                   />
                   <button
                     type="button"
@@ -8011,7 +8011,7 @@ function InfoDialog({
                       onRename(nameDraft.trim())
                       setEditingName(false)
                     }}
-                    className="rounded-lg bg-emerald-500 p-1.5 text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-90 disabled:opacity-50"
+                    className="rounded-lg bg-amber-500 p-1.5 text-white outline-none transition-transform hover:bg-amber-500/90 active:scale-90 disabled:opacity-50"
                   >
                     <Check className="size-3.5" aria-hidden />
                   </button>
@@ -8036,7 +8036,7 @@ function InfoDialog({
                         setNameDraft(detail.name?.trim() ?? '')
                         setEditingName(true)
                       }}
-                      className="rounded-md p-1 text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-emerald-600 active:scale-90 dark:hover:bg-zinc-800 dark:hover:text-emerald-400"
+                      className="rounded-md p-1 text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-700 active:scale-90 dark:hover:bg-zinc-800 dark:hover:text-amber-400"
                     >
                       <Pencil className="size-3.5" aria-hidden />
                     </button>
@@ -8085,7 +8085,7 @@ function InfoDialog({
                         className={cn(
                           'flex w-full items-center gap-3 rounded-xl p-2.5 text-left outline-none transition-colors',
                           picked
-                            ? 'bg-emerald-500/10 ring-1 ring-emerald-400/60'
+                            ? 'bg-amber-500/10 ring-1 ring-amber-400/60'
                             : 'bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800/60 dark:hover:bg-zinc-800',
                         )}
                       >
@@ -8097,7 +8097,7 @@ function InfoDialog({
                           className={cn(
                             'flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
                             picked
-                              ? 'border-emerald-500 bg-emerald-500 text-white'
+                              ? 'border-amber-500 bg-amber-500 text-white'
                               : 'border-zinc-300 dark:border-zinc-600',
                           )}
                           aria-hidden
@@ -8128,7 +8128,7 @@ function InfoDialog({
                   setPickerOpen(false)
                   setPickedIds([])
                 }}
-                className="h-10 flex-1 gap-1.5 rounded-xl bg-emerald-500 text-sm font-semibold text-white hover:bg-emerald-500/90"
+                className="h-10 flex-1 gap-1.5 rounded-xl bg-amber-500 text-sm font-semibold text-white hover:bg-amber-500/90"
               >
                 {addMembersPending ? (
                   <LoaderCircle className="size-4 animate-spin" aria-hidden />
@@ -8163,7 +8163,7 @@ function InfoDialog({
                         <button
                           type="button"
                           onClick={() => onOpenMember(member)}
-                          className="min-w-0 truncate text-sm font-medium text-zinc-900 outline-none transition-colors hover:text-emerald-600 dark:text-zinc-100 dark:hover:text-emerald-400"
+                          className="min-w-0 truncate text-sm font-medium text-zinc-900 outline-none transition-colors hover:text-amber-700 dark:text-zinc-100 dark:hover:text-amber-400"
                         >
                           {member.name}
                           {isMe ? <span className="ml-1 text-xs font-normal text-zinc-400">(you)</span> : null}
@@ -8171,7 +8171,7 @@ function InfoDialog({
                         {detail.isGroup && member.role === 'admin' ? (
                           <span
                             aria-label={`${member.role === 'admin' ? member.name : ''} is a group admin`}
-                            className="flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400"
+                            className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400"
                           >
                             <Crown className="size-2.5" aria-hidden />
                             Admin
@@ -8200,7 +8200,7 @@ function InfoDialog({
                               onClick={() => onSetRole(member.id, true)}
                               aria-label={`Promote ${member.name} to admin`}
                               title="Promote to admin"
-                              className="inline-flex h-6 items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 text-[10px] font-semibold text-zinc-500 outline-none transition-colors hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-400"
+                              className="inline-flex h-6 items-center gap-1 rounded-md border border-zinc-200 bg-white px-1.5 text-[10px] font-semibold text-zinc-500 outline-none transition-colors hover:border-amber-300 hover:bg-emerald-50 hover:text-amber-700 active:scale-95 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-amber-500/40 dark:hover:bg-amber-950/40 dark:hover:text-amber-400"
                             >
                               <Crown className="size-3" aria-hidden />
                               Promote
@@ -8253,11 +8253,11 @@ function InfoDialog({
                     className={cn(
                       'flex w-full items-center gap-3 rounded-xl border p-3 text-left outline-none transition-colors disabled:opacity-60',
                       broadcastMode
-                        ? 'border-emerald-400 bg-emerald-500/10'
+                        ? 'border-amber-400 bg-amber-500/10'
                         : 'border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/60',
                     )}
                   >
-                    <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', broadcastMode ? 'bg-emerald-500 text-white' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300')}>
+                    <span className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg', broadcastMode ? 'bg-amber-500 text-white' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300')}>
                       <Megaphone className="size-4" aria-hidden />
                     </span>
                     <span className="min-w-0 flex-1">
@@ -8266,14 +8266,14 @@ function InfoDialog({
                         {broadcastMode ? 'Only admins can send - everyone else reads' : 'Everyone can post messages and polls'}
                       </span>
                     </span>
-                    <span aria-hidden className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', broadcastMode ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600')}>
+                    <span aria-hidden className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', broadcastMode ? 'bg-amber-500' : 'bg-zinc-300 dark:bg-zinc-600')}>
                       <span className={cn('absolute top-0.5 size-4 rounded-full bg-white shadow transition-all', broadcastMode ? 'left-[18px]' : 'left-0.5')} />
                     </span>
                   </button>
                 ) : null}
                 {isAdmin ? (
-                  <div className="rounded-xl border border-dashed border-emerald-500/40 bg-emerald-500/5 p-3">
-                    <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/5 p-3">
+                    <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
                       <Link2 className="size-3" aria-hidden />
                       Invite link
                     </p>
@@ -8288,7 +8288,7 @@ function InfoDialog({
                             aria-label="Copy invite link"
                             title="Copy invite link"
                             onClick={copyInvite}
-                            className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-90"
+                            className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-white outline-none transition-transform hover:bg-amber-500/90 active:scale-90"
                           >
                             <Copy className="size-3.5" aria-hidden />
                           </button>
@@ -8312,7 +8312,7 @@ function InfoDialog({
                         type="button"
                         disabled={invitePending}
                         onClick={() => onInvite(false)}
-                        className="mt-2 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-500 text-sm font-semibold text-white outline-none transition-all hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-50"
+                        className="mt-2 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-amber-500 text-sm font-semibold text-white outline-none transition-all hover:bg-amber-500/90 active:scale-[0.98] disabled:opacity-50"
                       >
                         {invitePending ? (
                           <LoaderCircle className="size-4 animate-spin" aria-hidden />
@@ -8331,7 +8331,7 @@ function InfoDialog({
                       setPickedIds([])
                       setPickerOpen(true)
                     }}
-                    className="h-10 justify-start gap-2 rounded-xl border-emerald-500/40 text-sm font-semibold text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600 dark:text-emerald-400"
+                    className="h-10 justify-start gap-2 rounded-xl border-amber-500/40 text-sm font-semibold text-amber-700 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400"
                   >
                     <UserPlus className="size-4" aria-hidden />
                     Add members
@@ -8459,7 +8459,7 @@ function PollBuilderSheet({
             onChange={(e) => setQuestion(e.target.value)}
             placeholder="Ask a question…"
             aria-label="Poll question"
-            className="h-11 rounded-2xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+            className="h-11 rounded-2xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
           />
           <p className="px-1 pb-1 pt-3 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
             Options (2–{POLL_OPTIONS_MAX})
@@ -8483,7 +8483,7 @@ function PollBuilderSheet({
                   }}
                   placeholder={`Option ${i + 1}`}
                   aria-label={`Poll option ${i + 1}`}
-                  className="h-10 flex-1 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+                  className="h-10 flex-1 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
                 />
                 {options.length > 2 ? (
                   <button
@@ -8502,7 +8502,7 @@ function PollBuilderSheet({
             <button
               type="button"
               onClick={() => setOptions((prev) => [...prev, ''])}
-              className="mt-1.5 flex h-8 w-full items-center justify-center gap-1 rounded-xl border border-dashed border-emerald-400/60 text-xs font-semibold text-emerald-600 outline-none transition-colors hover:bg-emerald-500/5 active:scale-[0.99] dark:text-emerald-400"
+              className="mt-1.5 flex h-8 w-full items-center justify-center gap-1 rounded-xl border border-dashed border-amber-400/60 text-xs font-semibold text-amber-700 outline-none transition-colors hover:bg-amber-500/5 active:scale-[0.99] dark:text-amber-400"
             >
               <Plus className="size-3.5" aria-hidden />
               Add option
@@ -8525,7 +8525,7 @@ function PollBuilderSheet({
                 onSubmit(question.trim(), trimmedOptions)
                 reset()
               }}
-              className="h-11 flex-[1.4] gap-1.5 rounded-2xl bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90"
+              className="h-11 flex-[1.4] gap-1.5 rounded-2xl bg-amber-500 text-sm font-bold text-white shadow-md shadow-amber-600/25 hover:bg-amber-500/90"
             >
               {submitting ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : <Vote className="size-4" aria-hidden />}
               Post poll
@@ -8603,7 +8603,7 @@ function ScheduleSheet({
             onChange={(e) => onDraftChange(e.target.value)}
             placeholder="Message to send…"
             aria-label="Scheduled message text"
-            className="pulse-scroll mt-1 resize-none rounded-2xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+            className="pulse-scroll mt-1 resize-none rounded-2xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
           />
           <div className="mt-2 flex flex-wrap gap-1.5">
             {[
@@ -8615,7 +8615,7 @@ function ScheduleSheet({
                 key={p.label}
                 type="button"
                 onClick={() => preset(p.ms)}
-                className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] font-semibold text-zinc-600 outline-none transition-colors hover:bg-emerald-500/15 hover:text-emerald-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:text-emerald-400"
+                className="rounded-full bg-zinc-100 px-3 py-1 text-[11px] font-semibold text-zinc-600 outline-none transition-colors hover:bg-amber-500/15 hover:text-amber-700 active:scale-95 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:text-amber-400"
               >
                 {p.label}
               </button>
@@ -8629,10 +8629,10 @@ function ScheduleSheet({
             type="datetime-local"
             value={whenLocal}
             onChange={(e) => setWhenLocal(e.target.value)}
-            className="mt-1 h-11 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 font-mono text-sm outline-none transition-colors focus:border-emerald-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            className="mt-1 h-11 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 font-mono text-sm outline-none transition-colors focus:border-amber-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
           {iso ? (
-            <p className="mt-1.5 flex items-center gap-1 px-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+            <p className="mt-1.5 flex items-center gap-1 px-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">
               <CheckCheck className="size-3.5" aria-hidden />
               Sends itself {formatListStamp(iso)} · {formatTime(iso)}
             </p>
@@ -8844,7 +8844,7 @@ function ThreadSheet({
                 ) : (
                   <UserAvatar name={root.sender.name} color={root.sender.color} avatar={root.sender.avatar} size={22} />
                 )}
-                <span className="truncate text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                <span className="truncate text-xs font-bold text-amber-700 dark:text-amber-400">
                   {root.sender.id === myId ? 'You' : root.sender.name}
                 </span>
                 <span className="ml-auto shrink-0 text-[10px] text-zinc-400">{formatListStamp(root.createdAt)}</span>
@@ -8885,7 +8885,7 @@ function ThreadSheet({
                       <UserAvatar name={m.sender.name} color={m.sender.color} avatar={m.sender.avatar} size={26} />
                     )}
                     <div className={cn('max-w-[76%]', mine && 'text-right')}>
-                      <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
+                      <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400">
                         {mine ? 'You' : m.sender.name}
                         <span className="ml-1.5 font-normal text-zinc-400">{formatTime(m.createdAt)}</span>
                       </p>
@@ -8893,7 +8893,7 @@ function ThreadSheet({
                         className={cn(
                           'mt-0.5 inline-block rounded-2xl px-3 py-1.5 text-left',
                           mine
-                            ? 'bg-emerald-500 text-white'
+                            ? 'bg-amber-500 text-white'
                             : 'border border-zinc-100 bg-white text-zinc-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100',
                         )}
                       >
@@ -8920,14 +8920,14 @@ function ThreadSheet({
                   submit()
                 }
               }}
-              className="pulse-scroll max-h-[96px] min-h-[42px] flex-1 resize-none rounded-2xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-emerald-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              className="pulse-scroll max-h-[96px] min-h-[42px] flex-1 resize-none rounded-2xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-amber-400 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
             <button
               type="button"
               aria-label="Send thread reply"
               disabled={text.trim().length === 0 || sending}
               onClick={submit}
-              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md shadow-emerald-600/25 outline-none transition-all hover:bg-emerald-500/90 active:scale-90 disabled:opacity-40"
+              className="flex size-11 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white shadow-md shadow-amber-600/25 outline-none transition-all hover:bg-amber-500/90 active:scale-90 disabled:opacity-40"
             >
               {sending ? <LoaderCircle className="size-5 animate-spin" aria-hidden /> : <SendHorizontal className="size-5" aria-hidden />}
             </button>

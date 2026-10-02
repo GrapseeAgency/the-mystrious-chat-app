@@ -80,7 +80,7 @@ function drawFloorPlan(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.fillRect(0, 0, w, h)
 
   const wall = 'rgba(161,161,170,0.5)'
-  const accent = 'rgba(16,185,129,0.35)'
+  const accent = 'rgba(245,158,11,0.35)'
   ctx.lineWidth = Math.max(2, w * 0.006)
   ctx.lineCap = 'round'
 
@@ -175,8 +175,8 @@ function SpaceAvatar({
       <div
         className={cn(
           'flex items-center justify-center rounded-full shadow-lg shadow-black/40 ring-2',
-          isMe ? 'size-9 ring-emerald-400' : 'size-8 ring-white/20',
-          nearby && !isMe && 'ring-emerald-400/80',
+          isMe ? 'size-9 ring-amber-400' : 'size-8 ring-white/20',
+          nearby && !isMe && 'ring-amber-400/80',
         )}
         style={{ background: gradientFor(player.color) }}
         aria-hidden
@@ -186,7 +186,7 @@ function SpaceAvatar({
       <div
         className={cn(
           'mt-1 max-w-[84px] truncate rounded-full bg-zinc-950/85 px-1.5 py-0.5 text-center text-[9px] font-medium text-zinc-200',
-          isMe && 'text-emerald-300',
+          isMe && 'text-amber-300',
         )}
       >
         {isMe ? 'You' : player.name}
@@ -194,7 +194,7 @@ function SpaceAvatar({
       {isMe ? (
         <motion.span
           aria-hidden
-          className="absolute inset-0 -m-2 rounded-full border border-emerald-400/50"
+          className="absolute inset-0 -m-2 rounded-full border border-amber-400/50"
           animate={reduced ? undefined : { scale: [1, 1.25, 1], opacity: [0.7, 0.2, 0.7] }}
           transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
         />
@@ -366,8 +366,8 @@ export function SpaceSheetUI({
       >
         {/* header */}
         <div className="flex items-center gap-2 border-b border-zinc-800/80 px-4 pb-3 pt-4">
-          <div className="flex size-9 items-center justify-center rounded-2xl bg-emerald-500/15">
-            <MapIcon className="size-5 text-emerald-400" aria-hidden />
+          <div className="flex size-9 items-center justify-center rounded-2xl bg-amber-500/15">
+            <MapIcon className="size-5 text-amber-400" aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-zinc-100">Space</h2>
@@ -378,7 +378,7 @@ export function SpaceSheetUI({
           <span
             className={cn(
               'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold',
-              connected ? 'bg-emerald-500/15 text-emerald-300' : 'bg-zinc-800 text-zinc-400',
+              connected ? 'bg-amber-500/15 text-amber-300' : 'bg-zinc-800 text-zinc-400',
             )}
           >
             <UsersRound className="size-3" aria-hidden />
@@ -434,7 +434,7 @@ export function SpaceSheetUI({
             </p>
           ) : (
             <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-bold text-emerald-300">
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-1 text-[10px] font-bold text-amber-300">
                 <Zap className="size-3" aria-hidden /> NEARBY
               </span>
               {nearby.map((p) => (

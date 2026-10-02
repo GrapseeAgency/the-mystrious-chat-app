@@ -257,7 +257,7 @@ export function AutomationsSection({
                   haptic(8)
                   setCreateOpen(true)
                 }}
-                className="glass-pill flex size-8 shrink-0 items-center justify-center text-emerald-600 outline-none transition-transform active:scale-90 dark:text-emerald-400"
+                className="glass-pill flex size-8 shrink-0 items-center justify-center text-amber-700 outline-none transition-transform active:scale-90 dark:text-amber-400"
               >
                 <Plus className="size-4" aria-hidden />
               </button>
@@ -280,7 +280,7 @@ export function AutomationsSection({
                   className={cn(
                     'flex size-8 shrink-0 items-center justify-center rounded-xl',
                     row.enabled
-                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
                       : 'bg-zinc-900/[0.05] text-zinc-400 dark:bg-white/[0.07]',
                   )}
                 >
@@ -300,7 +300,7 @@ export function AutomationsSection({
                           haptic(8)
                           openTriggerEdit(row)
                         }}
-                        className="flex size-6 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-emerald-500/10 hover:text-emerald-600 active:scale-90 disabled:opacity-40 dark:hover:text-emerald-400"
+                        className="flex size-6 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-amber-500/10 hover:text-amber-700 active:scale-90 disabled:opacity-40 dark:hover:text-amber-400"
                       >
                         <Pencil className="size-3" aria-hidden />
                       </button>
@@ -352,7 +352,7 @@ export function AutomationsSection({
                     className={cn(
                       'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold',
                       row.enabled
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
                         : 'bg-zinc-900/[0.05] text-zinc-500 dark:bg-white/[0.07] dark:text-zinc-400',
                     )}
                   >
@@ -371,7 +371,7 @@ export function AutomationsSection({
               haptic(8)
               setCreateOpen(true)
             }}
-            className="glass-row-hover mt-1 flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-[0.99] dark:text-emerald-400"
+            className="glass-row-hover mt-1 flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-xs font-bold text-amber-700 outline-none transition-transform active:scale-[0.99] dark:text-amber-400"
           >
             <Plus className="size-3.5 shrink-0" aria-hidden />
             New automation
@@ -484,7 +484,7 @@ function AutomationsCreateSheet({
             />
 
             <div className="flex items-center gap-2.5 px-1">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400">
                 <Bot className="size-4" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
@@ -513,7 +513,7 @@ function AutomationsCreateSheet({
                   aria-invalid={trigger.length > 0 && triggerInvalid}
                   autoComplete="off"
                   className={cn(
-                    'h-10 w-full rounded-2xl border border-zinc-900/[0.07] bg-white/50 px-3 text-[13px] font-medium text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors focus:border-emerald-500/50 dark:border-white/[0.09] dark:bg-white/[0.06] dark:text-zinc-100',
+                    'h-10 w-full rounded-2xl border border-zinc-900/[0.07] bg-white/50 px-3 text-[13px] font-medium text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors focus:border-amber-500/50 dark:border-white/[0.09] dark:bg-white/[0.06] dark:text-zinc-100',
                     trigger.length > 0 && triggerInvalid && 'border-rose-400/60',
                   )}
                 />
@@ -548,7 +548,7 @@ function AutomationsCreateSheet({
                   aria-invalid={reply.length > 0 && replyInvalid}
                   rows={3}
                   className={cn(
-                    'w-full resize-none rounded-2xl border border-zinc-900/[0.07] bg-white/50 px-3 py-2 text-[13px] leading-relaxed text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors focus:border-emerald-500/50 dark:border-white/[0.09] dark:bg-white/[0.06] dark:text-zinc-100',
+                    'w-full resize-none rounded-2xl border border-zinc-900/[0.07] bg-white/50 px-3 py-2 text-[13px] leading-relaxed text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors focus:border-amber-500/50 dark:border-white/[0.09] dark:bg-white/[0.06] dark:text-zinc-100',
                     reply.length > 0 && replyInvalid && 'border-rose-400/60',
                   )}
                 />
@@ -574,7 +574,7 @@ function AutomationsCreateSheet({
                 haptic(8)
                 createMutation.mutate()
               }}
-              className="mt-3 flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-full bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/25 outline-none transition-all hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-50"
+              className="mt-3 flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-full bg-amber-500 text-sm font-bold text-white shadow-md shadow-amber-600/25 outline-none transition-all hover:bg-amber-500/90 active:scale-[0.98] disabled:opacity-50"
             >
               {createMutation.isPending ? (
                 <LoaderCircle className="size-4 animate-spin" aria-hidden />
@@ -655,7 +655,7 @@ function AutomationsEditSheet({
             />
 
             <div className="flex items-center gap-2.5 px-1">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400">
                 <Pencil className="size-4" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
@@ -693,7 +693,7 @@ function AutomationsEditSheet({
                 aria-invalid={trigger.length > 0 && triggerInvalid}
                 autoComplete="off"
                 className={cn(
-                  'h-10 w-full rounded-2xl border border-zinc-900/[0.07] bg-white/50 px-3 text-[13px] font-medium text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors focus:border-emerald-500/50 dark:border-white/[0.09] dark:bg-white/[0.06] dark:text-zinc-100',
+                  'h-10 w-full rounded-2xl border border-zinc-900/[0.07] bg-white/50 px-3 text-[13px] font-medium text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors focus:border-amber-500/50 dark:border-white/[0.09] dark:bg-white/[0.06] dark:text-zinc-100',
                   trigger.length > 0 && triggerInvalid && 'border-rose-400/60',
                 )}
               />
@@ -720,7 +720,7 @@ function AutomationsEditSheet({
                   { onSuccess: () => onOpenChange(false) },
                 )
               }
-              className="mt-3 flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-full bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/25 outline-none transition-all hover:bg-emerald-500/90 active:scale-[0.98] disabled:opacity-50"
+              className="mt-3 flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-full bg-amber-500 text-sm font-bold text-white shadow-md shadow-amber-600/25 outline-none transition-all hover:bg-amber-500/90 active:scale-[0.98] disabled:opacity-50"
             >
               {renameMutation.isPending ? (
                 <LoaderCircle className="size-4 animate-spin" aria-hidden />

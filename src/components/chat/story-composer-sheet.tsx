@@ -126,7 +126,7 @@ export function StoryComposerSheet({ me, onClose }: StoryComposerSheetProps) {
               type="button"
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
-              className="flex h-44 w-64 flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed border-white/25 text-white/70 outline-none transition-colors hover:border-emerald-400/60 hover:text-emerald-300 active:scale-[0.98] disabled:opacity-60"
+              className="flex h-44 w-64 flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed border-white/25 text-white/70 outline-none transition-colors hover:border-amber-400/60 hover:text-amber-300 active:scale-[0.98] disabled:opacity-60"
             >
               {uploading ? (
                 <>
@@ -196,7 +196,7 @@ export function StoryComposerSheet({ me, onClose }: StoryComposerSheetProps) {
                 }}
                 className={cn(
                   'flex h-8 items-center gap-1.5 rounded-full px-4 text-[13px] font-semibold outline-none transition-all active:scale-95',
-                  active ? 'bg-emerald-500 text-white shadow-sm' : 'text-zinc-300 hover:text-white',
+                  active ? 'bg-amber-500 text-white shadow-sm' : 'text-zinc-300 hover:text-white',
                 )}
               >
                 <Icon className="size-3.5" aria-hidden />
@@ -240,7 +240,7 @@ export function StoryComposerSheet({ me, onClose }: StoryComposerSheetProps) {
                 maxLength={STORY_COMPOSER_CAPTION_MAX}
                 placeholder="What's happening?"
                 aria-label="Status text"
-                className="w-full resize-none rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-[15px] text-white placeholder:text-white/40 outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-500/30"
+                className="w-full resize-none rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-[15px] text-white placeholder:text-white/40 outline-none focus:border-amber-400/60 focus:ring-2 focus:ring-amber-500/30"
               />
               <p className="mt-1 text-right text-[10px] font-medium tabular-nums text-white/40">
                 {caption.length}/{STORY_COMPOSER_CAPTION_MAX}
@@ -257,7 +257,7 @@ export function StoryComposerSheet({ me, onClose }: StoryComposerSheetProps) {
                 placeholder={photo ? 'Add a caption… (optional)' : 'Choose a photo first'}
                 aria-label="Photo caption"
                 disabled={!photo}
-                className="h-11 w-full rounded-2xl border border-white/10 bg-white/10 px-4 text-[15px] text-white placeholder:text-white/40 outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-500/30 disabled:opacity-50"
+                className="h-11 w-full rounded-2xl border border-white/10 bg-white/10 px-4 text-[15px] text-white placeholder:text-white/40 outline-none focus:border-amber-400/60 focus:ring-2 focus:ring-amber-500/30 disabled:opacity-50"
               />
               <p className="mt-1 text-right text-[10px] font-medium tabular-nums text-white/40">
                 {caption.length}/{STORY_COMPOSER_CAPTION_MAX}

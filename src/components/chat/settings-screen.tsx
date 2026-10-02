@@ -351,8 +351,8 @@ function FooterNote({ children }: { children: React.ReactNode }) {
 
 function IconTile({ Icon }: { Icon: RowIcon }) {
   return (
-    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)]">
-      <Icon className="size-[18px] text-emerald-600 dark:text-emerald-400" aria-hidden />
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--ui-accent,#c9762b)_12%,transparent)]">
+      <Icon className="size-[18px] text-amber-700 dark:text-amber-400" aria-hidden />
     </span>
   )
 }
@@ -454,7 +454,7 @@ function PickerRow({
         onClick()
       }}
       whileTap={reduced ? undefined : pressTap}
-      className="glass-row-hover flex min-h-[56px] w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+      className="glass-row-hover flex min-h-[56px] w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
     >
       <IconTile Icon={Icon} />
       <span className="min-w-0 flex-1">
@@ -540,7 +540,7 @@ function PillPicker<T extends string>({
               onChange(o.value)
             }}
             className={cn(
-              'relative flex h-9 min-w-0 flex-1 items-center justify-center rounded-full px-2 text-[12.5px] font-semibold outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-emerald-500/60',
+              'relative flex h-9 min-w-0 flex-1 items-center justify-center rounded-full px-2 text-[12.5px] font-semibold outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-amber-500/60',
               selected
                 ? 'text-zinc-900 dark:text-white'
                 : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100',
@@ -619,7 +619,7 @@ function StatusBadge({ tone, children }: { tone: 'ok' | 'warn' | 'off' | 'info';
     <span
       className={cn(
         'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold tabular-nums',
-        tone === 'ok' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+        tone === 'ok' && 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
         tone === 'warn' && 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
         tone === 'off' && 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
         tone === 'info' && 'bg-zinc-900/[0.06] text-zinc-500 dark:bg-white/[0.08] dark:text-zinc-300',
@@ -633,7 +633,7 @@ function StatusBadge({ tone, children }: { tone: 'ok' | 'warn' | 'off' | 'info';
 function StatTile({ Icon, value, label }: { Icon: LucideIcon; value: number | string; label: string }) {
   return (
     <div className="flex flex-col gap-1 rounded-2xl border border-zinc-200/70 bg-white/60 p-3 dark:border-white/[0.06] dark:bg-white/[0.04]">
-      <Icon className="size-4 text-emerald-600 dark:text-emerald-400" aria-hidden />
+      <Icon className="size-4 text-amber-700 dark:text-amber-400" aria-hidden />
       <p className="text-xl font-bold leading-none tracking-tight tabular-nums text-zinc-900 dark:text-zinc-50">
         {value}
       </p>
@@ -680,7 +680,7 @@ function RootRow({
       type="button"
       onClick={() => onOpen(def.id)}
       whileTap={reduced ? undefined : pressTap}
-      className="glass-row-hover flex w-full items-center gap-3 rounded-2xl px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+      className="glass-row-hover flex w-full items-center gap-3 rounded-2xl px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
     >
       <IconTile Icon={def.Icon} />
       <span className="min-w-0 flex-1">
@@ -806,7 +806,7 @@ function AccountSection({ ctx }: { ctx: SectionCtx }) {
                   {user?.name ?? 'Signed out'}
                 </span>
                 {user ? (
-                  <span className="shrink-0 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                  <span className="shrink-0 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
                     You
                   </span>
                 ) : null}
@@ -1006,27 +1006,27 @@ function ChatSection({ ctx }: { ctx: SectionCtx }) {
                     haptic(8)
                     save({ wallpaper: w.id })
                   }}
-                  className="flex min-h-[44px] flex-col items-center gap-1.5 rounded-xl p-1 outline-none transition-transform active:scale-95 focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+                  className="flex min-h-[44px] flex-col items-center gap-1.5 rounded-xl p-1 outline-none transition-transform active:scale-95 focus-visible:ring-2 focus-visible:ring-amber-500/60"
                 >
                   <span
                     className={cn(
                       'relative block aspect-square w-full rounded-lg border shadow-sm',
                       w.preview,
                       selected
-                        ? 'border-emerald-500 ring-2 ring-emerald-500/60'
+                        ? 'border-amber-500 ring-2 ring-amber-500/60'
                         : 'border-zinc-200/80 dark:border-white/10',
                     )}
                   >
                     {selected ? (
                       <span className="absolute inset-0 flex items-center justify-center">
-                        <Check className="size-4 text-emerald-600 drop-shadow dark:text-emerald-300" aria-hidden />
+                        <Check className="size-4 text-amber-700 drop-shadow dark:text-amber-300" aria-hidden />
                       </span>
                     ) : null}
                   </span>
                   <span
                     className={cn(
                       'text-[10px] font-semibold',
-                      selected ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+                      selected ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
                     )}
                   >
                     {w.label}
@@ -1102,7 +1102,7 @@ function ChatSection({ ctx }: { ctx: SectionCtx }) {
             ctx.mounted && ctx.queuedCount > 0 ? (
               <StatusBadge tone="warn">{ctx.queuedCount}</StatusBadge>
             ) : (
-              <Check className="size-4 shrink-0 text-emerald-500" aria-hidden />
+              <Check className="size-4 shrink-0 text-amber-600" aria-hidden />
             )
           }
         />
@@ -1159,7 +1159,7 @@ function NotificationsSection({ ctx }: { ctx: SectionCtx }) {
   const quietNow = isQuietHoursNow({ quietHoursOn, quietStart, quietEnd })
 
   const timeInputClass =
-    'h-11 w-full rounded-xl border border-zinc-200/80 bg-white/60 px-3 text-[13.5px] font-semibold text-zinc-800 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60 [color-scheme:light] dark:border-white/10 dark:bg-zinc-800/60 dark:text-zinc-100 dark:[color-scheme:dark]'
+    'h-11 w-full rounded-xl border border-zinc-200/80 bg-white/60 px-3 text-[13.5px] font-semibold text-zinc-800 outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 [color-scheme:light] dark:border-white/10 dark:bg-zinc-800/60 dark:text-zinc-100 dark:[color-scheme:dark]'
 
   return (
     <>
@@ -1697,7 +1697,7 @@ function AboutSection() {
       <motion.section variants={rowVariants} className="pb-5">
         <div className="glass-deep glass-sheen rounded-3xl p-4">
           <div className="flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md shadow-emerald-500/25">
+            <span className="flex size-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 text-white shadow-md shadow-amber-500/25">
               <Sparkles className="size-5" aria-hidden />
             </span>
             <div className="min-w-0 flex-1">
@@ -1740,7 +1740,7 @@ function AboutSection() {
           href={GITHUB_URL}
           target="_blank"
           rel="noreferrer"
-          className="glass-row-hover flex min-h-[56px] w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/60"
+          className="glass-row-hover flex min-h-[56px] w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
         >
           <IconTile Icon={Github} />
           <span className="min-w-0 flex-1">
@@ -1756,7 +1756,7 @@ function AboutSection() {
       </Group>
 
       <motion.footer variants={rowVariants} className="flex flex-col items-center gap-1.5 pb-2 pt-1">
-        <Heart className="size-4 fill-emerald-500 text-emerald-500" aria-hidden />
+        <Heart className="size-4 fill-amber-500 text-amber-600" aria-hidden />
         <p className="text-[13px] font-semibold text-zinc-600 dark:text-zinc-300">Made with Pulse</p>
         <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
           Version {PULSE_VERSION} · chats, hub economy and settings sync live
@@ -2035,7 +2035,7 @@ export function SettingsScreen({
                   }}
                   trailing={
                     uiTheme === t.id ? (
-                      <Check className="size-4 text-emerald-600 dark:text-emerald-300" aria-hidden />
+                      <Check className="size-4 text-amber-700 dark:text-amber-300" aria-hidden />
                     ) : undefined
                   }
                 >
@@ -2065,7 +2065,7 @@ export function SettingsScreen({
                   }}
                   trailing={
                     navStyle === s.id ? (
-                      <Check className="size-4 text-emerald-600 dark:text-emerald-300" aria-hidden />
+                      <Check className="size-4 text-amber-700 dark:text-amber-300" aria-hidden />
                     ) : (
                       <span className="uppercase">{s.zone}</span>
                     )

@@ -55,7 +55,7 @@ export function LocationBubble({
     <div
       className={cn(
         'relative w-[228px] overflow-hidden rounded-xl',
-        mine ? 'bg-emerald-600' : 'bg-emerald-100 dark:bg-zinc-800',
+        mine ? 'bg-amber-600' : 'bg-amber-100 dark:bg-zinc-800',
       )}
       style={{ height: 132 }}
     >
@@ -71,11 +71,11 @@ export function LocationBubble({
       />
       <div
         aria-hidden
-        className={cn('absolute left-[-30%] top-[38%] h-[7px] w-[170%] -rotate-6 rounded-full', mine ? 'bg-white/20' : 'bg-emerald-200/80 dark:bg-zinc-700')}
+        className={cn('absolute left-[-30%] top-[38%] h-[7px] w-[170%] -rotate-6 rounded-full', mine ? 'bg-white/20' : 'bg-amber-200/80 dark:bg-zinc-700')}
       />
       <div
         aria-hidden
-        className={cn('absolute left-[52%] top-[-20%] h-[150%] w-[6px] rotate-12 rounded-full', mine ? 'bg-white/15' : 'bg-emerald-200/70 dark:bg-zinc-700/90')}
+        className={cn('absolute left-[52%] top-[-20%] h-[150%] w-[6px] rotate-12 rounded-full', mine ? 'bg-white/15' : 'bg-amber-200/70 dark:bg-zinc-700/90')}
       />
 
       {/* pulsing pin at the projected coordinate */}
@@ -88,14 +88,14 @@ export function LocationBubble({
           <span
             className={cn(
               'absolute bottom-0 size-4 animate-ping rounded-full opacity-60',
-              mine ? 'bg-white/70' : 'bg-emerald-500/70',
+              mine ? 'bg-white/70' : 'bg-amber-500/70',
             )}
             style={{ animationDuration: '1.4s' }}
           />
           <span
             className={cn(
               'relative flex size-6 items-center justify-center rounded-full shadow-md',
-              mine ? 'bg-white text-emerald-600' : 'bg-emerald-500 text-white',
+              mine ? 'bg-white text-amber-700' : 'bg-amber-500 text-white',
             )}
           >
             <MapPin className="size-3.5" aria-hidden />
@@ -126,7 +126,7 @@ export function LocationBubble({
           aria-label={`Open ${label} in Google Maps`}
           className={cn(
             'flex size-6 shrink-0 items-center justify-center rounded-full outline-none transition-transform active:scale-90',
-            mine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-emerald-500 text-white hover:bg-emerald-500/90',
+            mine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-amber-500 text-white hover:bg-amber-500/90',
           )}
         >
           <ExternalLink className="size-3" aria-hidden />
@@ -229,7 +229,7 @@ export function LocationShareSheet({
         <div className="pb-2">
           {status === 'locating' ? (
             <div className="flex flex-col items-center gap-3 py-10" role="status" aria-label="Finding your location">
-              <LoaderCircle className="size-7 animate-spin text-emerald-500" aria-hidden />
+              <LoaderCircle className="size-7 animate-spin text-amber-600" aria-hidden />
               <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Finding you…</p>
             </div>
           ) : status === 'error' ? (
@@ -275,7 +275,7 @@ export function LocationShareSheet({
                       )
                     }
                   }}
-                  className="h-10 flex-1 gap-1.5 rounded-2xl bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90"
+                  className="h-10 flex-1 gap-1.5 rounded-2xl bg-amber-500 text-sm font-bold text-white shadow-md shadow-amber-600/25 hover:bg-amber-500/90"
                 >
                   <LocateFixed className="size-4" aria-hidden />
                   Retry
@@ -303,7 +303,7 @@ export function LocationShareSheet({
                   }}
                   placeholder="Label this place…"
                   aria-label="Location label"
-                  className="h-11 rounded-2xl border-zinc-200 bg-zinc-100 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+                  className="h-11 rounded-2xl border-zinc-200 bg-zinc-100 text-sm focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
                 />
               </div>
               <div className="mt-3 flex gap-2">
@@ -312,7 +312,7 @@ export function LocationShareSheet({
                 </Button>
                 <Button
                   onClick={confirm}
-                  className="h-11 flex-[1.6] gap-1.5 rounded-2xl bg-emerald-500 text-sm font-bold text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90"
+                  className="h-11 flex-[1.6] gap-1.5 rounded-2xl bg-amber-500 text-sm font-bold text-white shadow-md shadow-amber-600/25 hover:bg-amber-500/90"
                 >
                   <MapPin className="size-4" aria-hidden />
                   Send pin

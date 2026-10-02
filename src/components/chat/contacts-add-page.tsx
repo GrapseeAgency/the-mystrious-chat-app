@@ -128,7 +128,7 @@ export function ContactsAddPage({
             initial={false}
             animate={{ opacity: searchFocused ? 1 : 0 }}
             transition={spring.soft}
-            className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.25)]"
+            className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.25)]"
           />
           <Search className="size-4 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden />
           <Input
@@ -192,8 +192,8 @@ export function ContactsAddPage({
               transition={{ duration: 0.2, ease: ease.out }}
               className="mx-1 flex flex-col items-center gap-3 rounded-3xl border border-dashed border-zinc-200 p-8 text-center dark:border-zinc-700"
             >
-              <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-500/10">
-                <UserPlus className="size-7 text-emerald-500" aria-hidden />
+              <div className="flex size-14 items-center justify-center rounded-2xl bg-amber-500/10">
+                <UserPlus className="size-7 text-amber-600" aria-hidden />
               </div>
               <div>
                 <p className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">No one to add yet</p>
@@ -267,7 +267,7 @@ function AddResultRow({
           <span className="relative shrink-0">
             <UserAvatar name={person.name} color={person.color} avatar={person.avatar} size={44} showPresence online={online} />
             {online ? (
-              <span aria-hidden className="absolute -inset-[3px] rounded-full ring-2 ring-emerald-400/50" />
+              <span aria-hidden className="absolute -inset-[3px] rounded-full ring-2 ring-amber-400/50" />
             ) : null}
           </span>
           <span className="min-w-0 flex-1">
@@ -276,12 +276,12 @@ function AddResultRow({
                 {person.name}
               </span>
               {person.username ? (
-                <span className="truncate text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="truncate text-[10px] font-semibold text-amber-700 dark:text-amber-400">
                   @{person.username}
                 </span>
               ) : null}
               {sharesDm ? (
-                <span className="inline-flex h-4 shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 text-[9px] font-bold uppercase tracking-wide text-emerald-600 ring-1 ring-emerald-500/20 dark:text-emerald-400">
+                <span className="inline-flex h-4 shrink-0 items-center gap-1 rounded-full bg-amber-500/10 px-1.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-400">
                   <MessageCircle className="size-2.5" aria-hidden />
                   Chat
                 </span>
@@ -300,8 +300,8 @@ function AddResultRow({
           whileTap={reduced ? undefined : pressTap}
           transition={pressSpring}
           className={cn(
-            'glass-pill flex size-10 shrink-0 items-center justify-center rounded-full text-emerald-600 outline-none',
-            'hover:bg-emerald-500/10 active:scale-95 disabled:opacity-40 dark:text-emerald-400',
+            'glass-pill flex size-10 shrink-0 items-center justify-center rounded-full text-amber-700 outline-none',
+            'hover:bg-amber-500/10 active:scale-95 disabled:opacity-40 dark:text-amber-400',
           )}
         >
           {pending ? (

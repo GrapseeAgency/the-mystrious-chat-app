@@ -127,7 +127,7 @@ export default function TournamentCard({
         <div className="flex items-center gap-2.5 px-3.5 pb-2.5 pt-3">
           <span
             aria-hidden
-            className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_8px_20px_-8px_rgba(16,185,129,0.7)]"
+            className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 shadow-[0_8px_20px_-8px_rgba(245,158,11,0.7)]"
           >
             <Trophy className="size-4.5 text-white" aria-hidden />
           </span>
@@ -144,7 +144,7 @@ export default function TournamentCard({
                 className={cn(
                   'flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide',
                   running
-                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
                     : 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400',
                 )}
               >
@@ -152,7 +152,7 @@ export default function TournamentCard({
                   aria-hidden
                   className={cn(
                     'size-1.5 rounded-full',
-                    running ? 'animate-pulse bg-emerald-500' : 'bg-zinc-400',
+                    running ? 'animate-pulse bg-amber-500' : 'bg-zinc-400',
                   )}
                 />
                 {running ? 'Running' : 'Finished'}
@@ -205,13 +205,13 @@ export default function TournamentCard({
                 <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-zinc-800 dark:text-zinc-100">
                   {entry.name}
                   {entry.userId === meId ? (
-                    <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                    <span className="font-medium text-amber-700 dark:text-amber-400">
                       {' '}
                       · you
                     </span>
                   ) : null}
                 </span>
-                <span className="shrink-0 text-[12.5px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                <span className="shrink-0 text-[12.5px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
                   {entry.points} pt{entry.points === 1 ? '' : 's'}
                 </span>
               </motion.div>
@@ -235,7 +235,7 @@ export default function TournamentCard({
               whileTap={reducedMotion ? undefined : { scale: 0.96 }}
               transition={spring.snappy}
               style={{ willChange: 'transform' }}
-              className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-[13px] font-bold text-white shadow-[0_10px_24px_-10px_rgba(16,185,129,0.8)] outline-none ring-emerald-400/60 transition-colors focus-visible:ring-2 disabled:opacity-60"
+              className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-[13px] font-bold text-white shadow-[0_10px_24px_-10px_rgba(245,158,11,0.8)] outline-none ring-amber-400/60 transition-colors focus-visible:ring-2 disabled:opacity-60"
             >
               {joining ? (
                 <LoaderCircle className="size-4 animate-spin" aria-hidden />

@@ -352,14 +352,14 @@ export function RemindersSheet({ onClose, myId }: RemindersSheetProps) {
         <span
           className={cn(
             'flex size-6 shrink-0 items-center justify-center rounded-full',
-            fired ? 'bg-zinc-500/10' : 'bg-emerald-500/10',
+            fired ? 'bg-zinc-500/10' : 'bg-amber-500/10',
           )}
           aria-hidden
         >
           {fired ? (
             <BellOff className="size-3 text-zinc-400 dark:text-zinc-500" />
           ) : (
-            <Bell className="size-3 text-emerald-500" />
+            <Bell className="size-3 text-amber-600" />
           )}
         </span>
         <button
@@ -386,7 +386,7 @@ export function RemindersSheet({ onClose, myId }: RemindersSheetProps) {
         {!fired ? (
           <>
             <span
-              className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400"
+              className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400"
               title={new Date(item.remindAt).toLocaleString()}
             >
               {formatReminderCountdown(item.remindAt)}
@@ -440,10 +440,10 @@ export function RemindersSheet({ onClose, myId }: RemindersSheetProps) {
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-1.5 px-2 pt-1">
             <span
-              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/10"
+              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/10"
               aria-hidden
             >
-              <Bell className="size-3 text-emerald-500" />
+              <Bell className="size-3 text-amber-600" />
             </span>
             <GlassMenuLabel className="flex-1 px-1 pb-0 pt-1.5">
               {upcoming.length === 1 ? '1 reminder' : `${upcoming.length} reminders`}

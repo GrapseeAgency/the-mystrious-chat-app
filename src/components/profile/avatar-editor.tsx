@@ -202,7 +202,7 @@ export function AvatarPhotoEditor({ me }: { me: AppUser }) {
             transition={pressSpring}
             disabled={busy}
             aria-label={me.avatar ? 'Replace profile photo' : 'Set profile photo'}
-            className="glass-pill flex h-11 items-center gap-2 rounded-full px-4 text-[13px] font-bold text-[var(--ui-accent,#10b981)] outline-none disabled:opacity-60"
+            className="glass-pill flex h-11 items-center gap-2 rounded-full px-4 text-[13px] font-bold text-[var(--ui-accent,#c9762b)] outline-none disabled:opacity-60"
           >
             <Camera className="size-4" aria-hidden />
             {me.avatar ? 'Replace photo' : 'Set photo'}
