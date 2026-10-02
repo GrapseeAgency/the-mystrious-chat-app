@@ -4817,3 +4817,22 @@ Stage Summary:
 - SERVER: ON and proven - API :3000 (R50 code) + IM socket :3003 + caddy :81 routing, all hops green.
 - APP CONNECT PATH: v0.19.0-native APK -> onboarding step 0 connect gate (live GET /api/users probe) -> paste the preview-panel origin -> one-tap "Explore the demo account (Alice Chen)" -> 23 seeded rooms + realtime via XTransformPort=3003. The CDN manifest gateway/socket fields stay honestly empty; the connect gate is the connectivity path.
 - Open: iOS connect-gate card, predictive-back/shared-element wave, emerald launcher glyph decision.
+---
+Task ID: R51-connect
+Agent: orchestrator (Z.ai main session)
+Task: user homepage directive (Android) + full offline-first direction: Pulse brand title, bare header icons, search bar replaces chips, tiny folder rail + channel glyph, Note/Mentions/Channels rows deleted, Archived conditional, compact reference dock; ship as v0.20.0-native through GitHub Actions.
+
+Work Log:
+- ChatsScreen.kt rebuild: header title "Chats" -> "Pulse"; the three glass circle buttons replaced by bare 40dp icon boxes (camera = story composer, kebab = menu) with ZERO background; search icon removed from the header; new HomeSearchBar glass pill (40dp, radius 20, leading glyph, ImeAction.Search opens the existing spotlight surface) mounted where the All/Unread/Groups chips lived - typing filters conversations live through the existing locallyFiltered path (fully offline, no gateway dependency); FolderRail shrunk (RailPill 36->28dp, text 13->12sp, glyph 14->12dp) + new 30dp channels glyph beside the 30dp folder manager; NoteToSelfCard + Mentions + Channels rows deleted from the list (note reachable via the FAB composer, mentions live in notifications per the directive); Archived pill now renders ONLY when archivedRows is non-empty; deleted the dead FilterChipsRow + NoteToSelfCard composables and the EmberGlassButton import.
+- MainActivity.kt dock: CapsuleDock pill 64->54dp (radius 27, padding 8->6), DockTabButton 56->46dp with icons 22->18dp and active-dot slot 7->6dp, FAB 56->46dp with plus glyph 22->20dp - the reference-page proportions from the user's screenshot.
+- Call site cleanup: onOpenMentions removed from the ChatsScreen contract (MainActivity no longer passes it; the mentions route itself stays intact for notifications-deep links).
+- Static gates: zero leftover references (rg), brace/paren balance 0/0 on both edited files matching the HEAD baseline. Local gradle compile IMPOSSIBLE this session (the platform restore wiped the Android SDK AND local.properties; no SDK exists anywhere on the box) - per the standing "use github action not bother your sandbox" rule the compile gate ran on CI.
+- CI receipts: Android main run 37020289809 SUCCESS (compile + JVM tests on the homepage commit 4cdf702); tag v0.20.0-native pushed; Android tag run 37022048206 SUCCESS (signed R8 APK + emulator release smoke booted the artifact) -> Release v0.20.0-native PUBLISHED 14:52:37Z, Pulse-v0.20.0-native.apk 25,448,725 bytes sha256 aee6695f...; iOS tag run 37022048124 SUCCESS.
+- Version plumbing: gradle defaults versionCode 38 / versionName 0.20.0-native (no CI override, source-verified path again).
+- CDN: release asset downloaded via authenticated octet-stream, local sha256 == release digest; download/Pulse.apk mirror swapped with the identical bytes; download/update-manifest.json bumped (38 / 0.20.0-native / aee6695f... / honest gateway:"" - the connect gate stays the connectivity path); pushed 9437e93; live raw manifest verified serving 38 / 0.20.0-native.
+
+Stage Summary:
+- SHIPPED: v0.20.0-native (versionCode 38) on all CI tracks with the user's homepage directive implemented exactly: Pulse title, bare top icons, search bar instead of chips, tiny All+folder+channel rail, Note/Mentions/Channels gone, Archived conditional, compact dock.
+- The full-offline direction is honored in the design: the search filter, list, folders, stories and dock all run on local Room state with no network call in the path; outbound sends still queue as pending when offline (honest delivery).
+- User action: in-app LiveUpdater will offer v0.20.0-native (manifest pinned), or sideload from the release page; the installed v0.19 keeps working offline meanwhile.
+- Open: SDK reinstall is an operator item if local compiles are ever needed again; iOS homepage mirrors are next (same directive language).
