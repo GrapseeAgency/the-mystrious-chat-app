@@ -4870,3 +4870,34 @@ Work Log:
 Stage Summary:
 - The user-facing story: the server bug that made every concurrent login kill every other session is FIXED AND LIVE (web + apps on the current server benefit immediately); v0.21.0-native adds the http-origin cleartext fix + probe fallback for fresh installs.
 - Open: iOS homepage mirrors, predictive-back/shared-element wave, iOS connect-gate card.
+
+---
+Task ID: R52-c
+Agent: orchestrator (Z.ai main session)
+Task: "only that adding link will stay that pulse-gateway link just that no need to create account just that as if app can reach the server" - the onboarding is now the gateway link ONLY; auto demo sign-in; the session-ended kick is deleted.
+
+Work Log:
+- FLOW REWRITE (OnboardingViewModel): init resolves the stored serverBase deterministically (applies it to PulseEndpoints if PulseApplication's async pass has not landed yet) and, when a gateway is known, runs demoLogin(celebrate=false) SILENTLY at cold start - the shell opens with the seeded demo identity, zero taps. connect(): probe success now auto-signs in (probe success IS the login) - it never advances to the name step. skipConnect() and the "Skip - explore offline" button removed from the gate. The name/handle creation steps are unreachable from the flow (code kept, compiled, dead) per "no need to create account".
+- KICK DELETED (SessionViewModel): the invalidated collector no longer clears prefs/vault/push on 401 or socket join:error. It now silently reclaims the SAME identity by name (name-keyed identities: POST /api/users/login IS the re-auth), persists the fresh token (inside repo.login), re-arms realtime via repo.start(id), throttled to one attempt per 10s. Offline -> the viewer stays, the outbox queues, the next rejection retries. sessionNotice is never set destructively anymore; explicit forgetViewer (Profile sign-out) remains the only way out of a session.
+- SERVER CHAIN RE-PROVEN for the new flow: POST /api/users/login {"name":"Alice Chen"} -> 200 + token; GET /api/conversations?userId=<alice> + Bearer -> 200 / 23 rooms (the exact requests the silent auto-login fires).
+- SHIP: versionCode 40 / versionName 0.22.0-native; lint clean; main pushed (117669f); tag v0.22.0-native pushed; CI in flight (Android tag 37034562138, iOS tag 37034562172, Android main 37034559998). CDN manifest + mirror refresh queued on green.
+
+Stage Summary:
+- USER-FACING: install/update the app -> it connects with the gateway link (already stored on their device) and lands in the demo account automatically; every cold start re-signs-in silently; a rejected token no longer shows ANY end-session display - the app just quietly re-authenticates and carries on.
+- Honest gaps: the connect gate shows briefly during the silent sign-in (progress state); fresh installs with NO stored base see only the link field (per the directive) - the demo door button remains as the manual retry after a successful probe.
+- Open: iOS homepage mirrors, predictive-back/shared-element wave, iOS connect-gate card.
+
+---
+Task ID: R52-c-ship
+Agent: orchestrator (Z.ai main session)
+Task: v0.22.0-native release + CDN refresh.
+
+Work Log:
+- CI ALL GREEN: Android tag 37034562138 (signed R8 APK + emulator release smoke), iOS tag 37034562172 (build + XCTest + archive), Android main 37034559998.
+- RELEASE v0.22.0-native published 16:44Z: Pulse-v0.22.0-native.apk 25,449,301 bytes sha256 ff9cdec8c8ba8e97b30e45b72eb016cdadebf28ac9597308902d200f1631b9e8 (versionCode 40, gradle defaults source-verified).
+- CDN: download/Pulse.apk mirror swapped with the byte-identical release asset; update-manifest.json pinned (40 / 0.22.0-native / ff9cdec8...); pushed 41ac20c; live raw manifest + live mirror verified serving the identical digest.
+
+Stage Summary:
+- SHIPPED: the demo-default app - gateway link is the only step, silent auto sign-in on every cold start with a known gateway, the session-ended kick is deleted from the codebase.
+- User action: in-app LiveUpdater offers v0.22.0-native; their stored gateway link persists through the update, so the first launch after update lands straight inside.
+- Open: iOS homepage mirrors, predictive-back/shared-element wave, iOS connect-gate card.
