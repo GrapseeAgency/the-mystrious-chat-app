@@ -144,6 +144,7 @@ import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.PulseTheme
+import app.pulse.ui.emberBackdrop
 import app.pulse.ui.isPulseDarkTheme
 import app.pulse.ui.pulseUiThemePageBackground
 import app.pulse.ui.pulseGlass
@@ -801,7 +802,10 @@ private fun PulseShell(
             }
             composable("hub") {
                 PulseTheme(darkTheme = true) {
-                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                // R38 - Telegram-style dock: the tab's ember field runs edge-to-
+                // edge BEHIND the dock (drawn before padding = full-bleed), so
+                // no separate color band ever shows under the nav pill.
+                Box(Modifier.fillMaxSize().emberBackdrop().padding(bottom = dockSpace)) {
                     app.pulse.feature.hub.HubScreen(
                         viewerName = viewerName ?: "",
                         onOpenConversation = { id -> navController.navigate("room/$id") },
@@ -811,7 +815,8 @@ private fun PulseShell(
             }
             composable("contacts") {
                 PulseTheme(darkTheme = true) {
-                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                // R38 - full-bleed ember field behind the dock (same idiom).
+                Box(Modifier.fillMaxSize().emberBackdrop().padding(bottom = dockSpace)) {
                     ContactsScreen(
                         onOpenRoom = { id -> navController.navigate("room/$id") },
                         onOpenUser = { id -> navController.navigate("user/$id") },
@@ -846,7 +851,8 @@ private fun PulseShell(
             }
             composable("calls") {
                 PulseTheme(darkTheme = true) {
-                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                // R38 - full-bleed ember field behind the dock (same idiom).
+                Box(Modifier.fillMaxSize().emberBackdrop().padding(bottom = dockSpace)) {
                     CallsView(
                         onBack = { navController.popBackStack() },
                         onOpenRoom = { id -> navController.navigate("room/$id") },
@@ -885,7 +891,9 @@ private fun PulseShell(
             }
             composable("profile") {
                 PulseTheme(darkTheme = true) {
-                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                // R38 - full-bleed ember field behind the dock (same idiom);
+                // this is the tab from the user's green-band screenshot.
+                Box(Modifier.fillMaxSize().emberBackdrop().padding(bottom = dockSpace)) {
                     ProfileScreen(
                         onEditProfile = { navController.navigate("profile/edit") },
                         onOpenBlocked = { navController.navigate("settings/blocked") },
@@ -1072,7 +1080,8 @@ private fun PulseShell(
             // (fetch → Room cache → search → unsave → jump-to-message rows).
             composable("saved") {
                 PulseTheme(darkTheme = true) {
-                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                // R38 - full-bleed ember field behind the dock (same idiom).
+                Box(Modifier.fillMaxSize().emberBackdrop().padding(bottom = dockSpace)) {
                     SavedLibraryScreen(
                         onBack = { navController.popBackStack() },
                         onOpenRoom = { id, jump ->

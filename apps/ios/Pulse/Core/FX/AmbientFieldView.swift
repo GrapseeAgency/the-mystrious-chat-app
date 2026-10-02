@@ -110,28 +110,32 @@ private struct CanvasAmbient: View {
     }
 
     private func drawCaustics(_ context: inout GraphicsContext, size: CGSize, time: Double) {
-        let base = dark ? Color(red: 0.008, green: 0.050, blue: 0.055) : Color(red: 0.940, green: 0.970, blue: 0.970)
+        // EMB-B: aqua rings keep their water identity but swim over the warm
+        // ember field (the old green-cast base is gone).
+        let base = dark ? Color(red: 0.043, green: 0.027, blue: 0.020) : Color(red: 0.980, green: 0.965, blue: 0.945)
         context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(base))
 
         var glow = context
         glow.addFilter(.blur(radius: dark ? 26 : 34))
         glow.blendMode = dark ? .plusLighter : .normal
         let aqua = dark ? Color(red: 0.30, green: 0.91, blue: 0.85) : Color(red: 0.10, green: 0.55, blue: 0.55).opacity(0.35)
-        let emerald = dark ? Color(red: 0.063, green: 0.725, blue: 0.506) : Color(red: 0.063, green: 0.50, blue: 0.38).opacity(0.22)
+        let glowWarm = dark ? Color(red: 0.478, green: 0.306, blue: 0.200) : Color(red: 0.478, green: 0.35, blue: 0.26).opacity(0.22)
         for (index, seed) in [0.0, 2.1, 4.2].enumerated() {
             let cx = size.width * (0.30 + 0.16 * sin(time * (0.28 + seed * 0.04) + seed))
             let cy = size.height * (0.34 + 0.20 * cos(time * (0.22 + seed * 0.03) + seed * 1.7))
             let r = min(size.width, size.height) * (0.30 + 0.08 * sin(time * 0.4 + seed)) * (index == 1 ? 1.2 : 1.0)
             let rect = CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)
             glow.fill(Path(ellipseIn: rect), with: .radialGradient(
-                Gradient(colors: [index == 1 ? emerald : aqua, .clear]),
+                Gradient(colors: [index == 1 ? glowWarm : aqua, .clear]),
                 center: CGPoint(x: cx, y: cy), startRadius: 0, endRadius: r,
             ))
         }
     }
 
     private func drawLiquid(_ context: inout GraphicsContext, size: CGSize, time: Double) {
-        let base = dark ? Color(red: 0.010, green: 0.042, blue: 0.036) : Color(red: 0.968, green: 0.976, blue: 0.972)
+        // EMB-B: amber/ember fluid bodies with the rose accent (Android
+        // Canvas parity), over the warm ember field.
+        let base = dark ? Color(red: 0.043, green: 0.027, blue: 0.020) : Color(red: 0.980, green: 0.965, blue: 0.945)
         context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(base))
 
         var glow = context
@@ -140,11 +144,11 @@ private struct CanvasAmbient: View {
 
         // Five drifting metaball centers (Lissajous family, web R31-b spirit).
         let specs: [(CGFloat, CGFloat, CGFloat, CGFloat, Color)] = [
-            (0.34, 0.38, 0.11, 0.31, dark ? Color(red: 0.063, green: 0.725, blue: 0.506) : Color(red: 0.063, green: 0.60, blue: 0.44).opacity(0.3)),
-            (0.62, 0.30, 0.13, 0.24, dark ? Color(red: 0.078, green: 0.722, blue: 0.651) : Color(red: 0.078, green: 0.60, blue: 0.54).opacity(0.24)),
+            (0.34, 0.38, 0.11, 0.31, dark ? Color(red: 1.0, green: 0.722, blue: 0.42) : Color(red: 1.0, green: 0.78, blue: 0.52).opacity(0.3)),
+            (0.62, 0.30, 0.13, 0.24, dark ? Color(red: 1.0, green: 0.478, blue: 0.239) : Color(red: 1.0, green: 0.56, blue: 0.34).opacity(0.24)),
             (0.50, 0.68, 0.10, 0.27, dark ? Color(red: 0.957, green: 0.247, blue: 0.369).opacity(0.55) : Color(red: 0.957, green: 0.35, blue: 0.45).opacity(0.14)),
-            (0.78, 0.58, 0.12, 0.19, dark ? Color(red: 0.063, green: 0.725, blue: 0.506).opacity(0.8) : Color(red: 0.063, green: 0.55, blue: 0.42).opacity(0.2)),
-            (0.24, 0.66, 0.09, 0.23, dark ? Color(red: 0.078, green: 0.722, blue: 0.651).opacity(0.7) : Color(red: 0.078, green: 0.58, blue: 0.52).opacity(0.18)),
+            (0.78, 0.58, 0.12, 0.19, dark ? Color(red: 1.0, green: 0.722, blue: 0.42).opacity(0.8) : Color(red: 1.0, green: 0.80, blue: 0.55).opacity(0.2)),
+            (0.24, 0.66, 0.09, 0.23, dark ? Color(red: 1.0, green: 0.478, blue: 0.239).opacity(0.7) : Color(red: 1.0, green: 0.60, blue: 0.38).opacity(0.18)),
         ]
         let minDim = min(size.width, size.height)
         for (ax, ay, fx, fy, color) in specs {
