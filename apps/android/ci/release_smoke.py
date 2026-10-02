@@ -260,10 +260,10 @@ def node_bounds_all(xml, needle, exact=False):
 
 def dock_pill_tap():
     """Tap the floating dock pill through its own label text (the pill shows
-    'Chats' 'Hub' 'Contact' 'Profile' labels). Blind coordinates keep missing
+    'Chats' 'Call' 'Updates' 'Profile' labels). Blind coordinates keep missing
     it across densities; the label is always on the pill."""
     xml = uiax_xml()
-    for label in ("Chats", "Hub"):
+    for label in ("Chats", "Call", "Updates", "Profile"):
         for (x, y) in node_bounds_all(xml, label, exact=True):
             if y > H * 0.72:
                 tap((x, y))
@@ -354,7 +354,7 @@ def main():
     if failed:
         return finish(2)
 
-    # Deterministic tab walk via dock drag (chats -> hub -> contacts -> profile).
+    # Deterministic tab walk via dock drag (chats -> calls -> hub -> profile).
     # Skip entirely when onboarding never finished (drags would hit its UX).
     def in_shell():
         xml = uiax_xml()
@@ -365,7 +365,7 @@ def main():
         if not in_shell():
             note("shell not detected; skipping drag walk")
             return
-        for i, name in enumerate(("hub", "contacts", "profile")):
+        for i, name in enumerate(("calls", "hub", "profile")):
             dock_drag()
             screen("04-drag-%s.png" % name)
             note("dragged to " + name)
@@ -375,26 +375,42 @@ def main():
     if not stage("tab-walk-drag", tab_walk):
         return finish(2)
 
-    # Dock quick-switcher: tap the pill via its label, menu opens; tap items
-    # by popup frame. DOCK_TABS order: chats(0), hub(1), contacts(2), profile(3).
+    # Dock walk: tap each dock tab through its own label text. The reference
+    # dock is a pure 4-tab pill (Chats / Call / Updates / Profile) - no popup
+    # anywhere, so the old quick-switcher stage became a label tap walk.
     def nav_via_switcher():
-        if not dock_pill_tap():
-            return
-        screen("03-switcher-open.png")
-        for idx, label in ((1, "hub"), (2, "contacts"), (3, "profile")):
-            if not tap_switcher_item(idx):
-                return
-            screen("04-switch-%s.png" % label)
-            note("switched to " + label)
+        for label in ("Call", "Updates", "Profile", "Chats"):
+            xml = uiax_xml()
+            target = None
+            for (x, y) in node_bounds_all(xml, label, exact=True):
+                if y > H * 0.72:
+                    target = (x, y)
+                    break
+            if target is None:
+                note("MISS dock label " + label)
+                continue
+            tap(target)
+            time.sleep(2.5)
+            screen("04-tab-%s.png" % label.lower())
+            note("tapped dock tab " + label)
             if not alive():
                 return
-            dock_pill_tap()
 
-    if not stage("nav-switcher", nav_via_switcher):
+    if not stage("nav-tabs", nav_via_switcher):
         return finish(2)
 
-    # Settings entry from the chats header (icon-only button).
+    # Settings entry: chats header kebab (content-desc "More options") first,
+    # then the Settings item inside that menu.
     def open_settings():
+        xml = uiax_xml()
+        kebab = None
+        for (x, y) in node_bounds_all(xml, "More options", exact=True):
+            if y < H * 0.25:
+                kebab = (x, y)
+                break
+        if kebab is not None:
+            tap(kebab)
+            time.sleep(1.5)
         if not tap_scrolling("Settings", wait=3.5):
             return
         screen("06-settings.png")

@@ -200,6 +200,9 @@ fun ChatsScreen(
     // the pencil icon opens the REAL new-chat composer (web chats header).
     onOpenCalls: () -> Unit = {},
     onOpenNewChat: () -> Unit = {},
+    // R25 - the dock More menu moved into the header kebab.
+    onOpenSaved: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     /** Incremented by the dock's More → Search action to open search mode. */
     searchRequest: Int = 0,
     viewModel: ChatsViewModel = hiltViewModel(),
@@ -369,13 +372,18 @@ fun ChatsScreen(
                     onAvatar = { onSwitchTab("profile") },
                     // R2-A item 2 - real calls history (route owned by the shell).
                     onCalls = onOpenCalls,
-                    // R2-A item 1 - real new-chat composer (shell-hosted sheet).
-                    onCompose = onOpenNewChat,
+                    // R25 reference header - the camera glass button opens the
+                    // story composer; the dock FAB stays the new-chat entry.
+                    onStories = onOpenStoriesComposer,
                     onTheme = onCycleTheme,
                     onSearch = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         search = true
                     },
+                    // R25 - the dock More menu lives here now.
+                    onContacts = { onSwitchTab("contacts") },
+                    onSaved = onOpenSaved,
+                    onSettings = onOpenSettings,
                 )
             }
 
@@ -883,9 +891,12 @@ private fun HomeHeader(
     dark: Boolean,
     onAvatar: () -> Unit,
     onCalls: () -> Unit,
-    onCompose: () -> Unit,
+    onStories: () -> Unit,
     onTheme: () -> Unit,
     onSearch: () -> Unit,
+    onContacts: () -> Unit,
+    onSaved: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth()) {
         Row(
@@ -901,8 +912,8 @@ private fun HomeHeader(
                 color = if (dark) EmberText else MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f),
             )
-            // EMB-A glass cluster: search, new chat, kebab (menu absorbs the
-            // calls + theme actions that used to be header icon buttons).
+            // R25 reference glass cluster: search, camera (story composer),
+            // kebab (the menu absorbs contacts/saved/settings + theme).
             var headerMenuOpen by remember { mutableStateOf(false) }
             val glassTint = if (dark) EmberText else MaterialTheme.colorScheme.onBackground
             EmberGlassButton(
@@ -913,9 +924,9 @@ private fun HomeHeader(
             )
             Spacer(Modifier.width(8.dp))
             EmberGlassButton(
-                icon = PulseIcons.Pencil,
-                label = "New chat",
-                onClick = onCompose,
+                icon = PulseIcons.Camera,
+                label = "New story",
+                onClick = onStories,
                 tint = glassTint,
             )
             Spacer(Modifier.width(8.dp))
@@ -933,11 +944,35 @@ private fun HomeHeader(
                     containerColor = if (dark) Color(0xFF241A13) else Color.White,
                 ) {
                     DropdownMenuItem(
+                        text = { Text("Contacts", fontSize = 14.sp) },
+                        leadingIcon = { Icon(PulseIcons.Users, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            headerMenuOpen = false
+                            onContacts()
+                        },
+                    )
+                    DropdownMenuItem(
                         text = { Text("Calls", fontSize = 14.sp) },
                         leadingIcon = { Icon(PulseIcons.Phone, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
                         onClick = {
                             headerMenuOpen = false
                             onCalls()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Saved", fontSize = 14.sp) },
+                        leadingIcon = { Icon(PulseIcons.Bookmark, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            headerMenuOpen = false
+                            onSaved()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Settings", fontSize = 14.sp) },
+                        leadingIcon = { Icon(PulseIcons.Gear, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
+                        onClick = {
+                            headerMenuOpen = false
+                            onSettings()
                         },
                     )
                     DropdownMenuItem(

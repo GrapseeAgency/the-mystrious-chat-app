@@ -55,8 +55,8 @@ object EmberPalette {
     /** Dark circle FAB fill (attach button, 92% of the same ink). */
     val FabFill = Color(0xEB1C1410)
 
-    /** Bubble fills. */
-    val BubbleIn = Color(0xFF2E2824)
+    /** Bubble fills - the reference near-black charcoal (warm-cast). */
+    val BubbleIn = Color(0xFF241D17)
     val BubbleOut = Color(0xFF17110D)
 
     /** Grouped sender name / warm accent text. */

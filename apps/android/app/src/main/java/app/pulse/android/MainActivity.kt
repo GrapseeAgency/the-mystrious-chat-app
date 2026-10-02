@@ -175,8 +175,10 @@ private val DockTeal600 = Color(0xFFFF7A3D)
 private val DockInactiveDark = Color.White.copy(alpha = 0.45f)
 private val DockInactiveLight = Color(0xFF71717A)
 
-/** Canonical tab order - drives dock layout + direction-aware transitions. */
-private val TAB_ROUTES = listOf("chats", "hub", "contacts", "profile")
+/** Canonical tab order - drives dock layout + direction-aware transitions.
+ *  Reference dock: Chats / Call / Updates / Profile. Contacts left the pill
+ *  but stays a registered route reachable from the chats header menu. */
+private val TAB_ROUTES = listOf("chats", "calls", "hub", "profile")
 
 private data class DockTab(
     val route: String,
@@ -186,11 +188,12 @@ private data class DockTab(
     val carriesUnread: Boolean = false,
 )
 
-/** Registry parity with web NAV_ITEMS (nav-router.ts) - EMB-A PulseIcons voice. */
+/** Registry parity with web NAV_ITEMS (nav-router.ts) - EMB-A PulseIcons voice.
+ *  The dock speaks the reference labels: Chats / Call / Updates / Profile. */
 private val DOCK_TABS = listOf(
     DockTab("chats", "Chats", PulseIcons.ChatBubble, PulseIcons.ChatBubble, carriesUnread = true),
-    DockTab("hub", "Hub", PulseIcons.Globe, PulseIcons.Globe),
-    DockTab("contacts", "Contacts", PulseIcons.Users, PulseIcons.Users),
+    DockTab("calls", "Call", PulseIcons.Phone, PulseIcons.Phone),
+    DockTab("hub", "Updates", PulseIcons.Refresh, PulseIcons.Refresh),
     DockTab("profile", "Profile", PulseIcons.Person, PulseIcons.Person),
 )
 
@@ -649,7 +652,8 @@ private fun PulseShell(
     // Dock visibility: tabs + the archived sub-page keep the chrome (web keeps
     // the nav over hash sub-pages); rooms own the whole screen. Wave 2: the
     // saved library keeps it too (it's a shell page, not a room).
-    val showDock = currentRoute in TAB_ROUTES || currentRoute == "archived" || currentRoute == "saved"
+    val showDock = currentRoute in TAB_ROUTES || currentRoute == "archived" || currentRoute == "saved" ||
+        currentRoute == "contacts"
 
     // The system nav bar (gesture pill or 3-button strip) draws over the app -
     // every bottom-anchored surface must clear it.
@@ -762,6 +766,9 @@ private fun PulseShell(
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         newChatOpen = true
                     },
+                    // R25 - the dock More menu lives in the header kebab now.
+                    onOpenSaved = { navController.navigate("saved") },
+                    onOpenSettings = { navController.navigate("settings") },
                     searchRequest = searchTick,
                 )
 
@@ -1428,52 +1435,20 @@ private fun CapsuleDock(
                 Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DockTabButton(
-                    tab = DOCK_TABS[0],
-                    active = active == "chats",
-                    unread = unread,
-                    dark = dark,
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier.weight(1f),
-                    onSelect = { onSelect("chats") },
-                )
-                DockTabButton(
-                    tab = DOCK_TABS[1],
-                    active = active == "hub",
-                    unread = 0,
-                    dark = dark,
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier.weight(1f),
-                    onSelect = { onSelect("hub") },
-                )
-                DockTabButton(
-                    tab = DOCK_TABS[2],
-                    active = active == "contacts",
-                    unread = 0,
-                    dark = dark,
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier.weight(1f),
-                    onSelect = { onSelect("contacts") },
-                )
-                DockTabButton(
-                    tab = DOCK_TABS[3],
-                    active = active == "profile",
-                    unread = 0,
-                    dark = dark,
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier.weight(1f),
-                    onSelect = { onSelect("profile") },
-                )
-                MoreDockButton(
-                    dark = dark,
-                    open = moreMenuOpen,
-                    onOpenChange = onMoreMenuChange,
-                    onSearch = onSearch,
-                    onSaved = onSaved,
-                    onStories = onStories,
-                    onSettings = onSettings,
-                    onDeferred = onDeferred,
-                )
+                // Reference dock: exactly the four labeled tabs in the pill;
+                // the More menu moved to the chats header kebab (the round
+                // compose FAB stays outside the pill, per the reference).
+                DOCK_TABS.forEach { tab ->
+                    DockTabButton(
+                        tab = tab,
+                        active = active == tab.route,
+                        unread = if (tab.carriesUnread) unread else 0,
+                        dark = dark,
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier.weight(1f),
+                        onSelect = { onSelect(tab.route) },
+                    )
+                }
             }
         }
         // separate 56dp circular FAB - the existing new-chat action
@@ -1818,17 +1793,17 @@ private fun FloatingTopDock(
                     )
                     Spacer(Modifier.width(gap))
                     DockTabButton(
-                        tab = DOCK_TABS[1], active = active == "hub", unread = 0,
+                        tab = DOCK_TABS[1], active = active == DOCK_TABS[1].route, unread = 0,
                         dark = dark, reducedMotion = reducedMotion,
-                        modifier = Modifier.weight(1f), onSelect = { actions.onSelect("hub") },
+                        modifier = Modifier.weight(1f), onSelect = { actions.onSelect(DOCK_TABS[1].route) },
                     )
                     Spacer(Modifier.width(gap))
                     ComposeDockButton(actions.onCompose, size = composeW)
                     Spacer(Modifier.width(gap))
                     DockTabButton(
-                        tab = DOCK_TABS[2], active = active == "contacts", unread = 0,
+                        tab = DOCK_TABS[2], active = active == DOCK_TABS[2].route, unread = 0,
                         dark = dark, reducedMotion = reducedMotion,
-                        modifier = Modifier.weight(1f), onSelect = { actions.onSelect("contacts") },
+                        modifier = Modifier.weight(1f), onSelect = { actions.onSelect(DOCK_TABS[2].route) },
                     )
                     Spacer(Modifier.width(gap))
                     DockTabButton(
@@ -1935,9 +1910,9 @@ private fun PillDock(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PillTabItem(DOCK_TABS[0], active == "chats", unread, dark, Modifier.weight(1f)) { actions.onSelect("chats") }
-                    PillTabItem(DOCK_TABS[1], active == "hub", 0, dark, Modifier.weight(1f)) { actions.onSelect("hub") }
+                    PillTabItem(DOCK_TABS[1], active == DOCK_TABS[1].route, 0, dark, Modifier.weight(1f)) { actions.onSelect(DOCK_TABS[1].route) }
                     ComposeDockButton(actions.onCompose, size = composeW)
-                    PillTabItem(DOCK_TABS[2], active == "contacts", 0, dark, Modifier.weight(1f)) { actions.onSelect("contacts") }
+                    PillTabItem(DOCK_TABS[2], active == DOCK_TABS[2].route, 0, dark, Modifier.weight(1f)) { actions.onSelect(DOCK_TABS[2].route) }
                     PillTabItem(DOCK_TABS[3], active == "profile", 0, dark, Modifier.weight(1f)) { actions.onSelect("profile") }
                     MoreDockButton(
                         dark = dark,
@@ -2020,8 +1995,8 @@ private fun BottomBarDock(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     BarTabItem(DOCK_TABS[0], active == "chats", unread, dark, Modifier.weight(1f)) { actions.onSelect("chats") }
-                    BarTabItem(DOCK_TABS[1], active == "hub", 0, dark, Modifier.weight(1f)) { actions.onSelect("hub") }
-                    BarTabItem(DOCK_TABS[2], active == "contacts", 0, dark, Modifier.weight(1f)) { actions.onSelect("contacts") }
+                    BarTabItem(DOCK_TABS[1], active == DOCK_TABS[1].route, 0, dark, Modifier.weight(1f)) { actions.onSelect(DOCK_TABS[1].route) }
+                    BarTabItem(DOCK_TABS[2], active == DOCK_TABS[2].route, 0, dark, Modifier.weight(1f)) { actions.onSelect(DOCK_TABS[2].route) }
                     BarTabItem(DOCK_TABS[3], active == "profile", 0, dark, Modifier.weight(1f)) { actions.onSelect("profile") }
                     Spacer(Modifier.width(4.dp))
                     ComposeDockButton(actions.onCompose, size = 38.dp)
@@ -2837,6 +2812,7 @@ private fun ContextualDockDock(
     // (nav-router.tsx:1193-1240 - New chat / Search / New group / Settings).
     val (chipLabel, chipIcon, chipAction) = when (active) {
         "chats" -> Triple("New chat", PulseIcons.Plus, actions.onCompose)
+        "calls" -> Triple("Search", PulseIcons.Search, actions.onSearch)
         "hub" -> Triple("Search", PulseIcons.Search, actions.onSearch)
         "contacts" -> Triple("New group", PulseIcons.Users, actions.onCompose)
         else -> Triple("Settings", PulseIcons.Gear, actions.onSettings)
