@@ -442,10 +442,10 @@ struct ProfileEditView: View {
         defer { avatarUploading = false }
         let snapshot = viewer
         // Optimistic local clear (the viewer mirror drives every surface).
-        prefs.setViewer(PulseViewer(id: viewer.id, name: viewer.name, username: viewer.username, color: viewer.color, avatar: nil))
+        prefs.setViewer(PulseViewer(id: viewer.id, name: viewer.name, username: viewer.username, color: viewer.color, avatar: nil, coverImage: viewer.coverImage))
         do {
             let user = try await session.api.updateProfile(userId: viewer.id, body: ["avatar": ""])
-            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar))
+            prefs.setViewer(PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, coverImage: user.coverImage))
             adopt(user)
             avatarPreview = nil
             PulseHaptics.success()
@@ -509,12 +509,13 @@ struct ProfileEditView: View {
             username: handle.isEmpty ? viewer.username : handle,
             color: color,
             avatar: viewer.avatar,
+            coverImage: viewer.coverImage,
         )
         prefs.setViewer(optimistic)
 
         do {
             let user = try await session.api.updateProfile(userId: viewer.id, body: body)
-            optimistic = PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar)
+            optimistic = PulseViewer(id: user.id, name: user.name, username: user.username, color: user.color, avatar: user.avatar, coverImage: user.coverImage)
             prefs.setViewer(optimistic)
             prefs.setViewerProfile(
                 about: user.about ?? "",

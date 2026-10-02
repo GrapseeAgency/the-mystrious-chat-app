@@ -4733,3 +4733,16 @@ Stage Summary:
 - Cover pictures are a real system now (schema + validation + upload pipeline + render on own profile, user pages, and the sheet) on web AND Android; iOS mirrors next.
 - Non-stop loop armed: recurring webDevReview cron continues the wave queue (CI verification -> native feel wave -> iOS cover mirror -> haptics gate completion).
 - Open items: iOS cover + kebab mirror, haptics toggle full gating, stale download/update-manifest.json (v0.11.1-era, untouched by 0.15-0.17 releases - LiveUpdater still points old; needs one bump once the 0.18 release publishes), emerald launcher icon glyph (needs user brand signal).
+
+---
+Task ID: R39-ios-mirror
+Agent: orchestrator (Z.ai main session)
+Task: mirror the R39 cover-picture system + profile kebab Hub/Settings onto iOS while the v0.18.0-native CI tag run rebuilds.
+
+Work Log:
+- Fixed the Android tag-run compile failure first (missing pulseTabBackdrop import in MainActivity; CI caught it, root-caused from the run logs, fix pushed, tag force-moved; runs 36980626168/36980626138 re-triggered).
+- iOS cover mirror: WireUser.coverImage (tolerant Codable optional), PulseViewer.coverImage (+ init(from wire:) pass-through), PulseCoverImage pipeline (2:1 1200x600 center-crop JPEG q0.85, web coverFileToDataUrl parity), ProfileView cover banner (Add row when unset, 116pt banner + Change/Remove glass chips when set, AsyncImage via PulseTheme.photoURL), setCover/removeCover flows through session.api.uploadMedia + updateProfile(coverImage) + prefs.setViewer(PulseViewer(from:)), every PulseViewer construction site audited so the mirror never drops the field, ProfileEditView optimistic/rollback constructions carry coverImage.
+- iOS kebab mirror: ProfileView menu now hosts Hub + Settings above Edit profile/Saved/Switch identity; RootView passes onOpenHub { switchTab(.hub) } + onOpenSettings { settingsOpen = true }.
+- UserPageView: cover banner in the hero when the member set one.
+- Token correction caught pre-push: iOS has hairlineStrong/hairlineSoft/hairlinePanel (no bare hairline) - banner borders use hairlineSoft; brace balance ok on all 7 edited Swift files.
+- Browser QA receipt (web, before this entry): fresh onboarding walked end-to-end; profile hero shows the live "Add cover picture" chip; kebab menu lists Hub / Settings / Saved messages; Settings opens from the kebab; /api/health {"ok":true}; dev.log clean.

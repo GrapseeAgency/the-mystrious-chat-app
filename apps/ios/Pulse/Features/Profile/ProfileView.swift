@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PhotosUI
 
 /// Profile - PULSE EMBER (EMB-I) mirror of the reference profile screen:
 /// the sunset ground with glass chrome, a centered 96pt avatar with the
@@ -13,6 +14,10 @@ import UIKit
 struct ProfileView: View {
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
+    // R39 - the user ask: Hub and Settings live in the profile corner menu
+    // (web ProfileMoreMenu parity); RootView hands the real switches.
+    var onOpenHub: () -> Void = {}
+    var onOpenSettings: () -> Void = {}
 
     @State private var identitySheet = false
     // Wave 6 - the full profile editor (F-CP-04/09) via the real PATCH.
@@ -33,6 +38,9 @@ struct ProfileView: View {
     // The account card: copy-ID confirmation + sign-out dialog.
     @State private var idCopied = false
     @State private var signOutArmed = false
+    // R39 - profile cover picture (web parity): pick, upload, remove.
+    @State private var coverItem: PhotosPickerItem?
+    @State private var coverBusy = false
 
     var body: some View {
         NavigationStack {
@@ -46,6 +54,7 @@ struct ProfileView: View {
                 ScrollView {
                     VStack(spacing: 14) {
                         profileTopChrome
+                        coverBanner
                         identityBlock
                         statusBioBlock
                         statsRow
@@ -86,6 +95,12 @@ struct ProfileView: View {
             await loadWallet()
             await loadStats()
         }
+        // R39 - cover pick flows through the upload pipeline.
+        .onChange(of: coverItem) { _, item in
+            guard let item else { return }
+            coverItem = nil
+            Task { await setCover(item) }
+        }
     }
 
     // ── top chrome (EMB-I) ───────────────────────────────────
@@ -98,6 +113,18 @@ struct ProfileView: View {
         HStack(spacing: 10) {
             Spacer()
             Menu {
+                Button {
+                    PulseHaptics.tap()
+                    onOpenHub()
+                } label: {
+                    Label("Hub", systemImage: "square.grid.2x2")
+                }
+                Button {
+                    PulseHaptics.tap()
+                    onOpenSettings()
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
                 Button {
                     PulseHaptics.tap()
                     editProfileOpen = true
@@ -124,6 +151,133 @@ struct ProfileView: View {
     }
 
     // ── identity (web reference profile: centered column) ────
+
+    /// R39 - the profile cover picture. No cover set: a quiet glass "Add
+    /// cover" row keeps the reference look at rest. Cover set: a 2:1 banner
+    /// with Change / Remove glass chips (web hero parity).
+    @ViewBuilder
+    private var coverBanner: some View {
+        if let cover = prefs.viewer?.coverImage, !cover.isEmpty {
+            ZStack(alignment: .bottomTrailing) {
+                AsyncImage(url: PulseTheme.photoURL(cover)) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Rectangle().fill(PulseTheme.glassFill)
+                    }
+                }
+                .frame(height: 116)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .strokeBorder(PulseTheme.hairlineSoft, lineWidth: 1)
+                )
+                .overlay(alignment: .bottom) {
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.28)],
+                        startPoint: .top,
+                        endPoint: .bottom,
+                    )
+                    .allowsHitTesting(false)
+                }
+                HStack(spacing: 8) {
+                    PhotosPicker(selection: $coverItem, matching: .images) {
+                        HStack(spacing: 5) {
+                            if coverBusy {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: "photo")
+                            }
+                            Text("Change").font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(.black.opacity(0.35)))
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 1))
+                    }
+                    .disabled(coverBusy)
+                    Button {
+                        PulseHaptics.tap()
+                        Task { await removeCover() }
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .padding(7)
+                            .background(Capsule().fill(.black.opacity(0.35)))
+                            .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 1))
+                    }
+                    .disabled(coverBusy)
+                }
+                .padding(10)
+            }
+        } else {
+            PhotosPicker(selection: $coverItem, matching: .images) {
+                HStack(spacing: 6) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Add cover picture")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(.white.opacity(0.65))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(PulseTheme.glassFill),
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(PulseTheme.hairlineSoft, lineWidth: 1),
+                )
+            }
+            .disabled(coverBusy)
+        }
+    }
+
+    /// R39 - PhotosPicker byte flow: 2:1 banner crop -> POST /api/uploads ->
+    /// PATCH coverImage -> viewer mirror refresh (web coverMutation parity).
+    private func setCover(_ item: PhotosPickerItem) async {
+        guard !coverBusy, let viewer = prefs.viewer else { return }
+        guard let raw = try? await item.loadTransferable(type: Data.self),
+              let jpeg = PulseCoverImage.jpegData(from: raw) else {
+            session.toasts.show("Couldn't read that image - try another one")
+            return
+        }
+        coverBusy = true
+        defer { coverBusy = false }
+        do {
+            let path = try await session.api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
+            let user = try await session.api.updateProfile(
+                userId: viewer.id,
+                body: ["coverImage": "/api/uploads/\(path)"],
+            )
+            prefs.setViewer(PulseViewer(from: user))
+            PulseHaptics.success()
+            session.toasts.show("Cover picture updated")
+        } catch {
+            PulseHaptics.warning()
+            session.toasts.show(ChatsViewModel.describe(error))
+        }
+    }
+
+    /// R39 - cover removal mirrors the web remove mutation (PATCH "").
+    private func removeCover() async {
+        guard !coverBusy, let viewer = prefs.viewer else { return }
+        coverBusy = true
+        defer { coverBusy = false }
+        do {
+            let user = try await session.api.updateProfile(userId: viewer.id, body: ["coverImage": ""])
+            prefs.setViewer(PulseViewer(from: user))
+            PulseHaptics.success()
+            session.toasts.show("Cover picture removed")
+        } catch {
+            PulseHaptics.warning()
+            session.toasts.show(ChatsViewModel.describe(error))
+        }
+    }
 
     /// Centered 96pt avatar with the amber presence dot, bold name, and
     /// the handle line at 13pt white 55%.

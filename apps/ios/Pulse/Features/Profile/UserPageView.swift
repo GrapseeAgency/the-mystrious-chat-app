@@ -66,6 +66,24 @@ struct UserPageView: View {
 
     private func hero(_ user: WireUser) -> some View {
         VStack(spacing: 10) {
+            // R39 - cover picture banner (web parity) when the member set one.
+            if let cover = user.coverImage, !cover.isEmpty {
+                AsyncImage(url: PulseTheme.photoURL(cover)) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Rectangle().fill(PulseTheme.glassFill)
+                    }
+                }
+                .frame(height: 120)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .strokeBorder(PulseTheme.hairlineSoft, lineWidth: 1)
+                )
+                .accessibilityLabel("Cover picture of \(user.name)")
+            }
             PulseAvatar(
                 name: user.name,
                 color: PulseTheme.color(named: user.color),

@@ -255,7 +255,14 @@ struct RootView: View {
                 ContactsView(session: session)
                     .transition(panelTransition)
             case .profile:
-                ProfileView(session: session, prefs: prefs)
+                ProfileView(
+                    session: session,
+                    prefs: prefs,
+                    // R39 - the profile corner menu hands off to the real
+                    // Hub tab and the Settings sheet (web ProfileMoreMenu).
+                    onOpenHub: { switchTab(.hub) },
+                    onOpenSettings: { settingsOpen = true },
+                )
                     .transition(panelTransition)
             }
         }
