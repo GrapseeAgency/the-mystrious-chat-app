@@ -4621,3 +4621,29 @@ Stage Summary:
 - SHIPPED + PROVEN: v0.15.0-native (versionCode 32) on GitHub Releases - the v0.14.0 rebuild is fully reverted, the app speaks the user's reference language (restored ember surfaces + reference nav pill Chats/Call/Updates/Profile + FAB on Android and iOS), and the released artifact is emulator-proven: booted, onboarded, all four dock tabs navigated by label, settings reached through the header kebab, zero crash markers on API 30+34, screenshots archived.
 - Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.15.0-native
 - Open items for the next wave: web ci re-check after the revert (web untouched by all three reverted commits - no exposure), iOS device-level visual pass, story tiles still gradient-initials (no photo assets in-repo), light-mode reference polish (the reference shots are dark; dark surfaces already match, light chrome shows the same structure).
+
+---
+Task ID: R36-audit
+Agent: orchestrator (Z.ai main session)
+Task: user audit of the web app (F): (1) Hub/Settings unreachable, add them to a three-dot menu in the profile corner; (2) the new design system only covers some pages - unify it across the ENTIRE app (Docs/Hub/Home all spoke different languages); (3) dark mode must be the DEFAULT; (4) backend must communicate more seamlessly with native components (native features, motion effects)
+
+Work Log:
+- Dev environment repair first: user creation 500ed because the long-running next-server held a stale read-only SQLite handle; a server restart fixed writes (probe: POST /api/users 201). Started the pulse-socket mini-service (:3003) for the E2E leg.
+- Dark by default: next-themes defaultTheme light -> dark. Appearance > Color Mode shows Dark selected; users can still switch (Light/Dark/System + design language + 13 nav styles all intact in Settings).
+- Theme unification: new UiThemeAttr mirrors the active design language onto document.body[data-ui] - body-portaled menus/sheets and hash sub-pages now inherit --ui-* tokens (portals escaped .ui-root before, which is exactly why Hub/Docs/other pages rendered a different theme than Home).
+- Token realignment: :root/.dark shadcn tokens realigned to the ember language (light = warm paper #FBF6F0 + burnt ember #C9762B; dark = #150F0B field + #1E1610 panels + amber #FFB86B signal). The old .dark mint/neo tokens were the second theme fighting the ember chrome.
+- Accent sweep: 57 chrome files swept emerald/teal/cyan/sky -> amber/orange/violet (two-pass text contrast mapping). Guarded exclusions: avatar identity gradients (lib), wallpaper previews in Settings, game player colors, message-effect palettes.
+- Hub retint: teal/cyan wallet hero + header icon -> theme-token ember gradients; ledger kind colors warmed.
+- Nav unread badge -> reference red (rose-500/red-500).
+- Aurora (default WebGL ambient) shader repainted to ember (amber/ember/violet bands, warm dark base) - the huge green ambient wash is gone.
+- Illustrations: generated ember-language assets (public/empty-chats-ember.png, public/onboarding-hero-ember.png) replacing the green empty-state + onboarding art.
+- Profile corner kebab (user's exact ask): glass three-dot button in the profile cover corner -> portal glass menu with Hub / Settings / Saved messages; wired through MainShell (Hub switches tab, Settings opens the overlay). Verified by clicking every item in the browser.
+- Native bridge (backend focus): new src/lib/native-bridge.ts contract + GET /api/native/manifest (haptic moments, effect specs with hapticPattern/hapticIntensity/motionCurve/durationMs, realtime cadence, push caps). Both message:new relays (interactive send + automation webhook) now carry a parse-free `native` block derived from the message payload so Android/iOS/PWA shells trigger effects + haptics without JSON spelunking. scripts/e2e/native-relay.ts connects a real socket client and asserts the block over the wire: pass:true.
+- False alarms worth noting: two suspected syntax corruptions ("const emberRows", "pb-ax(") were display-eating of "[m" sequences in tool output; byte-level checks proved the files valid. No corruption existed.
+- Hygiene: eslint clean; PAT scan on the staged diff = 0 hits; commit d5b473c pushed to GitHub main with inline PAT then the remote URL scrubbed; backup mirror pushed.
+
+Stage Summary:
+- The web app now reads as ONE warm ember design in dark (default) and light: chats, hub, profile, contacts, settings, nav dock, ambient shader, illustrations all share tokens; body-portaled surfaces included.
+- Hub + Settings reachable from the profile corner kebab on top of the dock/overflow paths.
+- Backend ships a native capability contract (/api/native/manifest) and parse-free effect/haptic metadata on every message relay - verified end-to-end via socket (scripts/e2e/native-relay.ts, pass:true).
+- Known open items: story tiles on mobile reference remain gradient initials; iOS/Android should consume the native block next (the wire contract is ready); db/custom.db left dirty (QA test rows) and excluded from the commit.
