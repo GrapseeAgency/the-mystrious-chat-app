@@ -329,12 +329,12 @@ final class OnboardingViewModel: ObservableObject {
             about: nil,
             color: color,
             avatar: nil,
+            coverImage: nil,
             statusEmoji: nil,
             statusText: nil,
             createdAt: nil,
             lastSeenAt: nil,
             verified: nil,
-            coverImage: nil,
         )
     }
 }

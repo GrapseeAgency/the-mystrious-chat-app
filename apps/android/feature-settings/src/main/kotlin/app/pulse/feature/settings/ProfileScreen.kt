@@ -20,10 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
-import app.pulse.core.PulseEndpoints
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -270,32 +266,6 @@ fun ProfileScreen(
         }
 
         Spacer(Modifier.height(2.dp))
-
-        // R50-b - the profile cover: a real uploaded background photo rides
-        // ABOVE the identity block, melting into the ember backdrop through a
-        // bottom fade. No cover set = the clean ember stage (unchanged).
-        val coverPath = viewer?.cover
-        if (!coverPath.isNullOrBlank() && coverPath.startsWith("/api/uploads/")) {
-            AsyncImage(
-                model = PulseEndpoints.http(coverPath),
-                contentDescription = "Profile cover photo",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(132.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .drawBehind {
-                        // ember fade so the band melts into the backdrop
-                        drawRect(
-                            Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                1f to Color(0xFF1A0F0A).copy(alpha = 0.85f),
-                            ),
-                        )
-                    },
-            )
-            Spacer(Modifier.height(10.dp))
-        }
 
         // EMB identity block: centered 96dp avatar; the presence dot rides
         // bottom-right with a 2.5dp BackdropBase ground ring (the old emerald
