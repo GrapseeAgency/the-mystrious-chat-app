@@ -4567,3 +4567,36 @@ Stage Summary:
 - The release artifact is provably bootable, onboardable, and navigable in CI at least once; the user's device crash is NOT yet reproduced or explained. Suspects remaining: device-API-specific paths (API 34 leg now covered), real-data-specific paths (legacy folders/topics pre-R18 - resolution code audited safe), App Lock biometric gate (audited safe), or an intermittent race (Hub death seen once).
 - CI evidence artifacts per run: pulse-release-smoke-<api> (screenshots + report + logcat-full.txt + crash-logcat.txt on capture).
 - Screen QA pending: phone-metric screenshots from the API 34 leg will drive the visible-error UI fixes the user demands.
+
+---
+Task ID: R23-revert
+Agent: orchestrator (Z.ai main session)
+Task: user verdict - v0.14.0-native (R24 emerald/carbon) was "completely unforgivable", revert EVERYTHING from that version, keep the old (ember) design, then build the UI EXACTLY like the 5 uploaded reference screenshots (warm espresso surfaces, floating labeled pill nav, glass circles, red badges, orange presence, charcoal bubbles)
+
+Work Log:
+- Git archaeology: v0.14.0-native = fc4d3ec (R24 Android rebuild) + 326b6d5 (iOS mirror) + 977eb35 (worklog). Base to restore = 0871a09 (v0.13.1-ember).
+- Revert executed: git revert --no-commit of all three commits; working tree verified byte-identical to 0871a09 (git diff empty); committed as a75f74a and pushed to main. Nothing from the old design deleted - only the R24 version's changes removed.
+- PAT hygiene scan on the revert diff: 0 hits.
+
+Stage Summary:
+- main = a75f74a = the v0.13.1-ember app (warm ember tokens, capsule dock, glass chrome) with zero R24 remnants. iOS CI on the revert commit: SUCCESS (36956497865).
+
+---
+Task ID: R23-reference
+Agent: orchestrator (Z.ai main session)
+Task: build the reference UI on the restored ember base - dock speaks the reference EXACTLY (Chats / Call / Updates / Profile + round FAB), header glass cluster, charcoal bubbles; Android + iOS mirror; ship v0.15.0-native (versionCode 32) via GitHub Actions only
+
+Work Log:
+- Reference spec extracted from the 5 uploaded screenshots: warm espresso gradient grounds, floating frosted pill nav with 4 LABELED tabs (active = white + tiny red dot) + separate round compose FAB, large "Chats" title + search/camera/kebab glass circles, story rail, filter chips (light active pill), red unread badges, orange presence dots, near-black charcoal bubbles, glass input pill with camera + round attach.
+- Android dock remap (MainActivity): TAB_ROUTES chats/calls/hub/profile; DOCK_TABS relabeled Chats / Call(Phone icon) / Updates(Refresh icon, hub route) / Profile; CapsuleDock pill now exactly the 4 tabs via DOCK_TABS.forEach (MoreDockButton removed from the pill); FloatingTop/Pill/BottomBar docks route-driven via DOCK_TABS[i].route; ContextualDock gained the calls branch; contacts stays a registered route + showDock covers it (reachable from the chats header menu).
+- Chats header: pencil glass button became the reference CAMERA (opens the story composer); the kebab menu absorbs the dock More menu (Contacts / Calls / Saved / Settings / theme); new ChatsScreen params onOpenSaved/onOpenSettings wired in MainActivity (navigate saved/settings).
+- Bubbles: EmberPalette.BubbleIn 0xFF2E2824 -> 0xFF241D17 (reference charcoal, warm-cast); BubbleOut unchanged 0xFF17110D.
+- Smoke driver (ci/release_smoke.py) re-pointed to the reference dock: label walk Chats/Call/Updates/Profile (stage nav-tabs), drag walk chats->calls->hub->profile, settings stage opens the chats header kebab (content-desc "More options") first. py_compile clean.
+- Version bump: versionCode 32, versionName 0.15.0-native (31 burned by the reverted v0.14.0).
+- iOS mirror (RootView/ChatsView/NavDockStyles): PulseTab gains .calls (chats, calls, hub, contacts, profile - contacts kept as a reachable case, no dock slot); tabPanels renders CallsHistoryView as the .calls panel; CapsuleDock pill = the four reference tabs (phone / arrow.triangle.2.circlepath glyphs), moreButton out of the pill; ChatsHeaderBar camera opens stories, ellipsis menu gains Contacts/Saved/Stories/Settings; NavDockStyles destinations + both contextual-chip switches updated exhaustively.
+- Hygiene: brace deltas balanced on all edited Kotlin files, em-dash/emoji scan 0, PAT scan 0, no test pins on old labels (Android + iOS scans clean), release_smoke.py compiles.
+- SHIP: commit 8b2b50e pushed to main + tag v0.15.0-native; Android CI 36957348694 + iOS CI 36957348725 fired on the tag (build + JVM tests + signed R8 + emulator release smoke on API 30/34 for Android; archive + build-test for iOS). Release publishes only after the smoke boots the signed artifact.
+
+Stage Summary:
+- The app speaks the user's reference language again: warm ember surfaces (restored), reference nav pill (Chats / Call / Updates / Profile + FAB) on both platforms, reference chats header, charcoal bubbles. v0.15.0-native shipping through GitHub Actions with emulator-walk evidence.
+- Honest caveats: story tiles render gradient initials (no photo assets in-repo); filter chips keep the app's real filters (All/Unread/Groups) instead of the reference's decorative labels - faking non-existent filters was rejected.
