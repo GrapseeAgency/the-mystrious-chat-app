@@ -28,3 +28,56 @@ export function bearerToken(req: Request): string | null {
   const match = /^Bearer\s+(.+)$/i.exec(header.trim())
   return match ? match[1].trim() : null
 }
+
+// R52 - token grace list. A single stored hash made every login a
+// global log-out: the demo identity is shared across devices + QA
+// (phone, web preview, scripts) and each reclaim rotated the hash,
+// instantly 401-ing every other session, which the native clients
+// answer by tearing the device session down (the "can barely log in,
+// demo isn't working" loop). Now a login keeps the previous hash in
+// User.legacyTokenHashes (JSON array, newest first, capped) and every
+// validator accepts the primary hash OR any grace-listed one.
+
+const LEGACY_TOKEN_CAP = 8
+
+/** Parse the stored legacy-hash JSON array; tolerant of garbage/null. */
+export function parseLegacyTokenHashes(json: string | null | undefined): string[] {
+  if (!json) return []
+  try {
+    const parsed: unknown = JSON.parse(json)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((v): v is string => typeof v === 'string' && v.length > 0)
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Rotate bookkeeping: push the outgoing primary hash onto the grace list
+ * (newest first, dedup, capped) and return the serialized array for
+ * User.legacyTokenHashes.
+ */
+export function pushLegacyTokenHash(previousHash: string | null | undefined, legacyJson: string | null | undefined): string {
+  const list = parseLegacyTokenHashes(legacyJson)
+  if (previousHash) {
+    const without = list.filter((h) => h !== previousHash)
+    without.unshift(previousHash)
+    return JSON.stringify(without.slice(0, LEGACY_TOKEN_CAP))
+  }
+  return JSON.stringify(list.slice(0, LEGACY_TOKEN_CAP))
+}
+
+/**
+ * Acceptance check used by every validator (proxy, internal verify):
+ * the presented raw token matches the user's primary hash OR any
+ * grace-listed previous hash.
+ */
+export function tokenAccepted(
+  user: { sessionTokenHash: string | null; legacyTokenHashes?: string | null } | null | undefined,
+  rawToken: string,
+): boolean {
+  if (!user) return false
+  const hash = hashSessionToken(rawToken)
+  if (user.sessionTokenHash && user.sessionTokenHash === hash) return true
+  return parseLegacyTokenHashes(user.legacyTokenHashes).includes(hash)
+}

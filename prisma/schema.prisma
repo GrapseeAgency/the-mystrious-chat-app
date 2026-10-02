@@ -24,6 +24,7 @@ model User {
   statusText         String? // Discord-style custom status line (null = none)
   preferences        String? // JSON-encoded Pulse prefs blob (see src/lib/prefs-defaults.ts)
   sessionTokenHash   String? // sha256 hex of the native session token (spec §3.11 A-1/A-2) — raw token never stored; null = pre-token identity (migration-accepted)
+  legacyTokenHashes  String? // JSON array of up to 8 recent previous session-token hashes (R52 grace list) — concurrent device logins must not invalidate each other; the newest hash stays in sessionTokenHash
   createdAt          DateTime                  @default(now())
   lastSeenAt         DateTime                  @default(now())
   appInstalls        AppInstall[]

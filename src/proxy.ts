@@ -31,9 +31,16 @@ export default async function proxy(req: NextRequest) {
     return NextResponse.next()
   }
 
+  // R52 - acceptance spans the primary hash AND the grace list, so a
+  // second device's reclaim no longer invalidates this session.
   const hash = hashSessionToken(token)
   const user = await db.user.findFirst({
-    where: { sessionTokenHash: hash },
+    where: {
+      OR: [
+        { sessionTokenHash: hash },
+        { legacyTokenHashes: { contains: JSON.stringify([hash]).slice(1, -1) } },
+      ],
+    },
     select: { id: true },
   })
   if (!user) {

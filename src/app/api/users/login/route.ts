@@ -14,7 +14,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapUser, safeJson, strField } from '@/lib/serializers'
-import { generateSessionToken, hashSessionToken } from '@/lib/session-token'
+import { generateSessionToken, hashSessionToken, pushLegacyTokenHash } from '@/lib/session-token'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,11 +36,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'No identity with that name on this Pulse.' }, { status: 404 })
   }
 
-  // Rotate: the newest reclaim invalidates earlier tokens for this identity.
+  // Rotate: the newest reclaim becomes the primary credential. R52 - the
+  // outgoing hash moves to the grace list (legacyTokenHashes, cap 8)
+  // instead of being destroyed, so the phone that logged in this morning
+  // is NOT 401-torn-down the moment another device reclaims the same
+  // identity. Last login wins the primary; earlier sessions keep working.
   const token = generateSessionToken()
   await db.user.update({
     where: { id: user.id },
-    data: { sessionTokenHash: hashSessionToken(token), lastSeenAt: new Date() },
+    data: {
+      sessionTokenHash: hashSessionToken(token),
+      legacyTokenHashes: pushLegacyTokenHash(user.sessionTokenHash, user.legacyTokenHashes),
+      lastSeenAt: new Date(),
+    },
   })
 
   return NextResponse.json({ user: mapUser(user), token })

@@ -137,25 +137,27 @@ class OnboardingViewModel @Inject constructor(
     /**
      * Live probe of a CANDIDATE base without touching the global endpoints:
      * GET <base>/api/users must answer 200 with a JSON body carrying the
-     * users array. Same dependency-free HttpURLConnection pattern the
+     * users array; as an R52 fallback GET <base>/api/health answers with the
+     * ok/database heartbeat (covers hardened gateways where /api/users is
+     * auth-gated). Same dependency-free HttpURLConnection pattern the
      * deployment-manifest fetcher uses (4s timeouts, honest verdict).
      */
     private fun probeBase(base: String): Pair<Boolean, String> = try {
-        val conn = java.net.URL("$base/api/users").openConnection() as java.net.HttpURLConnection
-        conn.connectTimeout = 4_000
-        conn.readTimeout = 4_000
-        conn.instanceFollowRedirects = true
-        try {
-            val code = conn.responseCode
-            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                ?.bufferedReader()?.use { it.readText() } ?: ""
-            if (code in 200..299 && body.contains("users")) {
-                true to "Connected. This is a live Pulse server."
-            } else {
-                false to "That host answered but it is not a Pulse gateway (HTTP $code)."
+        val users = probeUrl("$base/api/users")
+        val usersOk = users.first && users.second.contains("users")
+        when {
+            usersOk -> true to "Connected. This is a live Pulse server."
+            users.first -> false to "That host answered but it is not a Pulse gateway (HTTP ${users.third})."
+            else -> {
+                val health = probeUrl("$base/api/health")
+                if (health.first && health.second.contains("ok")) {
+                    true to "Connected. This is a live Pulse server."
+                } else if (health.first) {
+                    false to "That host answered but it is not a Pulse gateway (HTTP ${health.third})."
+                } else {
+                    false to "Could not reach that host - check the address and your network."
+                }
             }
-        } finally {
-            conn.disconnect()
         }
     } catch (e: java.net.UnknownHostException) {
         false to "Host not found - check the address and your network."
@@ -163,6 +165,22 @@ class OnboardingViewModel @Inject constructor(
         false to "Could not reach that host - plain HTTP may be blocked, try https."
     } catch (e: Exception) {
         false to "Probe failed: ${e.message ?: "unknown error"}"
+    }
+
+    /** GET a URL, return (reached, body, httpCode) - shared by both probe paths. */
+    private fun probeUrl(url: String): Triple<Boolean, String, Int> {
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 4_000
+        conn.readTimeout = 4_000
+        conn.instanceFollowRedirects = true
+        return try {
+            val code = conn.responseCode
+            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                ?.bufferedReader()?.use { it.readText() } ?: ""
+            Triple(code in 200..299, body, code)
+        } finally {
+            conn.disconnect()
+        }
     }
 
     /**

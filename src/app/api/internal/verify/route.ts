@@ -13,7 +13,7 @@
 // Response is a boolean only - never reveals which part failed.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hashSessionToken } from '@/lib/session-token'
+import { tokenAccepted } from '@/lib/session-token'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,9 +39,11 @@ export async function GET(req: Request) {
 
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { sessionTokenHash: true },
+    select: { sessionTokenHash: true, legacyTokenHashes: true },
   })
-  // No stored hash (pre-token identity) → token cannot match → invalid.
-  const valid = Boolean(user?.sessionTokenHash) && user!.sessionTokenHash === hashSessionToken(token)
+  // R52 - the presented token may match the primary hash OR any
+  // grace-listed previous hash (concurrent-device reclaim support).
+  // No stored hash at all (pre-token identity) → invalid.
+  const valid = tokenAccepted(user, token)
   return NextResponse.json({ valid })
 }
