@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -110,9 +109,8 @@ import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.StoryCell
 import app.pulse.feature.chat.R
 import app.pulse.ui.EmberPalette
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseGlass
 import app.pulse.ui.PulseIcons
@@ -344,12 +342,21 @@ fun ChatsScreen(
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     // EMB-A: the home tab sits on the warm sunset-blur backdrop (dark mode).
+    // R53 - the content column is CENTER-CAPPED at 560dp so tablets, foldables
+    // and landscape render the same phone-artboard proportions the reference
+    // locks (the backdrop still bleeds full-bleed behind it).
     Box(
         Modifier
             .fillMaxSize()
             .then(if (dark) Modifier.pulseTabBackdrop(LocalPulseUiTheme.current) else Modifier.background(MaterialTheme.colorScheme.background)),
     ) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxSize()
+                .widthIn(max = 560.dp)
+                .statusBarsPadding(),
+        ) {
             if (search) {
                 SearchHeader(
                     query = query,
@@ -364,19 +371,23 @@ fun ChatsScreen(
                     },
                 )
             } else {
+                // R53 reference rebuild - the header is the artboard: "Chats"
+                // title left, search + camera + kebab as BARE icons right (the
+                // big search pill is gone - search lives behind the icon).
                 HomeHeader(
-                    viewerName = viewerName,
-                    viewerColor = viewerColor,
                     dark = dark,
-                    onAvatar = { onSwitchTab("profile") },
-                    // R2-A item 2 - real calls history (route owned by the shell).
-                    onCalls = onOpenCalls,
-                    // R25 reference header - the camera glass button opens the
-                    // story composer; the dock FAB stays the new-chat entry.
+                    onSearch = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        search = true
+                        focused = true
+                    },
+                    // R25 reference header - the camera opens the story
+                    // composer; the dock FAB stays the new-chat entry.
                     onStories = onOpenStoriesComposer,
                     onTheme = onCycleTheme,
                     // R25 - the dock More menu lives here now.
                     onContacts = { onSwitchTab("contacts") },
+                    onCalls = onOpenCalls,
                     onSaved = onOpenSaved,
                     onSettings = onOpenSettings,
                 )
@@ -385,18 +396,6 @@ fun ChatsScreen(
             UpdaterBanner(Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp))
 
             if (!search) {
-                // R51 homepage directive - the All/Unread/Groups chips are gone;
-                // an always-visible search bar sits in their place (live local
-                // filter; IME search opens the full spotlight surface).
-                HomeSearchBar(
-                    query = query,
-                    onQuery = { query = it },
-                    onOpenFullSearch = {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        search = true
-                        focused = true
-                    },
-                )
                 StoriesRail(
                     viewerName = viewerName ?: "Me",
                     viewerColor = viewerColor,
@@ -865,124 +864,130 @@ ConversationRowItem(
 
 @Composable
 private fun HomeHeader(
-    viewerName: String?,
-    viewerColor: String?,
     dark: Boolean,
-    onAvatar: () -> Unit,
-    onCalls: () -> Unit,
+    onSearch: () -> Unit,
     onStories: () -> Unit,
     onTheme: () -> Unit,
     onContacts: () -> Unit,
+    onCalls: () -> Unit,
     onSaved: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    // R53 reference rebuild - the artboard header: "Chats" title left, and
+    // search / camera / kebab as BARE 40dp icon boxes (zero circles, zero
+    // glass) exactly like the reference screenshot.
+    var headerMenuOpen by remember { mutableStateOf(false) }
+    val bareTint = if (dark) EmberText else MaterialTheme.colorScheme.onBackground
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "Chats",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.3).sp,
+            color = bareTint,
+            modifier = Modifier.weight(1f),
+        )
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onSearch),
+            contentAlignment = Alignment.Center,
         ) {
-            // R51 homepage directive - the header brand is "Pulse".
-            Text(
-                "Pulse",
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.6).sp,
-                color = if (dark) EmberText else MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.weight(1f),
+            Icon(
+                PulseIcons.Search,
+                contentDescription = "Search chats and messages",
+                tint = bareTint,
+                modifier = Modifier.size(20.dp),
             )
-            // R51 homepage directive - bare icons, NO circle backgrounds; the
-            // search icon left the header (the inline search bar replaced the
-            // chips row); camera (story composer) + kebab remain.
-            var headerMenuOpen by remember { mutableStateOf(false) }
-            val bareTint = if (dark) EmberText else MaterialTheme.colorScheme.onBackground
+        }
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onStories),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                PulseIcons.Camera,
+                contentDescription = "New story",
+                tint = bareTint,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Box {
             Box(
                 Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .clickable(onClick = onStories),
+                    .clickable { headerMenuOpen = true },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    PulseIcons.Camera,
-                    contentDescription = "New story",
+                    PulseIcons.KebabVertical,
+                    contentDescription = "More options",
                     tint = bareTint,
-                    modifier = Modifier.size(21.dp),
+                    modifier = Modifier.size(20.dp),
                 )
             }
-            Box {
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .clickable { headerMenuOpen = true },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        PulseIcons.KebabVertical,
-                        contentDescription = "More options",
-                        tint = bareTint,
-                        modifier = Modifier.size(21.dp),
-                    )
-                }
-                DropdownMenu(
-                    expanded = headerMenuOpen,
-                    onDismissRequest = { headerMenuOpen = false },
-                    shape = RoundedCornerShape(16.dp),
-                    containerColor = if (dark) Color(0xFF241A13) else Color.White,
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Contacts", fontSize = 14.sp) },
-                        leadingIcon = { Icon(PulseIcons.Users, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
-                        onClick = {
-                            headerMenuOpen = false
-                            onContacts()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Calls", fontSize = 14.sp) },
-                        leadingIcon = { Icon(PulseIcons.Phone, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
-                        onClick = {
-                            headerMenuOpen = false
-                            onCalls()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Saved", fontSize = 14.sp) },
-                        leadingIcon = { Icon(PulseIcons.Bookmark, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
-                        onClick = {
-                            headerMenuOpen = false
-                            onSaved()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Settings", fontSize = 14.sp) },
-                        leadingIcon = { Icon(PulseIcons.Gear, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
-                        onClick = {
-                            headerMenuOpen = false
-                            onSettings()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(if (dark) "Light theme" else "Dark theme", fontSize = 14.sp) },
-                        leadingIcon = {
-                            Icon(
-                                if (dark) PulseIcons.Sun else PulseIcons.Moon,
-                                contentDescription = "Toggle theme (system cycles on press)",
-                                tint = if (dark) EmberPalette.Amber else Emerald600,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        },
-                        onClick = {
-                            headerMenuOpen = false
-                            onTheme()
-                        },
-                    )
-                }
+            DropdownMenu(
+                expanded = headerMenuOpen,
+                onDismissRequest = { headerMenuOpen = false },
+                shape = RoundedCornerShape(16.dp),
+                containerColor = if (dark) Color(0xFF241A13) else Color.White,
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Contacts", fontSize = 14.sp) },
+                    leadingIcon = { Icon(PulseIcons.Users, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        headerMenuOpen = false
+                        onContacts()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Calls", fontSize = 14.sp) },
+                    leadingIcon = { Icon(PulseIcons.Phone, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        headerMenuOpen = false
+                        onCalls()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Saved", fontSize = 14.sp) },
+                    leadingIcon = { Icon(PulseIcons.Bookmark, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        headerMenuOpen = false
+                        onSaved()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Settings", fontSize = 14.sp) },
+                    leadingIcon = { Icon(PulseIcons.Gear, contentDescription = null, tint = if (dark) EmberPalette.Amber else Emerald600, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                        headerMenuOpen = false
+                        onSettings()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(if (dark) "Light theme" else "Dark theme", fontSize = 14.sp) },
+                    leadingIcon = {
+                        Icon(
+                            if (dark) PulseIcons.Sun else PulseIcons.Moon,
+                            contentDescription = "Toggle theme (system cycles on press)",
+                            tint = if (dark) EmberPalette.Amber else Emerald600,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    onClick = {
+                        headerMenuOpen = false
+                        onTheme()
+                    },
+                )
             }
         }
-        // EMB-A: the header search pill is gone - search lives in the glass
-        // button; the title row keeps the same rhythm without the duplicate.
-        Spacer(Modifier.height(4.dp))
     }
 }
 
@@ -1086,70 +1091,6 @@ private fun SearchHeader(
     }
 }
 
-// ── home search bar (R51 homepage directive) ────────────────────────
-
-@Composable
-private fun HomeSearchBar(
-    query: String,
-    onQuery: (String) -> Unit,
-    onOpenFullSearch: () -> Unit,
-) {
-    val dark = isPulseDarkTheme()
-    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.weight(1f).height(40.dp)) {
-            // EMB-A glass pill: white 8% fill, white 12% border, radius 20.
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(if (dark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                    .border(1.dp, if (dark) Color.White.copy(alpha = 0.12f) else Color(0xFFE4E4E7), RoundedCornerShape(20.dp)),
-            )
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQuery,
-                placeholder = {
-                    Text(
-                        "Search",
-                        fontSize = 14.sp,
-                        color = if (dark) EmberText40 else Zinc400,
-                    )
-                },
-                singleLine = true,
-                textStyle = TextStyle(
-                    fontSize = 14.sp,
-                    color = if (dark) EmberText else MaterialTheme.colorScheme.onBackground,
-                ),
-                leadingIcon = {
-                    Icon(
-                        PulseIcons.Search,
-                        contentDescription = null,
-                        tint = if (dark) EmberText45 else Zinc400,
-                        modifier = Modifier.size(17.dp),
-                    )
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    cursorColor = EmberPalette.Amber,
-                ),
-                interactionSource = interaction,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { onOpenFullSearch() }),
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-}
-
 // ── stories rail (spec §5) ───────────────────────────────────────────
 
 @Composable
@@ -1199,9 +1140,10 @@ private fun StoriesRail(
 }
 
 /**
- * EMB-B story tile - the reference rounded-rect card: a warm gradient tile
- * with the author initial, an ember sweep ring while unseen, and the name
- * below in white. The own cell is glass with the ember "+" badge.
+ * R53 reference rebuild - the story tile is the CIRCLE: a 58dp avatar disc
+ * with the ember sweep ring while unseen (hairline ring when seen), the
+ * author initial inside, and the name below. The own cell is the glass disc
+ * with the ember "+" badge (a live own story shows the initial + "+" badge).
  */
 @Composable
 private fun StoryTile(
@@ -1225,10 +1167,8 @@ private fun StoryTile(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
-                .size(width = 62.dp, height = 82.dp)
+                .size(58.dp)
                 .scale(scale.value)
-                .clip(RoundedCornerShape(18.dp))
-                .background(Color.Transparent)
                 .then(
                     if (unseen) {
                         Modifier
@@ -1244,31 +1184,29 @@ private fun StoryTile(
                                         EmberPalette.Amber,
                                     ),
                                 ),
-                                RoundedCornerShape(18.dp),
+                                CircleShape,
                             )
                     } else {
-                        Modifier
+                        Modifier.border(
+                            1.5.dp,
+                            if (dark) Color.White.copy(alpha = 0.20f) else Color(0xFFE4E4E7),
+                            CircleShape,
+                        )
                     },
                 )
+                .padding(3.dp)
+                .clip(CircleShape)
                 .then(
-                    // Inner tile: gradient wash from the author accent (own cell
-                    // stays glass with the + badge like the reference "You" tile).
-                    if (isOwn) {
+                    if (isOwn && onPlus != null) {
+                        // Own cell WITH a live story: the author gradient disc.
+                        Modifier.background(Brush.linearGradient(PulsePalette.gradientFor(name, color)))
+                    } else if (isOwn) {
+                        // Empty own cell: the glass disc with the "+" glyph.
                         Modifier
-                            .padding(3.dp)
-                            .clip(RoundedCornerShape(15.dp))
                             .background(EmberPalette.GlassFill)
-                            .border(1.dp, EmberPalette.GlassBorder, RoundedCornerShape(15.dp))
+                            .border(1.dp, EmberPalette.GlassBorder, CircleShape)
                     } else {
-                        // Public gradient helper: author accent (or hashed
-                        // fallback) as a two-stop vertical wash.
-                        val wash = PulsePalette.gradientFor(name, color)
-                        Modifier
-                            .padding(3.dp)
-                            .clip(RoundedCornerShape(15.dp))
-                            .background(
-                                Brush.linearGradient(wash),
-                            )
+                        Modifier.background(Brush.linearGradient(PulsePalette.gradientFor(name, color)))
                     },
                 )
                 .clickable(
@@ -1284,24 +1222,35 @@ private fun StoryTile(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            if (isOwn) {
-                Box(
-                    Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(EmberPalette.Deep)
-                        .clickable(enabled = onPlus != null) { onPlus?.invoke() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("+", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
+            if (isOwn && onPlus == null) {
+                Text(
+                    "+",
+                    color = EmberPalette.Amber,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                )
             } else {
                 Text(
                     name.trim().take(1).uppercase().ifEmpty { "?" },
-                    fontSize = 26.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White.copy(alpha = 0.92f),
                 )
+            }
+            if (isOwn && onPlus != null) {
+                // D1 - the "+" affordance stays its own tap target.
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(EmberPalette.Deep)
+                        .border(1.5.dp, EmberPalette.BackdropBase, CircleShape)
+                        .clickable(enabled = onPlus != null) { onPlus?.invoke() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("+", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
         Spacer(Modifier.height(5.dp))
@@ -1390,22 +1339,34 @@ private fun FolderRail(
 
 @Composable
 private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Boolean, dark: Boolean, onClick: () -> Unit) {
-    // EMB-B: the active rail pill is the white/ink pill (reference language);
-    // inactive pills stay glass with warm-deep glyph tint.
+    // R53 reference rebuild - the chip row: the ACTIVE chip is the ink pill
+    // with the white hairline border and white text (the reference "All");
+    // inactive chips stay translucent glass with the amber folder glyph.
     Row(
         Modifier
-            .height(28.dp)
+            .height(32.dp)
             .clip(RoundedCornerShape(50))
             .background(
                 when {
-                    active && dark -> Color.White
+                    active && dark -> Color(0xEB1C1410)
                     active -> Color(0xFF1C1410)
                     dark -> Color.White.copy(alpha = 0.08f)
                     else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                 },
             )
+            .then(
+                if (active) {
+                    Modifier.border(
+                        1.dp,
+                        if (dark) Color.White.copy(alpha = 0.55f) else Color(0xFF1C1410),
+                        RoundedCornerShape(50),
+                    )
+                } else {
+                    Modifier
+                },
+            )
             .clickable(onClick = onClick)
-            .padding(horizontal = if (icon == null) 12.dp else 10.dp),
+            .padding(horizontal = if (icon == null) 14.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
@@ -1415,16 +1376,15 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
             Icon(
                 icon,
                 contentDescription = null,
-                tint = if (active) (if (dark) Color(0xFF1C1410) else Color.White) else EmberPalette.Amber,
-                modifier = Modifier.size(12.dp),
+                tint = if (active) (if (dark) Color.White else Color(0xFF1C1410)) else EmberPalette.Amber,
+                modifier = Modifier.size(13.dp),
             )
         }
         Text(
             label,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             color = when {
-                active && dark -> Color(0xFF1C1410)
                 active -> Color.White
                 dark -> EmberText55
                 else -> Zinc600
@@ -1847,6 +1807,9 @@ private fun StreakChip(icon: ImageVector, text: String, amber: Boolean) {
 
 @Composable
 private fun UnreadBadge(count: Int) {
+    // R53 reference rebuild - the row trailing is the small RED DOT under the
+    // timestamp (the reference artboard), not a count pill; the exact count
+    // stays available to screen readers and on the dock badge.
     val scale by animateFloatAsState(
         targetValue = 1f,
         animationSpec = PulseMotion.bouncy(),
@@ -1854,17 +1817,14 @@ private fun UnreadBadge(count: Int) {
     )
     Box(
         Modifier
+            .padding(horizontal = 3.dp)
             .scale(scale)
-            .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
-            .clip(RoundedCornerShape(50))
-            // EMB-B: the unread signal is the ember red (reference badges).
+            .size(10.dp)
+            .clip(CircleShape)
             .background(EmberPalette.Signal)
-            .border(2.dp, MaterialTheme.colorScheme.background, RoundedCornerShape(50))
-            .padding(horizontal = 5.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(countLabel(count), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
-    }
+            .border(1.5.dp, Color(0x66150F0B), CircleShape)
+            .semantics { contentDescription = "$count unread messages" },
+    )
 }
 
 @Composable

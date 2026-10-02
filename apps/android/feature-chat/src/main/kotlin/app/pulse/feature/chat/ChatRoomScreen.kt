@@ -63,7 +63,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHost
@@ -94,6 +93,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.positionChange
@@ -134,7 +134,6 @@ import app.pulse.protocol.TOPIC_ICON_DEFAULT
 import app.pulse.protocol.TOPIC_ICON_IDS
 import app.pulse.protocol.reactionId
 import app.pulse.protocol.topicIconId
-import app.pulse.ui.EmberGlassButton
 import app.pulse.ui.pulseInfiniteFloat
 import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseAvatar
@@ -694,14 +693,23 @@ fun ChatRoomScreen(
         dmPeerId?.let(viewModel::loadPeerVerification)
     }
 
-    Column(
+    // R53 - the room rides the warm glow backdrop full-bleed, while the
+    // content column is CENTER-CAPPED at 560dp (tablets/foldables/landscape
+    // keep the phone-artboard proportions the reference locks).
+    Box(
         Modifier
             .fillMaxSize()
-            .emberBackdrop(withGlow = true)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding(),
+            .emberBackdrop(withGlow = true),
     ) {
+        Column(
+            Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxSize()
+                .widthIn(max = 560.dp)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding(),
+        ) {
         RoomHeader(
             conversation = conversation,
             partnerTypingName = state.partnerTypingName,
@@ -1778,6 +1786,7 @@ fun ChatRoomScreen(
         }
 
         SnackbarHost(hostState = snackbar)
+        }
     }
 
     // ── sheets & dialogs ─────────────────────────────────────────────
@@ -3017,91 +3026,111 @@ private fun RoomHeader(
 ) {
     Surface(color = Color.Transparent) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // EMB: glass chrome on the ember ground (same handlers as before).
-            EmberGlassButton(
-                icon = PulseIcons.ChevronLeft,
-                label = if (searchOpen) "Close search" else "Back",
-                onClick = onBack,
-            )
-            Spacer(Modifier.width(6.dp))
-            PulseAvatar(
-                name = conversation?.title ?: "…",
-                colorHex = conversation?.accentColor,
-                size = 36.dp,
-                isGroup = conversation?.isGroupish == true,
-            )
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        conversation?.title ?: "…",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (conversation != null && !conversation.isGroupish) {
-                        if (peerVerified == true) {
-                            Spacer(Modifier.width(4.dp))
-                            Icon(PulseIcons.BadgeCheck, contentDescription = "Verified", tint = EmberPalette.Online, modifier = Modifier.size(14.dp))
-                        } else if (peerVerified == false) {
-                            Spacer(Modifier.width(4.dp))
-                            Box(
-                                Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(PulsePalette.Amber),
+            // R53 reference rebuild - the room header is the artboard: back
+            // chevron, avatar + title + subtitle (the whole block opens the
+            // room info), then VIDEO / PHONE / KEBAB as BARE icons. Every
+            // other room action moved into the kebab menu - nothing deleted,
+            // everything still active, the chrome is quiet again.
+            val backLabel = if (searchOpen) "Close search" else "Back"
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onBack),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    PulseIcons.ChevronLeft,
+                    contentDescription = backLabel,
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            // Avatar + title + subtitle = ONE tap target into the info surface
+            // (web room-info-page parity; "after clicking the profile they
+            // can see everything").
+            val infoClick: (() -> Unit)? = onOpenRoomInfo
+            Row(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .then(if (infoClick != null) Modifier.clickable(onClick = infoClick) else Modifier)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PulseAvatar(
+                    name = conversation?.title ?: "…",
+                    colorHex = conversation?.accentColor,
+                    size = 34.dp,
+                    isGroup = conversation?.isGroupish == true,
+                )
+                Spacer(Modifier.width(9.dp))
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            conversation?.title ?: "…",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (conversation != null && !conversation.isGroupish) {
+                            if (peerVerified == true) {
+                                Spacer(Modifier.width(4.dp))
+                                Icon(PulseIcons.BadgeCheck, contentDescription = "Verified", tint = EmberPalette.Online, modifier = Modifier.size(14.dp))
+                            } else if (peerVerified == false) {
+                                Spacer(Modifier.width(4.dp))
+                                Box(
+                                    Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(PulsePalette.Amber),
+                                )
+                            }
+                        }
+                    }
+                    AnimatedContentCompat(partnerTypingName != null) { typing ->
+                        if (typing) {
+                            // EMB: the typing state breathes (animated alpha on the word).
+                            val typingAlpha = pulseInfiniteFloat(
+                                initialValue = 0.35f,
+                                targetValue = 1f,
+                                durationMillis = 700,
+                                repeatMode = RepeatMode.Reverse,
+                                label = "typingPulse",
+                            )
+                            Text(
+                                "${partnerTypingName.orEmpty()} is typing",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White.copy(alpha = 0.55f),
+                                modifier = Modifier.alpha(typingAlpha),
+                            )
+                        } else {
+                            Text(
+                                when {
+                                    conversation == null -> ""
+                                    conversation.isGroupish -> conversation.memberNames.joinToString(", ").ifEmpty {
+                                        "${conversation.memberNames.size} members"
+                                    },
+                                    else -> "online"
+                                },
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.55f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
                 }
-                AnimatedContentCompat(partnerTypingName != null) { typing ->
-                    if (typing) {
-                        // EMB: the typing state breathes (animated alpha on the word).
-                        val typingAlpha = pulseInfiniteFloat(
-                            initialValue = 0.35f,
-                            targetValue = 1f,
-                            durationMillis = 700,
-                            repeatMode = RepeatMode.Reverse,
-                            label = "typingPulse",
-                        )
-                        Text(
-                            "${partnerTypingName.orEmpty()} is typing",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = 0.55f),
-                            modifier = Modifier.alpha(typingAlpha),
-                        )
-                    } else {
-                        Text(
-                            when {
-                                conversation == null -> ""
-                                conversation.isGroupish -> "${conversation.memberNames.size} members"
-                                else -> "online"
-                            },
-                            fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.55f),
-                        )
-                    }
-                }
-                // Wave 6 - DM safety-number entry (web chat-room ShieldCheck).
-                if (onOpenSafety != null) {
-                    IconButton(onClick = onOpenSafety, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            PulseIcons.Shield,
-                            contentDescription = "Safety number",
-                            tint = Color.White.copy(alpha = 0.55f),
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
-                }
             }
             // Wave 5 voice room entry - tints live while this room has a
-            // joined voice seat; the pill shows the live roster size.
+            // joined voice seat; the pill shows the live roster size. This is
+            // a STATUS chip, not chrome - it only renders when the seat is on.
             if (voiceJoined) {
                 Surface(
                     shape = RoundedCornerShape(999.dp),
@@ -3120,88 +3149,45 @@ private fun RoomHeader(
                 }
                 Spacer(Modifier.width(2.dp))
             }
-            EmberGlassButton(
-                icon = PulseIcons.Waveform,
-                label = if (voiceJoined) "Open the live voice room" else "Open voice room",
-                onClick = onOpenVoiceRoom,
-                tint = if (voiceJoined) EmberPalette.Online else Color.White,
-                modifier = Modifier.semantics {
-                    stateDescription = if (voiceJoined) "In voice room" else "Not in voice room"
-                },
-            )
-            // R8 Task 3-c - group voice/video call buttons (web chat-room
-            // header parity, aria "Start group voice/video call").
-            if (onStartGroupVoice != null) {
-                EmberGlassButton(
-                    icon = PulseIcons.Phone,
-                    label = "Start group voice call",
-                    onClick = onStartGroupVoice,
-                )
-            }
+            // R8 Task 3-c - the group VIDEO dial stays a header icon (the
+            // reference artboard's right-hand video glyph); DMs hide it.
             if (onStartGroupVideo != null) {
-                EmberGlassButton(
+                BareHeaderIcon(
                     icon = PulseIcons.Video,
                     label = "Start group video call",
                     onClick = onStartGroupVideo,
                 )
             }
-            onOpenLeaderboard?.let {
-                EmberGlassButton(
-                    icon = PulseIcons.Star,
-                    label = "Leaderboard",
-                    onClick = it,
-                )
-            }
-            EmberGlassButton(
-                icon = if (searchOpen) PulseIcons.X else PulseIcons.Search,
-                label = if (searchOpen) "Close search" else "Search in conversation",
-                onClick = onToggleSearch,
+            // The PHONE dial covers every room kind: groups dial the group
+            // voice call, DMs fall back to the live voice room (the audio
+            // path that room always had).
+            BareHeaderIcon(
+                icon = PulseIcons.Phone,
+                label = if (onStartGroupVoice != null) "Start group voice call" else "Open voice room",
+                onClick = onStartGroupVoice ?: onOpenVoiceRoom,
             )
-            // R6 - BE7 - reminders (web chat-room header BellRing/Schedule
-            // parity): opens the existing RemindersSheet; the emerald badge
-            // shows the upcoming (unfired) count when non-zero.
-            Box {
-                EmberGlassButton(
-                    icon = PulseIcons.Bell,
-                    label = if (remindersCount > 0) "Reminders - $remindersCount upcoming" else "Reminders",
-                    onClick = onOpenReminders,
-                )
-                if (remindersCount > 0) {
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 4.dp, end = 2.dp)
-                            .clip(CircleShape)
-                            .background(EmberPalette.Signal)
-                            .padding(horizontal = 4.dp, vertical = 1.dp),
-                    ) {
-                        Text(
-                            if (remindersCount > 99) "99+" else "$remindersCount",
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                        )
-                    }
-                }
-            }
-            // R1-W2F - the room overflow menu (new host; the header previously
-            // had only icon buttons). F-FX-05's theme picker entry lives here;
-            // future room actions slot in below.
+            // Room overflow - the quiet home for every relocated action.
             var roomMenuOpen by remember { mutableStateOf(false) }
             Box {
-                EmberGlassButton(
+                BareHeaderIcon(
                     icon = PulseIcons.KebabVertical,
                     label = "Room menu",
                     onClick = { roomMenuOpen = true },
                 )
-                DropdownMenu(expanded = roomMenuOpen, onDismissRequest = { roomMenuOpen = false }) {
+                DropdownMenu(
+                    expanded = roomMenuOpen,
+                    onDismissRequest = { roomMenuOpen = false },
+                    shape = RoundedCornerShape(16.dp),
+                    containerColor = Color(0xFF241A13),
+                ) {
                     // R2-A item 6/7/8/9 - room info (automations, webhooks,
-                    // screen security, photo) - groups/channels only.
+                    // screen security, photo) - every room kind (the info
+                    // surface adapts itself for DMs).
                     if (onOpenRoomInfo != null) {
                         DropdownMenuItem(
-                            text = { Text("Room info") },
+                            text = { Text("Room info", color = Color.White) },
                             leadingIcon = {
-                                Icon(PulseIcons.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(PulseIcons.Info, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.8f))
                             },
                             onClick = {
                                 roomMenuOpen = false
@@ -3209,9 +3195,76 @@ private fun RoomHeader(
                             },
                         )
                     }
+                    // Wave 5 - the voice room entry (relocated header waveform).
+                    DropdownMenuItem(
+                        text = { Text(if (voiceJoined) "Voice room - $voiceLiveCount live" else "Voice room", color = Color.White) },
+                        leadingIcon = {
+                            Icon(PulseIcons.Waveform, contentDescription = null, modifier = Modifier.size(18.dp), tint = if (voiceJoined) EmberPalette.Online else Color.White.copy(alpha = 0.8f))
+                        },
+                        onClick = {
+                            roomMenuOpen = false
+                            onOpenVoiceRoom()
+                        },
+                    )
+                    onOpenLeaderboard?.let {
+                        DropdownMenuItem(
+                            text = { Text("Leaderboard", color = Color.White) },
+                            leadingIcon = {
+                                Icon(PulseIcons.Star, contentDescription = null, modifier = Modifier.size(18.dp), tint = EmberPalette.Amber)
+                            },
+                            onClick = {
+                                roomMenuOpen = false
+                                it()
+                            },
+                        )
+                    }
+                    // Room search (relocated header search toggle).
+                    DropdownMenuItem(
+                        text = { Text(if (searchOpen) "Close search" else "Search in conversation", color = Color.White) },
+                        leadingIcon = {
+                            Icon(if (searchOpen) PulseIcons.X else PulseIcons.Search, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.8f))
+                        },
+                        onClick = {
+                            roomMenuOpen = false
+                            onToggleSearch()
+                        },
+                    )
+                    // R6 - BE7 - reminders (relocated header bell) + badge.
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (remindersCount > 0) {
+                                    "Reminders - $remindersCount upcoming"
+                                } else {
+                                    "Reminders"
+                                },
+                                color = Color.White,
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(PulseIcons.Bell, contentDescription = null, modifier = Modifier.size(18.dp), tint = if (remindersCount > 0) EmberPalette.Amber else Color.White.copy(alpha = 0.8f))
+                        },
+                        onClick = {
+                            roomMenuOpen = false
+                            onOpenReminders()
+                        },
+                    )
+                    // Wave 6 - DM safety number (relocated shield under the name).
+                    onOpenSafety?.let {
+                        DropdownMenuItem(
+                            text = { Text("Safety number", color = Color.White) },
+                            leadingIcon = {
+                                Icon(PulseIcons.Shield, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.8f))
+                            },
+                            onClick = {
+                                roomMenuOpen = false
+                                it()
+                            },
+                        )
+                    }
                     // R2-A item 5 - AI recap (web header overflow parity).
                     DropdownMenuItem(
-                        text = { Text(if (recapBusy) "Summarizing…" else "AI recap") },
+                        text = { Text(if (recapBusy) "Summarizing…" else "AI recap", color = Color.White) },
                         leadingIcon = {
                             Icon(PulseIcons.Sparkle, contentDescription = null, modifier = Modifier.size(18.dp), tint = PulsePalette.Violet)
                         },
@@ -3222,9 +3275,9 @@ private fun RoomHeader(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("Chat theme") },
+                        text = { Text("Chat theme", color = Color.White) },
                         leadingIcon = {
-                            Icon(PulseIcons.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(PulseIcons.Palette, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.8f))
                         },
                         onClick = {
                             roomMenuOpen = false
@@ -3234,13 +3287,13 @@ private fun RoomHeader(
                     // R1-W2I F-PI-03 - pop-out mini chat (web chat-room.tsx
                     // :4023-4037: focused pane → close, else open this room).
                     DropdownMenuItem(
-                        text = { Text(if (pipActive) "Close mini chat window" else "Open mini chat window") },
+                        text = { Text(if (pipActive) "Close mini chat window" else "Open mini chat window", color = Color.White) },
                         leadingIcon = {
                             Icon(
                                 PulseIcons.PiP,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
-                                tint = if (pipActive) PulsePalette.Emerald else LocalContentColor.current,
+                                tint = if (pipActive) PulsePalette.Emerald else Color.White.copy(alpha = 0.8f),
                             )
                         },
                         onClick = {
@@ -3258,6 +3311,7 @@ private fun RoomHeader(
                                 } else {
                                     "Scheduled sends"
                                 },
+                                color = Color.White,
                             )
                         },
                         leadingIcon = {
@@ -3265,7 +3319,7 @@ private fun RoomHeader(
                                 PulseIcons.Clock,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
-                                tint = if (scheduledCount > 0) PulsePalette.Amber else LocalContentColor.current,
+                                tint = if (scheduledCount > 0) PulsePalette.Amber else Color.White.copy(alpha = 0.8f),
                             )
                         },
                         onClick = {
@@ -3276,6 +3330,30 @@ private fun RoomHeader(
                 }
             }
         }
+    }
+}
+
+/** R53 - the bare 40dp header icon box (NO circle fill, NO border). */
+@Composable
+private fun BareHeaderIcon(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    tint: Color = Color.White,
+) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
@@ -3360,33 +3438,14 @@ private fun MessageRow(
             return@Column
         }
 
-        // Group sender label above their first bubble run - incognito rows
-        // (R3-B item 4) mask the real name behind the server alias with a
-        // neutral zinc dot (web anonMasked parity, chat-room.tsx:7232-7235).
-        // R7 item 1 - head-only (web chat-room.tsx:7313 `head && !deleted`).
-        if (!mine && head && conversation?.isGroupish == true) {
-            val anonMasked = message.anon && message.anonAlias != null
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)) {
-                Box(
-                    Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (anonMasked) {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            } else {
-                                PulsePalette.parse(message.senderColor) ?: PulsePalette.Teal
-                            },
-                        ),
-                )
-                Spacer(Modifier.width(5.dp))
-                Text(
-                    if (anonMasked) message.anonAlias.orEmpty() else message.authorName,
-                    fontSize = 12.sp,
-                    color = EmberPalette.SenderName,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
+        // R53 reference rebuild - the group sender label moved INSIDE the
+        // bubble (the artboard shows the name as the bubble's first line);
+        // incognito rows (R3-B item 4) keep the server alias mask.
+        val anonMasked = message.anon && message.anonAlias != null
+        val inBubbleSender = if (!mine && head && conversation?.isGroupish == true && !message.isDeleted) {
+            if (anonMasked) message.anonAlias.orEmpty() else message.authorName
+        } else {
+            null
         }
 
         // ── R7 item 2 - swipe-bubble-to-reply (web chat-room.tsx:7248-7373) ──
@@ -3466,6 +3525,21 @@ private fun MessageRow(
                         },
                     ),
             ) {
+            // R53 reference rebuild - the 24dp sender avatar rides the LEFT of
+            // incoming rows (head rows carry it, clustered rows keep the
+            // 24dp gutter so the column stays flush); own rows hug the edge.
+            if (!mine) {
+                if (head && !message.isDeleted) {
+                    PulseAvatar(
+                        name = if (anonMasked) message.anonAlias.orEmpty() else message.authorName,
+                        colorHex = message.senderColor,
+                        size = 24.dp,
+                        modifier = Modifier.align(Alignment.Bottom),
+                    )
+                } else {
+                    Spacer(Modifier.width(24.dp))
+                }
+            }
             // Wave 2 view-once gate (spec §1 row 6): only the RECEIVER is
             // gated - the sender always sees their own photo normally.
             val viewOncePhoto = message.viewOnce && message.imagePath != null
@@ -3626,6 +3700,8 @@ private fun MessageRow(
                     bubbleCornerDp = bubbleCornerDp,
                     // R7 item 1 - the grouped-first bubble tucks its top corner.
                     head = head,
+                    // R53 - the group sender label renders INSIDE the bubble.
+                    senderLabel = inBubbleSender,
                 )
             }
             }
@@ -3827,6 +3903,9 @@ internal fun Bubble(
     // R7 item 1 - cluster head: the grouped-first bubble tucks its near-sender
     // top corner to 6dp (ember bubble shape, spec item 3).
     head: Boolean = true,
+    // R53 reference rebuild - the group sender name renders INSIDE the bubble
+    // as its first line (the artboard); null on own/DM/non-head rows.
+    senderLabel: String? = null,
 ) {
     // EMB: 20dp bubble radius; the grouped-first row pulls the top corner on
     // its own side to 6dp (incoming top-left, outgoing top-right).
@@ -3886,6 +3965,17 @@ internal fun Bubble(
                 .background(background, shape)
                 .padding(horizontal = 13.dp, vertical = 9.dp),
         ) {
+            // R53 - the in-bubble sender name (group heads): white semibold
+            // 12sp as the bubble's first line, exactly like the reference.
+            if (senderLabel != null) {
+                Text(
+                    senderLabel,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White.copy(alpha = 0.92f),
+                )
+                Spacer(Modifier.height(2.dp))
+            }
             // reply quote - tap jumps to the quoted message (when a jump
             // surface exists; thread bubbles render it read-only).
             val replyBody = message.replyToBody
