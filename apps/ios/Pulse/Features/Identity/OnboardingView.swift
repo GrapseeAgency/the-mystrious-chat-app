@@ -136,6 +136,31 @@ final class OnboardingViewModel: ObservableObject {
         create(username: nil, onSuccess: onSuccess)
     }
 
+    /// R50-a parity with the Android connect gate - one tap into the seeded
+    /// demo identity through the SAME POST /api/users/login chain (token
+    /// rotate + Keychain persist). Visible only when a live gateway is set:
+    /// offline-first has no demo rows to show, honestly.
+    static let demoAccountName = "Alice Chen"
+    var demoAvailable: Bool { PulseEndpoints.configuredBase != nil }
+
+    func demoLogin(onSuccess: @escaping (WireUser, String?) -> Void) {
+        guard !signingIn, !confirming, !pending else { return }
+        signingIn = true
+        notice = nil
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.signingIn = false }
+            do {
+                let envelope = try await self.api.login(name: Self.demoAccountName)
+                onSuccess(envelope.user, envelope.token)
+            } catch let failure as PulseAPIClient.Failure where failure.status == 404 {
+                self.notice = "This Pulse server has no demo account - create your own below."
+            } catch {
+                self.notice = Self.message(of: error)
+            }
+        }
+    }
+
     /// "That's me - log in instead" - the web's reclaim-by-name affordance.
     /// Step 1: the live lookup; success opens the CONFIRM step (the login
     /// itself rotates the session token, so it waits for an explicit tap).
@@ -496,6 +521,36 @@ struct OnboardingView: View {
                 )
                 if viewModel.nameTaken {
                     loginButton
+                }
+                // R50-a - the demo door (parity with the Android connect gate):
+                // one tap lands inside the seeded demo account's rich chats.
+                if viewModel.demoAvailable {
+                    Button {
+                        viewModel.demoLogin(onSuccess: complete)
+                    } label: {
+                        HStack(spacing: 6) {
+                            if viewModel.signingIn {
+                                ProgressView().controlSize(.mini).tint(.white)
+                            } else {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            Text(viewModel.signingIn ? "Opening the demo account..." : "Explore the demo account (Alice Chen)")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(PulseTheme.emberGlowTop.opacity(0.10)),
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(PulseTheme.emberGlowTop.opacity(0.5), lineWidth: 1)
+                        )
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(PulseButtonStyle())
+                    .disabled(viewModel.signingIn)
                 }
             }
 
