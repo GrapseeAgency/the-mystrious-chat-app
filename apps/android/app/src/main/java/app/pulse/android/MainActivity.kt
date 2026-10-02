@@ -49,6 +49,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -167,10 +170,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-// EMB-A: the dock signal pair is now the ember gradient (amber -> deep);
+// R24 NATIVE: the dock signal pair rides the web emerald family again
+// (emerald-600 for light-chrome contrast, teal-600 as the secondary slot);
 // the names keep their historical slot so every nav style inherits the swap.
-private val DockEmerald600 = Color(0xFFFFB86B)
-private val DockTeal600 = Color(0xFFFF7A3D)
+private val DockEmerald600 = Color(0xFF059669)
+private val DockTeal600 = Color(0xFF0D9488)
 // EMB-A: inactive chrome is white 45% on the warm backdrop.
 private val DockInactiveDark = Color.White.copy(alpha = 0.45f)
 private val DockInactiveLight = Color(0xFF71717A)
@@ -662,7 +666,8 @@ private fun PulseShell(
         PulseNavStyle.FLOATING_TOP -> navBottom + 12.dp
         PulseNavStyle.FLOATING_DOCK -> 108.dp + navBottom
         PulseNavStyle.PILL -> 104.dp + navBottom
-        PulseNavStyle.BOTTOM_BAR, PulseNavStyle.TAB_BAR -> 64.dp + navBottom
+        PulseNavStyle.BOTTOM_BAR -> 80.dp + navBottom
+        PulseNavStyle.TAB_BAR -> 64.dp + navBottom
         PulseNavStyle.FLOATING_TAB_BAR -> 104.dp + navBottom
         PulseNavStyle.COMMAND_BAR -> navBottom + 12.dp
         PulseNavStyle.RAIL -> navBottom + 12.dp
@@ -1534,7 +1539,7 @@ private fun DockTabButton(
                     DockUnreadBadge(unread, dark)
                 }
             }
-            // the active signal: a 4dp #FF453A circle 3dp under the icon
+            // the active signal: a 4dp emerald circle 3dp under the icon
             // (slot reserved so the label never shifts between states)
             Box(Modifier.height(7.dp), contentAlignment = Alignment.Center) {
                 if (active && dark) {
@@ -1542,7 +1547,7 @@ private fun DockTabButton(
                         Modifier
                             .size(4.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFFF453A)),
+                            .background(PulsePalette.Emerald),
                     )
                 }
             }
@@ -1568,8 +1573,8 @@ private fun DockUnreadBadge(count: Int, dark: Boolean) {
         modifier = Modifier
             .offset(x = 10.dp, y = (-6).dp)
             .clip(CircleShape)
-            .background(Color(0xFFFF453A))
-            .border(2.dp, if (dark) Color(0xFF1C1410) else Color.White, CircleShape)
+            .background(PulsePalette.Emerald)
+            .border(2.dp, if (dark) Color(0xFF0D1211) else Color.White, CircleShape)
             .padding(horizontal = 5.dp, vertical = 1.dp),
     )
 }
@@ -1581,9 +1586,8 @@ private fun ComposeDockButton(onCompose: () -> Unit, size: Dp = 46.dp) {
         Modifier
             .size(size)
             .clip(CircleShape)
-            // EMB-A glass FAB: white 10% fill + white 12% border (spec).
-            .background(Color.White.copy(alpha = 0.10f))
-            .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
+            // R24 NATIVE: the accent compose FAB (emerald fill, white glyph).
+            .background(PulsePalette.Emerald)
             .clickable {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 onCompose()
@@ -1628,8 +1632,8 @@ private fun MoreDockButton(
             expanded = open,
             onDismissRequest = { onOpenChange(false) },
             shape = RoundedCornerShape(16.dp),
-            // EMB-A: warm ink menu.
-            containerColor = if (dark) Color(0xFF241A13) else Color.White,
+            // R24 NATIVE: carbon menu surface.
+            containerColor = if (dark) Color(0xFF161C1A) else Color.White,
         ) {
             DropdownMenuItem(
                 text = { Text("Settings", fontSize = 14.sp) },
@@ -1991,52 +1995,63 @@ private fun BottomBarDock(
     moreMenuOpen: Boolean,
     onMoreMenuChange: (Boolean) -> Unit,
 ) {
-    BarDockChrome(modifier, dark) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val pad = 6.dp
-            val fixedW = 40.dp
-            val slotW = (maxWidth - pad * 2 - fixedW * 2) / 4
-            val tabIndex = TAB_ROUTES.indexOf(active).coerceAtLeast(0)
-            // web nav-bottombar-dot: 3×32 emerald bar sliding at the top edge
-            val dotX by animateDpAsState(
-                targetValue = pad + slotW * tabIndex + (slotW - 32.dp) / 2,
-                animationSpec = PulseMotion.snappy(),
-                label = "bottomBarDot",
-            )
-            Box(Modifier.fillMaxWidth()) {
-                Box(
-                    Modifier
-                        .offset(x = dotX)
-                        .width(32.dp)
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(bottomStart = 999.dp, bottomEnd = 999.dp))
-                        .background(DockEmerald600),
+    // R24 NATIVE - the standard Material 3 bottom bar: opaque surface with an
+    // elevation shadow, NavigationBarItems with the platform ripple, pill
+    // indicator and labels. Compose lives in the chats header (web parity);
+    // the more menu keeps Settings/Search/Saved/Stories reachable.
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = if (dark) Color(0xFF0D1211) else Color.White,
+        shadowElevation = 8.dp,
+    ) {
+        NavigationBar(
+            containerColor = Color.Transparent,
+            tonalElevation = 0.dp,
+        ) {
+            DOCK_TABS.forEach { tab ->
+                val isActive = active == tab.route
+                NavigationBarItem(
+                    selected = isActive,
+                    onClick = { actions.onSelect(tab.route) },
+                    icon = {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (isActive) tab.activeIcon else tab.inactiveIcon,
+                                contentDescription = tab.label,
+                                modifier = Modifier.size(24.dp),
+                            )
+                            if (tab.carriesUnread && unread > 0) {
+                                DockUnreadBadge(unread, dark)
+                            }
+                        }
+                    },
+                    label = {
+                        Text(
+                            tab.label,
+                            fontSize = 11.sp,
+                            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium,
+                        )
+                    },
+                    alwaysShowLabel = true,
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = PulsePalette.Emerald,
+                        selectedTextColor = PulsePalette.Emerald,
+                        unselectedIconColor = if (dark) Color.White.copy(alpha = 0.55f) else Color(0xFF71717A),
+                        unselectedTextColor = if (dark) Color.White.copy(alpha = 0.55f) else Color(0xFF71717A),
+                        indicatorColor = PulsePalette.Emerald.copy(alpha = 0.14f),
+                    ),
                 )
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = pad, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    BarTabItem(DOCK_TABS[0], active == "chats", unread, dark, Modifier.weight(1f)) { actions.onSelect("chats") }
-                    BarTabItem(DOCK_TABS[1], active == "hub", 0, dark, Modifier.weight(1f)) { actions.onSelect("hub") }
-                    BarTabItem(DOCK_TABS[2], active == "contacts", 0, dark, Modifier.weight(1f)) { actions.onSelect("contacts") }
-                    BarTabItem(DOCK_TABS[3], active == "profile", 0, dark, Modifier.weight(1f)) { actions.onSelect("profile") }
-                    Spacer(Modifier.width(4.dp))
-                    ComposeDockButton(actions.onCompose, size = 38.dp)
-                    MoreDockButton(
-                        dark = dark,
-                        open = moreMenuOpen,
-                        onOpenChange = onMoreMenuChange,
-                        onSearch = actions.onSearch,
-                        onSaved = actions.onSaved,
-                        onStories = actions.onStories,
-                        onSettings = actions.onSettings,
-                        onDeferred = {},
-                    )
-                }
             }
+            MoreDockButton(
+                dark = dark,
+                open = moreMenuOpen,
+                onOpenChange = onMoreMenuChange,
+                onSearch = actions.onSearch,
+                onSaved = actions.onSaved,
+                onStories = actions.onStories,
+                onSettings = actions.onSettings,
+                onDeferred = {},
+            )
         }
     }
 }

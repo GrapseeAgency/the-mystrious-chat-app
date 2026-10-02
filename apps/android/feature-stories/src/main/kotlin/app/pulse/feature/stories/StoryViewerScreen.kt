@@ -405,7 +405,7 @@ private fun ViewerHeader(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .clip(CircleShape)
-                                .background(Color(0xFFC9762B))
+                                .background(Color(0xFF059669))
                                 .padding(horizontal = 4.dp),
                         )
                     }

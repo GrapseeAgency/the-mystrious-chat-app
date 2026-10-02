@@ -364,7 +364,7 @@ private fun SegPicker(label: String, options: List<Pair<String, String>>, value:
 @Composable
 private fun emberSegmentedColors() = SegmentedButtonDefaults.colors(
     activeContainerColor = EmberPalette.Deep,
-    activeContentColor = Color(0xFF1C1410),
+    activeContentColor = Color(0xFF04120C),
     inactiveContainerColor = Color.Transparent,
     inactiveContentColor = Color.White.copy(alpha = 0.55f),
 )
@@ -839,7 +839,7 @@ fun NotificationsSection(onBack: () -> Unit, viewModel: SettingsViewModel = hilt
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = EmberPalette.Deep,
-                contentColor = Color(0xFF1C1410),
+                contentColor = Color(0xFF04120C),
             ),
         ) {
             Icon(PulseIcons.Bell, contentDescription = null, modifier = Modifier.size(16.dp))

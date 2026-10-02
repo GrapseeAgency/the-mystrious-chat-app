@@ -84,36 +84,28 @@ enum class PulseUiTheme(
         tagline = "Glassmorphic Chat UI",
         detail = "Layered frosted glass, aurora backdrop, specular edges, elastic motion.",
         motion = PulseUiThemeMotion.ELASTIC,
-        // EMB-B: the brand accent is the ember pair now - amber glow on dark,
-        // burnt ember on light - so every Material-tinted control matches the
-        // sunset reference language without per-screen overrides.
-        accentLight = Color(0xFFC9762B),
-        accent2Light = Color(0xFFE08A3C),
-        accentDark = Color(0xFFFFB86B),
-        accent2Dark = Color(0xFFFF7A3D),
-        radiusPanel = 28.dp,
-        pageBaseLight = Color(0xFFFBF6F0),
-        // EMB-B: warm near-black brown base (Ember BackdropBase) instead of
-        // the green-cast carbon; the ember screens paint their gradient on top.
-        pageBaseDark = Color(0xFF150F0B),
+        // R24 NATIVE: the brand accent is the web emerald pair again
+        // (--ui-accent #10b981 / #14b8a6; dark rides the R35 Neo mint
+        // #2be8a6 family) so every Material-tinted control matches the
+        // web source of truth without per-screen overrides.
+        accentLight = Color(0xFF10B981),
+        accent2Light = Color(0xFF14B8A6),
+        accentDark = Color(0xFF2BE8A6),
+        accent2Dark = Color(0xFF2DD4BF),
+        radiusPanel = 24.dp,
+        pageBaseLight = Color(0xFFF5F8F6),
+        // Web .dark --background: green-cast near-black carbon. Flat -
+        // native apps do not paint sunset fields behind the chrome.
+        pageBaseDark = Color(0xFF07090B),
         pageBaseLightTop = null,
-        pageBaseDarkTop = Color(0xFF33241B),
-        radialsLight = listOf(
-            PulsePageRadial(listOf(Color(0x2BE08A3C), Color.Transparent), 0.12f, -0.08f, 1.20f),
-            PulsePageRadial(listOf(Color(0x22FF7A3D), Color.Transparent), 0.96f, 0.12f, 1.00f),
-            PulsePageRadial(listOf(Color(0x1AD97706), Color.Transparent), 0.50f, 1.12f, 0.90f),
-        ),
-        // EMB-B: the sunset glow washes (warm brown + amber bleed).
-        radialsDark = listOf(
-            PulsePageRadial(listOf(Color(0x42FFB86B), Color.Transparent), 0.10f, -0.10f, 1.20f),
-            PulsePageRadial(listOf(Color(0x2EFF7A3D), Color.Transparent), 0.96f, 0.08f, 1.00f),
-            PulsePageRadial(listOf(Color(0x297A4E33), Color.Transparent), 0.50f, 1.12f, 1.00f),
-        ),
-        panelBgLight = Color(0x8CFFFFFF),
-        panelBorderLight = Color(0x1A2A1E14),
-        // Elevated warm panel over the locked 8% white hairline border.
-        panelBgDark = Color(0x991E1610),
-        panelBorderDark = Color(0x17FFFFFF),
+        pageBaseDarkTop = null,
+        radialsLight = emptyList(),
+        radialsDark = emptyList(),
+        panelBgLight = Color(0xD9FFFFFF),
+        panelBorderLight = Color(0x1A0C1210),
+        // Elevated panel over the locked 8% white hairline border.
+        panelBgDark = Color(0xF20D1211),
+        panelBorderDark = Color(0x14FFFFFF),
     ),
     KINETIC(
         id = "kinetic",
@@ -254,7 +246,7 @@ enum class PulseUiTheme(
 /** Current design language - provided by [PulseTheme], read by any surface. */
 val LocalPulseUiTheme = staticCompositionLocalOf { PulseUiTheme.GLASS }
 
-private val Ink = Color(0xFF09090B)
+private val Ink = Color(0xFF0C1210)
 
 private fun onAccent(color: Color): Color =
     if (color.luminanceCompat() > 0.6f) Color(0xFF04120C) else Color.White
@@ -281,8 +273,8 @@ private fun lightScheme(theme: PulseUiTheme) = with(theme) {
         onBackground = Ink,
         surface = surface(dark = false),
         onSurface = Ink,
-        surfaceVariant = Color(0xFFF0F0EE),
-        onSurfaceVariant = Color(0xFF52525B),
+        surfaceVariant = Color(0xFFEDF2EE),
+        onSurfaceVariant = Color(0xFF5C6F65),
         outlineVariant = panelBorderLight,
     )
 }
@@ -293,35 +285,35 @@ private fun darkScheme(theme: PulseUiTheme) = with(theme) {
     darkColorScheme(
         primary = accent,
         onPrimary = onAccent(accent),
-        // EMB-B: warm ink containers instead of the green-cast carbon.
-        primaryContainer = lerp(Color(0xFF1E1610), accent, 0.30f),
+        // R24 NATIVE: green-cast carbon containers + Neo text tokens.
+        primaryContainer = lerp(Color(0xFF0D1211), accent, 0.30f),
         onPrimaryContainer = lerp(accent, Color.White, 0.72f),
         secondary = accent2,
         onSecondary = onAccent(accent2),
-        secondaryContainer = lerp(Color(0xFF1E1610), accent2, 0.30f),
+        secondaryContainer = lerp(Color(0xFF0D1211), accent2, 0.30f),
         onSecondaryContainer = lerp(accent2, Color.White, 0.72f),
         tertiary = Color(0xFFA78BFA),
         // R35 Neo destructive (web --destructive #ff5c6c).
         error = Color(0xFFFF5C6C),
         background = pageBaseDark,
-        // EMB-B warm text tokens (soft parchment white on the sunset field).
-        onBackground = Color(0xFFF5EFE8),
+        // Neo text tokens (web .dark --foreground #ecf4ef).
+        onBackground = Color(0xFFECF4EF),
         surface = surface(dark = true),
-        onSurface = Color(0xFFF5EFE8),
-        // Secondary warm surface + dimmed warm text.
-        surfaceVariant = Color(0xFF2A2019),
-        onSurfaceVariant = Color(0xFFB8A89A),
+        onSurface = Color(0xFFECF4EF),
+        // Secondary surface + dimmed text (web .dark --secondary / --muted-foreground).
+        surfaceVariant = Color(0xFF161C1A),
+        onSurfaceVariant = Color(0xFF8CA398),
         outlineVariant = panelBorderDark,
     )
 }
 
 private fun shapesFor(theme: PulseUiTheme): Shapes = Shapes(
-    // R35 Neo: radii raised ~1.4x of the old scale (8/12/16/20) - cards sit
-    // at 20-24dp via the feature screens, chips stay full-round, sheets 28dp.
-    extraSmall = RoundedCornerShape(12),
-    small = RoundedCornerShape(16),
-    medium = RoundedCornerShape(22),
-    large = RoundedCornerShape(28),
+    // R24 NATIVE: the standard Material scale again - native apps sit at
+    // 8-20dp corners; panels cap at the theme panel radius (24dp).
+    extraSmall = RoundedCornerShape(8),
+    small = RoundedCornerShape(12),
+    medium = RoundedCornerShape(16),
+    large = RoundedCornerShape(20),
     // The shared panel radius IS the design language's silhouette.
     extraLarge = RoundedCornerShape(theme.radiusPanel),
 )

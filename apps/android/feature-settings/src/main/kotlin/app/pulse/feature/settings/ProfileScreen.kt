@@ -330,7 +330,7 @@ fun ProfileScreen(
                         Icon(
                             PulseIcons.Pencil,
                             contentDescription = null,
-                            tint = Color(0xFF1C1410),
+                            tint = Color(0xFF04120C),
                             modifier = Modifier.size(16.dp),
                         )
                         Spacer(Modifier.width(8.dp))
@@ -338,7 +338,7 @@ fun ProfileScreen(
                             "Edit profile",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1C1410),
+                            color = Color(0xFF04120C),
                         )
                     }
                 }
@@ -497,7 +497,7 @@ fun ProfileScreen(
                         ) {
                             Text(
                                 label,
-                                color = if (selected) Color(0xFF1C1410) else Color.White.copy(alpha = 0.55f),
+                                color = if (selected) Color(0xFF04120C) else Color.White.copy(alpha = 0.55f),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -934,7 +934,7 @@ private fun SettingCard(content: @Composable androidx.compose.foundation.layout.
 @Composable
 private fun emberSegmentedColors() = SegmentedButtonDefaults.colors(
     activeContainerColor = EmberPalette.Deep,
-    activeContentColor = Color(0xFF1C1410),
+    activeContentColor = Color(0xFF04120C),
     inactiveContainerColor = Color.Transparent,
     inactiveContentColor = Color.White.copy(alpha = 0.55f),
 )

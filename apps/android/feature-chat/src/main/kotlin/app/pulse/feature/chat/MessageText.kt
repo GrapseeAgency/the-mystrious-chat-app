@@ -329,25 +329,25 @@ internal fun FormattedMessageBody(
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     }
-    // EMB-B - the mention chip rides the ember language (reference DM shows
-    // the amber @mention): warm amber wash + light amber text in dark,
-    // burnt-ember wash + deep amber text in light, both bubble sides.
+    // R24 NATIVE - the mention chip rides the web emerald language: emerald
+    // wash + light emerald text in dark, soft emerald wash + deep emerald text
+    // in light, both bubble sides.
     val darkChrome = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val mentionBg = if (darkChrome) {
-        Color(0xFFFFB86B).copy(alpha = 0.25f)
+        Color(0xFF34D399).copy(alpha = 0.25f)
     } else {
-        Color(0xFFE08A3C).copy(alpha = 0.20f)
+        Color(0xFF10B981).copy(alpha = 0.12f)
     }
-    val mentionText = if (darkChrome) Color(0xFFFFD9A8) else Color(0xFF8A4B0F)
+    val mentionText = if (darkChrome) Color(0xFF6EE7B7) else Color(0xFF059669)
 
-    // EMB-B - link ink: mine → the bubble's content color; theirs → the
-    // ember pair (amber glow in dark, deep ember in light), underlined.
+    // R24 NATIVE - link ink: mine → the bubble's content color; theirs → the
+    // emerald pair (emerald-400 in dark, emerald-600 in light), underlined.
     val linkColor = if (mine) {
         contentColor
     } else if (darkChrome) {
-        Color(0xFFFFB86B)
+        Color(0xFF34D399)
     } else {
-        Color(0xFFB45309)
+        Color(0xFF059669)
     }
 
     // R4-B item 1 - ACTION_VIEW on a tapped link; https:// is synthesized for

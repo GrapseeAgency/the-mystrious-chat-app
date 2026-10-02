@@ -230,7 +230,7 @@ internal data class StampPack(
 internal val STAMP_PACKS: List<StampPack> = listOf(
     StampPack(
         "Signal", PulseIcons.Bolt,
-        Color(0xFFFFB86B), Color(0xFFFF7A3D), // EMB-B: ember amber -> deep ember
+        Color(0xFF34D399), Color(0xFF14B8A6), // web Signal pack verbatim: emerald-400 -> teal-500
         listOf("bolt", "flame", "sparkles", "rocket", "target", "star"),
     ),
     StampPack(

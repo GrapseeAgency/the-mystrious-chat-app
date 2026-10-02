@@ -396,14 +396,14 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
         val h = size.height
         val aspect = w / h.coerceAtLeast(1f)
 
-        val base = if (dark) Color(0xFF0B0705) else Color(0xFFFAF6F1)
+        val base = if (dark) Color(0xFF07090B) else Color(0xFFF5F8F6)
         drawRect(base)
 
-        // EMB-B: the fx layer rides the ember language (warm glow fields).
-        val emerald = Color(0xFFFFB86B)
-        val teal = Color(0xFFFF7A3D)
+        // R24 NATIVE: the fx layer rides the web emerald family (cool fields).
+        val emerald = Color(0xFF34D399)
+        val teal = Color(0xFF14B8A6)
         val violet = Color(0xFF8B5CF6)
-        val white = Color(0xFFFFF3E2)
+        val white = Color(0xFFECF4EF)
 
         val strength = if (dark) 0.30f else 0.10f
         val blend = if (dark) BlendMode.Plus else BlendMode.Multiply
@@ -440,7 +440,7 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
             }
             FxMode.LIQUID -> {
                 // five fused metaballs - ember amber/deep body with a rose rim
-                val emerald = Color(0xFFFFB86B)
+                val emerald = Color(0xFF34D399)
                 val rose = Color(0xFFF43F5E)
                 repeat(5) { ball ->
                     val cx = w * (0.5f + 0.15f * sin(time * 0.21f + ball * 1.7f))
@@ -503,12 +503,12 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
 // Particle bursts (native port of particle-layer.tsx)
 
 private val CONFETTI_COLORS = listOf(
-    Color(0xFFFFB86B), Color(0xFFFF7A3D), Color(0xFFF59E0B),
+    Color(0xFF34D399), Color(0xFF059669), Color(0xFFF59E0B),
     Color(0xFFFB7185), Color(0xFF8B5CF6), Color(0xFFFFFFFF),
 )
 private val HEART_COLORS = listOf(Color(0xFFFB7185), Color(0xFFF43F5E), Color(0xFFFDA4AF), Color(0xFFFF6B81))
 private val STAR_COLORS = listOf(Color(0xFFFDE68A), Color(0xFFFFFFFF), Color(0xFFA7F3D0), Color(0xFF99F6E4))
-private val BURST_COLORS = listOf(Color(0xFFFFB86B), Color(0xFFFF7A3D), Color(0xFFFFFFFF), Color(0xFFFBBF24))
+private val BURST_COLORS = listOf(Color(0xFF34D399), Color(0xFF059669), Color(0xFFFFFFFF), Color(0xFFFBBF24))
 
 private class P(
     var x: Float, var y: Float,

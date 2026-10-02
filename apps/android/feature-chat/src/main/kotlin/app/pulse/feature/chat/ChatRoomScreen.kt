@@ -1001,12 +1001,12 @@ fun ChatRoomScreen(
                             .padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("New messages", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF1C1410))
+                        Text("New messages", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF04120C))
                         Spacer(Modifier.width(4.dp))
                         Icon(
                             PulseIcons.ChevronDown,
                             contentDescription = null,
-                            tint = Color(0xFF1C1410),
+                            tint = Color(0xFF04120C),
                             modifier = Modifier.size(14.dp),
                         )
                         if (missedCount.intValue > 0) {
@@ -1022,7 +1022,7 @@ fun ChatRoomScreen(
                                     if (missedCount.intValue > 99) "99+" else "${missedCount.intValue}",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF7A4E33),
+                                    color = Color(0xFF059669),
                                 )
                             }
                         }

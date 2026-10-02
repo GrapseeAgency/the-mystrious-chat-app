@@ -64,7 +64,7 @@ import kotlinx.coroutines.withContext
 
 private val Zinc700 = Color(0xFF3F3F46)
 private val Zinc800 = Color(0xFF27272A)
-private val Emerald600 = Color(0xFFC9762B) // EMB-B ember
+private val Emerald600 = Color(0xFF059669) // R24: web emerald-600
 private val Rose500 = Color(0xFFEF4444)
 
 /**
