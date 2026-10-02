@@ -130,6 +130,7 @@ exports.Prisma.UserScalarFieldEnum = {
   statusText: 'statusText',
   preferences: 'preferences',
   sessionTokenHash: 'sessionTokenHash',
+  legacyTokenHashes: 'legacyTokenHashes',
   createdAt: 'createdAt',
   lastSeenAt: 'lastSeenAt',
   xp: 'xp',

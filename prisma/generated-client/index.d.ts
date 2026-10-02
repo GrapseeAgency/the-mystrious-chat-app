@@ -5453,6 +5453,7 @@ export namespace Prisma {
     statusText: string | null
     preferences: string | null
     sessionTokenHash: string | null
+    legacyTokenHashes: string | null
     createdAt: Date | null
     lastSeenAt: Date | null
     xp: number | null
@@ -5472,6 +5473,7 @@ export namespace Prisma {
     statusText: string | null
     preferences: string | null
     sessionTokenHash: string | null
+    legacyTokenHashes: string | null
     createdAt: Date | null
     lastSeenAt: Date | null
     xp: number | null
@@ -5491,6 +5493,7 @@ export namespace Prisma {
     statusText: number
     preferences: number
     sessionTokenHash: number
+    legacyTokenHashes: number
     createdAt: number
     lastSeenAt: number
     xp: number
@@ -5522,6 +5525,7 @@ export namespace Prisma {
     statusText?: true
     preferences?: true
     sessionTokenHash?: true
+    legacyTokenHashes?: true
     createdAt?: true
     lastSeenAt?: true
     xp?: true
@@ -5541,6 +5545,7 @@ export namespace Prisma {
     statusText?: true
     preferences?: true
     sessionTokenHash?: true
+    legacyTokenHashes?: true
     createdAt?: true
     lastSeenAt?: true
     xp?: true
@@ -5560,6 +5565,7 @@ export namespace Prisma {
     statusText?: true
     preferences?: true
     sessionTokenHash?: true
+    legacyTokenHashes?: true
     createdAt?: true
     lastSeenAt?: true
     xp?: true
@@ -5666,6 +5672,7 @@ export namespace Prisma {
     statusText: string | null
     preferences: string | null
     sessionTokenHash: string | null
+    legacyTokenHashes: string | null
     createdAt: Date
     lastSeenAt: Date
     xp: number
@@ -5704,6 +5711,7 @@ export namespace Prisma {
     statusText?: boolean
     preferences?: boolean
     sessionTokenHash?: boolean
+    legacyTokenHashes?: boolean
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
@@ -5746,6 +5754,7 @@ export namespace Prisma {
     statusText?: boolean
     preferences?: boolean
     sessionTokenHash?: boolean
+    legacyTokenHashes?: boolean
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
@@ -5765,6 +5774,7 @@ export namespace Prisma {
     statusText?: boolean
     preferences?: boolean
     sessionTokenHash?: boolean
+    legacyTokenHashes?: boolean
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
@@ -5784,6 +5794,7 @@ export namespace Prisma {
     statusText?: boolean
     preferences?: boolean
     sessionTokenHash?: boolean
+    legacyTokenHashes?: boolean
     createdAt?: boolean
     lastSeenAt?: boolean
     xp?: boolean
@@ -5791,7 +5802,7 @@ export namespace Prisma {
     xpDay?: boolean
   }
 
-  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "coverImage" | "statusEmoji" | "statusText" | "preferences" | "sessionTokenHash" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
+  export type UserOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "username" | "about" | "color" | "avatar" | "coverImage" | "statusEmoji" | "statusText" | "preferences" | "sessionTokenHash" | "legacyTokenHashes" | "createdAt" | "lastSeenAt" | "xp" | "xpToday" | "xpDay", ExtArgs["result"]["user"]>
   export type UserInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     appInstalls?: boolean | User$appInstallsArgs<ExtArgs>
     wallet?: boolean | User$walletArgs<ExtArgs>
@@ -5858,6 +5869,7 @@ export namespace Prisma {
       statusText: string | null
       preferences: string | null
       sessionTokenHash: string | null
+      legacyTokenHashes: string | null
       createdAt: Date
       lastSeenAt: Date
       xp: number
@@ -6319,6 +6331,7 @@ export namespace Prisma {
     readonly statusText: FieldRef<"User", 'String'>
     readonly preferences: FieldRef<"User", 'String'>
     readonly sessionTokenHash: FieldRef<"User", 'String'>
+    readonly legacyTokenHashes: FieldRef<"User", 'String'>
     readonly createdAt: FieldRef<"User", 'DateTime'>
     readonly lastSeenAt: FieldRef<"User", 'DateTime'>
     readonly xp: FieldRef<"User", 'Int'>
@@ -54336,6 +54349,7 @@ export namespace Prisma {
     statusText: 'statusText',
     preferences: 'preferences',
     sessionTokenHash: 'sessionTokenHash',
+    legacyTokenHashes: 'legacyTokenHashes',
     createdAt: 'createdAt',
     lastSeenAt: 'lastSeenAt',
     xp: 'xp',
@@ -54991,6 +55005,7 @@ export namespace Prisma {
     statusText?: StringNullableFilter<"User"> | string | null
     preferences?: StringNullableFilter<"User"> | string | null
     sessionTokenHash?: StringNullableFilter<"User"> | string | null
+    legacyTokenHashes?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
     lastSeenAt?: DateTimeFilter<"User"> | Date | string
     xp?: IntFilter<"User"> | number
@@ -55032,6 +55047,7 @@ export namespace Prisma {
     statusText?: SortOrderInput | SortOrder
     preferences?: SortOrderInput | SortOrder
     sessionTokenHash?: SortOrderInput | SortOrder
+    legacyTokenHashes?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
@@ -55076,6 +55092,7 @@ export namespace Prisma {
     statusText?: StringNullableFilter<"User"> | string | null
     preferences?: StringNullableFilter<"User"> | string | null
     sessionTokenHash?: StringNullableFilter<"User"> | string | null
+    legacyTokenHashes?: StringNullableFilter<"User"> | string | null
     createdAt?: DateTimeFilter<"User"> | Date | string
     lastSeenAt?: DateTimeFilter<"User"> | Date | string
     xp?: IntFilter<"User"> | number
@@ -55117,6 +55134,7 @@ export namespace Prisma {
     statusText?: SortOrderInput | SortOrder
     preferences?: SortOrderInput | SortOrder
     sessionTokenHash?: SortOrderInput | SortOrder
+    legacyTokenHashes?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
@@ -55144,6 +55162,7 @@ export namespace Prisma {
     statusText?: StringNullableWithAggregatesFilter<"User"> | string | null
     preferences?: StringNullableWithAggregatesFilter<"User"> | string | null
     sessionTokenHash?: StringNullableWithAggregatesFilter<"User"> | string | null
+    legacyTokenHashes?: StringNullableWithAggregatesFilter<"User"> | string | null
     createdAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     lastSeenAt?: DateTimeWithAggregatesFilter<"User"> | Date | string
     xp?: IntWithAggregatesFilter<"User"> | number
@@ -58139,6 +58158,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -58180,6 +58200,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -58221,6 +58242,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -58262,6 +58284,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -58303,6 +58326,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -58322,6 +58346,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -58341,6 +58366,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -61725,6 +61751,7 @@ export namespace Prisma {
     statusText?: SortOrder
     preferences?: SortOrder
     sessionTokenHash?: SortOrder
+    legacyTokenHashes?: SortOrder
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
@@ -61749,6 +61776,7 @@ export namespace Prisma {
     statusText?: SortOrder
     preferences?: SortOrder
     sessionTokenHash?: SortOrder
+    legacyTokenHashes?: SortOrder
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
@@ -61768,6 +61796,7 @@ export namespace Prisma {
     statusText?: SortOrder
     preferences?: SortOrder
     sessionTokenHash?: SortOrder
+    legacyTokenHashes?: SortOrder
     createdAt?: SortOrder
     lastSeenAt?: SortOrder
     xp?: SortOrder
@@ -68023,6 +68052,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68063,6 +68093,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68108,6 +68139,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68148,6 +68180,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68204,6 +68237,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68244,6 +68278,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68295,6 +68330,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68335,6 +68371,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68375,6 +68412,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68415,6 +68453,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68460,6 +68499,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68500,6 +68540,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68556,6 +68597,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68596,6 +68638,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68647,6 +68690,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68687,6 +68731,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68727,6 +68772,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68767,6 +68813,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68823,6 +68870,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68863,6 +68911,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -68903,6 +68952,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68943,6 +68993,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -68999,6 +69050,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69039,6 +69091,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69079,6 +69132,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69119,6 +69173,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69175,6 +69230,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69215,6 +69271,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69255,6 +69312,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69295,6 +69353,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69351,6 +69410,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69391,6 +69451,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69431,6 +69492,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69471,6 +69533,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69527,6 +69590,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69567,6 +69631,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69607,6 +69672,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69647,6 +69713,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69703,6 +69770,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69743,6 +69811,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69783,6 +69852,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69823,6 +69893,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69879,6 +69950,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69919,6 +69991,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -69959,6 +70032,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -69999,6 +70073,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70044,6 +70119,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70084,6 +70160,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70140,6 +70217,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70180,6 +70258,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70231,6 +70310,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70271,6 +70351,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70311,6 +70392,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70351,6 +70433,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70407,6 +70490,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70447,6 +70531,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70487,6 +70572,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70527,6 +70613,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -70583,6 +70670,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -70623,6 +70711,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -71413,6 +71502,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -71453,6 +71543,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -71574,6 +71665,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -71614,6 +71706,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -71778,6 +71871,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -71818,6 +71912,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -71895,6 +71990,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -71935,6 +72031,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -72057,6 +72154,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -72097,6 +72195,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -72212,6 +72311,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -72252,6 +72352,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -72357,6 +72458,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -72397,6 +72499,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -73027,6 +73130,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -73067,6 +73171,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -73947,6 +74052,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -73987,6 +74093,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -74128,6 +74235,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -74168,6 +74276,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -75109,6 +75218,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -75149,6 +75259,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -75226,6 +75337,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -75266,6 +75378,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -75694,6 +75807,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -75734,6 +75848,7 @@ export namespace Prisma {
     statusText?: string | null
     preferences?: string | null
     sessionTokenHash?: string | null
+    legacyTokenHashes?: string | null
     createdAt?: Date | string
     lastSeenAt?: Date | string
     xp?: number
@@ -75823,6 +75938,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
@@ -75863,6 +75979,7 @@ export namespace Prisma {
     statusText?: NullableStringFieldUpdateOperationsInput | string | null
     preferences?: NullableStringFieldUpdateOperationsInput | string | null
     sessionTokenHash?: NullableStringFieldUpdateOperationsInput | string | null
+    legacyTokenHashes?: NullableStringFieldUpdateOperationsInput | string | null
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     lastSeenAt?: DateTimeFieldUpdateOperationsInput | Date | string
     xp?: IntFieldUpdateOperationsInput | number
