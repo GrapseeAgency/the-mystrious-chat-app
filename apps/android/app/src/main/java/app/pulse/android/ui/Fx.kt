@@ -674,10 +674,14 @@ private fun playBurstHaptics(context: Context, kind: PulseFx.BurstKind): Boolean
     return runCatching {
         when {
             vibrator == null || !vibrator.hasVibrator() -> false
-            vibrator.hasAmplitudeControl() ->
+            vibrator.hasAmplitudeControl() -> {
                 vibrator.vibrate(VibrationEffect.createWaveform(waveform.first, waveform.second, -1))
-            else ->
+                true
+            }
+            else -> {
                 vibrator.vibrate(VibrationEffect.createWaveform(waveform.first, -1))
+                true
+            }
         }
     }.getOrDefault(false)
 }
