@@ -1,13 +1,13 @@
 {
-  "versionCode": 22,
-  "versionName": "0.11.1-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.11.1-native/Pulse-v0.11.1-native.apk",
+  "versionCode": 37,
+  "versionName": "0.19.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.19.0-native/Pulse-v0.19.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "f53fe580fec493c699ac679f561d2967d0cf5e0406e6cf7e57f0b9759dd5c595",
-  "notes": "Parity wave continuation \u2014 natives reach web parity: Android render batch (formatting parser/jumbo emoji/24-reaction picker/who-reacted/slash palette/sticker picker/effect FX + export share sheet/lightbox zoom/BOOT receiver/hub FX+logs poll), iOS batch (offline-forward outbox/NWPath flush/forget-viewer/hub cache/translate/location share/conv themes/quick phrases/check-in FX/logs poll/whiteboard draft strokes/space last-position), REAL VIDEO CALLS on both natives, camera capture + hold-to-record voice with web-identical waveform on both natives, in-app PiP panes on both natives, web quick-phrases rail + draft GET + delta sync. Tests: Android 450 JVM green + CI emulator + R8 release; iOS CI build+XCTest(298)+archive green; live E2E 293/293 + security probe 29/29. PHYSICAL DEVICE behaviors remain hardware-gated (Wave 3-HW/5-HW).",
+  "sha256": "f64247a4f126f2086d152e56d7dc175f01b2d78c08f6fc846088352bf51505a0",
+  "notes": "R50 wave - the honest connect gate lands: onboarding now probes a pasted gateway URL live, and a one-tap demo login (Alice Chen) opens the fully seeded chats on both Android and iOS; profile cover pictures ship end-to-end on web, Android and iOS with a decode fallback for older browsers; Hub and Settings join the profile three-dot menu on every platform; every UI haptic now honors the settings master gate; modern SplashScreen API launch on Android; version plumbing fixed (37 / 0.19.0-native).",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-09-23T17:58:11Z",
-  "apkSize": 24156318
+  "updatedAt": "2026-10-02T11:13:35Z",
+  "apkSize": 25451081
 }
