@@ -46,8 +46,8 @@ struct PulseNavDestination: Identifiable, Equatable {
 enum PulseNavDestinations {
     static let all: [PulseNavDestination] = [
         PulseNavDestination(tab: .chats, label: "Chats", icon: "bubble.left.and.bubble.right", filled: "bubble.left.and.bubble.right.fill"),
-        PulseNavDestination(tab: .hub, label: "Hub", icon: "globe.americas", filled: "globe.americas.fill"),
-        PulseNavDestination(tab: .contacts, label: "Contacts", icon: "person.2", filled: "person.2.fill"),
+        PulseNavDestination(tab: .calls, label: "Call", icon: "phone", filled: "phone.fill"),
+        PulseNavDestination(tab: .hub, label: "Updates", icon: "arrow.triangle.2.circlepath", filled: "arrow.triangle.2.circlepath"),
         PulseNavDestination(tab: .profile, label: "Profile", icon: "person.crop.circle", filled: "person.crop.circle.fill"),
     ]
 
@@ -1513,6 +1513,7 @@ struct ContextualDock: View {
     private var contextAction: (label: String, icon: String) {
         switch active {
         case .chats: return ("New chat", "plus")
+        case .calls: return ("Search", "magnifyingglass")
         case .hub: return ("Search", "magnifyingglass")
         case .contacts: return ("New group", "person.2")
         case .profile: return ("Settings", "gearshape")
@@ -1583,6 +1584,7 @@ struct ContextualDock: View {
             PulseHaptics.tap()
             switch active {
             case .chats: context.onCompose()
+            case .calls: context.onSearch()
             case .hub: context.onSearch()
             case .contacts: context.onCompose()
             case .profile: context.onSettings()

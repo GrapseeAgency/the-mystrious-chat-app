@@ -75,6 +75,10 @@ struct ChatsView: View {
     @ObservedObject var prefs: PulsePrefs
     var onGoContacts: () -> Void = {}
     var onGoProfile: () -> Void = {}
+    // R25 - the dock More menu lives in the chats header now.
+    var onGoSaved: () -> Void = {}
+    var onGoStories: () -> Void = {}
+    var onGoSettings: () -> Void = {}
     /// Whether this tab is the visible one (dock-level tab switch).
     var isActive: Bool = true
 
@@ -253,18 +257,21 @@ struct ChatsView: View {
                     session: session,
                     prefs: prefs,
                     onGoProfile: onGoProfile,
-                    // R3-A item 9 - the dead toast is gone: the phone button
-                    // opens the real call-history page.
+                    onGoContacts: onGoContacts,
+                    // R3-A item 9 - the phone menu item opens the real
+                    // call-history page (Call is a dock tab now too).
                     onPhone: {
                         PulseHaptics.tap()
                         callsOpen = true
                     },
-                    // R3-A item 10 - the dead toast is gone: the compose
-                    // button opens the SAME NewChatSheet the dock uses.
-                    onCompose: {
+                    // R25 reference header - the camera glass button opens
+                    // the story composer; new chat lives on the dock FAB.
+                    onStories: {
                         PulseHaptics.tap()
-                        newChatOpen = true
+                        onGoStories()
                     },
+                    onSaved: { onGoSaved() },
+                    onSettings: { onGoSettings() },
                     onStartSearch: {
                         PulseHaptics.tap()
                         enterSearch()
@@ -735,8 +742,11 @@ private struct ChatsHeaderBar: View {
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
     let onGoProfile: () -> Void
+    let onGoContacts: () -> Void
     let onPhone: () -> Void
-    let onCompose: () -> Void
+    let onStories: () -> Void
+    let onSaved: () -> Void
+    let onSettings: () -> Void
     let onStartSearch: () -> Void
 
     var body: some View {
@@ -757,11 +767,17 @@ private struct ChatsHeaderBar: View {
                 .accessibilityLabel("Start searching")
 
                 EmberGlassCircleButton(systemImage: "camera") {
-                    onCompose()
+                    onStories()
                 }
-                .accessibilityLabel("New chat")
+                .accessibilityLabel("New story")
 
                 Menu {
+                    Button {
+                        PulseHaptics.tap()
+                        onGoContacts()
+                    } label: {
+                        Label("Contacts", systemImage: "person.2")
+                    }
                     Button {
                         PulseHaptics.tap()
                         onGoProfile()
@@ -773,6 +789,24 @@ private struct ChatsHeaderBar: View {
                         onPhone()
                     } label: {
                         Label("Calls", systemImage: "phone")
+                    }
+                    Button {
+                        PulseHaptics.tap()
+                        onSaved()
+                    } label: {
+                        Label("Saved", systemImage: "bookmark")
+                    }
+                    Button {
+                        PulseHaptics.tap()
+                        onStories()
+                    } label: {
+                        Label("Stories", systemImage: "sparkles")
+                    }
+                    Button {
+                        PulseHaptics.tap()
+                        onSettings()
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
                     }
                     Button {
                         PulseHaptics.tap()
