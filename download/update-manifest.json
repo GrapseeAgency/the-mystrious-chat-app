@@ -1,13 +1,13 @@
 {
-  "versionCode": 37,
-  "versionName": "0.19.0-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.19.0-native/Pulse-v0.19.0-native.apk",
+  "versionCode": 38,
+  "versionName": "0.20.0-native",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.20.0-native/Pulse-v0.20.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "f64247a4f126f2086d152e56d7dc175f01b2d78c08f6fc846088352bf51505a0",
-  "notes": "R50 wave - the honest connect gate lands: onboarding now probes a pasted gateway URL live, and a one-tap demo login (Alice Chen) opens the fully seeded chats on both Android and iOS; profile cover pictures ship end-to-end on web, Android and iOS with a decode fallback for older browsers; Hub and Settings join the profile three-dot menu on every platform; every UI haptic now honors the settings master gate; modern SplashScreen API launch on Android; version plumbing fixed (37 / 0.19.0-native).",
+  "sha256": "aee6695fa4dd295f1ab18bbc37637cd05e067bdf662f3da00afb767a1133397d",
+  "notes": "R51 homepage wave - the full offline-first app direction lands: the chats header is the Pulse brand with bare camera + kebab icons (circle backgrounds deleted), an always-visible search bar replaced the All/Unread/Groups chips (live local filter, IME search opens spotlight), the folder rail is tiny (28dp pills + 30dp folder/channel glyphs), the Note to Self / Mentions / Channels rows are gone (archived appears only when non-empty), and the dock speaks reference proportions (54dp pill, 46dp FAB, 18dp icons). CI: Android main + tag v0.20.0-native green (signed R8 + emulator smoke), release published.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-10-02T11:13:35Z",
-  "apkSize": 25451081
+  "updatedAt": "2026-10-02T14:54:00Z",
+  "apkSize": 25448725
 }
