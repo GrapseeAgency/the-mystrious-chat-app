@@ -82,22 +82,54 @@ const ABOUT_MAX = 140
 const STATUS_MAX = 48
 
 /** R39 - crop the picked image to the 2:1 hero banner (max 1200x600, JPEG q0.85). */
+/** Decode a File to a drawable source with a graceful two-path fallback:
+ *  createImageBitmap first, then the classic Image() loader (older Safari
+ *  and some headless/embedded Chromium builds reject the bitmap path). */
+async function decodeImageSource(
+  file: File,
+): Promise<{ source: ImageBitmap | HTMLImageElement; width: number; height: number; close: () => void }> {
+  try {
+    const bitmap = await createImageBitmap(file)
+    return { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() }
+  } catch {
+    const url = URL.createObjectURL(file)
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image()
+        el.onload = () => resolve(el)
+        el.onerror = () => {
+          URL.revokeObjectURL(url)
+          reject(new Error('The source image could not be decoded.'))
+        }
+        el.src = url
+      })
+      return { source: img, width: img.naturalWidth, height: img.naturalHeight, close: () => URL.revokeObjectURL(url) }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('decode')) URL.revokeObjectURL(url)
+      throw error
+    }
+  }
+}
+
 async function coverFileToDataUrl(file: File): Promise<string> {
-  const bitmap = await createImageBitmap(file)
+  const { source, width: srcW, height: srcH, close } = await decodeImageSource(file)
   const targetW = 1200
   const targetH = 600
-  const scale = Math.max(targetW / bitmap.width, targetH / bitmap.height)
+  const scale = Math.max(targetW / srcW, targetH / srcH)
   const sw = targetW / scale
   const sh = targetH / scale
-  const sx = Math.max(0, (bitmap.width - sw) / 2)
-  const sy = Math.max(0, (bitmap.height - sh) / 2)
+  const sx = Math.max(0, (srcW - sw) / 2)
+  const sy = Math.max(0, (srcH - sh) / 2)
   const canvas = document.createElement('canvas')
   canvas.width = targetW
   canvas.height = targetH
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas is unavailable in this browser')
-  ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, targetW, targetH)
-  bitmap.close()
+  if (!ctx) {
+    close()
+    throw new Error('Canvas is unavailable in this browser')
+  }
+  ctx.drawImage(source, sx, sy, sw, sh, 0, 0, targetW, targetH)
+  close()
   return canvas.toDataURL('image/jpeg', 0.85)
 }
 
