@@ -107,6 +107,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
     // R10-a - BiometricPrompt app lock (BIOMETRIC_WEAK | DEVICE_CREDENTIAL).
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.activity.compose)
