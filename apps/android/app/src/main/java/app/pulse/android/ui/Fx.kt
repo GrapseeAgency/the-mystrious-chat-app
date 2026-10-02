@@ -1,6 +1,10 @@
 package app.pulse.android.ui
 
+import android.content.Context
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -26,6 +30,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
@@ -642,6 +647,42 @@ private fun DrawScope.drawParticle(p: P) {
 }
 
 /**
+ * Effect-synced NATIVE haptics - the device side of the native bridge
+ * contract (web: src/lib/native-bridge.ts, GET /api/native/manifest + the
+ * parse-free `native` block on message:new). Each burst kind maps to the
+ * same waveform the web catalog publishes: confetti 0.7, lasers(burst)
+ * 0.9, sparkles(stars) 0.4, echo(hearts) 0.5 - timings in ms, amplitudes
+ * scaled 0..255 from the intensity. Real system vibrator (VibratorManager
+ * on 31+, legacy service below) so the effect lands in the HAND, not just
+ * on the screen; graceful fallback to view haptics when no vibrator.
+ */
+private val BURST_WAVEFORMS: Map<PulseFx.BurstKind, Pair<LongArray, IntArray>> = mapOf(
+    PulseFx.BurstKind.CONFETTI to Pair(longArrayOf(0, 18, 40, 18), intArrayOf(0, 178, 0, 178)),
+    PulseFx.BurstKind.BURST to Pair(longArrayOf(0, 8, 30, 8, 30, 14), intArrayOf(0, 229, 0, 229, 0, 229)),
+    PulseFx.BurstKind.STARS to Pair(longArrayOf(0, 6, 24, 6, 24, 6), intArrayOf(0, 102, 0, 102, 0, 102)),
+    PulseFx.BurstKind.HEARTS to Pair(longArrayOf(0, 12), intArrayOf(0, 128)),
+)
+
+private fun playBurstHaptics(context: Context, kind: PulseFx.BurstKind): Boolean {
+    val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    }
+    val waveform = BURST_WAVEFORMS[kind] ?: return false
+    return runCatching {
+        when {
+            vibrator == null || !vibrator.hasVibrator() -> false
+            vibrator.hasAmplitudeControl() ->
+                vibrator.vibrate(VibrationEffect.createWaveform(waveform.first, waveform.second, -1))
+            else ->
+                vibrator.vibrate(VibrationEffect.createWaveform(waveform.first, -1))
+        }
+    }.getOrDefault(false)
+}
+
+/**
  * Fullscreen burst overlay - listens to [PulseFx.bursts], animates only while
  * particles are alive (zero idle cost, web parity), pointer-transparent.
  */
@@ -649,13 +690,16 @@ private fun DrawScope.drawParticle(p: P) {
 fun ParticleBurstHost(modifier: Modifier = Modifier, reducedMotion: Boolean) {
     val particles = remember { mutableStateListOf<P>() }
     val view = LocalView.current
+    val context = LocalContext.current
     var canvasW by remember { mutableFloatStateOf(0f) }
     var canvasH by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
         PulseFx.bursts.collect { burst ->
             if (reducedMotion) return@collect
-            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            if (!playBurstHaptics(context, burst.kind)) {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            }
             repeat(burst.count.coerceIn(1, 400)) {
                 particles.add(makeParticle(burst.kind, canvasW, canvasH))
             }
