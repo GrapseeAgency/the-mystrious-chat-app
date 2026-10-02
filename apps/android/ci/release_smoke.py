@@ -375,10 +375,10 @@ def main():
         return (node_bounds(xml, "What should people call you") is None
                 and node_bounds(xml, "Pick your handle") is None)
 
-    # Belt: any IME residue gone. NEVER send BACK while onboarding owns the
-    # screen - there BACK exits the whole activity (v10's launcher-detour).
-    if in_shell():
-        adb_ok("shell", "input", "keyevent", "4")
+    # R25 v14: the old BACK belt is GONE - dismiss_ime above already clears
+    # any IME the safe way (BACK only while the IME is truly shown). A bare
+    # BACK here lands on the chats root, which backgrounds the whole app
+    # (v13 evidence: 02-main-shell captured the launcher mid-run).
     time.sleep(1.5)
     screen("02-main-shell.png")
     if failed:
