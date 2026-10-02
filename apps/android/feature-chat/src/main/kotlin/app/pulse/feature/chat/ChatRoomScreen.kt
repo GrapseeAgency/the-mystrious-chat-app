@@ -3116,7 +3116,7 @@ private fun RoomHeader(
                                     conversation == null -> ""
                                     conversation.isGroupish -> conversation.memberNames.joinToString(", ").ifEmpty {
                                         "${conversation.memberNames.size} members"
-                                    },
+                                    }
                                     else -> "online"
                                 },
                                 fontSize = 11.sp,
