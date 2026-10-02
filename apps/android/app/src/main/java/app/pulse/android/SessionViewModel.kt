@@ -53,21 +53,33 @@ class SessionViewModel @Inject constructor(
                 }
             }
         }
-        // Wave 8 - a 401 or relay join:error proved the stored token invalid
-        // or rotated: clear the device session and surface the honest
-        // re-login notice on the onboarding screen.
+        // R52-c - a rejected token NEVER tears the session down anymore: the
+        // "Your session ended" onboarding kick the user hit is dead. The
+        // device silently reclaims the SAME identity by name (Pulse
+        // identities are name-keyed and self-declared - the login endpoint IS
+        // the re-auth), the fresh token persists inside the repository, and
+        // realtime re-arms. Offline -> nothing changes: the viewer stays, the
+        // outbox keeps queueing, the retry happens on the next rejection
+        // (throttled). Explicit sign-out (forgetViewer) is the ONLY way out.
         viewModelScope.launch {
             sessionTokenStore.invalidated.collect { invalid ->
-                if (invalid && prefs.viewerId.first() != null) {
-                    _sessionNotice.value =
-                        "Your session ended. Log in again to reclaim your identity."
-                    // Task 5-d - the identity is going away here too (401 /
-                    // join:error teardown): the push registry row must not
-                    // outlive it. Fire-and-forget, never blocks the clear.
-                    runCatching { PulsePush.signOut(repo) }
-                    prefs.setViewer(null, null)
-                    runCatching { secureSessionStore.delete() }
-                }
+                if (!invalid) return@collect
+                val id = prefs.viewerId.first() ?: return@collect
+                val name = prefs.viewerName.first().takeUnless { it.isNullOrBlank() }
+                    ?: return@collect
+                val now = System.currentTimeMillis()
+                if (now - lastSilentReauth < SILENT_REAUTH_THROTTLE_MS) return@collect
+                lastSilentReauth = now
+                repo.login(name).fold(
+                    onSuccess = {
+                        _sessionNotice.value = null
+                        repo.start(id)
+                    },
+                    onFailure = {
+                        // Stay exactly where we are - the app remains fully
+                        // usable offline; the next 401 retries (throttled).
+                    },
+                )
             }
         }
         // Outbox → WorkManager bridge: a pending queue always has an expedited,
@@ -80,6 +92,13 @@ class SessionViewModel @Inject constructor(
     }
 
     private val _sessionNotice = MutableStateFlow<String?>(null)
+
+    /** R52-c throttle: at most one silent re-auth per 10s window. */
+    private var lastSilentReauth = 0L
+
+    private companion object {
+        const val SILENT_REAUTH_THROTTLE_MS = 10_000L
+    }
 
     /** One-shot honest notice when the session token was rejected (401 / join:error). */
     val sessionNotice: StateFlow<String?> = _sessionNotice.asStateFlow()

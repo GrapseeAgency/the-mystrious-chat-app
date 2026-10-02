@@ -310,12 +310,6 @@ private fun ConnectStep(
                 },
             )
         }
-
-        PulseGhostButton(
-            text = "Skip - explore offline",
-            enabled = !state.probing,
-            onClick = { viewModel.skipConnect() },
-        )
     }
 }
 

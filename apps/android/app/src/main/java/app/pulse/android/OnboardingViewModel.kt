@@ -104,15 +104,29 @@ class OnboardingViewModel @Inject constructor(
     init {
         // R50-a - a fresh install with no gateway configured must NOT land on
         // the name step (every request there fails as a bare "server error").
-        // The honest front door is the connect gate; a persisted serverBase
-        // (or a manifest-adopted origin) skips straight past it.
+        // R52-c - the user directive: the gateway LINK is the only step. The
+        // name/handle creation steps are gone from the flow entirely:
+        //   • a known base (stored Server field / baked / manifest) skips
+        //     straight into a SILENT demo sign-in - the shell opens with the
+        //     seeded identity, zero taps;
+        //   • no known base -> the connect gate (link field) shows, and a
+        //     successful probe auto-signs in - it never advances anywhere.
         viewModelScope.launch {
             val stored = runCatching { prefs.serverBase.first() }.getOrNull()
-            val configured = app.pulse.core.PulseEndpoints.isConfigured || !stored.isNullOrBlank()
+            // Deterministic endpoint adoption (PulseApplication re-applies the
+            // same stored value a beat later - idempotent).
+            if (!app.pulse.core.PulseEndpoints.isConfigured && !stored.isNullOrBlank()) {
+                app.pulse.core.PulseEndpoints.applyBase(stored)
+            }
+            val configured = app.pulse.core.PulseEndpoints.isConfigured
             _state.value = _state.value.copy(
-                step = if (configured) OnboardingStep.NAME else OnboardingStep.CONNECT,
+                step = OnboardingStep.CONNECT,
                 serverUrl = stored ?: app.pulse.core.PulseEndpoints.gatewayHttpUrl,
+                serverConnected = configured,
             )
+            if (configured) {
+                demoLogin(celebrate = false)
+            }
         }
     }
 
@@ -186,12 +200,12 @@ class OnboardingViewModel @Inject constructor(
     /**
      * Connect: probe the candidate base, adopt it for REST + realtime
      * (SessionViewModel.setServerBase persists it AND points the endpoints),
-     * then advance to the name step where the demo login waits. The callback
-     * receives the NORMALIZED base so the host can persist it.
+     * then auto-sign in to the seeded demo account - the probe success IS
+     * the login now (R52-c: no name step, no account creation).
      */
     fun connect(onConnected: (String) -> Unit) {
         val s = _state.value
-        if (s.probing) return
+        if (s.probing || s.signingIn) return
         val base = normalizeBase(s.serverUrl) ?: run {
             _state.value = _state.value.copy(
                 connectNotice = "Paste the address of a Pulse gateway (https://...).",
@@ -209,10 +223,10 @@ class OnboardingViewModel @Inject constructor(
                 _state.value = _state.value.copy(
                     probing = false,
                     serverConnected = true,
-                    step = OnboardingStep.NAME,
-                    connectNotice = message,
+                    connectNotice = "Connected - opening your account...",
                     connectNoticeTone = ConnectNoticeTone.EMERALD,
                 )
+                demoLogin()
             } else {
                 _state.value = _state.value.copy(
                     probing = false,
@@ -230,18 +244,20 @@ class OnboardingViewModel @Inject constructor(
     }
 
     /**
-     * R50-a - one-tap demo login: reclaim the seeded demo identity through
-     * the SAME POST /api/users/login chain the "log in instead" flow uses
-     * (token rotate, vault persist, repo.start) - the shell then opens
-     * straight onto the rich demo chats.
+     * R50-a - one-tap demo login (R52-c: ALSO the automatic path - a known
+     * gateway signs in silently on cold start, no taps, no account
+     * creation): reclaim the seeded demo identity through the SAME
+     * POST /api/users/login chain the "log in instead" flow uses (token
+     * rotate, vault persist, repo.start) - the shell then opens straight
+     * onto the rich demo chats.
      */
-    fun demoLogin() {
+    fun demoLogin(celebrate: Boolean = true) {
         val s = _state.value
         if (s.signingIn) return
         viewModelScope.launch {
             _state.value = _state.value.copy(signingIn = true, connectNotice = null)
             repo.login(DEMO_ACCOUNT_NAME).fold(
-                onSuccess = { user -> complete(user) },
+                onSuccess = { user -> complete(user, celebrate) },
                 onFailure = { error ->
                     _state.value = _state.value.copy(
                         signingIn = false,
@@ -422,7 +438,7 @@ class OnboardingViewModel @Inject constructor(
     private fun isActiveFor(handle: String): Boolean =
         _state.value.handle == handle && _state.value.step == OnboardingStep.HANDLE
 
-    private suspend fun complete(user: User) {
+    private suspend fun complete(user: User, celebrate: Boolean = true) {
         prefs.setViewer(user.id, user.name, user.color)
         // The encrypted vault is the durable identity - the plaintext prefs
         // keys remain only as the read-only UI mirror (Wave 0 secure session).
@@ -443,7 +459,9 @@ class OnboardingViewModel @Inject constructor(
             )
         }
         repo.start(user.id)
-        PulseFx.fire(PulseFx.BurstKind.CONFETTI, count = 120)
+        if (celebrate) {
+            PulseFx.fire(PulseFx.BurstKind.CONFETTI, count = 120)
+        }
         _state.value = _state.value.copy(pending = false, signingIn = false)
     }
 }
