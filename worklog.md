@@ -4567,3 +4567,39 @@ Stage Summary:
 - The release artifact is provably bootable, onboardable, and navigable in CI at least once; the user's device crash is NOT yet reproduced or explained. Suspects remaining: device-API-specific paths (API 34 leg now covered), real-data-specific paths (legacy folders/topics pre-R18 - resolution code audited safe), App Lock biometric gate (audited safe), or an intermittent race (Hub death seen once).
 - CI evidence artifacts per run: pulse-release-smoke-<api> (screenshots + report + logcat-full.txt + crash-logcat.txt on capture).
 - Screen QA pending: phone-metric screenshots from the API 34 leg will drive the visible-error UI fixes the user demands.
+
+---
+Task ID: R24-native-rebuild
+Agent: orchestrator (Z.ai main session)
+Task: the user rejected the ember design ("design system looks horrible nothing is feels native at all") - rebuild the Android design system to the native, web-truth emerald/carbon language and ship v0.14.0-native (versionCode 31) through GitHub Actions
+
+Work Log:
+- Diagnosis: v0.13.1-ember (versionCode 30, released 2026-10-01) already fixed the R23 nav crash (NavHost routes registered as side effects inside hub's lambda -> IllegalArgumentException). The user's remaining verdict is DESIGN: the EMB ember wave had taken over every token layer (PulsePalette.Emerald was literally amber 0xFFF2A65A, DockEmerald600 was 0xFFFFB86B, warm-brown backdrops 0xFF5C4030->0xFF150F0B, amber bubbles/badges/chips, Space Grotesk downloadable font, glass-circle chrome, capsule dock default).
+- Web truth re-extracted from src/app/globals.css + chat-room.tsx: brand = emerald-500 #10b981 / emerald-600 #059669; dark = R35 Neo carbon #07090b with mint primary #2be8a6; mine bubble = bg-emerald-500 white ink, theirs = white card (light) / zinc-800 (dark), 16px radius + 6px tail; send button gradient from-emerald-400 to-emerald-600; unread badge emerald-500; destructive #ff5c6c.
+- TOKEN RE-POINT (names kept, values swapped - every screen re-skins through one object): Ember.kt EmberPalette (carbon backdrop stack, emerald Glow/Amber/Deep, web bubble fills, native-green Online, web-destructive Signal, carbon PillFill/FabFill), Common.kt PulsePalette (emerald-500/600, mint NeonMint + #04120c ink), Theme.kt GLASS (emerald accents light + mint dark, FLAT page bases #f5f8f6/#07090b, radials removed, Neo dark-scheme text tokens, standard Material shape scale 8/12/16/20), EmberGlassButton glass circle -> bounded-ripple header icon.
+- TYPE: PulseType.kt rewritten - system Roboto (FontFamily.Default) + platform monospace replace downloadable Space Grotesk/JetBrains Mono (native voice + no first-launch font-provider latency). Family slot names preserved (zero call-site changes).
+- NAV: PulseNavStyle DEFAULT_ID capsule -> bottom-bar; storage key pulse.navStyle.v2 -> v3 so capsule-persisted devices land on the native default too; junk fallback -> BOTTOM_BAR; PulseNavStyleTest pins updated (4 assertions). BottomBarDock rebuilt as a REAL Material 3 NavigationBar (opaque surface, elevation shadow, NavigationBarItem ripple + pill indicator, emerald selection colors, DockUnreadBadge emerald); dockSpace BOTTOM_BAR -> 80dp; compose FAB emerald fill; both overflow menus (shell + chats header) carbon #161c1a instead of warm brown #241a13.
+- HEX SWEEP: all 54 ember literals across 16 files re-pointed (ChatRoom new-messages pill, MessageText mention chip + link ink, MessagingSurfaces Signal stamp pack gradient -> web verbatim #34d399/#14b8a6, ChatsScreen chips/quartet/menu, HubScreen chips, CallOverlay accept -> native green + emerald initials, Onboarding shade family incl. the disguised Emerald400 0xFFFFD9A8, Settings/Profile segmented pickers, Fx.kt warm field bases + teal-that-was-ember + confetti/burst palettes, Story viewer/composer badges). Final grep: ZERO ember hexes remain tree-wide.
+- Hygiene gates: git diff PAT scan 0; em-dash 0; emoji 0; brace-balance check on all 21 edited files (2 mismatches proven pre-existing at HEAD, scanner noise from braces inside strings).
+- False alarm documented: the workflow trigger line displays as "branches: ain]" in terminal output but od -c proves the files contain "branches: [main]" - a tooling display artifact (the R21 session hit the same artifact). Main-push CI runs confirmed triggering (run 36946251546).
+- SHIP: commit fc4d3ec pushed to main + tag v0.14.0-native; Android CI (build + JVM tests + signed R8 APK + instrumented release smoke on API 30/34) and iOS CI triggered; release publishes only after the emulator smoke boots the signed artifact.
+
+Stage Summary:
+- The Android app now speaks the web source-of-truth design language: emerald/mint identity, clean carbon dark, native system type, standard M3 bottom bar by default, WhatsApp-grade bubble colors. Zero ember remnants.
+- Honest caveats: (1) compile verification rides CI only (sandbox build ban upheld) - symbol-level cross-checks + brace gates were the local evidence; (2) iOS still carries its own ember token wave (PulseTheme+Tokens.swift etc.) - next wave mirrors this rebuild; (3) the light-mode ember screens stay dark-chrome by design (dark flagship), scheme-driven surfaces now use the clean light palette.
+- Install after CI: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.14.0-native
+
+---
+Task ID: R24-close
+Agent: orchestrator (Z.ai main session)
+Task: verify the v0.14.0-native release end-to-end + iOS mirror ship
+
+Work Log:
+- iOS mirror wave (commit 326b6d5): PulseTheme+Tokens.swift re-pointed (emberBackdrop -> carbon stack, glow #7A4E33 -> #10B981, chrome -> #0D1211, bubbles -> web verbatim zinc-800/emerald-500, glow pair -> #34D399/#059669, red -> #FF5C6C destructive, online -> #22C55E, dot ring -> carbon; glass ui-theme tokens -> emerald accents + radius 24 + clean carbon page); PulseUiThemeTests pins updated (swatch, 4 accent assertions, radius 24); stale ember comments re-pointed in ChatRoomView/ProfileView/PulseComponents. Brace deltas unchanged vs HEAD on all 5 files; warm-hex sweep 0; hygiene 0/0/0.
+- CI verdicts: iOS on main (326b6d5) SUCCESS - the mirror compiles and the updated test pins pass. Android on main (fc4d3ec) SUCCESS - JVM tests (incl. new nav-style pins) + signed R8 build. Tag run 36946253501: build + instrumented(api 30) + instrumented(api 34) + publish ALL SUCCESS - the emulator release smoke booted the signed artifact and walked onboarding + nav paths on BOTH API levels before the release published.
+- Release receipt (read-only AXML parse of the downloaded Pulse-v0.14.0-native.apk, 25,416,072 bytes): versionCode=31 (INT_DEC 0x10), versionName="0.14.0-native", package="app.pulse.chat" - byte-verified; installable as an update over v0.13.1-ember (30).
+
+Stage Summary:
+- SHIPPED: v0.14.0-native (versionCode 31) - the Android native rebuild (web-truth emerald/carbon tokens, system Roboto, Material 3 bottom bar default, web-verbatim bubbles/badges/links, zero ember remnants) released through GitHub Actions with emulator-smoke evidence on API 30+34.
+- iOS rides the same token language via 326b6d5 (validated by main CI); it ships in the next release tag.
+- Tooling note: sandbox SDK was purged (build-ban compliance) - release verification used a hand-rolled AXML parser (Res_value layout: size/res0/dataType/data at +12).
