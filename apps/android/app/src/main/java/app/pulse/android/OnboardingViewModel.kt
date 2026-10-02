@@ -168,9 +168,10 @@ class OnboardingViewModel @Inject constructor(
     /**
      * Connect: probe the candidate base, adopt it for REST + realtime
      * (SessionViewModel.setServerBase persists it AND points the endpoints),
-     * then advance to the name step where the demo login waits.
+     * then advance to the name step where the demo login waits. The callback
+     * receives the NORMALIZED base so the host can persist it.
      */
-    fun connect(onConnected: () -> Unit) {
+    fun connect(onConnected: (String) -> Unit) {
         val s = _state.value
         if (s.probing) return
         val base = normalizeBase(s.serverUrl) ?: run {
@@ -186,7 +187,7 @@ class OnboardingViewModel @Inject constructor(
                 probeBase(base)
             }
             if (ok) {
-                onConnected()
+                onConnected(base)
                 _state.value = _state.value.copy(
                     probing = false,
                     serverConnected = true,
