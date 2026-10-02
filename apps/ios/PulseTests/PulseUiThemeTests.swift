@@ -13,7 +13,7 @@ final class PulseUiThemeTests: XCTestCase {
 
     func testMetaTableIsByteSameAsWeb() {
         let expectations: [(PulseUiThemeId, String, String, String, [String], String)] = [
-            (.glass, "Immersive Glass", "Glassmorphic Chat UI", "Layered frosted glass, aurora backdrop, specular edges, elastic motion.", ["#FFB86B", "#FF7A3D"], "elastic"),
+            (.glass, "Immersive Glass", "Glassmorphic Chat UI", "Layered frosted glass, aurora backdrop, specular edges, elastic motion.", ["#10B981", "#14B8A6"], "elastic"),
             (.kinetic, "Kinetic", "Kinetic UI", "High-contrast ink, sharp corners, bold type, whip-crack springs.", ["#18181b", "#f43f5e"], "crisp"),
             (.minimal, "Quiet Minimal", "Motion-Driven Minimalist UI", "Hairlines and whitespace. Motion whispers, structure speaks.", ["#52525b", "#a1a1aa"], "quiet"),
             (.dynamic, "Dynamic", "Dynamic Minimalism", "Soft neutrals with vivid gradient accents and playful bounce.", ["#f59e0b", "#ec4899"], "playful"),
@@ -63,14 +63,14 @@ final class PulseUiThemeTests: XCTestCase {
     // tokens (globals.css [data-ui] blocks)
 
     func testRadiusPanelMatchesTheCssBlocks() {
-        // Base 28 (glass), kinetic 14, minimal 22, dynamic 26, aero 24.
-        XCTAssertEqual(PulseUiTheme.tokens(for: .glass, dark: false).radiusPanel, 28)
+        // Base 24 (glass), kinetic 14, minimal 22, dynamic 26, aero 24.
+        XCTAssertEqual(PulseUiTheme.tokens(for: .glass, dark: false).radiusPanel, 24)
         XCTAssertEqual(PulseUiTheme.tokens(for: .kinetic, dark: false).radiusPanel, 14)
         XCTAssertEqual(PulseUiTheme.tokens(for: .minimal, dark: false).radiusPanel, 22)
         XCTAssertEqual(PulseUiTheme.tokens(for: .dynamic, dark: false).radiusPanel, 26)
         XCTAssertEqual(PulseUiTheme.tokens(for: .aero, dark: false).radiusPanel, 24)
         // Radius does not flip with the scheme.
-        XCTAssertEqual(PulseUiTheme.tokens(for: .glass, dark: true).radiusPanel, 28)
+        XCTAssertEqual(PulseUiTheme.tokens(for: .glass, dark: true).radiusPanel, 24)
         XCTAssertEqual(PulseUiTheme.tokens(for: .aero, dark: true).radiusPanel, 24)
     }
 
@@ -83,15 +83,15 @@ final class PulseUiThemeTests: XCTestCase {
     }
 
     func testAccentsMatchTheSwatchPairs() {
-        // EMB-B: glass speaks ember (light burnt ember + amber; dark amber +
-        // deep ember, dark-flipped like kinetic). The light values are
-        // byte-equal to the web glass accents in globals.css.
+        // R24 NATIVE: glass speaks the web emerald pair (light emerald-500 +
+        // teal-500; dark mint + teal-400, dark-flipped like kinetic). The
+        // values are byte-equal to the web glass accents in globals.css.
         let glass = PulseUiTheme.tokens(for: .glass, dark: false)
-        XCTAssertEqual(glass.accent, PulseUiThemeColor(hex: "#C9762B"))
-        XCTAssertEqual(glass.accent2, PulseUiThemeColor(hex: "#E08A3C"))
+        XCTAssertEqual(glass.accent, PulseUiThemeColor(hex: "#10B981"))
+        XCTAssertEqual(glass.accent2, PulseUiThemeColor(hex: "#14B8A6"))
         let glassDark = PulseUiTheme.tokens(for: .glass, dark: true)
-        XCTAssertEqual(glassDark.accent, PulseUiThemeColor(hex: "#FFB86B"))
-        XCTAssertEqual(glassDark.accent2, PulseUiThemeColor(hex: "#FF7A3D"))
+        XCTAssertEqual(glassDark.accent, PulseUiThemeColor(hex: "#2BE8A6"))
+        XCTAssertEqual(glassDark.accent2, PulseUiThemeColor(hex: "#2DD4BF"))
         let kineticLight = PulseUiTheme.tokens(for: .kinetic, dark: false)
         XCTAssertEqual(kineticLight.accent, PulseUiThemeColor(hex: "#18181b"))
         XCTAssertEqual(kineticLight.accent2, PulseUiThemeColor(hex: "#f43f5e"))

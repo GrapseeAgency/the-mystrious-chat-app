@@ -416,7 +416,7 @@ struct RowAvatar: View {
 /// One cell of the stories rail (PULSE EMBER, EMB-I):
 ///   • "You" tile (no live story) = 56pt circle, white 8% fill, white plus.
 ///   • story cards = 64x88pt rounded-14 thumbnails via the existing avatar
-///     pipeline, 2pt ring: ember sweep (#FFB86B to #FF7A3D) when unseen,
+///     pipeline, 2pt ring: emerald sweep (#34D399 to #059669) when unseen,
 ///     quiet white when seen. Name sits below at 11pt white.
 struct StoryRingCell: View {
     let name: String
