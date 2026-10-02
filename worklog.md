@@ -4677,3 +4677,37 @@ Work Log:
 
 Stage Summary:
 - SHIPPED: v0.16.0-native (versionCode 33) on GitHub Releases - the native-feel wave: effect bursts now drive real system VibrationEffect waveforms (VibratorManager 31+, amplitude-controlled waveforms scaled from the web native-bridge intensities), on top of the v0.15.0-native reference dock + ember language. Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.16.0-native
+---
+Task ID: R38-dock-band
+Agent: orchestrator (Z.ai main session)
+Task: user audit with screenshots - the Android dock (nav bar) showed a separate green/dark background band behind the pill and the system nav ("extra background is ridiculous... like telegram... navigation bar doesn't need any background"); the web version was named as the correct one.
+
+Work Log:
+- Root-caused from the screenshot BEFORE touching code: the profile tab's warm ember backdrop stops at the dock line (hosting Box carried padding(bottom = dockSpace)), and what shows through in that strip is the AmbientField - whose API 33+ AGSL shader path STILL spoke the old emerald/teal language. The EMB-B repaint only reached the Canvas fallback (API 26-32); every modern device rendered green aurora curtains behind the dock. The web aurora WAS repainted (R36) - the native shader path was the missed surface, the same "new effects not applied everywhere" class the user flagged.
+- Fx.kt (Android): all five AGSL shaders repainted to ember. Aurora mirrors the web R36 repaint verbatim (amber/ember/violet bands over warm dark field). Mesh/liquid align with the already-blessed Canvas fallback. Stars lose the blue-cast base + teal ground wash. Caustics keeps its aqua ring identity (water mode, web parity) but swims over the warm field. Canvas fallback locals renamed emerald/teal -> amber/ember so names match values.
+- MainActivity: the five dock-hosted tabs (hub/contacts/calls/profile/saved) now draw emberBackdrop full-bleed - modifier order backdrop-before-padding means the tab's own field continues edge-to-edge BEHIND the dock while content keeps its dockSpace clearance. The dock floats over the page like Telegram's pill over the chat list; no separate band in any fx mode. Chats already had this structure (hosted bare).
+- iOS mirror: AmbientShader.metal aurora/mesh/stars kernels + AmbientFieldView Canvas caustics/liquid repainted with the same ember palette (aurora verbatim web mirror; liquid bodies amber/ember + rose).
+- Verified: zero old-palette values remain in the FX paths (byte-level grep); brace/paren balance clean on all four edited files; PAT scan of the staged diff = 0 hits.
+- Ship: commit 206224e pushed to main; tag v0.17.0-native (versionCode 34) pushed - Android CI (build + JVM tests + signed R8 APK + emulator release smoke API 30/34 + publish gate) and iOS CI triggered. Sandbox: NO builds (CI is the gate).
+- Launcher icon + pulse_launcher_bg remain #047857 emerald (the app icon glyph, NOT in-app chrome; the user flagged the nav band only). Logged as an open item, deliberately untouched.
+
+Stage Summary:
+- The green band behind the dock is dead at the root: the ambient field speaks ember on every API level (AGSL 33+, Canvas 26-32, iOS Metal 17+ / iOS Canvas), and every dock-hosted tab extends its own ember field edge-to-edge behind the nav - the pill + FAB now float over continuous page color, Telegram-style, with no separate background in any fx mode.
+- Release v0.17.0-native (versionCode 34) in flight through GitHub Actions with emulator-walk gating; install URL appears on the release once publish lands.
+- Open items: emerald launcher icon glyph (brand decision, needs user signal), story tiles still gradient initials, iOS device-level visual pass, Android/iOS consuming the web native-effect block.
+
+---
+Task ID: R38-verify
+Agent: orchestrator (Z.ai main session)
+Task: verify the v0.17.0-native release end-to-end and prove the dock band fix with behavior-level evidence.
+
+Work Log:
+- Android tag run 36973624880 SUCCESS (build + JVM tests + signed R8 APK + emulator release smoke API 30/34 + publish gate). iOS tag run 36973624964 SUCCESS (Metal kernel edits compile in the mirror). Both main-push runs green too.
+- VISUAL PROOF (artifact pulse-release-smoke-34, run 36973624880): 04-tab-profile.png - the exact screen from the user's screenshot - shows the warm ember gradient running edge-to-edge BEHIND the dock pill + FAB + system nav zone; no separate band anywhere. Pixel-sampled the dock strip on 04-tab-profile/updates/call/chats + 02-main-shell: 45/45 samples warm (R>G>B), 0/45 green-dominant. Example profile-strip rgb(26,19,14)/(28,19,16)/(22,16,12) - warm ember field, was green-dominant in the user's screenshot.
+- Release receipt: GitHub Release v0.17.0-native published, Pulse-v0.17.0-native.apk (25,420,436 bytes) downloaded from the release; binary manifest contains UTF-16-LE "0.17.0-native" and does NOT contain "0.16.0-native"; publish only fires after the smoke boots the signed artifact (workflow gate).
+- Worklog hygiene: db/custom.db stays uncommitted (QA rows); PAT used inline-only, remote URL scrubbed after pushes.
+
+Stage Summary:
+- SHIPPED + PROVEN: v0.17.0-native (versionCode 34) on https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.17.0-native - the dock now floats over the app's own ember field with NO separate background band, on every tab, every fx mode, every API level (AGSL 33+ / Canvas 26-32 / iOS Metal + Canvas all ember).
+- Install: overwrite-installs over v0.16.0-native (33).
+- Open items: emerald launcher icon glyph (brand decision, needs user signal), story tiles gradient initials, Android/iOS consuming the web native-effect block.
