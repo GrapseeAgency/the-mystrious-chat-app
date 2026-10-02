@@ -208,7 +208,7 @@ function DateTile({ startsAtMs }: { startsAtMs: number }) {
       aria-hidden
       className="flex w-11 shrink-0 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] py-1.5"
     >
-      <span className="text-[9px] font-bold uppercase tracking-widest text-emerald-400">
+      <span className="text-[9px] font-bold uppercase tracking-widest text-amber-400">
         {monthFormatter.format(d)}
       </span>
       <span className="text-lg font-bold leading-none text-zinc-50">{d.getDate()}</span>
@@ -250,7 +250,7 @@ function GoingStack({
           {r.checkedInAt ? (
             <span
               aria-hidden
-              className="absolute right-0 bottom-0 size-2 rounded-full bg-emerald-400 ring-2 ring-zinc-950"
+              className="absolute right-0 bottom-0 size-2 rounded-full bg-amber-400 ring-2 ring-zinc-950"
             />
           ) : null}
         </span>
@@ -548,7 +548,7 @@ export function EventsSheet({
                   }
                   onClick={() => handleDeleteTap(e.id)}
                   className={cn(
-                    'flex size-7 shrink-0 items-center justify-center rounded-full outline-none ring-emerald-400/60 transition-colors focus-visible:ring-2 disabled:opacity-50',
+                    'flex size-7 shrink-0 items-center justify-center rounded-full outline-none ring-amber-400/60 transition-colors focus-visible:ring-2 disabled:opacity-50',
                     confirmDeleteId === e.id
                       ? 'bg-rose-500 text-white'
                       : 'text-zinc-500 hover:bg-rose-500/10 hover:text-rose-400',
@@ -564,8 +564,8 @@ export function EventsSheet({
                   'rounded-full px-2 py-0.5 text-[10.5px] font-bold tabular-nums',
                   kind === 'upcoming'
                     ? startsAtMs - nowMs < 60_000
-                      ? 'bg-emerald-500 text-white'
-                      : 'bg-emerald-500/15 text-emerald-400'
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-amber-500/15 text-amber-400'
                     : 'bg-white/5 text-zinc-500',
                 )}
               >
@@ -603,9 +603,9 @@ export function EventsSheet({
                     }
                   }}
                   className={cn(
-                    'flex h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold outline-none ring-emerald-400/60 transition-colors duration-150 focus-visible:ring-2 disabled:opacity-60',
+                    'flex h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-bold outline-none ring-amber-400/60 transition-colors duration-150 focus-visible:ring-2 disabled:opacity-60',
                     mine
-                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-600/25'
+                      ? 'bg-amber-500 text-white shadow-lg shadow-amber-600/25'
                       : 'bg-white/5 text-zinc-300 hover:bg-white/10',
                   )}
                 >
@@ -621,7 +621,7 @@ export function EventsSheet({
             {hereCount > 0 ? (
               <span
                 aria-label={`${hereCount} checked in here`}
-                className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-bold text-emerald-400"
+                className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10.5px] font-bold text-amber-400"
               >
                 <UserCheck className="size-3" aria-hidden />
                 <span className="tabular-nums">{hereCount}</span> here
@@ -647,12 +647,12 @@ export function EventsSheet({
             animate={{ opacity: 1, y: 0 }}
             transition={spring.soft}
             style={{ willChange: 'transform' }}
-            className="relative mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-emerald-400/30 bg-emerald-500/15 text-[13px] font-bold text-emerald-300 outline-none ring-emerald-400/60 backdrop-blur-md transition-colors duration-150 hover:bg-emerald-500/25 focus-visible:ring-2 disabled:opacity-60"
+            className="relative mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-amber-400/30 bg-amber-500/15 text-[13px] font-bold text-amber-300 outline-none ring-amber-400/60 backdrop-blur-md transition-colors duration-150 hover:bg-amber-500/25 focus-visible:ring-2 disabled:opacity-60"
           >
             {!reduce ? (
               <motion.span
                 aria-hidden
-                className="absolute inset-0 rounded-xl border border-emerald-400/50"
+                className="absolute inset-0 rounded-xl border border-amber-400/50"
                 animate={{ opacity: [0.5, 0], scale: [1, 1.06] }}
                 transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut' }}
               />
@@ -672,7 +672,7 @@ export function EventsSheet({
             style={{ willChange: 'transform' }}
             role="status"
             aria-label={`Checked in to ${e.title}`}
-            className="mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-400/25 bg-emerald-500/10 text-[12.5px] font-bold text-emerald-300"
+            className="mt-2.5 flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-amber-400/25 bg-amber-500/10 text-[12.5px] font-bold text-amber-300"
           >
             <BadgeCheck className="size-4" aria-hidden />
             Checked in
@@ -713,7 +713,7 @@ export function EventsSheet({
         >
           {/* header */}
           <header className="flex shrink-0 items-center gap-2.5 border-b border-white/10 px-4 pb-3 pt-1">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-400">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400">
               <CalendarDays className="size-4" aria-hidden />
             </span>
             <div className="min-w-0 flex-1">
@@ -723,7 +723,7 @@ export function EventsSheet({
                   aria-hidden
                   className={cn(
                     'size-1.5 rounded-full',
-                    offline ? 'bg-rose-500' : 'animate-pulse bg-emerald-400',
+                    offline ? 'bg-rose-500' : 'animate-pulse bg-amber-400',
                   )}
                 />
                 {statusLine}
@@ -736,7 +736,7 @@ export function EventsSheet({
                 haptic(10)
                 onClose()
               }}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-emerald-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-amber-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
             >
               <X className="size-4.5" aria-hidden />
             </button>
@@ -763,7 +763,7 @@ export function EventsSheet({
                 required
                 aria-label="Event title"
                 placeholder="Event title"
-                className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none transition-colors focus:border-emerald-400"
+                className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none transition-colors focus:border-amber-400"
               />
               <div className="grid grid-cols-2 gap-2">
                 <input
@@ -772,7 +772,7 @@ export function EventsSheet({
                   onChange={(e) => setStartsAtLocal(e.target.value)}
                   required
                   aria-label="Starts at"
-                  className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-2 font-mono text-[12.5px] text-zinc-100 outline-none transition-colors [color-scheme:dark] focus:border-emerald-400"
+                  className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-2 font-mono text-[12.5px] text-zinc-100 outline-none transition-colors [color-scheme:dark] focus:border-amber-400"
                 />
                 <input
                   type="text"
@@ -781,13 +781,13 @@ export function EventsSheet({
                   maxLength={LOCATION_MAX}
                   aria-label="Location (optional)"
                   placeholder="Location (optional)"
-                  className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none transition-colors focus:border-emerald-400"
+                  className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none transition-colors focus:border-amber-400"
                 />
               </div>
               <button
                 type="submit"
                 disabled={createMutation.isPending || title.trim().length === 0}
-                className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-500 text-[13px] font-bold text-white shadow-lg shadow-emerald-600/25 outline-none ring-emerald-300/60 transition-all duration-150 hover:bg-emerald-500/90 focus-visible:ring-2 active:scale-[0.98] disabled:opacity-50"
+                className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-amber-500 text-[13px] font-bold text-white shadow-lg shadow-amber-600/25 outline-none ring-amber-300/60 transition-all duration-150 hover:bg-amber-500/90 focus-visible:ring-2 active:scale-[0.98] disabled:opacity-50"
               >
                 {createMutation.isPending ? (
                   <LoaderCircle className="size-4 animate-spin" aria-hidden />
@@ -837,7 +837,7 @@ export function EventsSheet({
                   aria-label="Loading events"
                   className="flex items-center justify-center gap-2 py-6"
                 >
-                  <LoaderCircle className="size-5 animate-spin text-emerald-400" aria-hidden />
+                  <LoaderCircle className="size-5 animate-spin text-amber-400" aria-hidden />
                   <span className="text-[12.5px] font-medium text-zinc-500">Loading events…</span>
                 </div>
               ) : null}
@@ -861,7 +861,7 @@ export function EventsSheet({
                       haptic(6)
                       setPastOpen((v) => !v)
                     }}
-                    className="flex w-full items-center gap-1.5 px-1 pb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 outline-none ring-emerald-400/60 transition-colors hover:text-zinc-300 focus-visible:ring-2"
+                    className="flex w-full items-center gap-1.5 px-1 pb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 outline-none ring-amber-400/60 transition-colors hover:text-zinc-300 focus-visible:ring-2"
                   >
                     <ChevronDown
                       aria-hidden

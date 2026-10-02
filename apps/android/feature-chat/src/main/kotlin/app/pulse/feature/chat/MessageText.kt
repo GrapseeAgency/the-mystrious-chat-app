@@ -329,26 +329,25 @@ internal fun FormattedMessageBody(
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     }
-    // R3-B item 2 - web mention chip colors verbatim (chat-room.tsx:6903):
-    // bg-emerald-500/20 + emerald-800 text in light, bg-emerald-400/25 +
-    // emerald-200 text in dark - identical on mine and their bubbles.
+    // EMB-B - the mention chip rides the ember language (reference DM shows
+    // the amber @mention): warm amber wash + light amber text in dark,
+    // burnt-ember wash + deep amber text in light, both bubble sides.
     val darkChrome = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val mentionBg = if (darkChrome) {
-        Color(0xFF34D399).copy(alpha = 0.25f)
+        Color(0xFFFFB86B).copy(alpha = 0.25f)
     } else {
-        Color(0xFF10B981).copy(alpha = 0.20f)
+        Color(0xFFE08A3C).copy(alpha = 0.20f)
     }
-    val mentionText = if (darkChrome) Color(0xFFA7F3D0) else Color(0xFF065F46)
+    val mentionText = if (darkChrome) Color(0xFFFFD9A8) else Color(0xFF8A4B0F)
 
-    // R4-B item 1 - web link colors verbatim (chat-room.tsx BubbleText
-    // renderPlain): mine → white on the emerald bubble (contentColor);
-    // theirs → text-emerald-700 / dark:text-emerald-400, underlined.
+    // EMB-B - link ink: mine → the bubble's content color; theirs → the
+    // ember pair (amber glow in dark, deep ember in light), underlined.
     val linkColor = if (mine) {
         contentColor
     } else if (darkChrome) {
-        Color(0xFF34D399)
+        Color(0xFFFFB86B)
     } else {
-        Color(0xFF047857)
+        Color(0xFFB45309)
     }
 
     // R4-B item 1 - ACTION_VIEW on a tapped link; https:// is synthesized for

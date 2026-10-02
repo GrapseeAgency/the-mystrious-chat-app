@@ -40,7 +40,7 @@ export const STAMP_PACKS: readonly StampPack[] = [
   {
     name: 'Signal',
     badge: PulseBolt,
-    gradient: 'from-emerald-400 to-teal-500',
+    gradient: 'from-amber-400 to-orange-500',
     items: ['bolt', 'flame', 'sparkles', 'rocket', 'target', 'star'],
   },
   {
@@ -71,7 +71,7 @@ export const STAMP_PACKS: readonly StampPack[] = [
 
 /** Resolve the gradient for a stamp's pack (unknown packs -> neutral emerald). */
 export function stickerGradient(pack: string): string {
-  return STAMP_PACKS.find((p) => p.name === pack)?.gradient ?? 'from-emerald-400 to-teal-500'
+  return STAMP_PACKS.find((p) => p.name === pack)?.gradient ?? 'from-amber-400 to-orange-500'
 }
 
 const RECENTS_KEY = 'pulse.sticker-recents.v2'

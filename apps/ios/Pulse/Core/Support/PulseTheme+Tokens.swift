@@ -212,19 +212,19 @@ extension PulseTheme {
         )
     }
 
-    /// Pinned wash - emerald 4.5% light, 6% dark.
+    /// Pinned wash - ember amber 4.5% light, 6% dark (EMB-B).
     static var pinnedWash: Color {
         adaptive(
-            UIColor(red: 0.063, green: 0.725, blue: 0.506, alpha: 0.045),
-            UIColor(red: 0.063, green: 0.725, blue: 0.506, alpha: 0.06),
+            UIColor(red: 0.788, green: 0.463, blue: 0.169, alpha: 0.045),
+            UIColor(red: 1.0, green: 0.722, blue: 0.42, alpha: 0.06),
         )
     }
 
-    /// Auto-linked bubble URL color (R4-A item 1, web renderPlain :6885-6888):
-    /// text-emerald-700 light, text-emerald-400 dark (mine rows override to
-    /// white at the call site).
+    /// Auto-linked bubble URL color (R4-A item 1, web renderPlain parity):
+    /// EMB-B readable burnt ember light, ember amber dark (mine rows
+    /// override to white at the call site).
     static var bubbleLink: Color {
-        adaptive(PulseUiThemeColor(hex: "#047857").color, emerald400)
+        adaptive(PulseUiThemeColor(hex: "#B4631F").color, emberGlowTop)
     }
 
     /// Dock/panel shadow strength - heavier in dark.
@@ -243,11 +243,11 @@ extension PulseTheme {
         return LinearGradient(colors: [start, end], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    /// Active dock pill - emerald 500/20 → 500/6 top-to-bottom (dark: 400/16 → 5%).
+    /// Active dock pill - ember 500/20 → 500/6 top-to-bottom (EMB-B).
     static var dockPillGradient: LinearGradient {
         LinearGradient(
-            colors: [adaptive(emerald500.opacity(0.20), emerald400.opacity(0.16)),
-                     adaptive(emerald500.opacity(0.06), emerald400.opacity(0.05))],
+            colors: [adaptive(emberGlowBottom.opacity(0.20), emberGlowTop.opacity(0.16)),
+                     adaptive(emberGlowBottom.opacity(0.06), emberGlowTop.opacity(0.05))],
             startPoint: .top, endPoint: .bottom,
         )
     }
@@ -555,7 +555,7 @@ public enum PulseUiTheme {
                 label: "Immersive Glass",
                 tagline: "Glassmorphic Chat UI",
                 detail: "Layered frosted glass, aurora backdrop, specular edges, elastic motion.",
-                swatch: ["#10b981", "#0ea5e9"],
+                swatch: ["#FFB86B", "#FF7A3D"],
                 motion: "elastic",
             )
         case .kinetic:
@@ -613,20 +613,20 @@ public enum PulseUiTheme {
     public static func tokens(for id: PulseUiThemeId, dark: Bool) -> PulseUiThemeTokens {
         switch id {
         case .glass:
-            // ui-glass - aurora wash over warm paper / R35 Neo carbon.
-            // R17: the DARK accent is the Neo neon mint (web .dark --primary
-            // #2be8a6); the light accent stays the pinned emerald swatch.
+            // ui-glass - EMB-B: the ember glass language (Android Theme.kt
+            // GLASS parity). Amber glow accent in dark, burnt ember in light,
+            // warm paper page base instead of the green-cast washes.
             return PulseUiThemeTokens(
-                accent: dark ? PulseUiThemeColor(hex: "#2be8a6") : PulseUiThemeColor(hex: "#10b981"),
-                accent2: PulseUiThemeColor(hex: "#0ea5e9"),
+                accent: dark ? PulseUiThemeColor(hex: "#FFB86B") : PulseUiThemeColor(hex: "#C9762B"),
+                accent2: dark ? PulseUiThemeColor(hex: "#FF7A3D") : PulseUiThemeColor(hex: "#E08A3C"),
                 radiusPanel: 28,
-                pageBg: dark ? PulseUiThemeColor(hex: "#09090b") : PulseUiThemeColor(hex: "#f3f9f5"),
+                pageBg: dark ? PulseUiThemeColor(hex: "#150F0B") : PulseUiThemeColor(hex: "#FBF6F0"),
                 panelBg: dark
-                    ? PulseUiThemeColor(hex: "#ffffff", alpha: 0.08)
+                    ? PulseUiThemeColor(hex: "#1E1610", alpha: 0.60)
                     : PulseUiThemeColor(hex: "#ffffff", alpha: 0.55),
                 panelBorder: dark
                     ? PulseUiThemeColor(hex: "#ffffff", alpha: 0.14)
-                    : PulseUiThemeColor(hex: "#092a1f", alpha: 0.10),
+                    : PulseUiThemeColor(hex: "#2A1E14", alpha: 0.10),
                 blur: 28,
             )
         case .kinetic:

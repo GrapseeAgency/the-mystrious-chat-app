@@ -892,9 +892,9 @@ function SpeakingBars({ reduced }: { reduced: boolean }) {
   if (reduced) {
     return (
       <span className="flex items-end gap-[2.5px]" aria-hidden>
-        <span className="h-[13px] w-[3px] rounded-full bg-emerald-300" />
-        <span className="h-[6px] w-[3px] rounded-full bg-emerald-300" />
-        <span className="h-[15px] w-[3px] rounded-full bg-emerald-300" />
+        <span className="h-[13px] w-[3px] rounded-full bg-amber-300" />
+        <span className="h-[6px] w-[3px] rounded-full bg-amber-300" />
+        <span className="h-[15px] w-[3px] rounded-full bg-amber-300" />
       </span>
     )
   }
@@ -903,7 +903,7 @@ function SpeakingBars({ reduced }: { reduced: boolean }) {
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}
-          className="w-[3px] rounded-full bg-emerald-300"
+          className="w-[3px] rounded-full bg-amber-300"
           animate={{ height: [4, 13, 6, 15, 5] }}
           transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.14, ease: 'easeInOut' }}
           style={{ height: 5 }}
@@ -935,7 +935,7 @@ function StageAvatar({
     <motion.span
       animate={
         speaking
-          ? { boxShadow: '0 0 0 2px rgba(52,211,153,0.9), 0 0 18px rgba(16,185,129,0.55)' }
+          ? { boxShadow: '0 0 0 2px rgba(52,211,153,0.9), 0 0 18px rgba(245,158,11,0.55)' }
           : { boxShadow: '0 0 0 1px rgba(255,255,255,0.1)' }
       }
       transition={{ duration: 0.18 }}
@@ -968,7 +968,7 @@ function SpeakerTile({
     <li
       className={cn(
         'flex min-w-0 flex-1 basis-[calc(50%-0.25rem)] items-center gap-2.5 rounded-2xl border px-2.5 py-2',
-        speaking ? 'border-emerald-500/30 bg-emerald-500/[0.06]' : 'border-white/5 bg-white/[0.03]',
+        speaking ? 'border-amber-500/30 bg-amber-500/[0.06]' : 'border-white/5 bg-white/[0.03]',
       )}
     >
       <StageAvatar person={person} speaking={speaking} size={38} />
@@ -976,7 +976,7 @@ function SpeakerTile({
         <p className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-zinc-100">
           <span className="truncate">{person.name}</span>
           {isMe ? (
-            <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-300">
+            <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-amber-300">
               you
             </span>
           ) : null}
@@ -985,7 +985,7 @@ function SpeakerTile({
           {speaking ? (
             <>
               <SpeakingBars reduced={reduced} />
-              <span className="font-bold uppercase tracking-wider text-emerald-300">live</span>
+              <span className="font-bold uppercase tracking-wider text-amber-300">live</span>
             </>
           ) : (
             <span className="uppercase tracking-wider">{isHost ? 'hosting' : 'on stage'}</span>
@@ -1035,7 +1035,7 @@ function HandRow({
         <span className="truncate">{person.name}</span>
         <Hand className="size-3.5 shrink-0 text-amber-300" aria-hidden />
         {isMe ? (
-          <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-300">
+          <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-amber-300">
             you
           </span>
         ) : null}
@@ -1049,7 +1049,7 @@ function HandRow({
               haptic(12)
               onApprove()
             }}
-            className="size-11 rounded-xl bg-emerald-500 text-white shadow-md shadow-emerald-600/25 hover:bg-emerald-500/90"
+            className="size-11 rounded-xl bg-amber-500 text-white shadow-md shadow-amber-600/25 hover:bg-amber-500/90"
           >
             <UserCheck className="size-4" aria-hidden />
           </Button>
@@ -1185,7 +1185,7 @@ function StageRoomSheetUI({
 
   const connectionLine = (() => {
     if (stage.inRoom && stage.connected) {
-      return { dot: 'bg-emerald-400', text: 'Connected via gateway :3003', pulse: false }
+      return { dot: 'bg-amber-400', text: 'Connected via gateway :3003', pulse: false }
     }
     if (stage.status === 'joining') {
       return { dot: 'bg-amber-400', text: 'Connecting to the stage relay…', pulse: true }
@@ -1244,7 +1244,7 @@ function StageRoomSheetUI({
         <div className="flex items-start gap-2 px-4 pt-1.5 pb-3">
           <span
             aria-hidden
-            className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300"
+            className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-300"
           >
             <Podcast className="size-5" />
           </span>
@@ -1327,7 +1327,7 @@ function StageRoomSheetUI({
                       <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-zinc-100">
                         <span className="truncate">{state.host.name}</span>
                         {state.host.id === myId ? (
-                          <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-300">
+                          <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-amber-300">
                             you
                           </span>
                         ) : null}
@@ -1510,7 +1510,7 @@ function StageRoomSheetUI({
                     'relative flex size-[96px] touch-none flex-col items-center justify-center gap-0.5 rounded-full text-white select-none outline-none transition-colors duration-150',
                     canTalk
                       ? stage.transmitting
-                        ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_0_34px_rgba(16,185,129,0.55)]'
+                        ? 'bg-gradient-to-br from-amber-400 to-amber-600 shadow-[0_0_34px_rgba(245,158,11,0.55)]'
                         : 'bg-gradient-to-br from-zinc-700 to-zinc-800 shadow-inner'
                       : 'cursor-not-allowed bg-zinc-800/70 text-zinc-500',
                   )}
@@ -1518,8 +1518,8 @@ function StageRoomSheetUI({
                 >
                   {stage.transmitting && !reduced ? (
                     <>
-                      <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/35" aria-hidden style={{ animationDuration: '1.3s' }} />
-                      <span className="absolute -inset-2 animate-ping rounded-full border border-emerald-400/30" aria-hidden style={{ animationDuration: '1.9s' }} />
+                      <span className="absolute inset-0 animate-ping rounded-full bg-amber-400/35" aria-hidden style={{ animationDuration: '1.3s' }} />
+                      <span className="absolute -inset-2 animate-ping rounded-full border border-amber-400/30" aria-hidden style={{ animationDuration: '1.9s' }} />
                     </>
                   ) : null}
                   {stage.transmitting ? <AudioLines className="size-6" aria-hidden /> : <Mic className="size-6" aria-hidden />}
@@ -1564,7 +1564,7 @@ function StageRoomSheetUI({
                   'flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-bold outline-none',
                   stage.handRaised
                     ? 'bg-amber-400/90 text-zinc-950 shadow-md shadow-amber-500/25 hover:bg-amber-400'
-                    : 'bg-emerald-500 text-white shadow-md shadow-emerald-600/30 hover:bg-emerald-500/90',
+                    : 'bg-amber-500 text-white shadow-md shadow-amber-600/30 hover:bg-amber-500/90',
                 )}
                 style={{ willChange: 'transform' }}
               >

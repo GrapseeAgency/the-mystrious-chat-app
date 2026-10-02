@@ -231,7 +231,7 @@ export function NewChatSheet({
                   onClick={() => setMode(seg.id)}
                   className={cn(
                     'relative rounded-full py-2 text-[13px] font-semibold tracking-tight outline-none transition-colors active:scale-[0.98]',
-                    isActive ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400',
+                    isActive ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400',
                   )}
                 >
                   {isActive ? (
@@ -259,7 +259,7 @@ export function NewChatSheet({
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search people…"
                 aria-label="Search people"
-                className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+                className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
               />
             </div>
           ) : mode === 'group' ? (
@@ -271,9 +271,9 @@ export function NewChatSheet({
                 aria-label="Group name"
                 maxLength={48}
                 autoComplete="off"
-                className="h-10 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+                className="h-10 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
               />
-              <p className={cn('text-xs', groupValid ? 'text-zinc-400 dark:text-zinc-500' : 'font-medium text-emerald-600 dark:text-emerald-400')}>
+              <p className={cn('text-xs', groupValid ? 'text-zinc-400 dark:text-zinc-500' : 'font-medium text-amber-700 dark:text-amber-400')}>
                 {groupValid ? `${totalMembers} ${totalMembers === 1 ? 'member' : 'members'} selected` : `${totalMembers} of 3+ members picked`} · include yourself plus at least 2 people
               </p>
             </div>
@@ -340,7 +340,7 @@ export function NewChatSheet({
                   aria-invalid={channelError !== null}
                   maxLength={CHANNEL_NAME_MAX}
                   autoComplete="off"
-                  className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-emerald-500/60 aria-invalid:border-rose-400 aria-invalid:ring-rose-500/30 dark:border-zinc-700 dark:bg-zinc-800"
+                  className="h-10 rounded-xl border-zinc-200 bg-zinc-50 pl-9 text-sm focus-visible:ring-amber-500/60 aria-invalid:border-rose-400 aria-invalid:ring-rose-500/30 dark:border-zinc-700 dark:bg-zinc-800"
                 />
               </div>
               <Textarea
@@ -349,7 +349,7 @@ export function NewChatSheet({
                 placeholder="Description - what is this channel about? (optional)"
                 aria-label="Channel description"
                 rows={2}
-                className="min-h-0 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-emerald-500/60 dark:border-zinc-700 dark:bg-zinc-800"
+                className="min-h-0 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-amber-500/60 dark:border-zinc-700 dark:bg-zinc-800"
               />
               {channelError ? (
                 <p role="alert" className="text-xs font-medium text-rose-600 dark:text-rose-400">
@@ -426,7 +426,7 @@ export function NewChatSheet({
                             className={cn(
                               'flex size-6 items-center justify-center rounded-full border-2 transition-all',
                               checked
-                                ? 'border-emerald-500 bg-emerald-500 text-white'
+                                ? 'border-amber-500 bg-amber-500 text-white'
                                 : 'border-zinc-300 dark:border-zinc-600',
                             )}
                           >
@@ -447,7 +447,7 @@ export function NewChatSheet({
             <Button
               onClick={handleCreateGroup}
               disabled={!groupValid || create.isPending}
-              className="mt-3 h-11 w-full rounded-xl bg-emerald-600 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 transition-all hover:bg-emerald-500 active:scale-[0.98]"
+              className="mt-3 h-11 w-full rounded-xl bg-amber-600 text-sm font-semibold text-white shadow-md shadow-amber-600/20 transition-all hover:bg-amber-500 active:scale-[0.98]"
             >
               {create.isPending ? (
                 <>
@@ -463,7 +463,7 @@ export function NewChatSheet({
             <Button
               onClick={handleCreateChannel}
               disabled={!channelValid || createChannel.isPending}
-              className="mt-3 h-11 w-full gap-1.5 rounded-xl bg-emerald-600 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 transition-all hover:bg-emerald-500 active:scale-[0.98]"
+              className="mt-3 h-11 w-full gap-1.5 rounded-xl bg-amber-600 text-sm font-semibold text-white shadow-md shadow-amber-600/20 transition-all hover:bg-amber-500 active:scale-[0.98]"
             >
               {createChannel.isPending ? (
                 <>

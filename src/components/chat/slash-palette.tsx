@@ -91,29 +91,29 @@ export function dispatchOpenWhiteboard(conversationId?: string | null): void {
 }
 
 export const PULSE_SLASH_COMMANDS: readonly SlashCommandDef[] = [
-  { cmd: '/me', args: '<action>', help: 'Send an italic action line', icon: UserRound, tone: 'text-emerald-500' },
-  { cmd: '/shrug', args: '[text]', help: 'Append ¯\\_(ツ)_/¯', icon: PenLine, tone: 'text-teal-500' },
+  { cmd: '/me', args: '<action>', help: 'Send an italic action line', icon: UserRound, tone: 'text-amber-600' },
+  { cmd: '/shrug', args: '[text]', help: 'Append ¯\\_(ツ)_/¯', icon: PenLine, tone: 'text-orange-500' },
   { cmd: '/tableflip', args: '[text]', help: 'Append (╯°□°）╯︵ ┻━┻', icon: Armchair, tone: 'text-rose-500' },
   { cmd: '/unflip', args: '[text]', help: 'Prefix ┬┬ ノ( ゜-゜ノ', icon: RotateCcw, tone: 'text-amber-500' },
   { cmd: '/roll', args: '[AdM]', help: 'Roll dice, e.g. /roll 2d6', icon: Dices, tone: 'text-violet-500' },
   { cmd: '/poll', args: '', help: 'Open the live-poll builder', icon: Vote, tone: 'text-violet-500' },
   { cmd: '/schedule', args: '', help: 'Schedule this message for later', icon: CalendarClock, tone: 'text-amber-500' },
-  { cmd: '/remind', args: '<message> in <time>', help: 'Set a reminder on your next message', icon: Bell, tone: 'text-emerald-500' },
+  { cmd: '/remind', args: '<message> in <time>', help: 'Set a reminder on your next message', icon: Bell, tone: 'text-amber-600' },
   { cmd: '/recap', args: '', help: 'AI summary of the recent chat', icon: Sparkles, tone: 'text-violet-500' },
-  { cmd: '/sticker', args: '', help: 'Open the sticker packs', icon: Sticker, tone: 'text-emerald-500' },
-  { cmd: '/location', args: '', help: 'Share a live map pin', icon: MapPin, tone: 'text-teal-500' },
-  { cmd: '/whiteboard', args: '', help: 'Open the shared whiteboard', icon: Presentation, tone: 'text-emerald-500' },
+  { cmd: '/sticker', args: '', help: 'Open the sticker packs', icon: Sticker, tone: 'text-amber-600' },
+  { cmd: '/location', args: '', help: 'Share a live map pin', icon: MapPin, tone: 'text-orange-500' },
+  { cmd: '/whiteboard', args: '', help: 'Open the shared whiteboard', icon: Presentation, tone: 'text-amber-600' },
   { cmd: '/redpacket', args: '', help: 'Send a red packet (coins)', icon: Gift, tone: 'text-rose-500' },
   { cmd: '/game', args: '', help: 'Start tic-tac-toe in this chat', icon: Gamepad2, tone: 'text-violet-500' },
-  { cmd: '/kanban', args: '', help: 'Open the group board', icon: SquareKanban, tone: 'text-teal-500' },
+  { cmd: '/kanban', args: '', help: 'Open the group board', icon: SquareKanban, tone: 'text-orange-500' },
   { cmd: '/events', args: '', help: 'Group events with RSVP', icon: CalendarDays, tone: 'text-amber-500' },
-  { cmd: '/topic', args: '<name>', help: 'Create a topic and file here', icon: MessagesSquare, tone: 'text-emerald-500' },
-  { cmd: '/stage', args: '', help: 'Open the live stage room', icon: Podcast, tone: 'text-teal-500' },
+  { cmd: '/topic', args: '<name>', help: 'Create a topic and file here', icon: MessagesSquare, tone: 'text-amber-600' },
+  { cmd: '/stage', args: '', help: 'Open the live stage room', icon: Podcast, tone: 'text-orange-500' },
   { cmd: '/space', args: '', help: 'Open the spatial space', icon: MapIcon, tone: 'text-amber-500' },
   { cmd: '/tournament', args: '', help: 'Start a group tournament', icon: Trophy, tone: 'text-rose-500' },
   { cmd: '/effects confetti', args: '[text]', help: 'Send with a confetti blast', icon: PartyPopper, tone: 'text-rose-500' },
   { cmd: '/effects lasers', args: '[text]', help: 'Send with sweeping laser beams', icon: Zap, tone: 'text-amber-500' },
-  { cmd: '/effects echo', args: '[text]', help: 'Send with expanding echo rings', icon: Radio, tone: 'text-emerald-500' },
+  { cmd: '/effects echo', args: '[text]', help: 'Send with expanding echo rings', icon: Radio, tone: 'text-amber-600' },
   { cmd: '/effects sparkles', args: '[text]', help: 'Send with twinkling sparkles', icon: Sparkles, tone: 'text-violet-500' },
   { cmd: '/help', args: '', help: 'Show every command', icon: CircleHelp, tone: 'text-zinc-400' },
 ]
@@ -253,7 +253,7 @@ export function SlashPalette({
                   className={cn(
                     'flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left outline-none transition-colors',
                     i === activeIndex
-                      ? 'bg-emerald-50 dark:bg-emerald-500/10'
+                      ? 'bg-emerald-50 dark:bg-amber-500/10'
                       : 'hover:bg-zinc-100 dark:hover:bg-zinc-700/60',
                   )}
                 >

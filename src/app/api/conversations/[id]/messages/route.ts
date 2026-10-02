@@ -21,6 +21,7 @@ import {
   strField,
 } from '@/lib/serializers'
 import { XP_DAILY_CAP, XP_PER_MESSAGE } from '@/lib/xp'
+import { nativeBlockFromPayload } from '@/lib/native-bridge'
 import { maybeAiReply } from '@/lib/ai-bot'
 import { botWillRespond, maybeBotReply } from '@/lib/bot-engine'
 import { fanoutPush } from '@/lib/push/transport'
@@ -617,6 +618,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
   })
 
   // Realtime relay to every OTHER member (sender handles self via response).
+  // The `native` block is the parse-free device contract: native clients
+  // trigger the full-screen effect + matching haptic straight from the
+  // relay, no payload JSON spelunking (web ignores it - it reads payload).
   const recipients = (await memberIdsOf(id)).filter((memberId) => memberId !== senderId)
   const mapped = mapMessage(message, senderId)
   await notifySocket('message:new', recipients, {
@@ -624,6 +628,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
     message: mapped,
     recipientIds: recipients,
     conversationId: id,
+    native: nativeBlockFromPayload(mapped.payload),
   })
 
   // Remote push (registry-gated): members whose apps are closed hear about
@@ -861,6 +866,7 @@ async function maybeAutomationReply(conversationId: string, content: string): Pr
       message: mapMessage(created),
       recipientIds: recipients,
       conversationId,
+      native: nativeBlockFromPayload(created.payload),
     })
 
     // Atomic counters - updateMany keeps the bump single-statement.

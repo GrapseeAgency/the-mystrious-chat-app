@@ -36,7 +36,7 @@ export const UI_THEMES: Array<UiThemeMeta> = [
     label: 'Immersive Glass',
     tagline: 'Glassmorphic Chat UI',
     detail: 'Layered frosted glass, aurora backdrop, specular edges, elastic motion.',
-    swatch: ['#10b981', '#0ea5e9'],
+    swatch: ['#FFB86B', '#FF7A3D'],
     motion: 'elastic',
   },
   {

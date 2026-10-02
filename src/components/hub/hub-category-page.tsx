@@ -77,7 +77,7 @@ export function HubCategoryPage({
   const blurb = isMine
     ? 'Everything you have connected, live from your install history.'
     : (meta?.blurb ?? 'This corner of the matrix does not exist.')
-  const accent = meta?.accent ?? ['#10b981', '#0d9488']
+  const accent = meta?.accent ?? ['#c9762b', '#0d9488']
   const Icon = meta ? undefined : isMine ? Layers : undefined
 
   const hydrating = isMine && setQ.data === undefined && setQ.isFetching
@@ -144,8 +144,8 @@ export function HubCategoryPage({
             transition={{ duration: 0.28, ease: ease.out }}
             className="glass-deep glass-sheen mt-2 flex flex-col items-center gap-3 rounded-3xl px-6 py-10 text-center"
           >
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-500/10">
-              <Compass className="size-7 text-emerald-500" aria-hidden />
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-amber-500/10">
+              <Compass className="size-7 text-amber-600" aria-hidden />
             </div>
             <div>
               <p className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">Category not found</p>
@@ -174,8 +174,8 @@ export function HubCategoryPage({
             transition={{ duration: 0.28, ease: ease.out }}
             className="glass-deep glass-sheen mt-2 flex flex-col items-center gap-3 rounded-3xl px-6 py-10 text-center"
           >
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-500/10">
-              <SearchX className="size-7 text-emerald-500" aria-hidden />
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-amber-500/10">
+              <SearchX className="size-7 text-amber-600" aria-hidden />
             </div>
             <div>
               <p className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">

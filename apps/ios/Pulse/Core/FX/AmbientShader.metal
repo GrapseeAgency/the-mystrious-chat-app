@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────
 // Pulse ambient FX — Metal kernels for the SwiftUI shader system.
 // Faithful ports of the web app's WebGL fragment shaders
-// (src/components/fx/webgl-glow.tsx): aurora, mesh and stars.
+// (src/components/fx/webgl-glow.tsx): aurora, mesh and stars —
+// repainted to the ember language (web R36 + EMB-B).
 // caustics and liquid render as Canvas-gradient approximations
 // (AmbientFieldView) and have no kernel here.
 //
@@ -38,16 +39,18 @@ static float pulseCurtain(float2 uv, float aspect, float t,
   float b2 = pulseCurtain(uv, aspect, t * 1.25, 0.47, 0.13, 2.9, -0.32, 0.20);
   float b3 = pulseCurtain(uv, aspect, t * 0.8, 0.33, 0.08, 3.7, 0.24, 0.12);
 
-  float3 emerald = float3(0.063, 0.725, 0.506);
-  float3 teal    = float3(0.078, 0.722, 0.651);
+  // Web R36 ember repaint (webgl-glow.tsx AURORA_FRAG): amber/ember bands
+  // over the warm dark field - the old emerald/teal wash is gone.
+  float3 amber   = float3(1.0, 0.722, 0.42);
+  float3 ember   = float3(1.0, 0.478, 0.239);
   float3 violet  = float3(0.545, 0.365, 0.965);
 
-  float3 darkCol = float3(0.012, 0.045, 0.038);
-  darkCol += emerald * b1 * 0.85 + teal * b2 * 0.70 + violet * b3 * 0.45;
+  float3 darkCol = float3(0.043, 0.028, 0.018);
+  darkCol += amber * b1 * 0.85 + ember * b2 * 0.70 + violet * b3 * 0.35;
   darkCol = 1.0 - exp(-darkCol * intensity * 1.7);
 
-  float3 lightCol = float3(0.965, 0.976, 0.972);
-  lightCol -= (emerald * b1 * 0.16 + teal * b2 * 0.12 + violet * b3 * 0.08) * intensity;
+  float3 lightCol = float3(0.984, 0.965, 0.941);
+  lightCol -= (amber * b1 * 0.16 + ember * b2 * 0.12 + violet * b3 * 0.08) * intensity;
 
   float3 col = mix(lightCol, darkCol, dark);
   float2 q = uv - 0.5;
@@ -79,15 +82,16 @@ static float pulseBlob(float2 p, float2 c, float r) {
   float b2 = max(pulseBlob(uv, c2, 0.55), pulseBlob(wuv, c2, 0.48) * 0.85);
   float b3 = max(pulseBlob(uv, c3, 0.58), pulseBlob(wuv, c3, 0.50) * 0.85);
 
-  float3 darkCol = float3(0.012, 0.048, 0.040);
-  darkCol += float3(0.063, 0.725, 0.506) * b1 * 0.95;
-  darkCol += float3(0.078, 0.722, 0.651) * b2 * 0.80;
+  // EMB-B mesh blobs ride the ember language (Android/Canvas parity).
+  float3 darkCol = float3(0.043, 0.028, 0.020);
+  darkCol += float3(1.0, 0.722, 0.42) * b1 * 0.85;
+  darkCol += float3(1.0, 0.478, 0.239) * b2 * 0.70;
   darkCol += float3(0.545, 0.365, 0.965) * b3 * 0.38;
   darkCol = 1.0 - exp(-darkCol * intensity * 1.7);
 
-  float3 lightCol = float3(0.972, 0.978, 0.974);
-  lightCol -= float3(0.063, 0.725, 0.506) * b1 * 0.22 * intensity;
-  lightCol -= float3(0.078, 0.722, 0.651) * b2 * 0.18 * intensity;
+  float3 lightCol = float3(0.980, 0.965, 0.945);
+  lightCol -= float3(1.0, 0.722, 0.42) * b1 * 0.22 * intensity;
+  lightCol -= float3(1.0, 0.478, 0.239) * b2 * 0.18 * intensity;
   lightCol -= float3(0.545, 0.365, 0.965) * b3 * 0.10 * intensity;
 
   float3 col = mix(lightCol, darkCol, dark);
@@ -131,11 +135,13 @@ static float pulseStarLayer(float2 uv, float scale, float t) {
   float l2 = pulseStarLayer(float2(s2.x * aspect, s2.y), 44.0, t * 1.3);
   float l3 = pulseStarLayer(float2(s3.x * aspect, s3.y), 70.0, t * 1.7);
 
-  float3 darkCol = float3(0.015, 0.030, 0.045);
+  // EMB-B stars: white stars over the WARM dark field (no blue-cast base,
+  // no teal ground wash).
+  float3 darkCol = float3(0.043, 0.027, 0.020);
   darkCol += float3(0.92, 0.98, 1.0) * (l1 * 0.9 + l2 * 0.6 + l3 * 0.4) * intensity;
-  darkCol += float3(0.063, 0.500, 0.420) * 0.05 * (0.5 + 0.5 * sin(uv.y * 3.0 + t * 0.1)) * dark;
+  darkCol += float3(0.478, 0.306, 0.200) * 0.05 * (0.5 + 0.5 * sin(uv.y * 3.0 + t * 0.1)) * dark;
 
-  float3 lightCol = float3(0.955, 0.965, 0.975);
+  float3 lightCol = float3(0.980, 0.965, 0.945);
   lightCol -= float3(0.25, 0.30, 0.38) * (l1 * 0.35 + l2 * 0.25 + l3 * 0.15) * intensity;
 
   float3 col = mix(lightCol, darkCol, dark);

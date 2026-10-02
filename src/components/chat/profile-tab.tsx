@@ -32,15 +32,20 @@ import {
   PulseAt,
   PulseBack,
   PulseCheck,
+  PulseClose,
   PulseEdit,
   PulseFingerprint,
+  PulseHub,
   PulseLoader,
   PulseMic,
+  PulseMore,
   PulsePhoto,
   PulseSeal,
+  PulseSettings,
   PulseShare,
   PulseSignOut,
   PulseStar,
+  PulseTrash,
 } from '@/components/ui/icons'
 import { toast } from 'sonner'
 import type { AppUser, SavedItem, UserStats } from '@/lib/types'
@@ -67,14 +72,162 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { UserAvatar } from '@/components/chat/user-avatar'
 import { AvatarPhotoEditor } from '@/components/profile/avatar-editor'
-import { CoverPhotoEditor } from '@/components/profile/cover-editor'
 import { ChevronRow, ProfileSection, PROFILE_CARD } from '@/components/profile/profile-primitives'
+import { GlassMenu, GlassMenuItem, GlassMenuSeparator } from '@/components/ui/glass-menu'
 import { STATUS_GLYPH_CHOICES, StatusGlyph } from '@/components/profile/status-glyph'
 import { HandleEditorDialog } from '@/components/profile/handle-editor'
 
 const NAME_MAX = 32
 const ABOUT_MAX = 140
 const STATUS_MAX = 48
+
+/** R39 - crop the picked image to the 2:1 hero banner (max 1200x600, JPEG q0.85). */
+async function coverFileToDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file)
+  const targetW = 1200
+  const targetH = 600
+  const scale = Math.max(targetW / bitmap.width, targetH / bitmap.height)
+  const sw = targetW / scale
+  const sh = targetH / scale
+  const sx = Math.max(0, (bitmap.width - sw) / 2)
+  const sy = Math.max(0, (bitmap.height - sh) / 2)
+  const canvas = document.createElement('canvas')
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas is unavailable in this browser')
+  ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, targetW, targetH)
+  bitmap.close()
+  return canvas.toDataURL('image/jpeg', 0.85)
+}
+
+/**
+ * Profile corner kebab (three-dot) menu - the reference-language spot
+ * where Hub, Settings and Saved stay reachable even under nav styles
+ * that hide them. Glass menu portaled to body so nothing clips it;
+ * anchored below the trigger, right-aligned, veil + Escape + scroll
+ * dismissal (same contract as the nav overflow menu).
+ */
+function ProfileMoreMenu({
+  onOpenHub,
+  onOpenSettings,
+  onOpenSaved,
+}: {
+  onOpenHub: () => void
+  onOpenSettings: () => void
+  onOpenSaved: () => void
+}) {
+  const reduced = useReducedMotion()
+  const [open, setOpen] = useState(false)
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
+  const btnRef = useRef<HTMLButtonElement | null>(null)
+
+  const openMenu = () => {
+    const rect = btnRef.current?.getBoundingClientRect()
+    if (rect) setAnchor({ x: rect.right, y: rect.bottom })
+    setOpen(true)
+  }
+
+  const close = () => setOpen(false)
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    const onReposition = () => close()
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('resize', onReposition)
+    window.addEventListener('scroll', onReposition, true)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onReposition)
+      window.removeEventListener('scroll', onReposition, true)
+    }
+  }, [open])
+
+  const run = (fn: () => void) => {
+    close()
+    haptic(10)
+    fn()
+  }
+
+  const menuMotion = reduced
+    ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } }
+    : {}
+
+  return (
+    <>
+      <motion.button
+        ref={btnRef}
+        type="button"
+        aria-label="More options"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => {
+          haptic(10)
+          if (open) close()
+          else openMenu()
+        }}
+        whileTap={reduced ? undefined : pressTap}
+        transition={pressSpring}
+        className="glass-pill absolute right-4 top-4 z-20 flex size-10 items-center justify-center rounded-full text-white outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+      >
+        <PulseMore className="size-5" aria-hidden />
+      </motion.button>
+      {typeof document === 'undefined'
+        ? null
+        : createPortal(
+            <AnimatePresence>
+              {open && anchor ? (
+                <>
+                  <motion.button
+                    key="profile-more-veil"
+                    type="button"
+                    aria-label="Close menu"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: reduced ? 0 : 0.16 }}
+                    onClick={close}
+                    className="fixed inset-0 z-[80] cursor-default bg-zinc-950/25 backdrop-blur-[2px]"
+                  />
+                  <motion.div
+                    key="profile-more-anchor"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: reduced ? 0 : 0.12 }}
+                    className="fixed z-[81]"
+                    style={{ right: `calc(100vw - ${anchor.x}px)`, top: anchor.y + 8 }}
+                  >
+                    <GlassMenu aria-label="Profile options" className="w-[232px]" {...menuMotion}>
+                      <GlassMenuItem
+                        icon={PulseHub}
+                        label="Hub"
+                        onClick={() => run(onOpenHub)}
+                      />
+                      <GlassMenuItem
+                        icon={PulseSettings}
+                        label="Settings"
+                        onClick={() => run(onOpenSettings)}
+                      />
+                      <GlassMenuSeparator />
+                      <GlassMenuItem
+                        icon={PulseStar}
+                        label="Saved messages"
+                        onClick={() => run(onOpenSaved)}
+                      />
+                    </GlassMenu>
+                  </motion.div>
+                </>
+              ) : null}
+            </AnimatePresence>,
+            document.body,
+          )}
+    </>
+  )
+}
 
 /** One instrument cell of the flat stats row. */
 function StatCell({ label, value, accent = false, small = false }: {
@@ -89,7 +242,7 @@ function StatCell({ label, value, accent = false, small = false }: {
         className={cn(
           'stat-mono whitespace-nowrap truncate font-semibold tracking-tight',
           small ? 'text-[11px]' : 'text-[15px]',
-          accent ? 'text-[var(--ui-accent,#10b981)]' : 'text-zinc-800 dark:text-zinc-100',
+          accent ? 'text-[var(--ui-accent,#c9762b)]' : 'text-zinc-800 dark:text-zinc-100',
         )}
       >
         {value}
@@ -108,23 +261,40 @@ interface UsersResponse {
 export function ProfileTab({
   me,
   onOpenSavedMessage,
+  onOpenHub,
+  onOpenSettings,
 }: {
   me: AppUser
   /** saved-library row tap → open that chat and flash the message */
   onOpenSavedMessage?: (conversationId: string, messageId: string) => void
+  /** corner-menu handoffs - Hub tab + the Settings overlay */
+  onOpenHub?: () => void
+  onOpenSettings?: () => void
 }) {
   // remount the editor whenever the underlying identity changes,
   // which re-initializes all local field state (no sync effects)
   const identityKey = `${me.id}|${me.name}|${me.about}|${me.color}|${me.username}`
-  return <ProfileEditor key={identityKey} me={me} onOpenSavedMessage={onOpenSavedMessage} />
+  return (
+    <ProfileEditor
+      key={identityKey}
+      me={me}
+      onOpenSavedMessage={onOpenSavedMessage}
+      onOpenHub={onOpenHub}
+      onOpenSettings={onOpenSettings}
+    />
+  )
 }
 
 function ProfileEditor({
   me,
   onOpenSavedMessage,
+  onOpenHub,
+  onOpenSettings,
 }: {
   me: AppUser
   onOpenSavedMessage?: (conversationId: string, messageId: string) => void
+  onOpenHub?: () => void
+  onOpenSettings?: () => void
 }) {
   const queryClient = useQueryClient()
   const setUser = usePulseSession((s) => s.setUser)
@@ -252,6 +422,51 @@ function ProfileEditor({
 
   const canSave = dirty && name.trim().length > 0 && !saveProfile.isPending
 
+  // R39 - profile cover picture (real upload pipeline): pick a photo, crop
+  // to the 2:1 banner, POST /api/uploads then PATCH coverImage. The hero
+  // renders the image over the identity gradient; remove clears the column.
+  const coverInputRef = useRef<HTMLInputElement>(null)
+  const applyCoverUser = (user: AppUser) => {
+    setUser(user)
+    queryClient.setQueryData(['me', me.id], user)
+    queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+      old?.map((u) => (u.id === user.id ? user : u)),
+    )
+  }
+  const coverMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const dataUrl = await coverFileToDataUrl(file)
+      const up = await apiJson<{ filePath: string }>('/api/uploads', {
+        method: 'POST',
+        body: JSON.stringify({ dataUrl }),
+      })
+      const res = await apiJson<{ user: AppUser }>(
+        `/api/users/${encodeURIComponent(me.id)}`,
+        { method: 'PATCH', body: JSON.stringify({ coverImage: `/api/uploads/${up.filePath}` }) },
+      )
+      return res.user
+    },
+    onSuccess: (user) => {
+      applyCoverUser(user)
+      toast.success('Cover picture updated')
+    },
+    onError: (error: Error) => toast.error(error.message || 'Could not set the cover picture'),
+  })
+  const coverRemove = useMutation({
+    mutationFn: async () => {
+      const res = await apiJson<{ user: AppUser }>(
+        `/api/users/${encodeURIComponent(me.id)}`,
+        { method: 'PATCH', body: JSON.stringify({ coverImage: '' }) },
+      )
+      return res.user
+    },
+    onSuccess: (user) => {
+      applyCoverUser(user)
+      toast.success('Cover picture removed')
+    },
+    onError: (error: Error) => toast.error(error.message || 'Could not remove the cover picture'),
+  })
+
   const copyId = async () => {
     haptic(8)
     try {
@@ -323,19 +538,38 @@ function ProfileEditor({
 
   return (
     <div className="absolute inset-0 flex flex-col">
+      {/* R39 - hidden cover-picture input (the hero glass chip triggers it) */}
+      <input
+        ref={coverInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ''
+          if (file) coverMutation.mutate(file)
+        }}
+      />
       {/*  ROOT PAGE  */}
       <div className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(104px+env(safe-area-inset-bottom))]">
         {/*  HERO - identity beam, zero carnival blobs  */}
         <section aria-label="Profile" className="relative">
+          {/* corner kebab - Hub / Settings / Saved stay reachable here even
+              under nav styles that hide them (user audit fix) */}
+          <ProfileMoreMenu
+            onOpenHub={() => onOpenHub?.()}
+            onOpenSettings={() => onOpenSettings?.()}
+            onOpenSaved={() => setSavedOpen(true)}
+          />
           {/* flat identity cover with a scanline texture + signal edge */}
           <div className={cn('scan-fx relative isolate h-28 overflow-hidden sm:h-32', gradient)}>
-            {/* R50-b - the profile cover: a real uploaded background photo
-                when set, the identity-gradient band otherwise. The glass
-                sheen + signal line stay on top in both states. */}
-            {me.cover ? (
+            {/* R39 - the member's cover picture rides OVER the identity
+                gradient; the scanline wash + signal edge stay on top so the
+                reference language holds either way. */}
+            {me.coverImage ? (
               <img
-                src={me.cover}
-                alt=""
+                src={me.coverImage}
+                alt="Your cover picture"
                 className="absolute inset-0 size-full object-cover"
               />
             ) : null}
@@ -351,6 +585,41 @@ function ProfileEditor({
               aria-hidden
               className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-white/80 to-transparent"
             />
+            {/* R39 cover controls - glass chips bottom-right, honest states */}
+            <div className="absolute bottom-2.5 right-3 z-10 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  haptic(8)
+                  coverInputRef.current?.click()
+                }}
+                disabled={coverMutation.isPending}
+                className="flex items-center gap-1 rounded-full border border-white/25 bg-black/35 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/55 disabled:opacity-50"
+                aria-label={me.coverImage ? 'Change cover picture' : 'Add cover picture'}
+              >
+                {coverMutation.isPending ? (
+                  <PulseLoader className="size-3.5 animate-spin" />
+                ) : (
+                  <PulsePhoto className="size-3.5" />
+                )}
+                {me.coverImage ? 'Change' : 'Add cover'}
+              </button>
+              {me.coverImage ? (
+                <button
+                  type="button"
+                  onClick={() => coverRemove.mutate()}
+                  disabled={coverRemove.isPending}
+                  className="rounded-full border border-white/25 bg-black/35 px-2 py-1 text-white/90 backdrop-blur-sm transition-colors hover:bg-black/55 disabled:opacity-50"
+                  aria-label="Remove cover picture"
+                >
+                  {coverRemove.isPending ? (
+                    <PulseLoader className="size-3.5 animate-spin" />
+                  ) : (
+                    <PulseTrash className="size-3.5" />
+                  )}
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="relative px-5">
@@ -365,7 +634,7 @@ function ProfileEditor({
                 gradient,
               )}
             >
-              <div className="rounded-full bg-white p-[2.5px] dark:bg-[#0d1211]">
+              <div className="rounded-full bg-white p-[2.5px] dark:bg-[#1e1610]">
                 <UserAvatar name={me.name} color={me.color} avatar={me.avatar} size={84} showPresence online={iAmOnline} />
               </div>
             </motion.div>
@@ -381,7 +650,7 @@ function ProfileEditor({
                 {me.name}
               </h1>
               <PulseSeal
-                className="size-4 shrink-0 text-[var(--ui-accent,#10b981)]"
+                className="size-4 shrink-0 text-[var(--ui-accent,#c9762b)]"
                 aria-label="Registered member"
               />
             </motion.div>
@@ -401,7 +670,7 @@ function ProfileEditor({
                 aria-label={
                   me.username ? `Copy handle @${me.username}` : 'Set your handle'
                 }
-                className="glass-pill stat-mono flex min-h-[30px] items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold text-[var(--ui-accent,#10b981)] outline-none"
+                className="glass-pill stat-mono flex min-h-[30px] items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold text-[var(--ui-accent,#c9762b)] outline-none"
               >
                 <PulseAt className="size-3.5" aria-hidden />
                 {me.username ? (
@@ -428,7 +697,7 @@ function ProfileEditor({
                 className="mt-2.5 flex items-center gap-1.5 text-[13px] font-medium text-zinc-700 dark:text-zinc-200"
               >
                 {me.statusEmoji ? (
-                  <StatusGlyph value={me.statusEmoji} className="size-4 text-[var(--ui-accent,#10b981)]" />
+                  <StatusGlyph value={me.statusEmoji} className="size-4 text-[var(--ui-accent,#c9762b)]" />
                 ) : null}
                 {me.statusText}
               </motion.p>
@@ -460,7 +729,7 @@ function ProfileEditor({
                   navigate('/profile/edit')
                 }}
                 aria-label="Edit profile"
-                className="flex h-10 items-center gap-2 rounded-full bg-[var(--ui-accent,#10b981)] px-4 text-[13px] font-bold text-white shadow-[0_8px_24px_-8px_rgba(16,185,129,0.65)] outline-none transition-opacity hover:opacity-90 dark:text-[#04120c] dark:shadow-[0_8px_28px_-6px_rgba(43,232,166,0.4)]"
+                className="flex h-10 items-center gap-2 rounded-full bg-[var(--ui-accent,#c9762b)] px-4 text-[13px] font-bold text-white shadow-[0_8px_24px_-8px_rgba(201,118,43,0.65)] outline-none transition-opacity hover:opacity-90 dark:text-[#241304] dark:shadow-[0_8px_28px_-6px_rgba(255,184,107,0.4)]"
               >
                 <PulseEdit className="size-4" aria-hidden />
                 Edit profile
@@ -505,7 +774,7 @@ function ProfileEditor({
           <ProfileSection title="Saved" delay={0.02}>
             <ChevronRow
               icon={PulseStar}
-              iconClassName="bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)] text-[var(--ui-accent,#10b981)]"
+              iconClassName="bg-[color-mix(in_oklab,var(--ui-accent,#c9762b)_12%,transparent)] text-[var(--ui-accent,#c9762b)]"
               title="Saved messages"
               description="Long-press any message in a chat, then Save"
               onPress={() => setSavedOpen(true)}
@@ -586,7 +855,7 @@ function ProfileEditor({
                             onClick={() => saveProfile.mutate()}
                             disabled={!canSave}
                             aria-label="Save changes"
-                            className="h-9 rounded-full bg-[var(--ui-accent,#10b981)] px-3.5 text-xs font-bold text-white hover:opacity-90 active:scale-95"
+                            className="h-9 rounded-full bg-[var(--ui-accent,#c9762b)] px-3.5 text-xs font-bold text-white hover:opacity-90 active:scale-95"
                           >
                             {saveProfile.isPending ? (
                               <PulseLoader className="size-3.5 animate-spin" aria-hidden />
@@ -604,8 +873,6 @@ function ProfileEditor({
                     {/* R27-d - profile photo editor above the identity fields */}
                     <AvatarPhotoEditor me={me} />
 
-                    <CoverPhotoEditor me={me} />
-
                     <ProfileSection title="Identity" className="mt-6">
                       <div className="space-y-3 p-1.5">
                         <div className="space-y-1.5">
@@ -618,7 +885,7 @@ function ProfileEditor({
                             maxLength={NAME_MAX}
                             onChange={(e) => setName(e.target.value.slice(0, NAME_MAX))}
                             autoComplete="off"
-                            className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-[var(--ui-accent,#10b981)]/60 dark:border-zinc-700 dark:bg-zinc-800"
+                            className="h-11 rounded-xl border-zinc-200 bg-zinc-50 text-[15px] focus-visible:ring-[var(--ui-accent,#c9762b)]/60 dark:border-zinc-700 dark:bg-zinc-800"
                           />
                         </div>
                         <div className="space-y-1.5">
@@ -632,7 +899,7 @@ function ProfileEditor({
                             maxLength={ABOUT_MAX}
                             placeholder="Hey there! I'm using Pulse."
                             onChange={(e) => setAbout(e.target.value.slice(0, ABOUT_MAX))}
-                            className="resize-none rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-[var(--ui-accent,#10b981)]/60 dark:border-zinc-700 dark:bg-zinc-800"
+                            className="resize-none rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-[var(--ui-accent,#c9762b)]/60 dark:border-zinc-700 dark:bg-zinc-800"
                           />
                         </div>
                       </div>
@@ -661,7 +928,7 @@ function ProfileEditor({
                                 className={cn(
                                   'flex size-11 items-center justify-center rounded-2xl outline-none transition-all',
                                   selected
-                                    ? 'scale-105 bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_16%,transparent)] ring-2 ring-[var(--ui-accent,#10b981)]'
+                                    ? 'scale-105 bg-[color-mix(in_oklab,var(--ui-accent,#c9762b)_16%,transparent)] ring-2 ring-[var(--ui-accent,#c9762b)]'
                                     : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
                                 )}
                               >
@@ -678,7 +945,7 @@ function ProfileEditor({
                           onChange={(e) => setStatusText(e.target.value.slice(0, STATUS_MAX))}
                           autoComplete="off"
                           aria-label="Status text"
-                          className="h-10 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-[var(--ui-accent,#10b981)]/60 dark:border-zinc-700 dark:bg-zinc-800"
+                          className="h-10 rounded-xl border-zinc-200 bg-zinc-50 text-sm focus-visible:ring-[var(--ui-accent,#c9762b)]/60 dark:border-zinc-700 dark:bg-zinc-800"
                         />
                       </div>
                     </ProfileSection>
@@ -705,7 +972,7 @@ function ProfileEditor({
                                   'flex size-11 items-center justify-center rounded-full bg-gradient-to-br shadow-sm outline-none transition-transform',
                                   AVATAR_GRADIENTS[c],
                                   selected
-                                    ? 'scale-105 ring-2 ring-[var(--ui-accent,#10b981)] ring-offset-2 ring-offset-white dark:ring-offset-zinc-900'
+                                    ? 'scale-105 ring-2 ring-[var(--ui-accent,#c9762b)] ring-offset-2 ring-offset-white dark:ring-offset-zinc-900'
                                     : 'hover:scale-105',
                                 )}
                               >
@@ -721,7 +988,7 @@ function ProfileEditor({
                       <div className="p-1">
                         <ChevronRow
                           icon={PulseAt}
-                          iconClassName="bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)] text-[var(--ui-accent,#10b981)]"
+                          iconClassName="bg-[color-mix(in_oklab,var(--ui-accent,#c9762b)_12%,transparent)] text-[var(--ui-accent,#c9762b)]"
                           title="Your handle"
                           description={me.username ? `@${me.username}` : 'Claim yours - friends can find you by it'}
                           onPress={() => setHandleOpen(true)}
@@ -734,7 +1001,7 @@ function ProfileEditor({
                       <Button
                         onClick={() => saveProfile.mutate()}
                         disabled={!canSave}
-                        className="h-12 w-full rounded-2xl bg-[var(--ui-accent,#10b981)] text-sm font-bold text-white shadow-lg shadow-black/10 hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+                        className="h-12 w-full rounded-2xl bg-[var(--ui-accent,#c9762b)] text-sm font-bold text-white shadow-lg shadow-black/10 hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
                       >
                         {saveProfile.isPending ? (
                           <>
@@ -767,7 +1034,7 @@ function ProfileEditor({
           <DrawerDescription className="sr-only">Messages you starred across every chat</DrawerDescription>
           <div className="pb-2">
             <p className="flex items-center justify-center gap-1.5 pb-1 pt-1 text-sm font-bold text-zinc-800 dark:text-zinc-100">
-              <PulseStar className="size-4 text-[var(--ui-accent,#10b981)]" aria-hidden />
+              <PulseStar className="size-4 text-[var(--ui-accent,#c9762b)]" aria-hidden />
               {savedQuery.isPending
                 ? 'Loading'
                 : `${(savedQuery.data ?? []).length} saved ${(savedQuery.data ?? []).length === 1 ? 'message' : 'messages'}`}
@@ -779,8 +1046,8 @@ function ProfileEditor({
               </div>
             ) : (savedQuery.data ?? []).length === 0 ? (
               <div className="flex flex-col items-center gap-2.5 px-6 py-7 text-center">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)]">
-                  <PulseStar className="size-6 text-[var(--ui-accent,#10b981)]" aria-hidden />
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-[color-mix(in_oklab,var(--ui-accent,#c9762b)_12%,transparent)]">
+                  <PulseStar className="size-6 text-[var(--ui-accent,#c9762b)]" aria-hidden />
                 </div>
                 <p className="max-w-[250px] text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                   Long-press a message in any chat and choose Save message.
@@ -801,7 +1068,7 @@ function ProfileEditor({
                     >
                       <div className="flex items-center gap-2">
                         <UserAvatar name={item.message.sender.name} color={item.message.sender.color} size={22} />
-                        <span className="truncate text-xs font-bold text-[var(--ui-accent,#10b981)]">
+                        <span className="truncate text-xs font-bold text-[var(--ui-accent,#c9762b)]">
                           {item.message.sender.id === me.id ? 'You' : item.message.sender.name}
                           <span className="ml-1.5 font-medium text-zinc-400">in {item.conversation.name ?? 'chat'}</span>
                         </span>

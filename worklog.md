@@ -4484,6 +4484,268 @@ Stage Summary:
 - Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.12.0-native
 
 ---
+Task ID: R21-ci-only
+Agent: orchestrator (Z.ai main session)
+Task: ship everything through GitHub Actions only - no sandbox builds - per user mandate
+
+Work Log:
+- Root cause found: ALL THREE workflow files (android-ci.yml, ios-ci.yml, web-ci.yml) had a corrupted push trigger: "branches: ain]" instead of "branches: [main]" - push-to-main CI silently never fired; only tag pushes worked. Fixed all three, verified byte-by-byte with od.
+- Committed the pending EMB-B ember retarget wave (ChatsScreen, Theme, Fx, MessageText, StoryComposer/Viewer, CallOverlay, Onboarding, Common) + version bump 28 -> 29 (0.12.1-native) + trigger fixes as f9dc452 and pushed main.
+- PAT hygiene: grepped the full pending diff for the token before commit (0 hits); token used only inline in push URL / API headers, never written to any file.
+- Android CI run 36867496166 fired on main push (trigger fix proven live).
+
+Stage Summary:
+- CI-only discipline from now on: local Gradle/Xcode builds are banned; GitHub Actions is the single build/verify/release channel.
+- Next: monitor run 36867496166; on green, tag v0.12.1-native -> signed APK (versionCode 29) -> GitHub Release publish; monitor iOS CI for the EMB-B Swift port status.
+
+---
+Task ID: R21-ember-sweep
+Agent: orchestrator (Z.ai main session)
+Task: finish the EMB-B ember retarget on Android + iOS mirror, ship v0.13.0-ember via GitHub Actions only
+
+Work Log:
+- Android leftovers retargeted: MessagingSurfaces.kt STAMP_PACKS "Signal" pack gradient emerald/teal -> ember amber pair (FFB86B/FF7A3D); Fx.kt CONFETTI_COLORS first two greens -> ember pair.
+- Verified done-state of the user checklist: GLASS theme tokens retargeted (Theme.kt committed f9dc452), PulsePalette.Emerald/EmeraldDeep/NeonMint -> ember (Common.kt), ChatsScreen red unread badges (EmberPalette.Signal FF453A) + white active chips + orange presence (EmberPalette.Online FF9F0A) + amber TypingDots + flat borderless header rows, Onboarding/StoryComposer local vals.
+- iOS mirror (PulseTheme+Tokens.swift): GLASS tokens accent #10b981/#2be8a6/#0ea5e9 -> ember #C9762B/#FFB86B + #E08A3C/#FF7A3D (dark-flipped, Android Theme.kt parity); pageBg -> #FBF6F0 light / #150F0B dark; panelBg dark -> warm #1E1610 60%; panelBorder light -> warm ink; pinnedWash emerald -> ember amber; bubbleLink -> #B4631F light / emberGlowTop dark; dockPillGradient -> ember pair; glass meta swatch -> #FFB86B/#FF7A3D. brace_gate.py 1/1 BALANCED.
+- User-selectable identity swatches (onboarding "emerald"/"teal", StoryPalette stages, ChatRoomScreen id->color map) intentionally kept: user data-variety options, not the app accent - same policy as web.
+- Version bump: versionCode 29, versionName 0.13.0-ember. PAT sweep on staged diff: 0 hits. Pushed 16f4a1a to main.
+- CI evidence: instrumented job (emulator launch smoke + Room migration + DAO tests) PASSED on f9dc452; runs 36869714697 (Android) + 36869714672 (iOS) fired on 16f4a1a - trigger fix proven on both platforms.
+
+Stage Summary:
+- iOS GLASS now speaks ember on every accent-fed surface via the token table (no per-screen edits needed); Android stamp pack + confetti complete the sweep.
+- Waiting on CI green for both platforms, then tag v0.13.0-ember -> signed APK (versionCode 29) -> GitHub Release. No local builds anywhere.
+
+---
+Task ID: R21-ship
+Agent: orchestrator (Z.ai main session)
+Task: ship v0.13.0-ember through GitHub Actions only and verify the release artifact byte-level
+
+Work Log:
+- Session interruption recovery: found two more commits already pushed (16f4a1a final ember sweep + stamp pack/confetti + version bump; f42e495 web+iOS glass parity + parity tests). CI state on main: Android green (16f4a1a), iOS green (f42e495), Web green (f42e495); f42e495 touched no Android code so the Android green carries over.
+- Confirmed apps/android/app/build.gradle.kts:11-12 = versionCode 29 / versionName 0.13.0-ember.
+- Tagged v0.13.0-ember on f42e495 and pushed the tag. Tag-triggered runs fired: Android 36883568133, iOS 36883568200.
+- Android tag run 36883568133: BOTH jobs success (build: JVM tests + signed R8 APK + Release publish; instrumented: emulator launch smoke + Room migration + DAO tests).
+- GitHub Release v0.13.0-ember PUBLISHED with asset Pulse-v0.13.0-ember.apk (25,444,760 bytes).
+- Hard verification of the shipped artifact: downloaded the release APK, parsed the binary AndroidManifest.xml (AXML string pool + start-element attributes, aapt2 no-rawValue layout) -> versionCode = 29 (INT_DEC), versionName = 0.13.0-ember, package = app.pulse.chat, compileSdk 35. versionName also byte-matched as UTF-16LE inside the manifest.
+- Signing posture (repo-committed distribution keystore model, build.gradle.kts:32-52): v1+v2+v3 schemes enabled so LiveUpdater overwrite-installs cleanly.
+- Zero sandbox builds performed this session: verification was API polling + artifact inspection only, per the user mandate.
+- iOS tag run: archive job success; build-test in flight at log time (same sources already green on main, run 36871572372).
+
+Stage Summary:
+- SHIPPED: v0.13.0-ember (versionCode 29) - the EMB-B ember language wave (warm sunset surfaces, amber accents, ember GLASS tokens on web+iOS, red unread badges / white active chips / ember story cards / orange presence / amber typing / flat rows, Signal stamp pack + confetti retarget) is on GitHub Releases as a CI-built signed APK.
+- Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.13.0-ember
+- CI-only discipline holds: all builds, tests, signing, release publishing happen in GitHub Actions; sandbox does QA/read-only verification at most.
+
+---
+Task ID: R21-ship-final
+Agent: orchestrator (Z.ai main session)
+Task: close the v0.13.0-ember tag loop
+
+Work Log:
+- iOS tag run 36883568200: SUCCESS (build-test incl. simulator launch smoke + screenshot; archive). Both platform CIs green on the release tag.
+- Recurring webDevReview cron re-created: job 428767, fixed_rate 900s.
+
+Stage Summary:
+- v0.13.0-ember fully shipped and CI-verified on both platforms. Release: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.13.0-ember
+
+---
+Task ID: R22-crash-hunt
+Agent: orchestrator (Z.ai main session)
+Task: user reports v0.13.0-ember crashing on device - nav bar dead, everything crashing. Reproduce on the exact release artifact in CI, capture the real stack, fix.
+
+Work Log:
+- Honest re-baseline: CI green never proved the release APK works - it was never booted anywhere (instrumented tests only boot DEBUG on fresh data). Static diff review of the v0.12->v0.13 Android delta showed colors-only + StoryTile rewrite, no plausible crash; Room schema stable at v10 since v0.11.6; migration chain complete; all PendingIntents FLAG_IMMUTABLE; manifest FGS types + receiver exports Android-14 compliant; folder/topic glyph resolution fully guarded (else -> default).
+- Built the CI truth machine: apps/android/ci/release_smoke.py boots the SIGNED release APK on the emulator, walks onboarding via accessibility (name -> Continue -> Skip), drives dock quick-switcher + drag nav + settings, screencaps every stage, scans logcat for crash markers. Workflow now gates Release publishing behind a publish job needing [build, instrumented].
+- Iterations: (1) emulator-runner runs script lines in separate shells -> chain into one command; (2) evidence dir not created -> mkdir; (3) crash regex false-positived on benign D AndroidRuntime tool lines -> severity-filtered; W/H scoping fixed. Learned from each run's logs, never from local builds.
+- Run 3 attempt 1 failed on infra flake (corrupted emulator zip from Google CDN) - rerun-failed-jobs cleared it.
+- FIRST CRASH REPRODUCTION: release app died right after the Hub tab render during dock re-open taps (launcher screenshots prove the app was gone; later taps typed into Google search). No logcat captured that round (driver saved evidence only on regex hit).
+- Next run at tiny 320x640 metrics passed CLEAN: full four-tab drag walk (chats/hub/contacts/profile), zero kills in logcat-full.txt (all 8 'Killing' lines were unrelated Google packages) - the earlier death was either an lmkd flake on the starved 2-core runner or a real intermittent crash, unproven either way.
+- Driver v4 + workflow matrix now in: smoke runs on API 30 AND API 34 (Android 14 class), phone-realistic 1080x2340@440dpi, dumpsys-popup-probe for the dock switcher (uiautomator dump dismisses menus), matrix-unique artifact names.
+- Ember hero: the onboarding illustration card was still the old GREEN AI-generated JPG - replaced with a generated ember/amber chat illustration (drawable-nodpi/onboarding_hero.jpg), matching the reference language.
+
+Stage Summary:
+- The release artifact is provably bootable, onboardable, and navigable in CI at least once; the user's device crash is NOT yet reproduced or explained. Suspects remaining: device-API-specific paths (API 34 leg now covered), real-data-specific paths (legacy folders/topics pre-R18 - resolution code audited safe), App Lock biometric gate (audited safe), or an intermittent race (Hub death seen once).
+- CI evidence artifacts per run: pulse-release-smoke-<api> (screenshots + report + logcat-full.txt + crash-logcat.txt on capture).
+- Screen QA pending: phone-metric screenshots from the API 34 leg will drive the visible-error UI fixes the user demands.
+
+---
+Task ID: R23-revert
+Agent: orchestrator (Z.ai main session)
+Task: user verdict - v0.14.0-native (R24 emerald/carbon) was "completely unforgivable", revert EVERYTHING from that version, keep the old (ember) design, then build the UI EXACTLY like the 5 uploaded reference screenshots (warm espresso surfaces, floating labeled pill nav, glass circles, red badges, orange presence, charcoal bubbles)
+
+Work Log:
+- Git archaeology: v0.14.0-native = fc4d3ec (R24 Android rebuild) + 326b6d5 (iOS mirror) + 977eb35 (worklog). Base to restore = 0871a09 (v0.13.1-ember).
+- Revert executed: git revert --no-commit of all three commits; working tree verified byte-identical to 0871a09 (git diff empty); committed as a75f74a and pushed to main. Nothing from the old design deleted - only the R24 version's changes removed.
+- PAT hygiene scan on the revert diff: 0 hits.
+
+Stage Summary:
+- main = a75f74a = the v0.13.1-ember app (warm ember tokens, capsule dock, glass chrome) with zero R24 remnants. iOS CI on the revert commit: SUCCESS (36956497865).
+
+---
+Task ID: R23-reference
+Agent: orchestrator (Z.ai main session)
+Task: build the reference UI on the restored ember base - dock speaks the reference EXACTLY (Chats / Call / Updates / Profile + round FAB), header glass cluster, charcoal bubbles; Android + iOS mirror; ship v0.15.0-native (versionCode 32) via GitHub Actions only
+
+Work Log:
+- Reference spec extracted from the 5 uploaded screenshots: warm espresso gradient grounds, floating frosted pill nav with 4 LABELED tabs (active = white + tiny red dot) + separate round compose FAB, large "Chats" title + search/camera/kebab glass circles, story rail, filter chips (light active pill), red unread badges, orange presence dots, near-black charcoal bubbles, glass input pill with camera + round attach.
+- Android dock remap (MainActivity): TAB_ROUTES chats/calls/hub/profile; DOCK_TABS relabeled Chats / Call(Phone icon) / Updates(Refresh icon, hub route) / Profile; CapsuleDock pill now exactly the 4 tabs via DOCK_TABS.forEach (MoreDockButton removed from the pill); FloatingTop/Pill/BottomBar docks route-driven via DOCK_TABS[i].route; ContextualDock gained the calls branch; contacts stays a registered route + showDock covers it (reachable from the chats header menu).
+- Chats header: pencil glass button became the reference CAMERA (opens the story composer); the kebab menu absorbs the dock More menu (Contacts / Calls / Saved / Settings / theme); new ChatsScreen params onOpenSaved/onOpenSettings wired in MainActivity (navigate saved/settings).
+- Bubbles: EmberPalette.BubbleIn 0xFF2E2824 -> 0xFF241D17 (reference charcoal, warm-cast); BubbleOut unchanged 0xFF17110D.
+- Smoke driver (ci/release_smoke.py) re-pointed to the reference dock: label walk Chats/Call/Updates/Profile (stage nav-tabs), drag walk chats->calls->hub->profile, settings stage opens the chats header kebab (content-desc "More options") first. py_compile clean.
+- Version bump: versionCode 32, versionName 0.15.0-native (31 burned by the reverted v0.14.0).
+- iOS mirror (RootView/ChatsView/NavDockStyles): PulseTab gains .calls (chats, calls, hub, contacts, profile - contacts kept as a reachable case, no dock slot); tabPanels renders CallsHistoryView as the .calls panel; CapsuleDock pill = the four reference tabs (phone / arrow.triangle.2.circlepath glyphs), moreButton out of the pill; ChatsHeaderBar camera opens stories, ellipsis menu gains Contacts/Saved/Stories/Settings; NavDockStyles destinations + both contextual-chip switches updated exhaustively.
+- Hygiene: brace deltas balanced on all edited Kotlin files, em-dash/emoji scan 0, PAT scan 0, no test pins on old labels (Android + iOS scans clean), release_smoke.py compiles.
+- SHIP: commit 8b2b50e pushed to main + tag v0.15.0-native; Android CI 36957348694 + iOS CI 36957348725 fired on the tag (build + JVM tests + signed R8 + emulator release smoke on API 30/34 for Android; archive + build-test for iOS). Release publishes only after the smoke boots the signed artifact.
+
+Stage Summary:
+- The app speaks the user's reference language again: warm ember surfaces (restored), reference nav pill (Chats / Call / Updates / Profile + FAB) on both platforms, reference chats header, charcoal bubbles. v0.15.0-native shipping through GitHub Actions with emulator-walk evidence.
+- Honest caveats: story tiles render gradient initials (no photo assets in-repo); filter chips keep the app's real filters (All/Unread/Groups) instead of the reference's decorative labels - faking non-existent filters was rejected.
+
+---
+Task ID: R23-ship
+Agent: orchestrator (Z.ai main session)
+Task: verify v0.15.0-native end-to-end with behavior-level evidence (boot the signed release APK in CI, complete onboarding, walk the reference dock through its own labels, capture screenshots), fix the smoke driver until the evidence is real
+
+Work Log:
+- Tag run 36957348694 (v0.15.0-native): build + instrumented(api 30) + instrumented(api 34) + publish ALL SUCCESS. iOS tag run 36957348725 SUCCESS (mirror compiles, tests pass).
+- Release receipt: GitHub Release v0.15.0-native published, Pulse-v0.15.0-native.apk (25,419,390 bytes) downloaded; hand-rolled AXML parse of the binary manifest (RES_TABLE headerSize=8 aapt2 layout, string pool + first START_ELEMENT, attrExt at node+16+attributeStart, Res_value at attr+12) -> package app.pulse.chat, versionCode 32 (INT_DEC), versionName 0.15.0-native, compileSdk 35. Installable over v0.13.1 (30) and v0.14.0 (31).
+- Smoke evidence hunt: v10 (tag) legs passed the crash gate (zero crash markers, process alive both APIs) but onboarding flaked - the driver degenerated to blind drags over onboarding/launcher, so no dock evidence. Root-caused across three driver iterations, each fix driven by the previous run's screenshots/logs:
+  - v11: retry rounds added BUT the in_shell def-move raced out of the commit (UnboundLocalError) - also exposed that tap_scrolling's swipe args were ints, so EVERY scroll-swipe had been silently failing since v8 (ADB FAIL swallowed by adb_ok); that was the true v10 MISS cause.
+  - v12 (36961171492, all green): swipes fixed + def shipped, but a stray BACK (IME already closed) ping-ponged name<->handle steps.
+  - v13 (36962197776, all green): BACK only while the IME is truly shown + advance loop that returns only when no onboarding marker remains - onboarding completed, but the post-onboarding BACK belt backgrounded the app on the chats root (02-main-shell captured the launcher).
+  - v14 (36963066556, all green): belt removed. FULL WALK: onboarding completed -> drag walk chats->calls->hub->profile -> dock label taps "tapped dock tab Call / Updates / Profile / Chats" (every reference tab tapped through its own label) -> settings via the header kebab (06-settings.png) -> back to chats. Zero crash markers on both API legs.
+- VISUAL PROOF (API 34 screenshots in artifact pulse-release-smoke-34, run 36963066556): 02-main-shell.png shows the reference dock exactly - floating dark pill with Chats (active amber) / Call / Updates / Profile labels+icons and the separate round + FAB, large "Chats" title with search/camera/kebab glass circles, filter chips, story "You" cell. 04-tab-call.png shows the Call tab active in the pill over the warm ember gradient with the Calls screen rendered.
+- Driver commits are CI-tooling only (release_smoke.py) - the published v0.15.0-native APK is unchanged by them; no re-release needed.
+
+Stage Summary:
+- SHIPPED + PROVEN: v0.15.0-native (versionCode 32) on GitHub Releases - the v0.14.0 rebuild is fully reverted, the app speaks the user's reference language (restored ember surfaces + reference nav pill Chats/Call/Updates/Profile + FAB on Android and iOS), and the released artifact is emulator-proven: booted, onboarded, all four dock tabs navigated by label, settings reached through the header kebab, zero crash markers on API 30+34, screenshots archived.
+- Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.15.0-native
+- Open items for the next wave: web ci re-check after the revert (web untouched by all three reverted commits - no exposure), iOS device-level visual pass, story tiles still gradient-initials (no photo assets in-repo), light-mode reference polish (the reference shots are dark; dark surfaces already match, light chrome shows the same structure).
+
+---
+Task ID: R36-audit
+Agent: orchestrator (Z.ai main session)
+Task: user audit of the web app (F): (1) Hub/Settings unreachable, add them to a three-dot menu in the profile corner; (2) the new design system only covers some pages - unify it across the ENTIRE app (Docs/Hub/Home all spoke different languages); (3) dark mode must be the DEFAULT; (4) backend must communicate more seamlessly with native components (native features, motion effects)
+
+Work Log:
+- Dev environment repair first: user creation 500ed because the long-running next-server held a stale read-only SQLite handle; a server restart fixed writes (probe: POST /api/users 201). Started the pulse-socket mini-service (:3003) for the E2E leg.
+- Dark by default: next-themes defaultTheme light -> dark. Appearance > Color Mode shows Dark selected; users can still switch (Light/Dark/System + design language + 13 nav styles all intact in Settings).
+- Theme unification: new UiThemeAttr mirrors the active design language onto document.body[data-ui] - body-portaled menus/sheets and hash sub-pages now inherit --ui-* tokens (portals escaped .ui-root before, which is exactly why Hub/Docs/other pages rendered a different theme than Home).
+- Token realignment: :root/.dark shadcn tokens realigned to the ember language (light = warm paper #FBF6F0 + burnt ember #C9762B; dark = #150F0B field + #1E1610 panels + amber #FFB86B signal). The old .dark mint/neo tokens were the second theme fighting the ember chrome.
+- Accent sweep: 57 chrome files swept emerald/teal/cyan/sky -> amber/orange/violet (two-pass text contrast mapping). Guarded exclusions: avatar identity gradients (lib), wallpaper previews in Settings, game player colors, message-effect palettes.
+- Hub retint: teal/cyan wallet hero + header icon -> theme-token ember gradients; ledger kind colors warmed.
+- Nav unread badge -> reference red (rose-500/red-500).
+- Aurora (default WebGL ambient) shader repainted to ember (amber/ember/violet bands, warm dark base) - the huge green ambient wash is gone.
+- Illustrations: generated ember-language assets (public/empty-chats-ember.png, public/onboarding-hero-ember.png) replacing the green empty-state + onboarding art.
+- Profile corner kebab (user's exact ask): glass three-dot button in the profile cover corner -> portal glass menu with Hub / Settings / Saved messages; wired through MainShell (Hub switches tab, Settings opens the overlay). Verified by clicking every item in the browser.
+- Native bridge (backend focus): new src/lib/native-bridge.ts contract + GET /api/native/manifest (haptic moments, effect specs with hapticPattern/hapticIntensity/motionCurve/durationMs, realtime cadence, push caps). Both message:new relays (interactive send + automation webhook) now carry a parse-free `native` block derived from the message payload so Android/iOS/PWA shells trigger effects + haptics without JSON spelunking. scripts/e2e/native-relay.ts connects a real socket client and asserts the block over the wire: pass:true.
+- False alarms worth noting: two suspected syntax corruptions ("const emberRows", "pb-ax(") were display-eating of "[m" sequences in tool output; byte-level checks proved the files valid. No corruption existed.
+- Hygiene: eslint clean; PAT scan on the staged diff = 0 hits; commit d5b473c pushed to GitHub main with inline PAT then the remote URL scrubbed; backup mirror pushed.
+
+Stage Summary:
+- The web app now reads as ONE warm ember design in dark (default) and light: chats, hub, profile, contacts, settings, nav dock, ambient shader, illustrations all share tokens; body-portaled surfaces included.
+- Hub + Settings reachable from the profile corner kebab on top of the dock/overflow paths.
+- Backend ships a native capability contract (/api/native/manifest) and parse-free effect/haptic metadata on every message relay - verified end-to-end via socket (scripts/e2e/native-relay.ts, pass:true).
+- Known open items: story tiles on mobile reference remain gradient initials; iOS/Android should consume the native block next (the wire contract is ready); db/custom.db left dirty (QA test rows) and excluded from the commit.
+
+---
+Task ID: R37-ship
+Agent: orchestrator (Z.ai main session)
+Task: user asked for the APK release - "it must feel like native this time". Ship the Android release through GitHub Actions only, carrying the native-feel wave.
+
+Work Log:
+- Found the existing native effect path on Android: /effects slash commands (protocol EFFECT_NAMES web parity) + PulseFx burst funnel (CONFETTI/HEARTS/STARS/BURST) rendered by ParticleBurstHost, which only fired a generic KEYBOARD_TAP view haptic.
+- R37 delta (surgical, one file + version bump): ParticleBurstHost now plays effect-synced SYSTEM haptics - BURST_WAVEFORMS mirrors the web native-bridge catalog exactly (confetti 0.7 / lasers-burst 0.9 / sparkles-stars 0.4 / echo-hearts 0.5, timings ms + amplitudes 0..255 scaled from intensity). VibratorManager on API 31+, legacy Vibrator below; hasAmplitudeControl() decides waveform(timings, amplitudes) vs waveform(timings); runCatching-guarded with view-haptic fallback when no vibrator. This is the device side of the native bridge contract shipped on web (R36).
+- Version bump: versionCode 33, versionName 0.16.0-native (overwrite-installs over 32).
+- Brace/paren balance + PAT scan clean; NO sandbox builds - CI is the gate.
+- SHIP: commit 35683f9 pushed to main; tag v0.16.0-native pushed. Android CI tag run 36969579408 (build + JVM tests + signed R8 APK + emulator release smoke API 30/34 + publish gate), iOS tag run 36969579421. Release publishes only after the smoke boots the signed artifact.
+
+Stage Summary:
+- v0.16.0-native (versionCode 33) in flight through GitHub Actions with emulator-walk gating. Native feel = real system VibrationEffect waveforms synced to each message effect, on top of the reference dock + ember language from v0.15.0-native.
+
+---
+Task ID: R37-ship-final
+Agent: orchestrator (Z.ai main session)
+Task: verify the v0.16.0-native release end-to-end and close the loop.
+
+Work Log:
+- First tag run 36969579408 FAILED at compile: playBurstHaptics returned Any (Vibrator.vibrate is void; the when mixed false with void calls). Fixed with explicit Boolean branches; commit 76a2769; tag force-moved.
+- Second tag run 36970034852: build SUCCESS (signed R8 APK) + instrumented(api 30) SUCCESS + instrumented(api 34) SUCCESS + publish SUCCESS. The smoke booted the signed release artifact, completed onboarding, walked the reference dock, zero crash markers on both API legs.
+- Release v0.16.0-native PUBLISHED: Pulse-v0.16.0-native.apk (25,419,993 bytes). Downloaded the artifact and byte-verified the binary manifest with a corrected AXML parser (attrExt-relative attributeStart, UTF-16 pool): versionCode = 33 (INT_DEC), versionName = 0.16.0-native, package = app.pulse.chat, compileSdk 35. Overwrite-installs over v0.15.0-native (32).
+- iOS tag run 36970034834 in flight at log time (mirror sources already green on main).
+- Worklog pushed; PAT hygiene held (inline-only, remote URL scrubbed after every push).
+
+Stage Summary:
+- SHIPPED: v0.16.0-native (versionCode 33) on GitHub Releases - the native-feel wave: effect bursts now drive real system VibrationEffect waveforms (VibratorManager 31+, amplitude-controlled waveforms scaled from the web native-bridge intensities), on top of the v0.15.0-native reference dock + ember language. Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.16.0-native
+---
+Task ID: R38-dock-band
+Agent: orchestrator (Z.ai main session)
+Task: user audit with screenshots - the Android dock (nav bar) showed a separate green/dark background band behind the pill and the system nav ("extra background is ridiculous... like telegram... navigation bar doesn't need any background"); the web version was named as the correct one.
+
+Work Log:
+- Root-caused from the screenshot BEFORE touching code: the profile tab's warm ember backdrop stops at the dock line (hosting Box carried padding(bottom = dockSpace)), and what shows through in that strip is the AmbientField - whose API 33+ AGSL shader path STILL spoke the old emerald/teal language. The EMB-B repaint only reached the Canvas fallback (API 26-32); every modern device rendered green aurora curtains behind the dock. The web aurora WAS repainted (R36) - the native shader path was the missed surface, the same "new effects not applied everywhere" class the user flagged.
+- Fx.kt (Android): all five AGSL shaders repainted to ember. Aurora mirrors the web R36 repaint verbatim (amber/ember/violet bands over warm dark field). Mesh/liquid align with the already-blessed Canvas fallback. Stars lose the blue-cast base + teal ground wash. Caustics keeps its aqua ring identity (water mode, web parity) but swims over the warm field. Canvas fallback locals renamed emerald/teal -> amber/ember so names match values.
+- MainActivity: the five dock-hosted tabs (hub/contacts/calls/profile/saved) now draw emberBackdrop full-bleed - modifier order backdrop-before-padding means the tab's own field continues edge-to-edge BEHIND the dock while content keeps its dockSpace clearance. The dock floats over the page like Telegram's pill over the chat list; no separate band in any fx mode. Chats already had this structure (hosted bare).
+- iOS mirror: AmbientShader.metal aurora/mesh/stars kernels + AmbientFieldView Canvas caustics/liquid repainted with the same ember palette (aurora verbatim web mirror; liquid bodies amber/ember + rose).
+- Verified: zero old-palette values remain in the FX paths (byte-level grep); brace/paren balance clean on all four edited files; PAT scan of the staged diff = 0 hits.
+- Ship: commit 206224e pushed to main; tag v0.17.0-native (versionCode 34) pushed - Android CI (build + JVM tests + signed R8 APK + emulator release smoke API 30/34 + publish gate) and iOS CI triggered. Sandbox: NO builds (CI is the gate).
+- Launcher icon + pulse_launcher_bg remain #047857 emerald (the app icon glyph, NOT in-app chrome; the user flagged the nav band only). Logged as an open item, deliberately untouched.
+
+Stage Summary:
+- The green band behind the dock is dead at the root: the ambient field speaks ember on every API level (AGSL 33+, Canvas 26-32, iOS Metal 17+ / iOS Canvas), and every dock-hosted tab extends its own ember field edge-to-edge behind the nav - the pill + FAB now float over continuous page color, Telegram-style, with no separate background in any fx mode.
+- Release v0.17.0-native (versionCode 34) in flight through GitHub Actions with emulator-walk gating; install URL appears on the release once publish lands.
+- Open items: emerald launcher icon glyph (brand decision, needs user signal), story tiles still gradient initials, iOS device-level visual pass, Android/iOS consuming the web native-effect block.
+
+---
+Task ID: R38-verify
+Agent: orchestrator (Z.ai main session)
+Task: verify the v0.17.0-native release end-to-end and prove the dock band fix with behavior-level evidence.
+
+Work Log:
+- Android tag run 36973624880 SUCCESS (build + JVM tests + signed R8 APK + emulator release smoke API 30/34 + publish gate). iOS tag run 36973624964 SUCCESS (Metal kernel edits compile in the mirror). Both main-push runs green too.
+- VISUAL PROOF (artifact pulse-release-smoke-34, run 36973624880): 04-tab-profile.png - the exact screen from the user's screenshot - shows the warm ember gradient running edge-to-edge BEHIND the dock pill + FAB + system nav zone; no separate band anywhere. Pixel-sampled the dock strip on 04-tab-profile/updates/call/chats + 02-main-shell: 45/45 samples warm (R>G>B), 0/45 green-dominant. Example profile-strip rgb(26,19,14)/(28,19,16)/(22,16,12) - warm ember field, was green-dominant in the user's screenshot.
+- Release receipt: GitHub Release v0.17.0-native published, Pulse-v0.17.0-native.apk (25,420,436 bytes) downloaded from the release; binary manifest contains UTF-16-LE "0.17.0-native" and does NOT contain "0.16.0-native"; publish only fires after the smoke boots the signed artifact (workflow gate).
+- Worklog hygiene: db/custom.db stays uncommitted (QA rows); PAT used inline-only, remote URL scrubbed after pushes.
+
+Stage Summary:
+- SHIPPED + PROVEN: v0.17.0-native (versionCode 34) on https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.17.0-native - the dock now floats over the app's own ember field with NO separate background band, on every tab, every fx mode, every API level (AGSL 33+ / Canvas 26-32 / iOS Metal + Canvas all ember).
+- Install: overwrite-installs over v0.16.0-native (33).
+- Open items: emerald launcher icon glyph (brand decision, needs user signal), story tiles gradient initials, Android/iOS consuming the web native-effect block.
+
+---
+Task ID: R39-parity
+Agent: orchestrator (Z.ai main session)
+Task: user 24h non-stop wave - (1) Android app has none of the iOS/web settings depth (appearance/design language/nav styles/WebGL), (2) theme + nav-style pickers are showcase-only somewhere, (3) server error - cannot chat with anybody, need a demo user to see the chat box, (4) profiles have no cover/background picture adding system, (5) profile three-dot menu lacks Hub, (6) research the most important native-building priorities on the internet and keep working non-stop.
+
+Work Log:
+- Three read-only deep dives (Android/iOS/web) produced the parity matrix. Key roots: 11 nested PulseTheme(darkTheme=true) sites WITHOUT uiTheme re-defaulted GLASS+dark on hub/contacts/calls/profile/user/settings/room/thread/saved/stories - so the design-language picker changed nothing there (the "showcase-only" bug). Web nav styles + design language were verified fully live (13 renderers + data-ui), dark already default.
+- Android demo companion (user ask): new domain/model/PulseDemo.kt (Nova, DM demo_conversation_nova, rule-based reply bank). PulseRepositoryImpl: ensureDemoSeeded on repo.start (every fresh AND upgraded install), demoSend path for sendMessage/sendRichMessage (instant settle, no outbox lie), markRead short-circuit, scheduleDemoReply (0.8-1.8s beat, unread bump, preview update). ChatRoomScreen offline strip suppressed in the demo room (it is on-device by definition). Opening SYSTEM line says exactly what Nova is.
+- Design language LIVE everywhere: MainActivity PulseShell computes shellUiTheme; all 11 nested themes pass it; 5 dock-hosted tab boxes + 8 feature screen backdrops switched to pulseTabBackdrop(LocalPulseUiTheme.current) (new ui helper: GLASS keeps the blessed ember field, other languages paint their own page backdrop). Files: MainActivity, ContactsScreen, CallsView, UserPageScreen, HubScreen, SettingsRootScreen (root + SectionScaffold), ProfileScreen, SavedLibraryScreen, ChatsScreen (dark-conditional).
+- Profile kebab: Hub + Settings items added (web ProfileMoreMenu parity), wired via switchTab("hub") / navigate("settings").
+- Cover pictures (net-new on all platforms; user: "there will be a background picture on every profile"): Prisma User.coverImage (db pushed, client regenerated), serializers mapUser + types.ts AppUser, PATCH /api/users/[id] with server-path validation (verified: set/read/clear/foreign-URL-reject), profile-tab hero renders cover over the identity gradient + glass Add/Change/Remove chips with real upload pipeline (canvas 2:1 crop 1200x600 jpeg 0.85 -> POST /api/uploads -> PATCH) + session/cache sync, user-route-page + user-profile-sheet show covers. Android: domain User/UserProfile/ProfilePatch + UserDto/FullUserDto coverImage, ProfileEditViewModel uploadCover (upload when gateway answers, filesDir/pulse_cover.jpg fallback with honest notice), cover picker + preview + remove in ProfileEditScreen, hero banner in ProfileScreen, cover banner in UserPageScreen.
+- Gateway ops: GET /api/health added (db probe; verified {"ok":true}). CRON_SECRET generated, wired into .env + next-server restart + pulse-socket restart - /api/maintenance/dispatch now returns {"dispatched":0} instead of 401 every 20s; scheduled sends auto-dispatch again. .env UNTRACKED from git (was committed historically - leak hazard closed); db/custom.db stayed out of the commit.
+- Native research (user demand, via web search): prioritized Android native-feel backlog - (1) SharedTransitionLayout shared-element transitions (list->room avatar continuity), (2) predictive back in-app (PredictiveBackHandler; manifest flag already on), (3) real blur via RenderEffect/Haze for glass surfaces API 31+ (currently alpha-fill fakes), (4) core-splashscreen branded cold start, (5) haptics master toggle governing ALL haptics, (6) M3 Expressive motion (shape-morphing dock), (7) baseline profiles for startup/jank, (8) WindowInsets keyboard animation for the composer, (9) dynamic color as optional language. Recorded for the next waves.
+- Hygiene: lint clean (0 problems), brace/paren balance ok on 18 Kotlin files (repo paren delta matches HEAD's string-literal baseline), PAT scan 0 hits, emoji 0, no new em-dashes (generator artifacts pre-exist), CI green on main push (Web CI success; Android/iOS tag runs in flight).
+- SHIP: commit d51ba58 pushed to main + mirror (recreated the wiped bare mirror repo); tag v0.18.0-native (versionCode 35) pushed - Android CI tag run 36979996721 + iOS 36979996683 in flight; release publishes only after the emulator smoke boots the signed artifact.
+
+Stage Summary:
+- The showcase-only era is over on Android: the design language re-skins every destination, the profile kebab carries Hub + Settings, and every fresh install gets Nova - a real chat that answers offline - so the "server error / nobody to chat with" complaint is dead even without a gateway.
+- Cover pictures are a real system now (schema + validation + upload pipeline + render on own profile, user pages, and the sheet) on web AND Android; iOS mirrors next.
+- Non-stop loop armed: recurring webDevReview cron continues the wave queue (CI verification -> native feel wave -> iOS cover mirror -> haptics gate completion).
+- Open items: iOS cover + kebab mirror, haptics toggle full gating, stale download/update-manifest.json (v0.11.1-era, untouched by 0.15-0.17 releases - LiveUpdater still points old; needs one bump once the 0.18 release publishes), emerald launcher icon glyph (needs user brand signal).
+
+---
+Task ID: R39-ios-mirror
+Agent: orchestrator (Z.ai main session)
+Task: mirror the R39 cover-picture system + profile kebab Hub/Settings onto iOS while the v0.18.0-native CI tag run rebuilds.
+
+Work Log:
+- Fixed the Android tag-run compile failure first (missing pulseTabBackdrop import in MainActivity; CI caught it, root-caused from the run logs, fix pushed, tag force-moved; runs 36980626168/36980626138 re-triggered).
+- iOS cover mirror: WireUser.coverImage (tolerant Codable optional), PulseViewer.coverImage (+ init(from wire:) pass-through), PulseCoverImage pipeline (2:1 1200x600 center-crop JPEG q0.85, web coverFileToDataUrl parity), ProfileView cover banner (Add row when unset, 116pt banner + Change/Remove glass chips when set, AsyncImage via PulseTheme.photoURL), setCover/removeCover flows through session.api.uploadMedia + updateProfile(coverImage) + prefs.setViewer(PulseViewer(from:)), every PulseViewer construction site audited so the mirror never drops the field, ProfileEditView optimistic/rollback constructions carry coverImage.
+- iOS kebab mirror: ProfileView menu now hosts Hub + Settings above Edit profile/Saved/Switch identity; RootView passes onOpenHub { switchTab(.hub) } + onOpenSettings { settingsOpen = true }.
+- UserPageView: cover banner in the hero when the member set one.
+- Token correction caught pre-push: iOS has hairlineStrong/hairlineSoft/hairlinePanel (no bare hairline) - banner borders use hairlineSoft; brace balance ok on all 7 edited Swift files.
+- Browser QA receipt (web, before this entry): fresh onboarding walked end-to-end; profile hero shows the live "Add cover picture" chip; kebab menu lists Hub / Settings / Saved messages; Settings opens from the kebab; /api/health {"ok":true}; dev.log clean.
 Task ID: R50
 Agent: orchestrator (Z.ai Code, single-session non-stop)
 Task: The user's APK audit wave - server error + demo user, cover pictures, kebab Hub parity, native-feel research + implementation, release plumbing

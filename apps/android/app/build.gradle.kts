@@ -33,6 +33,9 @@ android {
         // the client then stays offline-first instead of reconnect-spamming a
         // dead address forever.
         buildConfigField("String", "PULSE_SOCKET", "\"${project.findProperty("pulseSocket") ?: ""}\"")
+        // CI release smoke: freeze infinite animations so uiautomator dumps
+        // settle (PulseMotionGate). Shipping builds default to false.
+        buildConfigField("Boolean", "PULSE_QUIET_ANIMS", "${(project.findProperty("pulseQuietAnims") ?: "false") == "true"}")
     }
 
     signingConfigs {
@@ -104,7 +107,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.core.splashscreen)
     // R10-a - BiometricPrompt app lock (BIOMETRIC_WEAK | DEVICE_CREDENTIAL).
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.activity.compose)

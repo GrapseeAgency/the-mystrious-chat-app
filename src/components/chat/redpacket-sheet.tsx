@@ -178,7 +178,7 @@ export function RedPacketSheet({
                 haptic(10)
                 onClose()
               }}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-emerald-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-amber-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
             >
               <X className="size-4.5" aria-hidden />
             </button>
@@ -242,7 +242,7 @@ export function RedPacketSheet({
                   setCount((c) => Math.max(COUNT_MIN, c - 1))
                   haptic(6)
                 }}
-                className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-zinc-200 outline-none ring-emerald-400/60 transition-all hover:bg-white/10 focus-visible:ring-2 active:scale-90 disabled:opacity-40"
+                className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-zinc-200 outline-none ring-amber-400/60 transition-all hover:bg-white/10 focus-visible:ring-2 active:scale-90 disabled:opacity-40"
               >
                 <Minus className="size-4" aria-hidden />
               </button>
@@ -267,7 +267,7 @@ export function RedPacketSheet({
                   setCount((c) => Math.min(COUNT_MAX, c + 1))
                   haptic(6)
                 }}
-                className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-zinc-200 outline-none ring-emerald-400/60 transition-all hover:bg-white/10 focus-visible:ring-2 active:scale-90 disabled:opacity-40"
+                className="flex size-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-zinc-200 outline-none ring-amber-400/60 transition-all hover:bg-white/10 focus-visible:ring-2 active:scale-90 disabled:opacity-40"
               >
                 <Plus className="size-4" aria-hidden />
               </button>

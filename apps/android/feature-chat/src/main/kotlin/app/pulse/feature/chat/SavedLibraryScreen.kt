@@ -50,7 +50,9 @@ import app.pulse.domain.repository.PulseRepository
 import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.LocalPulseUiTheme
 import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseTabBackdrop
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
 import java.time.LocalDate
@@ -165,7 +167,7 @@ fun SavedLibraryScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .emberBackdrop()
+            .pulseTabBackdrop(LocalPulseUiTheme.current)
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {

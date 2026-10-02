@@ -132,7 +132,7 @@ function Highlight({ text, query }: { text: string; query: string }) {
   return (
     <>
       {text.slice(0, idx)}
-      <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+      <span className="font-semibold text-amber-700 dark:text-amber-400">
         {text.slice(idx, idx + q.length)}
       </span>
       {text.slice(idx + q.length)}
@@ -468,7 +468,7 @@ export function SpotlightOverlay({
             className="h-12 border-0 bg-transparent px-0 text-[15px] font-medium shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
           {searching ? (
-            <LoaderCircle className="size-4 shrink-0 animate-spin text-emerald-500" aria-label="Searching" />
+            <LoaderCircle className="size-4 shrink-0 animate-spin text-amber-600" aria-label="Searching" />
           ) : (
             <kbd className="hidden shrink-0 rounded-md border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-400 sm:block dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500">
               esc
@@ -520,7 +520,7 @@ export function SpotlightOverlay({
 
           {debouncedQ.length >= 2 && messageSearch.isPending && !messageSearch.data ? (
             <div className="flex items-center justify-center gap-2 py-5" role="status" aria-label="Searching messages">
-              <LoaderCircle className="size-4 animate-spin text-emerald-500" aria-hidden />
+              <LoaderCircle className="size-4 animate-spin text-amber-600" aria-hidden />
               <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500">Searching messages…</span>
             </div>
           ) : null}
@@ -577,7 +577,7 @@ function SpotlightItemRow({
 }) {
   const base = cn(
     'flex min-h-[46px] w-full items-center gap-3 rounded-2xl px-3 py-2 text-left outline-none transition-colors',
-    active ? 'bg-emerald-500/[0.12] dark:bg-emerald-400/[0.12]' : 'hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50',
+    active ? 'bg-amber-500/[0.12] dark:bg-amber-400/[0.12]' : 'hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50',
   )
 
   let content: React.ReactNode = null
@@ -595,7 +595,7 @@ function SpotlightItemRow({
               <Highlight text={row.title} query={query} />
             </span>
             {row.unread > 0 ? (
-              <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white">
+              <span className="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">
                 {row.unread > 99 ? '99+' : row.unread}
               </span>
             ) : null}
@@ -632,7 +632,7 @@ function SpotlightItemRow({
     content = (
       <>
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
-          <MessagesSquare className="size-[18px] text-emerald-600 dark:text-emerald-400" aria-hidden />
+          <MessagesSquare className="size-[18px] text-amber-700 dark:text-amber-400" aria-hidden />
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
@@ -666,8 +666,8 @@ function SpotlightItemRow({
     const Icon = row.Icon
     content = (
       <>
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 dark:bg-emerald-400/10">
-          <Icon className="size-[18px] text-emerald-600 dark:text-emerald-400" aria-hidden />
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 dark:bg-amber-400/10">
+          <Icon className="size-[18px] text-amber-700 dark:text-amber-400" aria-hidden />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[14px] font-medium text-zinc-900 dark:text-zinc-100">{row.label}</span>

@@ -63,7 +63,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseIcons
+import app.pulse.ui.LocalPulseUiTheme
 import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseTabBackdrop
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 
@@ -128,7 +130,7 @@ fun ContactsScreen(
         it.name.contains(filter, true) || it.handle.contains(filter, true)
     }
 
-    Column(Modifier.fillMaxSize().emberBackdrop().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().pulseTabBackdrop(LocalPulseUiTheme.current).statusBarsPadding()) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
             Text("Contacts", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(

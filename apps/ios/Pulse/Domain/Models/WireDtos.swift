@@ -47,7 +47,7 @@ public struct WireUser: Codable, Hashable, Sendable, Identifiable {
     public let about: String?
     public let color: String?
     public let avatar: String?
-    public let cover: String?
+    public let coverImage: String?
     public let statusEmoji: String?
     public let statusText: String?
     public let createdAt: String?

@@ -33,7 +33,7 @@ data class FullUserDto(
     val about: String? = null,
     val color: String? = null,
     val avatar: String? = null,
-    val cover: String? = null,
+    val coverImage: String? = null,
     val statusEmoji: String? = null,
     val statusText: String? = null,
     val createdAt: String? = null,

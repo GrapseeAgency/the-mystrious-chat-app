@@ -903,30 +903,30 @@ export function GroupCallRingBanner({ session }: { session: GroupCallSessionCont
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0 }}
         transition={spring()}
-        className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3"
+        className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3"
         role="alert"
       >
-        <span className="relative flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20">
-          <PhoneCall className="h-4.5 w-4.5 text-emerald-600" aria-hidden />
-          <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500/20" aria-hidden />
+        <span className="relative flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/20">
+          <PhoneCall className="h-4.5 w-4.5 text-amber-700" aria-hidden />
+          <span className="absolute inset-0 animate-ping rounded-full bg-amber-500/20" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-emerald-900">
+          <p className="truncate text-sm font-medium text-amber-900">
             {session.ring.title ? `${session.ring.title} · group call` : `Group call from ${session.ring.caller.name}`}
           </p>
-          <p className="truncate text-xs text-emerald-700/80">
+          <p className="truncate text-xs text-amber-700/80">
             {session.ring.kind === 'video' ? 'Video call' : 'Voice call'} · started by {session.ring.caller.name}
           </p>
         </div>
         <button
           onClick={session.dismissRing}
-          className="rounded-full px-3 py-2 text-xs text-emerald-900/60 hover:bg-emerald-500/10"
+          className="rounded-full px-3 py-2 text-xs text-amber-900/60 hover:bg-amber-500/10"
         >
           Ignore
         </button>
         <button
           onClick={session.joinCall}
-          className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-emerald-700"
+          className="rounded-full bg-amber-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-amber-700"
         >
           Join
         </button>
@@ -945,27 +945,27 @@ export function GroupCallRingBanner({ session }: { session: GroupCallSessionCont
         initial={prefersReducedMotion() ? { opacity: 0 } : { opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={spring()}
-        className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3"
+        className="mx-3 mb-2 flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3"
         role="status"
       >
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/20">
-          <Users className="h-4 w-4 text-emerald-600" aria-hidden />
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-500/20">
+          <Users className="h-4 w-4 text-amber-700" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-emerald-900">
+          <p className="truncate text-sm font-medium text-amber-900">
             Ongoing group call · {session.ongoingMembers.length} in call
           </p>
-          <p className="truncate text-xs text-emerald-700/80">{names}</p>
+          <p className="truncate text-xs text-amber-700/80">{names}</p>
         </div>
         <button
           onClick={session.ignoreOngoing}
-          className="rounded-full px-3 py-1.5 text-xs text-emerald-900/60 hover:bg-emerald-500/10"
+          className="rounded-full px-3 py-1.5 text-xs text-amber-900/60 hover:bg-amber-500/10"
         >
           Ignore
         </button>
         <button
           onClick={session.joinOngoing}
-          className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-emerald-700"
+          className="rounded-full bg-amber-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-amber-700"
         >
           Join
         </button>

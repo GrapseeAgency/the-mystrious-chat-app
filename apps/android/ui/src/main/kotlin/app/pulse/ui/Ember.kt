@@ -55,8 +55,8 @@ object EmberPalette {
     /** Dark circle FAB fill (attach button, 92% of the same ink). */
     val FabFill = Color(0xEB1C1410)
 
-    /** Bubble fills. */
-    val BubbleIn = Color(0xFF2E2824)
+    /** Bubble fills - the reference near-black charcoal (warm-cast). */
+    val BubbleIn = Color(0xFF241D17)
     val BubbleOut = Color(0xFF17110D)
 
     /** Grouped sender name / warm accent text. */
@@ -151,3 +151,16 @@ fun Modifier.emberGlass(shape: Shape): Modifier = this
     .clip(shape)
     .background(EmberPalette.CardFill, shape)
     .border(1.dp, EmberPalette.Hairline, shape)
+
+/**
+ * R39 - the design-language-aware tab backdrop. GLASS keeps the blessed
+ * ember sunset field (the reference look); every other language paints its
+ * own page backdrop so the Appearance picker visibly re-skins every dock
+ * tab (web parity: data-ui tokens cover all pages, not just chats).
+ */
+fun Modifier.pulseTabBackdrop(theme: PulseUiTheme, dark: Boolean = true): Modifier =
+    if (theme == PulseUiTheme.GLASS) {
+        this.emberBackdrop()
+    } else {
+        this.pulseUiThemePageBackground(theme, dark)
+    }

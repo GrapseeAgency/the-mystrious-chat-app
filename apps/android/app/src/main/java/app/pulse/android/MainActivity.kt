@@ -145,6 +145,8 @@ import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.PulseTheme
+import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseTabBackdrop
 import app.pulse.ui.isPulseDarkTheme
 import app.pulse.ui.pulseUiThemePageBackground
 import app.pulse.ui.pulseGlass
@@ -176,8 +178,10 @@ private val DockTeal600 = Color(0xFFFF7A3D)
 private val DockInactiveDark = Color.White.copy(alpha = 0.45f)
 private val DockInactiveLight = Color(0xFF71717A)
 
-/** Canonical tab order - drives dock layout + direction-aware transitions. */
-private val TAB_ROUTES = listOf("chats", "hub", "contacts", "profile")
+/** Canonical tab order - drives dock layout + direction-aware transitions.
+ *  Reference dock: Chats / Call / Updates / Profile. Contacts left the pill
+ *  but stays a registered route reachable from the chats header menu. */
+private val TAB_ROUTES = listOf("chats", "calls", "hub", "profile")
 
 private data class DockTab(
     val route: String,
@@ -187,11 +191,12 @@ private data class DockTab(
     val carriesUnread: Boolean = false,
 )
 
-/** Registry parity with web NAV_ITEMS (nav-router.ts) - EMB-A PulseIcons voice. */
+/** Registry parity with web NAV_ITEMS (nav-router.ts) - EMB-A PulseIcons voice.
+ *  The dock speaks the reference labels: Chats / Call / Updates / Profile. */
 private val DOCK_TABS = listOf(
     DockTab("chats", "Chats", PulseIcons.ChatBubble, PulseIcons.ChatBubble, carriesUnread = true),
-    DockTab("hub", "Hub", PulseIcons.Globe, PulseIcons.Globe),
-    DockTab("contacts", "Contacts", PulseIcons.Users, PulseIcons.Users),
+    DockTab("calls", "Call", PulseIcons.Phone, PulseIcons.Phone),
+    DockTab("hub", "Updates", PulseIcons.Refresh, PulseIcons.Refresh),
     DockTab("profile", "Profile", PulseIcons.Person, PulseIcons.Person),
 )
 
@@ -554,6 +559,11 @@ private fun PulseShell(
     // shell re-renders the matching dock live when the Appearance pick lands.
     val navStyle by session.navStyle.collectAsStateWithLifecycle()
     val reducedMotion by session.reducedMotion.collectAsStateWithLifecycle()
+    // R39 - the design language rides EVERY destination: the nested dark-pinned
+    // themes below now inherit the user's pick (web pulse.uiTheme.v2 parity),
+    // and each tab backdrop re-skins through pulseTabBackdrop().
+    val uiThemeRaw by session.uiTheme.collectAsStateWithLifecycle()
+    val shellUiTheme = app.pulse.ui.PulseUiTheme.fromId(uiThemeRaw)
 
     // Identity adoption for the voice/stage/space wire payloads (the calls
     // surface receives the same values through callPeer's caller args).
@@ -583,6 +593,14 @@ private fun PulseShell(
 
     fun switchTab(route: String) {
         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        // R23 hard gate: navigating to a destination that is not in the graph
+        // throws IllegalArgumentException and kills the whole shell (the
+        // release crash the R22 smoke caught). A missing route must degrade
+        // to a no-op, never a crash.
+        if (navController.graph.findNode(route) == null) {
+            android.util.Log.w("PulseNav", "switchTab: route \"$route\" not in graph; ignoring")
+            return
+        }
         navController.navigate(route) {
             popUpTo(navController.graph.startDestinationId) { saveState = true }
             launchSingleTop = true
@@ -650,7 +668,8 @@ private fun PulseShell(
     // Dock visibility: tabs + the archived sub-page keep the chrome (web keeps
     // the nav over hash sub-pages); rooms own the whole screen. Wave 2: the
     // saved library keeps it too (it's a shell page, not a room).
-    val showDock = currentRoute in TAB_ROUTES || currentRoute == "archived" || currentRoute == "saved"
+    val showDock = currentRoute in TAB_ROUTES || currentRoute == "archived" || currentRoute == "saved" ||
+        currentRoute == "contacts"
 
     // The system nav bar (gesture pill or 3-button strip) draws over the app -
     // every bottom-anchored surface must clear it.
@@ -763,6 +782,9 @@ private fun PulseShell(
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         newChatOpen = true
                     },
+                    // R25 - the dock More menu lives in the header kebab now.
+                    onOpenSaved = { navController.navigate("saved") },
+                    onOpenSettings = { navController.navigate("settings") },
                     searchRequest = searchTick,
                 )
 
@@ -794,17 +816,22 @@ private fun PulseShell(
                 }
             }
             composable("hub") {
-                PulseTheme(darkTheme = true) {
-                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
+                // R38 - Telegram-style dock: the tab's ember field runs edge-to-
+                // edge BEHIND the dock (drawn before padding = full-bleed), so
+                // no separate color band ever shows under the nav pill.
+                Box(Modifier.fillMaxSize().pulseTabBackdrop(shellUiTheme).padding(bottom = dockSpace)) {
                     app.pulse.feature.hub.HubScreen(
                         viewerName = viewerName ?: "",
                         onOpenConversation = { id -> navController.navigate("room/$id") },
                     )
                 }
             }
+            }
             composable("contacts") {
-                PulseTheme(darkTheme = true) {
-                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
+                // R38 - full-bleed ember field behind the dock (same idiom).
+                Box(Modifier.fillMaxSize().pulseTabBackdrop(shellUiTheme).padding(bottom = dockSpace)) {
                     ContactsScreen(
                         onOpenRoom = { id -> navController.navigate("room/$id") },
                         onOpenUser = { id -> navController.navigate("user/$id") },
@@ -836,9 +863,11 @@ private fun PulseShell(
                     )
                 }
             }
+            }
             composable("calls") {
-                PulseTheme(darkTheme = true) {
-                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
+                // R38 - full-bleed ember field behind the dock (same idiom).
+                Box(Modifier.fillMaxSize().pulseTabBackdrop(shellUiTheme).padding(bottom = dockSpace)) {
                     CallsView(
                         onBack = { navController.popBackStack() },
                         onOpenRoom = { id -> navController.navigate("room/$id") },
@@ -863,6 +892,7 @@ private fun PulseShell(
             }
             // R2-A item 6/7/8/9 - the room-info surface: automations manager,
             // webhooks manager, screen-security toggles and the photo edit.
+            }
             composable(
                 "room-info/{conversationId}",
                 arguments = listOf(navArgument("conversationId") { type = NavType.StringType }),
@@ -875,13 +905,15 @@ private fun PulseShell(
                 }
             }
             composable("profile") {
-                PulseTheme(darkTheme = true) {
-                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
+                // R38 - full-bleed ember field behind the dock (same idiom);
+                // this is the tab from the user's green-band screenshot.
+                Box(Modifier.fillMaxSize().pulseTabBackdrop(shellUiTheme).padding(bottom = dockSpace)) {
                     ProfileScreen(
                         onEditProfile = { navController.navigate("profile/edit") },
                         onOpenBlocked = { navController.navigate("settings/blocked") },
-                        // R50-c - kebab parity: Hub jumps to the hub tab,
-                        // Settings opens the settings root.
+                        // R39/R50-c - Hub + Settings live in the profile
+                        // corner three-dot menu (web ProfileMoreMenu parity).
                         onOpenHub = { switchTab("hub") },
                         onOpenSettings = { navController.navigate("settings") },
                         // R16 - web profile-tab.tsx:497-508: the profile tab's
@@ -895,11 +927,12 @@ private fun PulseShell(
                 }
             }
             // Wave 6 - social graph: user page, add contact, profile edit, blocked list.
+            }
             composable(
                 "user/{id}",
                 arguments = listOf(navArgument("id") { type = NavType.StringType }),
             ) { entry ->
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 Box(Modifier.fillMaxSize()) {
                     UserPageScreen(
                         userId = entry.arguments?.getString("id").orEmpty(),
@@ -907,6 +940,7 @@ private fun PulseShell(
                         onOpenRoom = { id -> navController.navigate("room/$id") },
                     )
                 }
+            }
             }
             composable("contacts/add") {
                 Box(Modifier.fillMaxSize()) {
@@ -928,7 +962,7 @@ private fun PulseShell(
             }
             // Wave 8 - the full Settings root + nine sections.
             composable("settings") {
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 Box(Modifier.fillMaxSize()) {
                     SettingsRootScreen(
                         onBack = { navController.popBackStack() },
@@ -937,11 +971,12 @@ private fun PulseShell(
                     )
                 }
             }
+            }
             composable(
                 "settings/{section}",
                 arguments = listOf(navArgument("section") { type = NavType.StringType }),
             ) { entry ->
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 when (entry.arguments?.getString("section")) {
                     "account" -> Box(Modifier.fillMaxSize()) {
                         AccountSection(
@@ -991,6 +1026,7 @@ private fun PulseShell(
                     }
                 }
             }
+            }
             composable(
                 "room/{conversationId}?jump={jump}",
                 arguments = listOf(
@@ -1002,7 +1038,7 @@ private fun PulseShell(
                     },
                 ),
             ) { entry ->
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 val conversationId = entry.arguments?.getString("conversationId").orEmpty()
                 // R8 Task 3-c - the OPEN conversation is the group-call probe
                 // target + outsider-banner gate (web openConversationId parity);
@@ -1035,6 +1071,7 @@ private fun PulseShell(
                     onStartGroupCall = { kind, title -> groupCallVm.startCall(kind, title) },
                 )
             }
+            }
             composable(
                 "room/{conversationId}/thread/{rootId}",
                 arguments = listOf(
@@ -1042,11 +1079,12 @@ private fun PulseShell(
                     navArgument("rootId") { type = NavType.StringType },
                 ),
             ) {
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 ThreadScreen(
                     viewerId = viewerId,
                     onBack = { navController.popBackStack() },
                 )
+            }
             }
             composable("archived") {
                 ArchivedScreen(
@@ -1060,8 +1098,9 @@ private fun PulseShell(
             // Wave 2 - the dock "Saved" menu item now lands on the real library
             // (fetch → Room cache → search → unsave → jump-to-message rows).
             composable("saved") {
-                PulseTheme(darkTheme = true) {
-                Box(Modifier.fillMaxSize().padding(bottom = dockSpace)) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
+                // R38 - full-bleed ember field behind the dock (same idiom).
+                Box(Modifier.fillMaxSize().pulseTabBackdrop(shellUiTheme).padding(bottom = dockSpace)) {
                     SavedLibraryScreen(
                         onBack = { navController.popBackStack() },
                         onOpenRoom = { id, jump ->
@@ -1074,6 +1113,7 @@ private fun PulseShell(
             // surfaces (no dock). The nav-entry-scoped StoriesViewModel boots on
             // entry: one fresh REST fetch (REST only - zero socket for stories)
             // + 60s poll while open, so D2 expiry and D3 vanishing reconcile.
+            }
             composable(
                 "stories/viewer?start={start}",
                 arguments = listOf(
@@ -1084,7 +1124,7 @@ private fun PulseShell(
                     },
                 ),
             ) { entry ->
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 val storiesVm: StoriesViewModel = hiltViewModel()
                 LaunchedEffect(Unit) { storiesVm.boot() }
                 StoryViewerScreen(
@@ -1092,6 +1132,7 @@ private fun PulseShell(
                     onClose = { navController.popBackStack() },
                     storiesVm = storiesVm,
                 )
+            }
             }
             composable("stories/compose") {
                 val storiesVm: StoriesViewModel = hiltViewModel()
@@ -1101,18 +1142,7 @@ private fun PulseShell(
                     storiesVm = storiesVm,
                 )
             }
-            
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                }}}}}}}}}}}}
+            }
         }
     }
 
@@ -1433,52 +1463,20 @@ private fun CapsuleDock(
                 Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DockTabButton(
-                    tab = DOCK_TABS[0],
-                    active = active == "chats",
-                    unread = unread,
-                    dark = dark,
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier.weight(1f),
-                    onSelect = { onSelect("chats") },
-                )
-                DockTabButton(
-                    tab = DOCK_TABS[1],
-                    active = active == "hub",
-                    unread = 0,
-                    dark = dark,
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier.weight(1f),
-                    onSelect = { onSelect("hub") },
-                )
-                DockTabButton(
-                    tab = DOCK_TABS[2],
-                    active = active == "contacts",
-                    unread = 0,
-                    dark = dark,
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier.weight(1f),
-                    onSelect = { onSelect("contacts") },
-                )
-                DockTabButton(
-                    tab = DOCK_TABS[3],
-                    active = active == "profile",
-                    unread = 0,
-                    dark = dark,
-                    reducedMotion = reducedMotion,
-                    modifier = Modifier.weight(1f),
-                    onSelect = { onSelect("profile") },
-                )
-                MoreDockButton(
-                    dark = dark,
-                    open = moreMenuOpen,
-                    onOpenChange = onMoreMenuChange,
-                    onSearch = onSearch,
-                    onSaved = onSaved,
-                    onStories = onStories,
-                    onSettings = onSettings,
-                    onDeferred = onDeferred,
-                )
+                // Reference dock: exactly the four labeled tabs in the pill;
+                // the More menu moved to the chats header kebab (the round
+                // compose FAB stays outside the pill, per the reference).
+                DOCK_TABS.forEach { tab ->
+                    DockTabButton(
+                        tab = tab,
+                        active = active == tab.route,
+                        unread = if (tab.carriesUnread) unread else 0,
+                        dark = dark,
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier.weight(1f),
+                        onSelect = { onSelect(tab.route) },
+                    )
+                }
             }
         }
         // separate 56dp circular FAB - the existing new-chat action
@@ -1823,17 +1821,17 @@ private fun FloatingTopDock(
                     )
                     Spacer(Modifier.width(gap))
                     DockTabButton(
-                        tab = DOCK_TABS[1], active = active == "hub", unread = 0,
+                        tab = DOCK_TABS[1], active = active == DOCK_TABS[1].route, unread = 0,
                         dark = dark, reducedMotion = reducedMotion,
-                        modifier = Modifier.weight(1f), onSelect = { actions.onSelect("hub") },
+                        modifier = Modifier.weight(1f), onSelect = { actions.onSelect(DOCK_TABS[1].route) },
                     )
                     Spacer(Modifier.width(gap))
                     ComposeDockButton(actions.onCompose, size = composeW)
                     Spacer(Modifier.width(gap))
                     DockTabButton(
-                        tab = DOCK_TABS[2], active = active == "contacts", unread = 0,
+                        tab = DOCK_TABS[2], active = active == DOCK_TABS[2].route, unread = 0,
                         dark = dark, reducedMotion = reducedMotion,
-                        modifier = Modifier.weight(1f), onSelect = { actions.onSelect("contacts") },
+                        modifier = Modifier.weight(1f), onSelect = { actions.onSelect(DOCK_TABS[2].route) },
                     )
                     Spacer(Modifier.width(gap))
                     DockTabButton(
@@ -1940,9 +1938,9 @@ private fun PillDock(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PillTabItem(DOCK_TABS[0], active == "chats", unread, dark, Modifier.weight(1f)) { actions.onSelect("chats") }
-                    PillTabItem(DOCK_TABS[1], active == "hub", 0, dark, Modifier.weight(1f)) { actions.onSelect("hub") }
+                    PillTabItem(DOCK_TABS[1], active == DOCK_TABS[1].route, 0, dark, Modifier.weight(1f)) { actions.onSelect(DOCK_TABS[1].route) }
                     ComposeDockButton(actions.onCompose, size = composeW)
-                    PillTabItem(DOCK_TABS[2], active == "contacts", 0, dark, Modifier.weight(1f)) { actions.onSelect("contacts") }
+                    PillTabItem(DOCK_TABS[2], active == DOCK_TABS[2].route, 0, dark, Modifier.weight(1f)) { actions.onSelect(DOCK_TABS[2].route) }
                     PillTabItem(DOCK_TABS[3], active == "profile", 0, dark, Modifier.weight(1f)) { actions.onSelect("profile") }
                     MoreDockButton(
                         dark = dark,
@@ -2025,8 +2023,8 @@ private fun BottomBarDock(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     BarTabItem(DOCK_TABS[0], active == "chats", unread, dark, Modifier.weight(1f)) { actions.onSelect("chats") }
-                    BarTabItem(DOCK_TABS[1], active == "hub", 0, dark, Modifier.weight(1f)) { actions.onSelect("hub") }
-                    BarTabItem(DOCK_TABS[2], active == "contacts", 0, dark, Modifier.weight(1f)) { actions.onSelect("contacts") }
+                    BarTabItem(DOCK_TABS[1], active == DOCK_TABS[1].route, 0, dark, Modifier.weight(1f)) { actions.onSelect(DOCK_TABS[1].route) }
+                    BarTabItem(DOCK_TABS[2], active == DOCK_TABS[2].route, 0, dark, Modifier.weight(1f)) { actions.onSelect(DOCK_TABS[2].route) }
                     BarTabItem(DOCK_TABS[3], active == "profile", 0, dark, Modifier.weight(1f)) { actions.onSelect("profile") }
                     Spacer(Modifier.width(4.dp))
                     ComposeDockButton(actions.onCompose, size = 38.dp)
@@ -2842,6 +2840,7 @@ private fun ContextualDockDock(
     // (nav-router.tsx:1193-1240 - New chat / Search / New group / Settings).
     val (chipLabel, chipIcon, chipAction) = when (active) {
         "chats" -> Triple("New chat", PulseIcons.Plus, actions.onCompose)
+        "calls" -> Triple("Search", PulseIcons.Search, actions.onSearch)
         "hub" -> Triple("Search", PulseIcons.Search, actions.onSearch)
         "contacts" -> Triple("New group", PulseIcons.Users, actions.onCompose)
         else -> Triple("Settings", PulseIcons.Gear, actions.onSettings)

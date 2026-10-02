@@ -33,3 +33,27 @@ public enum PulseAvatarImage {
         PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg)
     }
 }
+
+/// R39 - cover pipeline: the picked image becomes a CENTERED 2:1 banner
+/// (1200x600 max) JPEG q0.85 for the profile cover picture (web parity:
+/// coverFileToDataUrl in profile-tab.tsx).
+public enum PulseCoverImage {
+    public static let maxWidth: CGFloat = 1200
+    public static let maxHeight: CGFloat = 600
+    public static let quality: CGFloat = 0.85
+
+    public static func jpegData(from data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
+        let scale = max(maxWidth / image.size.width, maxHeight / image.size.height)
+        let drawW = image.size.width * scale
+        let drawH = image.size.height * scale
+        let cropOrigin = CGPoint(x: (drawW - maxWidth) / 2, y: (drawH - maxHeight) / 2)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let rendered = UIGraphicsImageRenderer(size: CGSize(width: maxWidth, height: maxHeight), format: format).image { _ in
+            image.draw(in: CGRect(origin: CGPoint(x: -cropOrigin.x, y: -cropOrigin.y), size: CGSize(width: drawW, height: drawH)))
+        }
+        return rendered.jpegData(compressionQuality: quality)
+    }
+}

@@ -10,7 +10,9 @@ enum PulseTheme {
 
 /// Dock tab set - index order drives the direction-aware slide (web §1).
 enum PulseTab: Int, CaseIterable {
-    case chats, hub, contacts, profile
+    // Reference dock order: Chats / Call / Updates / Profile. Contacts stays
+    // a reachable case (chats header menu) but holds no dock slot.
+    case chats, calls, hub, contacts, profile
 }
 
 /// Root shell - session + prefs live here (single ownership), the ambient
@@ -229,8 +231,19 @@ struct RootView: View {
                     prefs: prefs,
                     onGoContacts: { switchTab(.contacts) },
                     onGoProfile: { switchTab(.profile) },
+                    // R25 - the dock More menu lives in the chats header now.
+                    onGoSaved: { savedLibraryOpen = true },
+                    onGoStories: { storiesOpen = true },
+                    onGoSettings: { settingsOpen = true },
                     isActive: tab == .chats,
                 )
+                .transition(panelTransition)
+            case .calls:
+                // Reference dock: Call is a real tab now (was a More sheet).
+                CallsHistoryView(session: session, onOpenConversation: { conversationId in
+                    switchTab(.chats)
+                    session.pendingLinkedRoomId = conversationId
+                })
                 .transition(panelTransition)
             case .hub:
                 HubView(session: session, onOpenRoom: { conversation in
@@ -242,7 +255,14 @@ struct RootView: View {
                 ContactsView(session: session)
                     .transition(panelTransition)
             case .profile:
-                ProfileView(session: session, prefs: prefs)
+                ProfileView(
+                    session: session,
+                    prefs: prefs,
+                    // R39 - the profile corner menu hands off to the real
+                    // Hub tab and the Settings sheet (web ProfileMoreMenu).
+                    onOpenHub: { switchTab(.hub) },
+                    onOpenSettings: { settingsOpen = true },
+                )
                     .transition(panelTransition)
             }
         }
@@ -624,13 +644,14 @@ private struct CapsuleDock: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            // The floating pill: tabs + More (compose lives on the FAB).
+            // The floating pill: the four reference tabs (Chats / Call /
+            // Updates / Profile); compose lives on the FAB, More moved to the
+            // chats header ellipsis.
             HStack(spacing: 4) {
                 dockTab(.chats, icon: "bubble.left.and.bubble.right", filled: "bubble.left.and.bubble.right.fill", label: "Chats", badge: session.dockUnreadCount)
-                dockTab(.hub, icon: "globe.americas", filled: "globe.americas.fill", label: "Hub", badge: 0)
-                dockTab(.contacts, icon: "person.2", filled: "person.2.fill", label: "Contacts", badge: 0)
+                dockTab(.calls, icon: "phone", filled: "phone.fill", label: "Call", badge: 0)
+                dockTab(.hub, icon: "arrow.triangle.2.circlepath", filled: "arrow.triangle.2.circlepath", label: "Updates", badge: 0)
                 dockTab(.profile, icon: "person.crop.circle", filled: "person.crop.circle.fill", label: "Profile", badge: 0)
-                moreButton
             }
             .padding(.horizontal, 10)
             .frame(height: 64)

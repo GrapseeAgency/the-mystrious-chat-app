@@ -272,14 +272,14 @@ export function FoldersSheet({
                   setMode('list')
                   setEditingFolder(null)
                 }}
-                className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-emerald-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
+                className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-amber-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
               >
                 <ChevronLeft className="size-5" aria-hidden />
               </button>
             ) : (
               <span
                 aria-hidden
-                className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-[0_10px_24px_-10px_rgba(16,185,129,0.7)]"
+                className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-[0_10px_24px_-10px_rgba(245,158,11,0.7)]"
               >
                 <PulseFolder className="size-5" />
               </span>
@@ -301,7 +301,7 @@ export function FoldersSheet({
                 haptic(10)
                 onClose()
               }}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-emerald-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none ring-amber-400/60 transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 active:scale-90"
             >
               <X className="size-4.5" aria-hidden />
             </button>
@@ -347,7 +347,7 @@ export function FoldersSheet({
                             className={cn(
                               'flex size-10 items-center justify-center rounded-xl outline-none transition-colors',
                               active
-                                ? 'bg-emerald-500/25 text-emerald-300 ring-2 ring-emerald-400/70'
+                                ? 'bg-amber-500/25 text-amber-300 ring-2 ring-amber-400/70'
                                 : 'bg-white/5 text-zinc-300 ring-1 ring-white/10 hover:bg-white/10',
                             )}
                           >
@@ -369,14 +369,14 @@ export function FoldersSheet({
                         }}
                         placeholder="Folder name…"
                         aria-label="Folder name"
-                        className="h-11 flex-1 rounded-2xl border-white/10 bg-white/5 text-[14px] font-medium text-zinc-50 placeholder:text-zinc-600 focus-visible:border-emerald-400/60 focus-visible:ring-emerald-400/30"
+                        className="h-11 flex-1 rounded-2xl border-white/10 bg-white/5 text-[14px] font-medium text-zinc-50 placeholder:text-zinc-600 focus-visible:border-amber-400/60 focus-visible:ring-amber-400/30"
                       />
                       <Button
                         type="button"
                         disabled={!nameValid || createM.isPending}
                         onClick={() => createM.mutate()}
                         aria-label="Create folder"
-                        className="h-11 shrink-0 gap-1.5 rounded-2xl border-0 bg-gradient-to-r from-emerald-500 to-teal-600 px-4 text-[14px] font-bold text-white shadow-[0_12px_28px_-12px_rgba(16,185,129,0.8)] transition-transform active:scale-[0.97] disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-400 disabled:shadow-none"
+                        className="h-11 shrink-0 gap-1.5 rounded-2xl border-0 bg-gradient-to-r from-amber-500 to-orange-600 px-4 text-[14px] font-bold text-white shadow-[0_12px_28px_-12px_rgba(245,158,11,0.8)] transition-transform active:scale-[0.97] disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-400 disabled:shadow-none"
                       >
                         {createM.isPending ? (
                           <LoaderCircle className="size-4.5 animate-spin" aria-hidden />
@@ -393,7 +393,7 @@ export function FoldersSheet({
                   {/* folder list */}
                   {foldersQ.isPending ? (
                     <div className="flex items-center justify-center gap-2 py-6" role="status" aria-label="Loading folders">
-                      <LoaderCircle className="size-4 animate-spin text-emerald-500" aria-hidden />
+                      <LoaderCircle className="size-4 animate-spin text-amber-600" aria-hidden />
                       <span className="text-xs font-medium text-zinc-500">Loading folders…</span>
                     </div>
                   ) : folders.length === 0 ? (
@@ -426,7 +426,7 @@ export function FoldersSheet({
                               <div className="flex items-center gap-2 px-2.5 py-2">
                                 <span
                                   aria-hidden
-                                  className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-emerald-300 ring-1 ring-white/10"
+                                  className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-amber-300 ring-1 ring-white/10"
                                 >
                                   <FolderIconGlyph value={folder.emoji} className="size-4.5" />
                                 </span>
@@ -444,7 +444,7 @@ export function FoldersSheet({
                                       if (e.key === 'Escape') setRenamingId(null)
                                     }}
                                     aria-label="Folder name"
-                                    className="h-9 min-w-0 flex-1 rounded-xl border-white/10 bg-white/5 text-[13.5px] font-semibold text-zinc-50 focus-visible:border-emerald-400/60 focus-visible:ring-emerald-400/30"
+                                    className="h-9 min-w-0 flex-1 rounded-xl border-white/10 bg-white/5 text-[13.5px] font-semibold text-zinc-50 focus-visible:border-amber-400/60 focus-visible:ring-amber-400/30"
                                   />
                                 ) : (
                                   <button
@@ -474,7 +474,7 @@ export function FoldersSheet({
                                     whileTap={reducedMotion ? undefined : pressTap}
                                     transition={pressSpring}
                                     onClick={() => renameM.mutate({ folderId: folder.id, name: renameValue.trim() })}
-                                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 outline-none ring-1 ring-emerald-400/40 disabled:opacity-40"
+                                    className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-400 outline-none ring-1 ring-amber-400/40 disabled:opacity-40"
                                   >
                                     <Check className="size-4" aria-hidden />
                                   </motion.button>
@@ -489,7 +489,7 @@ export function FoldersSheet({
                                       setRenamingId(folder.id)
                                       setRenameValue(folder.name)
                                     }}
-                                    className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-emerald-400/60"
+                                    className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-amber-400/60"
                                   >
                                     <Pencil className="size-4" aria-hidden />
                                   </motion.button>
@@ -501,7 +501,7 @@ export function FoldersSheet({
                                     whileTap={reducedMotion ? undefined : pressTap}
                                     transition={pressSpring}
                                     onClick={() => setRenamingId(null)}
-                                    className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-emerald-400/60"
+                                    className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-amber-400/60"
                                   >
                                     <X className="size-4" aria-hidden />
                                   </motion.button>
@@ -522,7 +522,7 @@ export function FoldersSheet({
                                       }
                                     }}
                                     className={cn(
-                                      'flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-emerald-400/60',
+                                      'flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-amber-400/60',
                                       armed
                                         ? 'bg-rose-500 text-white'
                                         : 'text-zinc-400 hover:bg-white/10 hover:text-rose-400',
@@ -597,7 +597,7 @@ export function FoldersSheet({
                               className={cn(
                                 'flex w-full items-center gap-2.5 rounded-2xl border px-2.5 py-2 text-left outline-none transition-colors',
                                 checked
-                                  ? 'border-emerald-400/40 bg-emerald-500/10'
+                                  ? 'border-amber-400/40 bg-amber-500/10'
                                   : 'border-white/10 bg-white/5 hover:bg-white/10',
                               )}
                             >
@@ -621,7 +621,7 @@ export function FoldersSheet({
                                 aria-hidden
                                 className={cn(
                                   'flex size-6 shrink-0 items-center justify-center rounded-lg transition-colors',
-                                  checked ? 'bg-emerald-500 text-white' : 'bg-white/10 text-transparent',
+                                  checked ? 'bg-amber-500 text-white' : 'bg-white/10 text-transparent',
                                 )}
                               >
                                 <Check className="size-3.5" strokeWidth={3} />
@@ -650,7 +650,7 @@ export function FoldersSheet({
                 disabled={saveM.isPending}
                 onClick={() => saveM.mutate({ folderId: editingFolder.id, conversationIds: [...checkedIds] })}
                 aria-label={`Save chats in folder ${editingFolder.name}`}
-                className="h-12 w-full rounded-2xl border-0 bg-gradient-to-r from-emerald-500 to-teal-600 text-[15px] font-bold text-white shadow-[0_12px_28px_-12px_rgba(16,185,129,0.8)] transition-transform active:scale-[0.98] disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-400 disabled:shadow-none"
+                className="h-12 w-full rounded-2xl border-0 bg-gradient-to-r from-amber-500 to-orange-600 text-[15px] font-bold text-white shadow-[0_12px_28px_-12px_rgba(245,158,11,0.8)] transition-transform active:scale-[0.98] disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-400 disabled:shadow-none"
               >
                 {saveM.isPending ? (
                   <LoaderCircle className="size-5 animate-spin" aria-hidden />

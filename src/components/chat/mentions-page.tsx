@@ -82,7 +82,7 @@ function MentionSnippet({ snippet, meName }: { snippet: string; meName: string }
     <>
       {parts.before}
       <mark
-        className="mx-0.5 rounded-md bg-emerald-500/15 px-1 py-px font-semibold text-emerald-700 ring-1 ring-emerald-500/30 dark:text-emerald-300 dark:ring-emerald-400/25"
+        className="mx-0.5 rounded-md bg-amber-500/15 px-1 py-px font-semibold text-amber-700 ring-1 ring-amber-500/30 dark:text-amber-300 dark:ring-amber-400/25"
       >
         {parts.token}
       </mark>
@@ -135,7 +135,7 @@ function MentionRow({
           <MentionSnippet snippet={item.snippet} meName={meName} />
         </span>
         <span className="mt-1 flex items-center gap-1 text-[11px] text-zinc-400 dark:text-zinc-500">
-          <AtSign className="size-3 shrink-0 text-emerald-500/70 dark:text-emerald-400/70" aria-hidden />
+          <AtSign className="size-3 shrink-0 text-amber-600/70 dark:text-amber-400/70" aria-hidden />
           <span className="truncate">{where}</span>
         </span>
       </span>
@@ -195,7 +195,7 @@ export function MentionsPage({ open, me, onBack, onOpenConversation }: MentionsP
                 <h1 className="flex items-center gap-2 truncate text-[17px] font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
                   Mentions
                   {items.length > 0 ? (
-                    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-500/15 px-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500/15 px-1.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
                       {items.length > 99 ? '99+' : items.length}
                     </span>
                   ) : null}
@@ -205,7 +205,7 @@ export function MentionsPage({ open, me, onBack, onOpenConversation }: MentionsP
                 </p>
               </div>
               {mentions.isFetching ? (
-                <LoaderCircle className="size-4 shrink-0 animate-spin text-emerald-500" aria-hidden />
+                <LoaderCircle className="size-4 shrink-0 animate-spin text-amber-600" aria-hidden />
               ) : null}
             </div>
           </header>
@@ -238,7 +238,7 @@ export function MentionsPage({ open, me, onBack, onOpenConversation }: MentionsP
                 <button
                   type="button"
                   onClick={() => void mentions.refetch()}
-                  className="glass-pill h-9 px-4 text-xs font-bold text-emerald-600 outline-none dark:text-emerald-400"
+                  className="glass-pill h-9 px-4 text-xs font-bold text-amber-700 outline-none dark:text-amber-400"
                 >
                   Try again
                 </button>

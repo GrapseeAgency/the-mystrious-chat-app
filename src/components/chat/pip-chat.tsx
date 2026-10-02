@@ -104,7 +104,7 @@ function PipBubble({ message, myId }: { message: ChatMessage; myId: string }) {
     <div className={cn('flex w-full', mine ? 'justify-end' : 'justify-start')}>
       <div className="max-w-[86%]">
         {!mine ? (
-          <p className="mb-0.5 truncate text-[9.5px] font-bold text-emerald-700 dark:text-emerald-400">
+          <p className="mb-0.5 truncate text-[9.5px] font-bold text-amber-700 dark:text-amber-400">
             {message.sender.name}
           </p>
         ) : null}
@@ -116,7 +116,7 @@ function PipBubble({ message, myId }: { message: ChatMessage; myId: string }) {
               : sticker
                 ? 'bg-transparent px-0 text-3xl leading-none'
                 : mine
-                  ? 'bg-emerald-500 text-white'
+                  ? 'bg-amber-500 text-white'
                   : 'border border-zinc-100 bg-white text-zinc-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100',
             pending && 'opacity-70',
           )}
@@ -463,7 +463,7 @@ function PipWindow({
           {unread > 0 ? (
             <span
               aria-label={`${unread} unread`}
-              className="size-2 shrink-0 rounded-full bg-emerald-500"
+              className="size-2 shrink-0 rounded-full bg-amber-500"
             />
           ) : null}
           <button
@@ -534,14 +534,14 @@ function PipWindow({
             placeholder="Message…"
             aria-label={`Message ${displayName} from mini chat`}
             maxLength={2000}
-            className="h-9 min-w-0 flex-1 rounded-full border-zinc-200/80 bg-white/80 text-[12.5px] focus-visible:ring-emerald-500/50 dark:border-zinc-600/80 dark:bg-zinc-800/80"
+            className="h-9 min-w-0 flex-1 rounded-full border-zinc-200/80 bg-white/80 text-[12.5px] focus-visible:ring-amber-500/50 dark:border-zinc-600/80 dark:bg-zinc-800/80"
           />
           <button
             type="button"
             aria-label="Send message"
             onClick={() => void send()}
             disabled={draft.trim().length === 0}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md shadow-emerald-600/25 outline-none transition-all hover:bg-emerald-500/90 active:scale-90 disabled:opacity-40"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white shadow-md shadow-amber-600/25 outline-none transition-all hover:bg-amber-500/90 active:scale-90 disabled:opacity-40"
           >
             <SendHorizontal className="size-4" aria-hidden />
           </button>

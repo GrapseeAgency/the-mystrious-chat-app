@@ -357,8 +357,8 @@ export function ChatOptionsSheet({
                         onClick={() => onMute(preset.until)}
                         className={cn(
                           'h-9 min-w-0 flex-1 rounded-full px-1 text-[12px] font-semibold outline-none transition-colors',
-                          'text-zinc-700 hover:bg-emerald-500/15 hover:text-emerald-700 active:bg-emerald-500/20',
-                          'dark:text-zinc-200 dark:hover:text-emerald-300 disabled:pointer-events-none disabled:opacity-40',
+                          'text-zinc-700 hover:bg-amber-500/15 hover:text-amber-700 active:bg-amber-500/20',
+                          'dark:text-zinc-200 dark:hover:text-amber-300 disabled:pointer-events-none disabled:opacity-40',
                         )}
                       >
                         {preset.label}

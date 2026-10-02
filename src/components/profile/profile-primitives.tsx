@@ -181,7 +181,7 @@ export function SwitchRow({
           onCheckedChange={onCheckedChange}
           disabled={disabled}
           aria-label={ariaLabel ?? title}
-          className="data-[state=checked]:bg-[var(--ui-accent,#10b981)]"
+          className="data-[state=checked]:bg-[var(--ui-accent,#c9762b)]"
         />
       </div>
       {children}
@@ -233,7 +233,7 @@ export function StatTile({
       className={cn(
         'flex min-w-0 flex-col items-center gap-0.5 rounded-2xl px-1 py-2.5 text-center',
         accent
-          ? 'bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_12%,transparent)]'
+          ? 'bg-[color-mix(in_oklab,var(--ui-accent,#c9762b)_12%,transparent)]'
           : 'bg-zinc-100/70 dark:bg-white/5',
       )}
     >
@@ -241,7 +241,7 @@ export function StatTile({
         className={cn(
           'stat-mono text-[15px] font-semibold tracking-tight',
           accent
-            ? 'text-[var(--ui-accent,#10b981)]'
+            ? 'text-[var(--ui-accent,#c9762b)]'
             : 'text-zinc-800 dark:text-zinc-100',
         )}
       >

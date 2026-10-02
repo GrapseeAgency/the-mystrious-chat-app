@@ -1,6 +1,7 @@
 package app.pulse.feature.calls
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,7 +63,9 @@ import app.pulse.ui.PulseAvatar
 import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.LocalPulseUiTheme
 import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseTabBackdrop
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -222,7 +225,7 @@ fun UserPageScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .emberBackdrop()
+            .pulseTabBackdrop(LocalPulseUiTheme.current)
             .statusBarsPadding()
             .verticalScroll(rememberScrollState()),
     ) {
@@ -253,6 +256,27 @@ fun UserPageScreen(
                 )
             }
             else -> Column(Modifier.padding(horizontal = 20.dp)) {
+                // R39 - cover picture banner (web parity): shows the member's
+                // cover when they set one; the ember field carries the hero
+                // exactly as before otherwise.
+                profile.coverImage?.takeIf { it.isNotBlank() }?.let { cover ->
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(EmberPalette.CardFill)
+                            .border(1.dp, EmberPalette.Hairline, RoundedCornerShape(24.dp)),
+                    ) {
+                        AsyncImage(
+                            model = app.pulse.core.PulseEndpoints.http(cover),
+                            contentDescription = "Cover picture of ${profile.name}",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
                 // Hero
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ProfileAvatarPhoto(profile)

@@ -75,10 +75,10 @@ export function RoomPinsSheet({
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-1.5 px-2 pt-1">
             <span
-              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/10"
+              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/10"
               aria-hidden
             >
-              <Pin className="size-3 rotate-45 text-emerald-500" />
+              <Pin className="size-3 rotate-45 text-amber-600" />
             </span>
             <GlassMenuLabel className="flex-1 px-1 pb-0 pt-1.5">
               {pins.length === 1 ? '1 pinned message' : `${pins.length} pinned messages`}
@@ -123,7 +123,7 @@ export function RoomPinsSheet({
                         haptic(8)
                         onJump(m.id)
                       }}
-                      className="flex h-7 items-center gap-1 rounded-full border border-zinc-900/[0.08] bg-white/60 px-3 text-[11px] font-semibold text-zinc-600 outline-none transition-transform hover:text-emerald-600 active:scale-95 dark:border-white/[0.1] dark:bg-white/[0.05] dark:text-zinc-300 dark:hover:text-emerald-400"
+                      className="flex h-7 items-center gap-1 rounded-full border border-zinc-900/[0.08] bg-white/60 px-3 text-[11px] font-semibold text-zinc-600 outline-none transition-transform hover:text-amber-700 active:scale-95 dark:border-white/[0.1] dark:bg-white/[0.05] dark:text-zinc-300 dark:hover:text-amber-400"
                     >
                       <ArrowDown className="size-3" aria-hidden />
                       Jump

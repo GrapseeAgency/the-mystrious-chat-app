@@ -125,7 +125,7 @@ exports.Prisma.UserScalarFieldEnum = {
   about: 'about',
   color: 'color',
   avatar: 'avatar',
-  cover: 'cover',
+  coverImage: 'coverImage',
   statusEmoji: 'statusEmoji',
   statusText: 'statusText',
   preferences: 'preferences',

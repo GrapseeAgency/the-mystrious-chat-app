@@ -161,7 +161,7 @@ function HandleEditorBody({
             aria-invalid={(taken || clashSuggestion !== null) || undefined}
             aria-describedby="handle-editor-availability"
             className={cn(
-              'h-11 rounded-xl border-zinc-200 bg-zinc-50 pl-8 text-[15px] focus-visible:ring-[var(--ui-accent,#10b981)]/60 dark:border-zinc-700 dark:bg-zinc-800',
+              'h-11 rounded-xl border-zinc-200 bg-zinc-50 pl-8 text-[15px] focus-visible:ring-[var(--ui-accent,#c9762b)]/60 dark:border-zinc-700 dark:bg-zinc-800',
               (taken || clashSuggestion !== null) &&
                 'border-amber-400 focus-visible:ring-amber-500/50 dark:border-amber-500/60',
             )}
@@ -186,7 +186,7 @@ function HandleEditorBody({
               Checking @{trimmed}…
             </span>
           ) : available ? (
-            <span className="flex items-center gap-1.5 text-[var(--ui-accent,#10b981)]">
+            <span className="flex items-center gap-1.5 text-[var(--ui-accent,#c9762b)]">
               <Check className="size-3.5" strokeWidth={3} aria-hidden />
               @{trimmed} is free
             </span>
@@ -236,7 +236,7 @@ function HandleEditorBody({
         <Button
           onClick={() => save.mutate()}
           disabled={!valid || checking || taken || !changed || save.isPending}
-          className="h-10 flex-1 rounded-xl bg-[var(--ui-accent,#10b981)] text-sm font-semibold text-white hover:opacity-90 active:scale-[0.98]"
+          className="h-10 flex-1 rounded-xl bg-[var(--ui-accent,#c9762b)] text-sm font-semibold text-white hover:opacity-90 active:scale-[0.98]"
         >
           {save.isPending ? (
             <LoaderCircle className="size-4 animate-spin" aria-hidden />

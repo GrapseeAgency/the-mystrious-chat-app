@@ -29,7 +29,9 @@ import androidx.compose.material3.CircularProgressIndicator
 
 import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseIcons
+import app.pulse.ui.LocalPulseUiTheme
 import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseTabBackdrop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -502,7 +504,7 @@ fun HubScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .emberBackdrop()
+            .pulseTabBackdrop(LocalPulseUiTheme.current)
             .statusBarsPadding(),
     ) {
         Column(

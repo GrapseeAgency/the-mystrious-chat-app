@@ -462,7 +462,7 @@ export function StoriesSheet({ me, groups, start, onClose }: StoriesSheetProps) 
             >
               <div className="flex items-center gap-2 px-4 pb-1.5 pt-1">
                 <h3 className="text-[15px] font-bold text-white">Viewers</h3>
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500/20 px-1.5 text-[11px] font-bold text-emerald-300">
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500/20 px-1.5 text-[11px] font-bold text-amber-300">
                   {story?.viewCount ?? 0}
                 </span>
                 <button
@@ -477,7 +477,7 @@ export function StoriesSheet({ me, groups, start, onClose }: StoriesSheetProps) 
               <div className="pulse-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-1">
                 {viewersQ.isPending ? (
                   <div className="flex items-center justify-center gap-2 py-8" role="status" aria-label="Loading viewers">
-                    <LoaderCircle className="size-4 animate-spin text-emerald-400" aria-hidden />
+                    <LoaderCircle className="size-4 animate-spin text-amber-400" aria-hidden />
                     <span className="text-xs font-medium text-zinc-400">Loading viewers…</span>
                   </div>
                 ) : (viewersQ.data?.viewers.length ?? 0) === 0 ? (

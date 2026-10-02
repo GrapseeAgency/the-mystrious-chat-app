@@ -272,6 +272,21 @@ export function UserProfileSheet({
                 gradient,
               )}
             />
+            {/* R39 - cover picture strip when the member set one */}
+            {user.coverImage ? (
+              <div className="relative mb-3 h-24 overflow-hidden rounded-2xl">
+                { }
+                <img
+                  src={user.coverImage}
+                  alt={`Cover picture of ${user.name}`}
+                  className="absolute inset-0 size-full object-cover"
+                />
+                <span
+                  aria-hidden
+                  className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-white/70 to-transparent"
+                />
+              </div>
+            ) : null}
             <div className="relative flex items-center gap-3.5">
               {/* presence avatar in a specular gradient ring */}
               <motion.div
@@ -296,7 +311,7 @@ export function UserProfileSheet({
                 <p className="flex items-center gap-1.5 text-lg font-bold leading-tight text-zinc-900 dark:text-zinc-50">
                   <span className="truncate">{user.name}</span>
                   <span title="Registered member" aria-label="Registered member" className="shrink-0">
-                    <BadgeCheck className="size-4.5 fill-[var(--ui-accent,#10b981)] text-white dark:text-zinc-900" aria-hidden />
+                    <BadgeCheck className="size-4.5 fill-[var(--ui-accent,#c9762b)] text-white dark:text-zinc-900" aria-hidden />
                   </span>
                 </p>
                 {user.username ? (
@@ -306,7 +321,7 @@ export function UserProfileSheet({
                     whileTap={reducedMotion ? undefined : pressTap}
                     transition={pressSpring}
                     aria-label={`Copy handle @${user.username}`}
-                    className="glass-pill mt-1.5 flex min-h-[28px] items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold text-[var(--ui-accent,#10b981)] outline-none"
+                    className="glass-pill mt-1.5 flex min-h-[28px] items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold text-[var(--ui-accent,#c9762b)] outline-none"
                   >
                     {handleCopied ? (
                       <>
@@ -328,7 +343,7 @@ export function UserProfileSheet({
                     aria-hidden
                     className={cn(
                       'inline-block size-1.5 rounded-full',
-                      online ? 'bg-[var(--ui-accent,#10b981)]' : 'bg-zinc-300 dark:bg-zinc-600',
+                      online ? 'bg-[var(--ui-accent,#c9762b)]' : 'bg-zinc-300 dark:bg-zinc-600',
                     )}
                   />
                   {online ? 'Online now' : 'Offline'}
@@ -337,7 +352,7 @@ export function UserProfileSheet({
             </div>
             {user.statusEmoji || user.statusText ? (
               <p className="relative mt-3 flex items-center gap-1.5 text-[13px] font-semibold text-zinc-700 dark:text-zinc-200">
-                {user.statusEmoji ? <StatusGlyph value={user.statusEmoji} className="size-4 text-[var(--ui-accent,#10b981)]" /> : null}
+                {user.statusEmoji ? <StatusGlyph value={user.statusEmoji} className="size-4 text-[var(--ui-accent,#c9762b)]" /> : null}
                 {user.statusText}
               </p>
             ) : null}
@@ -444,7 +459,7 @@ export function UserProfileSheet({
               className="flex-1"
             >
               <Button
-                className="h-12 w-full rounded-2xl bg-[var(--ui-accent,#10b981)] text-sm font-bold text-white hover:opacity-90"
+                className="h-12 w-full rounded-2xl bg-[var(--ui-accent,#c9762b)] text-sm font-bold text-white hover:opacity-90"
                 onClick={handlePressMessage}
                 disabled={messagePending}
               >
@@ -475,7 +490,7 @@ export function UserProfileSheet({
                 transition={pressSpring}
                 aria-label={`Copy handle @${user.username}`}
                 title="Copy handle"
-                className="glass-pill flex size-12 shrink-0 items-center justify-center rounded-2xl text-[var(--ui-accent,#10b981)] outline-none"
+                className="glass-pill flex size-12 shrink-0 items-center justify-center rounded-2xl text-[var(--ui-accent,#c9762b)] outline-none"
               >
                 {handleCopied ? <Check className="size-4" strokeWidth={3} /> : <Copy className="size-4" aria-hidden />}
               </motion.button>

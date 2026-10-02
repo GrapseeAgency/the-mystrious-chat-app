@@ -820,7 +820,7 @@ function SpeakingBars() {
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}
-          className="w-[3px] rounded-full bg-emerald-300"
+          className="w-[3px] rounded-full bg-amber-300"
           animate={{ height: [4, 13, 6, 15, 5] }}
           transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.14, ease: 'easeInOut' }}
           style={{ height: 5 }}
@@ -844,7 +844,7 @@ function PeerRow({
       <motion.span
         animate={
           speaking
-            ? { boxShadow: '0 0 0 2px rgba(52,211,153,0.9), 0 0 18px rgba(16,185,129,0.55)' }
+            ? { boxShadow: '0 0 0 2px rgba(52,211,153,0.9), 0 0 18px rgba(245,158,11,0.55)' }
             : { boxShadow: '0 0 0 1px rgba(255,255,255,0.1)' }
         }
         transition={{ duration: 0.18 }}
@@ -857,7 +857,7 @@ function PeerRow({
         <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-zinc-100">
           <span className="truncate">{peer.name}</span>
           {isMe ? (
-            <span className="shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-300">
+            <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-amber-300">
               you
             </span>
           ) : null}
@@ -867,9 +867,9 @@ function PeerRow({
         </p>
       </div>
       {speaking ? (
-        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-1">
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-amber-500/10 px-2 py-1">
           <SpeakingBars />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">live</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">live</span>
         </span>
       ) : (
         <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-zinc-600">listening</span>
@@ -944,7 +944,7 @@ export function VoiceRoomSheet({
 
   const connectionLine = (() => {
     if (voice.inRoom && voice.connected) {
-      return { dot: 'bg-emerald-400', text: 'Connected via gateway :3003', pulse: false }
+      return { dot: 'bg-amber-400', text: 'Connected via gateway :3003', pulse: false }
     }
     if (voice.status === 'joining') {
       return { dot: 'bg-amber-400', text: 'Connecting to the voice relay…', pulse: true }
@@ -1002,7 +1002,7 @@ export function VoiceRoomSheet({
         <div className="flex items-start gap-2 px-4 pt-1.5 pb-3">
           <span
             aria-hidden
-            className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300"
+            className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-300"
           >
             <AudioLines className="size-5" />
           </span>
@@ -1047,7 +1047,7 @@ export function VoiceRoomSheet({
             )
           ) : (
             <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-7 text-center">
-              <span className="flex size-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300" aria-hidden>
+              <span className="flex size-11 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-300" aria-hidden>
                 <Radio className="size-5" />
               </span>
               <p className="text-[13px] font-semibold text-zinc-200">Nobody is on stage yet</p>
@@ -1096,9 +1096,9 @@ export function VoiceRoomSheet({
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.18 }}
-                  className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.08] px-3 py-2 text-[12.5px] leading-snug"
+                  className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.08] px-3 py-2 text-[12.5px] leading-snug"
                 >
-                  <span className="mr-1.5 font-bold text-emerald-300">{caption.name}</span>
+                  <span className="mr-1.5 font-bold text-amber-300">{caption.name}</span>
                   <span className="text-zinc-100">{caption.text}</span>
                 </motion.p>
               ))}
@@ -1153,7 +1153,7 @@ export function VoiceRoomSheet({
                 'relative flex size-[108px] touch-none flex-col items-center justify-center gap-0.5 rounded-full text-white select-none outline-none transition-colors duration-150',
                 canTalk
                   ? voice.transmitting
-                    ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_0_34px_rgba(16,185,129,0.55)]'
+                    ? 'bg-gradient-to-br from-amber-400 to-amber-600 shadow-[0_0_34px_rgba(245,158,11,0.55)]'
                     : 'bg-gradient-to-br from-zinc-700 to-zinc-800 shadow-inner'
                   : 'cursor-not-allowed bg-zinc-800/70 text-zinc-500',
               )}
@@ -1161,8 +1161,8 @@ export function VoiceRoomSheet({
             >
               {voice.transmitting ? (
                 <>
-                  <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/35" aria-hidden style={{ animationDuration: '1.3s' }} />
-                  <span className="absolute -inset-2 animate-ping rounded-full border border-emerald-400/30" aria-hidden style={{ animationDuration: '1.9s' }} />
+                  <span className="absolute inset-0 animate-ping rounded-full bg-amber-400/35" aria-hidden style={{ animationDuration: '1.3s' }} />
+                  <span className="absolute -inset-2 animate-ping rounded-full border border-amber-400/30" aria-hidden style={{ animationDuration: '1.9s' }} />
                 </>
               ) : null}
               {voice.transmitting ? (
@@ -1198,7 +1198,7 @@ export function VoiceRoomSheet({
                   voice.join()
                 }}
                 disabled={voice.status === 'joining'}
-                className="size-12 rounded-full bg-emerald-500 text-white shadow-md shadow-emerald-600/30 hover:bg-emerald-500/90 disabled:opacity-60"
+                className="size-12 rounded-full bg-amber-500 text-white shadow-md shadow-amber-600/30 hover:bg-amber-500/90 disabled:opacity-60"
               >
                 {voice.status === 'joining' ? (
                   <LoaderCircle className="size-5 animate-spin" aria-hidden />
@@ -1222,7 +1222,7 @@ export function VoiceRoomSheet({
               className={cn(
                 'flex min-h-[34px] items-center gap-1.5 rounded-full border px-3.5 text-[11px] font-bold uppercase tracking-wider outline-none transition-colors',
                 voice.captionsOn
-                  ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300'
+                  ? 'border-amber-400/40 bg-amber-500/15 text-amber-300'
                   : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200',
               )}
             >

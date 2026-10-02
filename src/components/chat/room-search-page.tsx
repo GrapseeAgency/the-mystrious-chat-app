@@ -66,7 +66,7 @@ function MatchedText({ content, query }: { content: string; query: string }) {
         part.toLowerCase() === query.toLowerCase() ? (
           <mark
             key={i}
-            className="rounded bg-emerald-400/30 px-0.5 text-emerald-800 outline outline-1 outline-emerald-500/40 dark:text-emerald-200"
+            className="rounded bg-amber-400/30 px-0.5 text-emerald-800 outline outline-1 outline-amber-500/40 dark:text-amber-200"
           >
             {part}
           </mark>
@@ -236,7 +236,7 @@ export function RoomSearchPage({
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
             <div
               aria-hidden
-              className="glass-sheen flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-400/15 to-emerald-600/10 text-emerald-500 dark:from-emerald-400/10 dark:to-emerald-600/5"
+              className="glass-sheen flex size-16 items-center justify-center rounded-3xl bg-gradient-to-br from-amber-400/15 to-amber-600/10 text-amber-600 dark:from-amber-400/10 dark:to-amber-600/5"
             >
               <Search className="size-7" aria-hidden />
             </div>
@@ -289,7 +289,7 @@ export function RoomSearchPage({
               >
                 <div className="mb-1 flex items-center gap-2 px-1">
                   <UserAvatar name={group.sender.name} color={group.sender.color} size={22} />
-                  <span className="truncate text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                  <span className="truncate text-xs font-bold text-amber-700 dark:text-amber-400">
                     {group.sender.id === me.id ? 'You' : group.sender.name}
                   </span>
                   <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">

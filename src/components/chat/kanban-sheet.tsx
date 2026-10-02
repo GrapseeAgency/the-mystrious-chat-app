@@ -88,9 +88,9 @@ const COLUMN_META: Record<
   },
   done: {
     label: 'Done',
-    dot: 'bg-emerald-400',
-    text: 'text-emerald-300',
-    pill: 'border-emerald-400/25 bg-emerald-500/10',
+    dot: 'bg-amber-400',
+    text: 'text-amber-300',
+    pill: 'border-amber-400/25 bg-amber-500/10',
   },
 }
 
@@ -302,7 +302,7 @@ export function KanbanSheet({
           <header className="flex shrink-0 items-center gap-2.5 border-b border-white/10 px-4 pb-3 pt-1">
             <span
               aria-hidden
-              className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[color-mix(in_oklab,var(--ui-accent,#10b981)_14%,transparent)] text-[var(--ui-accent,#10b981)]"
+              className="flex size-9 shrink-0 items-center justify-center rounded-2xl bg-[color-mix(in_oklab,var(--ui-accent,#c9762b)_14%,transparent)] text-[var(--ui-accent,#c9762b)]"
             >
               <PulseKanban className="size-4.5" />
             </span>
@@ -330,7 +330,7 @@ export function KanbanSheet({
                 haptic(8)
                 onClose()
               }}
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-emerald-500/50 active:scale-90"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-white/10 hover:text-zinc-100 focus-visible:ring-2 focus-visible:ring-amber-500/50 active:scale-90"
             >
               <X className="size-4" aria-hidden />
             </button>
@@ -383,7 +383,7 @@ export function KanbanSheet({
                               className={cn(
                                 'rounded-xl border p-2',
                                 done
-                                  ? 'border-emerald-500/20 bg-emerald-500/[0.05]'
+                                  ? 'border-amber-500/20 bg-amber-500/[0.05]'
                                   : 'border-white/10 bg-white/[0.04]',
                                 busy && 'opacity-60',
                               )}
@@ -425,7 +425,7 @@ export function KanbanSheet({
                                       aria-label={`Move card back ${card.title}`}
                                       disabled={busy}
                                       onClick={() => void moveCard(card, -1)}
-                                      className="flex size-6 items-center justify-center rounded-md text-zinc-500 outline-none transition-colors hover:bg-white/10 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:opacity-40 active:scale-90"
+                                      className="flex size-6 items-center justify-center rounded-md text-zinc-500 outline-none transition-colors hover:bg-white/10 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-amber-500/50 disabled:opacity-40 active:scale-90"
                                     >
                                       <ArrowLeft className="size-3" aria-hidden />
                                     </button>
@@ -436,7 +436,7 @@ export function KanbanSheet({
                                       aria-label={`Move card forward ${card.title}`}
                                       disabled={busy}
                                       onClick={() => void moveCard(card, 1)}
-                                      className="flex size-6 items-center justify-center rounded-md text-zinc-500 outline-none transition-colors hover:bg-white/10 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:opacity-40 active:scale-90"
+                                      className="flex size-6 items-center justify-center rounded-md text-zinc-500 outline-none transition-colors hover:bg-white/10 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-amber-500/50 disabled:opacity-40 active:scale-90"
                                     >
                                       <ArrowRight className="size-3" aria-hidden />
                                     </button>
@@ -481,12 +481,12 @@ export function KanbanSheet({
                       aria-label={`Add card ${col}`}
                       maxLength={120}
                       disabled={addingIn !== null}
-                      className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 pr-6 text-[11px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/50 focus:bg-white/[0.06] disabled:opacity-50"
+                      className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 pr-6 text-[11px] text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-amber-500/50 focus:bg-white/[0.06] disabled:opacity-50"
                     />
                     {addingIn === col ? (
                       <LoaderCircle
                         aria-hidden
-                        className="absolute right-1.5 top-1/2 size-3 -translate-y-1/2 animate-spin text-emerald-400"
+                        className="absolute right-1.5 top-1/2 size-3 -translate-y-1/2 animate-spin text-amber-400"
                       />
                     ) : null}
                   </div>

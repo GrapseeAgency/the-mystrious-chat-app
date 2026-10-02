@@ -682,13 +682,13 @@ function AvatarHalo({ reduced, children }: { reduced: boolean; children: React.R
         <>
           <motion.span
             aria-hidden
-            className="absolute inset-0 rounded-full border border-emerald-300/40"
+            className="absolute inset-0 rounded-full border border-amber-300/40"
             animate={{ scale: [1, 1.35], opacity: [0.7, 0] }}
             transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut' }}
           />
           <motion.span
             aria-hidden
-            className="absolute inset-0 rounded-full border border-emerald-300/30"
+            className="absolute inset-0 rounded-full border border-amber-300/30"
             animate={{ scale: [1, 1.55], opacity: [0.5, 0] }}
             transition={{ duration: 1.8, repeat: Infinity, ease: 'easeOut', delay: 0.6 }}
           />
@@ -726,7 +726,7 @@ function CallButton({
         tone === 'danger' &&
           'border-rose-300/30 bg-rose-500/90 text-white shadow-[0_10px_30px_-10px_rgba(244,63,94,0.8)] hover:bg-rose-500',
         tone === 'accept' &&
-          'border-emerald-300/30 bg-emerald-500/90 text-white shadow-[0_10px_30px_-10px_rgba(16,185,129,0.8)] hover:bg-emerald-500',
+          'border-amber-300/30 bg-amber-500/90 text-white shadow-[0_10px_30px_-10px_rgba(245,158,11,0.8)] hover:bg-amber-500',
         tone === 'neutral' &&
           'glass-pill text-zinc-100 hover:bg-white/10',
       )}
@@ -800,7 +800,7 @@ export function CallOverlay({ session }: CallOverlayProps) {
             className="pointer-events-none absolute inset-0"
             style={{
               background:
-                'radial-gradient(120% 70% at 50% -10%, rgba(16,185,129,0.22) 0%, rgba(16,185,129,0.06) 38%, rgba(0,0,0,0) 65%), radial-gradient(90% 55% at 50% 110%, rgba(20,184,166,0.16) 0%, rgba(0,0,0,0) 60%)',
+                'radial-gradient(120% 70% at 50% -10%, rgba(245,158,11,0.22) 0%, rgba(245,158,11,0.06) 38%, rgba(0,0,0,0) 65%), radial-gradient(90% 55% at 50% 110%, rgba(20,184,166,0.16) 0%, rgba(0,0,0,0) 60%)',
             }}
           />
 
@@ -836,7 +836,7 @@ export function CallOverlay({ session }: CallOverlayProps) {
             {state === 'active' && isVideo ? (
               <div className="absolute left-0 right-0 top-[max(1rem,env(safe-area-inset-top))] flex flex-col items-center gap-0.5 px-4 text-center">
                 <p className="text-base font-semibold tracking-tight text-white drop-shadow">{peer.name}</p>
-                <p className="text-xs font-medium tabular-nums text-emerald-300">
+                <p className="text-xs font-medium tabular-nums text-amber-300">
                   {formatCallDuration(durationSec)}
                 </p>
               </div>
@@ -864,7 +864,7 @@ export function CallOverlay({ session }: CallOverlayProps) {
                   transition={{ ...spring.soft, delay: 0.05 }}
                   className={cn(
                     'mt-1.5 text-sm font-medium',
-                    state === 'incoming' ? 'text-emerald-300' : 'text-zinc-300',
+                    state === 'incoming' ? 'text-amber-300' : 'text-zinc-300',
                   )}
                 >
                   {state === 'incoming'
@@ -896,7 +896,7 @@ export function CallOverlay({ session }: CallOverlayProps) {
                 <button
                   type="button"
                   onClick={dismissError}
-                  className="mt-4 h-10 w-full rounded-full bg-emerald-500 text-sm font-bold text-white outline-none transition-transform hover:bg-emerald-500/90 active:scale-[0.98]"
+                  className="mt-4 h-10 w-full rounded-full bg-amber-500 text-sm font-bold text-white outline-none transition-transform hover:bg-amber-500/90 active:scale-[0.98]"
                 >
                   Close
                 </button>
@@ -916,11 +916,11 @@ export function CallOverlay({ session }: CallOverlayProps) {
                 <span
                   className={cn(
                     'flex size-8 shrink-0 items-center justify-center rounded-full',
-                    summary.startsWith('Call ended') ? 'bg-emerald-500/15' : 'bg-rose-500/15',
+                    summary.startsWith('Call ended') ? 'bg-amber-500/15' : 'bg-rose-500/15',
                   )}
                 >
                   {summary.startsWith('Call ended') ? (
-                    <PhoneCall className="size-4 text-emerald-500 dark:text-emerald-400" aria-hidden />
+                    <PhoneCall className="size-4 text-amber-600 dark:text-amber-400" aria-hidden />
                   ) : (
                     <PhoneMissed className="size-4 text-rose-500 dark:text-rose-400" aria-hidden />
                   )}

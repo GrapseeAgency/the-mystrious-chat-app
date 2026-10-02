@@ -84,35 +84,35 @@ enum class PulseUiTheme(
         tagline = "Glassmorphic Chat UI",
         detail = "Layered frosted glass, aurora backdrop, specular edges, elastic motion.",
         motion = PulseUiThemeMotion.ELASTIC,
-        accentLight = Color(0xFF10B981),
-        accent2Light = Color(0xFF0EA5E9),
-        // R35 Neo: neon mint signal + neon magenta on the carbon field
-        // (web globals.css .dark [data-ui='ui-glass']).
-        accentDark = Color(0xFF2BE8A6),
-        accent2Dark = Color(0xFFFF5CA8),
+        // EMB-B: the brand accent is the ember pair now - amber glow on dark,
+        // burnt ember on light - so every Material-tinted control matches the
+        // sunset reference language without per-screen overrides.
+        accentLight = Color(0xFFC9762B),
+        accent2Light = Color(0xFFE08A3C),
+        accentDark = Color(0xFFFFB86B),
+        accent2Dark = Color(0xFFFF7A3D),
         radiusPanel = 28.dp,
-        pageBaseLight = Color(0xFFF3F9F5),
-        // R35 Neo carbon - green-cast near-black (web --background #07090b).
-        pageBaseDark = Color(0xFF07090B),
+        pageBaseLight = Color(0xFFFBF6F0),
+        // EMB-B: warm near-black brown base (Ember BackdropBase) instead of
+        // the green-cast carbon; the ember screens paint their gradient on top.
+        pageBaseDark = Color(0xFF150F0B),
         pageBaseLightTop = null,
-        pageBaseDarkTop = null,
+        pageBaseDarkTop = Color(0xFF33241B),
         radialsLight = listOf(
-            PulsePageRadial(listOf(Color(0x4210B981), Color.Transparent), 0.12f, -0.08f, 1.20f),
-            PulsePageRadial(listOf(Color(0x330EA5E9), Color.Transparent), 0.96f, 0.12f, 1.00f),
-            PulsePageRadial(listOf(Color(0x3314B8A6), Color.Transparent), 0.50f, 1.12f, 0.90f),
+            PulsePageRadial(listOf(Color(0x2BE08A3C), Color.Transparent), 0.12f, -0.08f, 1.20f),
+            PulsePageRadial(listOf(Color(0x22FF7A3D), Color.Transparent), 0.96f, 0.12f, 1.00f),
+            PulsePageRadial(listOf(Color(0x1AD97706), Color.Transparent), 0.50f, 1.12f, 0.90f),
         ),
-        // R35 Neo: carbon field, mint + magenta signal bleed (same geometry
-        // as the web radial stack, alpha-matched).
+        // EMB-B: the sunset glow washes (warm brown + amber bleed).
         radialsDark = listOf(
-            PulsePageRadial(listOf(Color(0x212BE8A6), Color.Transparent), 0.10f, -0.10f, 1.20f),
-            PulsePageRadial(listOf(Color(0x17FF5CA8), Color.Transparent), 0.96f, 0.08f, 1.00f),
-            PulsePageRadial(listOf(Color(0x172BE8A6), Color.Transparent), 0.50f, 1.12f, 1.00f),
+            PulsePageRadial(listOf(Color(0x42FFB86B), Color.Transparent), 0.10f, -0.10f, 1.20f),
+            PulsePageRadial(listOf(Color(0x2EFF7A3D), Color.Transparent), 0.96f, 0.08f, 1.00f),
+            PulsePageRadial(listOf(Color(0x297A4E33), Color.Transparent), 0.50f, 1.12f, 1.00f),
         ),
         panelBgLight = Color(0x8CFFFFFF),
-        panelBorderLight = Color(0x1A092A1F),
-        // Elevated carbon panel (web --ui-panel-bg rgba(13,18,17,0.6)) over
-        // the locked 8% white hairline border.
-        panelBgDark = Color(0x990D1211),
+        panelBorderLight = Color(0x1A2A1E14),
+        // Elevated warm panel over the locked 8% white hairline border.
+        panelBgDark = Color(0x991E1610),
         panelBorderDark = Color(0x17FFFFFF),
     ),
     KINETIC(
@@ -293,23 +293,24 @@ private fun darkScheme(theme: PulseUiTheme) = with(theme) {
     darkColorScheme(
         primary = accent,
         onPrimary = onAccent(accent),
-        primaryContainer = lerp(Color(0xFF0D1211), accent, 0.30f),
+        // EMB-B: warm ink containers instead of the green-cast carbon.
+        primaryContainer = lerp(Color(0xFF1E1610), accent, 0.30f),
         onPrimaryContainer = lerp(accent, Color.White, 0.72f),
         secondary = accent2,
         onSecondary = onAccent(accent2),
-        secondaryContainer = lerp(Color(0xFF0D1211), accent2, 0.30f),
+        secondaryContainer = lerp(Color(0xFF1E1610), accent2, 0.30f),
         onSecondaryContainer = lerp(accent2, Color.White, 0.72f),
         tertiary = Color(0xFFA78BFA),
         // R35 Neo destructive (web --destructive #ff5c6c).
         error = Color(0xFFFF5C6C),
         background = pageBaseDark,
-        // R35 Neo text tokens (web --foreground/--muted-foreground).
-        onBackground = Color(0xFFECF4EF),
+        // EMB-B warm text tokens (soft parchment white on the sunset field).
+        onBackground = Color(0xFFF5EFE8),
         surface = surface(dark = true),
-        onSurface = Color(0xFFECF4EF),
-        // Secondary surface (web --secondary #161c1a) + dimmed text #8ca398.
-        surfaceVariant = Color(0xFF161C1A),
-        onSurfaceVariant = Color(0xFF8CA398),
+        onSurface = Color(0xFFF5EFE8),
+        // Secondary warm surface + dimmed warm text.
+        surfaceVariant = Color(0xFF2A2019),
+        onSurfaceVariant = Color(0xFFB8A89A),
         outlineVariant = panelBorderDark,
     )
 }

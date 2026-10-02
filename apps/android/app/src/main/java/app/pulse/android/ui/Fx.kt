@@ -1,6 +1,10 @@
 package app.pulse.android.ui
 
+import android.content.Context
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -26,6 +30,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
@@ -39,8 +44,9 @@ import app.pulse.core.fx.PulseFx
 
 /**
  * Pulse ambient FX - the NATIVE rebuild of the web WebGL ambient system
- * (src/components/fx/webgl-glow.tsx). Same six modes, same palette, same
- * outcome - implemented with Android graphics APIs:
+ * (src/components/fx/webgl-glow.tsx). Same six modes, ember palette (web
+ * R36 aurora repaint + EMB-B), same outcome - implemented with Android
+ * graphics APIs:
  *   · API 33+ (AGSL): the actual GLSL fragment shaders ported to AGSL
  *     and run through RuntimeShader - the platform's WebGL analogue.
  *   · API 26-32: an animated Canvas gradient approximation of the mode.
@@ -83,16 +89,19 @@ half4 main(float2 fragCoord) {
     float b2 = curtain(uv, aspect, t * 1.25, 0.47, 0.13, 2.9, -0.32, 0.20);
     float b3 = curtain(uv, aspect, t * 0.8, 0.33, 0.08, 3.7, 0.24, 0.12);
 
-    float3 emerald = float3(0.063, 0.725, 0.506);
-    float3 teal = float3(0.078, 0.722, 0.651);
+    // web webgl-glow.tsx AURORA_FRAG ember repaint, verbatim: amber/ember
+    // bands over the warm dark field (the old emerald/teal wash is what
+    // painted the green band behind the dock on API 33+).
+    float3 amber = float3(1.0, 0.722, 0.42);
+    float3 ember = float3(1.0, 0.478, 0.239);
     float3 violet = float3(0.545, 0.365, 0.965);
 
-    float3 darkCol = float3(0.012, 0.045, 0.038);
-    darkCol += emerald * b1 * 0.85 + teal * b2 * 0.70 + violet * b3 * 0.45;
+    float3 darkCol = float3(0.043, 0.028, 0.018);
+    darkCol += amber * b1 * 0.85 + ember * b2 * 0.70 + violet * b3 * 0.35;
     darkCol = 1.0 - exp(-darkCol * intensity * 1.7);
 
-    float3 lightCol = float3(0.965, 0.976, 0.972);
-    lightCol -= (emerald * b1 * 0.16 + teal * b2 * 0.12 + violet * b3 * 0.08) * intensity;
+    float3 lightCol = float3(0.984, 0.965, 0.941);
+    lightCol -= (amber * b1 * 0.16 + ember * b2 * 0.12 + violet * b3 * 0.08) * intensity;
 
     float3 col = mix(lightCol, darkCol, dark);
     float2 q = uv - 0.5;
@@ -127,15 +136,16 @@ half4 main(float2 fragCoord) {
     float b2 = max(blob(p, c2, 0.55), blob(wuv, c2, 0.48) * 0.85);
     float b3 = max(blob(p, c3, 0.58), blob(wuv, c3, 0.50) * 0.85);
 
-    float3 darkCol = float3(0.012, 0.048, 0.040);
-    darkCol += float3(0.063, 0.725, 0.506) * b1 * 0.95;
-    darkCol += float3(0.078, 0.722, 0.651) * b2 * 0.80;
+    // EMB-B mesh blobs ride the ember language (same as the Canvas fallback).
+    float3 darkCol = float3(0.043, 0.028, 0.020);
+    darkCol += float3(1.0, 0.722, 0.42) * b1 * 0.85;
+    darkCol += float3(1.0, 0.478, 0.239) * b2 * 0.70;
     darkCol += float3(0.545, 0.365, 0.965) * b3 * 0.38;
     darkCol = 1.0 - exp(-darkCol * intensity * 1.7);
 
-    float3 lightCol = float3(0.972, 0.978, 0.974);
-    lightCol -= float3(0.063, 0.725, 0.506) * b1 * 0.22 * intensity;
-    lightCol -= float3(0.078, 0.722, 0.651) * b2 * 0.18 * intensity;
+    float3 lightCol = float3(0.980, 0.965, 0.945);
+    lightCol -= float3(1.0, 0.722, 0.42) * b1 * 0.22 * intensity;
+    lightCol -= float3(1.0, 0.478, 0.239) * b2 * 0.18 * intensity;
     lightCol -= float3(0.545, 0.365, 0.965) * b3 * 0.10 * intensity;
 
     float3 col = mix(lightCol, darkCol, dark);
@@ -178,11 +188,13 @@ half4 main(float2 fragCoord) {
     float l2 = starLayer(float2((uv.x + t * 0.012) * aspect, uv.y - t * 0.004) + 0.37, 44.0, t * 1.3);
     float l3 = starLayer(float2((uv.x + t * 0.021) * aspect, uv.y + t * 0.006) + 0.71, 70.0, t * 1.7);
 
-    float3 darkCol = float3(0.015, 0.030, 0.045);
+    // EMB-B stars: white stars over the WARM dark field (the old blue-cast
+    // base + teal ground wash are gone).
+    float3 darkCol = float3(0.043, 0.027, 0.020);
     darkCol += float3(0.92, 0.98, 1.0) * (l1 * 0.9 + l2 * 0.6 + l3 * 0.4) * intensity;
-    darkCol += float3(0.063, 0.500, 0.420) * 0.05 * (0.5 + 0.5 * sin(uv.y * 3.0 + t * 0.1)) * dark;
+    darkCol += float3(0.478, 0.306, 0.200) * 0.05 * (0.5 + 0.5 * sin(uv.y * 3.0 + t * 0.1)) * dark;
 
-    float3 lightCol = float3(0.955, 0.965, 0.975);
+    float3 lightCol = float3(0.980, 0.965, 0.945);
     lightCol -= float3(0.25, 0.30, 0.38) * (l1 * 0.35 + l2 * 0.25 + l3 * 0.15) * intensity;
 
     float3 col = mix(lightCol, darkCol, dark);
@@ -221,11 +233,13 @@ half4 main(float2 fragCoord) {
 
     float3 aqua = float3(0.30, 0.91, 0.85);
 
-    float3 darkCol = float3(0.008, 0.050, 0.055);
-    darkCol += aqua * v * 0.55 * intensity + float3(0.063, 0.725, 0.506) * v * 0.20;
+    // EMB-B: the aqua rings stay (the mode's water identity on web too) but
+    // they swim over the warm ember field, not a green-cast base.
+    float3 darkCol = float3(0.043, 0.027, 0.020);
+    darkCol += aqua * v * 0.55 * intensity + float3(0.478, 0.306, 0.200) * v * 0.12;
     darkCol = 1.0 - exp(-darkCol * 1.7);
 
-    float3 lightCol = float3(0.940, 0.970, 0.970);
+    float3 lightCol = float3(0.980, 0.965, 0.945);
     lightCol -= float3(0.0, 0.28, 0.30) * v * 0.35 * intensity;
 
     float3 col = mix(lightCol, darkCol, dark);
@@ -275,22 +289,23 @@ half4 main(float2 fragCoord) {
     float rim   = smoothstep(0.42, 0.62, body) * (1.0 - smoothstep(0.66, 0.88, body));
     float halo  = 0.5 / (1.0 + max(-f, 0.0) * 12.0);
 
-    float3 emerald = float3(0.063, 0.725, 0.506);
-    float3 teal    = float3(0.078, 0.722, 0.651);
-    float3 rose    = float3(0.957, 0.247, 0.369);
+    // EMB-B liquid body = the Canvas fallback's ember amber/deep + rose rim.
+    float3 amber = float3(1.0, 0.722, 0.42);
+    float3 ember = float3(1.0, 0.478, 0.239);
+    float3 rose  = float3(0.957, 0.247, 0.369);
 
-    float3 darkCol = float3(0.010, 0.042, 0.036);
-    darkCol += emerald * core * 0.85;
-    darkCol += teal    * mid  * 0.55;
-    darkCol += rose    * outer * 0.16;
-    darkCol += float3(0.86, 0.97, 0.93) * rim * 0.10;
-    darkCol += emerald * halo * 0.28;
+    float3 darkCol = float3(0.043, 0.027, 0.020);
+    darkCol += amber * core * 0.85;
+    darkCol += ember * mid  * 0.55;
+    darkCol += rose  * outer * 0.16;
+    darkCol += float3(1.0, 0.953, 0.886) * rim * 0.10;
+    darkCol += amber * halo * 0.28;
     darkCol = 1.0 - exp(-darkCol * intensity * 1.7);
 
-    float3 lightCol = float3(0.968, 0.976, 0.972);
-    lightCol -= emerald * core * 0.20 * intensity;
-    lightCol -= teal    * mid  * 0.14 * intensity;
-    lightCol -= rose    * outer * 0.05 * intensity;
+    float3 lightCol = float3(0.980, 0.965, 0.945);
+    lightCol -= amber * core * 0.20 * intensity;
+    lightCol -= ember * mid  * 0.14 * intensity;
+    lightCol -= rose  * outer * 0.05 * intensity;
     lightCol += float3(1.0) * rim * 0.16;
 
     float3 col = mix(lightCol, darkCol, dark);
@@ -396,13 +411,14 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
         val h = size.height
         val aspect = w / h.coerceAtLeast(1f)
 
-        val base = if (dark) Color(0xFF030B09) else Color(0xFFF6F8F7)
+        val base = if (dark) Color(0xFF0B0705) else Color(0xFFFAF6F1)
         drawRect(base)
 
-        val emerald = Color(0xFF10B981)
-        val teal = Color(0xFF14B8A6)
+        // EMB-B: the fx layer rides the ember language (warm glow fields).
+        val amber = Color(0xFFFFB86B)
+        val ember = Color(0xFFFF7A3D)
         val violet = Color(0xFF8B5CF6)
-        val white = Color(0xFFEAF6FF)
+        val white = Color(0xFFFFF3E2)
 
         val strength = if (dark) 0.30f else 0.10f
         val blend = if (dark) BlendMode.Plus else BlendMode.Multiply
@@ -438,14 +454,13 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
                 }
             }
             FxMode.LIQUID -> {
-                // five fused metaballs - emerald/teal body with a rose rim
-                val emerald = Color(0xFF10B981)
+                // five fused metaballs - ember amber/deep body with a rose rim
                 val rose = Color(0xFFF43F5E)
                 repeat(5) { ball ->
                     val cx = w * (0.5f + 0.15f * sin(time * 0.21f + ball * 1.7f))
                     val cy = h * (0.5f + 0.14f * cos(time * 0.16f + ball * 2.3f))
                     val radius = h * (0.22f + ball * 0.02f)
-                    val bodyColor = if (ball % 2 == 0) emerald else teal
+                    val bodyColor = if (ball % 2 == 0) amber else ember
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(
@@ -465,8 +480,8 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
             else -> {
                 // three drifting curtains/blobs - aurora/mesh shared geometry
                 val blobs = listOf(
-                    Triple(emerald, 0.32f * sin(time * 0.31f), 0.60f + 0.14f * cos(time * 0.23f)),
-                    Triple(teal, 0.26f * cos(time * 0.21f + 1.7f), 0.34f + 0.16f * sin(time * 0.27f + 0.6f)),
+                    Triple(amber, 0.32f * sin(time * 0.31f), 0.60f + 0.14f * cos(time * 0.23f)),
+                    Triple(ember, 0.26f * cos(time * 0.21f + 1.7f), 0.34f + 0.16f * sin(time * 0.27f + 0.6f)),
                     Triple(violet, 0.28f * sin(time * 0.17f + 3.9f), 0.46f + 0.18f * cos(time * 0.19f + 2.4f)),
                 )
                 blobs.forEach { (color, dx, dy) ->
@@ -502,12 +517,12 @@ private fun CanvasFallbackField(mode: FxMode, dark: Boolean, time: Float, intens
 // Particle bursts (native port of particle-layer.tsx)
 
 private val CONFETTI_COLORS = listOf(
-    Color(0xFF10B981), Color(0xFF14B8A6), Color(0xFFF59E0B),
+    Color(0xFFFFB86B), Color(0xFFFF7A3D), Color(0xFFF59E0B),
     Color(0xFFFB7185), Color(0xFF8B5CF6), Color(0xFFFFFFFF),
 )
 private val HEART_COLORS = listOf(Color(0xFFFB7185), Color(0xFFF43F5E), Color(0xFFFDA4AF), Color(0xFFFF6B81))
 private val STAR_COLORS = listOf(Color(0xFFFDE68A), Color(0xFFFFFFFF), Color(0xFFA7F3D0), Color(0xFF99F6E4))
-private val BURST_COLORS = listOf(Color(0xFF10B981), Color(0xFF5EEAD4), Color(0xFFFFFFFF), Color(0xFFFBBF24))
+private val BURST_COLORS = listOf(Color(0xFFFFB86B), Color(0xFFFF7A3D), Color(0xFFFFFFFF), Color(0xFFFBBF24))
 
 private class P(
     var x: Float, var y: Float,
@@ -641,6 +656,46 @@ private fun DrawScope.drawParticle(p: P) {
 }
 
 /**
+ * Effect-synced NATIVE haptics - the device side of the native bridge
+ * contract (web: src/lib/native-bridge.ts, GET /api/native/manifest + the
+ * parse-free `native` block on message:new). Each burst kind maps to the
+ * same waveform the web catalog publishes: confetti 0.7, lasers(burst)
+ * 0.9, sparkles(stars) 0.4, echo(hearts) 0.5 - timings in ms, amplitudes
+ * scaled 0..255 from the intensity. Real system vibrator (VibratorManager
+ * on 31+, legacy service below) so the effect lands in the HAND, not just
+ * on the screen; graceful fallback to view haptics when no vibrator.
+ */
+private val BURST_WAVEFORMS: Map<PulseFx.BurstKind, Pair<LongArray, IntArray>> = mapOf(
+    PulseFx.BurstKind.CONFETTI to Pair(longArrayOf(0, 18, 40, 18), intArrayOf(0, 178, 0, 178)),
+    PulseFx.BurstKind.BURST to Pair(longArrayOf(0, 8, 30, 8, 30, 14), intArrayOf(0, 229, 0, 229, 0, 229)),
+    PulseFx.BurstKind.STARS to Pair(longArrayOf(0, 6, 24, 6, 24, 6), intArrayOf(0, 102, 0, 102, 0, 102)),
+    PulseFx.BurstKind.HEARTS to Pair(longArrayOf(0, 12), intArrayOf(0, 128)),
+)
+
+private fun playBurstHaptics(context: Context, kind: PulseFx.BurstKind): Boolean {
+    val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    }
+    val waveform = BURST_WAVEFORMS[kind] ?: return false
+    return runCatching {
+        when {
+            vibrator == null || !vibrator.hasVibrator() -> false
+            vibrator.hasAmplitudeControl() -> {
+                vibrator.vibrate(VibrationEffect.createWaveform(waveform.first, waveform.second, -1))
+                true
+            }
+            else -> {
+                vibrator.vibrate(VibrationEffect.createWaveform(waveform.first, -1))
+                true
+            }
+        }
+    }.getOrDefault(false)
+}
+
+/**
  * Fullscreen burst overlay - listens to [PulseFx.bursts], animates only while
  * particles are alive (zero idle cost, web parity), pointer-transparent.
  */
@@ -648,13 +703,16 @@ private fun DrawScope.drawParticle(p: P) {
 fun ParticleBurstHost(modifier: Modifier = Modifier, reducedMotion: Boolean) {
     val particles = remember { mutableStateListOf<P>() }
     val view = LocalView.current
+    val context = LocalContext.current
     var canvasW by remember { mutableFloatStateOf(0f) }
     var canvasH by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
         PulseFx.bursts.collect { burst ->
             if (reducedMotion) return@collect
-            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            if (!playBurstHaptics(context, burst.kind)) {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            }
             repeat(burst.count.coerceIn(1, 400)) {
                 particles.add(makeParticle(burst.kind, canvasW, canvasH))
             }

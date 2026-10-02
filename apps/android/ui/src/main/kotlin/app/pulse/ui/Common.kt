@@ -2,6 +2,7 @@ package app.pulse.ui
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -32,10 +33,51 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 
+/**
+ * CI quiet-animations gate. The release smoke drives the app through
+ * uiautomator, whose accessibility dumps only settle when the UI stops
+ * invalidating; infinite Compose animations never do. When the
+ * PULSE_QUIET_ANIMS build flag is on (CI smoke artifacts only), infinite
+ * animations render their initial frame and stay silent. Shipping builds
+ * default the flag to false and are untouched.
+ */
+object PulseMotionGate {
+    @Volatile
+    var quiet: Boolean = false
+}
+
+/** Frozen-able infinite float - the one primitive every looping animation rides. */
+@Composable
+fun pulseInfiniteFloat(
+    initialValue: Float,
+    targetValue: Float,
+    durationMillis: Int,
+    repeatMode: RepeatMode = RepeatMode.Restart,
+    startOffsetMillis: Int = 0,
+    label: String,
+): Float {
+    if (PulseMotionGate.quiet) return initialValue
+    val transition = rememberInfiniteTransition(label = label)
+    val value by transition.animateFloat(
+        initialValue = initialValue,
+        targetValue = targetValue,
+        animationSpec = infiniteRepeatable(
+            tween(durationMillis, easing = LinearEasing),
+            repeatMode,
+            initialStartOffset = StartOffset(startOffsetMillis),
+        ),
+        label = label,
+    )
+    return value
+}
+
 /** The web palette - one source of truth for accents (ui-theme tokens). */
 object PulsePalette {
-    val Emerald = Color(0xFF10B981)
-    val EmeraldDeep = Color(0xFF047857)
+    // EMB-B: the "Emerald" accent slots carry the ember pair now - every
+    // icon/tint call site that named the old green rides the sunset language.
+    // Deep is darkened for light-mode text contrast (4.2:1 on white).
+    val Emerald = Color(0xFFF2A65A)
+    val EmeraldDeep = Color(0xFFC9762B)
     val Teal = Color(0xFF14B8A6)
     val TealLight = Color(0xFF2DD4BF)
     val Violet = Color(0xFF8B5CF6)
@@ -55,10 +97,10 @@ object PulsePalette {
     val NeoText = Color(0xFFECF4EF)
     /** Secondary text on carbon. */
     val NeoTextDim = Color(0xFF8CA398)
-    /** Neon mint signal accent. */
-    val NeonMint = Color(0xFF2BE8A6)
-    /** Ink to place on top of the mint accent. */
-    val OnNeonMint = Color(0xFF04120C)
+    /** Neon ember signal accent (EMB-B: was neon mint). */
+    val NeonMint = Color(0xFFFFB86B)
+    /** Ink to place on top of the ember accent. */
+    val OnNeonMint = Color(0xFF24140A)
     /** Neon magenta - sparing secondary accent. */
     val NeonMagenta = Color(0xFFFF5CA8)
     /** Neo destructive. */
@@ -140,12 +182,11 @@ fun PulseAvatar(
 
 /** Shimmer placeholder - the web's skeleton sheen, animated via a moving brush. */
 fun Modifier.shimmer(): Modifier = composed {
-    val transition = rememberInfiniteTransition(label = "shimmer")
-    val progress by transition.animateFloat(
+    val progress = pulseInfiniteFloat(
         initialValue = -1f,
         targetValue = 2f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Restart),
-        label = "shimmerProgress",
+        durationMillis = 1100,
+        label = "shimmer",
     )
     val base = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
     val sheen = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)

@@ -13,7 +13,7 @@ final class PulseUiThemeTests: XCTestCase {
 
     func testMetaTableIsByteSameAsWeb() {
         let expectations: [(PulseUiThemeId, String, String, String, [String], String)] = [
-            (.glass, "Immersive Glass", "Glassmorphic Chat UI", "Layered frosted glass, aurora backdrop, specular edges, elastic motion.", ["#10b981", "#0ea5e9"], "elastic"),
+            (.glass, "Immersive Glass", "Glassmorphic Chat UI", "Layered frosted glass, aurora backdrop, specular edges, elastic motion.", ["#FFB86B", "#FF7A3D"], "elastic"),
             (.kinetic, "Kinetic", "Kinetic UI", "High-contrast ink, sharp corners, bold type, whip-crack springs.", ["#18181b", "#f43f5e"], "crisp"),
             (.minimal, "Quiet Minimal", "Motion-Driven Minimalist UI", "Hairlines and whitespace. Motion whispers, structure speaks.", ["#52525b", "#a1a1aa"], "quiet"),
             (.dynamic, "Dynamic", "Dynamic Minimalism", "Soft neutrals with vivid gradient accents and playful bounce.", ["#f59e0b", "#ec4899"], "playful"),
@@ -83,11 +83,15 @@ final class PulseUiThemeTests: XCTestCase {
     }
 
     func testAccentsMatchTheSwatchPairs() {
-        // Glass emerald + sky; the light values are byte-equal to the web
-        // swatch pairs. Kinetic is the only dark flip (ink → paper).
+        // EMB-B: glass speaks ember (light burnt ember + amber; dark amber +
+        // deep ember, dark-flipped like kinetic). The light values are
+        // byte-equal to the web glass accents in globals.css.
         let glass = PulseUiTheme.tokens(for: .glass, dark: false)
-        XCTAssertEqual(glass.accent, PulseUiThemeColor(hex: "#10b981"))
-        XCTAssertEqual(glass.accent2, PulseUiThemeColor(hex: "#0ea5e9"))
+        XCTAssertEqual(glass.accent, PulseUiThemeColor(hex: "#C9762B"))
+        XCTAssertEqual(glass.accent2, PulseUiThemeColor(hex: "#E08A3C"))
+        let glassDark = PulseUiTheme.tokens(for: .glass, dark: true)
+        XCTAssertEqual(glassDark.accent, PulseUiThemeColor(hex: "#FFB86B"))
+        XCTAssertEqual(glassDark.accent2, PulseUiThemeColor(hex: "#FF7A3D"))
         let kineticLight = PulseUiTheme.tokens(for: .kinetic, dark: false)
         XCTAssertEqual(kineticLight.accent, PulseUiThemeColor(hex: "#18181b"))
         XCTAssertEqual(kineticLight.accent2, PulseUiThemeColor(hex: "#f43f5e"))

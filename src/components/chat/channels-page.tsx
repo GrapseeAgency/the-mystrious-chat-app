@@ -102,12 +102,12 @@ function ChannelRow({
                 aria-hidden
                 className="glass-deep relative flex size-11 items-center justify-center rounded-2xl"
               >
-                <Radio className="size-5 text-emerald-600 dark:text-emerald-400" />
+                <Radio className="size-5 text-amber-700 dark:text-amber-400" />
               </span>
             )}
           </span>
           {channel.unread ? (
-            <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-zinc-900" />
+            <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-zinc-900" />
           ) : null}
         </span>
         <span className="min-w-0 flex-1">
@@ -127,7 +127,7 @@ function ChannelRow({
         <button
           type="button"
           onClick={onPress}
-          className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-emerald-600 outline-none transition-transform active:scale-95 dark:text-emerald-400"
+          className="glass-pill h-8 shrink-0 px-3 text-xs font-bold text-amber-700 outline-none transition-transform active:scale-95 dark:text-amber-400"
         >
           Open
         </button>
@@ -136,7 +136,7 @@ function ChannelRow({
           type="button"
           disabled={subscribePending}
           onClick={onSubscribe}
-          className="h-8 shrink-0 rounded-full bg-emerald-500 px-3.5 text-xs font-bold text-white shadow-sm shadow-emerald-600/30 outline-none transition-transform hover:bg-emerald-400 active:scale-95 disabled:opacity-60"
+          className="h-8 shrink-0 rounded-full bg-amber-500 px-3.5 text-xs font-bold text-white shadow-sm shadow-amber-600/30 outline-none transition-transform hover:bg-amber-400 active:scale-95 disabled:opacity-60"
         >
           {subscribePending ? (
             <LoaderCircle className="mx-auto size-3.5 animate-spin" aria-hidden />
@@ -233,7 +233,7 @@ export function ChannelsPage({ open, me, onBack, onOpenConversation }: ChannelsP
               <div className="min-w-0 flex-1">
                 <h1 className="flex items-center gap-2 truncate text-[17px] font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
                   Channels
-                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-500/15 px-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500/15 px-1.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
                     {subscribed.length > 99 ? '99+' : subscribed.length}
                   </span>
                 </h1>
@@ -286,7 +286,7 @@ export function ChannelsPage({ open, me, onBack, onOpenConversation }: ChannelsP
                 <button
                   type="button"
                   onClick={() => void directory.refetch()}
-                  className="glass-pill h-9 px-4 text-xs font-bold text-emerald-600 outline-none dark:text-emerald-400"
+                  className="glass-pill h-9 px-4 text-xs font-bold text-amber-700 outline-none dark:text-amber-400"
                 >
                   Try again
                 </button>

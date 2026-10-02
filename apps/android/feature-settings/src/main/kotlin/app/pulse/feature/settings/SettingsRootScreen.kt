@@ -90,7 +90,9 @@ import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.PulseWallpaper
+import app.pulse.ui.LocalPulseUiTheme
 import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseTabBackdrop
 import app.pulse.ui.emberGlass
 import app.pulse.ui.update.LiveUpdater
 import app.pulse.ui.update.UpdaterDetail
@@ -185,7 +187,7 @@ fun SettingsRootScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .emberBackdrop(),
+            .pulseTabBackdrop(LocalPulseUiTheme.current),
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
@@ -295,7 +297,7 @@ private fun SectionScaffold(title: String, onBack: () -> Unit, content: @Composa
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .emberBackdrop(),
+            .pulseTabBackdrop(LocalPulseUiTheme.current),
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(

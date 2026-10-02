@@ -51,20 +51,45 @@ jobs:
           name: pulse-release-apk
           path: apps/android/app/build/outputs/apk/release/*.apk
 
-      - name: Publish GitHub Release (tag builds only)
-        if: startsWith(github.ref, 'refs/tags/v')
+  # The Release itself is published ONLY after the instrumented job has
+  # booted this exact signed APK on the emulator (release smoke). A green
+  # compile alone never shipped again.
+  publish:
+    runs-on: ubuntu-latest
+    needs: [build, instrumented]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download smoke-tested APK
+        uses: actions/download-artifact@v4
+        with:
+          name: pulse-release-apk
+          path: apk
+
+      - name: Publish GitHub Release (smoke-tested artifact only)
         uses: softprops/action-gh-release@v2
         with:
-          files: apps/android/app/build/outputs/apk/release/Pulse-*.apk
+          files: apk/Pulse-*.apk
 
   # Wave 0 quality gate: the app must actually LAUNCH and the Room v3→v4
   # migration must be proven non-destructive on a real Android system image.
+  # The release smoke runs on BOTH API 30 and API 34 (Android 14 hardens
+  # FGS types, PendingIntent mutability, receiver exports) at phone-realistic
+  # metrics (1080x2340 @ 440dpi) so the artifact is judged like a real device.
   instrumented:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [30, 34]
+    name: instrumented (api ${{ matrix.api-level }})
     defaults:
       run:
         working-directory: apps/android
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
 
@@ -89,7 +114,7 @@ jobs:
       - name: Run instrumented tests on emulator (launch smoke + Room migration + outbox/draft DAOs)
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
+          api-level: ${{ matrix.api-level }}
           target: google_apis
           arch: x86_64
           force-avd-creation: false
@@ -97,10 +122,30 @@ jobs:
           disable-animations: true
           script: cd apps/android && ./gradlew :app:connectedDebugAndroidTest :data:connectedDebugAndroidTest
 
+      - name: RELEASE smoke - boot the signed artifact, walk onboarding, drive all nav paths
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: cd apps/android && ./gradlew :app:assembleRelease -PpulseQuietAnims=true -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseParallelGC" -Dorg.gradle.workers.max=2 && adb install -r app/build/outputs/apk/release/app-release.apk && adb shell wm size 1080x2340 && adb shell wm density 440 && export PATH="$PATH:$ANDROID_HOME/platform-tools" && python3 ci/release_smoke.py
+
       - name: Upload instrumented test reports (always, even on failure)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pulse-android-instrumented-reports
+          name: pulse-android-instrumented-reports-${{ matrix.api-level }}
           path: apps/android/**/build/outputs/androidTest-results/**
+          if-no-files-found: ignore
+
+      - name: Upload release smoke evidence (logcat + screenshots, always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-release-smoke-${{ matrix.api-level }}
+          path: |
+            apps/android/release-smoke/**
           if-no-files-found: ignore
