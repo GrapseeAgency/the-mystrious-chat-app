@@ -1,13 +1,15 @@
 {
-  "versionCode": 38,
+  "versionCode": 39,
   "versionName": "0.20.0-native",
   "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.20.0-native/Pulse-v0.20.0-native.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "aee6695fa4dd295f1ab18bbc37637cd05e067bdf662f3da00afb767a1133397d",
+  "sha256": "ae948688a95dae5990b976c86ed8c05b8989beebdd5f2a02327bc62c1de6815e",
   "notes": "R51 homepage wave - the full offline-first app direction lands: the chats header is the Pulse brand with bare camera + kebab icons (circle backgrounds deleted), an always-visible search bar replaced the All/Unread/Groups chips (live local filter, IME search opens spotlight), the folder rail is tiny (28dp pills + 30dp folder/channel glyphs), the Note to Self / Mentions / Channels rows are gone (archived appears only when non-empty), and the dock speaks reference proportions (54dp pill, 46dp FAB, 18dp icons). CI: Android main + tag v0.20.0-native green (signed R8 + emulator smoke), release published.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
   "updatedAt": "2026-10-02T14:54:00Z",
-  "apkSize": 25448725
+  "apkSize": 25448725,
+  "version": "0.21.0-native",
+  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.21.0-native/Pulse-v0.21.0-native.apk"
 }
