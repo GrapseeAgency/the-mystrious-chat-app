@@ -4600,3 +4600,24 @@ Work Log:
 Stage Summary:
 - The app speaks the user's reference language again: warm ember surfaces (restored), reference nav pill (Chats / Call / Updates / Profile + FAB) on both platforms, reference chats header, charcoal bubbles. v0.15.0-native shipping through GitHub Actions with emulator-walk evidence.
 - Honest caveats: story tiles render gradient initials (no photo assets in-repo); filter chips keep the app's real filters (All/Unread/Groups) instead of the reference's decorative labels - faking non-existent filters was rejected.
+
+---
+Task ID: R23-ship
+Agent: orchestrator (Z.ai main session)
+Task: verify v0.15.0-native end-to-end with behavior-level evidence (boot the signed release APK in CI, complete onboarding, walk the reference dock through its own labels, capture screenshots), fix the smoke driver until the evidence is real
+
+Work Log:
+- Tag run 36957348694 (v0.15.0-native): build + instrumented(api 30) + instrumented(api 34) + publish ALL SUCCESS. iOS tag run 36957348725 SUCCESS (mirror compiles, tests pass).
+- Release receipt: GitHub Release v0.15.0-native published, Pulse-v0.15.0-native.apk (25,419,390 bytes) downloaded; hand-rolled AXML parse of the binary manifest (RES_TABLE headerSize=8 aapt2 layout, string pool + first START_ELEMENT, attrExt at node+16+attributeStart, Res_value at attr+12) -> package app.pulse.chat, versionCode 32 (INT_DEC), versionName 0.15.0-native, compileSdk 35. Installable over v0.13.1 (30) and v0.14.0 (31).
+- Smoke evidence hunt: v10 (tag) legs passed the crash gate (zero crash markers, process alive both APIs) but onboarding flaked - the driver degenerated to blind drags over onboarding/launcher, so no dock evidence. Root-caused across three driver iterations, each fix driven by the previous run's screenshots/logs:
+  - v11: retry rounds added BUT the in_shell def-move raced out of the commit (UnboundLocalError) - also exposed that tap_scrolling's swipe args were ints, so EVERY scroll-swipe had been silently failing since v8 (ADB FAIL swallowed by adb_ok); that was the true v10 MISS cause.
+  - v12 (36961171492, all green): swipes fixed + def shipped, but a stray BACK (IME already closed) ping-ponged name<->handle steps.
+  - v13 (36962197776, all green): BACK only while the IME is truly shown + advance loop that returns only when no onboarding marker remains - onboarding completed, but the post-onboarding BACK belt backgrounded the app on the chats root (02-main-shell captured the launcher).
+  - v14 (36963066556, all green): belt removed. FULL WALK: onboarding completed -> drag walk chats->calls->hub->profile -> dock label taps "tapped dock tab Call / Updates / Profile / Chats" (every reference tab tapped through its own label) -> settings via the header kebab (06-settings.png) -> back to chats. Zero crash markers on both API legs.
+- VISUAL PROOF (API 34 screenshots in artifact pulse-release-smoke-34, run 36963066556): 02-main-shell.png shows the reference dock exactly - floating dark pill with Chats (active amber) / Call / Updates / Profile labels+icons and the separate round + FAB, large "Chats" title with search/camera/kebab glass circles, filter chips, story "You" cell. 04-tab-call.png shows the Call tab active in the pill over the warm ember gradient with the Calls screen rendered.
+- Driver commits are CI-tooling only (release_smoke.py) - the published v0.15.0-native APK is unchanged by them; no re-release needed.
+
+Stage Summary:
+- SHIPPED + PROVEN: v0.15.0-native (versionCode 32) on GitHub Releases - the v0.14.0 rebuild is fully reverted, the app speaks the user's reference language (restored ember surfaces + reference nav pill Chats/Call/Updates/Profile + FAB on Android and iOS), and the released artifact is emulator-proven: booted, onboarded, all four dock tabs navigated by label, settings reached through the header kebab, zero crash markers on API 30+34, screenshots archived.
+- Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.15.0-native
+- Open items for the next wave: web ci re-check after the revert (web untouched by all three reverted commits - no exposure), iOS device-level visual pass, story tiles still gradient-initials (no photo assets in-repo), light-mode reference polish (the reference shots are dark; dark surfaces already match, light chrome shows the same structure).
