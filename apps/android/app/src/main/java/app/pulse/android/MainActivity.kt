@@ -773,7 +773,6 @@ private fun PulseShell(
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         navController.navigate("stories/compose")
                     },
-                    onOpenMentions = { navController.navigate("mentions") },
                     onOpenChannels = { navController.navigate("channels") },
                     // R2-A item 2 - the header phone button opens the REAL calls page.
                     onOpenCalls = { navController.navigate("calls") },
@@ -1450,14 +1449,16 @@ private fun CapsuleDock(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         // the pill - content minus the FAB
+        // R51 dock directive - reference proportions: slimmer pill, smaller
+        // icons, lower overall height than the pre-R51 dock.
         Box(
             Modifier
                 .weight(1f)
-                .height(64.dp)
-                .clip(RoundedCornerShape(32.dp))
+                .height(54.dp)
+                .clip(RoundedCornerShape(27.dp))
                 .background(EmberPalette.PillFill)
-                .border(1.dp, EmberPalette.Hairline, RoundedCornerShape(32.dp))
-                .padding(horizontal = 8.dp),
+                .border(1.dp, EmberPalette.Hairline, RoundedCornerShape(27.dp))
+                .padding(horizontal = 6.dp),
         ) {
             Row(
                 Modifier.fillMaxSize(),
@@ -1479,8 +1480,8 @@ private fun CapsuleDock(
                 }
             }
         }
-        // separate 56dp circular FAB - the existing new-chat action
-        ComposeDockButton(onCompose, size = 56.dp)
+        // separate compact circular FAB - the existing new-chat action
+        ComposeDockButton(onCompose, size = 46.dp)
     }
 }
 
@@ -1511,8 +1512,8 @@ private fun DockTabButton(
     val inactiveTint = if (dark) DockInactiveDark else DockInactiveLight
     Box(
         modifier
-            .height(56.dp)
-            .clip(RoundedCornerShape(22.dp))
+            .height(46.dp)
+            .clip(RoundedCornerShape(18.dp))
             .clickable {
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onSelect()
@@ -1526,7 +1527,7 @@ private fun DockTabButton(
                     contentDescription = tab.label,
                     tint = if (active) activeTint else inactiveTint,
                     modifier = Modifier
-                        .size(22.dp)
+                        .size(18.dp)
                         .graphicsLayer {
                             rotationZ = rotate.value
                             scaleX = if (active) 1.08f else 1f
@@ -1539,7 +1540,7 @@ private fun DockTabButton(
             }
             // the active signal: a 4dp #FF453A circle 3dp under the icon
             // (slot reserved so the label never shifts between states)
-            Box(Modifier.height(7.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.height(6.dp), contentAlignment = Alignment.Center) {
                 if (active && dark) {
                     Box(
                         Modifier
@@ -1593,7 +1594,7 @@ private fun ComposeDockButton(onCompose: () -> Unit, size: Dp = 46.dp) {
             },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(PulseIcons.Plus, contentDescription = "New chat", tint = Color.White, modifier = Modifier.size(if (size >= 44.dp) 22.dp else 18.dp))
+        Icon(PulseIcons.Plus, contentDescription = "New chat", tint = Color.White, modifier = Modifier.size(if (size >= 44.dp) 20.dp else 17.dp))
     }
 }
 

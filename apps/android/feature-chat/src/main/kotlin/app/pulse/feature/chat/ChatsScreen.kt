@@ -110,7 +110,9 @@ import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.StoryCell
 import app.pulse.feature.chat.R
 import app.pulse.ui.EmberPalette
-import app.pulse.ui.EmberGlassButton
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseGlass
 import app.pulse.ui.PulseIcons
@@ -195,8 +197,7 @@ fun ChatsScreen(
     onOpenStoriesViewer: (String?) -> Unit = {},
     /** Wave 4 - the own-cell "+" affordance (or empty "My status" cell) → composer. */
     onOpenStoriesComposer: () -> Unit = {},
-    /** Wave 6 - mentions / channels surfaces + the folders manage sheet. */
-    onOpenMentions: () -> Unit = {},
+    /** Wave 6 - channels surface + the folders manage sheet. */
     onOpenChannels: () -> Unit = {},
     // R2-A item 2/1 - the header phone icon opens the calls history page and
     // the pencil icon opens the REAL new-chat composer (web chats header).
@@ -217,7 +218,6 @@ fun ChatsScreen(
     val listFilter by viewModel.listFilter.collectAsStateWithLifecycle()
     val stories by viewModel.stories.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
-    val mentionCount by viewModel.mentionCount.collectAsStateWithLifecycle()
     val searchHits by viewModel.searchHits.collectAsStateWithLifecycle()
     val searchRunning by viewModel.searching.collectAsStateWithLifecycle()
     // R2-C item 7 - recent searches for the search bar (last 5).
@@ -315,9 +315,6 @@ fun ChatsScreen(
     val all = chats
     val activeRows = all.filter { !it.isArchived && !it.isSelf }
     val archivedRows = all.filter { it.isArchived }
-    val selfConv = all.firstOrNull { it.isSelf }
-    val unreadTotal = activeRows.sumOf { it.unreadCount }
-    val channelCount = all.count { it.isGroupish && it.isChannel }
     val archivedUnread = archivedRows.sumOf { it.unreadCount }
 
     val q = query.trim().lowercase()
@@ -378,10 +375,6 @@ fun ChatsScreen(
                     // story composer; the dock FAB stays the new-chat entry.
                     onStories = onOpenStoriesComposer,
                     onTheme = onCycleTheme,
-                    onSearch = {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        search = true
-                    },
                     // R25 - the dock More menu lives here now.
                     onContacts = { onSwitchTab("contacts") },
                     onSaved = onOpenSaved,
@@ -392,12 +385,16 @@ fun ChatsScreen(
             UpdaterBanner(Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp))
 
             if (!search) {
-                FilterChipsRow(
-                    active = listFilter,
-                    unreadTotal = unreadTotal,
-                    onSelect = { filter ->
+                // R51 homepage directive - the All/Unread/Groups chips are gone;
+                // an always-visible search bar sits in their place (live local
+                // filter; IME search opens the full spotlight surface).
+                HomeSearchBar(
+                    query = query,
+                    onQuery = { query = it },
+                    onOpenFullSearch = {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.setListFilter(filter)
+                        search = true
+                        focused = true
                     },
                 )
                 StoriesRail(
@@ -421,6 +418,8 @@ fun ChatsScreen(
                         activeFolderId = if (activeFolderId == next) null else next
                     },
                     onManage = { foldersSheet = true },
+                    // R51 - the tiny channel glyph sits beside the folder icon.
+                    onChannels = onOpenChannels,
                 )
             }
 
@@ -492,42 +491,20 @@ fun ChatsScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 128.dp + navBottom),
                     ) {
-                        item(key = "note-to-self") {
-                            NoteToSelfCard(
-                                exists = selfConv != null,
-                                onOpen = { selfConv?.let { openConversation(viewModel, it, onOpenRoom) } },
-                                onCreate = { viewModel.createSelfChat { id -> onOpenRoom(id, null) } },
-                            )
-                        }
-                        item(key = "pill-mentions") {
-                            EntryPill(
-                                icon = PulseIcons.AtSign,
-                                label = "Mentions",
-                                badge = mentionCount.takeIf { it > 0 },
-                                trailing = if (mentionCount == 1) "1 mention" else "$mentionCount mentions",
-                                dark = dark,
-                                onClick = onOpenMentions,
-                            )
-                        }
-                        item(key = "pill-channels") {
-                            EntryPill(
-                                icon = PulseIcons.Radio,
-                                label = "Channels",
-                                badge = null,
-                                trailing = if (channelCount == 1) "1 channel" else "$channelCount channels",
-                                dark = dark,
-                                onClick = onOpenChannels,
-                            )
-                        }
-                        item(key = "pill-archived") {
-                            EntryPill(
-                                icon = PulseIcons.Archive,
-                                label = "Archived",
-                                badge = archivedUnread.takeIf { it > 0 },
-                                trailing = if (archivedRows.size == 1) "1 chat" else "${archivedRows.size} chats",
-                                dark = dark,
-                                onClick = onOpenArchived,
-                            )
+                        // R51 homepage directive - Note to Self / Mentions / Channels
+                        // rows deleted (note lives behind the FAB; mentions live in
+                        // notifications); Archived appears ONLY when it is non-empty.
+                        if (archivedRows.isNotEmpty()) {
+                            item(key = "pill-archived") {
+                                EntryPill(
+                                    icon = PulseIcons.Archive,
+                                    label = "Archived",
+                                    badge = archivedUnread.takeIf { it > 0 },
+                                    trailing = if (archivedRows.size == 1) "1 chat" else "${archivedRows.size} chats",
+                                    dark = dark,
+                                    onClick = onOpenArchived,
+                                )
+                            }
                         }
                         if (pinnedRows.isNotEmpty()) {
                             item(key = "header-pinned") { SectionHeader("Pinned", pinnedRows.size) }
@@ -895,7 +872,6 @@ private fun HomeHeader(
     onCalls: () -> Unit,
     onStories: () -> Unit,
     onTheme: () -> Unit,
-    onSearch: () -> Unit,
     onContacts: () -> Unit,
     onSaved: () -> Unit,
     onSettings: () -> Unit,
@@ -905,40 +881,49 @@ private fun HomeHeader(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // EMB-A: the big display title; avatar/profile stays on the dock tab.
+            // R51 homepage directive - the header brand is "Pulse".
             Text(
-                "Chats",
+                "Pulse",
                 fontSize = 30.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = (-0.6).sp,
                 color = if (dark) EmberText else MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.weight(1f),
             )
-            // R25 reference glass cluster: search, camera (story composer),
-            // kebab (the menu absorbs contacts/saved/settings + theme).
+            // R51 homepage directive - bare icons, NO circle backgrounds; the
+            // search icon left the header (the inline search bar replaced the
+            // chips row); camera (story composer) + kebab remain.
             var headerMenuOpen by remember { mutableStateOf(false) }
-            val glassTint = if (dark) EmberText else MaterialTheme.colorScheme.onBackground
-            EmberGlassButton(
-                icon = PulseIcons.Search,
-                label = "Search chats and messages",
-                onClick = onSearch,
-                tint = glassTint,
-            )
-            Spacer(Modifier.width(8.dp))
-            EmberGlassButton(
-                icon = PulseIcons.Camera,
-                label = "New story",
-                onClick = onStories,
-                tint = glassTint,
-            )
-            Spacer(Modifier.width(8.dp))
-            Box {
-                EmberGlassButton(
-                    icon = PulseIcons.KebabVertical,
-                    label = "More options",
-                    onClick = { headerMenuOpen = true },
-                    tint = glassTint,
+            val bareTint = if (dark) EmberText else MaterialTheme.colorScheme.onBackground
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onStories),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    PulseIcons.Camera,
+                    contentDescription = "New story",
+                    tint = bareTint,
+                    modifier = Modifier.size(21.dp),
                 )
+            }
+            Box {
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable { headerMenuOpen = true },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        PulseIcons.KebabVertical,
+                        contentDescription = "More options",
+                        tint = bareTint,
+                        modifier = Modifier.size(21.dp),
+                    )
+                }
                 DropdownMenu(
                     expanded = headerMenuOpen,
                     onDismissRequest = { headerMenuOpen = false },
@@ -1101,66 +1086,66 @@ private fun SearchHeader(
     }
 }
 
-// ── filter chips ─────────────────────────────────────────────────────
+// ── home search bar (R51 homepage directive) ────────────────────────
 
 @Composable
-private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) -> Unit) {
+private fun HomeSearchBar(
+    query: String,
+    onQuery: (String) -> Unit,
+    onOpenFullSearch: () -> Unit,
+) {
     val dark = isPulseDarkTheme()
-    val chips = listOf("all" to "All", "unread" to "Unread", "groups" to "Groups")
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Row(
         Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        chips.forEach { (key, label) ->
-            val isActive = active == key
-            // EMB-B reference language: the active chip is the white pill with
-            // ink text (ink pill on light), inactive chips are glass.
-            Row(
+        Box(Modifier.weight(1f).height(40.dp)) {
+            // EMB-A glass pill: white 8% fill, white 12% border, radius 20.
+            Box(
                 Modifier
-                    .height(30.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(
-                        when {
-                            isActive && dark -> Color.White
-                            isActive -> Color(0xFF1C1410)
-                            dark -> Color.White.copy(alpha = 0.09f)
-                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                        },
-                    )
-                    .clickable { onSelect(key) }
-                    .padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                if (key == "unread" && unreadTotal > 0 && !isActive) {
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (dark) Color.White.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .border(1.dp, if (dark) Color.White.copy(alpha = 0.12f) else Color(0xFFE4E4E7), RoundedCornerShape(20.dp)),
+            )
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQuery,
+                placeholder = {
                     Text(
-                        countLabel(unreadTotal),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        color = Color.White,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(EmberPalette.Signal)
-                            .defaultMinSize(minWidth = 15.dp, minHeight = 15.dp)
-                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                        "Search",
+                        fontSize = 14.sp,
+                        color = if (dark) EmberText40 else Zinc400,
                     )
-                }
-                Text(
-                    label,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = when {
-                        isActive && dark -> Color(0xFF1C1410)
-                        isActive -> Color.White
-                        dark -> EmberText55
-                        else -> Zinc500
-                    },
-                )
-            }
+                },
+                singleLine = true,
+                textStyle = TextStyle(
+                    fontSize = 14.sp,
+                    color = if (dark) EmberText else MaterialTheme.colorScheme.onBackground,
+                ),
+                leadingIcon = {
+                    Icon(
+                        PulseIcons.Search,
+                        contentDescription = null,
+                        tint = if (dark) EmberText45 else Zinc400,
+                        modifier = Modifier.size(17.dp),
+                    )
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    cursorColor = EmberPalette.Amber,
+                ),
+                interactionSource = interaction,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onOpenFullSearch() }),
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 }
@@ -1342,14 +1327,15 @@ private fun FolderRail(
     folderCounts: (String) -> Int,
     onSelect: (String?) -> Unit,
     onManage: () -> Unit,
+    onChannels: () -> Unit = {},
 ) {
     val dark = isPulseDarkTheme()
     Row(
         Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(horizontal = 12.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         RailPill(
             label = "All",
@@ -1369,9 +1355,11 @@ private fun FolderRail(
                 onClick = { onSelect(folder.id) },
             )
         }
+        // R51 homepage directive - tiny utility glyphs (no more oversized
+        // circles): folder manager + channels, 30dp each, icon only.
         Box(
             Modifier
-                .size(44.dp)
+                .size(30.dp)
                 .pulseGlass(dark, CircleShape)
                 .clickable(onClick = onManage),
             contentAlignment = Alignment.Center,
@@ -1380,7 +1368,21 @@ private fun FolderRail(
                 PulseIcons.Folder,
                 contentDescription = "Manage chat folders",
                 tint = Zinc500,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(15.dp),
+            )
+        }
+        Box(
+            Modifier
+                .size(30.dp)
+                .pulseGlass(dark, CircleShape)
+                .clickable(onClick = onChannels),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                PulseIcons.Radio,
+                contentDescription = "Channels",
+                tint = Zinc500,
+                modifier = Modifier.size(15.dp),
             )
         }
     }
@@ -1392,7 +1394,7 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
     // inactive pills stay glass with warm-deep glyph tint.
     Row(
         Modifier
-            .height(36.dp)
+            .height(28.dp)
             .clip(RoundedCornerShape(50))
             .background(
                 when {
@@ -1403,9 +1405,9 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
                 },
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = if (icon == null) 16.dp else 14.dp),
+            .padding(horizontal = if (icon == null) 12.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         // R18 icon-id contract - the folder glyph is the registry vector for
         // the stored icon id (stale values normalize to the default).
@@ -1414,12 +1416,12 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
                 icon,
                 contentDescription = null,
                 tint = if (active) (if (dark) Color(0xFF1C1410) else Color.White) else EmberPalette.Amber,
-                modifier = Modifier.size(14.dp),
+                modifier = Modifier.size(12.dp),
             )
         }
         Text(
             label,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = when {
                 active && dark -> Color(0xFF1C1410)
@@ -1446,69 +1448,7 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
     }
 }
 
-// ── Note to Self card (spec §7.1) ────────────────────────────────────
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun NoteToSelfCard(exists: Boolean, onOpen: () -> Unit, onCreate: () -> Unit) {
-    val dark = isPulseDarkTheme()
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-            .pulseGlass(dark, RoundedCornerShape(16.dp), deep = true)
-            .combinedClickable(onClick = if (exists) onOpen else onCreate)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Brush.linearGradient(listOf(Emerald400, Teal600))),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(PulseIcons.Pencil, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
-        }
-        Column(Modifier.weight(1f)) {
-            Text(
-                "Note to Self",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                "Your private space - notes, links, ideas",
-                fontSize = 11.sp,
-                color = Zinc500,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (exists) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Emerald600)
-                Icon(PulseIcons.ChevronRight, contentDescription = null, tint = Emerald600, modifier = Modifier.size(14.dp))
-            }
-        } else {
-            Text(
-                "Create",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(Emerald500)
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            )
-        }
-    }
-}
-
-// ── entry pills - Mentions / Channels / Archived (spec §7.2) ─────────
+// ── entry pill - Archived (spec §7.2; R51: only rendered when non-empty)
 
 @Composable
 private fun EntryPill(
