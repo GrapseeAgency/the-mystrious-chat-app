@@ -4662,3 +4662,18 @@ Work Log:
 
 Stage Summary:
 - v0.16.0-native (versionCode 33) in flight through GitHub Actions with emulator-walk gating. Native feel = real system VibrationEffect waveforms synced to each message effect, on top of the reference dock + ember language from v0.15.0-native.
+
+---
+Task ID: R37-ship-final
+Agent: orchestrator (Z.ai main session)
+Task: verify the v0.16.0-native release end-to-end and close the loop.
+
+Work Log:
+- First tag run 36969579408 FAILED at compile: playBurstHaptics returned Any (Vibrator.vibrate is void; the when mixed false with void calls). Fixed with explicit Boolean branches; commit 76a2769; tag force-moved.
+- Second tag run 36970034852: build SUCCESS (signed R8 APK) + instrumented(api 30) SUCCESS + instrumented(api 34) SUCCESS + publish SUCCESS. The smoke booted the signed release artifact, completed onboarding, walked the reference dock, zero crash markers on both API legs.
+- Release v0.16.0-native PUBLISHED: Pulse-v0.16.0-native.apk (25,419,993 bytes). Downloaded the artifact and byte-verified the binary manifest with a corrected AXML parser (attrExt-relative attributeStart, UTF-16 pool): versionCode = 33 (INT_DEC), versionName = 0.16.0-native, package = app.pulse.chat, compileSdk 35. Overwrite-installs over v0.15.0-native (32).
+- iOS tag run 36970034834 in flight at log time (mirror sources already green on main).
+- Worklog pushed; PAT hygiene held (inline-only, remote URL scrubbed after every push).
+
+Stage Summary:
+- SHIPPED: v0.16.0-native (versionCode 33) on GitHub Releases - the native-feel wave: effect bursts now drive real system VibrationEffect waveforms (VibratorManager 31+, amplitude-controlled waveforms scaled from the web native-bridge intensities), on top of the v0.15.0-native reference dock + ember language. Install: https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.16.0-native
