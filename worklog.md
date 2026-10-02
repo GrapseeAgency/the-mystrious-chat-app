@@ -4800,3 +4800,20 @@ Work Log:
 Stage Summary:
 - RELEASED: v0.19.0-native on all three CI tracks, manifest + mirror refreshed, the user-facing connect gate + demo login + cover pictures + kebab parity + haptics gate + splash screen all inside the shipped APK
 - Honest gaps / next queue: in-app predictive-back transitions + shared-element wave; iOS connect-gate card (iOS currently gates demo login on a configured gateway via Settings -> Connection); the CDN manifest gateway field stays empty until a persistent public relay exists (the sandbox preview URL is the working door: paste it in the app's connect gate and everything works against the live DB)
+---
+Task ID: R51-connect
+Agent: orchestrator (Z.ai main session)
+Task: "turn the server on. make sure android app can reach im installing the app right now" - live device connectivity for the v0.19.0-native APK.
+
+Work Log:
+- Found the sandbox working tree rolled back to the 07:58 platform auto-snapshot (9847e8e) while remote main carried R41-R50 (14 commits, 34 files: web cover-editor, onboarding connect gate, R50 receipt). Surgical sync: backed up live db (md5 9075c55a...), stash -u, reset --hard origin/main (9917091), restored live db bytes byte-identical, dropped stale stash. db/custom.db stays uncommitted.
+- prisma db push: "already in sync" (live db was already R50-schema) + client regenerated. Restarted next dev (pid 2211) on R50 code; pulse-socket untouched (zero mini-services delta 9847e8e..origin/main).
+- Gateway chain verified on :81 (caddy): /api/health 200 {"ok":true,"database":"up"}; /api/users 200 with real users (Alice Chen @alicechen seeded); / socket.io handshake JSON via ?XTransformPort=3003; websocket upgrade 101 Switching Protocols.
+- FULL DEVICE-PATH SIMULATION, the exact requests PulseApi.kt/PulseEndpoints make: POST /api/users/login {"name":"Alice Chen"} -> 200 + 64-hex token (token rotate + lastSeenAt); GET /api/conversations?userId=<alice> + Authorization: Bearer -> 23 rooms incl. "Bot & Webhook QA" and "Audit Group"; WS upgrade 101 through the gateway.
+- Release/CDN re-verified: v0.19.0-native (versionCode 37, Android tag run 36997201402 SUCCESS) published 11:06Z; download/update-manifest.json (R50, 816c772) points at the release asset with sha256 f64247a4...; raw-main download/Pulse.apk mirror streams the identical digest. LiveUpdater chain is complete.
+- NO cron created (standing user order: "no need to make any loop on the background nor any cron"); zero cron jobs exist in the scheduler.
+
+Stage Summary:
+- SERVER: ON and proven - API :3000 (R50 code) + IM socket :3003 + caddy :81 routing, all hops green.
+- APP CONNECT PATH: v0.19.0-native APK -> onboarding step 0 connect gate (live GET /api/users probe) -> paste the preview-panel origin -> one-tap "Explore the demo account (Alice Chen)" -> 23 seeded rooms + realtime via XTransformPort=3003. The CDN manifest gateway/socket fields stay honestly empty; the connect gate is the connectivity path.
+- Open: iOS connect-gate card, predictive-back/shared-element wave, emerald launcher glyph decision.
