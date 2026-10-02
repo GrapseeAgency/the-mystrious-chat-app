@@ -4647,3 +4647,18 @@ Stage Summary:
 - Hub + Settings reachable from the profile corner kebab on top of the dock/overflow paths.
 - Backend ships a native capability contract (/api/native/manifest) and parse-free effect/haptic metadata on every message relay - verified end-to-end via socket (scripts/e2e/native-relay.ts, pass:true).
 - Known open items: story tiles on mobile reference remain gradient initials; iOS/Android should consume the native block next (the wire contract is ready); db/custom.db left dirty (QA test rows) and excluded from the commit.
+
+---
+Task ID: R37-ship
+Agent: orchestrator (Z.ai main session)
+Task: user asked for the APK release - "it must feel like native this time". Ship the Android release through GitHub Actions only, carrying the native-feel wave.
+
+Work Log:
+- Found the existing native effect path on Android: /effects slash commands (protocol EFFECT_NAMES web parity) + PulseFx burst funnel (CONFETTI/HEARTS/STARS/BURST) rendered by ParticleBurstHost, which only fired a generic KEYBOARD_TAP view haptic.
+- R37 delta (surgical, one file + version bump): ParticleBurstHost now plays effect-synced SYSTEM haptics - BURST_WAVEFORMS mirrors the web native-bridge catalog exactly (confetti 0.7 / lasers-burst 0.9 / sparkles-stars 0.4 / echo-hearts 0.5, timings ms + amplitudes 0..255 scaled from intensity). VibratorManager on API 31+, legacy Vibrator below; hasAmplitudeControl() decides waveform(timings, amplitudes) vs waveform(timings); runCatching-guarded with view-haptic fallback when no vibrator. This is the device side of the native bridge contract shipped on web (R36).
+- Version bump: versionCode 33, versionName 0.16.0-native (overwrite-installs over 32).
+- Brace/paren balance + PAT scan clean; NO sandbox builds - CI is the gate.
+- SHIP: commit 35683f9 pushed to main; tag v0.16.0-native pushed. Android CI tag run 36969579408 (build + JVM tests + signed R8 APK + emulator release smoke API 30/34 + publish gate), iOS tag run 36969579421. Release publishes only after the smoke boots the signed artifact.
+
+Stage Summary:
+- v0.16.0-native (versionCode 33) in flight through GitHub Actions with emulator-walk gating. Native feel = real system VibrationEffect waveforms synced to each message effect, on top of the reference dock + ember language from v0.15.0-native.
