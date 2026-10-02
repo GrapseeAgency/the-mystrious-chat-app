@@ -9,6 +9,8 @@ data class User(
     val name: String,
     val handle: String,
     val avatar: String? = null,
+    /** Profile cover picture (web parity - User.coverImage, /api/uploads path or data URL). */
+    val coverImage: String? = null,
     val bio: String? = null,
     val lastSeen: String? = null,
     val verified: Boolean = false,
@@ -284,6 +286,8 @@ data class UserProfile(
     val about: String? = null,
     val color: String? = null,
     val avatar: String? = null,
+    /** Profile cover picture (web parity - User.coverImage). */
+    val coverImage: String? = null,
     val statusEmoji: String? = null,
     val statusText: String? = null,
     val createdAtIso: String? = null,
@@ -382,6 +386,8 @@ data class ProfilePatch(
     val about: String? = null,
     val color: String? = null,
     val avatar: String? = null,
+    /** Profile cover picture (web parity - User.coverImage). */
+    val coverImage: String? = null,
     val statusEmoji: String? = null,
     val statusText: String? = null,
     val username: String? = null,

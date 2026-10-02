@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -63,16 +64,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.pulse.core.PulseEndpoints
 import app.pulse.ui.EmberGlassButton
 import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseAvatar
 import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulseMonoFamily
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.LocalPulseUiTheme
 import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseTabBackdrop
 import app.pulse.ui.emberGlass
 import app.pulse.ui.update.LiveUpdater
 import app.pulse.ui.update.UpdaterDetail
+import coil.compose.AsyncImage
+import java.io.File
 import kotlinx.coroutines.launch
 
 private val FX_OPTIONS = listOf(
@@ -101,6 +107,10 @@ private val SWATCHES = listOf("#10B981", "#14B8A6", "#8B5CF6", "#F59E0B", "#FB71
 fun ProfileScreen(
     onEditProfile: () -> Unit = {},
     onOpenBlocked: () -> Unit = {},
+    // R39 - user ask: the profile three-dot menu must host the Hub AND
+    // Settings next to the existing actions (web ProfileMoreMenu parity).
+    onOpenHub: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     // R16 - web profile-tab.tsx:497-508 "Saved messages" row -> the real
     // starred library (MainActivity routes this to the existing "saved" nav
     // destination - fetch / search / unsave / jump-to-message).
@@ -138,7 +148,7 @@ fun ProfileScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .emberBackdrop()
+            .pulseTabBackdrop(LocalPulseUiTheme.current)
             .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp),
@@ -159,6 +169,20 @@ fun ProfileScreen(
                     expanded = kebabMenu,
                     onDismissRequest = { kebabMenu = false },
                 ) {
+                    DropdownMenuItem(
+                        text = { Text("Hub", color = Color.White) },
+                        onClick = {
+                            kebabMenu = false
+                            onOpenHub()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Settings", color = Color.White) },
+                        onClick = {
+                            kebabMenu = false
+                            onOpenSettings()
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text("Edit profile", color = Color.White) },
                         onClick = {
@@ -182,6 +206,47 @@ fun ProfileScreen(
                     )
                 }
             }
+        }
+
+        // R39 - profile cover picture (web parity): the picked cover renders
+        // as the hero banner; a server path wins, the on-device copy is the
+        // offline fallback. No cover set = the ember field shows as before.
+        val coverPath = viewer?.coverImage
+        val localCover = remember { File(context.filesDir, "pulse_cover.jpg") }
+        if (coverPath != null || localCover.exists()) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(116.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .border(1.dp, EmberPalette.Hairline, RoundedCornerShape(24.dp)),
+            ) {
+                if (coverPath != null) {
+                    AsyncImage(
+                        model = PulseEndpoints.http(coverPath),
+                        contentDescription = "Your cover picture",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    AsyncImage(
+                        model = localCover,
+                        contentDescription = "Your cover picture",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.25f)),
+                            ),
+                        ),
+                )
+            }
+            Spacer(Modifier.height(12.dp))
         }
 
         Spacer(Modifier.height(2.dp))

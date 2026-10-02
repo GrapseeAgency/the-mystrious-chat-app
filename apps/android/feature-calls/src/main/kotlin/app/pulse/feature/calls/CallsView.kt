@@ -49,7 +49,9 @@ import app.pulse.domain.repository.PulseRepository
 import app.pulse.ui.EmberPalette
 import app.pulse.ui.PulseIcons
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.LocalPulseUiTheme
 import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseTabBackdrop
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.delay
@@ -154,7 +156,7 @@ fun CallsView(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .emberBackdrop(),
+            .pulseTabBackdrop(LocalPulseUiTheme.current),
     ) {
         Row(
             modifier = Modifier

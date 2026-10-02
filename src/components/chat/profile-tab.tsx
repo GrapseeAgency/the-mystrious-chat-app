@@ -32,6 +32,7 @@ import {
   PulseAt,
   PulseBack,
   PulseCheck,
+  PulseClose,
   PulseEdit,
   PulseFingerprint,
   PulseHub,
@@ -44,6 +45,7 @@ import {
   PulseShare,
   PulseSignOut,
   PulseStar,
+  PulseTrash,
 } from '@/components/ui/icons'
 import { toast } from 'sonner'
 import type { AppUser, SavedItem, UserStats } from '@/lib/types'
@@ -78,6 +80,26 @@ import { HandleEditorDialog } from '@/components/profile/handle-editor'
 const NAME_MAX = 32
 const ABOUT_MAX = 140
 const STATUS_MAX = 48
+
+/** R39 - crop the picked image to the 2:1 hero banner (max 1200x600, JPEG q0.85). */
+async function coverFileToDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file)
+  const targetW = 1200
+  const targetH = 600
+  const scale = Math.max(targetW / bitmap.width, targetH / bitmap.height)
+  const sw = targetW / scale
+  const sh = targetH / scale
+  const sx = Math.max(0, (bitmap.width - sw) / 2)
+  const sy = Math.max(0, (bitmap.height - sh) / 2)
+  const canvas = document.createElement('canvas')
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas is unavailable in this browser')
+  ctx.drawImage(bitmap, sx, sy, sw, sh, 0, 0, targetW, targetH)
+  bitmap.close()
+  return canvas.toDataURL('image/jpeg', 0.85)
+}
 
 /**
  * Profile corner kebab (three-dot) menu - the reference-language spot
@@ -400,6 +422,51 @@ function ProfileEditor({
 
   const canSave = dirty && name.trim().length > 0 && !saveProfile.isPending
 
+  // R39 - profile cover picture (real upload pipeline): pick a photo, crop
+  // to the 2:1 banner, POST /api/uploads then PATCH coverImage. The hero
+  // renders the image over the identity gradient; remove clears the column.
+  const coverInputRef = useRef<HTMLInputElement>(null)
+  const applyCoverUser = (user: AppUser) => {
+    setUser(user)
+    queryClient.setQueryData(['me', me.id], user)
+    queryClient.setQueryData<AppUser[]>(['users'], (old) =>
+      old?.map((u) => (u.id === user.id ? user : u)),
+    )
+  }
+  const coverMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const dataUrl = await coverFileToDataUrl(file)
+      const up = await apiJson<{ filePath: string }>('/api/uploads', {
+        method: 'POST',
+        body: JSON.stringify({ dataUrl }),
+      })
+      const res = await apiJson<{ user: AppUser }>(
+        `/api/users/${encodeURIComponent(me.id)}`,
+        { method: 'PATCH', body: JSON.stringify({ coverImage: `/api/uploads/${up.filePath}` }) },
+      )
+      return res.user
+    },
+    onSuccess: (user) => {
+      applyCoverUser(user)
+      toast.success('Cover picture updated')
+    },
+    onError: (error: Error) => toast.error(error.message || 'Could not set the cover picture'),
+  })
+  const coverRemove = useMutation({
+    mutationFn: async () => {
+      const res = await apiJson<{ user: AppUser }>(
+        `/api/users/${encodeURIComponent(me.id)}`,
+        { method: 'PATCH', body: JSON.stringify({ coverImage: '' }) },
+      )
+      return res.user
+    },
+    onSuccess: (user) => {
+      applyCoverUser(user)
+      toast.success('Cover picture removed')
+    },
+    onError: (error: Error) => toast.error(error.message || 'Could not remove the cover picture'),
+  })
+
   const copyId = async () => {
     haptic(8)
     try {
@@ -471,6 +538,18 @@ function ProfileEditor({
 
   return (
     <div className="absolute inset-0 flex flex-col">
+      {/* R39 - hidden cover-picture input (the hero glass chip triggers it) */}
+      <input
+        ref={coverInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ''
+          if (file) coverMutation.mutate(file)
+        }}
+      />
       {/*  ROOT PAGE  */}
       <div className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(104px+env(safe-area-inset-bottom))]">
         {/*  HERO - identity beam, zero carnival blobs  */}
@@ -484,6 +563,17 @@ function ProfileEditor({
           />
           {/* flat identity cover with a scanline texture + signal edge */}
           <div className={cn('scan-fx relative isolate h-28 overflow-hidden sm:h-32', gradient)}>
+            {/* R39 - the member's cover picture rides OVER the identity
+                gradient; the scanline wash + signal edge stay on top so the
+                reference language holds either way. */}
+            {me.coverImage ? (
+               
+              <img
+                src={me.coverImage}
+                alt="Your cover picture"
+                className="absolute inset-0 size-full object-cover"
+              />
+            ) : null}
             <span
               aria-hidden
               className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.16),transparent_60%),radial-gradient(130%_150%_at_88%_-12%,rgba(255,255,255,0.2),transparent_55%)]"
@@ -493,6 +583,41 @@ function ProfileEditor({
               aria-hidden
               className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-white/80 to-transparent"
             />
+            {/* R39 cover controls - glass chips bottom-right, honest states */}
+            <div className="absolute bottom-2.5 right-3 z-10 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  haptic(8)
+                  coverInputRef.current?.click()
+                }}
+                disabled={coverMutation.isPending}
+                className="flex items-center gap-1 rounded-full border border-white/25 bg-black/35 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/55 disabled:opacity-50"
+                aria-label={me.coverImage ? 'Change cover picture' : 'Add cover picture'}
+              >
+                {coverMutation.isPending ? (
+                  <PulseLoader className="size-3.5 animate-spin" />
+                ) : (
+                  <PulsePhoto className="size-3.5" />
+                )}
+                {me.coverImage ? 'Change' : 'Add cover'}
+              </button>
+              {me.coverImage ? (
+                <button
+                  type="button"
+                  onClick={() => coverRemove.mutate()}
+                  disabled={coverRemove.isPending}
+                  className="rounded-full border border-white/25 bg-black/35 px-2 py-1 text-white/90 backdrop-blur-sm transition-colors hover:bg-black/55 disabled:opacity-50"
+                  aria-label="Remove cover picture"
+                >
+                  {coverRemove.isPending ? (
+                    <PulseLoader className="size-3.5 animate-spin" />
+                  ) : (
+                    <PulseTrash className="size-3.5" />
+                  )}
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="relative px-5">

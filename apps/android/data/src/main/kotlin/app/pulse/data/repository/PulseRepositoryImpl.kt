@@ -233,6 +233,9 @@ class PulseRepositoryImpl @Inject constructor(
     /** Backoff so a dead network doesn't re-pay the timeout on every keystroke. */
     @Volatile private var offlineUntil: Long = 0L
 
+    /** Demo companion rotation counter - cycles the default reply bank. */
+    @Volatile private var demoReplyTurn: Int = 0
+
     @Volatile override var viewerId: String? = null
         private set
 
@@ -246,6 +249,9 @@ class PulseRepositoryImpl @Inject constructor(
         viewerId = userId
         startPump()
         socket.connect(userId)
+        // Demo companion: every identity (fresh or upgraded install) gets the
+        // on-device Nova room so the chat surface is explorable offline.
+        scope.launch { runCatching { ensureDemoSeeded(userId) } }
         // Wave 8 - load the persisted session token into the synchronous cache
         // BEFORE the refresh wave so the Bearer header rides from request one,
         // then merge the server prefs blob over the local store (server wins).
@@ -698,6 +704,120 @@ class PulseRepositoryImpl @Inject constructor(
         color = color ?: "emerald",
     )
 
+    // ------------------------------------------------------------------
+    // Demo companion (Nova) - the on-device first-run room. A fresh offline
+    // install can open a REAL chat immediately (Room rows, same pipeline as
+    // every other conversation) instead of staring at a dead inbox.
+
+    private fun demoNowIso(): String =
+        java.time.OffsetDateTime.now().format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+
+    /** Idempotent seed: one Nova DM per install, unread badge so it gets noticed. */
+    private suspend fun ensureDemoSeeded(viewerId: String) {
+        val demo = app.pulse.domain.model.PulseDemo
+        if (viewerId.isBlank()) return
+        if (conversationDao.byId(demo.CONVERSATION_ID) != null) return
+        val conversation = Conversation(
+            id = demo.CONVERSATION_ID,
+            kind = Conversation.Kind.DM,
+            title = demo.USER_NAME,
+            lastMessageAuthorName = demo.USER_NAME,
+            lastMessageKind = "text",
+            lastActivityAt = demoNowIso(),
+            unreadCount = 1,
+            memberIds = listOf(viewerId, demo.USER_ID),
+            memberNames = listOf(demo.USER_NAME),
+            accentColor = demo.COLOR,
+            otherUserId = demo.USER_ID,
+        )
+        conversationDao.upsertAll(listOf(ConversationEntity.from(conversation)))
+        val messages = demo.openingLines("").mapIndexed { index, pair ->
+            val isSystem = pair.first == "SYSTEM"
+            val body = pair.second
+            Message(
+                id = "demo_seed_$index",
+                conversationId = demo.CONVERSATION_ID,
+                authorId = if (isSystem) "system" else demo.USER_ID,
+                authorName = if (isSystem) "Pulse" else demo.USER_NAME,
+                kind = if (isSystem) Message.Kind.SYSTEM else Message.Kind.TEXT,
+                body = body,
+                createdAt = demoNowIso(),
+                senderColor = if (isSystem) null else demo.COLOR,
+            )
+        }
+        messageDao.upsertAll(messages.map { MessageEntity.from(it) })
+    }
+
+    /** On-device send: settle the bubble instantly, then let Nova answer. */
+    private suspend fun demoSend(
+        conversationId: String,
+        body: String,
+        replyToId: String?,
+        parentId: String?,
+        topicId: String?,
+    ): Result<SendReceipt> {
+        val demo = app.pulse.domain.model.PulseDemo
+        if (viewerId.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("No identity - complete onboarding first."))
+        }
+        val mine = Message(
+            id = "demo_out_" + java.util.UUID.randomUUID().toString().replace("-", "").take(16),
+            conversationId = conversationId,
+            authorId = viewerId ?: "",
+            authorName = viewerId ?: "",
+            kind = Message.Kind.TEXT,
+            body = body,
+            createdAt = demoNowIso(),
+            replyToId = replyToId,
+            threadRootId = parentId,
+            topicId = topicId,
+        )
+        messageDao.upsertAll(listOf(MessageEntity.from(mine)))
+        mutateConversation(conversationId) {
+            it.copy(
+                lastMessagePreview = body,
+                lastMessageKind = "text",
+                lastActivityAt = mine.createdAt,
+                lastMessageMine = true,
+                lastMessageDeleted = false,
+                lastMessageIsReply = false,
+            )
+        }
+        scheduleDemoReply(body)
+        return Result.success(SendReceipt(message = mine, streak = null))
+    }
+
+    /** Nova answers after a human-feeling beat; Room flows carry it live. */
+    private fun scheduleDemoReply(userBody: String) {
+        val demo = app.pulse.domain.model.PulseDemo
+        scope.launch {
+            kotlinx.coroutines.delay(800L + (0L..1000L).random())
+            runCatching {
+                val reply = Message(
+                    id = "demo_in_" + java.util.UUID.randomUUID().toString().replace("-", "").take(16),
+                    conversationId = demo.CONVERSATION_ID,
+                    authorId = demo.USER_ID,
+                    authorName = demo.USER_NAME,
+                    kind = Message.Kind.TEXT,
+                    body = demo.reply(userBody, demoReplyTurn++),
+                    createdAt = demoNowIso(),
+                    senderColor = demo.COLOR,
+                )
+                messageDao.upsertAll(listOf(MessageEntity.from(reply)))
+                mutateConversation(demo.CONVERSATION_ID) {
+                    it.copy(
+                        lastMessagePreview = reply.body,
+                        lastMessageAuthorName = demo.USER_NAME,
+                        lastMessageKind = "text",
+                        lastActivityAt = reply.createdAt,
+                        lastMessageMine = false,
+                        unreadCount = it.unreadCount + 1,
+                    )
+                }
+            }.onFailure { Log.w(TAG, "demo reply failed", it) }
+        }
+    }
+
     /**
      * Availability never blocks onboarding: server → static CDN registry →
      * local rules. The worst case (fully offline) still answers in one blink
@@ -779,6 +899,11 @@ class PulseRepositoryImpl @Inject constructor(
         parentId: String?,
         topicId: String?,
     ): Result<SendReceipt> {
+        // Demo companion room: fully on-device. No gateway round-trip, no
+        // outbox - the bubble settles instantly and Nova replies locally.
+        if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
+            return demoSend(conversationId, body, replyToId, parentId, topicId)
+        }
         // Optimistic echo FIRST (spec §2 row 2): the bubble appears on the very
         // keystroke-to-send beat, not after the round-trip. The same clientId
         // then either reconciles with the real row, rides the outbox, or is
@@ -859,6 +984,11 @@ class PulseRepositoryImpl @Inject constructor(
         parentId: String?,
         topicId: String?,
     ): Result<SendReceipt> {
+        // Demo room rides the same on-device path (sticker/effect wrappers
+        // degrade to their text body here - the bursts still fire client-side).
+        if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
+            return demoSend(conversationId, body, replyToId, parentId, topicId)
+        }
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
             .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
@@ -1540,6 +1670,11 @@ class PulseRepositoryImpl @Inject constructor(
         draftDao.observe(conversationId).map { it?.text }
 
     override suspend fun markRead(conversationId: String): Result<Unit> {
+        // Demo room is on-device: zero the badge locally, no gateway verdict.
+        if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
+            mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
+            return Result.success(Unit)
+        }
         // Optimistic: zero the badge locally, revert if the server refuses.
         val before = conversationDao.byId(conversationId)?.toDomain()
         if (before != null) {
@@ -2747,6 +2882,7 @@ class PulseRepositoryImpl @Inject constructor(
             patch.about?.let { put("about", it) }
             patch.color?.let { put("color", it) }
             patch.avatar?.let { put("avatar", it) }
+            patch.coverImage?.let { put("coverImage", it) }
             patch.statusEmoji?.let { put("statusEmoji", it) }
             patch.statusText?.let { put("statusText", it) }
             // username is "explicit key" on the wire: null = untouched, "" = clear.
@@ -3053,6 +3189,7 @@ fun UserDto.toDomain(): User = User(
     name = name,
     handle = username ?: "",
     avatar = avatar,
+    coverImage = coverImage,
     bio = bio,
     lastSeen = lastSeen,
     verified = verified == true,
@@ -3069,6 +3206,7 @@ fun FullUserDto.toUserProfile(): UserProfile = UserProfile(
     about = about,
     color = color,
     avatar = avatar,
+    coverImage = coverImage,
     statusEmoji = statusEmoji,
     statusText = statusText,
     createdAtIso = createdAt,

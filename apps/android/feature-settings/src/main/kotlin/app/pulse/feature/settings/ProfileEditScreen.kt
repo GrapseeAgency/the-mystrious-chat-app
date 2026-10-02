@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -89,6 +90,7 @@ private val EDIT_COLORS = listOf(
 @HiltViewModel
 class ProfileEditViewModel @Inject constructor(
     private val repo: PulseRepository,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
 
     data class HandleCheck(val state: String, val suggestion: String? = null)
@@ -101,6 +103,8 @@ class ProfileEditViewModel @Inject constructor(
         val handle: String = "",
         val color: String = "emerald",
         val avatar: String? = null,
+        /** R39 - profile cover picture: server path, "local:cover" marker, or null. */
+        val coverImage: String? = null,
         val statusEmoji: String = "",
         val statusText: String = "",
         val saving: Boolean = false,
@@ -110,6 +114,8 @@ class ProfileEditViewModel @Inject constructor(
         val uploading: Boolean = false,
         /** R14 gap 8 - the remove-photo PATCH in flight. */
         val removing: Boolean = false,
+        /** R39 - the cover upload/remove round-trip. */
+        val coverBusy: Boolean = false,
     )
 
     private val _state = MutableStateFlow(State())
@@ -199,6 +205,66 @@ class ProfileEditViewModel @Inject constructor(
         }
     }
 
+    // ------------------------------------------------------------------
+    // R39 - profile cover picture (web parity: User.coverImage + upload).
+
+    /**
+     * Cover pick: upload through /api/uploads when a gateway answers; fully
+     * offline the cropped image is kept on this device (filesDir) and the
+     * UI says so honestly. Server covers ride the next successful save.
+     */
+    fun uploadCover(dataUrl: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(coverBusy = true, error = null)
+            repo.uploadMedia(dataUrl)
+                .onSuccess { path ->
+                    _state.value = _state.value.copy(coverBusy = false, coverImage = path, notice = "Cover updated")
+                }
+                .onFailure {
+                    val kept = runCatching { writeLocalCover(dataUrl) }.getOrDefault(false)
+                    _state.value = _state.value.copy(
+                        coverBusy = false,
+                        coverImage = if (kept) "local:cover" else _state.value.coverImage,
+                        notice = if (kept) "Cover saved on this device - it uploads when Pulse reconnects" else null,
+                        error = if (kept) null else "Could not set the cover - try again",
+                    )
+                }
+        }
+    }
+
+    /** Decode a data URL cover onto this device (offline fallback). */
+    private fun writeLocalCover(dataUrl: String): Boolean {
+        val base64 = dataUrl.substringAfter("base64;", "").ifBlank { dataUrl.substringAfter("base64,", "") }
+        if (base64.isBlank()) return false
+        val bytes = Base64.decode(base64, Base64.NO_WRAP)
+        java.io.File(appContext.filesDir, "pulse_cover.jpg").writeBytes(bytes)
+        return true
+    }
+
+    private fun deleteLocalCover() {
+        runCatching { java.io.File(appContext.filesDir, "pulse_cover.jpg").delete() }
+    }
+
+    /** Cover removal mirrors removeAvatar: PATCH "" clears the column. */
+    fun removeCover() {
+        val s = _state.value
+        if (s.userId == null || s.coverBusy) return
+        viewModelScope.launch {
+            _state.value = s.copy(coverBusy = true, error = null)
+            repo.patchProfile(ProfilePatch(coverImage = ""))
+                .onSuccess {
+                    deleteLocalCover()
+                    _state.value = _state.value.copy(coverBusy = false, coverImage = null, notice = "Cover removed")
+                }
+                .onFailure { e ->
+                    _state.value = _state.value.copy(
+                        coverBusy = false,
+                        error = e.message ?: "Could not remove the cover - try again when connected",
+                    )
+                }
+        }
+    }
+
     /**
      * R14 gap 8 - "Remove photo" (web avatar-editor.tsx runRemovePhoto):
      * an immediate PATCH /api/users/{id} with avatar:"" - the server nulls
@@ -236,6 +302,9 @@ class ProfileEditViewModel @Inject constructor(
                 about = s.bio.ifBlank { null },
                 color = s.color,
                 avatar = s.avatar,
+                // Only real server paths ride the wire - the offline
+                // "local:cover" marker is a device-side render hint.
+                coverImage = s.coverImage?.takeIf { it.startsWith("/api/uploads/") },
                 statusEmoji = s.statusEmoji,
                 statusText = s.statusText,
                 username = s.handle,
@@ -317,6 +386,88 @@ fun ProfileEditScreen(
             Text("Edit profile", fontWeight = FontWeight.Bold, fontSize = 20.sp)
         }
         Spacer(Modifier.height(12.dp))
+
+        // R39 - profile cover picture (web parity): tap to pick, uploads
+        // through /api/uploads when connected, kept on-device otherwise.
+        val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+            if (uri != null) {
+                runCatching {
+                    val source = BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
+                        ?: return@runCatching null
+                    // Center-crop to 2:1 at 1024 wide - the banner aspect.
+                    val targetW = 1024
+                    val targetH = 512
+                    val scale = maxOf(
+                        targetW.toFloat() / source.width,
+                        targetH.toFloat() / source.height,
+                    )
+                    val scaledW = (source.width * scale).toInt().coerceAtLeast(targetW)
+                    val scaledH = (source.height * scale).toInt().coerceAtLeast(targetH)
+                    val scaled = Bitmap.createScaledBitmap(source, scaledW, scaledH, true)
+                    val left = ((scaledW - targetW) / 2).coerceAtLeast(0)
+                    val top = ((scaledH - targetH) / 2).coerceAtLeast(0)
+                    val cropped = Bitmap.createBitmap(scaled, left, top, targetW, targetH)
+                    val bytes = ByteArrayOutputStream().use { out ->
+                        cropped.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                        out.toByteArray()
+                    }
+                    "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+                }.getOrNull()?.let(viewModel::uploadCover)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Text("Cover picture", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(120.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White.copy(alpha = 0.05f))
+                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(20.dp))
+                .clickable { coverPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            contentAlignment = Alignment.Center,
+        ) {
+            when (state.coverImage) {
+                null -> {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(PulseIcons.ImageIcon, contentDescription = null, tint = Color.White.copy(alpha = 0.6f))
+                        Spacer(Modifier.height(6.dp))
+                        Text("Add a cover picture", fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f))
+                    }
+                }
+                "local:cover" -> {
+                    AsyncImage(
+                        model = java.io.File(context.filesDir, "pulse_cover.jpg"),
+                        contentDescription = "Your cover picture",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                else -> {
+                    AsyncImage(
+                        model = PulseEndpoints.http(state.coverImage ?: ""),
+                        contentDescription = "Your cover picture",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+            if (state.coverBusy) {
+                Box(
+                    Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.dp) }
+            }
+        }
+        if (state.coverImage != null) {
+            TextButton(onClick = viewModel::removeCover) {
+                Text("Remove cover", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
 
         // Avatar
         Row(verticalAlignment = Alignment.CenterVertically) {

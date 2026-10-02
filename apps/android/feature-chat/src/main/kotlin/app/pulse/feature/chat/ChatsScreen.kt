@@ -119,7 +119,9 @@ import app.pulse.ui.pulseInfiniteFloat
 import app.pulse.ui.PulseMonoFamily
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
+import app.pulse.ui.LocalPulseUiTheme
 import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseTabBackdrop
 import app.pulse.ui.isPulseDarkTheme
 import app.pulse.ui.pulseGlass
 import app.pulse.ui.shimmer
@@ -348,7 +350,7 @@ fun ChatsScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .then(if (dark) Modifier.emberBackdrop() else Modifier.background(MaterialTheme.colorScheme.background)),
+            .then(if (dark) Modifier.pulseTabBackdrop(LocalPulseUiTheme.current) else Modifier.background(MaterialTheme.colorScheme.background)),
     ) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             if (search) {

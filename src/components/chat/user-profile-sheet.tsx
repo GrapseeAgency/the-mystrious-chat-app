@@ -272,6 +272,21 @@ export function UserProfileSheet({
                 gradient,
               )}
             />
+            {/* R39 - cover picture strip when the member set one */}
+            {user.coverImage ? (
+              <div className="relative mb-3 h-24 overflow-hidden rounded-2xl">
+                { }
+                <img
+                  src={user.coverImage}
+                  alt={`Cover picture of ${user.name}`}
+                  className="absolute inset-0 size-full object-cover"
+                />
+                <span
+                  aria-hidden
+                  className="absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-white/70 to-transparent"
+                />
+              </div>
+            ) : null}
             <div className="relative flex items-center gap-3.5">
               {/* presence avatar in a specular gradient ring */}
               <motion.div

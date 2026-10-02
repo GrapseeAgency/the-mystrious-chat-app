@@ -549,6 +549,11 @@ private fun PulseShell(
     // shell re-renders the matching dock live when the Appearance pick lands.
     val navStyle by session.navStyle.collectAsStateWithLifecycle()
     val reducedMotion by session.reducedMotion.collectAsStateWithLifecycle()
+    // R39 - the design language rides EVERY destination: the nested dark-pinned
+    // themes below now inherit the user's pick (web pulse.uiTheme.v2 parity),
+    // and each tab backdrop re-skins through pulseTabBackdrop().
+    val uiThemeRaw by session.uiTheme.collectAsStateWithLifecycle()
+    val shellUiTheme = app.pulse.ui.PulseUiTheme.fromId(uiThemeRaw)
 
     // Identity adoption for the voice/stage/space wire payloads (the calls
     // surface receives the same values through callPeer's caller args).
@@ -801,11 +806,11 @@ private fun PulseShell(
                 }
             }
             composable("hub") {
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 // R38 - Telegram-style dock: the tab's ember field runs edge-to-
                 // edge BEHIND the dock (drawn before padding = full-bleed), so
                 // no separate color band ever shows under the nav pill.
-                Box(Modifier.fillMaxSize().emberBackdrop().padding(bottom = dockSpace)) {
+                Box(Modifier.fillMaxSize().pulseTabBackdrop(shellUiTheme).padding(bottom = dockSpace)) {
                     app.pulse.feature.hub.HubScreen(
                         viewerName = viewerName ?: "",
                         onOpenConversation = { id -> navController.navigate("room/$id") },
@@ -814,9 +819,9 @@ private fun PulseShell(
             }
             }
             composable("contacts") {
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 // R38 - full-bleed ember field behind the dock (same idiom).
-                Box(Modifier.fillMaxSize().emberBackdrop().padding(bottom = dockSpace)) {
+                Box(Modifier.fillMaxSize().pulseTabBackdrop(shellUiTheme).padding(bottom = dockSpace)) {
                     ContactsScreen(
                         onOpenRoom = { id -> navController.navigate("room/$id") },
                         onOpenUser = { id -> navController.navigate("user/$id") },
@@ -850,9 +855,9 @@ private fun PulseShell(
             }
             }
             composable("calls") {
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 // R38 - full-bleed ember field behind the dock (same idiom).
-                Box(Modifier.fillMaxSize().emberBackdrop().padding(bottom = dockSpace)) {
+                Box(Modifier.fillMaxSize().pulseTabBackdrop(shellUiTheme).padding(bottom = dockSpace)) {
                     CallsView(
                         onBack = { navController.popBackStack() },
                         onOpenRoom = { id -> navController.navigate("room/$id") },
@@ -890,13 +895,17 @@ private fun PulseShell(
                 }
             }
             composable("profile") {
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 // R38 - full-bleed ember field behind the dock (same idiom);
                 // this is the tab from the user's green-band screenshot.
-                Box(Modifier.fillMaxSize().emberBackdrop().padding(bottom = dockSpace)) {
+                Box(Modifier.fillMaxSize().pulseTabBackdrop(shellUiTheme).padding(bottom = dockSpace)) {
                     ProfileScreen(
                         onEditProfile = { navController.navigate("profile/edit") },
                         onOpenBlocked = { navController.navigate("settings/blocked") },
+                        // R39 - user ask: Hub + Settings live in the profile
+                        // corner three-dot menu (web ProfileMoreMenu parity).
+                        onOpenHub = { switchTab("hub") },
+                        onOpenSettings = { navController.navigate("settings") },
                         // R16 - web profile-tab.tsx:497-508: the profile tab's
                         // "Saved messages" row lands on the real starred library.
                         onOpenSaved = { navController.navigate("saved") },
@@ -913,7 +922,7 @@ private fun PulseShell(
                 "user/{id}",
                 arguments = listOf(navArgument("id") { type = NavType.StringType }),
             ) { entry ->
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 Box(Modifier.fillMaxSize()) {
                     UserPageScreen(
                         userId = entry.arguments?.getString("id").orEmpty(),
@@ -943,7 +952,7 @@ private fun PulseShell(
             }
             // Wave 8 - the full Settings root + nine sections.
             composable("settings") {
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 Box(Modifier.fillMaxSize()) {
                     SettingsRootScreen(
                         onBack = { navController.popBackStack() },
@@ -957,7 +966,7 @@ private fun PulseShell(
                 "settings/{section}",
                 arguments = listOf(navArgument("section") { type = NavType.StringType }),
             ) { entry ->
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 when (entry.arguments?.getString("section")) {
                     "account" -> Box(Modifier.fillMaxSize()) {
                         AccountSection(
@@ -1019,7 +1028,7 @@ private fun PulseShell(
                     },
                 ),
             ) { entry ->
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 val conversationId = entry.arguments?.getString("conversationId").orEmpty()
                 // R8 Task 3-c - the OPEN conversation is the group-call probe
                 // target + outsider-banner gate (web openConversationId parity);
@@ -1060,7 +1069,7 @@ private fun PulseShell(
                     navArgument("rootId") { type = NavType.StringType },
                 ),
             ) {
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 ThreadScreen(
                     viewerId = viewerId,
                     onBack = { navController.popBackStack() },
@@ -1079,9 +1088,9 @@ private fun PulseShell(
             // Wave 2 - the dock "Saved" menu item now lands on the real library
             // (fetch → Room cache → search → unsave → jump-to-message rows).
             composable("saved") {
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 // R38 - full-bleed ember field behind the dock (same idiom).
-                Box(Modifier.fillMaxSize().emberBackdrop().padding(bottom = dockSpace)) {
+                Box(Modifier.fillMaxSize().pulseTabBackdrop(shellUiTheme).padding(bottom = dockSpace)) {
                     SavedLibraryScreen(
                         onBack = { navController.popBackStack() },
                         onOpenRoom = { id, jump ->
@@ -1105,7 +1114,7 @@ private fun PulseShell(
                     },
                 ),
             ) { entry ->
-                PulseTheme(darkTheme = true) {
+                PulseTheme(darkTheme = true, uiTheme = shellUiTheme) {
                 val storiesVm: StoriesViewModel = hiltViewModel()
                 LaunchedEffect(Unit) { storiesVm.boot() }
                 StoryViewerScreen(

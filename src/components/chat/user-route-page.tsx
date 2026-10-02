@@ -361,6 +361,15 @@ function UserPageBody({
         >
           <span aria-hidden className="absolute -left-10 -top-14 size-40 rounded-full bg-white/20 blur-2xl" />
           <span aria-hidden className="absolute -bottom-16 -right-8 size-44 rounded-full bg-black/20 blur-2xl" />
+          {/* R39 - the member's cover picture over the palette cover */}
+          {user.coverImage ? (
+             
+            <img
+              src={user.coverImage}
+              alt={`Cover picture of ${user.name}`}
+              className="absolute inset-0 size-full object-cover"
+            />
+          ) : null}
         </motion.div>
 
         {/*  identity  */}

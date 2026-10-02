@@ -1203,7 +1203,9 @@ fun ChatRoomScreen(
         }
 
         // Offline honesty strip (spec row 7) - text queues, media won't.
-        AnimatedVisibility(visible = state.connected == false) {
+        // R39 - the demo companion room is on-device by definition, so the
+        // queue banner would be a lie there; sends settle instantly.
+        AnimatedVisibility(visible = state.connected == false && !app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
             Surface(
                 color = EmberPalette.CardFill,
                 modifier = Modifier.fillMaxWidth(),

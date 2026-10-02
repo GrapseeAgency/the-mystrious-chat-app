@@ -151,3 +151,16 @@ fun Modifier.emberGlass(shape: Shape): Modifier = this
     .clip(shape)
     .background(EmberPalette.CardFill, shape)
     .border(1.dp, EmberPalette.Hairline, shape)
+
+/**
+ * R39 - the design-language-aware tab backdrop. GLASS keeps the blessed
+ * ember sunset field (the reference look); every other language paints its
+ * own page backdrop so the Appearance picker visibly re-skins every dock
+ * tab (web parity: data-ui tokens cover all pages, not just chats).
+ */
+fun Modifier.pulseTabBackdrop(theme: PulseUiTheme, dark: Boolean = true): Modifier =
+    if (theme == PulseUiTheme.GLASS) {
+        this.emberBackdrop()
+    } else {
+        this.pulseUiThemePageBackground(theme, dark)
+    }
