@@ -37,8 +37,8 @@ struct ChatRoomView: View {
         }
         .navigationTitle(roomTitle)
         .navigationBarTitleDisplayMode(.inline)
-        // R24 - the header chrome melts into the carbon ground (the same
-        // #0D1211 92% surface as the dock and composer), never a mint tint.
+        // EMB-I - the header chrome melts into the ember ground (the same
+        // #1C1410 92% surface as the dock and composer), never a mint tint.
         .toolbarBackground(PulseTheme.emberChrome.opacity(0.92), for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .onAppear {
@@ -2883,7 +2883,7 @@ struct BubbleView: View {
                 // R7 - sender name renders on HEAD rows of incoming group
                 // messages only (web chat-room.tsx:7289 head gate; the little
                 // color dot is the row's avatar stand-in - gated with it).
-                // R24 - sender name 12pt emerald glow (#34D399).
+                // EMB-I - sender name 12pt ember glow (#FFB86B).
                 if groupChat && !mine, isClusterHead, let sender = message.sender {
                     HStack(spacing: 5) {
                         Circle().fill(PulseTheme.color(named: sender.color)).frame(width: 6, height: 6)
@@ -3386,7 +3386,7 @@ struct BubbleView: View {
     }
 
     private var bubbleFill: some ShapeStyle {
-        // R24 bubbles: outgoing emerald-500, incoming zinc-800 (web verbatim).
+        // EMB-I bubbles: outgoing #17110D, incoming #2E2824 (flat, no mint).
         if mine {
             return AnyShapeStyle(PulseTheme.emberBubbleOutgoing)
         }

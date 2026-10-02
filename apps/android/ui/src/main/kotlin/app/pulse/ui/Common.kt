@@ -73,12 +73,11 @@ fun pulseInfiniteFloat(
 
 /** The web palette - one source of truth for accents (ui-theme tokens). */
 object PulsePalette {
-    // R24 NATIVE: the palette rides the web truth again (src/app/globals.css)
-    // - emerald-500/600 as the brand pair, the R35 Neo carbon surfaces as the
-    // dark field. Historical slot names kept so every call site re-skins
-    // through this one object.
-    val Emerald = Color(0xFF10B981)
-    val EmeraldDeep = Color(0xFF059669)
+    // EMB-B: the "Emerald" accent slots carry the ember pair now - every
+    // icon/tint call site that named the old green rides the sunset language.
+    // Deep is darkened for light-mode text contrast (4.2:1 on white).
+    val Emerald = Color(0xFFF2A65A)
+    val EmeraldDeep = Color(0xFFC9762B)
     val Teal = Color(0xFF14B8A6)
     val TealLight = Color(0xFF2DD4BF)
     val Violet = Color(0xFF8B5CF6)
@@ -98,10 +97,10 @@ object PulsePalette {
     val NeoText = Color(0xFFECF4EF)
     /** Secondary text on carbon. */
     val NeoTextDim = Color(0xFF8CA398)
-    /** Neon mint signal accent (web .dark --primary #2be8a6). */
-    val NeonMint = Color(0xFF2BE8A6)
-    /** Ink to place on top of the mint accent (web .dark --primary-foreground). */
-    val OnNeonMint = Color(0xFF04120C)
+    /** Neon ember signal accent (EMB-B: was neon mint). */
+    val NeonMint = Color(0xFFFFB86B)
+    /** Ink to place on top of the ember accent. */
+    val OnNeonMint = Color(0xFF24140A)
     /** Neon magenta - sparing secondary accent. */
     val NeonMagenta = Color(0xFFFF5CA8)
     /** Neo destructive. */

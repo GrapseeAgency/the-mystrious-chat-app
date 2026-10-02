@@ -24,57 +24,54 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Pulse screen-chrome tokens.
+ * PULSE EMBER design tokens (Task EMB-A).
  *
- * R24 NATIVE: the values are re-pointed to the web-truth palette
- * (src/app/globals.css) - clean green-cast carbon surfaces with the
- * emerald/mint signal family, matching the chat room's own dark-in-both-modes
- * presentation. Historical slot names are kept deliberately: every styled
- * screen re-skins through this one object without a tree-wide rename.
+ * The language: a warm sunset-blur backdrop instead of flat black, glass
+ * circle chrome, hand-drawn white line icons (PulseIcons), ember amber as
+ * the single warm signal and #FF453A reserved for unread/active dots.
  */
 object EmberPalette {
-    /** Backdrop vertical stack: elevated carbon -> mid -> page carbon. */
-    val BackdropTop = Color(0xFF0D1211)
-    val BackdropMid = Color(0xFF090D0C)
-    val BackdropBase = Color(0xFF07090B)
+    /** Backdrop vertical stack: warm brown -> mid umber -> near-black warm. */
+    val BackdropTop = Color(0xFF5C4030)
+    val BackdropMid = Color(0xFF33241B)
+    val BackdropBase = Color(0xFF150F0B)
 
-    /** The radial glow behind a chat room header (emerald, drawn at 35%). */
-    val Glow = Color(0xFF10B981)
+    /** The radial warm glow behind a chat room header (#7A4E33 at 35%). */
+    val Glow = Color(0xFF7A4E33)
 
-    /** The accent gradient pair (send button, unseen story rings, FAB pulse).
-    *   Web send-button verbatim: from-emerald-400 to-emerald-600. */
-    val Amber = Color(0xFF34D399)
-    val Deep = Color(0xFF059669)
+    /** The ember gradient pair (send button, unseen story rings, FAB pulse). */
+    val Amber = Color(0xFFFFB86B)
+    val Deep = Color(0xFFFF7A3D)
     val Gradient: List<Color> = listOf(Amber, Deep)
 
-    /** Destructive / alert signal (web --destructive). */
-    val Signal = Color(0xFFFF5C6C)
+    /** Unread / active-tab signal red. */
+    val Signal = Color(0xFFFF453A)
 
-    /** Online presence dot (native green). */
-    val Online = Color(0xFF22C55E)
+    /** Online presence dot. */
+    val Online = Color(0xFFFF9F0A)
 
-    /** Chrome fills: floating nav pill and composer pill (NeoSurface at 95%). */
-    val PillFill = Color(0xF20D1211)
-    /** Dark circle FAB fill (attach button, zinc-800 at 95%). */
-    val FabFill = Color(0xF227272A)
+    /** Chrome fills: the floating nav pill and composer pill (#1C1410 at 92%). */
+    val PillFill = Color(0xEB1C1410)
+    /** Dark circle FAB fill (attach button, 92% of the same ink). */
+    val FabFill = Color(0xEB1C1410)
 
-    /** Bubble fills (web chat-room verbatim: zinc-800 incoming / emerald-500 mine). */
-    val BubbleIn = Color(0xFF27272A)
-    val BubbleOut = Color(0xFF10B981)
+    /** Bubble fills. */
+    val BubbleIn = Color(0xFF2E2824)
+    val BubbleOut = Color(0xFF17110D)
 
-    /** Grouped sender name (web group sender: emerald-400). */
-    val SenderName = Color(0xFF34D399)
+    /** Grouped sender name / warm accent text. */
+    val SenderName = Color(0xFFFFB86B)
 
-    /** Standard chrome fills (web dark hairline family). */
-    val GlassFill = Color.White.copy(alpha = 0.08f)
-    val GlassBorder = Color.White.copy(alpha = 0.10f)
+    /** Standard glass fills. */
+    val GlassFill = Color.White.copy(alpha = 0.09f)
+    val GlassBorder = Color.White.copy(alpha = 0.12f)
     val Hairline = Color.White.copy(alpha = 0.08f)
-    val CardFill = Color.White.copy(alpha = 0.06f)
+    val CardFill = Color.White.copy(alpha = 0.05f)
     val ChipFill = Color.White.copy(alpha = 0.08f)
 }
 
 /**
- * The page backdrop: vertical carbon gradient with an optional emerald
+ * The Ember page backdrop: vertical sunset gradient with an optional warm
  * radial glow centered behind the header (chat rooms). Drawn behind screen
  * content; screens layer their own chrome on top.
  */
@@ -120,12 +117,7 @@ fun EmberBackdrop(
     )
 }
 
-/**
- * Standard header icon button - the native chrome unit (40-44dp).
- * R24 NATIVE: the glass circle fill is gone; a plain icon with a bounded
- * ripple reads like every native messaging-app header. A subtle fill rides
- * only where the host surface needs separation (GlassFill at 50%).
- */
+/** Glass circle icon button - the Ember chrome unit (40-44dp, white 9% fill). */
 @Composable
 fun EmberGlassButton(
     icon: ImageVector,
@@ -140,7 +132,8 @@ fun EmberGlassButton(
         modifier
             .size(size)
             .clip(CircleShape)
-            .background(EmberPalette.GlassFill.copy(alpha = 0.5f))
+            .background(EmberPalette.GlassFill)
+            .border(1.dp, EmberPalette.GlassBorder, CircleShape)
             .clickable(onClick = onClick, role = Role.Button),
         contentAlignment = Alignment.Center,
     ) {

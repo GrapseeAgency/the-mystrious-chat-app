@@ -94,12 +94,12 @@ private val Zinc400 = Color(0xFFA1A1AA)
 private val Zinc500 = Color(0xFF71717A)
 private val Zinc700 = Color(0xFF3F3F46)
 private val Zinc800 = Color(0xFF27272A)
-// R24 NATIVE: the brand-adjacent shades ride the emerald family again (the
-// SWATCH picker below keeps its full user-choosable rainbow untouched).
-private val Emerald400 = Color(0xFF6EE7B7)
-private val Emerald500 = Color(0xFF10B981)
-private val Emerald600 = Color(0xFF059669)
-private val Emerald700 = Color(0xFF047857)
+// EMB-B: the brand-adjacent shades ride the ember language (the SWATCH
+// picker below keeps its full user-choosable rainbow untouched).
+private val Emerald400 = Color(0xFFFFD9A8)
+private val Emerald500 = Color(0xFFF2A65A)
+private val Emerald600 = Color(0xFFC9762B)
+private val Emerald700 = Color(0xFFB45309)
 private val Amber400 = Color(0xFFFBBF24)
 private val Amber500 = Color(0xFFF59E0B)
 private val Amber600 = Color(0xFFD97706)

@@ -1105,7 +1105,7 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
             .background(if (selected) EmberPalette.Deep else EmberPalette.ChipFill)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
-        color = if (selected) Color(0xFF04120C) else MaterialTheme.colorScheme.onSurface,
+        color = if (selected) Color(0xFF1C1410) else MaterialTheme.colorScheme.onSurface,
         fontSize = 12.sp,
     )
 }

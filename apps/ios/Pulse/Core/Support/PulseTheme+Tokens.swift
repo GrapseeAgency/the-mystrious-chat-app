@@ -212,19 +212,19 @@ extension PulseTheme {
         )
     }
 
-    /// Pinned wash - emerald 4.5% light, 6% dark (R24).
+    /// Pinned wash - ember amber 4.5% light, 6% dark (EMB-B).
     static var pinnedWash: Color {
         adaptive(
-            UIColor(red: 0.020, green: 0.588, blue: 0.412, alpha: 0.045),
-            UIColor(red: 0.204, green: 0.827, blue: 0.600, alpha: 0.06),
+            UIColor(red: 0.788, green: 0.463, blue: 0.169, alpha: 0.045),
+            UIColor(red: 1.0, green: 0.722, blue: 0.42, alpha: 0.06),
         )
     }
 
     /// Auto-linked bubble URL color (R4-A item 1, web renderPlain parity):
-    /// R24 readable emerald-600 light, emerald-400 dark (mine rows
+    /// EMB-B readable burnt ember light, ember amber dark (mine rows
     /// override to white at the call site).
     static var bubbleLink: Color {
-        adaptive(PulseUiThemeColor(hex: "#059669").color, emberGlowTop)
+        adaptive(PulseUiThemeColor(hex: "#B4631F").color, emberGlowTop)
     }
 
     /// Dock/panel shadow strength - heavier in dark.
@@ -350,39 +350,38 @@ extension PulseTheme {
     // The Ember design ground: warm sunset-blur backdrop, glass circle
     // chrome, ember signal accents. Deliberately NOT adaptive constants -
     // every Ember screen pins the dark look in both color schemes.
-    /// Backdrop stops, top to bottom: elevated carbon, mid, page carbon.
+    /// Backdrop stops, top to bottom: warm brown, mid brown, near-black.
     static var emberBackdrop: LinearGradient {
         LinearGradient(
             colors: [
-                PulseUiThemeColor(hex: "#0D1211").color,
-                PulseUiThemeColor(hex: "#090D0C").color,
-                PulseUiThemeColor(hex: "#07090B").color,
+                PulseUiThemeColor(hex: "#5C4030").color,
+                PulseUiThemeColor(hex: "#33241B").color,
+                PulseUiThemeColor(hex: "#150F0B").color,
             ],
             startPoint: .top, endPoint: .bottom,
         )
     }
-    /// Emerald radial glow behind room headers (#10b981, rendered at 35%).
-    static let emberGlowColor = PulseUiThemeColor(hex: "#10B981").color
+    /// Warm radial glow behind room headers (#7A4E33, rendered at 35%).
+    static let emberGlowColor = PulseUiThemeColor(hex: "#7A4E33").color
     /// Chrome surface (dock pill, composer field, dark circles).
-    static let emberChrome = PulseUiThemeColor(hex: "#0D1211").color
-    /// Bubble fills (web chat-room verbatim): incoming zinc-800, outgoing emerald-500.
-    static let emberBubbleIncoming = PulseUiThemeColor(hex: "#27272A").color
-    static let emberBubbleOutgoing = PulseUiThemeColor(hex: "#10B981").color
-    /// The signal pair (send button, story rings, primary moments) -
-    /// web send-button verbatim: emerald-400 to emerald-600.
-    static let emberGlowTop = PulseUiThemeColor(hex: "#34D399").color
-    static let emberGlowBottom = PulseUiThemeColor(hex: "#059669").color
+    static let emberChrome = PulseUiThemeColor(hex: "#1C1410").color
+    /// Bubble fills: incoming #2E2824, outgoing #17110D.
+    static let emberBubbleIncoming = PulseUiThemeColor(hex: "#2E2824").color
+    static let emberBubbleOutgoing = PulseUiThemeColor(hex: "#17110D").color
+    /// The Ember signal pair (send button, story rings, primary moments).
+    static let emberGlowTop = PulseUiThemeColor(hex: "#FFB86B").color
+    static let emberGlowBottom = PulseUiThemeColor(hex: "#FF7A3D").color
     static var emberSignalGradient: LinearGradient {
         LinearGradient(
             colors: [emberGlowTop, emberGlowBottom],
             startPoint: .topLeading, endPoint: .bottomTrailing,
         )
     }
-    /// System-semantic tints: destructive (web --destructive) + presence green.
-    static let emberRed = PulseUiThemeColor(hex: "#FF5C6C").color
-    static let emberOnline = PulseUiThemeColor(hex: "#22C55E").color
-    /// Ring color for dots/badges floating on the carbon ground.
-    static let emberDotRing = PulseUiThemeColor(hex: "#07090B").color
+    /// System-semantic ember tints: destructive red + presence amber.
+    static let emberRed = PulseUiThemeColor(hex: "#FF453A").color
+    static let emberOnline = PulseUiThemeColor(hex: "#FF9F0A").color
+    /// Ring color for dots/badges floating on the ember ground.
+    static let emberDotRing = PulseUiThemeColor(hex: "#1C1410").color
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -392,7 +391,7 @@ extension PulseTheme {
 // onto the ember ground (the Ember look is scheme-independent on purpose).
 // ─────────────────────────────────────────────────────────────
 
-/// Emerald radial glow behind room headers: #10b981 at 35% fading out by
+/// Warm radial glow behind room headers: #7A4E33 at 35% fading out by
 /// 40% of the container height. Pinned to the top edge, never hit-testable.
 struct EmberRadialGlow: View {
     var body: some View {
@@ -556,7 +555,7 @@ public enum PulseUiTheme {
                 label: "Immersive Glass",
                 tagline: "Glassmorphic Chat UI",
                 detail: "Layered frosted glass, aurora backdrop, specular edges, elastic motion.",
-                swatch: ["#10B981", "#14B8A6"],
+                swatch: ["#FFB86B", "#FF7A3D"],
                 motion: "elastic",
             )
         case .kinetic:
@@ -614,20 +613,20 @@ public enum PulseUiTheme {
     public static func tokens(for id: PulseUiThemeId, dark: Bool) -> PulseUiThemeTokens {
         switch id {
         case .glass:
-            // ui-glass - R24 NATIVE: the web emerald language (Android
-            // Theme.kt GLASS parity). Mint accent in dark, emerald-500 in
-            // light, clean carbon page base, flat native presentation.
+            // ui-glass - EMB-B: the ember glass language (Android Theme.kt
+            // GLASS parity). Amber glow accent in dark, burnt ember in light,
+            // warm paper page base instead of the green-cast washes.
             return PulseUiThemeTokens(
-                accent: dark ? PulseUiThemeColor(hex: "#2BE8A6") : PulseUiThemeColor(hex: "#10B981"),
-                accent2: dark ? PulseUiThemeColor(hex: "#2DD4BF") : PulseUiThemeColor(hex: "#14B8A6"),
-                radiusPanel: 24,
-                pageBg: dark ? PulseUiThemeColor(hex: "#07090B") : PulseUiThemeColor(hex: "#F5F8F6"),
+                accent: dark ? PulseUiThemeColor(hex: "#FFB86B") : PulseUiThemeColor(hex: "#C9762B"),
+                accent2: dark ? PulseUiThemeColor(hex: "#FF7A3D") : PulseUiThemeColor(hex: "#E08A3C"),
+                radiusPanel: 28,
+                pageBg: dark ? PulseUiThemeColor(hex: "#150F0B") : PulseUiThemeColor(hex: "#FBF6F0"),
                 panelBg: dark
-                    ? PulseUiThemeColor(hex: "#0D1211", alpha: 0.95)
-                    : PulseUiThemeColor(hex: "#ffffff", alpha: 0.85),
+                    ? PulseUiThemeColor(hex: "#1E1610", alpha: 0.60)
+                    : PulseUiThemeColor(hex: "#ffffff", alpha: 0.55),
                 panelBorder: dark
-                    ? PulseUiThemeColor(hex: "#ffffff", alpha: 0.08)
-                    : PulseUiThemeColor(hex: "#0C1210", alpha: 0.10),
+                    ? PulseUiThemeColor(hex: "#ffffff", alpha: 0.14)
+                    : PulseUiThemeColor(hex: "#2A1E14", alpha: 0.10),
                 blur: 28,
             )
         case .kinetic:

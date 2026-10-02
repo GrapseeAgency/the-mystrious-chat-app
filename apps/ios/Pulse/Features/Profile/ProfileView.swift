@@ -147,7 +147,7 @@ struct ProfileView: View {
         .padding(.top, 4)
     }
 
-    /// 96pt avatar; online renders the #22C55E dot ringed in the ground.
+    /// 96pt avatar; online renders the #FF9F0A dot ringed in the ground.
     private var avatarBadge: some View {
         PulseAvatar(
             name: prefs.viewer?.name ?? "You",

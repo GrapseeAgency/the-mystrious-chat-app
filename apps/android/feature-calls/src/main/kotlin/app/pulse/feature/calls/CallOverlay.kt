@@ -162,7 +162,7 @@ fun CallOverlay(vm: CallViewModel) {
                         CallButton(
                             icon = PulseIcons.Phone,
                             description = "Accept call",
-                            container = Color(0xFF22C55E), // R24: native green accept
+                            container = Color(0xFFFF9F0A), // EMB-B ember accept
                         ) {
                             if (isVideoCall) {
                                 videoAcceptLauncher.launch(
@@ -300,7 +300,7 @@ private fun PeerAvatar(name: String?) {
     ) {
         Text(
             text = initialsOf(name ?: "?").uppercase().take(2).ifBlank { "?" },
-            color = Color(0xFF34D399), // R24: emerald initials on carbon
+            color = Color(0xFFFFB86B), // EMB-B ember initials
             style = MaterialTheme.typography.headlineMedium,
         )
     }

@@ -1,33 +1,64 @@
 package app.pulse.ui
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.font.DeviceFontFamilyName
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.googlefonts.Font as GoogleFontFont
+import androidx.compose.ui.text.googlefonts.GoogleFont
 
 /**
- * R24 NATIVE type system.
+ * R35 Neo type system - the native mirror of the web's next/font setup
+ * (src/app/layout.tsx: Space Grotesk carries the whole UI, JetBrains Mono
+ * speaks for timestamps, handles, IDs and stat numerals).
  *
- * The app speaks the platform voice: system Roboto (FontFamily.Default)
- * carries the UI and the platform monospace face speaks for timestamps,
- * handles, IDs and stat numerals. The previous Google Fonts downloadable
- * families (Space Grotesk / JetBrains Mono) read as foreign chrome on a
- * native app and added first-launch font-provider latency; the platform
- * default is the native look AND the honest offline-first choice.
- *
- * The family slots keep their historical names so no call site changes.
+ * Both families load through the Google Play Services downloadable-fonts
+ * provider (certs: res/values/font_certs.xml). The trailing platform faces
+ * in each chain are the graceful offline fallback: if the provider cannot
+ * fetch the font, Compose walks down the family to sans-serif / monospace
+ * instead of crashing or blocking - the app is honest offline-first.
  */
 
-/** Display/UI face - the platform sans-serif (Roboto on Android). */
-val PulseDisplayFamily: FontFamily = FontFamily.Default
+private val pulseFontProvider = GoogleFont.Provider(
+    providerAuthority = "com.google.android.gms.fonts",
+    providerPackage = "com.google.android.gms",
+    certificates = R.array.com_google_android_gms_fonts_certs,
+)
 
-/** Mono face for timestamps, handles, IDs and stat numerals - platform monospace. */
-val PulseMonoFamily: FontFamily = FontFamily.Monospace
+private val spaceGrotesk = GoogleFont("Space Grotesk")
+private val jetBrainsMono = GoogleFont("JetBrains Mono")
+
+/** Display/UI face (weights 400/500/600/700) - fallback: platform sans-serif. */
+val PulseDisplayFamily: FontFamily = FontFamily(
+    GoogleFontFont(googleFont = spaceGrotesk, fontProvider = pulseFontProvider, weight = FontWeight.Normal),
+    GoogleFontFont(googleFont = spaceGrotesk, fontProvider = pulseFontProvider, weight = FontWeight.Medium),
+    GoogleFontFont(googleFont = spaceGrotesk, fontProvider = pulseFontProvider, weight = FontWeight.SemiBold),
+    GoogleFontFont(googleFont = spaceGrotesk, fontProvider = pulseFontProvider, weight = FontWeight.Bold),
+    // Platform fallback chain: DeviceFontFamilyName resolves the platform
+    // face by name at draw time (API-safe at every minSdk, no Typeface
+    // constants, and degrades to the system default if the face is absent).
+    Font(DeviceFontFamilyName("sans-serif"), FontWeight.Normal),
+    Font(DeviceFontFamilyName("sans-serif"), FontWeight.Medium),
+    Font(DeviceFontFamilyName("sans-serif"), FontWeight.SemiBold),
+    Font(DeviceFontFamilyName("sans-serif"), FontWeight.Bold),
+)
+
+/** Mono face for timestamps, handles, IDs and stat numerals - fallback: monospace. */
+val PulseMonoFamily: FontFamily = FontFamily(
+    GoogleFontFont(googleFont = jetBrainsMono, fontProvider = pulseFontProvider, weight = FontWeight.Normal),
+    GoogleFontFont(googleFont = jetBrainsMono, fontProvider = pulseFontProvider, weight = FontWeight.Medium),
+    GoogleFontFont(googleFont = jetBrainsMono, fontProvider = pulseFontProvider, weight = FontWeight.SemiBold),
+    GoogleFontFont(googleFont = jetBrainsMono, fontProvider = pulseFontProvider, weight = FontWeight.Bold),
+    Font(DeviceFontFamilyName("monospace"), FontWeight.Normal),
+    Font(DeviceFontFamilyName("monospace"), FontWeight.Bold),
+)
 
 /**
  * The Material typography with every style riding [PulseDisplayFamily].
  * MaterialTheme seeds LocalTextStyle from bodyLarge, so plain Text calls
- * that only set fontSize/color inherit the system face app-wide without
- * each screen having to pass a fontFamily.
+ * that only set fontSize/color inherit the Neo face app-wide without each
+ * screen having to pass a fontFamily.
  */
 fun pulseTypography(): Typography {
     val base = Typography()

@@ -71,12 +71,13 @@ class PulsePrefsLocalStore @Inject constructor(
         context.pulsePrefs.edit { it[Keys.UI_THEME] = id }
     }
 
-    // R4-B item 3 / R24 - navigation style (pulse.navStyle.v3, native default)
+    // R4-B item 3 - navigation style (pulse.navStyle.v2)
 
     /**
      * Live navigation style - one of the 13 [PulseNavStyle] ids (the web
      * value strings verbatim); junk and wrong-case values fall back to the
-     * native bottom-bar default.
+     * capsule default (the same resolve the web's getNavStyleMeta fallback
+     * performs).
      */
     val navStyle: Flow<app.pulse.protocol.PulseNavStyle> = context.pulsePrefs.data.map { p ->
         app.pulse.protocol.PulseNavStyle.fromPersisted(p[Keys.NAV_STYLE])

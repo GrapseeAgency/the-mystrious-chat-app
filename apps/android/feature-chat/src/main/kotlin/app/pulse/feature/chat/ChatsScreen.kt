@@ -145,14 +145,14 @@ private val EmberText80 = Color.White.copy(alpha = 0.80f)
 private val EmberText55 = Color.White.copy(alpha = 0.55f)
 private val EmberText45 = Color.White.copy(alpha = 0.45f)
 private val EmberText40 = Color.White.copy(alpha = 0.40f)
-// R24 NATIVE: the file-local shade quartet rides the web emerald family
-// (the shared PulsePalette.Emerald pair is the upstream truth; these are the
-// light glow ring, mid accent and teal secondaries for light surfaces).
-private val Emerald400 = Color(0xFF6EE7B7)
+// EMB-B: the old green quartet rides the ember language now (the shared
+// PulsePalette.Emerald pair is retargeted upstream; these file-local shades
+// follow: light glow ring, mid accent, readable deep for light surfaces).
+private val Emerald400 = Color(0xFFFFD9A8)
 private val Emerald500 = PulsePalette.Emerald
 private val Emerald600 = PulsePalette.EmeraldDeep
-private val Teal500 = Color(0xFF14B8A6)
-private val Teal600 = Color(0xFF0D9488)
+private val Teal500 = Color(0xFFFF7A3D)
+private val Teal600 = Color(0xFFD96A2B)
 
 /** Web `streakHeatLevel` - 2-4 → warm, 5-9 → hot, 10+ → blazing. */
 private fun streakHeat(count: Int): Int = when {
@@ -930,7 +930,7 @@ private fun HomeHeader(
                     expanded = headerMenuOpen,
                     onDismissRequest = { headerMenuOpen = false },
                     shape = RoundedCornerShape(16.dp),
-                    containerColor = if (dark) Color(0xFF161C1A) else Color.White,
+                    containerColor = if (dark) Color(0xFF241A13) else Color.White,
                 ) {
                     DropdownMenuItem(
                         text = { Text("Calls", fontSize = 14.sp) },
@@ -1088,7 +1088,7 @@ private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) 
                     .background(
                         when {
                             isActive && dark -> Color.White
-                            isActive -> Color(0xFF04120C)
+                            isActive -> Color(0xFF1C1410)
                             dark -> Color.White.copy(alpha = 0.09f)
                             else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                         },
@@ -1117,7 +1117,7 @@ private fun FilterChipsRow(active: String, unreadTotal: Int, onSelect: (String) 
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = when {
-                        isActive && dark -> Color(0xFF04120C)
+                        isActive && dark -> Color(0xFF1C1410)
                         isActive -> Color.White
                         dark -> EmberText55
                         else -> Zinc500
@@ -1360,7 +1360,7 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
             .background(
                 when {
                     active && dark -> Color.White
-                    active -> Color(0xFF04120C)
+                    active -> Color(0xFF1C1410)
                     dark -> Color.White.copy(alpha = 0.08f)
                     else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                 },
@@ -1376,7 +1376,7 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
             Icon(
                 icon,
                 contentDescription = null,
-                tint = if (active) (if (dark) Color(0xFF04120C) else Color.White) else EmberPalette.Amber,
+                tint = if (active) (if (dark) Color(0xFF1C1410) else Color.White) else EmberPalette.Amber,
                 modifier = Modifier.size(14.dp),
             )
         }
@@ -1385,7 +1385,7 @@ private fun RailPill(label: String, icon: ImageVector?, count: Int, active: Bool
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             color = when {
-                active && dark -> Color(0xFF04120C)
+                active && dark -> Color(0xFF1C1410)
                 active -> Color.White
                 dark -> EmberText55
                 else -> Zinc600
@@ -1752,7 +1752,7 @@ private fun ConversationRowItem(
                         fontSize = 11.sp,
                         fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
                         color = if (hasUnread) {
-                            if (dark) EmberText80 else Color(0xFF0C1210)
+                            if (dark) EmberText80 else Color(0xFF1C1410)
                         } else {
                             if (dark) EmberText45 else Zinc400
                         },

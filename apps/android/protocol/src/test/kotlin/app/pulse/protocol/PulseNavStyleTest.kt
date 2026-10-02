@@ -5,10 +5,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * R4-B item 3 / R14 / R24 - JVM pins for the navigation-style registry
- * parser. The id strings are the web nav-registry.ts values verbatim (13/13
- * since the R14 wiring); the parse rules pin the "junk → bottom-bar"
- * native-default fallback and the v3 storage key.
+ * R4-B item 3 / R14 - JVM pins for the navigation-style registry parser. The
+ * id strings are the web nav-registry.ts values verbatim (13/13 since the
+ * R14 wiring); the parse rules pin the "junk → capsule" fallback.
  */
 class PulseNavStyleTest {
 
@@ -35,13 +34,13 @@ class PulseNavStyleTest {
     }
 
     @Test
-    fun `junk wrong-case and null all fall back to the native default`() {
-        assertEquals(PulseNavStyle.BOTTOM_BAR, PulseNavStyle.fromPersisted("definitely-junk"))
-        assertEquals(PulseNavStyle.BOTTOM_BAR, PulseNavStyle.fromPersisted("CAPSULE"))
-        assertEquals(PulseNavStyle.BOTTOM_BAR, PulseNavStyle.fromPersisted("Capsule"))
-        assertEquals(PulseNavStyle.BOTTOM_BAR, PulseNavStyle.fromPersisted(" "))
-        assertEquals(PulseNavStyle.BOTTOM_BAR, PulseNavStyle.fromPersisted(""))
-        assertEquals(PulseNavStyle.BOTTOM_BAR, PulseNavStyle.fromPersisted(null))
+    fun `junk wrong-case and null all fall back to capsule`() {
+        assertEquals(PulseNavStyle.CAPSULE, PulseNavStyle.fromPersisted("definitely-junk"))
+        assertEquals(PulseNavStyle.CAPSULE, PulseNavStyle.fromPersisted("CAPSULE"))
+        assertEquals(PulseNavStyle.CAPSULE, PulseNavStyle.fromPersisted("Capsule"))
+        assertEquals(PulseNavStyle.CAPSULE, PulseNavStyle.fromPersisted(" "))
+        assertEquals(PulseNavStyle.CAPSULE, PulseNavStyle.fromPersisted(""))
+        assertEquals(PulseNavStyle.CAPSULE, PulseNavStyle.fromPersisted(null))
     }
 
     @Test
@@ -61,8 +60,8 @@ class PulseNavStyleTest {
     }
 
     @Test
-    fun `prefs key is the v3 native-default era and the default is the bottom bar`() {
-        assertTrue(PulseNavStyle.PREFS_KEY == "pulse.navStyle.v3")
-        assertEquals("bottom-bar", PulseNavStyle.DEFAULT_ID)
+    fun `prefs key matches the web localStorage key exactly`() {
+        assertTrue(PulseNavStyle.PREFS_KEY == "pulse.navStyle.v2")
+        assertEquals("capsule", PulseNavStyle.DEFAULT_ID)
     }
 }
