@@ -4766,3 +4766,22 @@ Stage Summary:
 - SHIPPED: the four user-audit items - honest connect gate + one-tap demo account (server error is now an explained, actionable first-run state), profile cover pictures end-to-end on ALL THREE platforms, Hub in the profile/dock kebabs on Android + iOS, and two research-driven native-feel upgrades (haptics master gate + splash screen)
 - Honest gaps: predictive-back in-app transitions and shared-element transitions are NOT yet implemented (flag + system animation only); iOS cover uses the square capture (render-crop hides it); demo login rotates Alice's session (web last-login-wins semantics, unchanged); the CDN manifest still points at v0.11.1 with empty gateway - refresh queued post-release
 - Next queue: manifest refresh with the v0.19.0-native asset + gateway story, ForwardSheet/automation polish already noted, shared-element transition wave behind CI validation of this batch
+
+---
+Task ID: R50-merge
+Agent: orchestrator (Z.ai Code)
+Task: Merge the forked histories (remote R37-R39 waves vs local R50) and repair the release chain
+
+Work Log:
+- DISCOVERY: origin/main was 46 commits ahead of the sandbox checkout (the environment reset restored an older base); remote had already shipped R37-R39 (cover pictures on web+Android+iOS under the coverImage column, Android profile kebab Hub+Settings, demo companion Nova, CRON_SECRET health gate, iOS More-menu work)
+- MERGE: backup branch backup-r50-local kept; FETCH_HEAD merged; 24 conflicts resolved - remote side canonical for the shared feature files (coverImage naming wins over my cover), my R50 deltas preserved (connect gate + demo login, gated haptics, splash screen, version bump); worklog resolved as a union; local demo-rich SQLite kept and reconciled by db:push (old cover column dropped, coverImage from remote schema - the one cover upload from the pre-merge session was re-proven post-merge)
+- SPLASH FIX: the theirs-resolution of app/build.gradle.kts silently dropped implementation(libs.androidx.core.splashscreen); Android CI failed on "Theme.SplashScreen not found"; dependency line restored (1de89fe)
+- iOS FIX: my R50 iOS additions used the pre-merge cover field - aligned every WireUser/PulseViewer call site to coverImage (memberwise-arg completeness across OnboardingView/IdentityPickerSheet/ProfileView/PulseKeychainTests; repaired two PulseViewer(from:) conversion calls my first naive sweep had corrupted)
+- BROWSER PROOF (post-merge web): createImageBitmap fails in this headless Chromium while the Image() loader decodes fine - added the two-path decodeImageSource fallback in profile-tab.tsx; live re-upload as Alice persisted coverImage=/api/uploads/96b1653f-....jpg and the profile hero rendered it (loaded=true)
+- OPS: stale duplicate pulse-socket process (pre-secret, from the wiped-environment boot) kept 401-ing the maintenance dispatch next to the healthy one - killed; both .env (gateway) and mini-services/pulse-socket/.env (relay) now share CRON_SECRET and the authed dispatch probe returns 200 {"dispatched":0}; dev-server + relay restarted cleanly through the keeper runbook
+- RELEASE: main pushed through 859cea1 (26+1+merge+fixes); v0.19.0-native tag force-moved onto 859cea1 so the release carries every fix; Android tag CI re-triggered
+
+Stage Summary:
+- SHIPPED: one coherent history (no more parallel-wave divergence), the release chain un-stuck (main CI triggers work again - Web green, Android/iOS green after the dependency + call-site repairs), dispatch auth pair fixed for real (shared secret + single relay process)
+- Honest gaps: my blind regex call-site sweep briefly corrupted two conversion calls - caught by CI logs before any release, repaired same wave; terminal rendering eats "[m" ANSI sequences - hexdump before diagnosing YAML-looking corruption
+- Next queue: watch the v0.19.0-native Android run to green + release publish; refresh download/update-manifest.json (versionCode 37, sha256 of the published asset); predictive-back in-app transitions + shared-element wave; Android instrumented suite re-check
