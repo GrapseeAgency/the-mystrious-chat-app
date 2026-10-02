@@ -145,6 +145,7 @@ import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
 import app.pulse.ui.PulseTheme
 import app.pulse.ui.emberBackdrop
+import app.pulse.ui.pulseTabBackdrop
 import app.pulse.ui.isPulseDarkTheme
 import app.pulse.ui.pulseUiThemePageBackground
 import app.pulse.ui.pulseGlass
