@@ -4785,3 +4785,18 @@ Stage Summary:
 - SHIPPED: one coherent history (no more parallel-wave divergence), the release chain un-stuck (main CI triggers work again - Web green, Android/iOS green after the dependency + call-site repairs), dispatch auth pair fixed for real (shared secret + single relay process)
 - Honest gaps: my blind regex call-site sweep briefly corrupted two conversion calls - caught by CI logs before any release, repaired same wave; terminal rendering eats "[m" ANSI sequences - hexdump before diagnosing YAML-looking corruption
 - Next queue: watch the v0.19.0-native Android run to green + release publish; refresh download/update-manifest.json (versionCode 37, sha256 of the published asset); predictive-back in-app transitions + shared-element wave; Android instrumented suite re-check
+
+---
+Task ID: R50-ship
+Agent: orchestrator (Z.ai Code)
+Task: v0.19.0-native release + CDN manifest refresh + golden-path QA
+
+Work Log:
+- CI ALL GREEN: Android v0.19.0-native (36997201402 success - JVM tests + instrumented api 30/34 + signed R8 APK), iOS v0.19.0-native (36997201373 success - build + XCTest + archive), Android main (36997198636 success), Web main success
+- RELEASE: v0.19.0-native published with Pulse-v0.19.0-native.apk (25,451,081 bytes, sha256 f64247a4f126f2086d152e56d7dc175f01b2d78c08f6fc846088352bf51505a0); versionCode 37 / versionName 0.19.0-native from the tagged gradle defaults (source-verified; no aapt2 in sandbox)
+- CDN: download/update-manifest.json refreshed (v0.19.0-native, versionCode 37, release asset URL + sha256, honest gateway:"" - the in-app connect gate is the connectivity path) + download/Pulse.apk mirror replaced with the release bytes (816c772)
+- GOLDEN PATH QA (agent-browser, fresh session): onboarding name step -> handle step -> "Start chatting" -> server 409 name-clash -> step-back reveals "That's me - log in instead" -> click -> lands inside Alice's shell (AC banner avatar) -> "Bot & Webhook QA" room opens with 30K chars of real message history. The exact reclaim path a fresh install walks is proven live
+
+Stage Summary:
+- RELEASED: v0.19.0-native on all three CI tracks, manifest + mirror refreshed, the user-facing connect gate + demo login + cover pictures + kebab parity + haptics gate + splash screen all inside the shipped APK
+- Honest gaps / next queue: in-app predictive-back transitions + shared-element wave; iOS connect-gate card (iOS currently gates demo login on a configured gateway via Settings -> Connection); the CDN manifest gateway field stays empty until a persistent public relay exists (the sandbox preview URL is the working door: paste it in the app's connect gate and everything works against the live DB)
