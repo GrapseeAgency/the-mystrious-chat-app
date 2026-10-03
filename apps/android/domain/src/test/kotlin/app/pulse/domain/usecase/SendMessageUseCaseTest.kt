@@ -288,6 +288,8 @@ class SendMessageUseCaseTest {
             Result.success(emptyList())
         override suspend fun writeCallLog(entry: app.pulse.domain.model.CallLogEntry) = Result.success(Unit)
         override suspend fun flushCallLogQueue(): Result<Int> = Result.success(0)
+        // R59 mirror parity stub (unused by these tests)
+        override suspend fun quickPhrases(): List<Pair<String, String>> = emptyList()
         override suspend fun emitCall(signal: app.pulse.domain.model.CallSignalOut) {}
         // R8 Task 3-c - group calls + push registration (unused here).
         override suspend fun emitGroupCall(signal: app.pulse.domain.model.GroupCallSignalOut) {}

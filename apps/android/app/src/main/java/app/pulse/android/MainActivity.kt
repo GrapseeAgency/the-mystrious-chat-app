@@ -529,7 +529,6 @@ fun PulseRoot(
                         )
                     }
                 }
-                }
             } else if (onboarding) {
                 OnboardingScreen(
                     sessionNotice = sessionNotice,
