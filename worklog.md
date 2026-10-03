@@ -5034,3 +5034,18 @@ Stage Summary:
 - The web app is now the artboard, re-checked element-by-element against both reference images with the scene gradient corrected, the white outgoing voice, photo-card stories, quiet chips, dark-glass FAB/reactions, and ~60 corrupted utility classes repaired.
 - Nothing deleted: every displaced tool remains active (home kebab, room kebab, tray tile, folders, search).
 - Open: none blocking; next round can keep polishing micro-details (story card text caption glyph, room kebab contents re-audit) under the recurring webDevReview job.
+---
+Task ID: R55-ship
+Agent: orchestrator (Z.ai main session)
+Task: v0.23.0.0.2 release + CDN refresh.
+
+Work Log:
+- CI: Web main GREEN; Android tag v0.23.0.0.2 GREEN (versionCode 43 built from gradle defaults, Kotlin shell untouched per "native no more" - only release plumbing); iOS tag + Android main were still in flight at receipt time (non-blocking tracks).
+- RELEASE v0.23.0.0.2 published: Pulse-v0.23.0.0.2.apk 25,456,594 bytes sha256 4a9282f24bdaa814c4925b50e1c66d18b11fda71acbd9dd64289e64fadb900ae.
+- CDN: asset downloaded (octet-stream), download/Pulse.apk mirror swapped (local sha == release digest == live raw stream digest), update-manifest.json pinned (43 / 0.23.0.0.2 / 4a9282f2...), pushed edb2d46, live raw verified.
+- EXTRA VERIFICATION during the CI wait: attachments tray "Quick phrase" tile (new) opens the manage popover anchored above the composer; added "On my way" - server round-trip toast + 1/12 counter + rail chip appears above the composer only when phrases exist; the rail hides clean (artboard) when empty. Hub/Profile/dock tabs re-checked after reload (active dock tab now white).
+
+Stage Summary:
+- SHIPPED v0.23.0.0.2: the deep-audit pass. Web = the artboards (both reference screens re-matched element-by-element, every displaced tool still active), ~60 corrupted Tailwind utilities repaired, release chain verified end-to-end.
+- User action: in-app LiveUpdater offers 0.23.0.0.2 (manifest pinned at 43); stored gateway link persists through the update.
+- Open: iOS tag + Android main CI green-watch; next digit 0.23.0.0.3 for the following round.
