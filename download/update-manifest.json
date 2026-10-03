@@ -1,15 +1,15 @@
 {
-  "versionCode": 43,
-  "versionName": "0.23.0.0.2",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.2/Pulse-v0.23.0.0.2.apk",
+  "versionCode": 44,
+  "versionName": "0.23.0.0.3",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.3/Pulse-v0.23.0.0.3.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "4a9282f24bdaa814c4925b50e1c66d18b11fda71acbd9dd64289e64fadb900ae",
-  "notes": "R55 deep audit - the web UI re-checked element-by-element against both reference artboards: horizon ember scene corrected, outgoing bubbles now bone-white with ink (the artboard's own voice), photo-card stories with corner badges, quiet chips/pins, dark-glass FAB and reactions, plain timestamp clusters, and ~60 corrupted utility classes repaired repo-wide. Web-first shell unchanged; no native feature work per direction. Version line 0.23.0.0.2.",
+  "sha256": "0e7046fc8afff32c5cf092cbb15897a7c1775159f7b6f51b1aea7f471a15a562",
+  "notes": "R56 app re-theme - the app now wears the web artboard exactly: ember launcher icon + shortcuts + splash/boot chrome (the retired emerald is gone), a dead-server state shows the artboard connect panel with retry and a themed server-link editor instead of ever auto-flipping to the native interface, fresh boots go straight to the web onboarding, and a one-time repair frees anyone stranded in the old UI by a past transient failure. Same web surfaces you preview - now inside the app.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-10-03T12:00:00Z",
-  "apkSize": 25456594,
-  "version": "0.23.0.0.2",
-  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.2/Pulse-v0.23.0.0.2.apk"
+  "updatedAt": "2026-10-03T13:30:00Z",
+  "apkSize": 25461385,
+  "version": "0.23.0.0.3",
+  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.3/Pulse-v0.23.0.0.3.apk"
 }
