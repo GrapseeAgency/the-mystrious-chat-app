@@ -58,6 +58,7 @@ import {
   Megaphone,
   MessageSquare,
   MessagesSquare,
+  MessageSquarePlus,
   Mic,
   Minus,
   Paperclip,
@@ -155,7 +156,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Drawer, DrawerContent, DrawerDescription, DrawerTitle } from '@/components/ui/drawer'
 import {
   Dialog,
@@ -2604,6 +2605,17 @@ export function ChatRoom({
             },
           },
           {
+            label: 'Quick phrase',
+            help: 'Save lines you send often',
+            icon: MessageSquarePlus,
+            tone: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+            disabled: false,
+            run: () => {
+              setTray(false)
+              setPhrasesManageOpen(true)
+            },
+          },
+          {
             label: 'Poll',
             help: 'Live votes in this chat',
             icon: Vote,
@@ -4590,7 +4602,7 @@ export function ChatRoom({
                       initial={prefs.reducedMotion ? false : { opacity: 0, y: -6, scale: 0.96 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{ duration: 0.28, ease: ease.out }}
-                      className="rounded-full bg-[#1c1610]/80 px-3 py-1 text-[11px] font-medium text-[color:var(--art-dim)] ring-1 ring-[color:var(--art-hairline)] backdrop-blur-md"
+                      className="text-[11px] font-medium tracking-wide text-[color:var(--art-faint)]"
                     >
                       {item.label}
                     </motion.span>
@@ -5237,7 +5249,8 @@ export function ChatRoom({
             Server-backed (GET/POST/DELETE /api/users/[id]/phrases, no local
             persistence) - tap a chip to insert its text into the input; the
             tail affordance opens the small manage popover (add + delete). */}
-        {!broadcastLocked && !dmBlocked && !recording && !editing && phrasesQuery.isSuccess ? (
+        {!broadcastLocked && !dmBlocked && !recording && !editing &&
+          phrasesQuery.isSuccess && phrases.length > 0 ? (
           <div
             role="toolbar"
             aria-label="Quick phrases"
@@ -5255,115 +5268,111 @@ export function ChatRoom({
                 {phrase.text}
               </motion.button>
             ))}
-            <Popover
-              open={phrasesManageOpen}
-              onOpenChange={(open) => {
-                setPhrasesManageOpen(open)
-                if (!open) setPhraseDraft('')
+            <motion.button
+              type="button"
+              aria-label="Manage quick phrases"
+              onClick={() => {
+                haptic(8)
+                setPhrasesManageOpen(true)
               }}
+              whileTap={{ scale: 0.94 }}
+              transition={spring.snappy}
+              className="glass-pill flex size-7 shrink-0 items-center justify-center text-[color:var(--art-dim)] outline-none transition-colors hover:text-[color:var(--art-accent-2)]"
             >
-              <PopoverTrigger asChild>
-                <motion.button
-                  type="button"
-                  aria-label="Manage quick phrases"
-                  onClick={() => haptic(8)}
-                  whileTap={{ scale: 0.94 }}
-                  transition={spring.snappy}
-                  className={
-                    phrases.length === 0
-                      ? 'glass-pill flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-[color:var(--art-dim)] outline-none transition-colors hover:text-[color:var(--art-accent-2)]'
-                      : 'glass-pill flex size-7 shrink-0 items-center justify-center text-[color:var(--art-dim)] outline-none transition-colors hover:text-[color:var(--art-accent-2)]'
-                  }
-                >
-                  {phrases.length === 0 ? (
-                    <>
-                      <Plus className="size-3.5 shrink-0" aria-hidden />
-                      Quick phrase
-                    </>
-                  ) : (
-                    <Pencil className="size-3.5" aria-hidden />
-                  )}
-                </motion.button>
-              </PopoverTrigger>
-              <PopoverContent
-                side="top"
-                align="start"
-                sideOffset={10}
-                className="w-[272px] rounded-2xl border border-[color:var(--art-hairline)] bg-[#1c1610]/95 p-2.5 text-[color:var(--art-text)]"
-              >
-                <div className="flex items-center justify-between px-1 pb-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--art-faint)]">
-                    Quick phrases
-                  </span>
-                  <span className="text-[10px] font-semibold tabular-nums text-[color:var(--art-faint)]">
-                    {phrases.length}/{QUICK_PHRASES_MAX}
-                  </span>
-                </div>
-                <div className="pulse-scroll max-h-52 overflow-y-auto">
-                  {phrases.map((phrase) => (
-                    <div
-                      key={phrase.id}
-                      className="flex items-center gap-1 rounded-lg px-1.5 py-1 transition-colors hover:bg-white/[0.07]"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => insertQuickPhrase(phrase.text)}
-                        className="min-w-0 flex-1 truncate text-left text-[12.5px] text-[color:var(--art-text-soft)] outline-none"
-                      >
-                        {phrase.text}
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Delete quick phrase: ${phrase.text}`}
-                        disabled={deletePhrase.isPending}
-                        onClick={() => deletePhrase.mutate(phrase.id)}
-                        className="shrink-0 rounded-full p-1 text-[color:var(--art-faint)] outline-none transition-colors hover:bg-rose-500/15 hover:text-rose-400 disabled:opacity-50"
-                      >
-                        <X className="size-3.5" aria-hidden />
-                      </button>
-                    </div>
-                  ))}
-                  {phrases.length === 0 ? (
-                    <p className="px-1 pb-1.5 pt-1 text-[11.5px] leading-relaxed text-[color:var(--art-faint)]">
-                      No phrases yet - save the lines you send often, then tap them above the
-                      composer.
-                    </p>
-                  ) : null}
-                </div>
-                <form
-                  className="mt-1.5 flex items-center gap-1.5 border-t border-[color:var(--art-hairline)] pt-2"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    const text = phraseDraft.trim()
-                    if (text.length === 0 || addPhrase.isPending || phrases.length >= QUICK_PHRASES_MAX) return
-                    addPhrase.mutate(text)
-                  }}
-                >
-                  <Input
-                    value={phraseDraft}
-                    maxLength={QUICK_PHRASE_MAX}
-                    placeholder="Add a phrase…"
-                    aria-label="New quick phrase"
-                    onChange={(e) => setPhraseDraft(e.target.value)}
-                    className="h-8 min-w-0 flex-1 rounded-full bg-white/[0.07] px-3 text-[12.5px] text-[color:var(--art-text)]"
-                  />
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={
-                      phraseDraft.trim().length === 0 ||
-                      addPhrase.isPending ||
-                      phrases.length >= QUICK_PHRASES_MAX
-                    }
-                    className="h-8 shrink-0 rounded-full px-3.5 text-[11.5px]"
-                  >
-                    Add
-                  </Button>
-                </form>
-              </PopoverContent>
-            </Popover>
+              <Pencil className="size-3.5" aria-hidden />
+            </motion.button>
           </div>
         ) : null}
+
+        {/* R55: the quick-phrase manage popover lives OUTSIDE the (now
+            phrases-only) rail so its anchor survives an empty phrase list -
+            the attachments-tray tile below opens it for the first phrase. */}
+        <Popover
+          open={phrasesManageOpen}
+          onOpenChange={(open) => {
+            setPhrasesManageOpen(open)
+            if (!open) setPhraseDraft('')
+          }}
+        >
+          <PopoverAnchor asChild>
+            <span aria-hidden className="absolute inset-x-6 bottom-1 block h-0" />
+          </PopoverAnchor>
+          <PopoverContent
+            side="top"
+            align="start"
+            sideOffset={10}
+            className="w-[272px] rounded-2xl border border-[color:var(--art-hairline)] bg-[#1c1610]/95 p-2.5 text-[color:var(--art-text)]"
+          >
+            <div className="flex items-center justify-between px-1 pb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--art-faint)]">
+                Quick phrases
+              </span>
+              <span className="text-[10px] font-semibold tabular-nums text-[color:var(--art-faint)]">
+                {phrases.length}/{QUICK_PHRASES_MAX}
+              </span>
+            </div>
+            <div className="pulse-scroll max-h-52 overflow-y-auto">
+              {phrases.map((phrase) => (
+                <div
+                  key={phrase.id}
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 transition-colors hover:bg-white/[0.07]"
+                >
+                  <button
+                    type="button"
+                    onClick={() => insertQuickPhrase(phrase.text)}
+                    className="min-w-0 flex-1 truncate text-left text-[12.5px] text-[color:var(--art-text-soft)] outline-none"
+                  >
+                    {phrase.text}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete quick phrase: ${phrase.text}`}
+                    disabled={deletePhrase.isPending}
+                    onClick={() => deletePhrase.mutate(phrase.id)}
+                    className="shrink-0 rounded-full p-1 text-[color:var(--art-faint)] outline-none transition-colors hover:bg-rose-500/15 hover:text-rose-400 disabled:opacity-50"
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </div>
+              ))}
+              {phrases.length === 0 ? (
+                <p className="px-1 pb-1.5 pt-1 text-[11.5px] leading-relaxed text-[color:var(--art-faint)]">
+                  No phrases yet - save the lines you send often, then tap them above the
+                  composer.
+                </p>
+              ) : null}
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const text = phraseDraft.trim()
+                if (text.length === 0) return
+                addPhrase.mutate(text)
+              }}
+              className="mt-1 flex items-center gap-1.5 px-1"
+            >
+              <Input
+                value={phraseDraft}
+                placeholder="Add a phrase…"
+                aria-label="New quick phrase"
+                onChange={(e) => setPhraseDraft(e.target.value)}
+                className="h-8 min-w-0 flex-1 rounded-full bg-white/[0.07] px-3 text-[12.5px] text-[color:var(--art-text)]"
+              />
+              <Button
+                type="submit"
+                size="sm"
+                disabled={
+                  phraseDraft.trim().length === 0 ||
+                  addPhrase.isPending ||
+                  phrases.length >= QUICK_PHRASES_MAX
+                }
+                className="h-8 shrink-0 rounded-full px-3.5 text-[11.5px]"
+              >
+                Add
+              </Button>
+            </form>
+          </PopoverContent>
+        </Popover>
 
         {/* R54-c composer row: ONE art-input-pill (paperclip / Type here /
             camera) with the ember art-fab OUTSIDE on the right - plus opens the
@@ -6660,7 +6669,7 @@ function FileBubble({
         className={cn(
           'flex size-10 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset',
           mine
-            ? 'bg-white/20 text-white ring-white/30'
+            ? 'bg-black/[0.06] text-[color:var(--art-ink)] ring-black/15'
             : 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:bg-amber-500/15 dark:text-amber-400',
         )}
       >
@@ -6670,7 +6679,7 @@ function FileBubble({
         <span
           className={cn(
             'line-clamp-2 break-all text-[13px] font-semibold leading-snug',
-            mine ? 'text-white' : 'text-zinc-800 dark:text-zinc-100',
+            mine ? 'text-[color:var(--art-ink)]' : 'text-zinc-800 dark:text-zinc-100',
           )}
         >
           {name}
@@ -6678,7 +6687,7 @@ function FileBubble({
         <span
           className={cn(
             'mt-0.5 flex items-center gap-1 text-[10.5px] font-medium',
-            mine ? 'text-white/80' : 'text-zinc-400 dark:text-zinc-500',
+            mine ? 'text-[color:var(--art-ink-soft)]' : 'text-zinc-400 dark:text-zinc-500',
           )}
         >
           {formatDocSize(fileSize)}
@@ -6742,7 +6751,7 @@ function VoiceBubble({
         onClick={toggle}
         className={cn(
           'flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition-transform active:scale-90',
-          mine ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-amber-500 text-white hover:bg-amber-500/90',
+          mine ? 'bg-black/[0.07] text-[color:var(--art-ink)] hover:bg-black/[0.12]' : 'bg-amber-500 text-white hover:bg-amber-500/90',
         )}
       >
         {playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4 translate-x-[1px]" aria-hidden />}
@@ -6758,10 +6767,10 @@ function VoiceBubble({
                   'w-[3px] shrink-0 rounded-full transition-colors',
                   played
                     ? mine
-                      ? 'bg-white'
+                      ? 'bg-[color:var(--art-ink)]'
                       : 'bg-amber-500'
                     : mine
-                      ? 'bg-white/35'
+                      ? 'bg-black/25'
                       : 'bg-zinc-300 dark:bg-zinc-600',
                 )}
               />
@@ -6775,9 +6784,9 @@ function VoiceBubble({
         className={cn(
           'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums outline-none transition-transform active:scale-90',
           mine
-            ? 'bg-white/20 text-white hover:bg-white/30'
+            ? 'bg-black/[0.06] text-[color:var(--art-ink)] hover:bg-black/[0.1]'
             : 'bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400',
-          rate !== 1 && (mine ? 'ring-1 ring-white/40' : 'ring-1 ring-amber-500/40'),
+          rate !== 1 && (mine ? 'ring-1 ring-black/20' : 'ring-1 ring-amber-500/40'),
         )}
       >
         {rate}x
@@ -6785,7 +6794,7 @@ function VoiceBubble({
       <span
         className={cn(
           'shrink-0 text-[10px] font-semibold tabular-nums',
-          mine ? 'text-white/85' : 'text-zinc-400 dark:text-zinc-500',
+          mine ? 'text-[color:var(--art-ink-soft)]' : 'text-zinc-400 dark:text-zinc-500',
         )}
       >
         {durationMs !== null ? formatVoicems(durationMs) : '--:--'}
@@ -6846,17 +6855,17 @@ function VoiceTranscriptStrip({
       <div
         className={cn(
           'mx-0.5 mb-0.5 mt-1 flex items-start gap-1.5 border-t px-0.5 pt-1.5 pb-0.5',
-          mine ? 'border-white/25' : 'border-zinc-200/80 dark:border-white/10',
+          mine ? 'border-black/15' : 'border-zinc-200/80 dark:border-white/10',
         )}
       >
         <AudioLines
-          className={cn('mt-0.5 size-3.5 shrink-0', mine ? 'text-white/75' : 'text-amber-700 dark:text-amber-400/80')}
+          className={cn('mt-0.5 size-3.5 shrink-0', mine ? 'text-[color:var(--art-ink-soft)]' : 'text-amber-700 dark:text-amber-400/80')}
           aria-hidden
         />
         <p
           className={cn(
             'min-w-0 flex-1 whitespace-pre-wrap break-words text-[12px] leading-snug',
-            mine ? 'text-white/90' : 'text-zinc-600 dark:text-zinc-300',
+            mine ? 'text-[color:var(--art-ink-soft)]' : 'text-zinc-600 dark:text-zinc-300',
           )}
         >
           {message.transcript}
@@ -6878,7 +6887,7 @@ function VoiceTranscriptStrip({
         className={cn(
           'flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium outline-none transition-colors disabled:opacity-70',
           mine
-            ? 'bg-white/15 text-white hover:bg-white/25'
+            ? 'bg-black/[0.06] text-[color:var(--art-ink)] hover:bg-black/[0.1]'
             : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-white/10 dark:text-zinc-300 dark:hover:bg-white/15',
         )}
       >
@@ -7038,7 +7047,7 @@ function BubbleText({
           className={cn(
             'underline underline-offset-2',
             mine
-              ? 'text-[#ffab5e] decoration-[#ffab5e]/60 hover:decoration-[#ffab5e]'
+              ? 'text-[#9a4e06] decoration-[#9a4e06]/50 hover:decoration-[#9a4e06]'
               : 'text-[#ffab5e] decoration-[#ffab5e]/50 hover:decoration-[#ffab5e]',
           )}
         >
@@ -7055,7 +7064,10 @@ function BubbleText({
       nodes.push(
         <span
           key={`men-${key++}`}
-          className="rounded bg-[#ffab5e]/15 px-1 font-semibold text-[#ffab5e]"
+          className={cn(
+            'rounded px-1 font-semibold',
+            mine ? 'bg-[#9a4e06]/10 text-[#9a4e06]' : 'bg-[#ffab5e]/15 text-[#ffab5e]',
+          )}
         >
           @{run.mention}
         </span>,
@@ -7075,7 +7087,7 @@ function BubbleText({
             key={`pre-${key++}`}
             className={cn(
               'my-0.5 block whitespace-pre-wrap rounded-lg px-2 py-1.5 font-mono text-[12.5px] leading-snug',
-              mine ? 'bg-white/10' : 'bg-black/30',
+              mine ? 'bg-black/[0.07]' : 'bg-black/30',
             )}
           >
             {pre}
@@ -7087,7 +7099,7 @@ function BubbleText({
             key={`code-${key++}`}
             className={cn(
               'rounded px-1 py-0.5 font-mono text-[12.5px]',
-              mine ? 'bg-white/10' : 'bg-black/30',
+              mine ? 'bg-black/[0.07]' : 'bg-black/30',
             )}
           >
             {code}
@@ -7131,7 +7143,7 @@ function BubbleText({
     <p
       className={cn(
         'text-[15px] leading-snug break-words whitespace-pre-wrap',
-        mine ? 'text-[color:var(--art-text)]' : 'text-[color:var(--art-text)]',
+        mine ? 'text-[color:var(--art-ink)]' : 'text-[color:var(--art-text)]',
       )}
     >
       {nodes}
@@ -7159,13 +7171,13 @@ function PollCard({
       <p
         className={cn(
           'mb-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider',
-          mine ? 'text-white/75' : 'text-amber-700 dark:text-amber-400',
+          mine ? 'text-[color:var(--art-ink-soft)]' : 'text-amber-700 dark:text-amber-400',
         )}
       >
         <Vote className="size-3" aria-hidden />
         {poll.closed ? 'Poll · Final results' : 'Live poll'}
       </p>
-      <p className={cn('text-[14px] font-semibold leading-snug', mine ? 'text-white' : 'text-zinc-900 dark:text-zinc-100')}>
+      <p className={cn('text-[14px] font-semibold leading-snug', mine ? 'text-[color:var(--art-ink)]' : 'text-zinc-900 dark:text-zinc-100')}>
         {poll.question}
       </p>
       <div className="mt-1.5 space-y-1" role={poll.closed ? undefined : 'radiogroup'} aria-label="Poll options">
@@ -7186,9 +7198,9 @@ function PollCard({
               className={cn(
                 'relative block w-full overflow-hidden rounded-lg border px-2 py-1.5 text-left outline-none transition-colors',
                 mine
-                  ? 'border-white/25 hover:bg-white/10'
+                  ? 'border-black/15 hover:bg-black/[0.05]'
                   : 'border-zinc-200 hover:border-amber-300 hover:bg-amber-500/5 dark:border-zinc-600 dark:hover:border-amber-500/60 dark:hover:bg-amber-500/10',
-                picked && (mine ? 'border-white bg-black/15' : 'border-amber-400 bg-amber-500/10'),
+                picked && (mine ? 'border-black/35 bg-black/[0.07]' : 'border-amber-400 bg-amber-500/10'),
                 poll.closed && 'cursor-default',
               )}
             >
@@ -7197,17 +7209,17 @@ function PollCard({
                 style={{ width: `${pct}%` }}
                 className={cn(
                   'absolute inset-y-0 left-0 transition-all duration-500',
-                  mine ? 'bg-black/25' : 'bg-amber-500/15 dark:bg-amber-400/20',
+                  mine ? 'bg-black/10' : 'bg-amber-500/15 dark:bg-amber-400/20',
                 )}
               />
               <span className="relative flex items-center justify-between gap-2">
-                <span className={cn('flex min-w-0 items-center gap-1 text-[13px]', mine ? 'text-white' : 'text-zinc-800 dark:text-zinc-100')}>
-                  <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-full border', picked ? (mine ? 'border-white bg-white text-amber-700' : 'border-amber-500 bg-amber-500 text-white') : mine ? 'border-white/50 text-transparent' : 'border-zinc-400 text-transparent dark:border-zinc-500')}>
+                <span className={cn('flex min-w-0 items-center gap-1 text-[13px]', mine ? 'text-[color:var(--art-ink)]' : 'text-zinc-800 dark:text-zinc-100')}>
+                  <span className={cn('flex size-4 shrink-0 items-center justify-center rounded-full border', picked ? (mine ? 'border-[color:var(--art-ink)] bg-[color:var(--art-ink)] text-[color:var(--art-bubble-out)]' : 'border-amber-500 bg-amber-500 text-white') : mine ? 'border-black/30 text-transparent' : 'border-zinc-400 text-transparent dark:border-zinc-500')}>
                     <Check className="size-2.5" strokeWidth={4} aria-hidden />
                   </span>
                   <span className="truncate font-medium">{option.text}</span>
                 </span>
-                <span className={cn('shrink-0 text-[11px] font-bold tabular-nums', mine ? 'text-white/85' : 'text-zinc-500 dark:text-zinc-300')}>
+                <span className={cn('shrink-0 text-[11px] font-bold tabular-nums', mine ? 'text-[color:var(--art-ink-soft)]' : 'text-zinc-500 dark:text-zinc-300')}>
                   {pct}%
                 </span>
               </span>
@@ -7216,7 +7228,7 @@ function PollCard({
         })}
       </div>
       <div className="mt-1 flex items-center justify-between gap-2">
-        <p className={cn('text-[10px]', mine ? 'text-white/70' : 'text-zinc-400 dark:text-zinc-500')}>
+        <p className={cn('text-[10px]', mine ? 'text-[color:var(--art-ink-faint)]' : 'text-zinc-400 dark:text-zinc-500')}>
           {total === 0 ? 'No votes yet' : `${total} ${total === 1 ? 'vote' : 'votes'}`} · {poll.closed ? 'closed' : 'tap an option to vote'}
         </p>
         {mine && !poll.closed ? (
@@ -7229,7 +7241,7 @@ function PollCard({
             }}
             className={cn(
               'rounded-full px-2 py-0.5 text-[10px] font-bold outline-none transition-colors',
-              mine ? 'text-white/85 hover:bg-white/15' : 'text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700',
+              mine ? 'text-[color:var(--art-ink-soft)] hover:bg-black/[0.08]' : 'text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700',
             )}
           >
             End
@@ -7256,7 +7268,7 @@ function LinkPreviewCard({
       onClick={(e) => e.stopPropagation()}
       className={cn(
         'mt-1 block rounded-xl border p-2 outline-none transition-transform active:scale-[0.99]',
-        mine ? 'border-white/25 bg-black/15 hover:bg-black/25' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/70 dark:hover:bg-zinc-800',
+        mine ? 'border-black/15 bg-black/[0.05] hover:bg-black/[0.09]' : 'border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/70 dark:hover:bg-zinc-800',
       )}
     >
       {preview.imageUrl ? (
@@ -7267,15 +7279,15 @@ function LinkPreviewCard({
           className="mb-1.5 max-h-32 w-full rounded-lg object-cover"
         />
       ) : null}
-      <p className={cn('truncate text-[12px] font-bold', mine ? 'text-white' : 'text-zinc-800 dark:text-zinc-100')}>
+      <p className={cn('truncate text-[12px] font-bold', mine ? 'text-[color:var(--art-ink)]' : 'text-zinc-800 dark:text-zinc-100')}>
         {preview.title ?? preview.url}
       </p>
       {preview.description ? (
-        <p className={cn('mt-0.5 line-clamp-2 text-[11.5px] leading-snug', mine ? 'text-white/80' : 'text-zinc-500 dark:text-zinc-400')}>
+        <p className={cn('mt-0.5 line-clamp-2 text-[11.5px] leading-snug', mine ? 'text-[color:var(--art-ink-soft)]' : 'text-zinc-500 dark:text-zinc-400')}>
           {preview.description}
         </p>
       ) : null}
-      <p className={cn('mt-1 flex items-center gap-1 truncate text-[10px]', mine ? 'text-white/65' : 'text-zinc-400 dark:text-zinc-500')}>
+      <p className={cn('mt-1 flex items-center gap-1 truncate text-[10px]', mine ? 'text-[color:var(--art-ink-faint)]' : 'text-zinc-400 dark:text-zinc-500')}>
         <Link2 className="size-3 shrink-0" aria-hidden />
         {preview.siteName ?? (() => { try { return new URL(preview.url.startsWith('www.') ? `https://${preview.url}` : preview.url).hostname } catch { return preview.url } })()}
       </p>
@@ -7574,7 +7586,7 @@ const MessageRow = memo(function MessageRow({
               ? cn(
                   // R54-c: own bubble - near-black warm, tight bottom-right corner
                   'art-bubble-out',
-                  queued && 'ring-1 ring-inset ring-white/25 opacity-95', // queued: dashed-feel cue
+                  queued && 'ring-1 ring-inset ring-black/20 opacity-95', // queued: dashed-feel cue
                   mentionsMe && 'ring-2 ring-inset ring-[#ffab5e]/70', // you were mentioned
                 )
               : cn(
@@ -7621,7 +7633,7 @@ const MessageRow = memo(function MessageRow({
                   className={cn(
                     'mb-1 block w-full rounded-md border-l-[3px] px-2 py-1 text-left outline-none transition-colors',
                     mine
-                      ? 'border-white/40 bg-white/10 hover:bg-white/15'
+                      ? 'border-black/15 bg-black/[0.05] hover:bg-black/[0.08]'
                       : 'border-[color:var(--art-accent)] bg-white/[0.06] hover:bg-white/[0.1]',
                     message.replyTo.deleted ? '' : 'cursor-pointer active:scale-[0.99]',
                   )}
@@ -7629,7 +7641,7 @@ const MessageRow = memo(function MessageRow({
                   <p
                     className={cn(
                       'text-[11px] font-bold',
-                      mine ? 'text-white/90' : 'text-[color:var(--art-accent-2)]',
+                      mine ? 'text-[color:var(--art-ink)]' : 'text-[color:var(--art-accent-2)]',
                     )}
                   >
                     {message.replyTo.deleted
@@ -7641,7 +7653,7 @@ const MessageRow = memo(function MessageRow({
                   <p
                     className={cn(
                       'truncate text-[12px] leading-snug',
-                      mine ? 'text-white/75' : 'text-[color:var(--art-dim)]',
+                      mine ? 'text-[color:var(--art-ink-soft)]' : 'text-[color:var(--art-dim)]',
                     )}
                   >
                     {message.replyTo.deleted
@@ -7665,7 +7677,7 @@ const MessageRow = memo(function MessageRow({
                       aria-label="View-once photo already opened"
                       className={cn(
                         'flex h-[168px] w-[220px] items-center justify-center gap-2 rounded-xl border border-dashed text-xs font-semibold',
-                        mine ? 'border-white/40 text-white/85' : 'border-[color:var(--art-hairline)] bg-white/[0.04] text-[color:var(--art-faint)]',
+                        mine ? 'border-black/20 text-[color:var(--art-ink-soft)]' : 'border-[color:var(--art-hairline)] bg-white/[0.04] text-[color:var(--art-faint)]',
                       )}
                     >
                       <EyeOff className="size-4" aria-hidden />
@@ -7785,7 +7797,7 @@ const MessageRow = memo(function MessageRow({
               className={cn(
                 'mt-0.5 flex items-center justify-end gap-1 text-[10px]',
                 mine && !deleted
-                  ? 'text-white/75'
+                  ? 'text-[color:var(--art-ink-faint)]'
                   : 'text-[color:var(--art-faint)]',
               )}
             >
@@ -7812,13 +7824,13 @@ const MessageRow = memo(function MessageRow({
             ) : null}
             {mine && !deleted ? (
               queued ? (
-                <CloudOff className="size-3 text-[color:var(--art-accent-2)]" aria-label="queued - sends when online" />
+                <CloudOff className="size-3 text-[color:var(--art-ink-faint)]" aria-label="queued - sends when online" />
               ) : pending ? (
                 <Clock className="size-3 opacity-90" aria-label="sending…" />
               ) : isRead ? (
-                <CheckCheck className="size-3.5 text-white/90" aria-label="read" />
+                <CheckCheck className="size-3.5 text-[color:var(--art-ink)]" aria-label="read" />
               ) : (
-                <Check className="size-3 text-white/60" aria-label="sent" />
+                <Check className="size-3 text-[color:var(--art-ink-faint)]" aria-label="sent" />
               )
             ) : null}
             </div>
@@ -7876,8 +7888,8 @@ const MessageRow = memo(function MessageRow({
                   className={cn(
                     'flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] shadow-sm backdrop-blur transition-transform active:scale-90',
                     iReacted
-                      ? 'border-[color:var(--art-accent)]/50 bg-[color:var(--art-accent)]/15'
-                      : 'border-[color:var(--art-hairline)] bg-white/[0.08]',
+                      ? 'border-[color:var(--art-accent)]/45 bg-[#1a120b]/90'
+                      : 'border-[color:var(--art-hairline)] bg-[#1a120b]/80',
                   )}
                 >
                   {(() => {

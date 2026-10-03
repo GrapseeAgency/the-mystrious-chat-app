@@ -55,7 +55,7 @@ import { toast } from 'sonner'
 import type { AppUser, ConversationSummary, FolderSummary, SearchResultMessage } from '@/lib/types'
 import { usePulseRealtime } from '@/hooks/use-pulse-socket'
 import { useMounted } from '@/hooks/use-mounted'
-import {
+import { gradientFor, 
   apiJson,
   conversationDisplayName,
   conversationPreview,
@@ -255,21 +255,27 @@ function SearchSection({ label, count }: { label: string; count: number }) {
   )
 }
 
-// 24h status stories 
+// 24h status stories
 
-const STORY_RING_SIZE = 56
+/** Artboard photo-card dimensions (rounded rect, not a disc). */
+const STORY_CARD_W = 46
+const STORY_CARD_H = 60
 
 /**
- * One avatar cell in the stories row (R54-b artboard language).
- * ring: 'unseen' -> spinning ember conic ring - 'seen' -> static hairline
- * ring - 'none' -> dark tile with a centered plus (the "You" cell when no
- * story is live). Tap targets and data unchanged from the R27 row.
+ * One cell in the artboard stories row: a rounded-rect PHOTO CARD with a
+ * corner count badge (unseen = amber ring, seen = hairline, "You" = dark
+ * tile with a centered plus). Text stories fall back to their background
+ * gradient, image stories show the real frame. Tap targets and data
+ * unchanged from the R27 row.
  */
 const StoryRingCell = memo(function StoryRingCell({
   name,
   color,
   ring,
   label,
+  image,
+  background,
+  badge,
   onPress,
   index,
 }: {
@@ -277,11 +283,13 @@ const StoryRingCell = memo(function StoryRingCell({
   color: string
   ring: 'unseen' | 'seen' | 'none'
   label: string
+  image: string | null
+  background: string | null
+  badge: number | null
   onPress: () => void
   index: number
 }) {
   const reducedMotion = useReducedMotion()
-  const inner = STORY_RING_SIZE - 5
   return (
     <motion.button
       type="button"
@@ -299,31 +307,50 @@ const StoryRingCell = memo(function StoryRingCell({
       }}
       onClick={onPress}
       aria-label={ring === 'unseen' ? `${label} - new status` : label}
-      className="flex w-16 shrink-0 snap-start flex-col items-center gap-1 rounded-2xl pb-1 pt-0.5 outline-none"
+      className="flex w-14 shrink-0 snap-start flex-col items-center gap-1 rounded-2xl pb-1 pt-0.5 outline-none"
     >
-      <span className="relative block" style={{ width: STORY_RING_SIZE, height: STORY_RING_SIZE }}>
-        {ring === 'unseen' ? (
-          <span
-            aria-hidden
-            className="pulse-story-spin absolute inset-0 rounded-full [background:conic-gradient(from_0deg,var(--art-accent),var(--art-accent-2),#d95f22,var(--art-accent))]"
-          />
-        ) : ring === 'seen' ? (
-          <span aria-hidden className="absolute inset-0 rounded-full bg-[var(--art-hairline)]" />
+      <span
+        className={cn(
+          'relative block overflow-hidden rounded-[14px]',
+          ring === 'unseen'
+            ? 'ring-2 ring-[var(--art-accent)]/85'
+            : ring === 'seen'
+              ? 'ring-1 ring-[var(--art-hairline)]'
+              : 'ring-1 ring-transparent',
+        )}
+        style={{ width: STORY_CARD_W, height: STORY_CARD_H }}
+      >
+        {ring !== 'none' ? (
+          image ? (
+            <img
+              src={`/api/uploads/${encodeURIComponent(image)}`}
+              alt=""
+              aria-hidden
+              loading="lazy"
+              className="absolute inset-0 size-full object-cover"
+            />
+          ) : background ? (
+            <span aria-hidden className={cn('absolute inset-0 bg-gradient-to-br', gradientFor(background))} />
+          ) : (
+            <span aria-hidden className="absolute inset-0 flex items-center justify-center bg-[#17110c]">
+              <UserAvatar name={name} color={color} size={30} />
+            </span>
+          )
         ) : (
           <span
             aria-hidden
-            className="absolute inset-0 flex items-center justify-center rounded-full bg-white/[0.06]"
+            className="absolute inset-0 flex items-center justify-center bg-white/[0.06]"
           >
             <Plus className="size-5 text-[var(--art-dim)]" strokeWidth={2.2} aria-hidden />
           </span>
         )}
-        {ring !== 'none' ? (
-          <span className="absolute inset-[2.5px] overflow-hidden rounded-full bg-[#17110c]">
-            <UserAvatar name={name} color={color} size={inner} />
+        {badge !== null && badge > 0 ? (
+          <span className="art-badge absolute right-1 top-1 flex h-[15px] min-w-[15px] items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none shadow">
+            {badge > 9 ? '9+' : badge}
           </span>
         ) : null}
       </span>
-      <span className="w-full truncate text-center text-[11px] leading-tight text-[var(--art-dim)]">
+      <span className="w-full truncate text-center text-[10.5px] leading-tight text-[var(--art-dim)]">
         {label}
       </span>
     </motion.button>
@@ -479,9 +506,6 @@ const ArtConversationRow = memo(function ArtConversationRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
             <span className="flex min-w-0 items-center gap-1">
-              {pinned ? (
-                <Pin className="size-3 shrink-0 fill-[var(--art-accent)] text-[var(--art-accent)]" aria-label="Pinned" />
-              ) : null}
               <span className="truncate text-[15px] font-semibold leading-snug tracking-tight text-[var(--art-text)]">
                 {name}
               </span>
@@ -491,7 +515,7 @@ const ArtConversationRow = memo(function ArtConversationRow({
               {streakAtRisk ? (
                 <span
                   aria-label={`${streakAtRisk.count}-day streak ends tonight - send a message to keep it`}
-                  className="flex items-center gap-1 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-bold text-[var(--art-accent-2)] ring-1 ring-[var(--art-hairline)]"
+                  className="flex items-center gap-1 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-bold text-[var(--art-dim)] ring-1 ring-[var(--art-hairline)]"
                 >
                   <Hourglass className="size-3" aria-hidden />
                   ends tonight
@@ -499,7 +523,7 @@ const ArtConversationRow = memo(function ArtConversationRow({
               ) : streakCount > 0 ? (
                 <span
                   aria-label={`${streakCount}-day streak`}
-                  className="flex items-center gap-0.5 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-bold text-[var(--art-accent-2)] ring-1 ring-[var(--art-hairline)]"
+                  className="flex items-center gap-0.5 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-bold text-[var(--art-dim)] ring-1 ring-[var(--art-hairline)]"
                 >
                   <Flame className="size-3" aria-hidden />
                   {streakCount}
@@ -507,7 +531,7 @@ const ArtConversationRow = memo(function ArtConversationRow({
               ) : streakLost ? (
                 <span
                   aria-label={`${streakLost.count}-day streak lost`}
-                  className="flex items-center gap-1 rounded-full bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-bold text-rose-400 ring-1 ring-rose-500/25"
+                  className="flex items-center gap-1 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-bold text-[var(--art-dim)] ring-1 ring-[var(--art-hairline)]"
                 >
                   <Flame className="size-3" aria-hidden />
                   lost
@@ -554,6 +578,11 @@ const ArtConversationRow = memo(function ArtConversationRow({
                 <span>{preview}</span>
               </p>
             )}
+            {pinned ? (
+              <span aria-label="Pinned" className="mr-0.5 flex shrink-0 items-center">
+                <Pin className="size-3 rotate-45 fill-[var(--art-faint)] text-[var(--art-faint)]" />
+              </span>
+            ) : null}
             {hasUnread && !muted ? (
               unreadCount > 0 ? (
                 // R54-b: signal-red badge replaces the old amber pill
@@ -1391,9 +1420,6 @@ export function ChatsTab({
 
   return (
     <div className="art-scene absolute inset-0 isolate flex flex-col">
-      {/* slow conic shimmer for unseen story rings - CSS, transform-only, honors reduced-motion */}
-      <style>{`@keyframes pulse-story-spin{to{transform:rotate(360deg)}}.pulse-story-spin{animation:pulse-story-spin 6s linear infinite;will-change:transform}@media (prefers-reduced-motion:reduce){.pulse-story-spin{animation:none}}`}</style>
-
       {/* header - artboard: bold title + exactly three bare icons */}
       <header className="relative z-10 shrink-0 px-3 pt-[max(10px,env(safe-area-inset-top))]">
         {searching ? (
@@ -1694,7 +1720,7 @@ export function ChatsTab({
         )}
       </header>
 
-      {/* 24h status stories row - circular discs with ember rings */}
+      {/* 24h status stories row - artboard photo cards with corner badges */}
       {!searching ? (
         <div className="relative z-10 shrink-0 pb-1">
           <h2 className="sr-only">Status</h2>
@@ -1704,6 +1730,9 @@ export function ChatsTab({
               color={me.color}
               ring={myStoryGroup ? 'unseen' : 'none'}
               label="You"
+              image={myStoryGroup?.stories.find((s) => s.kind === 'image')?.imagePath ?? null}
+              background={myStoryGroup?.stories[0]?.kind === 'text' ? myStoryGroup.stories[0].background : null}
+              badge={null}
               onPress={openMyStatus}
               index={0}
             />
@@ -1714,6 +1743,9 @@ export function ChatsTab({
                 color={group.user.color}
                 ring={group.allSeen ? 'seen' : 'unseen'}
                 label={group.user.name}
+                image={group.stories.find((s) => s.kind === 'image')?.imagePath ?? null}
+                background={group.stories[0]?.kind === 'text' ? group.stories[0].background : null}
+                badge={group.allSeen ? null : group.stories.length}
                 onPress={() => openStoryGroup(group)}
                 index={i + 1}
               />
@@ -1754,7 +1786,7 @@ export function ChatsTab({
                 >
                   <span className="flex items-center gap-1.5">
                     {f.label === 'Unread' && unreadTotal > 0 && !active ? (
-                      <span className="flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-[var(--art-accent)]/20 px-1 text-[9px] font-bold text-[var(--art-accent-2)]">
+                      <span className="flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-white/10 px-1 text-[9px] font-bold text-[var(--art-text-soft)]">
                         {unreadTotal > 99 ? '99+' : unreadTotal}
                       </span>
                     ) : null}

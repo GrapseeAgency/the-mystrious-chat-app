@@ -420,11 +420,11 @@ function DockTab({
       onClick={press}
       whileTap={reduced ? undefined : { scale: 0.88, y: 1 }}
       transition={reduced ? { duration: 0 } : spring.bouncy}
-      className="relative flex min-h-[54px] w-[64px] touch-manipulation select-none flex-col items-center justify-center gap-[2px] rounded-full outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60"
+      className="relative flex min-h-[54px] w-[64px] touch-manipulation select-none flex-col items-center justify-center gap-[2px] rounded-full outline-none focus-visible:ring-2 focus-visible:ring-white/30"
     >
       <span className="relative">
         <Icon
-          className={cn('size-[22px] transition-colors', active ? 'text-[var(--art-accent)]' : 'text-[var(--art-dim)]')}
+          className={cn('size-[22px] transition-colors', active ? 'text-[var(--art-text)]' : 'text-[var(--art-dim)]')}
           aria-hidden
         />
         {showBadge ? <UnreadBadge count={unread} className="-right-2 -top-1 h-4 min-w-4 text-[9px] ring-transparent" /> : null}
@@ -432,7 +432,7 @@ function DockTab({
       <span
         className={cn(
           'text-[10px] font-medium leading-none transition-colors',
-          active ? 'text-[var(--art-accent)]' : 'text-[var(--art-dim)]',
+          active ? 'text-[var(--art-text)]' : 'text-[var(--art-dim)]',
         )}
       >
         {label}
@@ -504,7 +504,7 @@ function CapsuleNav({
         }}
         whileTap={reduced ? undefined : pressTap}
         transition={pressSpring}
-        className="art-fab pointer-events-auto flex size-[52px] shrink-0 touch-manipulation select-none items-center justify-center self-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60"
+        className="art-fab pointer-events-auto flex size-[52px] shrink-0 touch-manipulation select-none items-center justify-center self-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-white/30"
         style={{ willChange: 'transform' }}
       >
         <PulsePlus className="size-6" aria-hidden />
