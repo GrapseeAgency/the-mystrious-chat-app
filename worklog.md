@@ -5064,3 +5064,18 @@ Work Log:
 - Version: versionCode 44 / versionName 0.23.0.0.3 (gradle defaults; user's 0.23.0.0.N line).
 - Web app untouched (the user's own screenshots confirm it IS the reference now).
 - CI FIX: first v0.23.0.0.3 build failed at resource merge - aapt2 rejects "--" inside XML comments (the colors.xml comment quoted the CSS var names verbatim); comment de-dashed, pushed (8e99cee), tag re-cut on the fixed commit (no release had shipped, so the move is user-invisible). R56 CI tracks re-in flight: Android tag 37124218361, iOS tag 37124218340, Android main 37124215727. webDevReview cron recreated (job 433142) - the two prior jobs were disabled by exec limits.
+---
+Task ID: R56-ship
+Agent: orchestrator (Z.ai main session)
+Task: v0.23.0.0.3 release + CDN refresh.
+
+Work Log:
+- CI ALL GREEN on the re-cut tag: Android tag 37124218361 (signed R8 APK + emulator smoke - the ember icon set, themed connect panel and gate hardening compile and boot), iOS tag 37124218340, Android main 37124215727.
+- RELEASE v0.23.0.0.3 published 13:20Z: Pulse-v0.23.0.0.3.apk 25,461,385 bytes sha256 0e7046fc8afff32c5cf092cbb15897a7c1775159f7b6f51b1aea7f471a15a562 (versionCode 44 from gradle defaults, source-verified).
+- CDN: release asset downloaded via authenticated octet-stream; download/Pulse.apk mirror swapped (local sha == release digest); update-manifest.json pinned (44 / 0.23.0.0.3 / 0e7046fc... / honest gateway:""); pushed 291a5f1; live raw manifest verified serving 44 / 0.23.0.0.3 and the live mirror streams the identical digest.
+- WEB QA during CI: agent-browser 390x844 boot of the web home - renders the exact artboard the user's three reference screenshots show; zero page errors; dev.log clean.
+
+Stage Summary:
+- SHIPPED v0.23.0.0.3: the app-surface re-theme. The app's launcher icon, shortcut icons, splash and boot chrome are now the web artboard's ember-on-carbon; a dead-server boot shows the artboard connect panel (retry + themed server-link editor + explicit classic-interface opt-out) and NEVER silently degrades to the native UI again; fresh boots land in the WEB onboarding; a one-time repair frees users stranded by the old auto-fallback.
+- User action: update via the in-app LiveUpdater (manifest pinned at 44) - the stored gateway link persists, the repair clears any old stranded opt-out on first boot, and from that frame on the app is the same surface as the screenshots. Next digit on this line: 0.23.0.0.4.
+- Open: WebView safe-area env() behavior on notch devices (worth one device check); story-card caption glyph polish; iOS homepage artboard mirror remains the standing web-parity item.
