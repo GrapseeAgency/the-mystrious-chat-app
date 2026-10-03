@@ -1,15 +1,15 @@
 {
-  "versionCode": 41,
-  "versionName": "0.23.0-native",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0-native/Pulse-v0.23.0-native.apk",
+  "versionCode": 42,
+  "versionName": "0.23.0.0.1",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.1/Pulse-v0.23.0.0.1.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "a48b9901c610e000f00b39197807f932b25f2f79b719a12da1b522a73ff70f57",
-  "notes": "R53 reference rebuild - the two reference artboards are the app now. Home: Chats title, bare search+camera+kebab header, circular story tiles with ember rings, reference chip row, red-dot unread trailers, 560dp responsive cap. Room: the glass-circle mess is gone (bare back, avatar+title+subtitle taps open room info, video/phone/kebab), waveform/star/search/bell/safety all live in the kebab menu, group sender names inside bubbles with 24dp side avatars. CI all green (signed R8 + emulator smoke), release published.",
+  "sha256": "a8c3da102780347a5a4348d02adb699d706afa4c7203e0df9f1eda5ebb6668be",
+  "notes": "R54 web-first shell - the reference artboards ARE the app: the interface renders the gateway web UI (home + chat room rebuilt 1:1 from the artboards, every tool relocated and active in the kebab/info sections) inside the app, with the native shell as automatic fallback and a Settings toggle. Demo identity auto-signs in on the web boot. Version line 0.23.0.0.1.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-10-02T21:30:00Z",
-  "apkSize": 25449665,
-  "version": "0.23.0-native",
-  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0-native/Pulse-v0.23.0-native.apk"
+  "updatedAt": "2026-10-03T07:20:00Z",
+  "apkSize": 25456593,
+  "version": "0.23.0.0.1",
+  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.1/Pulse-v0.23.0.0.1.apk"
 }
