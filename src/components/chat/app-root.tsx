@@ -3,9 +3,10 @@
 // then renders Onboarding or the main tab shell.
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { MessageCircleHeart } from 'lucide-react'
 import type { AppUser } from '@/lib/types'
 import { usePulseSession } from '@/lib/pulse-store'
@@ -68,10 +69,81 @@ function PhoneFrame({ children }: { children: React.ReactNode }) {
   )
 }
 
+const DEMO_IDENTITY = 'Alice Chen'
+const DEMO_OPTOUT_KEY = 'pulse.demo.optout'
+
+/**
+ * R54 - silent demo sign-in: a browser session with no stored identity
+ * lands STRAIGHT in home as the seeded demo user (the "no shitty login
+ * display" directive). Explicit sign-out sets the opt-out flag so the
+ * demo door never traps the user. Any failure (server down, identity
+ * absent) falls back to the real onboarding - honest, no mocks.
+ */
+function useDemoAutoSignIn(enabled: boolean) {
+  const setUser = usePulseSession((s) => s.setUser)
+  const attempted = useRef(false)
+  const [demoPending, setDemoPending] = useState(false)
+  const [demoDone, setDemoDone] = useState(false)
+  // Captured at FIRST RENDER (before any effect): the onboarding screen's
+  // ?login= effect rewrites the URL during its own effect (which runs before
+  // this parent hook's effect), so reading location.search inside the effect
+  // would miss the deep link and race it for setUser.
+  const bootHasLogin = useRef(
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('login'),
+  )
+
+  useEffect(() => {
+    if (!enabled || attempted.current) return
+    attempted.current = true
+    // A ?login= deep link (the Android web shell boots this way, signing in
+    // the stored native identity) OWNS the boot - the demo must not race it
+    // to setUser and flip the identity underneath the deep link.
+    if (bootHasLogin.current) {
+      setDemoDone(true)
+      return
+    }
+    let optOut = false
+    try {
+      optOut = sessionStorage.getItem(DEMO_OPTOUT_KEY) === '1'
+    } catch {
+      optOut = false
+    }
+    if (optOut) {
+      setDemoDone(true)
+      return
+    }
+    setDemoPending(true)
+    const run = async () => {
+      try {
+        const res = await fetch(`/api/users?name=${encodeURIComponent(DEMO_IDENTITY)}`)
+        if (!res.ok) throw new Error(`demo lookup ${res.status}`)
+        const data = (await res.json()) as { user?: AppUser }
+        if (!data.user?.id) throw new Error('demo identity missing')
+        setUser(data.user)
+        toast.success(`Demo sign-in - ${DEMO_IDENTITY}`, { description: 'You can switch identity from Profile.' })
+      } catch {
+        /* fall through to onboarding */
+      } finally {
+        setDemoPending(false)
+        setDemoDone(true)
+      }
+    }
+    void run()
+  }, [enabled, setUser])
+
+  // Resolving ONLY while the demo path is actually armed; a session that
+  // boots with a stored user never enters the pending state.
+  return enabled ? demoPending || !demoDone : false
+}
+
 function BootGate() {
   const hydrated = usePulseSession((s) => s._hasHydrated)
   const user = usePulseSession((s) => s.user)
   const clear = usePulseSession((s) => s.clear)
+
+  // R54: no stored identity -> the silent demo sign-in decides whether we
+  // still owe the user an onboarding (true = keep showing the splash).
+  const demoResolving = useDemoAutoSignIn(hydrated && !user)
 
   // minimum splash duration so the brand moment reads on fast devices
   const [minDelayDone, setMinDelayDone] = useState(false)
@@ -100,7 +172,7 @@ function BootGate() {
   }, [storedUserMissing, clear])
 
   let status: BootStatus = 'checking'
-  if (minDelayDone && hydrated) {
+  if (minDelayDone && hydrated && !demoResolving) {
     if (!user) status = 'onboarding'
     else if (!validation.isPending && !storedUserMissing) status = 'ready'
     else if (validation.isError) status = 'ready' // network flake - proceed optimistically

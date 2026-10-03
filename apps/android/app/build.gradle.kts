@@ -8,8 +8,9 @@ plugins {
 }
 
 // Release channel plumbing - CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 41
-val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.23.0-native"
+// R54: the user pinned the new version line - 0.23.0.0.1, then .0.2, .0.3, ...
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 42
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.23.0.0.1"
 
 android {
     namespace = "app.pulse.android"

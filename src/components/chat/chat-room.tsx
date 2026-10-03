@@ -4,6 +4,7 @@
 'use client'
 
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -16,7 +17,6 @@ import {
 } from 'react'
 import { AnimatePresence, animate, motion, useMotionValue, useSpring, useTransform, useVelocity } from 'framer-motion'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useTheme } from 'next-themes'
 import {
   ArrowDown,
   Bell,
@@ -24,6 +24,7 @@ import {
   Bot,
   CalendarClock,
   CalendarDays,
+  Camera,
   Check,
   CheckCheck,
   ChevronLeft,
@@ -46,7 +47,6 @@ import {
   Gift,
   Globe,
   HelpCircle,
-  ImagePlus,
   Info,
   Link2,
   ListTodo,
@@ -60,6 +60,7 @@ import {
   MessagesSquare,
   Mic,
   Minus,
+  Paperclip,
   PartyPopper,
   Pause,
   Pencil,
@@ -128,7 +129,7 @@ import {
 import { REACTION_IDS, REACTION_LABELS, reactionId, stampId } from '@/lib/icon-ids'
 import { reactionGlyphFor, stampGlyphFor } from '@/components/ui/icons'
 import { haptic, pulseSettingsStore } from '@/lib/pulse-settings'
-import { spring, ease, pressTap, pressSpring, fireParticles, type ParticleKind } from '@/lib/motion'
+import { spring, ease, pressSpring, fireParticles, type ParticleKind } from '@/lib/motion'
 import { pulseDraftsStore } from '@/lib/pulse-drafts'
 import { pulseOutboxStore, outboxCount } from '@/lib/pulse-outbox'
 import { ForwardSheet } from '@/components/chat/forward-sheet'
@@ -165,7 +166,6 @@ import {
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { GroupAvatar, UserAvatar } from '@/components/chat/user-avatar'
-import { useMounted } from '@/hooks/use-mounted'
 import { usePrefsValues } from '@/lib/prefs'
 import { applyConvTint, effectiveConvWallpaper, getConvTheme } from '@/lib/conv-theme'
 import type { PulsePrefs } from '@/lib/prefs-defaults'
@@ -326,6 +326,12 @@ const BUBBLE_RADIUS: Record<'md' | 'lg' | 'pill', string> = {
   lg: 'rounded-2xl',
   pill: 'rounded-3xl',
 }
+
+/** R54-c kebab dropdown - dark ember rows (reference artboard chrome). */
+const ROOM_MENU_ITEM =
+  'flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13.5px] font-medium text-[color:var(--art-text)] outline-none transition-colors hover:bg-white/[0.07] active:bg-white/[0.1] disabled:opacity-50'
+const ROOM_MENU_ICON = 'size-4 shrink-0 text-[color:var(--art-accent-2)]'
+const ROOM_MENU_LABEL = 'px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-widest text-[color:var(--art-faint)]'
 
 /** Safe-parse a red-packet payload {packetId, …} - never throws. (R23-a) */
 function parseRedPacketPayload(payload: string | null): { packetId: string } | null {
@@ -603,8 +609,6 @@ export function ChatRoom({
 }) {
   const queryClient = useQueryClient()
   const realtime = usePulseRealtime()
-  const { resolvedTheme } = useTheme()
-  const themeMounted = useMounted()
   const prefs = usePrefsValues()
   // floating bottom docks (acrylic dock / edge bar / radial FAB) need clearance;
   // the solid rail lives in a layout column → zero inset
@@ -806,6 +810,9 @@ export function ChatRoom({
   // R24-b: Zulip-style topics (groups) + incognito arming 
   /** active topic view - null = General (the implicit whole-room stream) */
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null)
+  // R54-c: the topic strip is hidden by default (reference artboard); the kebab
+  // menu toggles it back. The feature itself is untouched - visibility only.
+  const [topicsBarVisible, setTopicsBarVisible] = useState(false)
   /** Venetian-mask arming - next send posts anonymously (groups only) */
   const [anonNext, setAnonNext] = useState(false)
   const anonNextRef = useRef(false)
@@ -1303,14 +1310,6 @@ export function ChatRoom({
     if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`
     return `${names.length} people are typing…`
   }, [typers, isGroup])
-
-  const onlineOthers = useMemo(
-    () =>
-      detailData
-        ? detailData.members.filter((m) => m.id !== me.id && realtime.onlineIds.has(m.id)).length
-        : 0,
-    [detailData, me.id, realtime.onlineIds],
-  )
 
   /** highest read watermark among OTHER members → double ticks */
   const othersMaxReadMs = useMemo(() => {
@@ -2757,6 +2756,31 @@ export function ChatRoom({
         title: 'Express',
         tiles: [
           {
+            // R54-c: voice notes moved here from the composer bar (the bar is
+            // the reference artboard pill now) - recording stays one tap away.
+            label: 'Voice note',
+            help: 'Hold-free recording with a live timer',
+            icon: Mic,
+            tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+            disabled: broadcastLocked || slowRemaining > 0,
+            run: () => {
+              setTray(false)
+              void startRecording()
+            },
+          },
+          {
+            // R54-c: stickers moved here from the composer bar (same rule).
+            label: 'Sticker',
+            help: 'Send a stamp from the packs',
+            icon: Sticker,
+            tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+            disabled: broadcastLocked,
+            run: () => {
+              setTray(false)
+              setStickerOpen(true)
+            },
+          },
+          {
             label: 'Effects',
             help: 'Confetti, lasers, echo, sparkles',
             icon: Sparkles,
@@ -3825,12 +3849,12 @@ export function ChatRoom({
   const ttlSeconds = detailData?.ttlSeconds ?? 0
   const isBroadcast = isGroup && (detailData?.broadcastMode ?? false)
 
+  // R54-c: group headers show the artboard member roll ("Abkar, Farida, Vida…")
+  // as the subtitle; DMs keep the presence/status line. Typing wins as before.
   const subtitle = typerLabel.length > 0
     ? typerLabel
     : isGroup
-      ? isBroadcast
-        ? `${detailData?.members.length ?? 0} subscribers · ${onlineOthers} online${ttlSeconds > 0 ? ' · disappearing' : ''}`
-        : `${detailData?.members.length ?? 0} members · ${onlineOthers} online${ttlSeconds > 0 ? ' · disappearing' : ''}`
+      ? memberNames.filter(Boolean).join(', ')
       : !other
         ? ''
         : dmStatus.length > 0
@@ -3841,7 +3865,11 @@ export function ChatRoom({
             ? 'online'
             : 'offline'
 
-  const isDark = themeMounted && resolvedTheme === 'dark'
+  // R54-c: the room is ALWAYS dark (the artboard has no light variant), so the
+  // wallpaper glows and dot grid use their dark palette regardless of the app
+  // theme toggle. All light glass chrome on this surface was replaced by the
+  // art tokens below.
+  const isDark = true
   const dotColor = isDark ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.05)'
   // layered wallpaper (prefs): soft glows over the dot grid - aurora/dusk/forest/mono/none
   // R29-a: per-conversation override (chat.convThemes) wins over the global default;
@@ -3857,20 +3885,24 @@ export function ChatRoom({
       animate={{ y: 0 }}
       exit={{ y: '100%' }}
       transition={{ type: 'spring', stiffness: 320, damping: 34 }}
-      className="absolute inset-0 z-40 flex flex-col bg-white/70 dark:bg-zinc-950/70"
+      className="art-scene absolute inset-0 z-40 flex flex-col"
       role="dialog"
       aria-label={`Conversation with ${headerTitle}`}
     >
-      {/* R32: room canvas is translucent (was opaque bg-white/dark:bg-zinc-900) -
-          the ui-root aurora washes glow through the whole room and the
-          wallpaper glows below finally have light to work with. The only
-          backdrop-blur layers in the room are the header + composer capsule. */}
+      {/* R54-c: the room canvas is the reference artboard - always-dark warm
+          ember scene (art-scene), regardless of the app light/dark toggle.
+          Wallpaper glows still paint above it; the header + composer capsule
+          remain the only backdrop-blur chrome. */}
       {/* R28 lead: floating pane manager - panes were orphaned (store writes
           with no renderer). Mounted once per room overlay, above content. */}
       <PipChat me={me} />
 
-      {/* header */}
-      <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-1.5 border-b border-zinc-200/70 bg-white/60 px-2 pt-[env(safe-area-inset-top)] backdrop-blur-2xl backdrop-saturate-150 dark:border-zinc-800/80 dark:bg-zinc-950/55">
+      {/* R54-c header - the reference artboard: back chevron, 40px avatar,
+          ONE tap target (title + subtitle) into the room info page, then
+          EXACTLY three bare icons on the right: video call, audio call,
+          kebab. Every action that used to be a glass header button (search,
+          bell, mic, info, PiP, shield) lives in the kebab menu below. */}
+      <header className="relative z-20 flex min-h-14 shrink-0 items-center gap-0.5 border-b border-[color:var(--art-hairline)] bg-[#0d0906]/70 px-1.5 pt-[env(safe-area-inset-top)] backdrop-blur-2xl">
         <Button
           variant="ghost"
           size="icon"
@@ -3879,265 +3911,138 @@ export function ChatRoom({
             stopTyping()
             onClose()
           }}
-          className="size-10 shrink-0 rounded-full text-zinc-600 hover:bg-transparent hover:text-zinc-900 active:scale-95 dark:text-zinc-300 dark:hover:text-white"
+          className="size-11 shrink-0 rounded-full text-[color:var(--art-text-soft)] hover:bg-white/5 hover:text-[color:var(--art-text)] active:scale-95"
         >
           <ChevronLeft className="size-6" aria-hidden />
         </Button>
-        {isGroup ? (
-          <button
-            type="button"
-            aria-label="Show group info"
-            onClick={() => {
-              haptic(10)
-              navigateHash(`#/room/${conversationId}/info`)
-            }}
-            className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
-          >
-            <GroupAvatar title={displayName} id={conversationId} size={36} />
-          </button>
-        ) : (
-          <button
-            type="button"
-            aria-label={other ? `View ${other.name}'s profile` : 'Show info'}
-            onClick={() => {
-              haptic(10)
-              if (other) navigateHash(`#/user/${encodeURIComponent(other.id)}`)
-              else navigateHash(`#/room/${conversationId}/info`)
-            }}
-            className="shrink-0 rounded-full outline-none transition-transform duration-150 active:scale-90"
-          >
+        {/* avatar + title + subtitle are ONE tap target - the room info page
+            is the "everything lives here" destination the user asked for */}
+        <button
+          type="button"
+          aria-label={isGroup ? 'Show group info' : 'Show chat info'}
+          onClick={() => {
+            haptic(10)
+            navigateHash(`#/room/${conversationId}/info`)
+          }}
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-full py-1 pr-1.5 text-left outline-none transition-transform duration-150 active:scale-[0.98]"
+        >
+          {isGroup ? (
+            <GroupAvatar title={displayName} id={conversationId} size={40} />
+          ) : (
             <UserAvatar
               name={other?.name ?? displayName}
               color={other?.color}
-              size={36}
+              size={40}
               showPresence
               online={other ? realtime.onlineIds.has(other.id) : false}
             />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => navigateHash(`#/room/${conversationId}/info`)}
-          aria-label="Chat info"
-          className="ml-1.5 min-w-0 flex-1 text-left outline-none"
-        >
-          <p className="flex items-center gap-1 truncate text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            <span className="truncate">{headerTitle}</span>
-            {isBroadcast ? (
-              <span
-                className="flex shrink-0 items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-400"
-                aria-label="Broadcast channel - only admins can post"
-              >
-                <Radio className="size-2.5" aria-hidden />
-                Channel
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1">
+              <span className="truncate text-[16px] font-semibold leading-tight tracking-tight text-[color:var(--art-text)]">
+                {headerTitle}
               </span>
-            ) : null}
-            {isRoomMuted ? (
-              <BellOff className="size-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" aria-label="Notifications muted" />
-            ) : null}
-          </p>
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.p
-              key={subtitle}
-              initial={{ opacity: 0, y: 3 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className={cn(
-                'truncate text-[11px]',
-                typerLabel.length > 0
-                  ? 'font-medium text-amber-700 italic dark:text-amber-400'
-                  : 'text-zinc-500 dark:text-zinc-400',
-              )}
-            >
-              {subtitle}
-            </motion.p>
-          </AnimatePresence>
+              {isBroadcast ? (
+                <span
+                  className="flex shrink-0 items-center gap-0.5 rounded-full bg-[color:var(--art-accent)]/15 px-1.5 py-0.5 text-[9px] font-bold text-[color:var(--art-accent-2)]"
+                  aria-label="Broadcast channel - only admins can post"
+                >
+                  <Radio className="size-2.5" aria-hidden />
+                  Channel
+                </span>
+              ) : null}
+              {isRoomMuted ? (
+                <BellOff className="size-3.5 shrink-0 text-[color:var(--art-faint)]" aria-label="Notifications muted" />
+              ) : null}
+            </span>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.p
+                key={subtitle}
+                initial={{ opacity: 0, y: 3 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                className={cn(
+                  'truncate text-[11px] leading-tight',
+                  typerLabel.length > 0
+                    ? 'font-medium italic text-[color:var(--art-accent-2)]'
+                    : 'text-[color:var(--art-dim)]',
+                )}
+              >
+                {subtitle}
+              </motion.p>
+            </AnimatePresence>
+          </span>
         </button>
 
-        {/* R37 - Signal paradigm: DM-only contact verification badge beside
-            the call buttons. Verified peer → emerald ShieldCheck with a subtle
-            emerald tint ring; otherwise a zinc outline icon with a tiny amber
-            dot. Tap opens the shared safety-number sheet. */}
-        {!isGroup && dmPeer ? (
+        {/* R54-c: video call - DMs dial the shell call session, groups dial
+            the mesh group call. Audio call sits beside it, kebab last. */}
+        {!isGroup && other && onStartCall ? (
           <Button
             variant="ghost"
             size="icon"
-            aria-label={safety.data?.verified ? 'Verified' : 'Not verified'}
+            aria-label={`Start video call with ${other.name}`}
             onClick={() => {
-              haptic(8)
-              setSafetyOpen(true)
+              haptic(10)
+              onStartCall({
+                conversationId,
+                peer: { id: other.id, name: other.name, color: other.color, avatar: other.avatar },
+                kind: 'video',
+              })
             }}
-            className={cn(
-              'relative size-10 shrink-0 rounded-full active:scale-95',
-              safety.data?.verified
-                ? 'bg-amber-500/[0.07] text-amber-600 ring-1 ring-inset ring-amber-500/40 hover:bg-amber-500/[0.12] hover:text-amber-600'
-                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300',
-            )}
+            className="size-11 shrink-0 rounded-full text-[color:var(--art-text-soft)] hover:bg-white/5 hover:text-[color:var(--art-text)] active:scale-95"
           >
-            <ShieldCheck className="size-5" aria-hidden />
-            {!safety.data?.verified ? (
-              <span
-                aria-hidden
-                className="absolute top-2 right-2 size-1.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-zinc-950"
-              />
-            ) : null}
+            <Video className="size-5" aria-hidden />
+          </Button>
+        ) : null}
+        {isGroup && onStartGroupCall ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Start group video call${displayName ? ` in ${displayName}` : ''}`}
+            onClick={() => {
+              haptic(10)
+              onStartGroupCall({ conversationId, kind: 'video', title: displayName || 'Group call' })
+            }}
+            className="size-11 shrink-0 rounded-full text-[color:var(--art-text-soft)] hover:bg-white/5 hover:text-[color:var(--art-text)] active:scale-95"
+          >
+            <Video className="size-5" aria-hidden />
           </Button>
         ) : null}
 
-        {/* R33-a → R35-b: DM-only call buttons - voice always, video beside it.
-            They dial through the SHELL's single call session (onStartCall);
-            hosts without the shell wiring honestly show no dead buttons. */}
+        {/* audio call - the second of the three header icons */}
         {!isGroup && other && onStartCall ? (
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Start voice call with ${other.name}`}
-              onClick={() => {
-                haptic(10)
-                onStartCall({
-                  conversationId,
-                  peer: { id: other.id, name: other.name, color: other.color, avatar: other.avatar },
-                  kind: 'voice',
-                })
-              }}
-              className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
-            >
-              <Phone className="size-5" aria-hidden />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Start video call with ${other.name}`}
-              onClick={() => {
-                haptic(10)
-                onStartCall({
-                  conversationId,
-                  peer: { id: other.id, name: other.name, color: other.color, avatar: other.avatar },
-                  kind: 'video',
-                })
-              }}
-              className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
-            >
-              <Video className="size-5" aria-hidden />
-            </Button>
-          </>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Start voice call with ${other.name}`}
+            onClick={() => {
+              haptic(10)
+              onStartCall({
+                conversationId,
+                peer: { id: other.id, name: other.name, color: other.color, avatar: other.avatar },
+                kind: 'voice',
+              })
+            }}
+            className="size-11 shrink-0 rounded-full text-[color:var(--art-text-soft)] hover:bg-white/5 hover:text-[color:var(--art-text)] active:scale-95"
+          >
+            <Phone className="size-5" aria-hidden />
+          </Button>
         ) : null}
-
-        {/* Group call buttons (mesh) - same shell-dial contract, one session. */}
         {isGroup && onStartGroupCall ? (
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Start group voice call${displayName ? ` in ${displayName}` : ''}`}
-              onClick={() => {
-                haptic(10)
-                onStartGroupCall({ conversationId, kind: 'voice', title: displayName || 'Group call' })
-              }}
-              className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
-            >
-              <Phone className="size-5" aria-hidden />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Start group video call${displayName ? ` in ${displayName}` : ''}`}
-              onClick={() => {
-                haptic(10)
-                onStartGroupCall({ conversationId, kind: 'video', title: displayName || 'Group call' })
-              }}
-              className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
-            >
-              <Video className="size-5" aria-hidden />
-            </Button>
-          </>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Start group voice call${displayName ? ` in ${displayName}` : ''}`}
+            onClick={() => {
+              haptic(10)
+              onStartGroupCall({ conversationId, kind: 'voice', title: displayName || 'Group call' })
+            }}
+            className="size-11 shrink-0 rounded-full text-[color:var(--art-text-soft)] hover:bg-white/5 hover:text-[color:var(--art-text)] active:scale-95"
+          >
+            <Phone className="size-5" aria-hidden />
+          </Button>
         ) : null}
-
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={pipConversationId !== null ? 'Close mini chat window' : 'Open mini chat window'}
-          aria-pressed={pipConversationId !== null}
-          onClick={() => {
-            haptic(10)
-            if (pipConversationId !== null) {
-              closePipChat()
-            } else {
-              startPipChat(conversationId)
-            }
-          }}
-          className={cn(
-            'size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300',
-            pipConversationId !== null && 'text-amber-700 dark:text-amber-400',
-          )}
-        >
-          <PictureInPicture2 className="size-5" aria-hidden />
-        </Button>
-        {/* R27-c: header sub-page entries - search + info for every room */}
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Search messages"
-          onClick={() => {
-            haptic(8)
-            navigateHash(`#/room/${conversationId}/search`)
-          }}
-          className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
-        >
-          <Search className="size-5" aria-hidden />
-        </Button>
-        {/* R30-b: reminders - opens the glass reminders sheet; badge = upcoming count */}
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={
-            upcomingReminderCount > 0
-              ? `Reminders - ${upcomingReminderCount} upcoming`
-              : 'Reminders'
-          }
-          onClick={() => {
-            haptic(8)
-            setRemindersOpen(true)
-          }}
-          className="relative size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
-        >
-          <Bell className="size-5" aria-hidden />
-          {upcomingReminderCount > 0 ? (
-            <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold leading-none text-white">
-              {upcomingReminderCount > 9 ? '9+' : upcomingReminderCount}
-            </span>
-          ) : null}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Live voice room"
-          aria-pressed={voice.inRoom}
-          onClick={() => {
-            haptic(10)
-            setVoiceOpen(true)
-          }}
-          className={cn(
-            'size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300',
-            voice.inRoom && 'text-amber-700 dark:text-amber-400',
-          )}
-        >
-          <Mic className="size-5" aria-hidden />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Chat info"
-          onClick={() => {
-            haptic(8)
-            navigateHash(`#/room/${conversationId}/info`)
-          }}
-          className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
-        >
-          <Info className="size-5" aria-hidden />
-        </Button>
 
         <Button
           variant="ghost"
@@ -4149,11 +4054,15 @@ export function ChatRoom({
             setMuteChoicesOpen(false)
             setMenuOpen((v) => !v)
           }}
-          className="size-10 shrink-0 rounded-full text-zinc-500 hover:text-zinc-700 active:scale-95 dark:hover:text-zinc-300"
+          className="size-11 shrink-0 rounded-full text-[color:var(--art-text-soft)] hover:bg-white/5 hover:text-[color:var(--art-text)] active:scale-95"
         >
           <EllipsisVertical className="size-5" aria-hidden />
         </Button>
 
+        {/* R54-c kebab - the single drop-down that carries EVERY action the
+            slim header no longer shows (search, bell, mic, info, PiP, shield)
+            plus the room chrome (topics, pins, scheduled, tools). Dark ember
+            surface per the reference artboard. */}
         <AnimatePresence>
           {menuOpen ? (
             <>
@@ -4170,8 +4079,20 @@ export function ChatRoom({
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.14 }}
                 role="menu"
-                className="absolute top-[calc(3.5rem+env(safe-area-inset-top))] right-2 z-40 min-w-44 overflow-hidden rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800"
+                className="pulse-scroll absolute top-[calc(3.5rem+env(safe-area-inset-top))] right-2 z-40 max-h-[min(72vh,520px)] min-w-56 overflow-y-auto overscroll-contain rounded-2xl border border-[color:var(--art-hairline)] bg-[#1c1610]/95 p-1.5 shadow-2xl shadow-black/50 backdrop-blur-xl"
               >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    navigateHash(`#/room/${conversationId}/info`)
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <Info className={ROOM_MENU_ICON} aria-hidden />
+                  Room info
+                </button>
                 <button
                   type="button"
                   role="menuitem"
@@ -4179,51 +4100,161 @@ export function ChatRoom({
                     setMenuOpen(false)
                     navigateHash(`#/room/${conversationId}/search`)
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  className={ROOM_MENU_ITEM}
                 >
-                  <Search className="size-4 text-amber-600" aria-hidden />
-                  Search messages
+                  <Search className={ROOM_MENU_ICON} aria-hidden />
+                  Search in conversation
+                </button>
+                {/* relocated header bell - upcoming count rides along */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-label={
+                    upcomingReminderCount > 0
+                      ? `Reminders - ${upcomingReminderCount} upcoming`
+                      : 'Reminders'
+                  }
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setRemindersOpen(true)
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <Bell className={ROOM_MENU_ICON} aria-hidden />
+                  Reminders
+                  {upcomingReminderCount > 0 ? (
+                    <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-[color:var(--art-accent)] px-1 text-[9px] font-bold leading-none text-white">
+                      {upcomingReminderCount > 9 ? '9+' : upcomingReminderCount}
+                    </span>
+                  ) : null}
                 </button>
                 <button
                   type="button"
                   role="menuitem"
                   onClick={() => {
                     setMenuOpen(false)
-                    setInfoOpen(true)
+                    setPinnedOpen(true)
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  className={ROOM_MENU_ITEM}
                 >
-                  <Info className="size-4 text-zinc-400" aria-hidden />
-                  {isGroup ? 'Manage group' : 'Manage chat'}
+                  <Pin className="size-4 shrink-0 rotate-45 text-[color:var(--art-accent-2)]" aria-hidden />
+                  Pinned messages
+                  {pinnedCount > 0 ? (
+                    <span className="ml-auto rounded-full bg-white/[0.08] px-1.5 text-[10px] font-bold text-[color:var(--art-text-soft)]">
+                      {pinnedCount}
+                    </span>
+                  ) : null}
                 </button>
-                {/* R34-b: AI recap - real LLM summary of the recent chat */}
+                {/* relocated header mic - the live voice room */}
                 <button
                   type="button"
                   role="menuitem"
-                  disabled={recapMutation.isPending}
                   onClick={() => {
                     setMenuOpen(false)
-                    requestRecap()
+                    setVoiceOpen(true)
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  className={cn(ROOM_MENU_ITEM, voice.inRoom && 'text-[color:var(--art-accent-2)]')}
                 >
-                  <Sparkles className="size-4 text-violet-500" aria-hidden />
-                  Recap with AI
+                  <Mic className={ROOM_MENU_ICON} aria-hidden />
+                  Voice room
+                  {voice.inRoom ? (
+                    <span className="ml-auto rounded-full bg-[color:var(--art-accent)]/20 px-1.5 text-[10px] font-bold text-[color:var(--art-accent-2)]">
+                      {voice.roster.length} live
+                    </span>
+                  ) : null}
                 </button>
+                {/* relocated header PiP - mini chat window */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    haptic(10)
+                    setMenuOpen(false)
+                    if (pipConversationId !== null) {
+                      closePipChat()
+                    } else {
+                      startPipChat(conversationId)
+                    }
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <PictureInPicture2 className={ROOM_MENU_ICON} aria-hidden />
+                  {pipConversationId !== null ? 'Close mini chat window' : 'Mini chat window'}
+                </button>
+                {isGroup ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      haptic(8)
+                      setTopicsBarVisible((v) => !v)
+                    }}
+                    className={ROOM_MENU_ITEM}
+                  >
+                    <MessagesSquare className={ROOM_MENU_ICON} aria-hidden />
+                    Topics
+                    <span
+                      className={cn(
+                        'ml-auto rounded-full px-1.5 text-[10px] font-bold',
+                        topicsBarVisible
+                          ? 'bg-[color:var(--art-accent)]/20 text-[color:var(--art-accent-2)]'
+                          : 'bg-white/[0.08] text-[color:var(--art-dim)]',
+                      )}
+                    >
+                      {topicsBarVisible ? 'Shown' : 'Hidden'}
+                    </span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setScheduledListOpen(true)
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <CalendarClock className={ROOM_MENU_ICON} aria-hidden />
+                  Scheduled sends
+                </button>
+                {/* relocated header ShieldCheck - DM safety number */}
+                {!isGroup && dmPeer ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      haptic(8)
+                      setMenuOpen(false)
+                      setSafetyOpen(true)
+                    }}
+                    className={ROOM_MENU_ITEM}
+                  >
+                    <ShieldCheck
+                      className={cn(
+                        'size-4 shrink-0',
+                        safety.data?.verified
+                          ? 'text-[color:var(--art-accent-2)]'
+                          : 'text-[color:var(--art-dim)]',
+                      )}
+                      aria-hidden
+                    />
+                    {safety.data?.verified ? 'Verified safety number' : 'Verify safety number'}
+                  </button>
+                ) : null}
                 {isRoomMuted ? (
                   <button
                     type="button"
                     role="menuitem"
                     disabled={toggleRoomMute.isPending}
                     onClick={() => toggleRoomMute.mutate(null)}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 disabled:opacity-50 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    className={ROOM_MENU_ITEM}
                   >
-                    <VolumeX className="size-4 text-amber-600" aria-hidden />
+                    <VolumeX className={ROOM_MENU_ICON} aria-hidden />
                     Unmute notifications
                   </button>
                 ) : muteChoicesOpen ? (
                   <div className="px-1 pb-1 pt-0.5" role="group" aria-label="Mute duration">
-                    <p className="px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                    <p className={cn('px-2 pb-1 pt-1', ROOM_MENU_LABEL)}>
                       Mute for
                     </p>
                     <div className="flex gap-1">
@@ -4238,7 +4269,7 @@ export function ChatRoom({
                           role="menuitem"
                           disabled={toggleRoomMute.isPending}
                           onClick={() => toggleRoomMute.mutate(preset.until)}
-                          className="h-8 flex-1 rounded-lg bg-zinc-100 text-xs font-semibold text-zinc-700 outline-none transition-colors hover:bg-amber-500/15 hover:text-amber-700 active:scale-95 disabled:opacity-50 dark:bg-zinc-700 dark:text-zinc-200 dark:hover:bg-amber-500/20 dark:hover:text-amber-400"
+                          className="h-8 flex-1 rounded-lg bg-white/[0.07] text-xs font-semibold text-[color:var(--art-text-soft)] outline-none transition-colors hover:bg-[color:var(--art-accent)]/20 hover:text-[color:var(--art-accent-2)] active:scale-95 disabled:opacity-50"
                         >
                           {preset.label}
                         </button>
@@ -4250,15 +4281,15 @@ export function ChatRoom({
                     type="button"
                     role="menuitem"
                     onClick={() => setMuteChoicesOpen(true)}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    className={ROOM_MENU_ITEM}
                   >
-                    <BellOff className="size-4 text-zinc-400" aria-hidden />
+                    <BellOff className="size-4 shrink-0 text-[color:var(--art-dim)]" aria-hidden />
                     Mute notifications
                   </button>
                 )}
                 {ttlChoicesOpen ? (
                   <div className="px-1 pb-1 pt-0.5" role="group" aria-label="Disappearing messages">
-                    <p className="flex items-center gap-1 px-2 pb-1 pt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                    <p className={cn('flex items-center gap-1 px-2 pb-1 pt-1', ROOM_MENU_LABEL)}>
                       <Timer className="size-3" aria-hidden />
                       New messages vanish after
                     </p>
@@ -4273,8 +4304,8 @@ export function ChatRoom({
                           className={cn(
                             'h-8 rounded-lg text-xs font-semibold outline-none transition-colors active:scale-95 disabled:opacity-50',
                             ttlSeconds === t
-                              ? 'bg-amber-500/15 text-amber-700 ring-1 ring-amber-400 dark:text-amber-300'
-                              : 'bg-zinc-100 text-zinc-700 hover:bg-amber-500/15 hover:text-amber-700 dark:bg-zinc-700 dark:text-zinc-200',
+                              ? 'bg-[color:var(--art-accent)]/15 text-[color:var(--art-accent-2)] ring-1 ring-[color:var(--art-accent)]/50'
+                              : 'bg-white/[0.07] text-[color:var(--art-text-soft)] hover:bg-[color:var(--art-accent)]/15 hover:text-[color:var(--art-accent-2)]',
                           )}
                         >
                           {t === 0 ? 'Off' : t === 86_400 ? '24h' : t === 604_800 ? '7d' : '30d'}
@@ -4287,17 +4318,128 @@ export function ChatRoom({
                     type="button"
                     role="menuitem"
                     onClick={() => setTtlChoicesOpen(true)}
-                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-zinc-700 outline-none transition-colors hover:bg-zinc-100 active:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    className={ROOM_MENU_ITEM}
                   >
-                    <Timer className={cn('size-4', ttlSeconds > 0 ? 'text-amber-600' : 'text-zinc-400')} aria-hidden />
+                    <Timer
+                      className={cn(
+                        'size-4 shrink-0',
+                        ttlSeconds > 0 ? 'text-[color:var(--art-accent-2)]' : 'text-[color:var(--art-dim)]',
+                      )}
+                      aria-hidden
+                    />
                     Disappearing messages
                     {ttlSeconds > 0 ? (
-                      <span className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-px text-[9px] font-bold uppercase text-amber-700 dark:text-amber-400">
+                      <span className="ml-auto rounded-full bg-[color:var(--art-accent)]/15 px-1.5 py-px text-[9px] font-bold uppercase text-[color:var(--art-accent-2)]">
                         {ttlSeconds === 86_400 ? '24h' : ttlSeconds === 604_800 ? '7d' : '30d'}
                       </span>
                     ) : null}
                   </button>
                 )}
+                {/* R34-b: AI recap - real LLM summary of the recent chat */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={recapMutation.isPending}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    requestRecap()
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <Sparkles className={ROOM_MENU_ICON} aria-hidden />
+                  Recap with AI
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setInfoOpen(true)
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <UserPlus className={ROOM_MENU_ICON} aria-hidden />
+                  {isGroup ? 'Manage group' : 'Manage chat'}
+                </button>
+                {/* room tools - the same handlers the composer tray uses */}
+                <p className={ROOM_MENU_LABEL}>Tools</p>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    events.setOpen(true)
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <CalendarDays className={ROOM_MENU_ICON} aria-hidden />
+                  Events
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    whiteboard.setOpen(true)
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <Presentation className={ROOM_MENU_ICON} aria-hidden />
+                  Whiteboard
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    kanban.setOpen(true)
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <SquareKanban className={ROOM_MENU_ICON} aria-hidden />
+                  Kanban
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    window.dispatchEvent(new CustomEvent(STAGE_OPEN_EVENT))
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <Podcast className={ROOM_MENU_ICON} aria-hidden />
+                  Stage
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    window.dispatchEvent(new CustomEvent(SPACE_OPEN_EVENT))
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <MapIcon className={ROOM_MENU_ICON} aria-hidden />
+                  Space
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!isGroup}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    if (!isGroup) {
+                      toast.error('Tournaments are for groups only')
+                      return
+                    }
+                    window.dispatchEvent(new CustomEvent(TOURNAMENT_OPEN_EVENT))
+                  }}
+                  className={ROOM_MENU_ITEM}
+                >
+                  <Trophy className={ROOM_MENU_ICON} aria-hidden />
+                  Tournament
+                </button>
               </motion.div>
             </>
           ) : null}
@@ -4319,7 +4461,7 @@ export function ChatRoom({
               setVoiceOpen(true)
             }}
             aria-label={`Reopen live voice room - ${voice.roster.length} ${voice.roster.length === 1 ? 'participant' : 'participants'}`}
-            className="absolute top-[calc(3.75rem+env(safe-area-inset-top))] left-1/2 z-30 flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-zinc-950/85 py-1.5 pr-3 pl-2.5 text-xs font-bold text-amber-300 shadow-lg shadow-amber-950/40 backdrop-blur-md outline-none active:scale-95"
+            className="absolute top-[calc(3.75rem+env(safe-area-inset-top))] left-1/2 z-30 flex items-center gap-1.5 rounded-full border border-[color:var(--art-accent)]/30 bg-[#1c1610]/90 py-1.5 pr-3 pl-2.5 text-xs font-bold text-[color:var(--art-accent-2)] shadow-lg shadow-black/40 backdrop-blur-md outline-none active:scale-95"
             style={{ willChange: 'transform' }}
           >
             <span className="relative flex size-2" aria-hidden>
@@ -4332,7 +4474,7 @@ export function ChatRoom({
         ) : null}
       </AnimatePresence>
 
-      {/* pinned banner - slim glass strip (R27-c); tap → compact glass pins sheet */}
+      {/* pinned banner - slim dark strip (R27-c); tap → compact glass pins sheet */}
       {latestPinned ? (
         <motion.button
           type="button"
@@ -4344,25 +4486,26 @@ export function ChatRoom({
             setPinnedOpen(true)
           }}
           aria-label={`Open pinned messages - ${pinnedCount} pinned`}
-          className="glass-sheen relative flex shrink-0 items-center gap-2 border-b border-zinc-200/70 bg-white/60 px-3 py-1.5 text-left backdrop-blur-xl transition-colors hover:bg-white/80 dark:border-zinc-700/70 dark:bg-zinc-900/60 dark:hover:bg-zinc-900/80"
+          className="relative flex shrink-0 items-center gap-2 border-b border-[color:var(--art-hairline)] bg-white/[0.04] px-3 py-1.5 text-left backdrop-blur-xl transition-colors hover:bg-white/[0.07]"
         >
-          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/10" aria-hidden>
-            <Pin className="size-3 rotate-45 text-amber-600" />
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[color:var(--art-accent)]/15" aria-hidden>
+            <Pin className="size-3 rotate-45 text-[color:var(--art-accent-2)]" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-[color:var(--art-accent-2)]">
               Pinned{pinnedCount > 1 ? ` · ${pinnedCount}` : ''}
             </span>
-            <span className="block truncate text-xs text-zinc-600 dark:text-zinc-300">
+            <span className="block truncate text-xs text-[color:var(--art-text-soft)]">
               {latestPinned.content.replace(/\s+/g, ' ').trim().slice(0, 80) || 'Photo'}
             </span>
           </span>
-          <ChevronUp className="size-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden />
+          <ChevronUp className="size-3.5 shrink-0 text-[color:var(--art-faint)]" aria-hidden />
         </motion.button>
       ) : null}
 
-      {/* R24-b: Zulip-style topic rail - General + real topic chips (groups only) */}
-      {isGroup ? (
+      {/* R24-b: Zulip-style topic rail - hidden by default (R54-c reference
+          artboard); the kebab "Topics" item toggles it back into view */}
+      {isGroup && topicsBarVisible ? (
         <TopicBar
           topics={topics}
           activeTopicId={activeTopicId}
@@ -4378,7 +4521,7 @@ export function ChatRoom({
         <div
           ref={viewportRef}
           onScroll={handleScroll}
-          className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white/25 px-3 pt-3 pb-2 dark:bg-black/20"
+          className="pulse-scroll relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-3 pb-2"
           style={{
             backgroundImage: `radial-gradient(ellipse 90% 34% at 50% -8%, ${glowTop}, transparent 62%), radial-gradient(ellipse 110% 40% at 50% 110%, ${glowBottom}, transparent 62%), radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
             backgroundSize: '100% 100%, 100% 100%, 16px 16px',
@@ -4414,8 +4557,8 @@ export function ChatRoom({
                   <SendHorizontal className="size-7 -rotate-45" />
                 </div>
                 <div className="relative">
-                  <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">No messages yet</p>
-                  <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+                  <p className="text-sm font-semibold text-[color:var(--art-text-soft)]">No messages yet</p>
+                  <p className="mt-1 text-xs text-[color:var(--art-faint)]">
                     Say hello - your words travel in real time.
                   </p>
                 </div>
@@ -4429,7 +4572,7 @@ export function ChatRoom({
                     type="button"
                     disabled={loadingOlder}
                     onClick={() => void loadOlder()}
-                    className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-zinc-500 shadow-sm outline-none backdrop-blur transition-colors hover:border-amber-300 hover:text-amber-700 active:scale-95 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-400 dark:hover:border-amber-500/50 dark:hover:text-amber-400"
+                    className="flex items-center gap-1.5 rounded-full border border-[color:var(--art-hairline)] bg-white/[0.06] px-3.5 py-1.5 text-xs font-semibold text-[color:var(--art-dim)] outline-none backdrop-blur transition-colors hover:border-[color:var(--art-accent)]/40 hover:text-[color:var(--art-accent-2)] active:scale-95 disabled:opacity-60"
                   >
                     {loadingOlder ? (
                       <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
@@ -4447,7 +4590,7 @@ export function ChatRoom({
                       initial={prefs.reducedMotion ? false : { opacity: 0, y: -6, scale: 0.96 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{ duration: 0.28, ease: ease.out }}
-                      className="rounded-full bg-white/85 px-3 py-1 text-[11px] font-medium text-zinc-600 shadow-sm ring-1 ring-black/5 backdrop-blur-md dark:bg-zinc-800/85 dark:text-zinc-300 dark:ring-white/10"
+                      className="rounded-full bg-[#1c1610]/80 px-3 py-1 text-[11px] font-medium text-[color:var(--art-dim)] ring-1 ring-[color:var(--art-hairline)] backdrop-blur-md"
                     >
                       {item.label}
                     </motion.span>
@@ -4462,15 +4605,24 @@ export function ChatRoom({
                     role="separator"
                     aria-label="Unread messages"
                   >
-                    <span className="h-px flex-1 bg-amber-400/50 dark:bg-amber-500/40" />
-                    <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold tracking-widest text-amber-700 backdrop-blur-sm dark:text-amber-400">
+                    <span className="h-px flex-1 bg-[color:var(--art-accent)]/45" />
+                    <span className="rounded-full bg-[color:var(--art-accent)]/15 px-2 py-0.5 text-[10px] font-bold tracking-widest text-[color:var(--art-accent-2)] backdrop-blur-sm">
                       UNREAD
                     </span>
-                    <span className="h-px flex-1 bg-amber-400/50 dark:bg-amber-500/40" />
+                    <span className="h-px flex-1 bg-[color:var(--art-accent)]/45" />
                   </motion.div>
                 ) : (
-                  <MessageRow
-                    key={item.key}
+                  <Fragment key={item.key}>
+                    {/* R54-c: centered "8:16PM" between clusters (artboard style);
+                        the in-bubble time moved out here, one stamp per cluster */}
+                    {item.head ? (
+                      <div className="my-1 flex justify-center" aria-hidden>
+                        <span className="text-[11px] font-medium text-[color:var(--art-faint)]">
+                          {formatTime(item.message.createdAt)}
+                        </span>
+                      </div>
+                    ) : null}
+                    <MessageRow
                     message={item.message}
                     head={item.head}
                     mine={item.message.senderId === me.id}
@@ -4513,6 +4665,7 @@ export function ChatRoom({
                         Date.parse(item.message.createdAt) > mountMsRef.current)
                     }
                   />
+                  </Fragment>
                 ),
               )}
   
@@ -4538,18 +4691,18 @@ export function ChatRoom({
                               detailData?.members.find((m) => m.id === typer.userId)?.color ?? 'emerald'
                             }
                             avatar={detailData?.members.find((m) => m.id === typer.userId)?.avatar ?? null}
-                            size={28}
+                            size={24}
                           />
                         )
                       })()
                     ) : other ? (
-                      <UserAvatar name={other.name} color={other.color} avatar={other.avatar} size={28} />
+                      <UserAvatar name={other.name} color={other.color} avatar={other.avatar} size={24} />
                     ) : null}
                     {/* Telegram-style morphing pill: borderRadius breathes with the dots */}
                     <motion.div
                       animate={prefs.reducedMotion ? undefined : { borderRadius: ['1.25rem', '0.875rem', '1.25rem'] }}
                       transition={{ repeat: Infinity, duration: 0.72, ease: 'easeInOut' }}
-                      className="rounded-2xl rounded-bl-md border border-zinc-100 bg-white px-3 py-2.5 shadow-sm dark:border-zinc-700 dark:bg-zinc-800"
+                      className="art-bubble-in px-3 py-2.5"
                       style={{ willChange: 'border-radius' }}
                     >
                       <TypingDots reducedMotion={prefs.reducedMotion} />
@@ -4582,7 +4735,7 @@ export function ChatRoom({
                   scrollToBottom(true)
                 }}
                 style={{ willChange: 'transform' }}
-                className="sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full bg-amber-500 py-2 pr-3.5 pl-3 text-xs font-semibold text-white shadow-lg shadow-amber-600/30 outline-none"
+                className="art-fab sticky bottom-1 z-10 ml-auto mr-1 mt-2 flex items-center gap-1.5 rounded-full py-2 pr-3.5 pl-3 text-xs font-semibold outline-none"
               >
                 New messages
                 <ArrowDown className="size-3.5" aria-hidden />
@@ -4592,7 +4745,7 @@ export function ChatRoom({
                     initial={prefs.reducedMotion ? false : { scale: 0.4, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={spring.bouncy}
-                    className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-amber-700"
+                    className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold text-[#d95f22]"
                   >
                     {missedCount > 99 ? '99+' : missedCount}
                   </motion.span>
@@ -4614,7 +4767,7 @@ export function ChatRoom({
             className={cn(
               'absolute inset-0 z-30 flex items-center justify-center px-6',
               privacyHidden
-                ? 'bg-zinc-100/60 backdrop-blur-xl dark:bg-zinc-950/60'
+                ? 'bg-[#0d0906]/70 backdrop-blur-xl'
                 : 'pointer-events-none opacity-0',
             )}
             style={{ transition: prefs.reducedMotion ? undefined : 'opacity 180ms ease' }}
@@ -4623,10 +4776,10 @@ export function ChatRoom({
               <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-amber-500/10">
                 <EyeOff className="size-5 text-amber-700 dark:text-amber-400" aria-hidden />
               </span>
-              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+              <p className="text-sm font-semibold text-[color:var(--art-text)]">
                 Screen security is on
               </p>
-              <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+              <p className="text-[11px] leading-relaxed text-[color:var(--art-dim)]">
                 Messages are hidden while Pulse is not focused
               </p>
             </div>
@@ -4641,7 +4794,7 @@ export function ChatRoom({
         style={{ willChange: 'transform' }}
         className="relative z-20 shrink-0"
       >
-        <div className="bg-gradient-to-t from-zinc-100/90 via-zinc-100/45 to-transparent px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] dark:from-zinc-950/85 dark:via-zinc-950/40 dark:to-transparent">
+        <div className="bg-gradient-to-t from-[#0d0906]/95 via-[#0d0906]/55 to-transparent px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <AnimatePresence initial={false}>
           {isOffline ? (
             <motion.div
@@ -4652,7 +4805,7 @@ export function ChatRoom({
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30">
+              <div className="mb-2 flex items-center gap-1.5 rounded-full bg-[color:var(--art-accent)]/12 px-3 py-1.5 text-[11px] font-medium text-[color:var(--art-accent-2)] ring-1 ring-inset ring-[color:var(--art-accent)]/30">
                 <CloudOff className="size-3.5 shrink-0" aria-hidden />
                 <span>
                   Offline - messages you send will be queued
@@ -4673,13 +4826,13 @@ export function ChatRoom({
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-amber-400 bg-zinc-100 py-2 pr-2 pl-2.5 dark:bg-zinc-800">
+              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-[color:var(--art-accent)] bg-white/[0.06] py-2 pr-2 pl-2.5">
                 <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-1 text-xs font-bold text-amber-600 dark:text-amber-400">
+                  <p className="flex items-center gap-1 text-xs font-bold text-[color:var(--art-accent-2)]">
                     <Pencil className="size-3" aria-hidden />
                     Editing message
                   </p>
-                  <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                  <p className="truncate text-xs text-[color:var(--art-dim)]">
                     {editing.content.replace(/\s+/g, ' ').slice(0, 120) || 'Media caption'}
                   </p>
                 </div>
@@ -4687,7 +4840,7 @@ export function ChatRoom({
                   type="button"
                   aria-label="Cancel editing"
                   onClick={cancelEdit}
-                  className="rounded-full p-1.5 text-zinc-400 outline-none transition-colors hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                  className="rounded-full p-1.5 text-[color:var(--art-faint)] outline-none transition-colors hover:bg-white/10 hover:text-[color:var(--art-text)]"
                 >
                   <X className="size-4" aria-hidden />
                 </button>
@@ -4706,7 +4859,7 @@ export function ChatRoom({
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30">
+              <div className="mb-2 flex items-center gap-1.5 rounded-full bg-[color:var(--art-accent)]/12 px-3 py-1.5 text-[11px] font-semibold text-[color:var(--art-accent-2)] ring-1 ring-inset ring-[color:var(--art-accent)]/30">
                 <MessagesSquare className="size-3.5 shrink-0" aria-hidden />
                 <span className="min-w-0 flex-1 truncate">Filing to #{activeTopic.name}</span>
                 <button
@@ -4735,12 +4888,12 @@ export function ChatRoom({
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-amber-500 bg-zinc-100 py-2 pr-2 pl-2.5 dark:bg-zinc-800">
+              <div className="mb-2 flex items-start gap-2 rounded-xl border-l-4 border-[color:var(--art-accent)] bg-white/[0.06] py-2 pr-2 pl-2.5">
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-amber-700 dark:text-amber-400">
+                  <p className="text-xs font-bold text-[color:var(--art-accent-2)]">
                     Replying to {replyTo.sender.id === me.id ? 'yourself' : replyTo.sender.name}
                   </p>
-                  <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                  <p className="truncate text-xs text-[color:var(--art-dim)]">
                     {replyTo.deletedAt
                       ? 'Deleted message'
                       : replyTo.content.replace(/\s+/g, ' ').slice(0, 120)}
@@ -4750,7 +4903,7 @@ export function ChatRoom({
                   type="button"
                   aria-label="Cancel reply"
                   onClick={() => setReplyTo(null)}
-                  className="rounded-full p-1.5 text-zinc-400 outline-none transition-colors hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                  className="rounded-full p-1.5 text-[color:var(--art-faint)] outline-none transition-colors hover:bg-white/10 hover:text-[color:var(--art-text)]"
                 >
                   <X className="size-4" aria-hidden />
                 </button>
@@ -4772,7 +4925,7 @@ export function ChatRoom({
               <button
                 type="button"
                 onClick={() => setScheduledListOpen(true)}
-                className="mb-2 flex w-full items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-left text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200 transition-colors hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30"
+                className="mb-2 flex w-full items-center gap-1.5 rounded-full bg-[color:var(--art-accent)]/12 px-3 py-1.5 text-left text-[11px] font-medium text-[color:var(--art-accent-2)] ring-1 ring-inset ring-[color:var(--art-accent)]/30 transition-colors hover:bg-[color:var(--art-accent)]/20"
               >
                 <CalendarClock className="size-3.5 shrink-0" aria-hidden />
                 {scheduledChip.next} · {scheduledChip.count} pending - tap to manage
@@ -4796,9 +4949,9 @@ export function ChatRoom({
               <div
                 role="status"
                 aria-live="polite"
-                className="mb-2 flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-1.5 text-[11px] font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:bg-white/[0.06] dark:text-zinc-300 dark:ring-white/10"
+                className="mb-2 flex items-center gap-1.5 rounded-full bg-white/[0.06] px-3 py-1.5 text-[11px] font-medium text-[color:var(--art-text-soft)] ring-1 ring-inset ring-[color:var(--art-hairline)]"
               >
-                <Gauge className="size-3.5 shrink-0 text-amber-600" aria-hidden />
+                <Gauge className="size-3.5 shrink-0 text-[color:var(--art-accent-2)]" aria-hidden />
                 Slow mode - you can send again in {slowRemaining}s
               </div>
             </motion.div>
@@ -4815,8 +4968,8 @@ export function ChatRoom({
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-500/30">
-                <Sparkles className="size-3.5 shrink-0" aria-hidden />
+              <div className="mb-2 flex items-center gap-2 rounded-full bg-white/[0.06] px-3 py-1.5 text-[11px] font-semibold text-[color:var(--art-text-soft)] ring-1 ring-inset ring-[color:var(--art-hairline)]">
+                <Sparkles className="size-3.5 shrink-0 text-[color:var(--art-accent-2)]" aria-hidden />
                 <span className="min-w-0 flex-1 truncate">
                   {pendingEffect} effect armed - next message pops
                 </span>
@@ -4843,7 +4996,7 @@ export function ChatRoom({
               transition={{ duration: 0.18, ease: 'easeOut' }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-center gap-2 rounded-full bg-amber-500/15 px-3 py-1.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-400/40 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/40">
+              <div className="mb-2 flex items-center gap-2 rounded-full bg-[color:var(--art-accent)]/15 px-3 py-1.5 text-[11px] font-semibold text-[color:var(--art-accent-2)] ring-1 ring-inset ring-[color:var(--art-accent)]/40">
                 <motion.span
                   initial={prefs.reducedMotion ? false : { scale: 1 }}
                   animate={prefs.reducedMotion ? undefined : { scale: [1, 1.16, 1] }}
@@ -4890,8 +5043,8 @@ export function ChatRoom({
                     <Sparkles className="size-4" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-zinc-900 dark:text-zinc-50">AI recap</p>
-                    <p className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+                    <p className="text-xs font-bold text-[color:var(--art-text)]">AI recap</p>
+                    <p className="text-[10px] font-medium text-[color:var(--art-faint)]">
                       {recapMutation.isPending
                         ? 'Summarizing the latest messages'
                         : recap
@@ -4908,7 +5061,7 @@ export function ChatRoom({
                           .then(() => toast.success('Recap copied'))
                           .catch(() => toast.error('Could not copy the recap'))
                       }}
-                      className="glass-pill flex h-7 shrink-0 items-center gap-1 px-2.5 text-[11px] font-bold text-amber-700 outline-none transition-transform active:scale-95 dark:text-amber-400"
+                      className="glass-pill flex h-7 shrink-0 items-center gap-1 px-2.5 text-[11px] font-bold text-[color:var(--art-accent-2)] outline-none transition-transform active:scale-95"
                     >
                       <Copy className="size-3" aria-hidden />
                       Copy
@@ -4918,17 +5071,17 @@ export function ChatRoom({
                     type="button"
                     aria-label="Dismiss recap"
                     onClick={() => setRecap(null)}
-                    className="glass-pill flex size-7 shrink-0 items-center justify-center text-zinc-500 outline-none transition-transform active:scale-90 dark:text-zinc-400"
+                    className="glass-pill flex size-7 shrink-0 items-center justify-center text-[color:var(--art-dim)] outline-none transition-transform active:scale-90"
                   >
                     <X className="size-3.5" aria-hidden />
                   </button>
                 </div>
                 {recap !== null && !recapMutation.isPending ? (
-                  <p className="mt-2 whitespace-pre-line text-[12.5px] leading-relaxed text-zinc-700 dark:text-zinc-200">
+                  <p className="mt-2 whitespace-pre-line text-[12.5px] leading-relaxed text-[color:var(--art-text-soft)]">
                     {recap.text}
                   </p>
                 ) : (
-                  <div className="mt-2 flex items-center gap-2 text-[12px] font-medium text-zinc-500 dark:text-zinc-400">
+                  <div className="mt-2 flex items-center gap-2 text-[12px] font-medium text-[color:var(--art-dim)]">
                     <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
                     Reading the room…
                   </div>
@@ -4972,7 +5125,7 @@ export function ChatRoom({
               <div
                 role="group"
                 aria-label="Attachments and tools"
-                className="pulse-scroll mb-2 max-h-[min(58vh,440px)] overflow-y-auto rounded-3xl bg-white/60 p-2.5 ring-1 ring-inset ring-black/5 shadow-sm backdrop-blur-xl dark:bg-zinc-900/50 dark:ring-white/10"
+                className="pulse-scroll mb-2 max-h-[min(58vh,440px)] overflow-y-auto rounded-3xl border border-[color:var(--art-hairline)] bg-[#1c1610]/80 p-2.5 shadow-lg shadow-black/30 backdrop-blur-xl"
               >
                 {trayGroups.map((group, gi) => {
                   // one shared stagger timeline across all groups
@@ -4981,7 +5134,7 @@ export function ChatRoom({
                     .reduce((sum, g) => sum + g.tiles.length, 0)
                   return (
                     <div key={group.title} className={cn(gi > 0 && 'mt-3')}>
-                      <span className="glass-pill mb-1.5 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+                      <span className="mb-1.5 inline-flex rounded-full bg-white/[0.06] px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-[color:var(--art-dim)]">
                         {group.title}
                       </span>
                       <div className="grid grid-cols-2 gap-2">
@@ -5000,7 +5153,7 @@ export function ChatRoom({
                               delay: prefs.reducedMotion ? 0 : (offset + i) * 0.022,
                             }}
                             whileTap={tile.disabled ? undefined : { scale: 0.96 }}
-                            className="flex w-full items-center gap-2.5 rounded-2xl bg-white/55 px-2.5 py-2 text-left ring-1 ring-inset ring-black/[0.04] outline-none transition-colors hover:bg-white/90 disabled:opacity-40 dark:bg-white/[0.04] dark:ring-white/[0.06] dark:hover:bg-white/[0.09]"
+                            className="flex w-full items-center gap-2.5 rounded-2xl bg-white/[0.05] px-2.5 py-2 text-left ring-1 ring-inset ring-[color:var(--art-hairline)] outline-none transition-colors hover:bg-white/[0.1] disabled:opacity-40"
                           >
                             <span
                               className={cn(
@@ -5012,10 +5165,10 @@ export function ChatRoom({
                               <tile.icon className="size-[18px]" />
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[12.5px] font-semibold text-zinc-700 dark:text-zinc-100">
+                              <span className="block truncate text-[12.5px] font-semibold text-[color:var(--art-text)]">
                                 {tile.label}
                               </span>
-                              <span className="block truncate text-[10px] text-zinc-400 dark:text-zinc-500">
+                              <span className="block truncate text-[10px] text-[color:var(--art-faint)]">
                                 {tile.help}
                               </span>
                             </span>
@@ -5097,7 +5250,7 @@ export function ChatRoom({
                 whileTap={{ scale: 0.94 }}
                 transition={spring.snappy}
                 onClick={() => insertQuickPhrase(phrase.text)}
-                className="glass-pill max-w-[220px] shrink-0 truncate rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-zinc-600 outline-none transition-colors hover:text-amber-700 dark:text-zinc-300 dark:hover:text-amber-400"
+                className="glass-pill max-w-[220px] shrink-0 truncate rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-[color:var(--art-text-soft)] outline-none transition-colors hover:text-[color:var(--art-accent-2)]"
               >
                 {phrase.text}
               </motion.button>
@@ -5118,8 +5271,8 @@ export function ChatRoom({
                   transition={spring.snappy}
                   className={
                     phrases.length === 0
-                      ? 'glass-pill flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-zinc-500 outline-none transition-colors hover:text-amber-700 dark:text-zinc-400 dark:hover:text-amber-400'
-                      : 'glass-pill flex size-7 shrink-0 items-center justify-center text-zinc-500 outline-none transition-colors hover:text-amber-700 dark:text-zinc-400 dark:hover:text-amber-400'
+                      ? 'glass-pill flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-[11.5px] font-semibold text-[color:var(--art-dim)] outline-none transition-colors hover:text-[color:var(--art-accent-2)]'
+                      : 'glass-pill flex size-7 shrink-0 items-center justify-center text-[color:var(--art-dim)] outline-none transition-colors hover:text-[color:var(--art-accent-2)]'
                   }
                 >
                   {phrases.length === 0 ? (
@@ -5136,13 +5289,13 @@ export function ChatRoom({
                 side="top"
                 align="start"
                 sideOffset={10}
-                className="w-[272px] rounded-2xl p-2.5 dark:bg-zinc-800"
+                className="w-[272px] rounded-2xl border border-[color:var(--art-hairline)] bg-[#1c1610]/95 p-2.5 text-[color:var(--art-text)]"
               >
                 <div className="flex items-center justify-between px-1 pb-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--art-faint)]">
                     Quick phrases
                   </span>
-                  <span className="text-[10px] font-semibold tabular-nums text-zinc-400 dark:text-zinc-500">
+                  <span className="text-[10px] font-semibold tabular-nums text-[color:var(--art-faint)]">
                     {phrases.length}/{QUICK_PHRASES_MAX}
                   </span>
                 </div>
@@ -5150,12 +5303,12 @@ export function ChatRoom({
                   {phrases.map((phrase) => (
                     <div
                       key={phrase.id}
-                      className="flex items-center gap-1 rounded-lg px-1.5 py-1 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-700/60"
+                      className="flex items-center gap-1 rounded-lg px-1.5 py-1 transition-colors hover:bg-white/[0.07]"
                     >
                       <button
                         type="button"
                         onClick={() => insertQuickPhrase(phrase.text)}
-                        className="min-w-0 flex-1 truncate text-left text-[12.5px] text-zinc-700 outline-none dark:text-zinc-200"
+                        className="min-w-0 flex-1 truncate text-left text-[12.5px] text-[color:var(--art-text-soft)] outline-none"
                       >
                         {phrase.text}
                       </button>
@@ -5164,21 +5317,21 @@ export function ChatRoom({
                         aria-label={`Delete quick phrase: ${phrase.text}`}
                         disabled={deletePhrase.isPending}
                         onClick={() => deletePhrase.mutate(phrase.id)}
-                        className="shrink-0 rounded-full p-1 text-zinc-400 outline-none transition-colors hover:bg-rose-500/10 hover:text-rose-500 disabled:opacity-50"
+                        className="shrink-0 rounded-full p-1 text-[color:var(--art-faint)] outline-none transition-colors hover:bg-rose-500/15 hover:text-rose-400 disabled:opacity-50"
                       >
                         <X className="size-3.5" aria-hidden />
                       </button>
                     </div>
                   ))}
                   {phrases.length === 0 ? (
-                    <p className="px-1 pb-1.5 pt-1 text-[11.5px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+                    <p className="px-1 pb-1.5 pt-1 text-[11.5px] leading-relaxed text-[color:var(--art-faint)]">
                       No phrases yet - save the lines you send often, then tap them above the
                       composer.
                     </p>
                   ) : null}
                 </div>
                 <form
-                  className="mt-1.5 flex items-center gap-1.5 border-t border-zinc-200 pt-2 dark:border-zinc-700"
+                  className="mt-1.5 flex items-center gap-1.5 border-t border-[color:var(--art-hairline)] pt-2"
                   onSubmit={(e) => {
                     e.preventDefault()
                     const text = phraseDraft.trim()
@@ -5192,7 +5345,7 @@ export function ChatRoom({
                     placeholder="Add a phrase…"
                     aria-label="New quick phrase"
                     onChange={(e) => setPhraseDraft(e.target.value)}
-                    className="h-8 min-w-0 flex-1 rounded-full bg-zinc-100 px-3 text-[12.5px] dark:bg-zinc-700/60"
+                    className="h-8 min-w-0 flex-1 rounded-full bg-white/[0.07] px-3 text-[12.5px] text-[color:var(--art-text)]"
                   />
                   <Button
                     type="submit"
@@ -5212,24 +5365,30 @@ export function ChatRoom({
           </div>
         ) : null}
 
+        {/* R54-c composer row: ONE art-input-pill (paperclip / Type here /
+            camera) with the ember art-fab OUTSIDE on the right - plus opens the
+            attachments tray, and becomes the send action once there is text. */}
+        <div
+          className={cn(
+            'relative flex items-end gap-2',
+            broadcastLocked && 'pointer-events-none select-none opacity-40',
+            dmBlocked && 'hidden',
+          )}
+        >
         <div
           onFocusCapture={() => setComposerFocus(true)}
           onBlurCapture={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setComposerFocus(false)
           }}
-          className={cn(
-            'relative flex items-end gap-1 rounded-[26px] p-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.18)] backdrop-blur-2xl bg-white/80 ring-1 ring-inset ring-black/[0.06] dark:bg-zinc-900/70 dark:ring-white/10 dark:shadow-[0_8px_32px_rgba(0,0,0,0.5)]',
-            broadcastLocked && 'pointer-events-none select-none opacity-40',
-            dmBlocked && 'hidden',
-          )}
+          className="art-input-pill relative flex min-h-12 flex-1 items-end gap-1 p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
         >
-          {/* emerald focus hairline - springs in whenever the capsule holds focus */}
+          {/* ember focus hairline - springs in whenever the pill holds focus */}
           <motion.div
             aria-hidden
             initial={false}
             animate={{ opacity: composerFocus ? 1 : 0, scale: composerFocus ? 1 : 0.985 }}
             transition={spring.soft}
-            className="pointer-events-none absolute inset-0 rounded-[26px] ring-2 ring-inset ring-amber-500/40"
+            className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-inset ring-[color:var(--art-accent)]/45"
           />
           {/* slash-command palette (Discord/Slack-style) - fast-path over the plain parser */}
           {!editing && !recording ? (
@@ -5245,7 +5404,7 @@ export function ChatRoom({
             <div
               role="listbox"
               aria-label="Mention suggestions"
-              className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-lg shadow-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-800"
+              className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-2xl border border-[color:var(--art-hairline)] bg-[#1c1610]/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
             >
               {mentionMatches.map((m, i) => (
                 <button
@@ -5257,14 +5416,14 @@ export function ChatRoom({
                   className={cn(
                     'flex w-full items-center gap-2.5 px-3 py-2 text-left outline-none transition-colors',
                     i === 0
-                      ? 'bg-emerald-50 dark:bg-amber-500/10'
-                      : 'hover:bg-zinc-100 dark:hover:bg-zinc-700',
+                      ? 'bg-[color:var(--art-accent)]/15'
+                      : 'hover:bg-white/[0.07]',
                   )}
                 >
                   <UserAvatar name={m.name} color={m.color} avatar={m.avatar} size={26} />
-                  <span className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">{m.name}</span>
+                  <span className="truncate text-sm font-medium text-[color:var(--art-text)]">{m.name}</span>
                   {m.id === me.id ? (
-                    <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500">(you)</span>
+                    <span className="text-[10px] font-medium text-[color:var(--art-faint)]">(you)</span>
                   ) : null}
                 </button>
               ))}
@@ -5297,7 +5456,7 @@ export function ChatRoom({
                 onClick={() => finishRecording(false)}
                 whileTap={{ scale: 0.9 }}
                 transition={pressSpring}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 outline-none transition-colors hover:bg-rose-200 dark:bg-rose-500/15 dark:text-rose-400 dark:hover:bg-rose-500/25"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-rose-500/15 text-rose-400 outline-none transition-colors hover:bg-rose-500/25"
               >
                 <X className="size-5" aria-hidden />
               </motion.button>
@@ -5307,7 +5466,7 @@ export function ChatRoom({
                 initial={{ opacity: 0, x: -14 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={spring.snappy}
-                className="flex h-11 flex-1 items-center gap-2.5 rounded-full border border-rose-200 bg-rose-50 px-4 dark:border-rose-500/30 dark:bg-rose-500/10"
+                className="flex h-11 flex-1 items-center gap-2.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-4"
               >
                 {/* live pulsing red radar ring around the record indicator */}
                 <span className="relative flex size-2.5 shrink-0" aria-hidden>
@@ -5324,11 +5483,11 @@ export function ChatRoom({
                   initial={{ opacity: 0, y: -6, scale: 0.8 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   transition={spring.bouncy}
-                  className="text-sm font-semibold tabular-nums text-rose-600 dark:text-rose-400"
+                  className="text-sm font-semibold tabular-nums text-rose-400"
                 >
                   {formatVoicems(recordMs)}
                 </motion.span>
-                <span className="ml-auto truncate text-xs text-zinc-400 dark:text-zinc-500">
+                <span className="ml-auto truncate text-xs text-[color:var(--art-faint)]">
                   Recording voice note…
                 </span>
               </motion.div>
@@ -5339,7 +5498,7 @@ export function ChatRoom({
                 onClick={() => finishRecording(true)}
                 whileTap={sendingVoice ? undefined : { scale: 0.9 }}
                 transition={pressSpring}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-md shadow-amber-600/25 outline-none transition-colors hover:brightness-105 disabled:opacity-60"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#f0a35c] to-[#d95f22] text-white shadow-md shadow-[#d95f22]/30 outline-none transition-colors hover:brightness-105 disabled:opacity-60"
               >
                 {sendingVoice ? (
                   <LoaderCircle className="size-5 animate-spin" aria-hidden />
@@ -5350,7 +5509,8 @@ export function ChatRoom({
             </>
           ) : (
             <>
-              {/* plus tray toggle: rotates 45 degrees into a close mark while the tray is open */}
+              {/* paperclip - opens the attachments tray (the plus/actions entry);
+                  the sticker and mic tiles live inside that tray (R54-c regroup) */}
               <motion.button
                 type="button"
                 aria-label={trayOpen ? 'Close attachments tray' : 'Open attachments tray'}
@@ -5361,18 +5521,30 @@ export function ChatRoom({
                   setTray(!trayOpen)
                 }}
                 whileTap={broadcastLocked ? undefined : { scale: 0.88 }}
-                animate={{ rotate: trayOpen ? 45 : 0 }}
                 transition={spring.snappy}
                 className={cn(
-                  'flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-colors',
+                  'flex size-9 shrink-0 items-center justify-center rounded-full outline-none transition-colors',
                   trayOpen
-                    ? 'bg-zinc-900/5 text-zinc-700 dark:bg-white/10 dark:text-zinc-200'
-                    : 'text-zinc-400 hover:bg-zinc-100 hover:text-amber-700 dark:hover:bg-zinc-800',
+                    ? 'bg-white/10 text-[color:var(--art-text)]'
+                    : 'text-[color:var(--art-dim)] hover:bg-white/[0.07] hover:text-[color:var(--art-accent-2)]',
                 )}
               >
-                <Plus className="size-6" aria-hidden />
+                <Paperclip className="size-5" aria-hidden />
               </motion.button>
-              {/* R34-b: frequent actions stay on the bar (Discord rule) - photo + sticker */}
+              <textarea
+                ref={textareaRef}
+                value={input}
+                rows={1}
+                aria-label="Message input"
+                placeholder="Type here"
+                maxLength={2000}
+                enterKeyHint="send"
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={stopTyping}
+                className="pulse-scroll max-h-[120px] min-h-9 w-full flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-snug text-[color:var(--art-text)] outline-none transition-[height] duration-200 ease-out placeholder:text-[color:var(--art-faint)]"
+              />
+              {/* camera - the artboard photo button (same handler as before) */}
               <motion.button
                 type="button"
                 aria-label="Send a photo"
@@ -5380,133 +5552,109 @@ export function ChatRoom({
                 onClick={() => fileInputRef.current?.click()}
                 whileTap={sendingImage || broadcastLocked ? undefined : { scale: 0.88 }}
                 transition={spring.snappy}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-700 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-amber-400"
+                className="flex size-9 shrink-0 items-center justify-center rounded-full text-[color:var(--art-dim)] outline-none transition-colors hover:bg-white/[0.07] hover:text-[color:var(--art-accent-2)] disabled:opacity-50"
               >
                 {sendingImage ? (
                   <LoaderCircle className="size-5 animate-spin" aria-hidden />
                 ) : (
-                  <ImagePlus className="size-5" aria-hidden />
+                  <Camera className="size-5" aria-hidden />
                 )}
               </motion.button>
-              <motion.button
-                type="button"
-                aria-label="Open sticker packs"
-                disabled={broadcastLocked}
-                onClick={() => {
-                  haptic(8)
-                  setStickerOpen(true)
-                }}
-                whileTap={broadcastLocked ? undefined : { scale: 0.88 }}
-                transition={spring.snappy}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-zinc-400 outline-none transition-colors hover:bg-zinc-100 hover:text-amber-500 disabled:opacity-50 dark:hover:bg-zinc-800"
-              >
-                <Sticker className="size-5" aria-hidden />
-              </motion.button>
-              <textarea
-                ref={textareaRef}
-                value={input}
-                rows={1}
-                aria-label="Message input"
-                placeholder="Type a message"
-                maxLength={2000}
-                enterKeyHint="send"
-                onChange={(e) => handleInputChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={stopTyping}
-                className="pulse-scroll max-h-[120px] min-h-[44px] w-full flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-snug text-zinc-900 outline-none transition-[height] duration-200 ease-out placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
-              />
-              {/* R24-b incognito arm moved to the tray's Express group (R34-b regroup) */}
-              {input.trim().length === 0 && !editing && pendingEffect === null ? (
-                <motion.button
-                  type="button"
-                  aria-label="Record voice note"
-                  onClick={() => void startRecording()}
-                  whileTap={pressTap}
-                  transition={pressSpring}
-                  disabled={slowRemaining > 0}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 outline-none transition-colors hover:bg-amber-500/10 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:text-amber-400"
-                >
-                  <motion.span
-                    key={sendPop}
-                    initial={false}
-                    animate={sendPop > 0 && !prefs.reducedMotion ? { scale: [1, 1.18, 1] } : { scale: 1 }}
-                    transition={{ duration: 0.32, times: [0, 0.45, 1], ease: 'easeOut' }}
-                    className="flex"
-                  >
-                    <Mic className="size-5" aria-hidden />
-                  </motion.span>
-                </motion.button>
-              ) : (
-                <motion.button
-                  type="button"
-                  aria-label={editing ? 'Save edit' : 'Send message'}
-                  disabled={input.trim().length === 0 || sendMessage.isPending || editMessage.isPending || slowRemaining > 0}
-                  onClick={submit}
-                  whileTap={input.trim().length > 0 && !sendMessage.isPending ? { scale: 0.88 } : undefined}
-                  transition={pressSpring}
-                  className={cn(
-                    'flex size-11 shrink-0 items-center justify-center rounded-full outline-none transition-colors',
-                    input.trim().length > 0
-                      ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-md shadow-amber-600/30'
-                      : 'bg-zinc-200 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500',
-                  )}
-                >
-                  <AnimatePresence mode="wait" initial={false}>
-                    {sendMessage.isPending || editMessage.isPending ? (
-                      <motion.span
-                        key="sending"
-                        initial={{ opacity: 0, scale: 0.55, rotate: -90 }}
-                        animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                        exit={{ opacity: 0, scale: 0.55 }}
-                        transition={spring.snappy}
-                        className="flex"
-                      >
-                        <LoaderCircle className="size-5 animate-spin" aria-hidden />
-                      </motion.span>
-                    ) : editing ? (
-                      <motion.span
-                        key="edit"
-                        initial={{ opacity: 0, scale: 0.55 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.55 }}
-                        transition={spring.bouncy}
-                        className="flex"
-                      >
-                        <Check className="size-5" aria-hidden />
-                      </motion.span>
-                    ) : input.trim().length > 0 ? (
-                      <motion.span
-                        key="plane"
-                        initial={{ opacity: 0, x: 16, scale: 0.5, rotate: -35 }}
-                        animate={{ opacity: 1, x: 0, scale: 1, rotate: 0 }}
-                        exit={{ opacity: 0, x: -12, scale: 0.6 }}
-                        transition={spring.bouncy}
-                        className="flex"
-                      >
-                        <SendHorizontal className="size-5" aria-hidden />
-                      </motion.span>
-                    ) : (
-                      <motion.span
-                        key="idle-dot"
-                        initial={{ opacity: 0, scale: 0.5 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.5 }}
-                        transition={spring.snappy}
-                        className="flex"
-                      >
-                        <span className="block size-2 rounded-full bg-current" aria-hidden />
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </motion.button>
-              )}
             </>
           )}
+        </div>
+          {/* art-fab OUTSIDE the pill: plus opens the attachments tray, and
+              swaps to the send action the moment there is text to send */}
+          <motion.button
+            type="button"
+            aria-label={
+              input.trim().length > 0 || editing || pendingEffect !== null
+                ? editing
+                  ? 'Save edit'
+                  : 'Send message'
+                : trayOpen
+                  ? 'Close attachments tray'
+                  : 'Open attachments tray'
+            }
+            aria-expanded={input.trim().length > 0 || editing || pendingEffect !== null ? undefined : trayOpen}
+            disabled={
+              input.trim().length > 0 || editing || pendingEffect !== null
+                ? input.trim().length === 0 || sendMessage.isPending || editMessage.isPending || slowRemaining > 0
+                : broadcastLocked || recording
+            }
+            onClick={() => {
+              if (input.trim().length > 0 || editing || pendingEffect !== null) {
+                submit()
+              } else {
+                haptic(8)
+                setTray(!trayOpen)
+              }
+            }}
+            whileTap={
+              input.trim().length > 0 && !sendMessage.isPending && !broadcastLocked && !recording
+                ? { scale: 0.88 }
+                : broadcastLocked || recording
+                  ? undefined
+                  : { scale: 0.88 }
+            }
+            animate={{ rotate: !input && !editing && pendingEffect === null && trayOpen ? 45 : 0 }}
+            transition={spring.snappy}
+            className="art-fab flex size-11 shrink-0 items-center justify-center rounded-full outline-none disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {input.trim().length > 0 || editing || pendingEffect !== null ? (
+              <AnimatePresence mode="wait" initial={false}>
+                {sendMessage.isPending || editMessage.isPending ? (
+                  <motion.span
+                    key="sending"
+                    initial={{ opacity: 0, scale: 0.55, rotate: -90 }}
+                    animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                    exit={{ opacity: 0, scale: 0.55 }}
+                    transition={spring.snappy}
+                    className="flex"
+                  >
+                    <LoaderCircle className="size-5 animate-spin" aria-hidden />
+                  </motion.span>
+                ) : editing ? (
+                  <motion.span
+                    key="edit"
+                    initial={{ opacity: 0, scale: 0.55 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.55 }}
+                    transition={spring.bouncy}
+                    className="flex"
+                  >
+                    <Check className="size-5" aria-hidden />
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="plane"
+                    initial={{ opacity: 0, x: 16, scale: 0.5, rotate: -35 }}
+                    animate={{ opacity: 1, x: 0, scale: 1, rotate: 0 }}
+                    exit={{ opacity: 0, x: -12, scale: 0.6 }}
+                    transition={spring.bouncy}
+                    className="flex"
+                  >
+                    <SendHorizontal className="size-5" aria-hidden />
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            ) : (
+              <motion.span
+                key={sendPop}
+                initial={false}
+                animate={sendPop > 0 && !prefs.reducedMotion ? { scale: [1, 1.18, 1] } : { scale: 1 }}
+                transition={{ duration: 0.32, times: [0, 0.45, 1], ease: 'easeOut' }}
+                className="flex"
+              >
+                <Plus className="size-6" aria-hidden />
+              </motion.span>
+            )}
+          </motion.button>
         </div>
         </div>
       </motion.div>
       {/* clearance for the floating bottom dock (composer must never sit under it) */}
-      <div className="shrink-0 bg-zinc-100/80 dark:bg-zinc-950/60" style={{ height: dockInset }} aria-hidden />
+      <div className="shrink-0 bg-[#0d0906]/80" style={{ height: dockInset }} aria-hidden />
 
       {/* message actions - compact frosted glass menu anchored to the bubble (R26-b).
           Springs in from the tap point, dismisses on backdrop tap or Esc; all
@@ -6890,8 +7038,8 @@ function BubbleText({
           className={cn(
             'underline underline-offset-2',
             mine
-              ? 'text-white decoration-white/60 hover:decoration-white'
-              : 'text-amber-700 decoration-amber-400/60 hover:decoration-amber-600 dark:text-amber-400',
+              ? 'text-[#ffab5e] decoration-[#ffab5e]/60 hover:decoration-[#ffab5e]'
+              : 'text-[#ffab5e] decoration-[#ffab5e]/50 hover:decoration-[#ffab5e]',
           )}
         >
           {seg.value}
@@ -6907,7 +7055,7 @@ function BubbleText({
       nodes.push(
         <span
           key={`men-${key++}`}
-          className="rounded bg-amber-500/20 px-1 font-semibold text-emerald-800 dark:bg-amber-400/25 dark:text-amber-200"
+          className="rounded bg-[#ffab5e]/15 px-1 font-semibold text-[#ffab5e]"
         >
           @{run.mention}
         </span>,
@@ -6927,7 +7075,7 @@ function BubbleText({
             key={`pre-${key++}`}
             className={cn(
               'my-0.5 block whitespace-pre-wrap rounded-lg px-2 py-1.5 font-mono text-[12.5px] leading-snug',
-              mine ? 'bg-black/20' : 'bg-zinc-100 dark:bg-black/40',
+              mine ? 'bg-white/10' : 'bg-black/30',
             )}
           >
             {pre}
@@ -6939,7 +7087,7 @@ function BubbleText({
             key={`code-${key++}`}
             className={cn(
               'rounded px-1 py-0.5 font-mono text-[12.5px]',
-              mine ? 'bg-black/20' : 'bg-zinc-100 dark:bg-black/40',
+              mine ? 'bg-white/10' : 'bg-black/30',
             )}
           >
             {code}
@@ -6982,8 +7130,8 @@ function BubbleText({
   return (
     <p
       className={cn(
-        'text-[14px] leading-snug break-words whitespace-pre-wrap',
-        mine ? 'text-white' : 'text-zinc-900 dark:text-zinc-100',
+        'text-[15px] leading-snug break-words whitespace-pre-wrap',
+        mine ? 'text-[color:var(--art-text)]' : 'text-[color:var(--art-text)]',
       )}
     >
       {nodes}
@@ -7295,9 +7443,9 @@ const MessageRow = memo(function MessageRow({
               <span
                 role="img"
                 aria-label="Anonymous member"
-                className="flex size-7 items-center justify-center rounded-full bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300"
+                className="flex size-6 items-center justify-center rounded-full bg-white/[0.08] text-[color:var(--art-dim)] ring-1 ring-inset ring-[color:var(--art-hairline)]"
               >
-                <VenetianMask className="size-4" aria-hidden />
+                <VenetianMask className="size-3.5" aria-hidden />
               </span>
             ) : (
               <button
@@ -7309,18 +7457,20 @@ const MessageRow = memo(function MessageRow({
                   onOpenProfile(message.sender)
                 }}
               >
-                <UserAvatar name={message.sender.name} color={message.sender.color} avatar={message.sender.avatar} size={28} />
+                <UserAvatar name={message.sender.name} color={message.sender.color} avatar={message.sender.avatar} size={24} />
               </button>
             )}
           </div>
         ) : (
-          <span className="mr-1.5 block w-7 shrink-0" aria-hidden />
+          <span className="mr-1.5 block w-6 shrink-0" aria-hidden />
         )
       ) : null}
 
       <div className={cn('flex max-w-[78%] flex-col', mine ? 'items-end' : 'items-start')}>
-        {!mine && isGroup && head && !deleted ? (
-          <span className="mb-0.5 ml-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+        {/* R54-c: group sender names moved INSIDE the bubble (artboard style).
+            Self-contained cards (jumbo/sticker/loc/cards) keep the name above. */}
+        {!mine && isGroup && head && !deleted && plainChrome ? (
+          <span className="mb-0.5 ml-1 text-[12px] font-semibold text-[color:var(--art-text-soft)]">
             {senderLabel}
           </span>
         ) : null}
@@ -7330,7 +7480,7 @@ const MessageRow = memo(function MessageRow({
             <motion.span
               aria-hidden
               initial={false}
-              className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-amber-500/10 p-1 text-amber-600"
+              className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-[color:var(--art-accent)]/15 p-1 text-[color:var(--art-accent-2)]"
               style={{ opacity: hintOpacity, scale: hintScale, pointerEvents: 'none' }}
             >
               <Reply className="size-4" />
@@ -7339,7 +7489,7 @@ const MessageRow = memo(function MessageRow({
             <motion.span
               aria-hidden
               initial={false}
-              className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-amber-500/10 p-1 text-amber-600"
+              className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-[color:var(--art-accent)]/15 p-1 text-[color:var(--art-accent-2)]"
               style={{ opacity: hintOpacity, scale: hintScale, pointerEvents: 'none' }}
             >
               <Reply className="size-4" />
@@ -7417,20 +7567,20 @@ const MessageRow = memo(function MessageRow({
             deleted &&
               cn(
                 'border border-dashed italic',
-                'rounded-2xl border-zinc-300 bg-transparent text-zinc-400 dark:border-zinc-600 dark:text-zinc-500',
+                'rounded-2xl border-[color:var(--art-hairline)] bg-transparent text-[color:var(--art-faint)]',
                 mine ? 'rounded-br-md opacity-80' : 'rounded-bl-md',
               ),
             !deleted && !plainChrome && (mine
               ? cn(
-                  `${BUBBLE_RADIUS[bubbleRadius]} rounded-br-md bg-amber-500 text-white`,
-                  queued && 'ring-1 ring-inset ring-white/40 opacity-95', // queued: dashed-feel cue
-                  mentionsMe && 'ring-2 ring-inset ring-amber-300/80', // you were mentioned
+                  // R54-c: own bubble - near-black warm, tight bottom-right corner
+                  'art-bubble-out',
+                  queued && 'ring-1 ring-inset ring-white/25 opacity-95', // queued: dashed-feel cue
+                  mentionsMe && 'ring-2 ring-inset ring-[#ffab5e]/70', // you were mentioned
                 )
               : cn(
-                  'rounded-2xl rounded-bl-md border bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100',
-                  mentionsMe
-                    ? 'border-amber-400/70 ring-2 ring-inset ring-amber-300/60 dark:border-amber-400/60'
-                    : 'border-zinc-100 dark:border-zinc-700',
+                  // R54-c: incoming bubble - lighter warm brown, tight bottom-left
+                  'art-bubble-in',
+                  mentionsMe && 'ring-2 ring-inset ring-[#ffab5e]/70',
                 )),
             interactive
               ? cn(
@@ -7444,6 +7594,13 @@ const MessageRow = memo(function MessageRow({
             <p className="text-[13px] leading-snug">This message was deleted</p>
           ) : (
             <>
+              {/* R54-c: sender name is the FIRST LINE INSIDE the incoming group
+                  bubble (anon alias masking preserved) */}
+              {!mine && isGroup && head && !plainChrome ? (
+                <p className="mb-0.5 text-[12px] font-semibold leading-snug text-[color:var(--art-text-soft)]">
+                  {senderLabel}
+                </p>
+              ) : null}
               {message.replyTo ? (
                 <button
                   type="button"
@@ -7464,15 +7621,15 @@ const MessageRow = memo(function MessageRow({
                   className={cn(
                     'mb-1 block w-full rounded-md border-l-[3px] px-2 py-1 text-left outline-none transition-colors',
                     mine
-                      ? 'border-white/70 bg-black/10 hover:bg-black/15'
-                      : 'border-amber-400 bg-zinc-100 hover:bg-zinc-200/70 dark:border-amber-500/80 dark:bg-zinc-700/60 dark:hover:bg-zinc-700',
+                      ? 'border-white/40 bg-white/10 hover:bg-white/15'
+                      : 'border-[color:var(--art-accent)] bg-white/[0.06] hover:bg-white/[0.1]',
                     message.replyTo.deleted ? '' : 'cursor-pointer active:scale-[0.99]',
                   )}
                 >
                   <p
                     className={cn(
                       'text-[11px] font-bold',
-                      mine ? 'text-white/90' : 'text-amber-700 dark:text-amber-400',
+                      mine ? 'text-white/90' : 'text-[color:var(--art-accent-2)]',
                     )}
                   >
                     {message.replyTo.deleted
@@ -7484,7 +7641,7 @@ const MessageRow = memo(function MessageRow({
                   <p
                     className={cn(
                       'truncate text-[12px] leading-snug',
-                      mine ? 'text-white/75' : 'text-zinc-500 dark:text-zinc-400',
+                      mine ? 'text-white/75' : 'text-[color:var(--art-dim)]',
                     )}
                   >
                     {message.replyTo.deleted
@@ -7508,7 +7665,7 @@ const MessageRow = memo(function MessageRow({
                       aria-label="View-once photo already opened"
                       className={cn(
                         'flex h-[168px] w-[220px] items-center justify-center gap-2 rounded-xl border border-dashed text-xs font-semibold',
-                        mine ? 'border-white/40 text-white/85' : 'border-zinc-300 bg-zinc-100/70 text-zinc-500 dark:border-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-400',
+                        mine ? 'border-white/40 text-white/85' : 'border-[color:var(--art-hairline)] bg-white/[0.04] text-[color:var(--art-faint)]',
                       )}
                     >
                       <EyeOff className="size-4" aria-hidden />
@@ -7623,17 +7780,15 @@ const MessageRow = memo(function MessageRow({
               ) : null}
             </>
           )}
-          <div
-            className={cn(
-              'mt-0.5 flex items-center justify-end gap-1 text-[10px]',
-              deleted
-                ? 'text-zinc-400 dark:text-zinc-500'
-                : mine && !jumbo
-                  ? 'text-white/80'
-                  : 'text-zinc-400 dark:text-zinc-500',
-            )}
-          >
-            <span className={jumbo ? 'opacity-70' : undefined}>{formatTime(message.createdAt)}</span>
+          {message.viaAutomation || message.expiresAt !== null || pinned || edited || (mine && !deleted) ? (
+            <div
+              className={cn(
+                'mt-0.5 flex items-center justify-end gap-1 text-[10px]',
+                mine && !deleted
+                  ? 'text-white/75'
+                  : 'text-[color:var(--art-faint)]',
+              )}
+            >
             {message.viaAutomation ? (
               <span
                 className="flex items-center gap-0.5 opacity-80"
@@ -7657,7 +7812,7 @@ const MessageRow = memo(function MessageRow({
             ) : null}
             {mine && !deleted ? (
               queued ? (
-                <CloudOff className="size-3 text-amber-200" aria-label="queued - sends when online" />
+                <CloudOff className="size-3 text-[color:var(--art-accent-2)]" aria-label="queued - sends when online" />
               ) : pending ? (
                 <Clock className="size-3 opacity-90" aria-label="sending…" />
               ) : isRead ? (
@@ -7666,7 +7821,8 @@ const MessageRow = memo(function MessageRow({
                 <Check className="size-3 text-white/60" aria-label="sent" />
               )
             ) : null}
-          </div>
+            </div>
+          ) : null}
         </motion.div>
         </motion.div>
         </div>
@@ -7720,13 +7876,13 @@ const MessageRow = memo(function MessageRow({
                   className={cn(
                     'flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[11px] shadow-sm backdrop-blur transition-transform active:scale-90',
                     iReacted
-                      ? 'border-amber-400 bg-emerald-50 dark:border-amber-500/70 dark:bg-amber-500/15'
-                      : 'border-zinc-200 bg-white/95 dark:border-zinc-600 dark:bg-zinc-800/95',
+                      ? 'border-[color:var(--art-accent)]/50 bg-[color:var(--art-accent)]/15'
+                      : 'border-[color:var(--art-hairline)] bg-white/[0.08]',
                   )}
                 >
                   {(() => {
                     const ChipGlyph = reactionGlyphFor(group.emoji)
-                    return <ChipGlyph className="size-3.5 text-amber-700 dark:text-amber-400" aria-hidden />
+                    return <ChipGlyph className="size-3.5 text-[color:var(--art-accent-2)]" aria-hidden />
                   })()}
                   {group.count > 1 ? (
                     <motion.span
@@ -7737,8 +7893,8 @@ const MessageRow = memo(function MessageRow({
                       className={cn(
                         'font-semibold',
                         iReacted
-                          ? 'text-amber-700 dark:text-amber-300'
-                          : 'text-zinc-500 dark:text-zinc-300',
+                          ? 'text-[color:var(--art-accent-2)]'
+                          : 'text-[color:var(--art-text-soft)]',
                       )}
                     >
                       {group.count}
@@ -7763,10 +7919,10 @@ const MessageRow = memo(function MessageRow({
             }}
             aria-label={`Open thread - ${threadCount} ${threadCount === 1 ? 'reply' : 'replies'}`}
             className={cn(
-              'mt-0.5 flex max-w-[78%] items-center gap-1 rounded-full border bg-white/95 px-2 py-0.5 text-[10.5px] font-semibold shadow-sm outline-none transition-colors active:scale-95',
+              'mt-0.5 flex max-w-[78%] items-center gap-1 rounded-full border bg-white/[0.06] px-2 py-0.5 text-[10.5px] font-semibold text-[color:var(--art-accent-2)] shadow-sm outline-none transition-colors hover:bg-white/[0.1] active:scale-95',
               mine
-                ? 'mr-auto ml-0 border-amber-200 text-amber-700 hover:bg-emerald-50 dark:border-amber-500/40 dark:text-amber-400 dark:hover:bg-amber-500/10'
-                : 'ml-auto mr-0 border-amber-200 text-amber-700 hover:bg-emerald-50 dark:border-amber-500/40 dark:text-amber-400 dark:hover:bg-amber-500/10',
+                ? 'mr-auto ml-0 border-[color:var(--art-hairline)]'
+                : 'ml-auto mr-0 border-[color:var(--art-hairline)]',
             )}
           >
             <CornerDownRight className="size-3" aria-hidden />
@@ -7787,16 +7943,16 @@ const MessageRow = memo(function MessageRow({
               aria-label={
                 readBy.all ? 'Seen by everyone - show details' : `Read by ${readBy.members.length} - show details`
               }
-              className="flex items-center gap-1.5 rounded-full px-1.5 py-0.5 outline-none transition-colors hover:bg-zinc-100/80 active:scale-95 dark:hover:bg-zinc-800/80"
+              className="flex items-center gap-1.5 rounded-full px-1.5 py-0.5 outline-none transition-colors hover:bg-white/[0.06] active:scale-95"
             >
-              <span className="text-[10px] font-medium text-zinc-400 transition-colors hover:text-zinc-500 dark:text-zinc-500 dark:hover:text-zinc-400">
+              <span className="text-[10px] font-medium text-[color:var(--art-faint)] transition-colors hover:text-[color:var(--art-dim)]">
                 {readBy.all ? 'Seen' : `Read by ${readBy.members.length}`}
               </span>
               <span className="flex -space-x-1.5">
                 {readBy.members.map((member) => (
                   <span
                     key={member.id}
-                    className="overflow-hidden rounded-full ring-2 ring-zinc-50 dark:ring-zinc-900"
+                    className="overflow-hidden rounded-full ring-2 ring-[#292019]"
                   >
                     <UserAvatar name={member.name} color={member.color} avatar={member.avatar} size={14} />
                   </span>

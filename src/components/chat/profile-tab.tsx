@@ -547,6 +547,14 @@ function ProfileEditor({
   }
 
   const signOut = () => {
+    // R54: an explicit sign-out opts THIS browser session out of the silent
+    // demo auto-login - otherwise the boot gate would instantly re-sign-in
+    // as the demo identity and sign-out would be impossible.
+    try {
+      sessionStorage.setItem('pulse.demo.optout', '1')
+    } catch {
+      /* private mode - flag is best-effort */
+    }
     usePulseSession.getState().clear()
     window.location.reload()
   }

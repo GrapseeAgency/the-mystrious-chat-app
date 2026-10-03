@@ -46,6 +46,7 @@ export const DEFAULT_PREFERENCES: PulsePrefs = {
   readReceipts: true,
   typingVisible: true,
   reducedMotion: false,
+  'fx.webglMode': 'off',
 }
 
 const RADIUS = ['md', 'lg', 'pill']
@@ -75,7 +76,12 @@ export function mergePrefs(raw: unknown): PulsePrefs {
     out.wallpaper = p.wallpaper as PulsePrefs['wallpaper']
   }
   if (typeof p['fx.webglMode'] === 'string' && WEBGL_MODES_OK.includes(p['fx.webglMode'])) {
-    out['fx.webglMode'] = p['fx.webglMode']
+    // R54 ARTBOARD CONTRACT: the reference background IS the art-scene ember
+    // horizon. Ambient WebGL fields (liquid/aurora/...) repaint that reference,
+    // so every pre-existing opt-in value migrates to 'off' ONCE here. The
+    // modes themselves are NOT deleted - Settings still offers them - but the
+    // default experience must be the artboard, not a shader field over it.
+    out['fx.webglMode'] = 'off'
   }
   if (isRecord(p['chat.convThemes'])) {
     out['chat.convThemes'] = sanitizeConvThemeMap(p['chat.convThemes'])

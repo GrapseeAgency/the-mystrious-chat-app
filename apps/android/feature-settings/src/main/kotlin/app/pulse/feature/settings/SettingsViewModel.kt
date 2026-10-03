@@ -126,6 +126,14 @@ class SettingsViewModel @Inject constructor(
     val navStyle: StateFlow<app.pulse.protocol.PulseNavStyle> = prefs.navStyle
         .stateIn(viewModelScope, SharingStarted.Eagerly, app.pulse.protocol.PulseNavStyle.CAPSULE)
 
+    /** R54 - interface renderer: true = web shell (artboard), false = native. */
+    val webUi: StateFlow<Boolean> = prefs.webUi
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    fun setWebUi(value: Boolean) {
+        viewModelScope.launch { prefs.setWebUi(value) }
+    }
+
     /**
      * R10-a - biometric App lock (device-local DataStore flag, same block as
      * haptics/quiet-hours; never the server blob). The MainActivity lock gate

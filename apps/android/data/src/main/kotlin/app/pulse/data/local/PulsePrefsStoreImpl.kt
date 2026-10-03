@@ -50,6 +50,8 @@ class PulsePrefsStoreImpl @Inject constructor(
         val QUIET_END = stringPreferencesKey("pulse.settings.quietEnd")
         // R10-a - biometric App lock (device-local; never rides the server blob).
         val APP_LOCK_ON = booleanPreferencesKey("pulse.settings.appLockOn")
+        // R54 - interface renderer gate (true = WebView-first, the artboard shell).
+        val WEB_UI = booleanPreferencesKey("ui.webFirst")
     }
 
     override val viewerId: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_ID] }
@@ -76,6 +78,14 @@ class PulsePrefsStoreImpl @Inject constructor(
     // R10-a - App lock defaults OFF (an honest opt-in; enabling runs one
     // confirmation BiometricPrompt in Settings).
     override val appLockEnabled: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.APP_LOCK_ON] ?: false }
+
+    // R54 - the shell renders the gateway web app by default (the reference
+    // artboards ARE the web UI); native Compose stays the fallback + opt-out.
+    override val webUi: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.WEB_UI] ?: true }
+
+    override suspend fun setWebUi(value: Boolean) {
+        context.pulsePrefs.edit { it[Keys.WEB_UI] = value }
+    }
 
     override suspend fun setHapticsOn(value: Boolean) {
         context.pulsePrefs.edit { it[Keys.HAPTICS_ON] = value }

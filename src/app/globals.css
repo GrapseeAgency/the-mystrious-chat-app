@@ -419,6 +419,94 @@
   background-color: var(--glass-row-hover);
 }
 
+/* ── R54 ARTBOARD EMBER — the two reference screens (home + room) speak
+   ONLY these tokens. Always-dark (the artboard has no light variant), so
+   classes here ignore the .dark toggle on purpose: the reference IS dark.
+   Palette decoded from the artboards: near-black warm base, big amber
+   horizon glow from below, bone-white type, ember accent, signal red. ── */
+:root {
+  --art-bg: #0d0906;
+  --art-glow-1: rgba(196, 110, 40, 0.55); /* horizon core */
+  --art-glow-2: rgba(146, 76, 28, 0.34); /* wide bloom */
+  --art-glow-3: rgba(255, 184, 107, 0.14); /* top haze */
+  --art-text: #f5efe8;
+  --art-text-soft: #cbc0b4;
+  --art-dim: #9b8c7b;
+  --art-faint: #7a6d5d;
+  --art-hairline: rgba(255, 255, 255, 0.08);
+  --art-chip: rgba(255, 255, 255, 0.06);
+  --art-chip-active: rgba(255, 255, 255, 0.16);
+  --art-panel: rgba(24, 18, 13, 0.66);
+  --art-bubble-out: #17110c;
+  --art-bubble-in: #292019;
+  --art-accent: #ff7a3d;
+  --art-accent-2: #ffb86b;
+  --art-red: #ff453a;
+}
+
+/* The page behind the two artboard surfaces: warm horizon glow */
+.art-scene {
+  background:
+    radial-gradient(120% 55% at 50% 108%, var(--art-glow-1) 0%, transparent 62%),
+    radial-gradient(150% 80% at 50% 118%, var(--art-glow-2) 0%, transparent 70%),
+    radial-gradient(80% 40% at 50% -12%, var(--art-glow-3) 0%, transparent 60%),
+    var(--art-bg);
+}
+
+/* Glass over the glow without whitening it */
+.art-panel {
+  background: var(--art-panel);
+  border: 1px solid var(--art-hairline);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  backdrop-filter: blur(22px) saturate(1.4);
+}
+
+/* Bubbles - reference geometry: 18px radius, tight tail corner */
+.art-bubble-out {
+  background: var(--art-bubble-out);
+  color: var(--art-text);
+  border-radius: 18px 18px 6px 18px;
+}
+.art-bubble-in {
+  background: var(--art-bubble-in);
+  color: var(--art-text);
+  border-radius: 18px 18px 18px 6px;
+}
+
+/* Reference input pill + ember FAB */
+.art-input-pill {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--art-hairline);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  border-radius: 9999px;
+}
+.art-fab {
+  background: linear-gradient(160deg, #f0a35c 0%, var(--art-accent) 58%, #d95f22 100%);
+  color: #fff;
+  box-shadow: 0 10px 26px -8px rgba(255, 122, 61, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Signal red unread badge (home rows + dock) */
+.art-badge {
+  background: var(--art-red);
+  color: #fff;
+}
+
+/* Ember pulse for the horizon glow (cheap opacity breathe) */
+@keyframes art-glow-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.86; }
+}
+.art-scene::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(90% 42% at 50% 106%, var(--art-glow-1) 0%, transparent 60%);
+  animation: art-glow-breathe 7s ease-in-out infinite;
+}
+
 /* ── Pulse chat additions: thin custom scrollbars + hide helper ── */
 @layer utilities {
   .pulse-scroll {

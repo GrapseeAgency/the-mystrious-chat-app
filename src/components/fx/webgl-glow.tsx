@@ -53,8 +53,11 @@ export type WebGLMode = (typeof WEBGL_MODES)[number]
 /** Prefs store key that links Settings (R26-c) to this ambient system. */
 export const PREF_KEY_WEBGL_MODE = 'fx.webglMode'
 
-/** Shipped default when the pref is absent or malformed. */
-export const DEFAULT_WEBGL_MODE: WebGLMode = 'aurora'
+/** Shipped default when the pref is absent or malformed.
+ *  R54 ARTBOARD CONTRACT: the artboard background is the CSS ember horizon
+ *  (`art-scene`), so the ambient shader field ships OFF; every mode stays
+ *  opt-in from Settings. */
+export const DEFAULT_WEBGL_MODE: WebGLMode = 'off'
 
 export function isWebglMode(v: unknown): v is WebGLMode {
   return typeof v === 'string' && (WEBGL_MODES as readonly string[]).includes(v)

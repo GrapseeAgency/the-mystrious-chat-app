@@ -61,6 +61,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -430,6 +431,24 @@ fun PulseRoot(
     val darkRaw by session.darkOverride.collectAsStateWithLifecycle()
     val uiThemeRaw by session.uiTheme.collectAsStateWithLifecycle()
     val reduced by session.reducedMotion.collectAsStateWithLifecycle()
+    // R54 - the interface renderer gate: the gateway web app (the artboard
+    // shell) is the DEFAULT once an identity + a configured gateway exist;
+    // the native Compose shell stays as the fallback and the opt-out.
+    val webUi by session.webUi.collectAsStateWithLifecycle()
+    val viewerName by session.viewerName.collectAsStateWithLifecycle()
+    val storedBase by session.serverBase.collectAsStateWithLifecycle()
+    // Cold-start race guard (R54): PulseApplication applies the stored gateway
+    // asynchronously - if composition lands first, re-apply the persisted base
+    // here so the web shell can mount on the very first launch. The result is
+    // mirrored into a compose state so the shell actually recomposes.
+    var webBaseReady by remember(storedBase) { mutableStateOf(app.pulse.core.PulseEndpoints.isConfigured) }
+    LaunchedEffect(webUi, viewerName, storedBase) {
+        if (webUi && !viewerName.isNullOrBlank() && !app.pulse.core.PulseEndpoints.isConfigured && !storedBase.isNullOrBlank()) {
+            app.pulse.core.PulseEndpoints.applyBase(storedBase)
+        }
+        webBaseReady = app.pulse.core.PulseEndpoints.isConfigured
+    }
+    val webShellActive = webUi && !viewerName.isNullOrBlank() && webBaseReady
     // R2-C item 3 - the selected design language (web pulse.uiTheme.v2).
     val uiTheme = app.pulse.ui.PulseUiTheme.fromId(uiThemeRaw)
 
@@ -487,6 +506,18 @@ fun PulseRoot(
                     // the session (PulseEndpoints + prefs persistence).
                     onApplyServerBase = { base -> session.setServerBase(base) },
                 )
+            } else if (webShellActive) {
+                // R54 - the artboard shell: the gateway web app in a WebView,
+                // signed in as the stored identity via ?login=. A main-frame
+                // load failure falls back to the native shell (setWebUi(false)).
+                val activeName = viewerName.orEmpty()
+                key(activeName) {
+                    WebShellScreen(
+                        serverBase = app.pulse.core.PulseEndpoints.gatewayHttpUrl,
+                        viewerName = activeName,
+                        onFallback = { session.setWebUi(false) },
+                    )
+                }
             } else {
                 PulseShell(
                     viewerId = viewerId,

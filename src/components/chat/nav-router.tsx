@@ -36,6 +36,7 @@ import {
   PulseMore,
   PulseGrip,
   PulseCommand,
+  PulsePhone,
   type PulseGlyph,
 } from '@/components/ui/icons'
 import type { AppUser, ConversationSummary } from '@/lib/types'
@@ -44,6 +45,7 @@ import { cn } from '@/lib/utils'
 import { haptic } from '@/lib/pulse-settings'
 import { ease, pressSpring, pressTap, spring, stagger } from '@/lib/motion'
 import { useNavStyleStore, type NavStyleId, NAV_STYLES } from '@/lib/nav-registry'
+import { navigateHash } from '@/lib/hash-router'
 import { GlassMenu, GlassMenuItem, GlassMenuSeparator } from '@/components/ui/glass-menu'
 
 export type { NavStyleId }
@@ -381,28 +383,63 @@ function NavOverflowButton({
   )
 }
 
-/** Center compose action - emits the existing 'new-chat' context action. */
-function CapsuleComposeButton({ onAction }: { onAction: (action: NavContextAction) => void }) {
+// 1 · capsule - Floating Capsule Navigation Bar (DEFAULT)
+// R54 ARTBOARD: the reference home dock is a dark pill (Chats / Calls /
+// Updates / Profile, labels under icons) with a SEPARATE ember FAB on the
+// right. Contacts + the overflow actions stay alive one tap away: the
+// Chats tab's kebab menu (home) + Spotlight, so nothing is deleted.
+
+function DockTab({
+  label,
+  Icon,
+  active,
+  unread,
+  showBadge,
+  onSelect,
+}: {
+  label: string
+  Icon: PulseGlyph
+  active: boolean
+  unread: number
+  showBadge: boolean
+  onSelect: () => void
+}) {
   const reduced = useReducedMotion()
+  const wobble = useAnimationControls()
+  const press = useCallback(() => {
+    haptic(12)
+    onSelect()
+    if (!reduced) void wobble.start({ rotate: [0, -8, 6, 0] }, { duration: 0.35, ease: ease.out })
+  }, [onSelect, reduced, wobble])
   return (
     <motion.button
       type="button"
-      aria-label="New chat"
-      onClick={() => {
-        haptic(14)
-        onAction('new-chat')
-      }}
-      whileTap={reduced ? undefined : pressTap}
-      transition={pressSpring}
-      className="mx-0.5 flex size-[46px] shrink-0 touch-manipulation select-none items-center justify-center self-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-[0_8px_22px_-6px_rgba(245,158,11,0.7)] outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60"
-      style={{ willChange: 'transform' }}
+      role="tab"
+      aria-selected={active}
+      aria-label={label}
+      onClick={press}
+      whileTap={reduced ? undefined : { scale: 0.88, y: 1 }}
+      transition={reduced ? { duration: 0 } : spring.bouncy}
+      className="relative flex min-h-[54px] w-[64px] touch-manipulation select-none flex-col items-center justify-center gap-[2px] rounded-full outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60"
     >
-      <PulsePlus className="size-5" aria-hidden />
+      <span className="relative">
+        <Icon
+          className={cn('size-[22px] transition-colors', active ? 'text-[var(--art-accent)]' : 'text-[var(--art-dim)]')}
+          aria-hidden
+        />
+        {showBadge ? <UnreadBadge count={unread} className="-right-2 -top-1 h-4 min-w-4 text-[9px] ring-transparent" /> : null}
+      </span>
+      <span
+        className={cn(
+          'text-[10px] font-medium leading-none transition-colors',
+          active ? 'text-[var(--art-accent)]' : 'text-[var(--art-dim)]',
+        )}
+      >
+        {label}
+      </span>
     </motion.button>
   )
 }
-
-// 1 · capsule - Floating Capsule Navigation Bar (DEFAULT) 
 
 function CapsuleNav({
   active,
@@ -411,12 +448,8 @@ function CapsuleNav({
   onContextAction,
 }: TabProps & { onContextAction: (action: NavContextAction) => void }) {
   const reduced = useReducedMotion()
-  // registry-driven split: first half · center compose · second half · overflow
-  const mid = Math.ceil(NAV_ITEMS.length / 2)
-  const lead = NAV_ITEMS.slice(0, mid)
-  const tail = NAV_ITEMS.slice(mid)
   return (
-    <div className="pointer-events-none absolute inset-x-3 bottom-0 z-[45] mb-[calc(env(safe-area-inset-bottom,0px)_+_10px)]">
+    <div className="pointer-events-none absolute inset-x-3 bottom-0 z-[45] mb-[calc(env(safe-area-inset-bottom,0px)_+_12px)] flex items-center justify-center gap-2.5">
       <motion.nav
         role="tablist"
         aria-label="Main navigation (floating capsule)"
@@ -424,37 +457,58 @@ function CapsuleNav({
         animate={{ y: 0, opacity: 1 }}
         exit={reduced ? undefined : { y: 64, opacity: 0 }}
         transition={reduced ? { duration: 0 } : spring.soft}
-        className={cn('pointer-events-auto flex items-stretch gap-1 rounded-[28px] p-1.5', GLASS_PANEL)}
+        className="art-panel pointer-events-auto flex items-stretch gap-0.5 rounded-full px-1.5 py-1"
       >
-        {lead.map((item) => (
-          <CapsuleTab
-            key={item.id}
-            id={item.id}
-            label={item.label}
-            Icon={item.Icon}
-            badge={item.badge}
-            active={active === item.id}
-            unread={item.badge === 'chats-unread' ? unread : 0}
-            onSelect={onChange}
-            layoutId="nav-capsule-pill"
-          />
-        ))}
-        <CapsuleComposeButton onAction={onContextAction} />
-        {tail.map((item) => (
-          <CapsuleTab
-            key={item.id}
-            id={item.id}
-            label={item.label}
-            Icon={item.Icon}
-            badge={item.badge}
-            active={active === item.id}
-            unread={item.badge === 'chats-unread' ? unread : 0}
-            onSelect={onChange}
-            layoutId="nav-capsule-pill"
-          />
-        ))}
-        <NavOverflowButton placement="above" onAction={onContextAction} />
+        <DockTab
+          label="Chats"
+          Icon={PulseChats}
+          active={active === 'chats'}
+          unread={unread}
+          showBadge
+          onSelect={() => onChange('chats')}
+        />
+        <DockTab
+          label="Calls"
+          Icon={PulsePhone}
+          active={false}
+          unread={0}
+          showBadge={false}
+          onSelect={() => {
+            navigateHash('/calls')
+            onChange('chats')
+          }}
+        />
+        <DockTab
+          label="Updates"
+          Icon={PulseHub}
+          active={active === 'hub'}
+          unread={0}
+          showBadge={false}
+          onSelect={() => onChange('hub')}
+        />
+        <DockTab
+          label="Profile"
+          Icon={PulseProfile}
+          active={active === 'profile'}
+          unread={0}
+          showBadge={false}
+          onSelect={() => onChange('profile')}
+        />
       </motion.nav>
+      <motion.button
+        type="button"
+        aria-label="New chat"
+        onClick={() => {
+          haptic(14)
+          onContextAction('new-chat')
+        }}
+        whileTap={reduced ? undefined : pressTap}
+        transition={pressSpring}
+        className="art-fab pointer-events-auto flex size-[52px] shrink-0 touch-manipulation select-none items-center justify-center self-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60"
+        style={{ willChange: 'transform' }}
+      >
+        <PulsePlus className="size-6" aria-hidden />
+      </motion.button>
     </div>
   )
 }

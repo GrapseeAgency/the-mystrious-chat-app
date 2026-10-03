@@ -141,6 +141,14 @@ class SessionViewModel @Inject constructor(
     val serverBase: StateFlow<String?> = prefs.serverBase
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** R54 - interface renderer gate (true = WebView-first artboard shell). */
+    val webUi: StateFlow<Boolean> = prefs.webUi
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    fun setWebUi(value: Boolean) {
+        viewModelScope.launch { prefs.setWebUi(value) }
+    }
+
     fun chooseViewer(id: String, name: String, color: String? = null) {
         viewModelScope.launch {
             // Identity switch - the old identity's credential must not ride along.
