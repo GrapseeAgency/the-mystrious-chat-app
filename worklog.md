@@ -5120,3 +5120,19 @@ Stage Summary:
 - The web is verified 1:1 against BOTH new references; the app shell now matches Chrome on the last remaining surfaces (selection handles, edge glow, no reload on fold/rotate).
 - Server writes are healthy again after the inode incident; db/custom.db in git now mirrors live data.
 - User action: LiveUpdater offers 0.23.0.0.5 (46) once release + manifest pin land. Next digit: 0.23.0.0.6.
+
+---
+Task ID: R58-ship
+Agent: orchestrator (Z.ai main session)
+Task: v0.23.0.0.5 release + CDN refresh.
+
+Work Log:
+- CI ALL GREEN: Android tag 37136456907 (signed R8 APK + emulator smoke), iOS tag 37136456877, Android main 37136456836.
+- RELEASE v0.23.0.0.5 published 16:31Z: Pulse-v0.23.0.0.5.apk 25,461,965 bytes sha256 1e99b3ce78716c4c0ba6126752c3d37b728a8ccd26fe35f01e4fe64300beec09 (versionCode 46 from gradle defaults, source-verified).
+- CDN: release asset downloaded via authenticated octet-stream; download/Pulse.apk mirror swapped (local sha == release digest); update-manifest.json pinned (46 / 0.23.0.0.5 / 1e99b3ce...); pushed b0b08ca; live raw manifest verified serving 46 / 0.23.0.0.5 and the live raw mirror streams the identical digest.
+- Interactive QA after the db rescue: chip tap inserts the phrase into the composer ("On my way"), composer cleared after the probe, browser session re-verified on the home and room.
+
+Stage Summary:
+- SHIPPED v0.23.0.0.5: the app renders the web 1:1 (both new references verified) and the last Chrome-fidelity gaps inside the WebView are closed (ember selection handles, ember edge glow, no reload on fold/rotate/density).
+- User action: LiveUpdater offers 0.23.0.0.5 (46); the stored gateway link persists through the update. Next digit: 0.23.0.0.6.
+- Standing open items: story-card caption glyph polish; iOS homepage artboard mirror.
