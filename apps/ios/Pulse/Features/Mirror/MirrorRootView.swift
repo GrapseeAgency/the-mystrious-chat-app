@@ -88,6 +88,43 @@ final class MirrorViewModel: ObservableObject {
     private var timer: Timer?
     private var client: PulseAPIClient?
 
+
+    /// One conversation summary -> the home row (web chats-row mapping).
+    static func buildRow(summary: WireConversationSummary, viewerId: String) -> MirrorRow {
+        let other = summary.members.first { $0.id != viewerId }
+        let last = summary.lastMessage
+        let deleted = last?.deletedAt != nil
+        let raw: String
+        if deleted {
+            raw = "Message deleted"
+        } else if last?.imagePath != nil {
+            raw = "Photo"
+        } else {
+            raw = last?.content ?? "No messages yet"
+        }
+        let mine = last?.senderId == viewerId
+        let authorPrefix: String
+        if mine {
+            authorPrefix = "You: "
+        } else if summary.isGroup {
+            authorPrefix = (last?.sender?.name ?? "") + ": "
+        } else {
+            authorPrefix = ""
+        }
+        return MirrorRow(
+            id: summary.id,
+            title: summary.name ?? (other?.name ?? "Chat"),
+            color: other?.color,
+            isGroup: summary.isGroup,
+            preview: authorPrefix + raw,
+            time: MirrorRowTime.short(summary.updatedAt ?? last?.createdAt),
+            unread: summary.unreadCount ?? 0,
+            online: false,
+            pinned: summary.pinnedAt != nil,
+            muted: summary.mutedUntil != nil
+        )
+    }
+
     func start(session: PulseSession) {
         client = session.api
         timer?.invalidate()
@@ -104,29 +141,7 @@ final class MirrorViewModel: ObservableObject {
         Task { @MainActor in
             // rows - real summaries, same mapping the web home uses
             if let page = try? await client.conversations() {
-                rows = page.conversations.map { summary in
-                    let other = summary.members.first { $0.id != client.userId }
-                    let last = summary.lastMessage
-                    let deleted = last?.deletedAt != nil
-                    let raw: String
-                    if deleted { raw = "Message deleted" }
-                    else if last?.imagePath != nil { raw = "Photo" }
-                    else { raw = last?.content ?? "No messages yet" }
-                    let mine = last?.senderId == client.userId
-                    let authorPrefix = (mine ? "You: " : (summary.isGroup ? ((last?.sender?.name ?? "") + ": ") : ""))
-                    return MirrorRow(
-                        id: summary.id,
-                        title: summary.name ?? (other?.name ?? "Chat"),
-                        color: other?.color,
-                        isGroup: summary.isGroup,
-                        preview: authorPrefix + raw,
-                        time: MirrorRowTime.short(summary.updatedAt ?? last?.createdAt),
-                        unread: summary.unreadCount ?? 0,
-                        online: false,
-                        pinned: summary.pinnedAt != nil,
-                        muted: summary.mutedUntil != nil
-                    )
-                }
+                rows = page.map { MirrorViewModel.buildRow(summary: $0, viewerId: client.userId) }
             }
             // profile row (tolerant subset), stats, coins
             if let url = URL(string: PulseEndpoints.gatewayURL.absoluteString + "/api/users/" + client.userId) {
@@ -233,9 +248,9 @@ struct MirrorHomeView: View {
                 .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 6)
 
                 HStack(spacing: 8) {
-                    MirrorChipText("All", active: true)
+                    MirrorChipText(label: "All", active: true)
                     MirrorChipCount("Unread", count: model.rows.reduce(0) { $0 + $1.unread })
-                    MirrorChipText("Groups", active: false)
+                    MirrorChipText(label: "Groups", active: false)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)
 
@@ -446,8 +461,7 @@ struct MirrorProfileView: View {
 struct MirrorRidges: View {
     var body: some View {
         Canvas { context, size in
-            let base = LinearGradient(colors: [MirrorArt.sceneTop, Color(red: 0x19/255, green: 0x10/255, blue: 0x09/255)], startPoint: .top, endPoint: .bottom)
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(base, startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(Gradient(colors: [MirrorArt.sceneTop, Color(red: 0x19/255, green: 0x10/255, blue: 0x09/255)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
             var y: CGFloat = 0
             while y < size.height {
                 var line = Path()
@@ -627,7 +641,7 @@ struct MirrorRoomView: View {
                     Image(systemName: draft.isEmpty ? "plus" : "paperplane.fill")
                         .font(.system(size: 18)).foregroundColor(draft.isEmpty ? MirrorArt.text : .white)
                         .frame(width: 44, height: 44)
-                        .background(draft.isEmpty ? Color.white.opacity(0.07) : LinearGradient(colors: [MirrorArt.fabTop, MirrorArt.accent, MirrorArt.fabDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .background(draft.isEmpty ? AnyShapeStyle(Color.white.opacity(0.07)) : AnyShapeStyle(LinearGradient(colors: [MirrorArt.fabTop, MirrorArt.accent, MirrorArt.fabDeep], startPoint: .topLeading, endPoint: .bottomTrailing)))
                         .clipShape(Circle())
                 }
             }
@@ -677,8 +691,8 @@ struct MirrorBubble: View {
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(mine ? MirrorArt.bubbleOut : MirrorArt.bubbleIn)
             .clipShape(mine
-                ? UnevenRoundedRectangle(topLeadingRadius: 18, topTrailingRadius: 18, bottomLeadingRadius: 18, bottomTrailingRadius: 6)
-                : UnevenRoundedRectangle(topLeadingRadius: 18, topTrailingRadius: 18, bottomLeadingRadius: 6, bottomTrailingRadius: 18))
+                ? UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 6)
+                : UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 6, bottomTrailingRadius: 18, topTrailingRadius: 18))
             if !mine { Spacer(minLength: 60) }
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
