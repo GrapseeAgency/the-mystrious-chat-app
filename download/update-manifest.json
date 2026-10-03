@@ -1,15 +1,15 @@
 {
-  "versionCode": 42,
-  "versionName": "0.23.0.0.1",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.1/Pulse-v0.23.0.0.1.apk",
+  "versionCode": 43,
+  "versionName": "0.23.0.0.2",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.2/Pulse-v0.23.0.0.2.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "a8c3da102780347a5a4348d02adb699d706afa4c7203e0df9f1eda5ebb6668be",
-  "notes": "R54 web-first shell - the reference artboards ARE the app: the interface renders the gateway web UI (home + chat room rebuilt 1:1 from the artboards, every tool relocated and active in the kebab/info sections) inside the app, with the native shell as automatic fallback and a Settings toggle. Demo identity auto-signs in on the web boot. Version line 0.23.0.0.1.",
+  "sha256": "4a9282f24bdaa814c4925b50e1c66d18b11fda71acbd9dd64289e64fadb900ae",
+  "notes": "R55 deep audit - the web UI re-checked element-by-element against both reference artboards: horizon ember scene corrected, outgoing bubbles now bone-white with ink (the artboard's own voice), photo-card stories with corner badges, quiet chips/pins, dark-glass FAB and reactions, plain timestamp clusters, and ~60 corrupted utility classes repaired repo-wide. Web-first shell unchanged; no native feature work per direction. Version line 0.23.0.0.2.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-10-03T07:20:00Z",
-  "apkSize": 25456593,
-  "version": "0.23.0.0.1",
-  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.1/Pulse-v0.23.0.0.1.apk"
+  "updatedAt": "2026-10-03T12:00:00Z",
+  "apkSize": 25456594,
+  "version": "0.23.0.0.2",
+  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.2/Pulse-v0.23.0.0.2.apk"
 }
