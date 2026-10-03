@@ -1,15 +1,15 @@
 {
-  "versionCode": 44,
-  "versionName": "0.23.0.0.3",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.3/Pulse-v0.23.0.0.3.apk",
+  "versionCode": 45,
+  "versionName": "0.23.0.0.4",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.4/Pulse-v0.23.0.0.4.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "0e7046fc8afff32c5cf092cbb15897a7c1775159f7b6f51b1aea7f471a15a562",
-  "notes": "R56 app re-theme - the app now wears the web artboard exactly: ember launcher icon + shortcuts + splash/boot chrome (the retired emerald is gone), a dead-server state shows the artboard connect panel with retry and a themed server-link editor instead of ever auto-flipping to the native interface, fresh boots go straight to the web onboarding, and a one-time repair frees anyone stranded in the old UI by a past transient failure. Same web surfaces you preview - now inside the app.",
+  "sha256": "7a26f696381d387550bb8611d066f1fd48a4ca0014ee52275f23e13a444617e5",
+  "notes": "R57 mobile rendering parity - the app now frames the web EXACTLY like the browser you love: the page viewport starts below the status bar and ends above the gesture bar (Chrome geometry), framed by seamless artboard gradient strips, with system font scaling pinned so the Autumn typography stays exact. The five screens you showed (chats, calls, hub, profile, room) render 1:1.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-10-03T13:30:00Z",
-  "apkSize": 25461385,
-  "version": "0.23.0.0.3",
-  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.3/Pulse-v0.23.0.0.3.apk"
+  "updatedAt": "2026-10-03T14:20:00Z",
+  "apkSize": 25461926,
+  "version": "0.23.0.0.4",
+  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.4/Pulse-v0.23.0.0.4.apk"
 }

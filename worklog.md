@@ -5090,3 +5090,16 @@ Work Log:
 - FIX (WebShellScreen): Chrome-equivalent viewport - the WebView now lives inside Column.statusBarsPadding().navigationBarsPadding(), with the outer Box painting the artboard scene gradient (#2B1C10 top to art-bg bottom) full-bleed so the inset strips blend seamlessly with the page gradient (web top starts #2b1c10, bottom ends #0d0906 - no seams). The connect panel inherits the same clear viewport. Plus settings.textZoom=100 so system font scale can never inflate the artboard typography.
 - Brace-balance verified (python scan), full five-screen audit re-run clean. Web untouched.
 - Version: versionCode 45 / versionName 0.23.0.0.4.
+---
+Task ID: R57-ship
+Agent: orchestrator (Z.ai main session)
+Task: v0.23.0.0.4 release + CDN refresh.
+
+Work Log:
+- CI ALL GREEN first try: Android tag 37127926798 (signed R8 APK + emulator smoke), iOS tag 37127926793, Android main 37127925206.
+- RELEASE v0.23.0.0.4 published 14:10Z: Pulse-v0.23.0.0.4.apk 25,461,926 bytes sha256 7a26f696381d387550bb8611d066f1fd48a4ca0014ee52275f23e13a444617e5 (versionCode 45, source-verified).
+- CDN: download/Pulse.apk mirror swapped (local sha == release digest); update-manifest.json pinned (45 / 0.23.0.0.4 / 7a26f696...); push + live raw verify below.
+
+Stage Summary:
+- SHIPPED v0.23.0.0.4: the app now frames the web with Chrome geometry (inset viewport + seamless artboard strips + pinned text zoom). All five user-referenced screens verified 1:1 in the browser audit; the web side needed zero changes.
+- User action: LiveUpdater offers 0.23.0.0.4 (45). Next digit: 0.23.0.0.5.
