@@ -1,15 +1,15 @@
 {
-  "versionCode": 45,
-  "versionName": "0.23.0.0.4",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.4/Pulse-v0.23.0.0.4.apk",
+  "versionCode": 46,
+  "versionName": "0.23.0.0.5",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.5/Pulse-v0.23.0.0.5.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "7a26f696381d387550bb8611d066f1fd48a4ca0014ee52275f23e13a444617e5",
-  "notes": "R57 mobile rendering parity - the app now frames the web EXACTLY like the browser you love: the page viewport starts below the status bar and ends above the gesture bar (Chrome geometry), framed by seamless artboard gradient strips, with system font scaling pinned so the Autumn typography stays exact. The five screens you showed (chats, calls, hub, profile, room) render 1:1.",
+  "sha256": "1e99b3ce78716c4c0ba6126752c3d37b728a8ccd26fe35f01e4fe64300beec09",
+  "notes": "R58 shell fidelity - the app IS the web: ember text selection handles, cursor and overscroll glow inside the web surface, no reload across fold, split screen and rotation, seamless artboard viewport framing kept. Both reference screens (profile, Pulse AI room) verified 1:1 in the browser; the On my way quick reply chip row is live. Version 0.23.0.0.5.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-10-03T14:20:00Z",
-  "apkSize": 25461926,
-  "version": "0.23.0.0.4",
-  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.4/Pulse-v0.23.0.0.4.apk"
+  "updatedAt": "2026-10-03T16:33:00Z",
+  "apkSize": 25461965,
+  "version": "0.23.0.0.5",
+  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.23.0.0.5/Pulse-v0.23.0.0.5.apk"
 }
