@@ -52,6 +52,8 @@ class PulsePrefsStoreImpl @Inject constructor(
         val APP_LOCK_ON = booleanPreferencesKey("pulse.settings.appLockOn")
         // R54 - interface renderer gate (true = WebView-first, the artboard shell).
         val WEB_UI = booleanPreferencesKey("ui.webFirst")
+        // R56 - one-shot marker for the auto-opt-out repair (repairWebUiOptOutOnce).
+        val WEB_UI_REPAIR_R56 = booleanPreferencesKey("ui.webFirst.repairR56")
     }
 
     override val viewerId: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_ID] }
@@ -85,6 +87,17 @@ class PulsePrefsStoreImpl @Inject constructor(
 
     override suspend fun setWebUi(value: Boolean) {
         context.pulsePrefs.edit { it[Keys.WEB_UI] = value }
+    }
+
+    override suspend fun repairWebUiOptOutOnce() {
+        context.pulsePrefs.edit { prefs ->
+            if (prefs[Keys.WEB_UI_REPAIR_R56] != true) {
+                prefs[Keys.WEB_UI_REPAIR_R56] = true
+                // Only an explicitly persisted false (the R54/R55 auto flip)
+                // is repaired; an absent key already maps to the true default.
+                if (prefs[Keys.WEB_UI] == false) prefs[Keys.WEB_UI] = true
+            }
+        }
     }
 
     override suspend fun setHapticsOn(value: Boolean) {

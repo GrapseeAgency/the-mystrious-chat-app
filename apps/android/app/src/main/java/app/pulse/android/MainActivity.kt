@@ -431,9 +431,11 @@ fun PulseRoot(
     val darkRaw by session.darkOverride.collectAsStateWithLifecycle()
     val uiThemeRaw by session.uiTheme.collectAsStateWithLifecycle()
     val reduced by session.reducedMotion.collectAsStateWithLifecycle()
-    // R54 - the interface renderer gate: the gateway web app (the artboard
-    // shell) is the DEFAULT once an identity + a configured gateway exist;
-    // the native Compose shell stays as the fallback and the opt-out.
+    // R56 - the interface renderer gate: the gateway web app (the artboard
+    // shell) IS the app whenever a gateway is configured - identity or not
+    // (no identity boots the WEB onboarding, same surface as the Preview
+    // Panel). The native Compose shell is reachable ONLY through the explicit
+    // opt-out in the connect panel / settings - never automatically.
     val webUi by session.webUi.collectAsStateWithLifecycle()
     val viewerName by session.viewerName.collectAsStateWithLifecycle()
     val storedBase by session.serverBase.collectAsStateWithLifecycle()
@@ -448,7 +450,7 @@ fun PulseRoot(
         }
         webBaseReady = app.pulse.core.PulseEndpoints.isConfigured
     }
-    val webShellActive = webUi && !viewerName.isNullOrBlank() && webBaseReady
+    val webShellActive = webUi && webBaseReady
     // R2-C item 3 - the selected design language (web pulse.uiTheme.v2).
     val uiTheme = app.pulse.ui.PulseUiTheme.fromId(uiThemeRaw)
 
@@ -499,25 +501,33 @@ fun PulseRoot(
                 modifier = Modifier.fillMaxSize(),
             )
 
-            if (onboarding) {
-                OnboardingScreen(
-                    sessionNotice = sessionNotice,
-                    // R50-a - the connect gate adopts the probed gateway through
-                    // the session (PulseEndpoints + prefs persistence).
-                    onApplyServerBase = { base -> session.setServerBase(base) },
-                )
-            } else if (webShellActive) {
-                // R54 - the artboard shell: the gateway web app in a WebView,
-                // signed in as the stored identity via ?login=. A main-frame
-                // load failure falls back to the native shell (setWebUi(false)).
+            if (webShellActive) {
+                // R56 - the artboard shell outranks every native surface: with
+                // a gateway configured the app IS the web (identity or not -
+                // no identity boots the web onboarding). The native onboarding
+                // only shows when the user explicitly opts out of the web
+                // interface, and PulseShell keeps serving the rest.
+                // R56 - the artboard shell: the gateway web app in a WebView,
+                // signed in as the stored identity via ?login= (or the web
+                // onboarding with no identity). A main-frame load failure now
+                // shows the ARTBOARD CONNECT PANEL inside the shell - the
+                // native shell only via the panel's explicit opt-out button.
                 val activeName = viewerName.orEmpty()
                 key(activeName) {
                     WebShellScreen(
                         serverBase = app.pulse.core.PulseEndpoints.gatewayHttpUrl,
                         viewerName = activeName,
                         onFallback = { session.setWebUi(false) },
+                        onUpdateServerBase = { session.setServerBase(it) },
                     )
                 }
+            } else if (onboarding) {
+                OnboardingScreen(
+                    sessionNotice = sessionNotice,
+                    // R50-a - the connect gate adopts the probed gateway through
+                    // the session (PulseEndpoints + prefs persistence).
+                    onApplyServerBase = { base -> session.setServerBase(base) },
+                )
             } else {
                 PulseShell(
                     viewerId = viewerId,

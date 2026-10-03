@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="pulse_launcher_bg">#047857</color>
+    <!-- R56 - the launcher + boot chrome now wear the WEB ARTBOARD palette
+         (ember on warm carbon) instead of the retired emerald field. The
+         web app IS the interface, so every app-level surface that shows
+         before/around it matches the exact web tokens:
+         --art-bg #0d0906, --art-accent #ff7a3d, --art-accent-2 #ffb86b. -->
+    <color name="pulse_launcher_bg">#0D0906</color>
+    <color name="pulse_boot_bg">#0D0906</color>
+    <color name="pulse_art_horizon_top">#2B1C10</color>
+    <color name="pulse_art_ember">#FF7A3D</color>
 </resources>

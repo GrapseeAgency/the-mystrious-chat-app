@@ -1,15 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Pulse launcher glyph: heartbeat pulse over a speech ring (vector, no raster needed) -->
+<!-- R56 - Pulse launcher glyph, recast in the WEB ARTBOARD palette:
+     warm carbon field (adaptive bg @color/pulse_launcher_bg #0D0906),
+     deep-ember halo ring, ember ring, light-ember highlight arc and the
+     white-hot heartbeat line (the web Pulse brand). Solid fills/strokes
+     only - vector gradients need API 24, minSdk is 21. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- warm inner disc, barely lifted off the carbon field -->
     <path
-        android:fillColor="#047857"
+        android:fillColor="#140D07"
         android:pathData="M54,54m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
+    <!-- deep ember halo (the bloom) -->
     <path
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="#8A481C"
+        android:strokeWidth="10"
+        android:fillColor="#00000000"
+        android:pathData="M54,54m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
+    <!-- main ember ring -->
+    <path
+        android:strokeColor="#FF7A3D"
+        android:strokeWidth="5.5"
+        android:fillColor="#00000000"
+        android:pathData="M54,54m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
+    <!-- light-ember highlight arc, top-left quadrant -->
+    <path
+        android:strokeColor="#FFB86B"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M32.8,32.8 A30,30 0 0 1 54,24" />
+    <!-- the heartbeat -->
+    <path
+        android:strokeColor="#F5EFE8"
         android:strokeWidth="4"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"

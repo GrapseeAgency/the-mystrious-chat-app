@@ -1,17 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- R56 - the boot chrome matches the WEB ARTBOARD exactly: light system
+         bar icons over the warm carbon field (the artboard is always dark),
+         and a warm-dark window background so no cold-boot frame ever flashes
+         a foreign tone under the web shell. -->
     <style name="Theme.Pulse" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">@color/pulse_boot_bg</item>
     </style>
 
     <!-- R50-e - the Android 12+ SplashScreen API backport (core-splashscreen):
-         carbon launch field, the existing launcher foreground as the icon, and
+         the artboard carbon field, the ember launcher glyph as the icon, and
          a hand-off straight into Theme.Pulse so onCreate installs nothing new
          visually after the splash dismisses. -->
     <style name="Theme.Pulse.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#07090B</item>
+        <item name="windowSplashScreenBackground">#0D0906</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="postSplashScreenTheme">@style/Theme.Pulse</item>
     </style>

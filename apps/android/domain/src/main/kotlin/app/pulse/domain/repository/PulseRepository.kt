@@ -246,6 +246,15 @@ interface PulsePrefsStore {
      */
     val webUi: Flow<Boolean>
     suspend fun setWebUi(value: Boolean)
+
+    /**
+     * R56 - one-time upgrade repair. R54/R55 auto-flipped [webUi] to false on
+     * ANY transient WebView load failure (and persisted it), stranding users
+     * in the native shell with its retired icon language. The first boot
+     * after this version resets the flag to the web-first default; opt-outs
+     * made afterwards persist normally.
+     */
+    suspend fun repairWebUiOptOutOnce()
 }
 
 /** Contract every Pulse data source (remote-first, Room cache) must honor. */

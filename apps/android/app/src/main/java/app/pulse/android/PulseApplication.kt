@@ -138,6 +138,16 @@ class PulseApplication : Application() {
             }
         }
 
+        // R56 - one-time repair of the R54/R55 auto opt-out (see repository).
+        // Runs synchronously BEFORE the first frame so a webUi=false persisted
+        // by an old transient load failure can never boot the native shell
+        // again; the web artboard shell stays the interface.
+        runCatching {
+            kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeout(2_000) { prefs.repairWebUiOptOutOnce() }
+            }
+        }
+
         appScope.launch {
             val userBase = runCatching { prefs.serverBase.first() }.getOrNull()
             if (!userBase.isNullOrBlank()) {
