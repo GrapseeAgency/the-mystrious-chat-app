@@ -24,8 +24,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -167,11 +169,27 @@ fun WebShellScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(ArtBg),
+            .background(ArtBg)
+            .drawBehind {
+                // R57 - Chrome-equivalent viewport. The web scene gradient runs
+                // #2B1C10 (top) to art-bg (bottom), so the system-bar strips
+                // painted behind the inset WebView blend seamlessly with the
+                // page - the app now frames the web EXACTLY like the browser
+                // does: header clear of the clock, dock clear of the gesture
+                // pill, nothing cramped or clipped.
+                drawRect(Brush.verticalGradient(listOf(Color(0xFF2B1C10), ArtBg)))
+            },
     ) {
-        if (!loadFailed) {
-            key(serverBase, reloadNonce) {
-                AndroidView(
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                if (!loadFailed) {
+                    key(serverBase, reloadNonce) {
+                        AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         WebView(ctx).apply {
@@ -190,6 +208,9 @@ fun WebShellScreen(
                             settings.useWideViewPort = true
                             settings.setSupportZoom(false)
                             settings.builtInZoomControls = false
+                            // R57 - system font scaling must not inflate the
+                            // artboard's exact typography inside the shell.
+                            settings.textZoom = 100
                             webViewClient = object : WebViewClient() {
                                 override fun onReceivedError(
                                     view: WebView?,
@@ -278,8 +299,10 @@ fun WebShellScreen(
                 onCancelEdit = { panelMode = ConnectPanelMode.Status },
                 onClassic = onFallback,
             )
+            }
         }
     }
+}
 
     // Native back: walk the web history first, then hand the event back to
     // the system (ordinary app exit). The panel lets back dismiss the editor.

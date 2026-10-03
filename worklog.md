@@ -5079,3 +5079,14 @@ Stage Summary:
 - SHIPPED v0.23.0.0.3: the app-surface re-theme. The app's launcher icon, shortcut icons, splash and boot chrome are now the web artboard's ember-on-carbon; a dead-server boot shows the artboard connect panel (retry + themed server-link editor + explicit classic-interface opt-out) and NEVER silently degrades to the native UI again; fresh boots land in the WEB onboarding; a one-time repair frees users stranded by the old auto-fallback.
 - User action: update via the in-app LiveUpdater (manifest pinned at 44) - the stored gateway link persists, the repair clears any old stranded opt-out on first boot, and from that frame on the app is the same surface as the screenshots. Next digit on this line: 0.23.0.0.4.
 - Open: WebView safe-area env() behavior on notch devices (worth one device check); story-card caption glyph polish; iOS homepage artboard mirror remains the standing web-parity item.
+---
+Task ID: R57
+Agent: orchestrator (Z.ai main session)
+Task: "the mobile design it is sucks... use whatever you can do complete that if its mean to use the exact same language... see those pictures web looks stunning" (5 phone-width screenshots of the WEB: home, calls, hub, profile, Pulse AI room). Make the app's mobile rendering exactly the web's.
+
+Work Log:
+- AUDIT (agent-browser 390x844, all five user screens): home / calls / hub / profile / Pulse AI room each render the artboard exactly as the user's screenshots - bone-white outgoing voice, dark incoming, ember dock + FAB, hub wallet card, profile hero. ZERO web-side defects found; the web is the reference and stays untouched.
+- ROOT CAUSE of the app's "sucks" mobile rendering (the ONE structural difference between the app shell and the browser the user loves): the activity is edge-to-edge, so the WebView is laid out UNDER the status bar and UNDER the gesture bar, while the web's env(safe-area-inset-*) paddings evaluate to 0 inside WebView - the Chrome-like top/bottom framing vanishes (headers crowd the clock, the dock hugs the gesture pill).
+- FIX (WebShellScreen): Chrome-equivalent viewport - the WebView now lives inside Column.statusBarsPadding().navigationBarsPadding(), with the outer Box painting the artboard scene gradient (#2B1C10 top to art-bg bottom) full-bleed so the inset strips blend seamlessly with the page gradient (web top starts #2b1c10, bottom ends #0d0906 - no seams). The connect panel inherits the same clear viewport. Plus settings.textZoom=100 so system font scale can never inflate the artboard typography.
+- Brace-balance verified (python scan), full five-screen audit re-run clean. Web untouched.
+- Version: versionCode 45 / versionName 0.23.0.0.4.
