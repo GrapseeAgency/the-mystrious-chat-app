@@ -184,6 +184,10 @@ private val DockInactiveLight = Color(0xFF71717A)
  *  but stays a registered route reachable from the chats header menu. */
 private val TAB_ROUTES = listOf("chats", "calls", "hub", "profile")
 
+/** R59 - the native-audit build (applicationId .native) draws the artboard natively. */
+private val isNativeAuditBuild: Boolean
+    get() = app.pulse.android.BuildConfig.PULSE_APP_ID.endsWith(".native")
+
 private data class DockTab(
     val route: String,
     val label: String,
@@ -507,19 +511,24 @@ fun PulseRoot(
                 // no identity boots the web onboarding). The native onboarding
                 // only shows when the user explicitly opts out of the web
                 // interface, and PulseShell keeps serving the rest.
-                // R56 - the artboard shell: the gateway web app in a WebView,
-                // signed in as the stored identity via ?login= (or the web
-                // onboarding with no identity). A main-frame load failure now
-                // shows the ARTBOARD CONNECT PANEL inside the shell - the
-                // native shell only via the panel's explicit opt-out button.
-                val activeName = viewerName.orEmpty()
-                key(activeName) {
-                    WebShellScreen(
-                        serverBase = app.pulse.core.PulseEndpoints.gatewayHttpUrl,
-                        viewerName = activeName,
-                        onFallback = { session.setWebUi(false) },
-                        onUpdateServerBase = { session.setServerBase(it) },
-                    )
+                // R57 - the WebView frames the artboard with Chrome geometry
+                // (inset strips + pinned textZoom).
+                // R59 - the native-audit build (-PpulseAppId=app.pulse.chat.native)
+                // renders the SAME artboard NATIVELY (Compose) instead: the
+                // 1:1 mirror driven by the same repository flows.
+                if (isNativeAuditBuild) {
+                    app.pulse.android.mirror.MirrorRoot(session = session, repository = repository)
+                } else {
+                    val activeName = viewerName.orEmpty()
+                    key(activeName) {
+                        WebShellScreen(
+                            serverBase = app.pulse.core.PulseEndpoints.gatewayHttpUrl,
+                            viewerName = activeName,
+                            onFallback = { session.setWebUi(false) },
+                            onUpdateServerBase = { session.setServerBase(it) },
+                        )
+                    }
+                }
                 }
             } else if (onboarding) {
                 OnboardingScreen(

@@ -692,6 +692,13 @@ interface PulseRepository {
     suspend fun refreshCallLog(): Result<List<CallLogEntry>>
 
     /**
+     * R59 native mirror parity - GET /api/users/[viewer]/phrases (F-MS-29).
+     * Ordered (id, text) rows for the quick-phrase chip rail above the room
+     * composer; empty on any failure (the rail simply hides, web behavior).
+     */
+    suspend fun quickPhrases(): List<Pair<String, String>>
+
+    /**
      * POST /api/calls - SINGLE-WRITER: the caller writes the terminal row.
      * A network-class failure enqueues the exact payload locally (UNIQUE
      * dedupe) for the next flush; the row also lands in the local cache so

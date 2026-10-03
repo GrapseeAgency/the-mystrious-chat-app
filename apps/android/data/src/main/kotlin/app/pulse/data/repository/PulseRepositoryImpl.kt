@@ -2265,6 +2265,14 @@ class PulseRepositoryImpl @Inject constructor(
         return postCallLog(payload)
     }
 
+    override suspend fun quickPhrases(): List<Pair<String, String>> {
+        val id = viewerId ?: return emptyList()
+        return when (val r = api.quickPhrases(id)) {
+            is PulseResult.Success -> r.value
+            is PulseResult.Failure -> emptyList()
+        }
+    }
+
     override suspend fun flushCallLogQueue(): Result<Int> {
         val rows = callLogDao.queued(MAX_CALL_LOG_QUEUE)
         if (rows.isEmpty()) return Result.success(0)

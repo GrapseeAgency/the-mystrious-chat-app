@@ -126,7 +126,9 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -441,6 +443,22 @@ class PulseApi(
     suspend fun settings(userId: String): PulseResult<SettingsEnvelopeDto> =
         get("/api/settings?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
             it.decodeSettingsEnvelope()
+        }
+
+    /**
+     * GET /api/users/[id]/phrases -> { phrases: [{id,text,position}] }.
+     * R59 mirror parity: the quick-phrase chip rail above the room composer
+     * reads the same server-backed rows the web renders (F-MS-29).
+     */
+    suspend fun quickPhrases(userId: String): PulseResult<List<Pair<String, String>>> =
+        get("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases") { body ->
+            val arr = (PulseJson.parseToJsonElement(body) as? JsonObject)?.get("phrases") as? JsonArray
+            arr.orEmpty().mapNotNull { el ->
+                val o = el as? JsonObject ?: return@mapNotNull null
+                val id = (o["id"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+                val text = (o["text"] as? JsonPrimitive)?.content ?: return@mapNotNull null
+                id to text
+            }
         }
 
     /** PATCH /api/settings { userId, preferences: Partial } → { preferences } (shallow-merged + clamped server-side). */

@@ -17,7 +17,9 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "app.pulse.chat"
+        // R59 native-audit: -PpulseAppId installs the SAME build side by side
+        // with the store identity (app.pulse.chat.native + "Pulse Native").
+        applicationId = (project.findProperty("pulseAppId") as String?) ?: "app.pulse.chat"
         minSdk = 21
         targetSdk = 35
         versionCode = pulseVersionCode
@@ -30,6 +32,9 @@ android {
         // plain http → "CLEARTEXT communication not permitted"). Emulator dev:
         // -PpulseGateway=http://10.0.2.2:81 -PpulseSocket=http://10.0.2.2:3003
         buildConfigField("String", "PULSE_GATEWAY", "\"${project.findProperty("pulseGateway") ?: ""}\"")
+        // R59 native-audit discriminator - ".native" suffix flips the shell to
+        // MirrorRoot (the natively drawn artboard) instead of the WebView.
+        buildConfigField("String", "PULSE_APP_ID", "\"${project.findProperty("pulseAppId") ?: "app.pulse.chat"}\"")
         // Blank socket base = realtime relay disabled (no public relay yet) -
         // the client then stays offline-first instead of reconnect-spamming a
         // dead address forever.
@@ -87,6 +92,15 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+}
+
+// R59 native-audit: launcher label override ("Pulse Native") without touching
+// the main app_name resource. androidComponents is a project-level extension.
+androidComponents {
+    onVariants { variant ->
+        val label = (project.findProperty("pulseAppLabel") as String?) ?: "Pulse"
+        variant.manifestPlaceholders.put("pulseAppLabel", label)
+    }
 }
 
 dependencies {

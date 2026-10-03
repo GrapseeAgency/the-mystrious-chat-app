@@ -298,7 +298,12 @@ struct RootView: View {
 
     @ViewBuilder
     private var authenticatedShell: some View {
-        if prefs.viewer != nil {
+        if prefs.viewer != nil, UserDefaults.standard.bool(forKey: "ui.mirrorAudit") {
+            // R59 - the native mirror audit: the artboard redrawn natively
+            // (SwiftUI) on the REAL session data; the shipping shell stays
+            // untouched behind the flag.
+            MirrorRootView(session: session)
+        } else if prefs.viewer != nil {
             ZStack {
                 tabPanels
             }

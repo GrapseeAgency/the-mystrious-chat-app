@@ -593,6 +593,11 @@ struct SettingsView: View {
             toggleRow(icon: "moon.stars.fill", title: "Quiet hours", description: "Silence sounds and vibration inside the window.", isOn: prefs.quietHoursOn) {
                 prefs.setQuietHoursOn($0)
             }
+            // R59 - native mirror audit switch: the artboard redrawn natively
+            // (SwiftUI) on the real session data, replacing the shell while on.
+            toggleRow(icon: "square.2.layers.3d.top.filled", title: "Native mirror audit", description: "Render the artboard natively (SwiftUI) instead of the web shell. The exact-geometry mirror build.", isOn: UserDefaults.standard.bool(forKey: "ui.mirrorAudit")) { on in
+                UserDefaults.standard.set(on, forKey: "ui.mirrorAudit")
+            }
             if prefs.quietHoursOn {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
