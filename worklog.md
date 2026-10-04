@@ -5351,3 +5351,23 @@ Work Log:
 Stage Summary:
 - The chats-list right column (streak chip + time) is now one straight flush-right line on every row, matching the web's justify-between; the room's dead band mechanism is dead at both the data layer (tolerant parse renders real stamps) and the render layer (blank labels/stamps can never paint invisible boxes).
 - Next: user is hunting more errors; final APK build + audit clobber happens when they say "finally".
+---
+Task ID: R68
+Agent: orchestrator (Z.ai main session)
+Task: User sent two web screenshots of the home three-dot menu (ACTIONS/BROWSE/SYSTEM fully populated, second screenshot shows it scrolled) and said the in-app menu rows are "every single one missing" - add them all, the web icons are cool, and check whether they were ever added before. No APK build this round (final build later, per user).
+
+Work Log:
+- ANSWER TO THE USER'S QUESTION (checked first): YES - the full sectioned kebab was added in R62 (commit 7671923, MirrorKebabMenu) and re-sectioned to the web's three labels in R64, all wired to real gateway actions. The user's INSTALLED APK predates those commits, which is why every row is missing on-device; the rows ship with the final build.
+- SOURCE PARITY AUDIT vs chats-tab.tsx L1540-1718 (web truth, 15 rows): the source menu had 14/15 rows. Gaps found and fixed at commit 5d0d7a6:
+  1. MISSING ROW: "Appearance" (web L1702-1716: Sun/Moon glyph + KebabTrailing Dark/Light + toggleTheme). Added as the 15th row after Settings with the LSun glyph + "Dark" trailing (the native mirror is dark-locked, so it renders the web's dark state); the tap routes to the Profile settings surface - a real action, never dead - until a light engine exists.
+  2. WRONG GLYPH: "New chat" drew LMessageCircle but the web draws PulseCompose = bold(PencilSimple) (icons.tsx L175). Extracted the verbatim Phosphor BOLD PencilSimple path (256 viewport, single 1f fill part) from node_modules/@phosphor-icons/react/dist/defs/PencilSimple.es.js into MirrorIconPaths as PPencilSimpleBold, and MirrorKebabItem now routes P* glyphs to MirrorPhosphorIcon, L* to MirrorLucideIcon.
+  3. NO SCROLL (the sneaky "missing rows" cause on-device): the web menu is max-h-[min(70vh,560px)] overflow-y-auto - the user's second screenshot literally shows the web menu scrolled. The Android column had no clamp, so 15 rows + 3 labels overflow small screens and CLIP the System section. The column now clamps to min(70vh, 560dp) via heightIn + verticalScroll, web-exact.
+  4. PRESS TINT: web KEBAB_ITEM_CLS data-[highlighted]:bg-white/[0.07]; rows now light up white 7% while pressed (MutableInteractionSource + collectIsPressedAsState), no ripple (web has none).
+- Wiring: MirrorRoot passes onAppearance = Profile tab (documented in-code).
+- WEB ARTWORK UNTOUCHED (git diff src/ empty, verified 0 files). db/custom.db NOT staged. versionCode 46 / versionName 0.23.0.0.5 frozen; NO release assets touched; NO audit dispatch (user: final build later).
+- Commit 5d0d7a6 pushed to main (inline PAT URL); compile CI run 37210295826 triggered on push.
+
+Stage Summary:
+- The home kebab is now 15/15 rows matching the web screenshots exactly: ACTIONS (Search, New chat with the cool pencil glyph, New group, Join with code) / BROWSE (Contacts, Calls, Archived+count, Note to Self Open/New, Mentions+count, Channels+count, Folders) / SYSTEM (Saved, Stories, Settings, Appearance Dark) - scrollable like the web so nothing can ever clip, with the web's press tint.
+- The user's on-device "everything missing" is an APK-vintage issue: their installed build predates R62/R64. Everything ships in the final APK build (user will say "finally").
+- Next: user is still hunting errors; APK build + audit clobber deferred to their go signal.
