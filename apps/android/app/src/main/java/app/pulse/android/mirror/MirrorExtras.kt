@@ -67,7 +67,7 @@ internal fun MirrorCalls(repository: PulseRepository) {
     LaunchedEffect(Unit) { runCatching { repository.refreshCallLog() } }
     MirrorListScaffold(title = "Calls") {
         if (log.isEmpty()) {
-            MirrorEmptyState("No calls yet", "Voice and video calls you make show up here.")
+            item { MirrorEmptyState("No calls yet", "Voice and video calls you make show up here.") }
         }
         items(log, key = { it.id }) { entry ->
             MirrorCallRow(entry)
@@ -142,14 +142,14 @@ internal fun MirrorUpdates(repository: PulseRepository) {
 
     fun load() {
         CoroutineScope(Dispatchers.IO).launch {
-            channels = runCatching { repository.channels(mineOnly = false) }.getOrDefault(emptyList())
+            channels = repository.channels(mineOnly = false).getOrDefault(emptyList())
         }
     }
     LaunchedEffect(Unit) { load() }
 
     MirrorListScaffold(title = "Updates") {
         if (channels.isEmpty()) {
-            MirrorEmptyState("No channels yet", "Broadcast channels you create or join show up here.")
+            item { MirrorEmptyState("No channels yet", "Broadcast channels you create or join show up here.") }
         }
         items(channels, key = { it.id }) { channel ->
             Row(
@@ -202,7 +202,7 @@ internal fun MirrorUpdates(repository: PulseRepository) {
                                 busyId = channel.id
                                 CoroutineScope(Dispatchers.IO).launch {
                                     runCatching { repository.subscribeChannel(channel.id) }
-                                    channels = runCatching { repository.channels(mineOnly = false) }.getOrDefault(emptyList())
+                                    channels = repository.channels(mineOnly = false).getOrDefault(emptyList())
                                     busyId = null
                                 }
                             }
@@ -240,11 +240,11 @@ internal fun MirrorNewChatSheet(
     var busy by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        users = runCatching { repository.users("") }.getOrDefault(emptyList())
+        users = repository.users("").getOrDefault(emptyList())
     }
     LaunchedEffect(query) {
         delay(250)
-        users = runCatching { repository.users(query) }.getOrDefault(emptyList())
+        users = repository.users(query).getOrDefault(emptyList())
     }
 
     MirrorSheet(title = "New chat", onDismiss = onDismiss) {
@@ -290,7 +290,7 @@ internal fun MirrorNewChatSheet(
                             .clickable(enabled = busy == null) {
                                 busy = user.id
                                 CoroutineScope(Dispatchers.IO).launch {
-                                    val convo = runCatching { repository.createDm(user.id) }.getOrNull()
+                                    val convo = repository.createDm(user.id).getOrNull()
                                     busy = null
                                     if (convo != null) onOpened(convo.id)
                                 }

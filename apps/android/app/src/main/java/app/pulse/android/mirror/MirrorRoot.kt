@@ -23,6 +23,7 @@ import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.repository.PulseRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -65,8 +66,8 @@ fun MirrorRoot(
         while (true) {
             if (viewerId != null) {
                 runCatching { repository.refreshConversations() }
-                stories = runCatching { repository.stories() }.getOrDefault(emptyList())
-                folders = runCatching { repository.folders() }.getOrDefault(emptyList()).map { f ->
+                stories = repository.stories().getOrDefault(emptyList())
+                folders = repository.folders().getOrDefault(emptyList()).map { f ->
                     MirrorFolderChip(
                         id = f.id,
                         name = f.name,
@@ -217,7 +218,7 @@ fun MirrorRoot(
                         onPosted = {
                             composerOpen = false
                             CoroutineScope(Dispatchers.IO).launch {
-                                stories = runCatching { repository.stories() }.getOrDefault(emptyList())
+                                stories = repository.stories().getOrDefault(emptyList())
                             }
                         },
                     )

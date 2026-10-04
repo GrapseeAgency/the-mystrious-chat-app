@@ -288,7 +288,7 @@ internal fun MirrorHome(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         for (story in stories.take(8)) {
-                            MirrorStoryCardCell(story, onClick = onStory)
+                            MirrorStoryCardCell(story, onClick = { onStory(story) })
                         }
                     }
 
@@ -414,7 +414,7 @@ private fun MirrorStoryCardCell(story: MirrorStoryCard, onClick: () -> Unit) {
                 .clip(RoundedCornerShape(14.dp))
                 .border(
                     width = if (story.isYou) 0.dp else if (story.unseen) 2.dp else 1.dp,
-                    brush = Brush.SolidColor(
+                    brush = SolidColor(
                         when {
                             story.isYou -> Color.Transparent
                             story.unseen -> MirrorArt.Accent.copy(alpha = 0.85f)
@@ -424,8 +424,8 @@ private fun MirrorStoryCardCell(story: MirrorStoryCard, onClick: () -> Unit) {
                     shape = RoundedCornerShape(14.dp),
                 )
                 .background(
-                    if (story.isYou) Brush.SolidColor(MirrorArt.Chip)
-                    else Brush.SolidColor(Color(0xFF17110C)),
+                    if (story.isYou) SolidColor(MirrorArt.Chip)
+                    else SolidColor(Color(0xFF17110C)),
                 ),
             contentAlignment = Alignment.Center,
         ) {
