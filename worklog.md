@@ -5294,3 +5294,18 @@ Stage Summary:
 - Every defect the user circled is fixed at the root and shipped: no stray circle in the composer (the web's full-pill ember focus ring instead), live typing indicators (relay events → list rows + room bubble with breathing radius + header label; the composer broadcasts typing with the web's 1.5s throttle), home + room three-dot menus open the web's exact menus with every row wired to a real gateway action (contacts, new group, join with code, archived, mentions, folders, note to self, room info, search in conversation, pinned messages, mute strip, disappearing TTL), rows carry the web's exact time/pin/badge anatomy with the flat signal-red badge, and the room header video/phone icons dial REAL native calls (1:1 + group) through the shell engines.
 - USER ACTION: re-download Pulse-native-audit-0.23.0.0.5.apk from the v0.23.0.0.5 release page (same name, same version, installs over the current one; gateway link + identity persist).
 - Next round candidates: TOOLS depth in the room kebab (Events/Whiteboard/Kanban/Stage/Space/Tournament), story photo loading via Coil, Calls/Updates page depth, more web-menu items (Reminders, Scheduled sends, Recap with AI) once their sheets exist natively.
+---
+Task ID: R65
+Agent: orchestrator (Z.ai main session)
+Task: User marked (red circle) the home list HARD-CLIPPING rows at an invisible line above the dock - the "Announcements-0b7s" row avatar was amputated mid-glyph instead of scrolling behind the translucent glass dock like the web's absolute-positioned overlay. User order: "just fucking remove it dawg. then hard stop. we'll have to do more."
+
+Work Log:
+- ROOT CAUSE: MirrorHome.kt (Chats) LazyColumn and MirrorExtras.kt MirrorListScaffold (Calls/Updates tabs) carried `.navigationBarsPadding()` + `.padding(bottom = 108.dp)` on the viewport MODIFIER - a hard clip line ~108dp+nav-inset above the screen bottom that amputated every row crossing it; the dock then floated over a dead strip. MirrorProfile was already correct (padding inside verticalScroll scrolls with content, no wall).
+- FIX (commit 7414b09, pushed main): both viewports now run EDGE-TO-EDGE (fillMaxSize + statusBarsPadding only) so rows scroll BEHIND the translucent art-panel glass dock (0.66 alpha) exactly like the web; the 108dp dock clearance + system nav inset moved into LazyColumn contentPadding (scrolls WITH content) so only the LAST item clears the dock.
+- WEB untouched (git diff src/ empty). db/custom.db untouched. versionCode 46 / versionName 0.23.0.0.5 frozen; no release asset touched.
+- CI: Pulse Android CI run 37198532405 on 7414b09 (compiling the change). NO audit dispatch, NO release clobber.
+
+Stage Summary:
+- The dock is now a TRUE overlay: rows scroll under the glass pill on Chats/Calls/Updates; Profile was already scroll-through. No more amputated rows above the dock.
+- **HARD STOP (user order): NO further edits, NO CI dispatch, NO release work until the user explicitly says so. They said "we'll have to do more" - wait for their next marking.**
+- Pending-on-user-go only: audit APK rebuild + release clobber for this fix (same name Pulse-native-audit-0.23.0.0.5.apk, version frozen).
