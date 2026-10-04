@@ -5452,3 +5452,18 @@ Work Log:
 Stage Summary:
 - The room kebab now mirrors the web's menu 1:1: every row present, every row real (no dead rows), badges live, strips inline, TOOLS surfaces fully native on the real repository/relay contracts.
 - Remaining honest gaps: DM-only "Verify safety number" row (web DM variant) still absent; topic chips render name+count without the per-topic icon glyphs; note: agents' sheet code is CI-compiled but has NOT been runtime-tested on an emulator yet - first device pass happens with the final build.
+---
+Task ID: R69 (CI shakedown + GREEN)
+Agent: orchestrator (Z.ai main session)
+
+Work Log:
+- 3 CI iterations to green on the 5,850-line round (fresh Kotlin never compiled before):
+  1. 6d54980 FAIL: MirrorRoomTools.kt:614 raw curly quotes inside a string literal (web copy "Schedule message" uses U+201C/U+201D) - escaped as unicode.
+  2. 178c966 FAIL: (a) MirrorRoom.kt missing collectAsState + SolidColor imports (my topic rail + state collectors), (b) MirrorRoomLive.kt smart-cast on stage.host (public API property in a different module can never smart-cast - captured to a local val host), (c) "Unresolved reference tournaments" root-caused to a DOUBLE-WRAPPED Result: runCatching { suspendCallReturningResult() } yields Result<Result<T>> so fold's value was a Result, not the DTO.
+  3. bff8e17 GREEN after flattening all three double-wrapped outcomes with .getOrElse { Result.failure(it) } (tournaments/createTournament/joinTournament) - this also fixes the real semantics bug where inner network failures never reached onFailure (state could have gone stuck on joined/pending).
+- Run 37216934017 GREEN on bff8e17: build + instrumented api 30 + instrumented api 34.
+- WEB ARTWORK UNTOUCHED. db/custom.db NOT staged. versionCode 46 / 0.23.0.0.5 frozen. NO release assets touched. NO APK build (user: final build later).
+
+Stage Summary:
+- Room kebab parity shipped: 18 rows + TOOLS label, every row real, live badges, topics rail on real createTopic/select, PiP mini chat window over tabs, all ten tool surfaces native on the real repository/relay contracts. CI green.
+- Next candidates: DM-only "Verify safety number" kebab row, per-topic icon glyphs in the rail, runtime device pass of the new sheets during the final build.
