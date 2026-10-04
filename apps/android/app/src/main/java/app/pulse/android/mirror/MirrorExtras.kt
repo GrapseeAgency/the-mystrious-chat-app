@@ -838,8 +838,9 @@ internal fun MirrorContactsSheet(
                     )
                     Column(Modifier.weight(1f)) {
                         Text(user.name, color = MirrorArt.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        if (!user.statusText.isNullOrBlank()) {
-                            Text(user.statusText, color = MirrorArt.Faint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val status = user.statusText
+                        if (!status.isNullOrBlank()) {
+                            Text(status, color = MirrorArt.Faint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
