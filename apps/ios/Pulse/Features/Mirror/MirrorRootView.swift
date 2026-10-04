@@ -437,6 +437,7 @@ private struct MirrorProfileIdentity: View {
     }
 }
 
+@MainActor
 private func MirrorHandleText(model: MirrorViewModel, session: PulseSession) -> String {
     if let handle = model.profile?.username, !handle.isEmpty { return handle }
     if let viewerHandle = session.viewer?.username, !viewerHandle.isEmpty { return viewerHandle }
@@ -457,7 +458,7 @@ private struct MirrorProfileAvatar: View {
                 .frame(width: 92, height: 92)
                 .overlay(Circle().fill(MirrorArt.gapInk).frame(width: 87, height: 87))
                 .overlay(
-                    Text(MirrorArt.initials(model.profile?.name ?? session.viewer?.name ?? "?"))
+                    Text(verbatim: MirrorArt.initials(model.profile?.name ?? session.viewer?.name ?? "?"))
                         .font(.system(size: 28, weight: .semibold)).foregroundColor(.white)
                 )
             Circle()
@@ -544,6 +545,9 @@ struct MirrorStatCell: View {
     let label: String
     let tint: Color
     var small = false
+    init(value: String, label: String, tint: Color, small: Bool = false) {
+        self.value = value; self.label = label; self.tint = tint; self.small = small
+    }
     var body: some View {
         VStack(spacing: 3) {
             Text(value).font(.system(size: small ? 15 : 17, weight: .bold)).foregroundColor(tint).lineLimit(1)
