@@ -763,8 +763,8 @@ private enum MirrorBubbleText {
                     if !innerText.isEmpty {
                         var span = AttributedString(String(innerText))
                         var font: Font = .system(size: 15)
-                        if let weight { font = weight == .bold ? .system(size: 15, weight: .bold) : .system(size: 15, italic: true) }
-                        if italic == true { font = .system(size: 15, design: .default).italic() }
+                        if weight == .bold { font = .system(size: 15, weight: .bold) }
+                        if italic == true { font = font.italic() }
                         span.font = font
                         if strike == true { span.strikethroughStyle = .single }
                         if marker == "`" { span.backgroundColor = Color.black.opacity(0.3); span.font = .system(size: 12.5, design: .monospaced) }

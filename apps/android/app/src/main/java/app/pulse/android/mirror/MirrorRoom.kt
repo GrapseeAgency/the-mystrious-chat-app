@@ -300,8 +300,9 @@ internal fun MirrorRoom(
                 .weight(1f)
                 .fillMaxWidth(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                horizontal = 12.dp,
+                start = 12.dp,
                 top = 12.dp,
+                end = 12.dp,
                 bottom = 8.dp,
             ),
         ) {
