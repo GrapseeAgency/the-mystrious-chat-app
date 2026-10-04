@@ -1,8 +1,22 @@
 package app.pulse.android.mirror
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -12,12 +26,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -75,6 +96,9 @@ fun MirrorRoot(
     var searching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var kebabOpen by remember { mutableStateOf(false) }
+    // R69 - the web PiP mini chat window: floats over any tab, independent of
+    // the open room (web startPipChat/closePipChat).
+    var pipFor by remember { mutableStateOf<Conversation?>(null) }
     var callsOpen by remember { mutableStateOf(false) }
     var channelsOpen by remember { mutableStateOf(false) }
     var newChatOpen by remember { mutableStateOf(false) }
@@ -184,6 +208,10 @@ fun MirrorRoot(
                     viewerId = viewerId.orEmpty(),
                     presence = presence,
                     typers = roomTypers,
+                    pipActive = pipFor?.id == convo.id,
+                    onTogglePip = {
+                        pipFor = if (pipFor?.id == convo.id) null else convo
+                    },
                     onClose = { openRoom = null },
                     onRoomInfo = { roomInfoFor = convo },
                     onStartCall = onStartCall,
@@ -314,6 +342,23 @@ fun MirrorRoot(
                     onFab = { newChatOpen = true },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
+
+                // R69 - the web mini chat window floats over everything
+                pipFor?.let { pipConvo ->
+                    MirrorPipChat(
+                        convo = pipConvo,
+                        repository = repository,
+                        viewerId = viewerId.orEmpty(),
+                        onOpen = {
+                            pipFor = null
+                            openById(pipConvo.id)
+                        },
+                        onClose = { pipFor = null },
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = 12.dp, bottom = 116.dp),
+                    )
+                }
 
 
                 if (kebabOpen) {
@@ -585,6 +630,8 @@ private fun MirrorRoomScaffold(
     viewerId: String,
     presence: Set<String>,
     typers: List<String>,
+    pipActive: Boolean,
+    onTogglePip: () -> Unit,
     onClose: () -> Unit,
     onRoomInfo: () -> Unit,
     onStartCall: ((Conversation, video: Boolean) -> Unit)?,
@@ -622,6 +669,8 @@ private fun MirrorRoomScaffold(
         messages = messages,
         viewerId = viewerId,
         viewerName = convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(),
+        repository = repository,
+        viewerColor = convo.members.firstOrNull { it.id == viewerId }?.color,
         memberNames = convo.members.map { it.name },
         members = convo.members,
         phrases = phrases,
@@ -722,7 +771,151 @@ private fun MirrorRoomScaffold(
         fetchPinned = {
             runCatching { repository.pinnedMessages(convo.id) }.getOrDefault(emptyList())
         },
+        pipActive = pipActive,
+        onTogglePip = onTogglePip,
     )
+}
+
+/**
+ * R69 - the web mini chat window (PiP): a floating compact room card that
+ * lives over any tab while the kebab row keeps it open. Live messages from
+ * the repository cache, send wired to the real send pipeline, expand opens
+ * the room and the X closes the window (web closePipChat).
+ */
+@Composable
+private fun MirrorPipChat(
+    convo: Conversation,
+    repository: PulseRepository,
+    viewerId: String,
+    onOpen: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val messages by repository.observeMessages(convo.id).collectAsState(initial = emptyList<Message>())
+    var draft by remember { mutableStateOf("") }
+    Column(
+        modifier
+            .width(272.dp)
+            .heightIn(max = 336.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xF21C1610))
+            .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(18.dp)),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(MirrorArt.Panel)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                convo.title,
+                color = MirrorArt.Text,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "Expand",
+                color = MirrorArt.Accent2,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onOpen)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+            )
+            Text(
+                "Close",
+                color = MirrorArt.Faint,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClose)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+            )
+        }
+        LazyColumn(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .heightIn(max = 240.dp),
+        ) {
+            items(messages.takeLast(10)) { message ->
+                val line = when {
+                    message.deletedAt != null -> "Message deleted"
+                    message.imagePath != null -> "Photo"
+                    message.durationMs != null -> "Voice message"
+                    else -> message.body
+                }
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                    if (convo.isGroupish && message.authorName.isNotBlank()) {
+                        Text(
+                            message.authorName,
+                            color = MirrorArt.Accent2,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Text(
+                        line,
+                        color = if (message.authorId == viewerId) MirrorArt.TextSoft else MirrorArt.Text,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        ) {
+            BasicTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                singleLine = true,
+                textStyle = TextStyle(color = MirrorArt.Text, fontSize = 12.sp),
+                cursorBrush = SolidColor(MirrorArt.Accent2),
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MirrorArt.White7)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                decorationBox = { inner ->
+                    if (draft.isBlank()) {
+                        Text("Type here", color = MirrorArt.Faint, fontSize = 12.sp)
+                    }
+                    inner()
+                },
+            )
+            Text(
+                "Send",
+                color = if (draft.isNotBlank()) MirrorArt.Accent2 else MirrorArt.Faint,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(enabled = draft.isNotBlank()) {
+                        val text = draft.trim()
+                        draft = ""
+                        if (viewerId.isNotBlank() && text.isNotEmpty()) {
+                            CoroutineScope(Dispatchers.IO).launch {
+                                runCatching { repository.sendMessage(convo.id, text) }
+                            }
+                        }
+                    }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+            )
+        }
+    }
 }
 
 private fun Conversation.toRow(presence: Set<String>, viewerId: String?): ConversationRow {

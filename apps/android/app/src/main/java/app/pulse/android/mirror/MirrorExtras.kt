@@ -726,7 +726,7 @@ internal fun MirrorEmptyState(title: String, body: String) {
 
 /** Bottom sheet chrome: scrim + artboard panel with the title row. */
 @Composable
-private fun MirrorSheet(
+internal fun MirrorSheet(
     title: String,
     onDismiss: () -> Unit,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
@@ -778,7 +778,7 @@ private const val SHEET_MAX = 380
 
 /** Scrollable sheet body wrapper so long lists never overflow the panel. */
 @Composable
-private fun MirrorSheetScroll(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+internal fun MirrorSheetScroll(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Column(
         Modifier
             .heightIn(max = SHEET_MAX.dp)
