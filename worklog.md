@@ -5170,3 +5170,16 @@ Stage Summary:
 - The audit APK's three visible offenses (top dock, clock overlap, "?" avatar) are fixed at the root; the mirror now boots as the artboard: Chats header + three bare icons under the status bar, story discs with the quiet You tile, chip rail, flat rows with circle DM avatars, glass dock pinned at the bottom with the ember FAB.
 - User action: re-download Pulse-native-audit-0.23.0.0.5.apk from the v0.23.0.0.5 release page (same name, same version, fixed bytes) and reinstall - the gateway link entered once still stands.
 - Next: if the audit passes, continue the mirror (Calls/Updates tabs, new-chat FAB flow, animations) in the next round.
+---
+Task ID: R60-ship
+Agent: orchestrator (Z.ai main session)
+Task: Fixed native-audit APK attached to the v0.23.0.0.5 release (same version).
+
+Work Log:
+- CI: Pulse Android Native Audit run 37181609654 GREEN on d685966 (the mirror fixes compile and the signed APK built); Android main CI ran the same commit.
+- RELEASE: Pulse-native-audit-0.23.0.0.5.apk REPLACED on v0.23.0.0.5 (workflow --clobber): 25,513,053 bytes, sha256 6d69322b1c6f2c93ff6e7809377f6fef1365702c7fb8d4aee437f0ad628daea5, updated 06:07Z. versionCode 46 / versionName 0.23.0.0.5 unchanged (gradle defaults untouched).
+- UNTOUCHED, verified: the release's own Pulse-v0.23.0.0.5.apk (25,461,965 bytes, original 16:31Z timestamp, sha 1e99b3ce...) and the CDN manifest pin; the web artwork (git diff on src/ empty + agent-browser QA: ember home renders 1:1 with real data, bottom dock, live API).
+
+Stage Summary:
+- The user re-downloads Pulse-native-audit-0.23.0.0.5.apk (same file name, same version) and reinstalls: the mirror now boots as the artboard - header under the status bar, dock at the bottom, quiet You tile, circle DM avatars. The gateway link they entered once still stands.
+- If the audit passes, the mirror direction continues (Calls/Updates tabs, new-chat FAB, animations).
