@@ -59,7 +59,7 @@ import java.time.format.DateTimeFormatter
  * control deck the artboard dock's "Updates" slot actually opens. Zinc-900
  * page, glass-deep header with the ember Flame tile + live wallet chip, the
  * glass pill panel rail (Wallet / Tasks / Market / Swap / Logs / Apps), and
- * every panel talking to the real /api/hub/* routes the repository exposes -
+ * every panel talking to the real /api/hub routes the repository exposes -
  * zero mocks, zero dead controls.
  */
 
