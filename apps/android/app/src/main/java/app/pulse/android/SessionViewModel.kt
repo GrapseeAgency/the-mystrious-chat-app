@@ -188,6 +188,66 @@ class SessionViewModel @Inject constructor(
         viewModelScope.launch { prefs.setDarkOverride(value) }
     }
 
+    // R71 - device-local settings passthroughs (web pulse.settings.v1 parity):
+    // the Settings screen binds these directly, exactly like the web binds
+    // pulseSettingsStore. The DataStore stays the single source of truth.
+
+    /** Haptic feedback master toggle (web hapticsOn, default true). */
+    val hapticsOn: StateFlow<Boolean> = prefs.hapticsOn
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /** Device-local master ding gate (web soundOn, default true). */
+    val soundOn: StateFlow<Boolean> = prefs.soundOn
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /** Quiet hours window (web quietHoursOn/Start/End, defaults 22:00-07:00). */
+    val quietHoursOn: StateFlow<Boolean> = prefs.quietHoursOn
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val quietStart: StateFlow<String> = prefs.quietStart
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "22:00")
+
+    val quietEnd: StateFlow<String> = prefs.quietEnd
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "07:00")
+
+    /** Telegram-style folder filter on the chats list (web listFilter). */
+    val chatsListFilter: StateFlow<String> = prefs.chatsListFilter
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "all")
+
+    fun setHapticsOn(value: Boolean) {
+        viewModelScope.launch { prefs.setHapticsOn(value) }
+    }
+
+    fun setSoundOn(value: Boolean) {
+        viewModelScope.launch { prefs.setSoundOn(value) }
+    }
+
+    fun setQuietHoursOn(value: Boolean) {
+        viewModelScope.launch { prefs.setQuietHoursOn(value) }
+    }
+
+    fun setQuietStart(value: String) {
+        viewModelScope.launch { prefs.setQuietStart(value) }
+    }
+
+    fun setQuietEnd(value: String) {
+        viewModelScope.launch { prefs.setQuietEnd(value) }
+    }
+
+    fun setChatsListFilter(value: String) {
+        viewModelScope.launch { prefs.setChatsListFilter(value) }
+    }
+
+    /** Design-language selection (web pulse.uiTheme.v2 value string). */
+    fun setUiTheme(value: String) {
+        viewModelScope.launch { prefs.setUiTheme(value) }
+    }
+
+    /** Navigation architecture selection (web pulse.navStyle.v2). */
+    fun setNavStyle(value: app.pulse.protocol.PulseNavStyle) {
+        viewModelScope.launch { prefs.setNavStyle(value) }
+    }
+
     fun cycleDarkOverride() {
         val next = when (darkOverride.value) {
             "system" -> "light"

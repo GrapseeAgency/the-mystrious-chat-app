@@ -153,7 +153,7 @@ internal fun MirrorSavedSheet(
 ) {
     var items by remember { mutableStateOf<List<SavedItem>?>(null) }
     LaunchedEffect(viewerId) {
-        items = runCatching { repository.refreshSavedLibrary() }.getOrDefault(emptyList())
+        items = runCatching { repository.refreshSavedLibrary() }.getOrNull()
     }
     val list = items ?: emptyList()
 

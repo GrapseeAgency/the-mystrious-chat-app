@@ -65,6 +65,7 @@ import app.pulse.domain.repository.PulseRepository
 import app.pulse.domain.push.PulsePushStatus
 import app.pulse.protocol.PulseNavStyle
 import app.pulse.protocol.WirePulsePrefs
+import app.pulse.android.SessionViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -214,6 +215,7 @@ private fun isQuietHoursNow(on: Boolean, start: String, end: String): Boolean {
 @Composable
 internal fun MirrorSettingsScreen(
     repository: PulseRepository,
+    session: SessionViewModel,
     viewerId: String,
     onEditProfile: () -> Unit,
     onOpenHub: () -> Unit,
@@ -221,15 +223,15 @@ internal fun MirrorSettingsScreen(
 ) {
     val prefsWire by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
     val prefs = prefsWire.resolvedOrDefaults()
-    val soundOn by repository.soundOn.collectAsState(initial = true)
-    val hapticsOn by repository.hapticsOn.collectAsState(initial = true)
-    val quietHoursOn by repository.quietHoursOn.collectAsState(initial = false)
-    val quietStart by repository.quietStart.collectAsState(initial = "22:00")
-    val quietEnd by repository.quietEnd.collectAsState(initial = "07:00")
-    val listFilter by repository.chatsListFilter.collectAsState(initial = "all")
-    val uiTheme by repository.uiTheme.collectAsState(initial = "glass")
-    val navStyle by repository.navStyle.collectAsState(initial = PulseNavStyle.CAPSULE)
-    val darkOverride by repository.darkOverride.collectAsState(initial = "dark")
+    val soundOn by session.soundOn.collectAsState()
+    val hapticsOn by session.hapticsOn.collectAsState()
+    val quietHoursOn by session.quietHoursOn.collectAsState()
+    val quietStart by session.quietStart.collectAsState()
+    val quietEnd by session.quietEnd.collectAsState()
+    val listFilter by session.chatsListFilter.collectAsState()
+    val uiTheme by session.uiTheme.collectAsState()
+    val navStyle by session.navStyle.collectAsState()
+    val darkOverride by session.darkOverride.collectAsState()
     val drafts by repository.observeDrafts().collectAsState(initial = emptyMap())
     val outbox by repository.observeOutbox().collectAsState(initial = emptyList())
     val connected by repository.observeConnected().collectAsState(initial = false)
@@ -403,15 +405,9 @@ internal fun MirrorSettingsScreen(
                             uiTheme = uiTheme,
                             navStyle = navStyle,
                             fxMode = prefs.fxWebglMode,
-                            onColorMode = { value ->
-                                CoroutineScope(Dispatchers.IO).launch { runCatching { repository.setDarkOverride(value) } }
-                            },
-                            onUiTheme = { value ->
-                                CoroutineScope(Dispatchers.IO).launch { runCatching { repository.setUiTheme(value) } }
-                            },
-                            onNavStyle = { value ->
-                                CoroutineScope(Dispatchers.IO).launch { runCatching { repository.setNavStyle(value) } }
-                            },
+                            onColorMode = { value -> session.setDarkOverride(value) },
+                            onUiTheme = { value -> session.setUiTheme(value) },
+                            onNavStyle = { value -> session.setNavStyle(value) },
                             onFxMode = { savePrefs(WirePulsePrefs(fxWebglMode = it)) },
                         )
                         SettingsSection.Chat -> ChatSection(
@@ -420,12 +416,9 @@ internal fun MirrorSettingsScreen(
                             drafts = drafts.size,
                             outbox = outbox.size,
                             onPrefs = { savePrefs(it) },
-                            onListFilter = { value ->
-                                CoroutineScope(Dispatchers.IO).launch { runCatching { repository.setChatsListFilter(value) } }
-                            },
+                            onListFilter = { value -> session.setChatsListFilter(value) },
                         )
                         SettingsSection.Notifications -> NotificationsSection(
-                            repository = repository,
                             prefs = prefs,
                             soundOn = soundOn,
                             hapticsOn = hapticsOn,
@@ -433,19 +426,11 @@ internal fun MirrorSettingsScreen(
                             quietStart = quietStart,
                             quietEnd = quietEnd,
                             quietNow = quietNow,
-                            onSoundOn = { value ->
-                                CoroutineScope(Dispatchers.IO).launch { runCatching { repository.setSoundOn(value) } }
-                            },
+                            onSoundOn = { value -> session.setSoundOn(value) },
                             onPrefs = { savePrefs(it) },
-                            onQuietOn = { value ->
-                                CoroutineScope(Dispatchers.IO).launch { runCatching { repository.setQuietHoursOn(value) } }
-                            },
-                            onQuietStart = { value ->
-                                CoroutineScope(Dispatchers.IO).launch { runCatching { repository.setQuietStart(value) } }
-                            },
-                            onQuietEnd = { value ->
-                                CoroutineScope(Dispatchers.IO).launch { runCatching { repository.setQuietEnd(value) } }
-                            },
+                            onQuietOn = { value -> session.setQuietHoursOn(value) },
+                            onQuietStart = { value -> session.setQuietStart(value) },
+                            onQuietEnd = { value -> session.setQuietEnd(value) },
                         )
                         SettingsSection.Privacy -> PrivacySection(repository, prefs) { savePrefs(it) }
                         SettingsSection.Realtime -> RealtimeSection(repository, connected, presence.size)
@@ -453,9 +438,7 @@ internal fun MirrorSettingsScreen(
                             prefs = prefs,
                             hapticsOn = hapticsOn,
                             onPrefs = { savePrefs(it) },
-                            onHaptics = { value ->
-                                CoroutineScope(Dispatchers.IO).launch { runCatching { repository.setHapticsOn(value) } }
-                            },
+                            onHaptics = { value -> session.setHapticsOn(value) },
                         )
                         SettingsSection.Data -> DataSection(
                             repository = repository,
@@ -1373,7 +1356,6 @@ private fun ChatSection(
 
 @Composable
 private fun NotificationsSection(
-    repository: PulseRepository,
     prefs: ResolvedPrefs,
     soundOn: Boolean,
     hapticsOn: Boolean,
@@ -1568,7 +1550,8 @@ private fun PrivacySection(
     LaunchedEffect(showBlocked) {
         if (showBlocked) {
             loadingBlocks = true
-            blocks = runCatching { repository.blockedAccounts() }.getOrNull() ?: emptyList()
+            blocks = runCatching { repository.blockedAccounts() }
+                .getOrNull()?.getOrNull() ?: emptyList()
             loadingBlocks = false
         }
     }
@@ -1686,7 +1669,8 @@ private fun PrivacySection(
                                     busyId = account.id
                                     CoroutineScope(Dispatchers.IO).launch {
                                         runCatching { repository.unblock(account.id) }
-                                        blocks = runCatching { repository.blockedAccounts() }.getOrDefault(blocks)
+                                        blocks = runCatching { repository.blockedAccounts() }
+                                            .getOrNull()?.getOrNull() ?: blocks
                                         busyId = null
                                     }
                                 }

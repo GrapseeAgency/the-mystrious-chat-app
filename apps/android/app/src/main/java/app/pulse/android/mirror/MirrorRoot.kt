@@ -568,6 +568,7 @@ fun MirrorRoot(
         if (settingsOpen) {
             MirrorSettingsScreen(
                 repository = repository,
+                session = session,
                 viewerId = viewerId.orEmpty(),
                 onEditProfile = {
                     settingsOpen = false
