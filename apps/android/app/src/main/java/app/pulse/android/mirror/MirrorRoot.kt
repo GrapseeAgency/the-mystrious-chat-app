@@ -356,6 +356,10 @@ fun MirrorRoot(
                         onSaved = { tab = MirrorTab.Profile },
                         onStories = { composerOpen = true },
                         onSettings = { tab = MirrorTab.Profile },
+                        // web kebab Appearance: toggleTheme(); the native mirror is
+                        // dark-locked, so the row routes to the settings (Profile)
+                        // surface until a light engine exists - a real action, never dead.
+                        onAppearance = { tab = MirrorTab.Profile },
                         onDismiss = { kebabOpen = false },
                     )
                 }

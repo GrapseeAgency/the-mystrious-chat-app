@@ -3,6 +3,8 @@ package app.pulse.android.mirror
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -346,6 +349,9 @@ internal fun MirrorNewChatSheet(
  * labelled sections (ACTIONS / BROWSE / SYSTEM) with trailing counts, every
  * row wired to a real gateway-backed action. Dark ember dropdown (#1c1610/95,
  * rounded-16, hairline border, 240dp min width) exactly like KEBAB_CONTENT_CLS.
+ * R68 - the web menu is scrollable (`max-h-[min(70vh,560px)] overflow-y-auto`)
+ * and carries 15 rows; the column now clamps to min(70vh, 560dp) and scrolls,
+ * and the Appearance row (Sun + "Dark") closes the gap to the web's full set.
  */
 internal fun MirrorKebabMenu(
     archivedCount: Int,
@@ -366,6 +372,7 @@ internal fun MirrorKebabMenu(
     onSaved: () -> Unit,
     onStories: () -> Unit,
     onSettings: () -> Unit,
+    onAppearance: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Box(
@@ -379,15 +386,19 @@ internal fun MirrorKebabMenu(
                 .statusBarsPadding()
                 .padding(top = 62.dp, end = 12.dp)
                 .widthIn(min = 240.dp)
+                // web KEBAB_CONTENT_CLS: max-h-[min(70vh,560px)] overflow-y-auto
+                .heightIn(max = minOf(LocalConfiguration.current.screenHeightDp * 0.7f, 560f).dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color(0xF21C1610))
                 .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
+                .verticalScroll(rememberScrollState())
                 .padding(6.dp)
                 .clickable(enabled = false) {},
         ) {
             MirrorKebabLabel("Actions")
             MirrorKebabItem("LSearch", "Search", onClick = { onDismiss(); onSearch() })
-            MirrorKebabItem("LMessageCircle", "New chat", onClick = { onDismiss(); onNewChat() })
+            // web icon: PulseCompose = bold(PencilSimple)
+            MirrorKebabItem("PPencilSimpleBold", "New chat", onClick = { onDismiss(); onNewChat() })
             MirrorKebabItem("LUsers", "New group", onClick = { onDismiss(); onNewGroup() })
             MirrorKebabItem("LTicket", "Join with code", onClick = { onDismiss(); onJoinCode() })
             Spacer(Modifier.height(1.dp).fillMaxWidth().background(MirrorArt.Hairline))
@@ -404,6 +415,9 @@ internal fun MirrorKebabMenu(
             MirrorKebabItem("LBookmark", "Saved", onClick = { onDismiss(); onSaved() })
             MirrorKebabItem("LCircleDashed", "Stories", onClick = { onDismiss(); onStories() })
             MirrorKebabItem("LSettings", "Settings", onClick = { onDismiss(); onSettings() })
+            // web: Sun/Moon + KebabTrailing(isDarkTheme ? 'Dark' : 'Light'); the
+            // native mirror is dark-locked, so the row renders the web's dark state.
+            MirrorKebabItem("LSun", "Appearance", trailing = "Dark", onClick = { onDismiss(); onAppearance() })
         }
     }
 }
@@ -428,16 +442,25 @@ private fun MirrorKebabItem(
     trailing: String = "",
     onClick: () -> Unit,
 ) {
+    // web KEBAB_ITEM_CLS data-[highlighted]:bg-white/[0.07] - the row lights up
+    // while pressed, no ripple (the web has no ripples, only bg tints).
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .background(if (pressed) Color.White.copy(alpha = 0.07f) else Color.Transparent)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        MirrorLucideIcon(glyph, tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
+        if (glyph.startsWith("P")) {
+            MirrorPhosphorIcon(glyph, tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
+        } else {
+            MirrorLucideIcon(glyph, tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
+        }
         Text(label, color = MirrorArt.Text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
         if (trailing.isNotEmpty()) {
             Spacer(Modifier.weight(1f))
