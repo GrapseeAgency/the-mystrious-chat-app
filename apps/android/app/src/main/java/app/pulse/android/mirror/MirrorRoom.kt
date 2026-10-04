@@ -8,9 +8,16 @@ import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -50,7 +57,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -181,28 +190,83 @@ internal fun MirrorRoom(
     isGroup: Boolean,
     groupId: String,
     subtitle: String,
+    typers: List<String>,
     messages: List<Message>,
     viewerId: String,
     viewerName: String,
     memberNames: List<String>,
     members: List<ConversationMember>,
     phrases: List<QuickPhrase>,
+    muted: Boolean,
+    ttlSeconds: Int,
     onBack: () -> Unit,
     onSend: (String) -> Unit,
     onSendImage: (String) -> Unit,
+    onSendDocument: (String, String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
     onAddPhrase: (String) -> Unit,
     onDeletePhrase: (String) -> Unit,
+    onTyping: (Boolean) -> Unit,
+    onCall: (video: Boolean) -> Unit,
+    onRoomInfo: () -> Unit,
+    onMuteChoice: (String?) -> Unit,
+    onTtlChoice: (Int) -> Unit,
+    onUnpinMessage: (String) -> Unit,
+    fetchPinned: suspend () -> List<Message>,
 ) {
     var draft by remember { mutableStateOf("") }
     var composerFocused by remember { mutableStateOf(false) }
     var phraseManagerOpen by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var trayOpen by remember { mutableStateOf(false) }
+    var roomSearchOpen by remember { mutableStateOf(false) }
+    var pinnedOpen by remember { mutableStateOf(false) }
+    var muteStripOpen by remember { mutableStateOf(false) }
+    var ttlStripOpen by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val entries = remember(messages) { buildRoomEntries(messages) }
+    // R64 - the web typing label: DM = "typing…", groups roll names
+    // (chat-room.tsx typerLabel verbatim) and it WINS over the subtitle.
+    val typerLabel = when {
+        typers.isEmpty() -> ""
+        !isGroup -> "typing…"
+        typers.size == 1 -> "${typers[0]} is typing…"
+        typers.size == 2 -> "${typers[0]} and ${typers[1]} are typing…"
+        else -> "${typers.size} people are typing…"
+    }
+    // R64 - typing pump: throttled to one emit per 1.5s while typing
+    // (web signalTyping), cancelled on send / blur / draft clear.
+    var lastTypingSentAt by remember { mutableStateOf(0L) }
+    var typingActive by remember { mutableStateOf(false) }
+    fun pumpTyping(text: String) {
+        val now = System.currentTimeMillis()
+        if (text.isNotBlank()) {
+            if (!typingActive || now - lastTypingSentAt >= 1_500L) {
+                typingActive = true
+                lastTypingSentAt = now
+                onTyping(true)
+            }
+        } else if (typingActive) {
+            typingActive = false
+            lastTypingSentAt = 0L
+            onTyping(false)
+        }
+    }
+    fun stopTyping() {
+        if (typingActive) {
+            typingActive = false
+            lastTypingSentAt = 0L
+            onTyping(false)
+        }
+    }
 
     LaunchedEffect(messages.size) {
         if (entries.isNotEmpty()) listState.animateScrollToItem(entries.size - 1)
+    }
+    // Leaving the room always cancels the typing signal (web unmount parity).
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { stopTyping() }
     }
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -210,6 +274,15 @@ internal fun MirrorRoom(
             CoroutineScope(Dispatchers.IO).launch {
                 val dataUrl = mirrorUriToDataUrl(context, uri)
                 if (dataUrl != null) onSendImage(dataUrl)
+            }
+        }
+    }
+    // R64 - attachments tray document pick: any file → base64 data URL → upload.
+    val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            CoroutineScope(Dispatchers.IO).launch {
+                val doc = mirrorUriToDocumentDataUrl(context, uri)
+                if (doc != null) onSendDocument(doc.first, doc.second)
             }
         }
     }
@@ -240,11 +313,12 @@ internal fun MirrorRoom(
                 ) {
                     MirrorLucideIcon("LChevronLeft", tint = MirrorArt.TextSoft, modifier = Modifier.size(24.dp))
                 }
-                // ONE tap target: 40dp avatar + title + subtitle
+                // ONE tap target: 40dp avatar + title + subtitle → room info
                 Row(
                     Modifier
                         .weight(1f)
                         .clip(CircleShape)
+                        .clickable(onClick = onRoomInfo)
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -270,20 +344,23 @@ internal fun MirrorRoom(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        // web: the typing label wins and renders italic accent-2
                         Text(
-                            subtitle,
-                            color = MirrorArt.Dim,
+                            if (typerLabel.isNotEmpty()) typerLabel else subtitle,
+                            color = if (typerLabel.isNotEmpty()) MirrorArt.Accent2 else MirrorArt.Dim,
                             fontSize = 11.sp,
                             lineHeight = 13.sp,
+                            fontWeight = if (typerLabel.isNotEmpty()) FontWeight.Medium else FontWeight.Normal,
+                            fontStyle = if (typerLabel.isNotEmpty()) FontStyle.Italic else FontStyle.Normal,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
                 // EXACTLY three bare icons: video, audio, kebab (44dp ghosts, size-5)
-                MirrorRoomHeaderIcon("LVideo")
-                MirrorRoomHeaderIcon("LPhone")
-                MirrorRoomHeaderIcon("LKebab")
+                MirrorRoomHeaderIcon("LVideo") { onCall(true) }
+                MirrorRoomHeaderIcon("LPhone") { onCall(false) }
+                MirrorRoomHeaderIcon("LKebab") { menuOpen = !menuOpen }
             }
             Box(
                 Modifier
@@ -362,6 +439,55 @@ internal fun MirrorRoom(
                     }
                 }
             }
+            // R64 - the web typing indicator: 24dp avatar + art-bubble-in pill
+            // whose borderRadius breathes 1.25rem → 0.875rem → 1.25rem (0.72s
+            // loop) around three squash-and-stretch dots. Shows ONLY when
+            // someone else is typing (web chat-room.tsx:4684).
+            if (typers.isNotEmpty()) {
+                item(key = "room-typing-bubble") {
+                    Row(
+                        Modifier.padding(top = 6.dp),
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        val typerName = typers.first()
+                        val typerColor = members.firstOrNull { it.name == typerName }?.color
+                        MirrorAvatar(
+                            name = typerName,
+                            color = typerColor,
+                            isGroup = false,
+                            groupId = "",
+                            online = false,
+                            showPresence = false,
+                            sizeDp = 24,
+                            cornerDp = 12,
+                        )
+                        val breathe = rememberInfiniteTransition(label = "bubbleBreathe")
+                        val radius by breathe.animateFloat(
+                            initialValue = 20f,
+                            targetValue = 20f,
+                            animationSpec = infiniteRepeatable(
+                                animation = keyframes {
+                                    durationMillis = 720
+                                    20f at 0
+                                    14f at 360
+                                    20f at 720
+                                },
+                            ),
+                            label = "bubbleRadius",
+                        )
+                        Box(
+                            Modifier
+                                .graphicsLayer { alpha = 1f }
+                                .clip(RoundedCornerShape(radius.dp))
+                                .background(MirrorArt.BubbleIn)
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                        ) {
+                            MirrorRoomTypingDots()
+                        }
+                    }
+                }
+            }
         }
 
         // F-MS-29 quick phrases rail: glass chips ABOVE the composer; tap
@@ -424,11 +550,14 @@ internal fun MirrorRoom(
                     .clip(CircleShape)
                     .background(MirrorArt.White7)
                     .border(1.dp, MirrorArt.Hairline, CircleShape)
+                    // web focus hairline: ring-2 ring-inset ring-accent/45 over
+                    // the WHOLE pill (R64 fix - the old drawCircle painted a
+                    // floating circle INSIDE the pill instead of the inset ring).
                     .drawBehind {
                         if (composerFocused) {
-                            drawCircle(
+                            drawRoundRect(
                                 color = Color(0x73FF7A3D), // accent /45
-                                radius = size.minDimension / 2f - 1.dp.toPx(),
+                                cornerRadius = CornerRadius(size.height / 2f, size.height / 2f),
                                 style = Stroke(width = 2.dp.toPx()),
                             )
                         }
@@ -437,17 +566,16 @@ internal fun MirrorRoom(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                // paperclip: size-9 circle, size-5 dim glyph - opens photo pick
+                // paperclip: size-9 circle, size-5 dim glyph - toggles the tray
                 Box(
                     Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .clickable {
-                            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        },
+                        .background(if (trayOpen) MirrorArt.White10 else Color.Transparent)
+                        .clickable { trayOpen = !trayOpen },
                     contentAlignment = Alignment.Center,
                 ) {
-                    MirrorLucideIcon("LPaperclip", tint = MirrorArt.Dim, modifier = Modifier.size(20.dp))
+                    MirrorLucideIcon("LPaperclip", tint = if (trayOpen) MirrorArt.Text else MirrorArt.Dim, modifier = Modifier.size(20.dp))
                 }
                 Box(Modifier.weight(1f).padding(bottom = 8.dp)) {
                     if (draft.isBlank()) {
@@ -455,7 +583,10 @@ internal fun MirrorRoom(
                     }
                     BasicTextField(
                         value = draft,
-                        onValueChange = { draft = it },
+                        onValueChange = {
+                            draft = it
+                            pumpTyping(it)
+                        },
                         textStyle = TextStyle(
                             color = MirrorArt.Text,
                             fontSize = 15.sp,
@@ -464,7 +595,10 @@ internal fun MirrorRoom(
                         cursorBrush = androidx.compose.ui.graphics.SolidColor(MirrorArt.Accent),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .onFocusChanged { composerFocused = it.isFocused },
+                            .onFocusChanged {
+                                composerFocused = it.isFocused
+                                if (!it.isFocused) stopTyping()
+                            },
                         maxLines = 5,
                     )
                 }
@@ -481,21 +615,25 @@ internal fun MirrorRoom(
                     MirrorLucideIcon("LCamera", tint = MirrorArt.Dim, modifier = Modifier.size(20.dp))
                 }
             }
-            // art-fab: 44dp DARK GLASS always - plus (photo pick) becomes the
-            // send plane the moment the draft holds text
+            // art-fab: 44dp DARK GLASS always - plus (opens the tray) becomes
+            // the send plane the moment the draft holds text; rotates 45°
+            // while the tray is open (web parity).
             val hasText = draft.isNotBlank()
             Box(
                 Modifier
                     .size(44.dp)
+                    .graphicsLayer { rotationZ = if (!hasText && trayOpen) 45f else 0f }
                     .clip(CircleShape)
                     .background(MirrorArt.White7)
                     .border(1.dp, MirrorArt.Hairline, CircleShape)
                     .clickable {
                         if (hasText) {
+                            stopTyping()
                             onSend(draft)
                             draft = ""
+                            trayOpen = false
                         } else {
-                            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            trayOpen = !trayOpen
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -509,6 +647,145 @@ internal fun MirrorRoom(
         }
     }
 
+    // R64 - the attachments tray: web CREATE grid subset that is REAL here
+    // (photo pick, document pick + upload, quick-phrase manager). No dead tiles.
+    if (trayOpen) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clickable(onClick = { trayOpen = false }),
+        ) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xF21C1610))
+                    .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(20.dp))
+                    .padding(10.dp)
+                    .clickable(enabled = false) {},
+            ) {
+                Text(
+                    "CREATE",
+                    color = MirrorArt.Faint,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MirrorTrayTile("LImagePlus", "Photo", "Camera roll or gallery") {
+                        trayOpen = false
+                        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
+                    MirrorTrayTile("LFile", "Document", "PDF, TXT, CSV, ZIP") {
+                        trayOpen = false
+                        pickDocument.launch("*/*")
+                    }
+                    MirrorTrayTile("LMessageCircle", "Quick phrase", "Save lines you send often") {
+                        trayOpen = false
+                        phraseManagerOpen = true
+                    }
+                }
+            }
+        }
+    }
+
+    // R64 - the room kebab: the web Conversation menu (chat-room.tsx R54-c)
+    // with every row wired to a real action. Dark ember dropdown, scale-in.
+    if (menuOpen) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clickable(onClick = { menuOpen = false }),
+        ) {
+            Column(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(top = 60.dp, end = 8.dp)
+                    .widthIn(min = 224.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xF21C1610))
+                    .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
+                    .padding(6.dp)
+                    .clickable(enabled = false) {},
+            ) {
+                MirrorRoomMenuItem("LInfo", "Room info") {
+                    menuOpen = false
+                    onRoomInfo()
+                }
+                MirrorRoomMenuItem("LSearch", "Search in conversation") {
+                    menuOpen = false
+                    roomSearchOpen = true
+                }
+                MirrorRoomMenuItem("LPin", "Pinned messages", iconRotate = 45f) {
+                    menuOpen = false
+                    pinnedOpen = true
+                }
+                if (muteStripOpen) {
+                    MirrorMenuStrip("Mute for", listOf("8h", "1w", "Always")) { choice ->
+                        muteStripOpen = false
+                        menuOpen = false
+                        onMuteChoice(when (choice) {
+                            "8h" -> "8h"
+                            "1w" -> "1w"
+                            else -> "always"
+                        })
+                    }
+                } else {
+                    MirrorRoomMenuItem("LBellOff", if (muted) "Unmute notifications" else "Mute notifications") {
+                        if (muted) {
+                            menuOpen = false
+                            onMuteChoice(null)
+                        } else {
+                            muteStripOpen = true
+                        }
+                    }
+                }
+                if (ttlStripOpen) {
+                    MirrorMenuStrip("New messages vanish after", listOf("Off", "24h", "7d", "30d")) { choice ->
+                        ttlStripOpen = false
+                        menuOpen = false
+                        onTtlChoice(when (choice) {
+                            "24h" -> 86_400
+                            "7d" -> 604_800
+                            "30d" -> 2_592_000
+                            else -> 0
+                        })
+                    }
+                } else {
+                    MirrorRoomMenuItem(
+                        "LTimer",
+                        "Disappearing messages",
+                        trailing = if (ttlSeconds > 0) {
+                            when (ttlSeconds) { 86_400 -> "24h"; 604_800 -> "7d"; else -> "30d" }
+                        } else "",
+                    ) {
+                        ttlStripOpen = true
+                    }
+                }
+                MirrorRoomMenuItem("LUserPlus", if (isGroup) "Manage group" else "Manage chat") {
+                    menuOpen = false
+                    onRoomInfo()
+                }
+            }
+        }
+    }
+
+    // R64 - search in conversation: real filter over the cached room messages.
+    if (roomSearchOpen) {
+        MirrorRoomSearchSheet(messages = messages, onDismiss = { roomSearchOpen = false })
+    }
+    // R64 - pinned messages: live server list with unpin.
+    if (pinnedOpen) {
+        MirrorPinnedSheet(
+            fetchPinned = fetchPinned,
+            onUnpin = onUnpinMessage,
+            onDismiss = { pinnedOpen = false },
+        )
+    }
+
     if (phraseManagerOpen) {
         MirrorPhraseManager(
             phrases = phrases,
@@ -519,12 +796,346 @@ internal fun MirrorRoom(
     }
 }
 
+/** One attachments-tray tile (web CREATE grid tile anatomy). */
 @Composable
-private fun MirrorRoomHeaderIcon(glyph: String) {
+private fun MirrorTrayTile(icon: String, label: String, hint: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .widthIn(max = 108.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MirrorArt.White7)
+            .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        MirrorLucideIcon(icon, tint = MirrorArt.Accent2, modifier = Modifier.size(18.dp))
+        Column {
+            Text(label, color = MirrorArt.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(hint, color = MirrorArt.Faint, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** Room kebab row (web ROOM_MENU_ITEM): 16dp accent-2 icon + 13.5px medium. */
+@Composable
+private fun MirrorRoomMenuItem(
+    icon: String,
+    label: String,
+    iconRotate: Float = 0f,
+    trailing: String = "",
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        MirrorLucideIcon(
+            icon,
+            tint = MirrorArt.Accent2,
+            modifier = Modifier
+                .size(16.dp)
+                .graphicsLayer { rotationZ = iconRotate },
+        )
+        Text(label, color = MirrorArt.Text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+        if (trailing.isNotEmpty()) {
+            Text(trailing, color = MirrorArt.Accent2, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/** Inline choice strip inside the menu (web mute-for / ttl presets). */
+@Composable
+private fun MirrorMenuStrip(label: String, choices: List<String>, onPick: (String) -> Unit) {
+    Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+        Text(
+            label,
+            color = MirrorArt.Faint,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (choice in choices) {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MirrorArt.White7)
+                        .clickable { onPick(choice) }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(choice, color = MirrorArt.TextSoft, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+/** Search-in-conversation sheet: real filter over the room's cached messages. */
+@Composable
+private fun MirrorRoomSearchSheet(messages: List<Message>, onDismiss: () -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val hits = remember(query, messages) {
+        if (query.isBlank()) emptyList()
+        else messages.filter { it.content.contains(query, ignoreCase = true) }.take(40)
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0x8C000000))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            Modifier
+                .padding(16.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xF21C1610))
+                .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
+                .padding(10.dp)
+                .clickable(enabled = false) {},
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .clip(CircleShape)
+                    .background(MirrorArt.White7)
+                    .border(1.dp, MirrorArt.Hairline, CircleShape)
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                MirrorLucideIcon("LSearch", tint = MirrorArt.Faint, modifier = Modifier.size(16.dp))
+                Box(Modifier.weight(1f)) {
+                    if (query.isBlank()) {
+                        Text("Search this conversation…", color = MirrorArt.Faint, fontSize = 14.sp)
+                    }
+                    BasicTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        singleLine = true,
+                        textStyle = TextStyle(color = MirrorArt.Text, fontSize = 14.sp),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(MirrorArt.Accent),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            Column(
+                Modifier
+                    .heightIn(max = 320.dp)
+                    .padding(top = 8.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                if (query.isNotBlank() && hits.isEmpty()) {
+                    Text("No matches in this conversation", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+                }
+                for (hit in hits) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+                        Text(
+                            hit.content,
+                            color = MirrorArt.TextSoft,
+                            fontSize = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            MirrorRoomStamp(hit.createdAt),
+                            color = MirrorArt.Faint,
+                            fontSize = 10.sp,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Pinned messages sheet: the live server pins with unpin actions. */
+@Composable
+private fun MirrorPinnedSheet(
+    fetchPinned: suspend () -> List<Message>,
+    onUnpin: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var pinned by remember { mutableStateOf<List<Message>?>(null) }
+    LaunchedEffect(Unit) {
+        pinned = runCatching { fetchPinned() }.getOrDefault(emptyList())
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0x8C000000))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            Modifier
+                .padding(16.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xF21C1610))
+                .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
+                .padding(10.dp)
+                .clickable(enabled = false) {},
+        ) {
+            Text(
+                "PINNED MESSAGES",
+                color = MirrorArt.Faint,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            )
+            val list = pinned
+            when {
+                list == null -> Text("Loading pins…", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+                list.isEmpty() -> Text("Nothing pinned yet", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+                else -> Column(
+                    Modifier
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    for (message in list) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    message.content.ifBlank { "Photo" },
+                                    color = MirrorArt.TextSoft,
+                                    fontSize = 13.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(MirrorRoomStamp(message.createdAt), color = MirrorArt.Faint, fontSize = 10.sp)
+                            }
+                            Box(
+                                Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onUnpin(message.id) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                MirrorLucideIcon("LPinOff", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Room typing dots: 6dp squash-and-stretch (web TypingDots verbatim). */
+@Composable
+private fun MirrorRoomTypingDots() {
+    Row(
+        modifier = Modifier.padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        for (i in 0..2) {
+            val transition = rememberInfiniteTransition(label = "roomTyper$i")
+            val y by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 0f,
+                animationSpec = infiniteRepeatable(
+                    animation = keyframes {
+                        durationMillis = 920
+                        0f at 0
+                        -4f at 350
+                        -4f at 550
+                        0f at 800
+                    },
+                    initialStartOffset = StartOffset(i * 140),
+                ),
+                label = "roomTyperY$i",
+            )
+            val scaleY by transition.animateFloat(
+                initialValue = 1f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = keyframes {
+                        durationMillis = 920
+                        1f at 0
+                        1.55f at 350
+                        1.35f at 550
+                        0.7f at 800
+                        1f at 920
+                    },
+                    initialStartOffset = StartOffset(i * 140),
+                ),
+                label = "roomTyperSY$i",
+            )
+            val scaleX by transition.animateFloat(
+                initialValue = 1f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = keyframes {
+                        durationMillis = 920
+                        1f at 0
+                        0.8f at 350
+                        0.9f at 550
+                        1.2f at 800
+                        1f at 920
+                    },
+                    initialStartOffset = StartOffset(i * 140),
+                ),
+                label = "roomTyperSX$i",
+            )
+            val alpha by transition.animateFloat(
+                initialValue = 0.45f,
+                targetValue = 0.45f,
+                animationSpec = infiniteRepeatable(
+                    animation = keyframes {
+                        durationMillis = 920
+                        0.45f at 0
+                        1f at 350
+                        0.95f at 550
+                        0.5f at 800
+                        0.45f at 920
+                    },
+                    initialStartOffset = StartOffset(i * 140),
+                ),
+                label = "roomTyperA$i",
+            )
+            Box(
+                Modifier
+                    .offset(y = y.dp)
+                    .size(6.dp)
+                    .graphicsLayer {
+                        this.scaleY = scaleY
+                        this.scaleX = scaleX
+                        this.alpha = alpha
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                    }
+                    .clip(CircleShape)
+                    .background(Color(0xFFA1A1AA)),
+            )
+        }
+    }
+}
+
+private fun MirrorRoomStamp(iso: String): String =
+    runCatching { ROOM_STAMP.format(Instant.parse(iso)) }.getOrDefault("")
+
+@Composable
+private fun MirrorRoomHeaderIcon(glyph: String, onClick: () -> Unit = {}) {
     Box(
         Modifier
             .size(44.dp)
-            .clip(CircleShape),
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         MirrorLucideIcon(glyph, tint = MirrorArt.TextSoft, modifier = Modifier.size(20.dp))
@@ -1146,6 +1757,23 @@ private suspend fun mirrorUriToDataUrl(context: Context, uri: Uri): String? = wi
         "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
     }.getOrNull()
 }
+
+/**
+ * R64 - document pick → base64 data URL + display name (attachments tray
+ * Document tile). Reads ANY file the picker returns; the upload route is
+ * mime-agnostic so PDF/TXT/CSV/ZIP all ride the same POST /api/uploads.
+ */
+private suspend fun mirrorUriToDocumentDataUrl(context: Context, uri: Uri): Pair<String, String>? =
+    withContext(Dispatchers.IO) {
+        runCatching {
+            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: return@runCatching null
+            if (bytes.isEmpty() || bytes.size > 12 * 1024 * 1024) return@runCatching null
+            val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+            val name = uri.lastPathSegment?.substringAfterLast('/')?.take(120) ?: "document"
+            "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP) to name
+        }.getOrNull()
+    }
 
 /** HH:mm cluster stamp (en-US h23 parity - "08:16"). */
 internal fun MirrorRoomTimeLabel(iso: String): String {

@@ -1,8 +1,16 @@
 package app.pulse.android.mirror
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -92,6 +101,10 @@ internal data class ConversationRow(
     val pinned: Boolean,
     val muted: Boolean,
     val streak: Int = 0,
+    // R64 - web row affordances the mirror was missing
+    val typing: Boolean = false,
+    val draft: String? = null,
+    val manualUnread: Boolean = false,
 )
 
 private val TIME_FORMAT: DateTimeFormatter =
@@ -175,6 +188,8 @@ internal fun MirrorHome(
     onFolder: (String?) -> Unit,
     onStory: (MirrorStoryCard) -> Unit,
     onOpenConversation: (ConversationRow) -> Unit,
+    onRowOptions: (ConversationRow) -> Unit,
+    typingIds: Set<String> = emptySet(),
 ) {
     val maxW = 560.dp
     val unreadTotal = conversations.sumOf { it.unread }
@@ -349,7 +364,11 @@ internal fun MirrorHome(
                     .widthIn(max = maxW)
                     .padding(horizontal = 12.dp),
             ) {
-                MirrorConversationRow(row = row, onOpen = { onOpenConversation(row) })
+                MirrorConversationRow(
+                    row = if (row.id in typingIds) row.copy(typing = true) else row,
+                    onOpen = { onOpenConversation(row) },
+                    onOptions = { onRowOptions(row) },
+                )
             }
         }
         if (shown.isEmpty()) {
@@ -574,18 +593,28 @@ private fun MirrorFolderChipCell(folder: MirrorFolderChip, active: Boolean, onCl
 }
 
 /**
- * Artboard conversation row - web ArtConversationRow: rounded-16 px-2 py-2.5
- * gap-3, 50dp avatar, L1 name + streak chip + time, L2 preview + pin/mute +
- * the signal-red 18dp art-badge. Press opens the room.
+ * Artboard conversation row - web ArtConversationRow (R64 re-audit, exact):
+ * px-1.5 wrapper + rounded-2xl px-2 py-2.5 gap-3 flat row, 50dp avatar,
+ * L1 = name 15 semibold baseline + [streak chip] + time 11 tabular
+ * (TextSoft semibold when unread, Faint otherwise); L2 = typing dots /
+ * Draft line / preview 13 Dim, then the rotated FILLED pin (size-3), the
+ * BellOff muted chip, and the FLAT signal-red 18dp art-badge (web R54-b
+ * replaced the old gradient pill with var(--art-red)). Long-press opens
+ * the web's ChatOptionsSheet rows; press opens the room.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MirrorConversationRow(row: ConversationRow, onOpen: () -> Unit) {
-    val hasUnread = row.unread > 0
+private fun MirrorConversationRow(
+    row: ConversationRow,
+    onOpen: () -> Unit,
+    onOptions: () -> Unit,
+) {
+    val hasUnread = row.unread > 0 || row.manualUnread
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onOpen)
+            .combinedClickable(onClick = onOpen, onLongClick = onOptions)
             .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -602,16 +631,17 @@ private fun MirrorConversationRow(row: ConversationRow, onOpen: () -> Unit) {
             cornerDp = if (row.isGroup) 14 else 25,
         )
         Column(Modifier.weight(1f)) {
-            // L1 - baseline row: name ... streak chip + time
+            // L1 - BASELINE row: name ... streak chip + time (web items-baseline)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     row.title,
                     color = MirrorArt.Text,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
+                    lineHeight = 20.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f, fill = false).alignByBaseline(),
                 )
                 Spacer(Modifier.weight(1f))
                 if (row.streak > 0) {
@@ -635,50 +665,111 @@ private fun MirrorConversationRow(row: ConversationRow, onOpen: () -> Unit) {
                     color = if (hasUnread) MirrorArt.TextSoft else MirrorArt.Faint,
                     fontSize = 11.sp,
                     fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier.alignByBaseline(),
                 )
             }
             Spacer(Modifier.height(2.dp))
-            // L2 - preview ... pin/mute + red badge
+            // L2 - typing | Draft | preview ... rotated pin + muted chip + flat red badge
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(
                     Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
-                    if (row.previewPrefix.isNotEmpty()) {
-                        Text(
-                            row.previewPrefix,
-                            color = MirrorArt.Faint,
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                        )
+                    when {
+                        row.typing -> {
+                            // web: 3 bouncing accent dots + italic typing… (accent-2)
+                            MirrorTypingDotsSmall()
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "typing…",
+                                color = MirrorArt.Accent2,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                fontStyle = FontStyle.Italic,
+                                maxLines = 1,
+                            )
+                        }
+                        !row.draft.isNullOrBlank() -> {
+                            MirrorLucideIcon("LPencilLine", tint = MirrorArt.Accent, modifier = Modifier.size(12.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "Draft:",
+                                color = MirrorArt.Accent2,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                row.draft!!, // captured for the smart-cast
+                                color = MirrorArt.Dim,
+                                fontSize = 13.sp,
+                                fontStyle = FontStyle.Italic,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        else -> {
+                            if (row.previewPrefix.isNotEmpty()) {
+                                Text(
+                                    row.previewPrefix,
+                                    color = MirrorArt.Faint,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                )
+                            }
+                            Text(
+                                row.preview,
+                                color = MirrorArt.Dim,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                // web: deleted tombstones render italic
+                                fontStyle = if (row.previewDeleted) FontStyle.Italic else FontStyle.Normal,
+                            )
+                        }
                     }
-                    Text(
-                        row.preview,
-                        color = MirrorArt.Dim,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        // web: deleted tombstones render italic
-                        fontStyle = if (row.previewDeleted) FontStyle.Italic else FontStyle.Normal,
-                    )
                 }
                 if (row.pinned) {
-                    MirrorLucideIcon("LPin", tint = MirrorArt.Faint, modifier = Modifier.size(12.dp))
+                    // web: Pin size-3 rotate-45 fill art-faint (rotated + FILLED)
+                    MirrorLucideIcon(
+                        "LPin",
+                        tint = MirrorArt.Faint,
+                        modifier = Modifier.size(12.dp).graphicsLayer { rotationZ = 45f },
+                        filled = true,
+                    )
                     Spacer(Modifier.width(6.dp))
                 }
                 if (row.muted) {
-                    MirrorLucideIcon("LVolumeX", tint = MirrorArt.Faint, modifier = Modifier.size(12.dp))
-                    Spacer(Modifier.width(6.dp))
+                    // web muted chip: BellOff size-3 in a white/[0.08] pill, count when unread
+                    Row(
+                        Modifier
+                            .clip(CircleShape)
+                            .background(if (hasUnread) MirrorArt.White10 else Color.Transparent)
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        MirrorLucideIcon("LBellOff", tint = MirrorArt.Faint, modifier = Modifier.size(12.dp))
+                        if (hasUnread) {
+                            Text(
+                                if (row.unread > 99) "99+" else row.unread.toString(),
+                                color = MirrorArt.TextSoft,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(4.dp))
                 }
-                if (hasUnread) {
-                    // web art-badge: h-[18px] min-w-[18px] px-1.5 rounded-full text-11 bold white
+                if (hasUnread && row.unread > 0) {
+                    // web R54-b art-badge: FLAT var(--art-red), h-18 min-w-18 px-1.5 text-11 bold
                     Box(
                         Modifier
                             .heightIn(min = 18.dp)
                             .widthIn(min = 18.dp)
                             .clip(CircleShape)
-                            .background(MirrorArt.BadgeGradient)
+                            .background(MirrorArt.Red)
                             .padding(horizontal = 6.dp),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -690,8 +781,63 @@ private fun MirrorConversationRow(row: ConversationRow, onOpen: () -> Unit) {
                             lineHeight = 18.sp,
                         )
                     }
+                } else if (hasUnread) {
+                    // manual mark-as-unread dot (web size-2.5 art-badge)
+                    Box(
+                        Modifier
+                            .padding(horizontal = 3.dp)
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(MirrorArt.Red),
+                    )
                 }
             }
+        }
+    }
+}
+
+/** The chat-list typing dots: 3 x 3.5dp accent dots, y bounce + opacity pulse. */
+@Composable
+internal fun MirrorTypingDotsSmall() {
+    Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+        for (i in 0..2) {
+            val transition = rememberInfiniteTransition(label = "listTyper$i")
+            val y by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 0f,
+                animationSpec = infiniteRepeatable(
+                    animation = keyframes {
+                        durationMillis = 900
+                        0f at 0 using LinearEasing
+                        -2.5f at 250 using LinearEasing
+                        0f at 500
+                    },
+                    initialStartOffset = StartOffset(i * 150),
+                ),
+                label = "listTyperY$i",
+            )
+            val alpha by transition.animateFloat(
+                initialValue = 0.45f,
+                targetValue = 0.45f,
+                animationSpec = infiniteRepeatable(
+                    animation = keyframes {
+                        durationMillis = 900
+                        0.45f at 0
+                        1f at 250
+                        0.45f at 500
+                    },
+                    initialStartOffset = StartOffset(i * 150),
+                ),
+                label = "listTyperA$i",
+            )
+            Box(
+                Modifier
+                    .offset(y = y.dp)
+                    .size(3.5.dp)
+                    .graphicsLayer { this.alpha = alpha }
+                    .clip(CircleShape)
+                    .background(MirrorArt.Accent),
+            )
         }
     }
 }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -44,6 +47,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.domain.model.CallLogEntry
 import app.pulse.domain.model.Channel
+import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.ConversationMember
+import app.pulse.domain.model.MentionItem
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseRepository
@@ -331,10 +337,31 @@ internal fun MirrorNewChatSheet(
 
 /** Home kebab menu - web KEBAB_CONTENT_CLS language, real actions only. */
 @Composable
+/**
+ * R64 - the home kebab menu as the web's chats-tab R54-c dropdown: three
+ * labelled sections (ACTIONS / BROWSE / SYSTEM) with trailing counts, every
+ * row wired to a real gateway-backed action. Dark ember dropdown (#1c1610/95,
+ * rounded-16, hairline border, 240dp min width) exactly like KEBAB_CONTENT_CLS.
+ */
 internal fun MirrorKebabMenu(
+    archivedCount: Int,
+    selfOpen: Boolean,
+    mentionCount: Int,
+    channelCount: Int,
     onSearch: () -> Unit,
+    onNewChat: () -> Unit,
+    onNewGroup: () -> Unit,
+    onJoinCode: () -> Unit,
+    onContacts: () -> Unit,
+    onCalls: () -> Unit,
+    onArchived: () -> Unit,
+    onNoteToSelf: () -> Unit,
+    onMentions: () -> Unit,
+    onChannels: () -> Unit,
+    onFolders: () -> Unit,
+    onSaved: () -> Unit,
     onStories: () -> Unit,
-    onProfile: () -> Unit,
+    onSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Box(
@@ -351,26 +378,52 @@ internal fun MirrorKebabMenu(
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color(0xF21C1610))
                 .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
-                .padding(6.dp),
+                .padding(6.dp)
+                .clickable(enabled = false) {},
         ) {
-            MirrorKebabItem("LSearch", "Search", onClick = {
-                onDismiss()
-                onSearch()
-            })
-            MirrorKebabItem("LCamera", "Stories", onClick = {
-                onDismiss()
-                onStories()
-            })
-            MirrorKebabItem("LChevronRight", "Profile", onClick = {
-                onDismiss()
-                onProfile()
-            })
+            MirrorKebabLabel("Actions")
+            MirrorKebabItem("LSearch", "Search", onClick = { onDismiss(); onSearch() })
+            MirrorKebabItem("LMessageCircle", "New chat", onClick = { onDismiss(); onNewChat() })
+            MirrorKebabItem("LUsers", "New group", onClick = { onDismiss(); onNewGroup() })
+            MirrorKebabItem("LTicket", "Join with code", onClick = { onDismiss(); onJoinCode() })
+            Spacer(Modifier.height(1.dp).fillMaxWidth().background(MirrorArt.Hairline))
+            MirrorKebabLabel("Browse")
+            MirrorKebabItem("LBookUser", "Contacts", onClick = { onDismiss(); onContacts() })
+            MirrorKebabItem("LPhone", "Calls", onClick = { onDismiss(); onCalls() })
+            MirrorKebabItem("LArchive", "Archived", trailing = archivedCount.toString(), onClick = { onDismiss(); onArchived() })
+            MirrorKebabItem("LNotebookPen", "Note to Self", trailing = if (selfOpen) "Open" else "New", onClick = { onDismiss(); onNoteToSelf() })
+            MirrorKebabItem("LAtSign", "Mentions", trailing = if (mentionCount > 0) (if (mentionCount > 99) "99+" else mentionCount.toString()) else "", onClick = { onDismiss(); onMentions() })
+            MirrorKebabItem("LRadio", "Channels", trailing = channelCount.toString(), onClick = { onDismiss(); onChannels() })
+            MirrorKebabItem("LFolderPlus", "Folders", onClick = { onDismiss(); onFolders() })
+            Spacer(Modifier.height(1.dp).fillMaxWidth().background(MirrorArt.Hairline))
+            MirrorKebabLabel("System")
+            MirrorKebabItem("LBookmark", "Saved", onClick = { onDismiss(); onSaved() })
+            MirrorKebabItem("LCircleDashed", "Stories", onClick = { onDismiss(); onStories() })
+            MirrorKebabItem("LSettings", "Settings", onClick = { onDismiss(); onSettings() })
         }
     }
 }
 
+/** Section label (web KEBAB_LABEL_CLS): 10px bold uppercase art-faint. */
 @Composable
-private fun MirrorKebabItem(glyph: String, label: String, onClick: () -> Unit) {
+private fun MirrorKebabLabel(text: String) {
+    Text(
+        text.uppercase(),
+        color = MirrorArt.Faint,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.4.sp,
+        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun MirrorKebabItem(
+    glyph: String,
+    label: String,
+    trailing: String = "",
+    onClick: () -> Unit,
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -382,6 +435,15 @@ private fun MirrorKebabItem(glyph: String, label: String, onClick: () -> Unit) {
     ) {
         MirrorLucideIcon(glyph, tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
         Text(label, color = MirrorArt.Text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
+        if (trailing.isNotEmpty()) {
+            Spacer(Modifier.weight(1f))
+            Text(
+                trailing,
+                color = MirrorArt.Faint,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 
@@ -675,6 +737,693 @@ private fun MirrorSheet(
             }
             Spacer(Modifier.height(12.dp))
             content()
+        }
+    }
+}
+
+// R64 - the web kebab menu destinations, native and REAL =========================
+
+private const val SHEET_MAX = 380
+
+/** Scrollable sheet body wrapper so long lists never overflow the panel. */
+@Composable
+private fun MirrorSheetScroll(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .heightIn(max = SHEET_MAX.dp)
+            .verticalScroll(rememberScrollState()),
+        content = content,
+    )
+}
+
+/** Search field used by the picker sheets (same pill language as the home). */
+@Composable
+private fun MirrorSheetSearch(query: String, placeholder: String, onQuery: (String) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .clip(CircleShape)
+            .background(MirrorArt.White7)
+            .border(1.dp, MirrorArt.Hairline, CircleShape)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        MirrorLucideIcon("LSearch", tint = MirrorArt.Faint, modifier = Modifier.size(16.dp))
+        Box(Modifier.weight(1f)) {
+            if (query.isBlank()) {
+                Text(placeholder, color = MirrorArt.Faint, fontSize = 14.sp)
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQuery,
+                singleLine = true,
+                textStyle = TextStyle(color = MirrorArt.Text, fontSize = 14.sp),
+                cursorBrush = SolidColor(MirrorArt.Accent),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/** Contacts: real users() search; tap opens (creates) the DM. */
+@Composable
+internal fun MirrorContactsSheet(
+    repository: PulseRepository,
+    onOpened: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var users by remember { mutableStateOf<List<User>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    LaunchedEffect(query) {
+        loading = true
+        delay(180)
+        users = repository.users(query.trim()).getOrDefault(emptyList())
+        loading = false
+    }
+    MirrorSheet(title = "Contacts", onDismiss = onDismiss) {
+        MirrorSheetSearch(query, "Search people…", onQuery = { query = it })
+        Spacer(Modifier.height(10.dp))
+        MirrorSheetScroll {
+            if (!loading && users.isEmpty()) {
+                Text("Nobody here matches that", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+            }
+            for (user in users) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            CoroutineScope(Dispatchers.IO).launch {
+                                repository.createDm(user.id).onSuccess { convo ->
+                                    kotlinx.coroutines.withContext(Dispatchers.Main) { onOpened(convo.id) }
+                                }
+                            }
+                        }
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    MirrorAvatar(
+                        name = user.name,
+                        color = user.color,
+                        isGroup = false,
+                        groupId = "",
+                        online = false,
+                        showPresence = false,
+                        sizeDp = 40,
+                        cornerDp = 20,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(user.name, color = MirrorArt.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        if (!user.statusText.isNullOrBlank()) {
+                            Text(user.statusText, color = MirrorArt.Faint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** New group: real users() picker + createGroup (server needs 2+ others). */
+@Composable
+internal fun MirrorGroupSheet(
+    repository: PulseRepository,
+    onOpened: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
+    var users by remember { mutableStateOf<List<User>>(emptyList()) }
+    val picked = remember { mutableStateOf(setOf<String>()) }
+    var creating by remember { mutableStateOf(false) }
+    LaunchedEffect(query) {
+        delay(180)
+        users = repository.users(query.trim()).getOrDefault(emptyList())
+    }
+    MirrorSheet(title = "New group", onDismiss = onDismiss) {
+        MirrorSheetSearch(query, "Search people…", onQuery = { query = it })
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .clip(CircleShape)
+                .background(MirrorArt.White7)
+                .border(1.dp, MirrorArt.Hairline, CircleShape)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                textStyle = TextStyle(color = MirrorArt.Text, fontSize = 14.sp),
+                cursorBrush = SolidColor(MirrorArt.Accent),
+                modifier = Modifier.fillMaxWidth(),
+                decorationBox = { inner ->
+                    if (name.isBlank()) Text("Group name", color = MirrorArt.Faint, fontSize = 14.sp)
+                    inner()
+                },
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        MirrorSheetScroll {
+            for (user in users) {
+                val checked = user.id in picked.value
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            picked.value = if (checked) picked.value - user.id else picked.value + user.id
+                        }
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    MirrorAvatar(
+                        name = user.name,
+                        color = user.color,
+                        isGroup = false,
+                        groupId = "",
+                        online = false,
+                        showPresence = false,
+                        sizeDp = 36,
+                        cornerDp = 18,
+                    )
+                    Text(user.name, color = MirrorArt.Text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    Box(
+                        Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(if (checked) MirrorArt.Accent else MirrorArt.White7)
+                            .border(1.dp, if (checked) Color.Transparent else MirrorArt.Hairline, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (checked) MirrorLucideIcon("LCheck", tint = Color.White, modifier = Modifier.size(14.dp), strokeWidth = 2.6f)
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        val canCreate = name.isNotBlank() && picked.value.size >= 2 && !creating
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .clip(CircleShape)
+                .background(if (canCreate) MirrorArt.Accent else MirrorArt.White7)
+                .clickable(enabled = canCreate) {
+                    creating = true
+                    CoroutineScope(Dispatchers.IO).launch {
+                        repository.createGroup(name.trim(), picked.value.toList()).onSuccess { convo ->
+                            kotlinx.coroutines.withContext(Dispatchers.Main) { onOpened(convo.id) }
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                if (creating) "Creating…" else "Create group",
+                color = if (canCreate) Color.White else MirrorArt.Faint,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+/** Join with code: real invite join; success opens the conversation. */
+@Composable
+internal fun MirrorJoinSheet(
+    repository: PulseRepository,
+    onOpened: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    MirrorSheet(title = "Join with code", onDismiss = onDismiss) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .clip(CircleShape)
+                .background(MirrorArt.White7)
+                .border(1.dp, MirrorArt.Hairline, CircleShape)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicTextField(
+                value = code,
+                onValueChange = { code = it },
+                singleLine = true,
+                textStyle = TextStyle(color = MirrorArt.Text, fontSize = 15.sp),
+                cursorBrush = SolidColor(MirrorArt.Accent),
+                modifier = Modifier.weight(1f),
+                decorationBox = { inner ->
+                    if (code.isBlank()) Text("Paste an invite code or link", color = MirrorArt.Faint, fontSize = 14.sp)
+                    inner()
+                },
+            )
+        }
+        if (error.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(error, color = MirrorArt.Red, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(12.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .clip(CircleShape)
+                .background(if (code.isNotBlank() && !busy) MirrorArt.Accent else MirrorArt.White7)
+                .clickable(enabled = code.isNotBlank() && !busy) {
+                    busy = true
+                    error = ""
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val clean = code.trim().substringAfterLast('/').trim()
+                        repository.joinInvite(clean)
+                            .onSuccess { outcome ->
+                                kotlinx.coroutines.withContext(Dispatchers.Main) { onOpened(outcome.conversationId) }
+                            }
+                            .onFailure {
+                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                    error = it.message ?: "That code did not work"
+                                    busy = false
+                                }
+                            }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                if (busy) "Joining…" else "Join",
+                color = if (code.isNotBlank() && !busy) Color.White else MirrorArt.Faint,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+/** Archived chats: every archived row with an unarchive action. */
+@Composable
+internal fun MirrorArchivedSheet(
+    archived: List<Conversation>,
+    presence: Set<String>,
+    viewerId: String,
+    onOpen: (Conversation) -> Unit,
+    onUnarchive: (Conversation) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    MirrorSheet(title = "Archived", onDismiss = onDismiss) {
+        MirrorSheetScroll {
+            if (archived.isEmpty()) {
+                Text("Nothing archived", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+            }
+            for (convo in archived) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onOpen(convo) }
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    MirrorAvatar(
+                        name = convo.title,
+                        color = convo.accentColor,
+                        isGroup = convo.isGroupish,
+                        groupId = convo.id,
+                        online = convo.otherUserId != null && presence.contains(convo.otherUserId),
+                        showPresence = !convo.isGroupish,
+                        sizeDp = 44,
+                        cornerDp = if (convo.isGroupish) 14 else 22,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(convo.title, color = MirrorArt.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            convo.lastMessagePreview ?: "No messages yet",
+                            color = MirrorArt.Dim,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .clickable { onUnarchive(convo) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MirrorLucideIcon("LArchiveRestore", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Mentions: live GET /api/mentions rows; tap opens the conversation. */
+@Composable
+internal fun MirrorMentionsSheet(
+    repository: PulseRepository,
+    onOpenConv: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var items by remember { mutableStateOf<List<MentionItem>?>(null) }
+    LaunchedEffect(Unit) {
+        items = repository.mentions().getOrDefault(emptyList())
+    }
+    MirrorSheet(title = "Mentions", onDismiss = onDismiss) {
+        MirrorSheetScroll {
+            val list = items
+            when {
+                list == null -> Text("Loading mentions…", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+                list.isEmpty() -> Text("No mentions yet - when someone @-names you it lands here", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+                else -> for (mention in list) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onOpenConv(mention.conversationId) }
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                mention.conversationName ?: "Conversation",
+                                color = MirrorArt.Text,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(MirrorRowTime(mention.createdAt), color = MirrorArt.Faint, fontSize = 11.sp)
+                        }
+                        Text(
+                            (if (mention.authorName.isNotBlank()) mention.authorName + ": " else "") + mention.snippet,
+                            color = MirrorArt.Dim,
+                            fontSize = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Folders: pick a live folder filter (tap again to clear). */
+@Composable
+internal fun MirrorFoldersSheet(
+    folders: List<MirrorFolderChip>,
+    activeFolderId: String?,
+    onPick: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    MirrorSheet(title = "Folders", onDismiss = onDismiss) {
+        MirrorSheetScroll {
+            if (folders.isEmpty()) {
+                Text("No folders yet - create them on the web and they appear here", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+            }
+            for (folder in folders) {
+                val active = folder.id == activeFolderId
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (active) MirrorArt.ChipActive else Color.Transparent)
+                        .clickable { onPick(if (active) null else folder.id) }
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(folder.emoji, fontSize = 16.sp)
+                    Text(folder.name, color = MirrorArt.Text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    Text(folder.count.toString(), color = MirrorArt.Faint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Row long-press sheet - the web ChatOptionsSheet rows verbatim: pin / archive
+ * / mark-unread / mute (8h/1w/Always strip) / export .txt / clear chat (own
+ * messages, confirm-gated). Every action runs the real repository call.
+ */
+@Composable
+internal fun MirrorRowOptionsSheet(
+    conversationId: String,
+    title: String,
+    pinned: Boolean,
+    archived: Boolean,
+    manualUnread: Boolean,
+    muted: Boolean,
+    repository: PulseRepository,
+    onChanged: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var muteStrip by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf("") }
+    fun act(work: suspend () -> Unit) {
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { work() }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onChanged()
+                onDismiss()
+            }
+        }
+    }
+    MirrorSheet(title = title, onDismiss = onDismiss) {
+        MirrorSheetScroll {
+            when {
+                muteStrip -> {
+                    Text(
+                        "MUTE FOR",
+                        color = MirrorArt.Faint,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                        modifier = Modifier.padding(8.dp),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (choice in listOf("8h", "1w", "Always")) {
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MirrorArt.White7)
+                                    .clickable {
+                                        act {
+                                            repository.setMutedUntil(
+                                                conversationId,
+                                                when (choice) {
+                                                    "8h" -> java.time.Instant.ofEpochMilli(System.currentTimeMillis() + 8L * 3_600_000L).toString()
+                                                    "1w" -> java.time.Instant.ofEpochMilli(System.currentTimeMillis() + 7L * 86_400_000L).toString()
+                                                    else -> java.time.Instant.ofEpochMilli(3_252_524_799_999L).toString()
+                                                },
+                                            )
+                                        }
+                                    }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(choice, color = MirrorArt.TextSoft, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+                confirmClear -> {
+                    Text(
+                        "Clear chat",
+                        color = MirrorArt.Text,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                    Text(
+                        "This deletes YOUR OWN messages in this chat for everyone. The other side keeps theirs.",
+                        color = MirrorArt.Dim,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MirrorArt.White7)
+                                .clickable { confirmClear = false }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("Keep", color = MirrorArt.TextSoft, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MirrorArt.Red)
+                                .clickable {
+                                    act {
+                                        repository.clearMyMessages(conversationId)
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("Clear my messages", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                else -> {
+                    MirrorOptionRow("LPin", if (pinned) "Unpin from top" else "Pin to top") {
+                        act { repository.togglePin(conversationId, !pinned) }
+                    }
+                    MirrorOptionRow("LArchive", if (archived) "Unarchive chat" else "Archive chat") {
+                        act { repository.archive(conversationId, !archived) }
+                    }
+                    MirrorOptionRow(if (manualUnread) "LMailOpen" else "LMail", if (manualUnread) "Mark as read" else "Mark as unread") {
+                        act { repository.markUnread(conversationId, !manualUnread) }
+                    }
+                    MirrorOptionRow("LBellOff", "Mute notifications") { muteStrip = true }
+                    // Export runs WITHOUT closing the sheet - the saved file
+                    // name lands in the note row (web downloadTranscript feel).
+                    MirrorOptionRow("LDownload", "Export chat (.txt)") {
+                        CoroutineScope(Dispatchers.IO).launch {
+                            repository.exportChat(conversationId).onSuccess { file ->
+                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                    note = "Saved as $file"
+                                }
+                            }
+                        }
+                    }
+                    MirrorOptionRow("LEraser", "Clear chat…") { confirmClear = true }
+                    if (note.isNotEmpty()) {
+                        Text(note, color = MirrorArt.Accent2, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MirrorOptionRow(icon: String, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        MirrorLucideIcon(icon, tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
+        Text(label, color = MirrorArt.Text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+/** Room info / Manage chat: live members, presence, mute + export + clear. */
+@Composable
+internal fun MirrorRoomInfoSheet(
+    conversationId: String,
+    title: String,
+    color: String?,
+    isGroup: Boolean,
+    members: List<ConversationMember>,
+    presence: Set<String>,
+    viewerId: String,
+    muted: Boolean,
+    repository: PulseRepository,
+    onChanged: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var note by remember { mutableStateOf("") }
+    fun act(work: suspend () -> Unit) {
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { work() }
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onChanged() }
+        }
+    }
+    MirrorSheet(title = if (isGroup) "Group info" else "Chat info", onDismiss = onDismiss) {
+        MirrorSheetScroll {
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                MirrorAvatar(
+                    name = title,
+                    color = color,
+                    isGroup = isGroup,
+                    groupId = conversationId,
+                    online = false,
+                    showPresence = false,
+                    sizeDp = 56,
+                    cornerDp = if (isGroup) 16 else 28,
+                )
+                Column {
+                    Text(title, color = MirrorArt.Text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (isGroup) "${members.size} members" else "Direct message",
+                        color = MirrorArt.Faint,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            for (member in members) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    MirrorAvatar(
+                        name = member.name,
+                        color = member.color,
+                        isGroup = false,
+                        groupId = "",
+                        online = presence.contains(member.id),
+                        showPresence = true,
+                        sizeDp = 32,
+                        cornerDp = 16,
+                    )
+                    Text(member.name, color = MirrorArt.TextSoft, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    if (member.id == viewerId) {
+                        Text("you", color = MirrorArt.Faint, fontSize = 11.sp)
+                    } else if (presence.contains(member.id)) {
+                        Text("online", color = MirrorArt.PresenceOnline, fontSize = 11.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            MirrorOptionRow(if (muted) "LVolumeX" else "LBellOff", if (muted) "Unmute notifications" else "Mute notifications") {
+                act { repository.setMuted(conversationId, !muted) }
+            }
+            MirrorOptionRow("LDownload", "Export chat (.txt)") {
+                act {
+                    repository.exportChat(conversationId).onSuccess { file ->
+                        kotlinx.coroutines.withContext(Dispatchers.Main) { note = "Saved as $file" }
+                    }
+                }
+            }
+            if (note.isNotEmpty()) {
+                Text(note, color = MirrorArt.Accent2, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp))
+            }
         }
     }
 }

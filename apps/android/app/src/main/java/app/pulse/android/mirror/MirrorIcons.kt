@@ -45,7 +45,7 @@ internal object MirrorIcons {
         return builder.build()
     }
 
-    internal fun lucideVector(name: String, tint: Color, strokeWidth: Float = 2f): ImageVector {
+    internal fun lucideVector(name: String, tint: Color, strokeWidth: Float = 2f, filled: Boolean = false): ImageVector {
         val parts = MirrorIconPaths.lucide[name] ?: return placeholder(tint)
         val builder = ImageVector.Builder(
             name = "Mirror.Lucide.$name",
@@ -61,7 +61,9 @@ internal object MirrorIcons {
                 strokeLineWidth = strokeWidth,
                 strokeLineCap = StrokeCap.Round,
                 strokeLineJoin = StrokeJoin.Round,
-                fill = null,
+                // web lucide glyphs sometimes ride `fill-current` (the rotated
+                // row pin) - fill + stroke in one vector mirrors that exactly.
+                fill = if (filled) SolidColor(tint) else null,
             )
         }
         return builder.build()
@@ -86,7 +88,13 @@ internal fun MirrorPhosphorIcon(name: String, tint: Color, modifier: Modifier = 
 
 /** Lucide stroke glyph tinted and sized by the caller. */
 @Composable
-internal fun MirrorLucideIcon(name: String, tint: Color, modifier: Modifier = Modifier, strokeWidth: Float = 2f) {
-    val vector = remember(name, tint, strokeWidth) { MirrorIcons.lucideVector(name, tint, strokeWidth) }
+internal fun MirrorLucideIcon(
+    name: String,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    strokeWidth: Float = 2f,
+    filled: Boolean = false,
+) {
+    val vector = remember(name, tint, strokeWidth, filled) { MirrorIcons.lucideVector(name, tint, strokeWidth, filled) }
     Icon(painter = rememberVectorPainter(vector), contentDescription = null, modifier = modifier, tint = Color.Unspecified)
 }

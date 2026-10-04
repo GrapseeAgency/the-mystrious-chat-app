@@ -18,11 +18,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
-import app.pulse.android.SessionViewModel
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.QuickPhrase
 import app.pulse.domain.model.StoryGroup
+import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,20 +32,23 @@ import kotlinx.coroutines.launch
 /** Mirror destinations - the artboard dock set (Chats / Calls / Updates / Profile). */
 internal enum class MirrorTab { Chats, Calls, Updates, Profile }
 
+/** One typer in flight - the relay's typing event with a 4s expiry stamp. */
+private data class MirrorTyper(val conversationId: String, val userId: String, val userName: String, val expiresAt: Long)
+
 /**
- * R62 - native mirror root: the ARTBOARD rendered natively in Compose with
- * the web's EXACT tokens and full interactivity - real filters, real search,
- * real story cards/viewer/composer, real Calls log, real channel directory,
- * real new-chat DMs, real rooms. Data rides the same repository flows the
- * rest of the app uses (live gateway, zero mock). The scene replicates the
- * web .art-scene: warm linear wash + two elliptical horizon glows at 63/70%
- * height, painted with canvas scale transforms so the falloff is elliptical
- * exactly like the CSS radial-gradient(135% 44% at 50% 63%).
+ * R64 - native mirror root with the web's LIVE WIRE: typing events from the
+ * relay (4s expiry, web typersIn parity) feed the list rows + the room bubble
+ * + the header label; the home kebab menu is the web's three-section dropdown
+ * with every destination real; rows long-press into the web ChatOptionsSheet;
+ * archived chats leave the main list and live behind the Archived menu; rooms
+ * gain the kebab, native calls, mute/TTL controls and the document pipeline.
+ * Data rides the same repository flows as the rest of the app - zero mock.
  */
 @Composable
 fun MirrorRoot(
     session: SessionViewModel,
     repository: PulseRepository,
+    onStartCall: ((Conversation, video: Boolean) -> Unit)? = null,
 ) {
     val viewerId by session.viewerId.collectAsState()
     val viewerName by session.viewerName.collectAsState()
@@ -65,7 +68,47 @@ fun MirrorRoot(
     var composerOpen by remember { mutableStateOf(false) }
     var viewingStory by remember { mutableStateOf<StoryGroup?>(null) }
 
-    // Refresh rhythm: conversations + stories + folders on mount and every 5s.
+    // R64 - kebab destinations + row options (all REAL repository-backed)
+    var contactsOpen by remember { mutableStateOf(false) }
+    var groupOpen by remember { mutableStateOf(false) }
+    var joinOpen by remember { mutableStateOf(false) }
+    var archivedOpen by remember { mutableStateOf(false) }
+    var mentionsOpen by remember { mutableStateOf(false) }
+    var foldersOpen by remember { mutableStateOf(false) }
+    var mentionCount by remember { mutableStateOf(0) }
+    var rowOptions by remember { mutableStateOf<Conversation?>(null) }
+    var roomInfoFor by remember { mutableStateOf<Conversation?>(null) }
+
+    // R64 - typing state: relay events → per-conversation typer list (4s TTL).
+    var typers by remember { mutableStateOf<List<MirrorTyper>>(emptyList()) }
+    LaunchedEffect(viewerId) {
+        if (viewerId == null) return@LaunchedEffect
+        launch {
+            repository.events().collect { event ->
+                if (event is PulseEvent.Typing && event.userId != viewerId) {
+                    typers = if (event.isTyping) {
+                        typers
+                            .filter { it.userId != event.userId || it.conversationId != event.conversationId }
+                            .plus(MirrorTyper(event.conversationId, event.userId, event.userName, System.currentTimeMillis() + 4_000L))
+                    } else {
+                        typers.filter { !(it.userId == event.userId && it.conversationId == event.conversationId) }
+                    }
+                } else if (event is PulseEvent.MessageReceived) {
+                    // Realtime snappiness: refetch the list when a message lands.
+                    runCatching { repository.refreshConversations() }
+                }
+            }
+        }
+        // Expire stale typers on a 1s beat (web ~4s auto-expiry parity).
+        while (true) {
+            delay(1_000)
+            val now = System.currentTimeMillis()
+            val stale = typers.any { it.expiresAt <= now }
+            if (stale) typers = typers.filter { it.expiresAt > now }
+        }
+    }
+
+    // Refresh rhythm: conversations + stories + folders + mentions on mount and every 5s.
     LaunchedEffect(viewerId) {
         while (true) {
             if (viewerId != null) {
@@ -80,9 +123,18 @@ fun MirrorRoot(
                         conversationIds = f.conversationIds,
                     )
                 }
+                mentionCount = repository.mentions().getOrDefault(emptyList()).size
             }
             delay(5_000)
         }
+    }
+
+    // Web parity: the main list EXCLUDES archived chats (they live in the menu).
+    val activeConversations = conversations.filter { !it.isArchived }
+    val archivedConversations = conversations.filter { it.isArchived }
+
+    fun openById(conversationId: String) {
+        conversations.firstOrNull { it.id == conversationId }?.let { openRoom = it }
     }
 
     Box(
@@ -99,12 +151,18 @@ fun MirrorRoot(
             }
             openRoom != null -> {
                 val convo = openRoom!!
+                val roomTypers = typers
+                    .filter { it.conversationId == convo.id }
+                    .map { it.userName }
                 MirrorRoomScaffold(
                     convo = convo,
                     repository = repository,
                     viewerId = viewerId.orEmpty(),
                     presence = presence,
+                    typers = roomTypers,
                     onClose = { openRoom = null },
+                    onRoomInfo = { roomInfoFor = convo },
+                    onStartCall = onStartCall,
                 )
             }
             else -> {
@@ -142,7 +200,7 @@ fun MirrorRoot(
                 when (tab) {
                     MirrorTab.Chats -> {
                         MirrorHome(
-                            conversations = conversations.map { it.toRow(presence, viewerId) },
+                            conversations = activeConversations.map { it.toRow(presence, viewerId) },
                             stories = cards,
                             folders = folders,
                             viewerName = viewerName.orEmpty(),
@@ -168,9 +226,9 @@ fun MirrorRoot(
                                     composerOpen = true
                                 }
                             },
-                            onOpenConversation = { row ->
-                                conversations.firstOrNull { it.id == row.id }?.let { openRoom = it }
-                            },
+                            onOpenConversation = { row -> openById(row.id) },
+                            onRowOptions = { row -> conversations.firstOrNull { it.id == row.id }?.let { rowOptions = it } },
+                            typingIds = typers.map { it.conversationId }.toSet(),
                         )
                     }
                     MirrorTab.Profile -> {
@@ -188,7 +246,7 @@ fun MirrorRoot(
 
                 MirrorDock(
                     activeTab = tab,
-                    unread = conversations.sumOf { it.unreadCount },
+                    unread = activeConversations.sumOf { it.unreadCount },
                     onTab = { tab = it },
                     onFab = { newChatOpen = true },
                     modifier = Modifier.align(Alignment.BottomCenter),
@@ -196,12 +254,43 @@ fun MirrorRoot(
 
                 if (kebabOpen) {
                     MirrorKebabMenu(
+                        archivedCount = archivedConversations.size,
+                        selfOpen = conversations.any { it.isSelf },
+                        mentionCount = mentionCount,
+                        channelCount = activeConversations.count { it.isChannel },
                         onSearch = {
                             tab = MirrorTab.Chats
                             searching = true
                         },
+                        onNewChat = { newChatOpen = true },
+                        onNewGroup = { groupOpen = true },
+                        onJoinCode = { joinOpen = true },
+                        onContacts = { contactsOpen = true },
+                        onCalls = { tab = MirrorTab.Calls },
+                        onArchived = { archivedOpen = true },
+                        onNoteToSelf = {
+                            // web handleSelfPress: open the existing self chat or create it
+                            val self = conversations.firstOrNull { it.isSelf }
+                            if (self != null) {
+                                openRoom = self
+                            } else {
+                                val id = viewerId.orEmpty()
+                                if (id.isNotBlank()) {
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        repository.createDm(id).onSuccess { created ->
+                                            runCatching { repository.refreshConversations() }
+                                            kotlinx.coroutines.withContext(Dispatchers.Main) { openRoom = created }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        onMentions = { mentionsOpen = true },
+                        onChannels = { tab = MirrorTab.Updates },
+                        onFolders = { foldersOpen = true },
+                        onSaved = { tab = MirrorTab.Profile },
                         onStories = { composerOpen = true },
-                        onProfile = { tab = MirrorTab.Profile },
+                        onSettings = { tab = MirrorTab.Profile },
                         onDismiss = { kebabOpen = false },
                     )
                 }
@@ -211,7 +300,7 @@ fun MirrorRoot(
                         onDismiss = { newChatOpen = false },
                         onOpened = { convoId ->
                             newChatOpen = false
-                            conversations.firstOrNull { it.id == convoId }?.let { openRoom = it }
+                            openById(convoId)
                         },
                     )
                 }
@@ -227,7 +316,111 @@ fun MirrorRoot(
                         },
                     )
                 }
+                if (contactsOpen) {
+                    MirrorContactsSheet(
+                        repository = repository,
+                        onOpened = { contactsOpen = false; openById(it) },
+                        onDismiss = { contactsOpen = false },
+                    )
+                }
+                if (groupOpen) {
+                    MirrorGroupSheet(
+                        repository = repository,
+                        onOpened = {
+                            groupOpen = false
+                            CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
+                            openById(it)
+                        },
+                        onDismiss = { groupOpen = false },
+                    )
+                }
+                if (joinOpen) {
+                    MirrorJoinSheet(
+                        repository = repository,
+                        onOpened = {
+                            joinOpen = false
+                            CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
+                            openById(it)
+                        },
+                        onDismiss = { joinOpen = false },
+                    )
+                }
+                if (archivedOpen) {
+                    MirrorArchivedSheet(
+                        archived = archivedConversations,
+                        presence = presence,
+                        viewerId = viewerId.orEmpty(),
+                        onOpen = {
+                            archivedOpen = false
+                            openRoom = it
+                        },
+                        onUnarchive = { convo ->
+                            CoroutineScope(Dispatchers.IO).launch {
+                                repository.archive(convo.id, false)
+                                runCatching { repository.refreshConversations() }
+                            }
+                        },
+                        onDismiss = { archivedOpen = false },
+                    )
+                }
+                if (mentionsOpen) {
+                    MirrorMentionsSheet(
+                        repository = repository,
+                        onOpenConv = {
+                            mentionsOpen = false
+                            openById(it)
+                        },
+                        onDismiss = { mentionsOpen = false },
+                    )
+                }
+                if (foldersOpen) {
+                    MirrorFoldersSheet(
+                        folders = folders,
+                        activeFolderId = activeFolderId,
+                        onPick = {
+                            activeFolderId = it
+                            foldersOpen = false
+                            tab = MirrorTab.Chats
+                        },
+                        onDismiss = { foldersOpen = false },
+                    )
+                }
+                if (rowOptions != null) {
+                    val convo = rowOptions!!
+                    MirrorRowOptionsSheet(
+                        conversationId = convo.id,
+                        title = convo.title,
+                        pinned = convo.isPinned,
+                        archived = convo.isArchived,
+                        manualUnread = convo.myManualUnread,
+                        muted = convo.isMuted,
+                        repository = repository,
+                        onChanged = {
+                            CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
+                        },
+                        onDismiss = { rowOptions = null },
+                    )
+                }
             }
+        }
+
+        if (roomInfoFor != null) {
+            val convo = roomInfoFor!!
+            MirrorRoomInfoSheet(
+                conversationId = convo.id,
+                title = convo.title,
+                color = convo.accentColor,
+                isGroup = convo.isGroupish,
+                members = convo.members,
+                presence = presence,
+                viewerId = viewerId.orEmpty(),
+                muted = convo.isMuted,
+                repository = repository,
+                onChanged = {
+                    CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
+                },
+                onDismiss = { roomInfoFor = null },
+            )
         }
     }
 }
@@ -239,16 +432,23 @@ private fun MirrorRoomScaffold(
     repository: PulseRepository,
     viewerId: String,
     presence: Set<String>,
+    typers: List<String>,
     onClose: () -> Unit,
+    onRoomInfo: () -> Unit,
+    onStartCall: ((Conversation, video: Boolean) -> Unit)?,
 ) {
     val messages by repository.observeMessages(convo.id).collectAsState(initial = emptyList<Message>())
     var phrases by remember { mutableStateOf<List<QuickPhrase>>(emptyList()) }
+    var muted by remember { mutableStateOf(convo.isMuted) }
+    var ttlSeconds by remember { mutableStateOf(0) }
 
     LaunchedEffect(convo.id) {
         runCatching { repository.refreshMessages(convo.id) }
         phrases = repository.phrases().getOrDefault(emptyList())
         // entering the room marks it read (web POST /read on open)
         runCatching { repository.markRead(convo.id) }
+        // live room truth for the kebab controls (mute + disappearing TTL)
+        runCatching { repository.conversationDetail(convo.id) }
     }
 
     val other = convo.members.firstOrNull { it.id != viewerId }
@@ -266,12 +466,15 @@ private fun MirrorRoomScaffold(
         isGroup = convo.isGroupish,
         groupId = convo.id,
         subtitle = subtitle,
+        typers = typers,
         messages = messages,
         viewerId = viewerId,
         viewerName = convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(),
         memberNames = convo.members.map { it.name },
         members = convo.members,
         phrases = phrases,
+        muted = muted,
+        ttlSeconds = ttlSeconds,
         onBack = onClose,
         onSend = { text ->
             if (viewerId.isNotBlank() && text.isNotBlank()) {
@@ -291,6 +494,22 @@ private fun MirrorRoomScaffold(
                 }
             }
         },
+        onSendDocument = { dataUrl, fileName ->
+            if (viewerId.isNotBlank()) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    // web handleDocumentPicked flow: upload → kind="file" row
+                    runCatching {
+                        val path = repository.uploadMedia(dataUrl).getOrThrow()
+                        repository.sendMediaMessage(
+                            convo.id, "",
+                            filePath = path,
+                            fileName = fileName,
+                            kind = "file",
+                        )
+                    }
+                }
+            }
+        },
         onToggleReaction = { messageId, emoji ->
             CoroutineScope(Dispatchers.IO).launch {
                 runCatching { repository.react(messageId, emoji) }
@@ -305,6 +524,51 @@ private fun MirrorRoomScaffold(
             CoroutineScope(Dispatchers.IO).launch {
                 repository.deletePhrase(phraseId).onSuccess { phrases = repository.phrases().getOrDefault(emptyList()) }
             }
+        },
+        onTyping = { typing ->
+            // web signalTyping/cancelTyping - the relay fans out to members
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching { repository.setTyping(convo.id, convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(), typing) }
+            }
+        },
+        onCall = { video ->
+            // R64 - native calls wired through the same engines the shell uses
+            onStartCall?.invoke(convo, video)
+        },
+        onRoomInfo = onRoomInfo,
+        onMuteChoice = { until ->
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    if (until == null) {
+                        repository.setMutedUntil(convo.id, null)
+                        kotlinx.coroutines.withContext(Dispatchers.Main) { muted = false }
+                    } else {
+                        val epoch = when (until) {
+                            "8h" -> System.currentTimeMillis() + 8L * 3_600_000L
+                            "1w" -> System.currentTimeMillis() + 7L * 86_400_000L
+                            else -> 3_252_524_799_999L
+                        }
+                        repository.setMutedUntil(convo.id, java.time.Instant.ofEpochMilli(epoch).toString())
+                        kotlinx.coroutines.withContext(Dispatchers.Main) { muted = true }
+                    }
+                }
+            }
+        },
+        onTtlChoice = { ttl ->
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    val applied = repository.setDisappearingTtl(convo.id, ttl).getOrDefault(ttl)
+                    kotlinx.coroutines.withContext(Dispatchers.Main) { ttlSeconds = applied }
+                }
+            }
+        },
+        onUnpinMessage = { messageId ->
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching { repository.toggleMessagePin(messageId) }
+            }
+        },
+        fetchPinned = {
+            runCatching { repository.pinnedMessages(convo.id) }.getOrDefault(emptyList())
         },
     )
 }
@@ -384,5 +648,9 @@ private fun Conversation.toRow(presence: Set<String>, viewerId: String?): Conver
         pinned = isPinned,
         muted = isMuted,
         streak = streakCount,
+        // live typing rides MirrorHome's typingIds (row.copy below)
+        typing = false,
+        draft = myDraft?.takeIf { it.isNotBlank() },
+        manualUnread = myManualUnread,
     )
 }

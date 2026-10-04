@@ -520,8 +520,38 @@ fun PulseRoot(
                 // the design lifted 1:1 from the web source (chats-tab.tsx +
                 // nav-router.tsx geometry, globals.css tokens) and every tap
                 // wired to a real gateway action. The mirror is back - exact.
+                // R64 - the mirror also owns the call engines now: the room
+                // header video/phone icons dial real 1:1/group calls through
+                // the same engines the shell uses.
                 if (isNativeAuditBuild) {
-                    app.pulse.android.mirror.MirrorRoot(session = session, repository = repository)
+                    val callVm: CallViewModel = hiltViewModel()
+                    val groupCallVm: GroupCallViewModel = hiltViewModel()
+                    app.pulse.android.mirror.MirrorRoot(
+                        session = session,
+                        repository = repository,
+                        onStartCall = { convo, video ->
+                            val viewer = viewerName.orEmpty().ifBlank { "You" }
+                            if (convo.isGroupish) {
+                                groupCallVm.setActiveConversation(convo.id, convo.title)
+                                groupCallVm.startCall(
+                                    if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE,
+                                    convo.title,
+                                )
+                            } else {
+                                val peer = convo.members.firstOrNull { it.id != viewerId.orEmpty() }
+                                callVm.startOutgoing(
+                                    peerId = peer?.id ?: convo.otherUserId.orEmpty(),
+                                    name = convo.title,
+                                    color = convo.accentColor,
+                                    avatar = convo.avatar,
+                                    callerName = viewer,
+                                    kind = if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE,
+                                )
+                            }
+                        },
+                    )
+                    CallOverlay(callVm)
+                    GroupCallOverlay(groupCallVm)
                 } else {
                     val activeName = viewerName.orEmpty()
                     key(activeName) {
