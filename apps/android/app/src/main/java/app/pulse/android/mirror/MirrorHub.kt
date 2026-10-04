@@ -517,7 +517,7 @@ private fun HubTasksPanel(repository: PulseRepository) {
     var title by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        tasks = repository.hubTasks().getOrDefault(emptyList()).tasks
+        tasks = repository.hubTasks().getOrNull()?.tasks ?: emptyList()
     }
 
     fun move(task: HubTaskDto) {
@@ -579,7 +579,7 @@ private fun HubTasksPanel(repository: PulseRepository) {
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.5.sp,
-                        modifier = Modifier.padding(horizontal = 4.dp, bottom = 8.dp),
+                        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
                     )
                     for (task in col) {
                         Column(
@@ -652,7 +652,7 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
     var notice by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        listings = repository.market().getOrDefault(emptyList()).listings
+        listings = repository.market().getOrNull()?.listings ?: emptyList()
         coins = repository.wallet().getOrNull()?.wallet?.coins
     }
 
@@ -753,7 +753,7 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
                                                 onSuccess = { onCoinsChanged() },
                                                 onFailure = { notice = it.message },
                                             )
-                                            listings = repository.market().getOrDefault(emptyList()).listings
+                                            listings = repository.market().getOrNull()?.listings ?: emptyList()
                                             coins = repository.wallet().getOrNull()?.wallet?.coins
                                             busy = false
                                         }
@@ -974,12 +974,12 @@ private fun HubLogsPanel(repository: PulseRepository) {
     var tick by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
-        logs = repository.hubLogs(80, null).getOrDefault(emptyList()).logs
+        logs = repository.hubLogs(80, null).getOrNull()?.logs ?: emptyList()
     }
     // web refetchInterval 12s
     LaunchedEffect(tick) {
         delay(12_000)
-        logs = repository.hubLogs(80, null).getOrDefault(emptyList()).logs
+        logs = repository.hubLogs(80, null).getOrNull()?.logs ?: emptyList()
     }
 
     Column(
@@ -1072,6 +1072,26 @@ private fun HubAppsPanel(repository: PulseRepository, viewerId: String) {
     var busyId by remember { mutableStateOf<String?>(null) }
     var detail by remember { mutableStateOf<MatrixApp?>(null) }
 
+    suspend fun loadInstalled() {
+        // fan the real install states across the catalog (web hydrateInstalledSet:
+        // Promise.all over the matrix) - batched to keep the phone's pool sane
+        val ids = mutableSetOf<String>()
+        for (batch in HubCatalog.MATRIX.chunked(8)) {
+            val results = batch.map { app ->
+                CoroutineScope(Dispatchers.IO).async {
+                    val state = runCatching {
+                        repository.appInstallState(app.n.toString()).getOrNull()
+                    }.getOrNull()
+                    app to (state?.installed == true)
+                }
+            }.map { it.await() }
+            for ((app, on) in results) {
+                if (on) ids.add(app.n.toString())
+            }
+        }
+        installed = ids
+    }
+
     fun toggleApp(app: MatrixApp) {
         busyId = app.n.toString()
         CoroutineScope(Dispatchers.IO).launch {
@@ -1083,23 +1103,6 @@ private fun HubAppsPanel(repository: PulseRepository, viewerId: String) {
             loadInstalled()
             busyId = null
         }
-    }
-
-    suspend fun loadInstalled() {
-        // fan the real install states across the catalog (web hydrateInstalledSet:
-        // Promise.all over the matrix) - batched to keep the phone's pool sane
-        val ids = mutableSetOf<String>()
-        for (batch in HubCatalog.MATRIX.chunked(8)) {
-            val results = batch.map { app ->
-                CoroutineScope(Dispatchers.IO).async {
-                    app.n to runCatching {
-                        repository.appInstallState(app.n.toString()).getOrNull()
-                    }.getOrNull()?.installed == true
-                }
-            }.map { it.await() }
-            for ((n, on) in results) if (on) ids.add(n.toString())
-        }
-        installed = ids
     }
     LaunchedEffect(Unit) { CoroutineScope(Dispatchers.IO).launch { loadInstalled() } }
 

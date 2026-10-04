@@ -1,12 +1,9 @@
 package app.pulse.android.mirror
 
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -21,11 +18,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.indication.IndicationNodeFactory
-import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.fastOutSlowInEasing
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -47,13 +42,6 @@ import kotlinx.coroutines.launch
  * Updates(= the Hub tab) / Profile; Contacts rides the kebab (web '#/contacts').
  */
 internal enum class MirrorTab { Chats, Hub, Contacts, Profile }
-
-/** No-op indication: the web has no material ripples - taps flip bg tints only. */
-private object MirrorNoIndication : IndicationNodeFactory {
-    override fun create(interactionSource: InteractionSource): DelegatableNode = object : Modifier.Node() {}
-    override fun equals(other: Any?) = other === MirrorNoIndication
-    override fun hashCode() = 17
-}
 
 /** One typer in flight - the relay's typing event with a 4s expiry stamp. */
 private data class MirrorTyper(val conversationId: String, val userId: String, val userName: String, val expiresAt: Long)
@@ -168,12 +156,11 @@ fun MirrorRoot(
         initialValue = 1f,
         targetValue = 0.86f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 3_500, easing = fastOutSlowInEasing),
+            animation = tween(durationMillis = 3_500, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "sceneBreatheAlpha",
     )
-    CompositionLocalProvider(LocalIndication provides MirrorNoIndication) {
     Box(
         Modifier
             .fillMaxSize()
@@ -500,7 +487,6 @@ fun MirrorRoot(
                 onDismiss = { roomInfoFor = null },
             )
         }
-    }
     }
 }
 
