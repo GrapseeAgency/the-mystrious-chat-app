@@ -26,6 +26,9 @@ internal object MirrorArt {
     val Panel = Color(0xA818120D) // rgba(24,18,13,0.66)
     val BubbleOut = Color(0xFFF2EBDF) // --art-bubble-out bone cream
     val OnBubbleOut = Color(0xFF20150C) // --art-ink
+    val Ink = Color(0xFF20150C) // --art-ink (alias used by room metas/quotes)
+    val InkSoft = Color(0xA820150C) // --art-ink-soft rgba(32,21,12,.66)
+    val InkFaint = Color(0x7A20150C) // --art-ink-faint rgba(32,21,12,.48)
     val BubbleIn = Color(0xFF291F16) // --art-bubble-in rgba(41,31,22,.94)
     val Accent = Color(0xFFFF7A3D)
     val Accent2 = Color(0xFFFFB86B)

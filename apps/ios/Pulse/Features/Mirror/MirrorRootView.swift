@@ -19,9 +19,12 @@ enum MirrorArt {
     static let chip = Color.white.opacity(0.06)
     static let chipActive = Color.white.opacity(0.16)
     static let panel = Color(red: 24/255.0, green: 18/255.0, blue: 13/255.0).opacity(0.66)
-    static let bubbleOut = Color(red: 0xED/255.0, green: 0xE7/255.0, blue: 0xDC/255.0)
-    static let onBubbleOut = Color(red: 0x24/255.0, green: 0x1A/255.0, blue: 0x10/255.0)
-    static let bubbleIn = Color(red: 0x29/255.0, green: 0x20/255.0, blue: 0x19/255.0)
+    static let bubbleOut = Color(red: 0xF2/255.0, green: 0xEB/255.0, blue: 0xDF/255.0)
+    static let onBubbleOut = Color(red: 0x20/255.0, green: 0x15/255.0, blue: 0x0C/255.0)
+    static let bubbleIn = Color(red: 0x29/255.0, green: 0x1F/255.0, blue: 0x16/255.0)
+    static let inkSoft = Color(red: 0x20/255.0, green: 0x15/255.0, blue: 0x0C/255.0).opacity(0.66)
+    static let inkFaint = Color(red: 0x20/255.0, green: 0x15/255.0, blue: 0x0C/255.0).opacity(0.48)
+    static let glass7 = Color.white.opacity(0.07)
     static let accent = Color(red: 0xFF/255.0, green: 0x7A/255.0, blue: 0x3D/255.0)
     static let accent2 = Color(red: 0xFF/255.0, green: 0xB8/255.0, blue: 0x6B/255.0)
     static let red = Color(red: 0xFF/255.0, green: 0x45/255.0, blue: 0x3A/255.0)
@@ -90,6 +93,7 @@ final class MirrorViewModel: ObservableObject {
         let online: Bool
         let pinned: Bool
         let muted: Bool
+        let subtitle: String
     }
 
     private var timer: Timer?
@@ -128,7 +132,10 @@ final class MirrorViewModel: ObservableObject {
             unread: summary.unreadCount ?? 0,
             online: false,
             pinned: summary.pinnedAt != nil,
-            muted: summary.mutedUntil != nil
+            muted: summary.mutedUntil != nil,
+            subtitle: summary.isGroup
+                ? summary.members.map { $0.name }.filter { !$0.isEmpty }.joined(separator: ", ")
+                : ""
         )
     }
 
@@ -614,9 +621,10 @@ struct MirrorDock: View {
             .clipShape(Capsule())
 
             Button(action: onFab) {
-                Image(systemName: "plus").font(.system(size: 22, weight: .semibold)).foregroundColor(.white)
+                Image(systemName: "plus").font(.system(size: 22, weight: .semibold)).foregroundColor(MirrorArt.text)
                     .frame(width: 52, height: 52)
-                    .background(LinearGradient(colors: [MirrorArt.fabTop, MirrorArt.accent, MirrorArt.fabDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .background(MirrorArt.glass7)
+                    .overlay(Capsule().strokeBorder(MirrorArt.hairline, lineWidth: 1))
                     .clipShape(Circle())
             }
         }
@@ -651,76 +659,258 @@ struct MirrorDockItem: View {
     }
 }
 
-// MARK: - Room + placeholder
+// MARK: - Room (R63 - the web chat-room.tsx conversion)
+
+/// One render unit of the room list (web ClusterItem parity).
+private enum MirrorRoomEntry {
+    case day(key: String, label: String)
+    case stamp(key: String, iso: String)
+    case message(key: String, message: WireChatMessage, head: Bool)
+
+    var id: String {
+        switch self {
+        case .day(let key, _): return key
+        case .stamp(let key, _): return key
+        case .message(let key, _, _): return key
+        }
+    }
+}
+
+private enum MirrorCluster {
+    /// web CLUSTER_WINDOW_MS = 5 minutes.
+    static let window: TimeInterval = 5 * 60
+
+    static func entries(_ messages: [WireChatMessage]) -> [MirrorRoomEntry] {
+        var out: [MirrorRoomEntry] = []
+        var prev: WireChatMessage?
+        var dayKey: String?
+        let cal = Calendar.current
+        var seq = 0
+        for m in messages {
+            let head: Bool
+            if let p = prev {
+                let gap = (MirrorISO.parse(m.createdAt) ?? Date.distantPast)
+                    .timeIntervalSince(MirrorISO.parse(p.createdAt) ?? Date.distantPast)
+                let dayBreak = !cal.isDate(MirrorISO.parse(p.createdAt) ?? Date.distantPast,
+                                           inSameDayAs: MirrorISO.parse(m.createdAt) ?? Date.distantPast)
+                head = dayBreak || p.senderId != m.senderId || abs(gap) > window
+            } else {
+                head = true
+            }
+            if head {
+                let date = MirrorISO.parse(m.createdAt) ?? Date()
+                let key = cal.dateComponents([.year, .month, .day], from: date).description
+                if key != dayKey {
+                    out.append(.day(key: "day-\(seq)", label: MirrorRoomDay.short(m.createdAt)))
+                    dayKey = key
+                }
+                out.append(.stamp(key: "stamp-\(seq)", iso: m.createdAt))
+            }
+            seq += 1
+            out.append(.message(key: m.id, message: m, head: head))
+            prev = m
+        }
+        return out
+    }
+}
+
+private enum MirrorRoomDay {
+    static func short(_ iso: String) -> String {
+        guard let date = MirrorISO.parse(iso) else { return "" }
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "Today" }
+        if cal.isDateInYesterday(date) { return "Yesterday" }
+        return MirrorISO.day.string(from: date)
+    }
+}
+
+private enum MirrorBubbleText {
+    /// web BubbleText: **bold**, *italic*, ~~strike~~, `code`, @mentions, links.
+    static func make(_ content: String, mine: Bool, memberNames: [String]) -> AttributedString {
+        var out = AttributedString()
+        let ink = mine ? MirrorArt.onBubbleOut : MirrorArt.text
+        let mentionBg = mine ? MirrorArt.onBubbleOut.opacity(0.10) : MirrorArt.accent2.opacity(0.15)
+        let warm = mine ? Color(red: 0x9A/255, green: 0x4E/255, blue: 0x06/255) : MirrorArt.accent2
+        var rest = Substring(content)
+        while !rest.isEmpty {
+            // mentions first (web buildMentionRuns order)
+            if rest.hasPrefix("@"),
+               let name = memberNames
+                   .filter { !($0.isEmpty) && rest.dropFirst().lowercased().hasPrefix($0.lowercased()) }
+                   .max(by: { $0.count < $1.count }) {
+                var span = AttributedString("@" + rest.dropFirst().prefix(name.count))
+                span.backgroundColor = mentionBg
+                span.foregroundColor = warm
+                span.font = .system(size: 15, weight: .semibold)
+                out += span
+                rest = rest.dropFirst(1 + name.count)
+                continue
+            }
+            // markdown tokens
+            let tokens: [(String, Font.Weight?, Bool?, Bool?, Color?)] = [
+                ("**", .bold, nil, nil, ink), ("~~", nil, true, nil, ink.opacity(0.8)),
+                ("`", nil, nil, nil, ink), ("*", .regular, nil, true, ink), ("_", .regular, nil, true, ink),
+            ]
+            var matched = false
+            for (marker, weight, strike, italic, tint) in tokens {
+                let body = rest.dropFirst(marker.count)
+                if rest.hasPrefix(marker), let end = body.range(of: marker) {
+                    let innerText = body[..<(end.lowerBound)]
+                    if !innerText.isEmpty {
+                        var span = AttributedString(String(innerText))
+                        var font: Font = .system(size: 15)
+                        if let weight { font = weight == .bold ? .system(size: 15, weight: .bold) : .system(size: 15, italic: true) }
+                        if italic == true { font = .system(size: 15, design: .default).italic() }
+                        span.font = font
+                        if strike == true { span.strikethroughStyle = .single }
+                        if marker == "`" { span.backgroundColor = Color.black.opacity(0.3); span.font = .system(size: 12.5, design: .monospaced) }
+                        span.foregroundColor = tint ?? ink
+                        out += span
+                        rest = body[(end.upperBound)...]
+                        matched = true
+                        break
+                    }
+                }
+            }
+            if matched { continue }
+            // links
+            if let range = rest.range(of: #"https?://\S+|www\.\S+"#, options: .regularExpression) {
+                if range.lowerBound > rest.startIndex {
+                    var plain = AttributedString(String(rest[..<(range.lowerBound)]))
+                    plain.foregroundColor = ink
+                    plain.font = .system(size: 15)
+                    out += plain
+                }
+                var link = AttributedString(String(rest[range]))
+                link.foregroundColor = warm
+                link.underlineStyle = .single
+                link.font = .system(size: 15)
+                out += link
+                rest = rest[(range.upperBound)...]
+                continue
+            }
+            // plain run to end
+            var plain = AttributedString(String(rest))
+            plain.foregroundColor = ink
+            plain.font = .system(size: 15)
+            out += plain
+            rest = rest[rest.endIndex...]
+        }
+        return out
+    }
+}
 
 struct MirrorRoomView: View {
     let row: MirrorViewModel.MirrorRow
     @ObservedObject var session: PulseSession
     let onBack: () -> Void
     @State private var messages: [WireChatMessage] = []
+    @State private var memberNames: [String] = []
     @State private var draft = ""
+
+    private var bubbleMax: CGFloat { UIScreen.main.bounds.width * 0.78 }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left").font(.system(size: 20)).foregroundColor(MirrorArt.text)
-                        .frame(width: 40, height: 40)
+            // header: bg #0d0906/70, hairline bottom, back / 40 avatar / title+subtitle / 3 icons
+            VStack(spacing: 0) {
+                HStack(spacing: 2) {
+                    Button(action: onBack) {
+                        Image(systemName: "chevron.left").font(.system(size: 20)).foregroundColor(MirrorArt.textSoft)
+                            .frame(width: 44, height: 44)
+                    }
+                    MirrorAvatarTile(name: row.title, color: row.color, isGroup: row.isGroup, id: row.id, online: false, showPresence: !row.isGroup, size: 40, corner: 20)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(row.title).font(.system(size: 16, weight: .semibold)).foregroundColor(MirrorArt.text).lineLimit(1)
+                        Text(row.subtitle).font(.system(size: 11)).foregroundColor(MirrorArt.dim).lineLimit(1)
+                    }
+                    Spacer(minLength: 6)
+                    Image(systemName: "video").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft).frame(width: 44, height: 44)
+                    Image(systemName: "phone").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft).frame(width: 44, height: 44)
+                    Image(systemName: "ellipsis").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft).frame(width: 44, height: 44)
                 }
-                MirrorAvatarTile(name: row.title, color: row.color, isGroup: row.isGroup, id: row.id, online: false, showPresence: !row.isGroup, size: 38, corner: 19)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(row.title).font(.system(size: 16, weight: .bold)).foregroundColor(MirrorArt.text).lineLimit(1)
-                    Text("").font(.system(size: 11)).foregroundColor(MirrorArt.dim)
-                }
-                Spacer()
-                Image(systemName: "video").font(.system(size: 18)).foregroundColor(MirrorArt.text).padding(.horizontal, 6)
-                Image(systemName: "phone").font(.system(size: 18)).foregroundColor(MirrorArt.text).padding(.horizontal, 6)
-                Image(systemName: "ellipsis").font(.system(size: 18)).foregroundColor(MirrorArt.text).padding(.horizontal, 6)
+                .padding(.horizontal, 6).frame(minHeight: 56)
+                Rectangle().fill(MirrorArt.hairline).frame(height: 1)
             }
-            .padding(.horizontal, 6).frame(height: 56)
+            .background(Color(red: 0x0D/255.0, green: 0x09/255.0, blue: 0x06/255.0).opacity(0.7))
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(spacing: 6) {
-                        ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                            MirrorBubble(message: message, mine: message.senderId == session.viewer?.id, showSender: row.isGroup && message.senderId != session.viewer?.id)
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(MirrorCluster.entries(messages), id: \.id) { entry in
+                            switch entry {
+                            case .day(_, let label):
+                                Text(label)
+                                    .font(.system(size: 11, weight: .medium)).foregroundColor(MirrorArt.faint)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+                            case .stamp(_, let iso):
+                                Text(MirrorISO.hhmm.string(from: MirrorISO.parse(iso) ?? Date()))
+                                    .font(.system(size: 11, weight: .medium)).foregroundColor(MirrorArt.faint)
+                                    .frame(maxWidth: .infinity).padding(.vertical, 4)
+                            case .message(_, let message, let head):
+                                MirrorBubble(
+                                    message: message,
+                                    mine: message.senderId == session.viewer?.id,
+                                    isGroup: row.isGroup,
+                                    head: head,
+                                    memberNames: memberNames,
+                                    viewerId: session.viewer?.id ?? "",
+                                    bubbleMax: bubbleMax,
+                                    onToggleReaction: { emoji in react(message.id, emoji) }
+                                )
+                                .padding(.top, head ? 10 : 2)
                                 .id(message.id)
-                                .onAppear {
-                                    if index == messages.count - 1 {
-                                        proxy.scrollTo(message.id, anchor: .bottom)
-                                    }
-                                }
+                            }
                         }
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 8)
+                }
+                .onChange(of: messages.count) { _ in
+                    if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
 
+            // composer: art-input-pill + 44dp dark-glass FAB
             HStack(alignment: .bottom, spacing: 8) {
-                HStack {
-                    Image(systemName: "paperclip").font(.system(size: 16)).foregroundColor(MirrorArt.dim)
-                    TextField("Type here", text: $draft)
+                HStack(spacing: 4) {
+                    Image(systemName: "paperclip").font(.system(size: 17)).foregroundColor(MirrorArt.dim)
+                        .frame(width: 36, height: 36)
+                    TextField("Type here", text: $draft, axis: .vertical)
                         .font(.system(size: 15)).foregroundColor(MirrorArt.text)
-                    Image(systemName: "camera").font(.system(size: 16)).foregroundColor(MirrorArt.dim)
+                        .lineLimit(1...5)
+                        .padding(.vertical, 6)
+                    Image(systemName: "camera").font(.system(size: 17)).foregroundColor(MirrorArt.dim)
+                        .frame(width: 36, height: 36)
                 }
-                .padding(.horizontal, 14).frame(height: 48)
-                .background(Color.white.opacity(0.07)).clipShape(Capsule())
+                .padding(.horizontal, 4).padding(.vertical, 6)
+                .frame(minHeight: 48)
+                .background(MirrorArt.glass7)
+                .overlay(Capsule().strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                .clipShape(Capsule())
 
                 Button(action: send) {
                     Image(systemName: draft.isEmpty ? "plus" : "paperplane.fill")
-                        .font(.system(size: 18)).foregroundColor(draft.isEmpty ? MirrorArt.text : .white)
+                        .font(.system(size: 18)).foregroundColor(MirrorArt.text)
                         .frame(width: 44, height: 44)
-                        .background(draft.isEmpty ? AnyShapeStyle(Color.white.opacity(0.07)) : AnyShapeStyle(LinearGradient(colors: [MirrorArt.fabTop, MirrorArt.accent, MirrorArt.fabDeep], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                        .background(MirrorArt.glass7)
+                        .overlay(Circle().strokeBorder(MirrorArt.hairline, lineWidth: 1))
                         .clipShape(Circle())
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
+            .padding(.horizontal, 12).padding(.vertical, 12)
         }
-        .task { await load() }
+        .task {
+            await load()
+            try? await session.api.markRead(conversationId: row.id)
+        }
     }
 
     private func load() async {
         messages = (try? await session.api.messages(conversationId: row.id).messages) ?? []
+        if let summaries = try? await session.api.conversations(),
+           let summary = summaries.first(where: { $0.id == row.id }) {
+            memberNames = summary.members.map { $0.name }
+        }
     }
 
     private func send() {
@@ -732,37 +922,142 @@ struct MirrorRoomView: View {
             await load()
         }
     }
+
+    private func react(_ messageId: String, _ emoji: String) {
+        Task {
+            _ = try? await session.api.react(messageId: messageId, emoji: emoji)
+            await load()
+        }
+    }
+}
+
+private struct MirrorReactionChip: Identifiable {
+    let emoji: String
+    let count: Int
+    let iReacted: Bool
+    var id: String { emoji }
 }
 
 struct MirrorBubble: View {
     let message: WireChatMessage
     let mine: Bool
-    let showSender: Bool
+    let isGroup: Bool
+    let head: Bool
+    let memberNames: [String]
+    let viewerId: String
+    let bubbleMax: CGFloat
+    let onToggleReaction: (String) -> Void
+
+    private var chips: [MirrorReactionChip] {
+        (message.reactions ?? []).map { g in
+            MirrorReactionChip(emoji: g.emoji, count: g.count, iReacted: g.userIds.contains(viewerId))
+        }
+    }
+
+    private var bubbleShape: UnevenRoundedRectangle {
+        mine
+            ? UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 6)
+            : UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 6, bottomTrailingRadius: 18, topTrailingRadius: 18)
+    }
 
     var body: some View {
-        HStack {
-            if mine { Spacer(minLength: 60) }
-            VStack(alignment: .leading, spacing: 2) {
-                if showSender {
-                    Text(message.sender?.name ?? "").font(.system(size: 12, weight: .semibold)).foregroundColor(MirrorArt.textSoft)
-                }
-                Text(message.deletedAt != nil ? "This message was deleted" : message.content)
-                    .font(.system(size: 15))
-                    .foregroundColor(mine ? MirrorArt.onBubbleOut : MirrorArt.text)
-                    .italic(message.deletedAt != nil)
-                if mine, message.deletedAt == nil {
-                    HStack {
-                        Spacer()
-                        Image(systemName: "checkmark").font(.system(size: 9)).foregroundColor(MirrorArt.onBubbleOut.opacity(0.45))
-                    }
+        HStack(alignment: .bottom, spacing: 0) {
+            if !mine && isGroup {
+                if head {
+                    MirrorAvatarTile(name: message.sender?.name ?? "?", color: message.sender?.color, isGroup: false, id: message.senderId, online: false, showPresence: false, size: 24, corner: 12)
+                        .padding(.trailing, 6).padding(.bottom, 20)
+                } else {
+                    Color.clear.frame(width: 30, height: 1)
                 }
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(mine ? MirrorArt.bubbleOut : MirrorArt.bubbleIn)
-            .clipShape(mine
-                ? UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 6)
-                : UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 6, bottomTrailingRadius: 18, topTrailingRadius: 18))
-            if !mine { Spacer(minLength: 60) }
+            VStack(alignment: mine ? .trailing : .leading, spacing: 0) {
+                if message.deletedAt != nil {
+                    Text("This message was deleted")
+                        .font(.system(size: 13)).italic().foregroundColor(MirrorArt.faint)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MirrorArt.hairline, style: StrokeStyle(lineWidth: 1, dash: [6, 4])))
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // R54-c: sender name INSIDE the incoming group bubble
+                        if !mine && isGroup && head {
+                            Text(message.sender?.name ?? "")
+                                .font(.system(size: 12, weight: .semibold)).foregroundColor(MirrorArt.textSoft)
+                                .padding(.bottom, 2)
+                        }
+                        if let reply = message.replyTo {
+                            HStack(alignment: .top, spacing: 0) {
+                                Rectangle().fill(mine ? Color.black.opacity(0.15) : MirrorArt.accent).frame(width: 3)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(reply.deleted == true ? "Deleted message" : reply.senderName)
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(mine ? MirrorArt.onBubbleOut : MirrorArt.accent2)
+                                    Text(reply.deleted == true ? "This message was deleted" : reply.content)
+                                        .font(.system(size: 12)).foregroundColor(mine ? MirrorArt.inkSoft : MirrorArt.dim)
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                Spacer(minLength: 0)
+                            }
+                            .background(mine ? Color.black.opacity(0.05) : Color.white.opacity(0.06))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .padding(.bottom, 4)
+                        }
+                        if message.kind == "image", let imagePath = message.imagePath {
+                            AsyncImage(url: URL(string: PulseEndpoints.gatewayURL.absoluteString + "/api/uploads/" + imagePath)) { image in
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                Rectangle().fill(MirrorArt.chip)
+                            }
+                            .frame(maxWidth: 240, maxHeight: 300)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            if !message.content.isEmpty {
+                                Text(MirrorBubbleText.make(message.content, mine: mine, memberNames: memberNames))
+                                    .padding(2)
+                            }
+                        } else {
+                            Text(MirrorBubbleText.make(message.content, mine: mine, memberNames: memberNames))
+                        }
+                        if mine {
+                            // meta row: the read ticks
+                            HStack(spacing: 0) {
+                                Spacer(minLength: 0)
+                                Image(systemName: "checkmark.double")
+                                    .font(.system(size: 12)).foregroundColor(MirrorArt.onBubbleOut)
+                            }
+                            .padding(.top, 2)
+                        }
+                    }
+                    .padding(.horizontal, message.kind == "image" && message.imagePath != nil ? 4 : 12)
+                    .padding(.vertical, message.kind == "image" && message.imagePath != nil ? 4 : 8)
+                    .background(mine ? MirrorArt.bubbleOut : MirrorArt.bubbleIn)
+                    .clipShape(bubbleShape)
+                }
+                // reactions: -mt overlap chips
+                if !chips.isEmpty && message.deletedAt == nil {
+                    HStack(spacing: 4) {
+                        ForEach(chips) { chip in
+                            Button(action: { onToggleReaction(chip.emoji) }) {
+                                HStack(spacing: 2) {
+                                    Text(chip.emoji).font(.system(size: 12))
+                                    if chip.count > 1 {
+                                        Text("\(chip.count)")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(chip.iReacted ? MirrorArt.accent2 : MirrorArt.textSoft)
+                                    }
+                                }
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(chip.iReacted ? Color(red: 0x1A/255, green: 0x12/255, blue: 0x0B/255).opacity(0.9) : Color(red: 0x1A/255, green: 0x12/255, blue: 0x0B/255).opacity(0.8))
+                                .overlay(Capsule().strokeBorder(chip.iReacted ? MirrorArt.accent.opacity(0.45) : MirrorArt.hairline, lineWidth: 1))
+                                .clipShape(Capsule())
+                            }
+                        }
+                    }
+                    .padding(mine ? .trailing : .leading, 8)
+                    .offset(y: -6)
+                }
+            }
+            .frame(maxWidth: bubbleMax, alignment: mine ? .trailing : .leading)
+            if mine { Color.clear.frame(width: 8) }
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
     }

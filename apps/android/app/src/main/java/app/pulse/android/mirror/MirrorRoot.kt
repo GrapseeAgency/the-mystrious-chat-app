@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import app.pulse.android.SessionViewModel
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
+import app.pulse.domain.model.QuickPhrase
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.repository.PulseRepository
 import kotlinx.coroutines.CoroutineScope
@@ -241,17 +242,21 @@ private fun MirrorRoomScaffold(
     onClose: () -> Unit,
 ) {
     val messages by repository.observeMessages(convo.id).collectAsState(initial = emptyList<Message>())
-    var phrases by remember { mutableStateOf<List<String>>(emptyList()) }
+    var phrases by remember { mutableStateOf<List<QuickPhrase>>(emptyList()) }
 
     LaunchedEffect(convo.id) {
         runCatching { repository.refreshMessages(convo.id) }
-        phrases = repository.quickPhrases().map { it.second }
+        phrases = repository.phrases().getOrDefault(emptyList())
+        // entering the room marks it read (web POST /read on open)
+        runCatching { repository.markRead(convo.id) }
     }
 
     val other = convo.members.firstOrNull { it.id != viewerId }
+    // R54-c subtitle truth: groups roll the member names, DMs the presence line
     val subtitle = when {
-        convo.isGroupish -> "${convo.members.size} members"
+        convo.isGroupish -> convo.memberNames.filter { it.isNotBlank() }.joinToString(", ").ifBlank { "Group" }
         other != null && presence.contains(other.id) -> "online"
+        other != null -> "offline"
         else -> ""
     }
 
@@ -263,6 +268,9 @@ private fun MirrorRoomScaffold(
         subtitle = subtitle,
         messages = messages,
         viewerId = viewerId,
+        viewerName = convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(),
+        memberNames = convo.members.map { it.name },
+        members = convo.members,
         phrases = phrases,
         onBack = onClose,
         onSend = { text ->
@@ -270,6 +278,32 @@ private fun MirrorRoomScaffold(
                 CoroutineScope(Dispatchers.IO).launch {
                     runCatching { repository.sendMessage(convo.id, text) }
                 }
+            }
+        },
+        onSendImage = { dataUrl ->
+            if (viewerId.isNotBlank()) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    // web flow: compress → POST /api/uploads → send the imagePath row
+                    runCatching {
+                        val path = repository.uploadMedia(dataUrl).getOrThrow()
+                        repository.sendMediaMessage(convo.id, "", imagePath = path)
+                    }
+                }
+            }
+        },
+        onToggleReaction = { messageId, emoji ->
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching { repository.react(messageId, emoji) }
+            }
+        },
+        onAddPhrase = { text ->
+            CoroutineScope(Dispatchers.IO).launch {
+                repository.addPhrase(text).onSuccess { phrases = repository.phrases().getOrDefault(emptyList()) }
+            }
+        },
+        onDeletePhrase = { phraseId ->
+            CoroutineScope(Dispatchers.IO).launch {
+                repository.deletePhrase(phraseId).onSuccess { phrases = repository.phrases().getOrDefault(emptyList()) }
             }
         },
     )
