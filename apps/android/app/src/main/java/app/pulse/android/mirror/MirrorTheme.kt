@@ -20,16 +20,20 @@ internal object MirrorArt {
     val Hairline = Color(0x14FFFFFF) // rgba(255,255,255,0.08)
     val Chip = Color(0x0FFFFFFF) // rgba(255,255,255,0.06)
     val ChipActive = Color(0x29FFFFFF) // rgba(255,255,255,0.16)
+    val White10 = Color(0x1AFFFFFF) // white/10 - the idle chip count bubble
+    val White20 = Color(0x33FFFFFF) // white/20 - active folder count bubble
+    val White7 = Color(0x12FFFFFF) // white/[0.07] - folder idle count, search pill
     val Panel = Color(0xA818120D) // rgba(24,18,13,0.66)
-    val BubbleOut = Color(0xFFEDE7DC) // bone cream - the live render + both references
-    val OnBubbleOut = Color(0xFF241A10)
-    val BubbleIn = Color(0xFF292019)
+    val BubbleOut = Color(0xFFF2EBDF) // --art-bubble-out bone cream
+    val OnBubbleOut = Color(0xFF20150C) // --art-ink
+    val BubbleIn = Color(0xFF291F16) // --art-bubble-in rgba(41,31,22,.94)
     val Accent = Color(0xFFFF7A3D)
     val Accent2 = Color(0xFFFFB86B)
     val Red = Color(0xFFFF453A)
     val SceneTop = Color(0xFF2B1C10)
-    val PresenceOnline = Color(0xFF22C55E)
+    val PresenceOnline = Color(0xFF10B981) // emerald-500 (web presence truth)
     val PresenceOffline = Color(0xFF52525B) // zinc-600 dot truth
+    val PresenceRing = Color(0xFF18181B) // zinc-900 - the dark ring around the dot
     val SealAmber = Color(0xFFC9762B)
 
     // FAB / ember gradient (art-fab)

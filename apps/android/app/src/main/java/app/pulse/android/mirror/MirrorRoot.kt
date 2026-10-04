@@ -3,8 +3,6 @@ package app.pulse.android.mirror
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -14,60 +12,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.withTransform
 import app.pulse.android.SessionViewModel
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.repository.PulseRepository
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Mirror destinations - the artboard dock set. */
-internal enum class MirrorTab { Chats, Calls, Updates, Profile }
-
-/** Row view model the home renders (data shaped from the domain Conversation). */
-internal data class ConversationRow(
-    val id: String,
-    val title: String,
-    val color: String?,
-    val isGroup: Boolean,
-    val preview: String,
-    val time: String,
-    val unread: Int,
-    val online: Boolean,
-    val pinned: Boolean,
-    val muted: Boolean,
-    val streak: Int,
-)
-
-internal data class StoryDisc(
-    val label: String,
-    val name: String,
-    val color: String,
-    val seen: Boolean,
-)
-
 /**
- * R59 native mirror root - the ARTBOARD rendered natively (Compose), driven by
- * the SAME repository flows the native shell uses (real gateway, real data,
- * zero mock). Geometry, palette and glyphs are copied 1:1 from the web
- * artboard surfaces so this build stands beside the web shell for the audit.
+ * R62 - native mirror root: the ARTBOARD rendered natively in Compose with
+ * the web's EXACT tokens and full interactivity - real filters, real search,
+ * real story cards/viewer/composer, real Calls log, real channel directory,
+ * real new-chat DMs, real rooms. Data rides the same repository flows the
+ * rest of the app uses (live gateway, zero mock). The scene replicates the
+ * web .art-scene: warm linear wash + two elliptical horizon glows at 63/70%
+ * height, painted with canvas scale transforms so the falloff is elliptical
+ * exactly like the CSS radial-gradient(135% 44% at 50% 63%).
  */
 @Composable
 fun MirrorRoot(
@@ -81,50 +49,120 @@ fun MirrorRoot(
     var tab by remember { mutableStateOf(MirrorTab.Chats) }
     var openRoom by remember { mutableStateOf<Conversation?>(null) }
     var stories by remember { mutableStateOf<List<StoryGroup>>(emptyList()) }
+    var folders by remember { mutableStateOf<List<MirrorFolderChip>>(emptyList()) }
 
-    // Refresh rhythm: conversations + stories on mount and every 5s while open.
+    var filter by remember { mutableStateOf(MirrorFilter.All) }
+    var activeFolderId by remember { mutableStateOf<String?>(null) }
+    var searching by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var kebabOpen by remember { mutableStateOf(false) }
+    var newChatOpen by remember { mutableStateOf(false) }
+    var composerOpen by remember { mutableStateOf(false) }
+    var viewingStory by remember { mutableStateOf<StoryGroup?>(null) }
+
+    // Refresh rhythm: conversations + stories + folders on mount and every 5s.
     LaunchedEffect(viewerId) {
         while (true) {
             if (viewerId != null) {
                 runCatching { repository.refreshConversations() }
-                runCatching { stories = repository.stories().getOrDefault(emptyList()) }
+                stories = runCatching { repository.stories() }.getOrDefault(emptyList())
+                folders = runCatching { repository.folders() }.getOrDefault(emptyList()).map { f ->
+                    MirrorFolderChip(
+                        id = f.id,
+                        name = f.name,
+                        emoji = f.emoji,
+                        count = f.conversationIds.count { cid -> conversations.any { it.id == cid } },
+                        conversationIds = f.conversationIds,
+                    )
+                }
             }
             delay(5_000)
         }
     }
 
-    // Horizon scene: the artboard wash behind every surface (no WebGL needed).
     Box(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF0D0906), Color(0xFF0D0906)))),
+            .background(MirrorArt.Bg)
+            .drawBehind { MirrorScene(this) },
     ) {
-        // ember horizon glows, painted as the art-scene does
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(MirrorSceneBrush()),
-        )
-
         when {
+            viewingStory != null -> {
+                viewingStory?.let { group ->
+                    MirrorStoryViewer(group = group, repository = repository, onDismiss = { viewingStory = null })
+                }
+            }
             openRoom != null -> {
                 val convo = openRoom!!
-                MirrorRoomScaffold(convo, repository, viewerId.orEmpty(), onClose = { openRoom = null })
+                MirrorRoomScaffold(
+                    convo = convo,
+                    repository = repository,
+                    viewerId = viewerId.orEmpty(),
+                    presence = presence,
+                    onClose = { openRoom = null },
+                )
             }
             else -> {
+                val myGroup = stories.firstOrNull { it.mine }
+                val otherGroups = stories.filter { !it.mine }
+                val cards = buildList {
+                    add(
+                        MirrorStoryCard(
+                            label = "You",
+                            name = viewerName.orEmpty(),
+                            color = "emerald",
+                            isYou = true,
+                            unseen = myGroup != null,
+                            badge = 0,
+                            hasPhoto = myGroup != null,
+                            background = myGroup?.stories?.firstOrNull()?.background ?: "emerald",
+                        ),
+                    )
+                    for (g in otherGroups) {
+                        add(
+                            MirrorStoryCard(
+                                label = g.user?.name ?: "?",
+                                name = g.user?.name ?: "?",
+                                color = g.user?.color ?: "emerald",
+                                isYou = false,
+                                unseen = !g.allSeen,
+                                badge = if (g.allSeen) 0 else g.stories.size,
+                                hasPhoto = g.stories.any { it.imagePath != null },
+                                background = g.stories.firstOrNull()?.background ?: g.user?.color ?: "emerald",
+                            ),
+                        )
+                    }
+                }
+
                 when (tab) {
                     MirrorTab.Chats -> {
                         MirrorHome(
                             conversations = conversations.map { it.toRow(presence, viewerId) },
-                            stories = stories.map { g ->
-                                StoryDisc(
-                                    label = g.user?.name ?: "You",
-                                    name = g.user?.name ?: viewerName.orEmpty(),
-                                    color = g.user?.color ?: "emerald",
-                                    seen = g.allSeen,
-                                )
-                            },
+                            stories = cards,
+                            folders = folders,
                             viewerName = viewerName.orEmpty(),
+                            searching = searching,
+                            searchQuery = searchQuery,
+                            onSearchQuery = { searchQuery = it },
+                            onCloseSearch = {
+                                searching = false
+                                searchQuery = ""
+                            },
+                            onOpenSearch = { searching = true },
+                            onCamera = { composerOpen = true },
+                            onKebab = { kebabOpen = true },
+                            filter = filter,
+                            onFilter = { filter = it },
+                            activeFolderId = activeFolderId,
+                            onFolder = { activeFolderId = it },
+                            onStory = { card ->
+                                val group = if (card.isYou) myGroup else otherGroups.firstOrNull { it.user?.name == card.label }
+                                if (group != null) {
+                                    viewingStory = group
+                                } else if (card.isYou) {
+                                    composerOpen = true
+                                }
+                            },
                             onOpenConversation = { row ->
                                 conversations.firstOrNull { it.id == row.id }?.let { openRoom = it }
                             },
@@ -139,19 +177,51 @@ fun MirrorRoot(
                             onCopyId = { },
                         )
                     }
-                    MirrorTab.Calls -> MirrorPlaceholder("Calls")
-                    MirrorTab.Updates -> MirrorPlaceholder("Updates")
+                    MirrorTab.Calls -> MirrorCalls(repository)
+                    MirrorTab.Updates -> MirrorUpdates(repository)
                 }
-                // R60 - the dock pins to the BOTTOM of the root Box. It used to
-                // be the last child with no alignment, so it painted at the TOP
-                // over the header (the audited build's "navigation bar on top").
+
                 MirrorDock(
                     activeTab = tab,
                     unread = conversations.sumOf { it.unreadCount },
                     onTab = { tab = it },
-                    onFab = { },
+                    onFab = { newChatOpen = true },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
+
+                if (kebabOpen) {
+                    MirrorKebabMenu(
+                        onSearch = {
+                            tab = MirrorTab.Chats
+                            searching = true
+                        },
+                        onStories = { composerOpen = true },
+                        onProfile = { tab = MirrorTab.Profile },
+                        onDismiss = { kebabOpen = false },
+                    )
+                }
+                if (newChatOpen) {
+                    MirrorNewChatSheet(
+                        repository = repository,
+                        onDismiss = { newChatOpen = false },
+                        onOpened = { convoId ->
+                            newChatOpen = false
+                            conversations.firstOrNull { it.id == convoId }?.let { openRoom = it }
+                        },
+                    )
+                }
+                if (composerOpen) {
+                    MirrorStoryComposer(
+                        repository = repository,
+                        onDismiss = { composerOpen = false },
+                        onPosted = {
+                            composerOpen = false
+                            CoroutineScope(Dispatchers.IO).launch {
+                                stories = runCatching { repository.stories() }.getOrDefault(emptyList())
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -163,6 +233,7 @@ private fun MirrorRoomScaffold(
     convo: Conversation,
     repository: PulseRepository,
     viewerId: String,
+    presence: Set<String>,
     onClose: () -> Unit,
 ) {
     val messages by repository.observeMessages(convo.id).collectAsState(initial = emptyList<Message>())
@@ -173,12 +244,19 @@ private fun MirrorRoomScaffold(
         phrases = repository.quickPhrases().map { it.second }
     }
 
+    val other = convo.members.firstOrNull { it.id != viewerId }
+    val subtitle = when {
+        convo.isGroupish -> "${convo.members.size} members"
+        other != null && presence.contains(other.id) -> "online"
+        else -> ""
+    }
+
     MirrorRoom(
         title = convo.title,
-        color = convo.accentColor ?: convo.members.firstOrNull { it.id != viewerId }?.color,
+        color = convo.accentColor ?: other?.color,
         isGroup = convo.isGroupish,
         groupId = convo.id,
-        subtitle = convo.lastMessagePreview ?: "",
+        subtitle = subtitle,
         messages = messages,
         viewerId = viewerId,
         phrases = phrases,
@@ -193,15 +271,51 @@ private fun MirrorRoomScaffold(
     )
 }
 
-/** art-scene: warm horizon glows from below + ember crest, on the carbon base. */
-@Composable
-private fun MirrorSceneBrush(): Brush = Brush.verticalGradient(
-    listOf(
-        Color(0xFF2B1C10),
-        Color(0xFF150D07),
-        Color(0xFF0D0906),
-    ),
-)
+/** art-scene: linear wash + two elliptical horizon glows, CSS-exact. */
+private fun MirrorScene(scope: DrawScope) {
+    // linear-gradient(180deg, #2b1c10 0%, #241609 30%, #170e07 58%, #0d0906 92%)
+    scope.drawRect(
+        Brush.verticalGradient(
+            0f to Color(0xFF2B1C10),
+            0.30f to Color(0xFF241609),
+            0.58f to Color(0xFF170E07),
+            0.92f to Color(0xFF0D0906),
+            1f to Color(0xFF0D0906),
+        ),
+    )
+    // radial-gradient(135% 44% at 50% 63%, glow1 0%, transparent 62%)
+    scope.ellipseGlow(
+        core = Color(0x70BE6826),
+        cx = scope.size.width / 2f,
+        cy = scope.size.height * 0.63f,
+        rx = scope.size.width * 1.35f,
+        ry = scope.size.height * 0.44f,
+    )
+    // radial-gradient(170% 64% at 50% 70%, glow2 0%, transparent 72%)
+    scope.ellipseGlow(
+        core = Color(0x458A481C),
+        cx = scope.size.width / 2f,
+        cy = scope.size.height * 0.70f,
+        rx = scope.size.width * 1.70f,
+        ry = scope.size.height * 0.64f,
+    )
+}
+
+/** One elliptical radial glow: scale the canvas, draw a unit radial circle. */
+private fun DrawScope.ellipseGlow(core: Color, cx: Float, cy: Float, rx: Float, ry: Float) {
+    if (rx <= 0f || ry <= 0f) return
+    withTransform({ scale(scaleX = rx, scaleY = ry, pivot = Offset(cx, cy)) }) {
+        drawCircle(
+            brush = Brush.radialGradient(
+                listOf(core, core.copy(alpha = 0f)),
+                center = Offset.Zero,
+                radius = 1f,
+            ),
+            radius = 1f,
+            center = Offset.Zero,
+        )
+    }
+}
 
 private fun Conversation.toRow(presence: Set<String>, viewerId: String?): ConversationRow {
     val other = members.firstOrNull { it.id != viewerId }
@@ -216,7 +330,7 @@ private fun Conversation.toRow(presence: Set<String>, viewerId: String?): Conver
         lastMessageIsImage -> "Photo"
         lastMessageIsAudio -> "Voice message"
         lastMessageIsFile -> lastMessageFileName ?: "File"
-        else -> prefix + basePreview
+        else -> basePreview
     }
     return ConversationRow(
         id = id,
@@ -224,6 +338,8 @@ private fun Conversation.toRow(presence: Set<String>, viewerId: String?): Conver
         color = accentColor ?: other?.color,
         isGroup = isGroupish,
         preview = preview,
+        previewPrefix = prefix,
+        previewDeleted = lastMessageDeleted,
         time = MirrorRowTime(lastActivityAt),
         unread = unreadCount,
         online = otherUserId != null && presence.contains(otherUserId),
@@ -231,30 +347,4 @@ private fun Conversation.toRow(presence: Set<String>, viewerId: String?): Conver
         muted = isMuted,
         streak = streakCount,
     )
-}
-
-/** Honest audit placeholder for dock tabs outside this round's reference set. */
-@Composable
-private fun MirrorPlaceholder(title: String) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(bottom = 110.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Spacer(Modifier.height(80.dp))
-        Text(title, color = MirrorArt.Text, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Text(
-            "Native mirror audit - this tab mirrors the web next round",
-            color = MirrorArt.Dim,
-            fontSize = 13.sp,
-            modifier = Modifier
-                .padding(16.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(MirrorArt.Panel)
-                .clickable { }
-                .padding(16.dp),
-        )
-    }
 }

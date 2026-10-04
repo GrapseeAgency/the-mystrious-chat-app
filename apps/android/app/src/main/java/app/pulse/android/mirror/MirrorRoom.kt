@@ -1,6 +1,7 @@
 package app.pulse.android.mirror
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -208,7 +209,8 @@ internal fun MirrorRoom(
                     .weight(1f)
                     .height(48.dp)
                     .clip(CircleShape)
-                    .background(Color(0x12FFFFFF))
+                    .background(MirrorArt.White7)
+                    .border(1.dp, MirrorArt.Hairline, CircleShape)
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

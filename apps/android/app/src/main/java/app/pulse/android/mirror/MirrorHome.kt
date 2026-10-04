@@ -2,6 +2,7 @@ package app.pulse.android.mirror
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -20,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -27,19 +31,84 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.pulse.android.mirror.MirrorArt.Bg
-import app.pulse.android.mirror.MirrorArt.Chip
-import app.pulse.android.mirror.MirrorArt.Dim
-import app.pulse.android.mirror.MirrorArt.Faint
-import app.pulse.android.mirror.MirrorArt.Red
-import app.pulse.android.mirror.MirrorArt.Text
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+
+/**
+ * R62 - MirrorHome speaks the web's EXACT chats-tab geometry. Every number
+ * below is lifted from src/components/chat/chats-tab.tsx (R54-b artboard
+ * block): header 26sp title + three bare 44dp icons, 46x60 rounded-14 story
+ * PHOTO CARDS, the 30dp chip rail whose count bubbles are white glass (the
+ * signal red badge lives on ROWS only), and flat rows with the trailing
+ * 18dp art-badge. Interactions are real: search filters, chips filter,
+ * rows open rooms, every header icon opens something.
+ */
+
+/** The real All/Unread/Groups filter set (web ChatsListFilter). */
+internal enum class MirrorFilter { All, Unread, Groups }
+
+/** One story cell view model - shaped from the domain StoryGroup. */
+internal data class MirrorStoryCard(
+    val label: String,
+    val name: String,
+    val color: String,
+    val isYou: Boolean,
+    val unseen: Boolean,
+    val badge: Int,
+    val hasPhoto: Boolean,
+    val background: String,
+)
+
+/** One folder chip view model - shaped from the domain FolderSummary. */
+internal data class MirrorFolderChip(
+    val id: String,
+    val name: String,
+    val emoji: String,
+    val count: Int,
+    val conversationIds: List<String> = emptyList(),
+)
+
+/** Row view model the home renders (data shaped from the domain Conversation). */
+internal data class ConversationRow(
+    val id: String,
+    val title: String,
+    val color: String?,
+    val isGroup: Boolean,
+    val preview: String,
+    val previewPrefix: String = "",
+    val previewDeleted: Boolean = false,
+    val time: String,
+    val unread: Int,
+    val online: Boolean,
+    val pinned: Boolean,
+    val muted: Boolean,
+    val streak: Int = 0,
+)
+
+private val TIME_FORMAT: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
+
+/** Row time: HH:mm today, Yesterday, else MMM d - the artboard row clock. */
+internal fun MirrorRowTime(iso: String?): String {
+    val parsed = iso?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return ""
+    val zoned = parsed.atZone(ZoneId.systemDefault())
+    val today = java.time.LocalDate.now()
+    val day = zoned.toLocalDate()
+    return when {
+        day == today -> TIME_FORMAT.format(parsed)
+        day == today.minusDays(1) -> "Yesterday"
+        else -> DateTimeFormatter.ofPattern("MMM d").format(day)
+    }
+}
 
 /** Shared artboard avatar tile: gradient fill, initials, presence dot. */
 @Composable
@@ -62,235 +131,464 @@ internal fun MirrorAvatar(
                 .background(MirrorArt.avatarBrush(color, isGroup, groupId)),
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                // web: DM initials round(size*0.36), group round(size*0.34)
                 Text(
                     text = MirrorArt.initials(name),
                     color = Color.White,
-                    fontSize = (sizeDp * 0.34f).sp,
+                    fontSize = (sizeDp * if (isGroup) 0.34f else 0.36f).sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
         }
         if (showPresence) {
-            val dot = (sizeDp * 0.28f).coerceAtLeast(10f)
+            // web: dot = max(9, round(size*0.26)), ring-2 zinc-900, bottom-right
+            val dot = (sizeDp * 0.26f).coerceAtLeast(9f)
             Box(
                 Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(1.dp)
                     .size(dot.dp)
                     .clip(CircleShape)
-                    .border(2.dp, Bg, CircleShape)
+                    .border(2.dp, MirrorArt.PresenceRing, CircleShape)
                     .background(if (online) MirrorArt.PresenceOnline else MirrorArt.PresenceOffline),
             )
         }
     }
 }
 
-private val TIME_FORMAT: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
-
-/** Row time: HH:mm today, Yesterday, else MMM d - the artboard row clock. */
-internal fun MirrorRowTime(iso: String?): String {
-    val parsed = iso?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return ""
-    val zoned = parsed.atZone(ZoneId.systemDefault())
-    val today = java.time.LocalDate.now()
-    val day = zoned.toLocalDate()
-    return when {
-        day == today -> TIME_FORMAT.format(parsed)
-        day == today.minusDays(1) -> "Yesterday"
-        else -> DateTimeFormatter.ofPattern("MMM d").format(day)
-    }
-}
-
-/** Home surface: header, story discs, chip rail, flat rows (artboard geometry). */
+/** Home surface: header, story cards, chip rail, flat rows (artboard geometry). */
 @Composable
 internal fun MirrorHome(
     conversations: List<ConversationRow>,
-    stories: List<StoryDisc>,
+    stories: List<MirrorStoryCard>,
+    folders: List<MirrorFolderChip>,
     viewerName: String,
+    searching: Boolean,
+    searchQuery: String,
+    onSearchQuery: (String) -> Unit,
+    onCloseSearch: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onCamera: () -> Unit,
+    onKebab: () -> Unit,
+    filter: MirrorFilter,
+    onFilter: (MirrorFilter) -> Unit,
+    activeFolderId: String?,
+    onFolder: (String?) -> Unit,
+    onStory: (MirrorStoryCard) -> Unit,
     onOpenConversation: (ConversationRow) -> Unit,
 ) {
     val maxW = 560.dp
+    val unreadTotal = conversations.sumOf { it.unread }
+
+    // Real filtering, exactly the web rails: All / Unread / Groups + folder.
+    val activeFolder = folders.firstOrNull { f -> f.id == activeFolderId }
+    val visible = conversations
+        .filter { when (filter) {
+            MirrorFilter.All -> true
+            MirrorFilter.Unread -> it.unread > 0
+            MirrorFilter.Groups -> it.isGroup
+        } }
+        .filter { activeFolder == null || it.id in activeFolder.conversationIds }
+
     LazyColumn(
         state = rememberLazyListState(),
         modifier = Modifier
             .fillMaxSize()
-            // R60 - the artboard starts BELOW the status bar; the audited build
-            // painted "Chats" and the clock on top of each other.
             .statusBarsPadding()
-            .padding(bottom = 96.dp),
+            .navigationBarsPadding()
+            .padding(bottom = 108.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         item {
             Column(Modifier.widthIn(max = maxW)) {
-                // Header: Chats + three bare icons (lucide 22dp in 44dp targets)
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 6.dp)
-                        .height(44.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Chats",
-                        color = Text,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(start = 4.dp),
-                    )
-                    MirrorHeaderIconButton("LSearch")
-                    MirrorHeaderIconButton("LCamera")
-                    MirrorHeaderIconButton("LKebab")
-                }
-
-                // Story discs: You cell + real groups
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    MirrorStoryDisc(
-                        label = "You",
-                        name = viewerName,
-                        color = "orange",
-                        ringSeen = false,
-                        isYou = true,
-                    )
-                    for (story in stories.take(7)) {
-                        MirrorStoryDisc(
-                            label = story.label,
-                            name = story.name,
-                            color = story.color,
-                            ringSeen = story.seen,
-                            isYou = false,
+                if (searching) {
+                    // Search pill - web: h-10 rounded-full bg-white/[0.07] ring-hairline px-4
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .clip(CircleShape)
+                                .background(MirrorArt.White7)
+                                .border(1.dp, MirrorArt.Hairline, CircleShape)
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            MirrorLucideIcon("LSearch", tint = MirrorArt.Faint, modifier = Modifier.size(16.dp))
+                            Box(Modifier.weight(1f)) {
+                                if (searchQuery.isBlank()) {
+                                    Text("Search chats and messages…", color = MirrorArt.Faint, fontSize = 14.sp)
+                                }
+                                BasicTextField(
+                                    value = searchQuery,
+                                    onValueChange = onSearchQuery,
+                                    singleLine = true,
+                                    textStyle = TextStyle(color = MirrorArt.Text, fontSize = 14.sp),
+                                    cursorBrush = SolidColor(MirrorArt.Accent),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                            if (searchQuery.isNotEmpty()) {
+                                Box(
+                                    Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0x1AFFFFFF))
+                                        .clickable { onSearchQuery("") },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                        Box(
+                            Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .clickable(onClick = onCloseSearch),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                } else {
+                    // Header - web: px-3 pt-10px, inner row py-2, title 26 bold pl-1, icons 44dp gap-0.5
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 12.dp, end = 12.dp, top = 18.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            "Chats",
+                            color = MirrorArt.Text,
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 4.dp),
                         )
+                        MirrorHeaderIconButton("LSearch", "Search chats and messages", onOpenSearch)
+                        MirrorHeaderIconButton("LCamera", "Open story camera", onCamera)
+                        MirrorHeaderIconButton("LKebab", "More options", onKebab)
+                    }
+
+                    // Story row - web: px-3 pt-1.5 pb-1, gap-3, 46x60 cards
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        for (story in stories.take(8)) {
+                            MirrorStoryCardCell(story, onClick = onStory)
+                        }
+                    }
+
+                    // Chip rail - web: px-3 pt-1.5 pb-2, gap-1.5, h-30 chips
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MirrorChip(
+                            label = "All",
+                            active = filter == MirrorFilter.All,
+                            onClick = { onFilter(MirrorFilter.All) },
+                        )
+                        MirrorChip(
+                            label = "Unread",
+                            active = filter == MirrorFilter.Unread,
+                            onClick = { onFilter(MirrorFilter.Unread) },
+                            // web: idle Unread chip carries the white glass count bubble
+                            count = if (filter != MirrorFilter.Unread) unreadTotal else 0,
+                        )
+                        MirrorChip(
+                            label = "Groups",
+                            active = filter == MirrorFilter.Groups,
+                            onClick = { onFilter(MirrorFilter.Groups) },
+                        )
+                        if (folders.isNotEmpty()) {
+                            // web divider: h-4 w-px hairline mx-0.5
+                            Box(
+                                Modifier
+                                    .padding(horizontal = 2.dp)
+                                    .height(16.dp)
+                                    .width(1.dp)
+                                    .background(MirrorArt.Hairline),
+                            )
+                            for (folder in folders) {
+                                MirrorFolderChipCell(
+                                    folder = folder,
+                                    active = activeFolderId == folder.id,
+                                    onClick = { onFolder(if (activeFolderId == folder.id) null else folder.id) },
+                                )
+                            }
+                        }
                     }
                 }
-
-                // Chip rail: All / Unread / Groups with real counts
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    val unread = conversations.sumOf { it.unread }
-                    MirrorChip("All", active = true, count = 0)
-                    MirrorChip("Unread", active = false, count = unread)
-                    MirrorChip("Groups", active = false, count = conversations.count { it.isGroup })
-                }
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(4.dp))
             }
         }
 
-        items(conversations, key = { it.id }) { row ->
-            Box(Modifier.widthIn(max = maxW), contentAlignment = Alignment.Center) {
+        // web list container: px-3, pt-1, rows flat on the scene
+        val shown = visible
+            .filter { r -> searchQuery.isBlank() || r.title.contains(searchQuery, true) || r.preview.contains(searchQuery, true) }
+        items(shown, key = { it.id }) { row ->
+            Box(
+                Modifier
+                    .widthIn(max = maxW)
+                    .padding(horizontal = 12.dp),
+            ) {
                 MirrorConversationRow(row = row, onOpen = { onOpenConversation(row) })
             }
         }
-
-        item { Spacer(Modifier.height(8.dp)) }
-    }
-}
-
-/** 44dp bare header icon button (lucide 22dp, artboard text tint). */
-@Composable
-private fun MirrorHeaderIconButton(glyph: String) {
-    Box(
-        Modifier
-            .padding(2.dp)
-            .size(40.dp)
-            .clip(CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        MirrorLucideIcon(glyph, tint = Text, modifier = Modifier.size(22.dp))
-    }
-}
-
-/** 56dp story disc with the conic ember ring (unseen) or hairline ring (seen). */
-@Composable
-private fun MirrorStoryDisc(label: String, name: String, color: String, ringSeen: Boolean, isYou: Boolean) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
-            if (isYou) {
-                // R60 - artboard You cell: a quiet dark tile with a CENTERED
-                // plus glyph. The old rendering put an initials avatar inside
-                // the ring, so a blank viewer name painted a loud orange "?".
-                Box(
+        if (shown.isEmpty()) {
+            item {
+                Column(
                     Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape)
-                        .background(MirrorArt.Chip)
-                        .border(1.dp, MirrorArt.Hairline, CircleShape),
-                    contentAlignment = Alignment.Center,
+                        .fillMaxWidth()
+                        .padding(top = 48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    MirrorLucideIcon("LPlus", tint = MirrorArt.TextSoft, modifier = Modifier.size(20.dp), strokeWidth = 2f)
-                }
-            } else {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape)
-                        .background(
-                            if (ringSeen) Brush.verticalGradient(listOf(MirrorArt.Hairline, MirrorArt.Hairline))
-                            else MirrorArt.FabGradient,
-                        )
-                        .padding(2.5.dp),
-                ) {
-                    MirrorAvatar(name = name, color = color, isGroup = false, groupId = "", online = false, showPresence = false, sizeDp = 48, cornerDp = 24)
+                    Text(
+                        if (searchQuery.isBlank()) "No chats here yet" else "No matches",
+                        color = MirrorArt.Dim,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        if (searchQuery.isBlank()) "Your next great chat is one tap away. Find someone and break the ice."
+                        else "Try a different word or check the spelling.",
+                        color = MirrorArt.Faint,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 4.dp, start = 32.dp, end = 32.dp),
+                    )
                 }
             }
         }
-        Spacer(Modifier.height(3.dp))
+    }
+}
+
+/** 44dp bare header icon button - web HEADER_ICON_CLS: no chrome, 22dp glyph. */
+@Composable
+private fun MirrorHeaderIconButton(glyph: String, label: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        MirrorLucideIcon(glyph, tint = MirrorArt.Text, modifier = Modifier.size(22.dp))
+    }
+}
+
+/**
+ * Story cell - web StoryRingCell: w-14 column, 46x60 rounded-14 card.
+ * You = white/6 tile + centered Plus; unseen = 2dp accent/85 ring; seen =
+ * 1dp hairline ring; card interior falls back to the dark initials tile the
+ * web renders when a story has no photo; red count badge top-right.
+ */
+@Composable
+private fun MirrorStoryCardCell(story: MirrorStoryCard, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .width(56.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(width = 46.dp, height = 60.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .border(
+                    width = if (story.isYou) 0.dp else if (story.unseen) 2.dp else 1.dp,
+                    brush = Brush.SolidColor(
+                        when {
+                            story.isYou -> Color.Transparent
+                            story.unseen -> MirrorArt.Accent.copy(alpha = 0.85f)
+                            else -> MirrorArt.Hairline
+                        },
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                )
+                .background(
+                    if (story.isYou) Brush.SolidColor(MirrorArt.Chip)
+                    else Brush.SolidColor(Color(0xFF17110C)),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                story.isYou -> MirrorLucideIcon(
+                    "LPlus",
+                    tint = MirrorArt.Dim,
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.2f,
+                )
+                // No native image pipeline yet - the card interior falls back to
+                // the web's own no-photo rendering: dark tile + initials avatar.
+                else -> MirrorAvatar(
+                    name = story.name,
+                    color = story.color,
+                    isGroup = false,
+                    groupId = "",
+                    online = false,
+                    showPresence = false,
+                    sizeDp = 30,
+                    cornerDp = 15,
+                )
+            }
+            if (!story.isYou && story.badge > 0) {
+                // web: absolute right-1 top-1 h-[15px] min-w-[15px] px-1 text-[9px] bold art-badge
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 4.dp, top = 4.dp)
+                        .heightIn(min = 15.dp)
+                        .widthIn(min = 15.dp)
+                        .clip(CircleShape)
+                        .background(MirrorArt.Red)
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (story.badge > 9) "9+" else story.badge.toString(),
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 15.sp,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
         Text(
-            label,
-            color = Dim,
-            fontSize = 11.sp,
+            story.label,
+            color = MirrorArt.Dim,
+            fontSize = 10.5.sp,
             lineHeight = 13.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.width(60.dp),
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
         )
     }
 }
 
-/** Artboard chip: 30dp pill, 13sp; active = brighter glass, count rides a red dot. */
+/** Artboard chip - web ART_CHIP_CLS: h-30 px-3.5 rounded-full 13sp medium. */
 @Composable
-private fun MirrorChip(label: String, active: Boolean, count: Int) {
+private fun MirrorChip(label: String, active: Boolean, onClick: () -> Unit, count: Int = 0) {
     Row(
         Modifier
             .height(30.dp)
             .clip(CircleShape)
-            .background(if (active) MirrorArt.ChipActive else Chip)
+            .background(if (active) MirrorArt.ChipActive else MirrorArt.Chip)
+            .clickable(onClick = onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (count > 0) {
+            // web idle count bubble: h-[15px] min-w-[15px] px-1 bg-white/10 text-[9px] bold TextSoft
             Box(
                 Modifier
-                    .size(18.dp)
+                    .heightIn(min = 15.dp)
+                    .widthIn(min = 15.dp)
                     .clip(CircleShape)
-                    .background(Red),
+                    .background(MirrorArt.White10)
+                    .padding(horizontal = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(count.coerceAtMost(99).toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    if (count > 99) "99+" else count.toString(),
+                    color = MirrorArt.TextSoft,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 15.sp,
+                )
             }
-            Spacer(Modifier.width(6.dp))
         }
-        Text(label, color = if (active) Text else MirrorArt.TextSoft, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(
+            label,
+            color = if (active) MirrorArt.Text else MirrorArt.Dim,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 
-/** Flat transparent row: 50dp avatar, name 15sp, preview 13sp, time 11sp, red badge. */
+/** Folder chip - web: glyph 14 + name (max 96) + white count bubble. */
+@Composable
+private fun MirrorFolderChipCell(folder: MirrorFolderChip, active: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .height(30.dp)
+            .clip(CircleShape)
+            .background(if (active) MirrorArt.ChipActive else MirrorArt.Chip)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(folder.emoji, fontSize = 14.sp)
+        Text(
+            folder.name,
+            color = if (active) MirrorArt.Text else MirrorArt.Dim,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 96.dp),
+        )
+        if (folder.count > 0) {
+            Box(
+                Modifier
+                    .heightIn(min = 15.dp)
+                    .widthIn(min = 15.dp)
+                    .clip(CircleShape)
+                    .background(if (active) MirrorArt.White20 else MirrorArt.White7)
+                    .padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (folder.count > 99) "99+" else folder.count.toString(),
+                    color = if (active) MirrorArt.Text else MirrorArt.Dim,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 15.sp,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Artboard conversation row - web ArtConversationRow: rounded-16 px-2 py-2.5
+ * gap-3, 50dp avatar, L1 name + streak chip + time, L2 preview + pin/mute +
+ * the signal-red 18dp art-badge. Press opens the room.
+ */
 @Composable
 private fun MirrorConversationRow(row: ConversationRow, onOpen: () -> Unit) {
+    val hasUnread = row.unread > 0
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         MirrorAvatar(
             name = row.title,
@@ -300,83 +598,98 @@ private fun MirrorConversationRow(row: ConversationRow, onOpen: () -> Unit) {
             online = row.online,
             showPresence = !row.isGroup,
             sizeDp = 50,
-            // R60 - artboard parity: groups wear the rounded square, DMs are
-            // full circles (the audited build rendered every row as a square).
-            cornerDp = if (row.isGroup) 16 else 25,
+            // web: DMs are full circles, groups corner = max(10, size*0.28) = 14
+            cornerDp = if (row.isGroup) 14 else 25,
         )
-        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
+            // L1 - baseline row: name ... streak chip + time
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     row.title,
-                    color = Text,
+                    color = MirrorArt.Text,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (row.pinned) {
-                    Spacer(Modifier.width(4.dp))
-                    MirrorLucideIcon("LChevronRight", tint = Faint, modifier = Modifier.size(13.dp))
-                }
-            }
-            Spacer(Modifier.height(2.dp))
-            Text(
-                row.preview,
-                color = Dim,
-                fontSize = 13.sp,
-                lineHeight = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Column(horizontalAlignment = Alignment.End) {
-            if (row.streak > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
+                Spacer(Modifier.weight(1f))
+                if (row.streak > 0) {
+                    // web streak chip: bg-white/[0.06] px-1.5 py-0.5 text-10 bold Dim ring hairline
+                    Row(
                         Modifier
-                            .height(20.dp)
                             .clip(CircleShape)
-                            .background(Chip)
-                            .padding(horizontal = 6.dp),
-                        contentAlignment = Alignment.Center,
+                            .background(MirrorArt.Chip)
+                            .border(1.dp, MirrorArt.Hairline, CircleShape)
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        Text("${row.streak}", color = MirrorArt.Accent2, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        MirrorLucideIcon("LFlame", tint = MirrorArt.Dim, modifier = Modifier.size(12.dp))
+                        Text("${row.streak}", color = MirrorArt.Dim, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.width(6.dp))
                 }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (row.muted) {
-                    MirrorLucideIcon("LCheck", tint = Faint, modifier = Modifier.size(12.dp))
-                    Spacer(Modifier.width(4.dp))
-                }
                 Text(
                     row.time,
-                    color = Faint,
+                    color = if (hasUnread) MirrorArt.TextSoft else MirrorArt.Faint,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
-            if (row.unread > 0) {
-                Spacer(Modifier.height(3.dp))
-                Box(
-                    Modifier
-                        .height(18.dp)
-                        .widthIn(min = 18.dp)
-                        .clip(CircleShape)
-                        .background(MirrorArt.BadgeGradient)
-                        .padding(horizontal = 5.dp),
-                    contentAlignment = Alignment.Center,
+            Spacer(Modifier.height(2.dp))
+            // L2 - preview ... pin/mute + red badge
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
+                    if (row.previewPrefix.isNotEmpty()) {
+                        Text(
+                            row.previewPrefix,
+                            color = MirrorArt.Faint,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                        )
+                    }
                     Text(
-                        row.unread.coerceAtMost(99).toString(),
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
+                        row.preview,
+                        color = MirrorArt.Dim,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        // web: deleted tombstones render italic
+                        fontStyle = if (row.previewDeleted) FontStyle.Italic else FontStyle.Normal,
                     )
+                }
+                if (row.pinned) {
+                    MirrorLucideIcon("LPin", tint = MirrorArt.Faint, modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.width(6.dp))
+                }
+                if (row.muted) {
+                    MirrorLucideIcon("LVolumeX", tint = MirrorArt.Faint, modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.width(6.dp))
+                }
+                if (hasUnread) {
+                    // web art-badge: h-[18px] min-w-[18px] px-1.5 rounded-full text-11 bold white
+                    Box(
+                        Modifier
+                            .heightIn(min = 18.dp)
+                            .widthIn(min = 18.dp)
+                            .clip(CircleShape)
+                            .background(MirrorArt.BadgeGradient)
+                            .padding(horizontal = 6.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (row.unread > 99) "99+" else row.unread.toString(),
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            lineHeight = 18.sp,
+                        )
+                    }
                 }
             }
         }

@@ -513,26 +513,26 @@ fun PulseRoot(
             if (webShellActive) {
                 // R56 - the artboard shell outranks every native surface: with
                 // a gateway configured the app IS the web (identity or not -
-                // no identity boots the web onboarding). The native onboarding
-                // only shows when the user explicitly opts out of the web
-                // interface, and PulseShell keeps serving the rest.
-                // R57 - the WebView frames the artboard with Chrome geometry
-                // (inset strips + pinned textZoom).
-                // R61 - the native-audit build boots the SAME web shell: the
-                // hand-drawn mirror is retired for good (the audit verdict was
-                // that it never matched the artwork) and both flavors render
-                // the exact web surface the Preview Panel shows. The audit
-                // flavor also hides the "classic interface" opt-out, so the
-                // old native screen is unreachable there.
-                val activeName = viewerName.orEmpty()
-                key(activeName) {
-                    WebShellScreen(
-                        serverBase = app.pulse.core.PulseEndpoints.gatewayHttpUrl,
-                        viewerName = activeName,
-                        onFallback = { if (!isNativeAuditBuild) session.setWebUi(false) },
-                        onUpdateServerBase = { session.setServerBase(it) },
-                        showClassicOptOut = !isNativeAuditBuild,
-                    )
+                // no identity boots the web onboarding).
+                // R61 - the audit verdict: the hand-drawn mirror never matched
+                // the artwork, so the audit flavor briefly booted the web shell.
+                // R62 - the user wants the audit app NATIVE KOTLIN again, with
+                // the design lifted 1:1 from the web source (chats-tab.tsx +
+                // nav-router.tsx geometry, globals.css tokens) and every tap
+                // wired to a real gateway action. The mirror is back - exact.
+                if (isNativeAuditBuild) {
+                    app.pulse.android.mirror.MirrorRoot(session = session, repository = repository)
+                } else {
+                    val activeName = viewerName.orEmpty()
+                    key(activeName) {
+                        WebShellScreen(
+                            serverBase = app.pulse.core.PulseEndpoints.gatewayHttpUrl,
+                            viewerName = activeName,
+                            onFallback = { session.setWebUi(false) },
+                            onUpdateServerBase = { session.setServerBase(it) },
+                            showClassicOptOut = true,
+                        )
+                    }
                 }
             } else if (onboarding) {
                 OnboardingScreen(
