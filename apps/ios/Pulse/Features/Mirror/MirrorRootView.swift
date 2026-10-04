@@ -734,10 +734,14 @@ private enum MirrorBubbleText {
         var rest = Substring(content)
         while !rest.isEmpty {
             // mentions first (web buildMentionRuns order)
-            if rest.hasPrefix("@"),
-               let name = memberNames
-                   .filter { !($0.isEmpty) && rest.dropFirst().lowercased().hasPrefix($0.lowercased()) }
-                   .max(by: { $0.count < $1.count }) {
+            var mentionName: String?
+            if rest.hasPrefix("@") {
+                let lowered = rest.dropFirst().lowercased()
+                mentionName = memberNames
+                    .filter { !$0.isEmpty && lowered.hasPrefix($0.lowercased()) }
+                    .max(by: { $0.count < $1.count })
+            }
+            if let name = mentionName {
                 var span = AttributedString("@" + rest.dropFirst().prefix(name.count))
                 span.backgroundColor = mentionBg
                 span.foregroundColor = warm
