@@ -301,6 +301,7 @@ fun WebShellScreen(
                 },
                 onCancelEdit = { panelMode = ConnectPanelMode.Status },
                 onClassic = onFallback,
+                showClassicOptOut = showClassicOptOut,
             )
             }
         }
@@ -349,6 +350,7 @@ private fun ConnectPanel(
     onSaveLink: (String) -> Unit,
     onCancelEdit: () -> Unit,
     onClassic: () -> Unit,
+    showClassicOptOut: Boolean = true,
 ) {
     Box(
         Modifier
