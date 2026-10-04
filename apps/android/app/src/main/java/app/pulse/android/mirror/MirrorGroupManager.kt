@@ -251,7 +251,7 @@ internal fun MirrorGroupManagerSheet(
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MgrIconButton("Back to chat") { onDismiss() } {
+                MgrIconButton("Back to chat", onClick = { onDismiss() }) {
                     MirrorLucideIcon("LChevronLeft", tint = MirrorArt.TextSoft, modifier = Modifier.size(22.dp))
                 }
                 Text(
@@ -325,7 +325,7 @@ internal fun MirrorGroupManagerSheet(
                             note,
                             color = MirrorArt.Accent2,
                             fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 8.dp, bottom = 8.dp),
+                            modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
                         )
                     }
                 }
@@ -781,21 +781,24 @@ private fun MgrWebhooksSection(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        MgrIconButton("Copy ${webhook.name} webhook URL") {
-                            val url = webhook.url
-                            val origin = PulseEndpoints.gatewayHttpUrl.trimEnd('/')
-                            val absolute = when {
-                                origin.isBlank() -> url
-                                url.startsWith("http://") || url.startsWith("https://") -> url
-                                else -> origin.removeSuffix("/api") + url
-                            }
-                            clipboard.setText(AnnotatedString(absolute))
-                            onNote("Webhook URL copied")
-                        } {
+                        MgrIconButton(
+                            "Copy ${webhook.name} webhook URL",
+                            onClick = {
+                                val url = webhook.url
+                                val origin = PulseEndpoints.gatewayHttpUrl.trimEnd('/')
+                                val absolute = when {
+                                    origin.isBlank() -> url
+                                    url.startsWith("http://") || url.startsWith("https://") -> url
+                                    else -> origin.removeSuffix("/api") + url
+                                }
+                                clipboard.setText(AnnotatedString(absolute))
+                                onNote("Webhook URL copied")
+                            },
+                        ) {
                             MirrorLucideIcon("LCopy", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))
                         }
                         if (isAdmin) {
-                            MgrIconButton("Delete ${webhook.name}") { deleteTarget = webhook } {
+                            MgrIconButton("Delete ${webhook.name}", onClick = { deleteTarget = webhook }) {
                                 MirrorLucideIcon("LTrash2", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))
                             }
                         }
@@ -1441,6 +1444,7 @@ private fun MgrMembersCard(
                 MgrMemberRow(
                     member = member,
                     handle = user?.handle?.takeIf { it.isNotBlank() },
+                    lastSeenIso = user?.lastSeen,
                     isMe = isMe,
                     online = presence.contains(member.id),
                     isAdmin = isAdmin,
@@ -1456,6 +1460,7 @@ private fun MgrMembersCard(
 private fun MgrMemberRow(
     member: app.pulse.domain.model.ConversationMember,
     handle: String?,
+    lastSeenIso: String?,
     isMe: Boolean,
     online: Boolean,
     isAdmin: Boolean,
@@ -1521,10 +1526,10 @@ private fun MgrMemberRow(
                     Text("·", color = Color(0x33FFFFFF), fontSize = 11.sp)
                 }
                 Text(
-                    if (user == null || user.lastSeen.isNullOrBlank()) {
+                    if (lastSeenIso.isNullOrBlank()) {
                         "Last seen hidden"
                     } else {
-                        "active ${mgrStamp(user.lastSeen)}"
+                        "active ${mgrStamp(lastSeenIso)}"
                     },
                     color = MirrorArt.Faint,
                     fontSize = 11.sp,
@@ -2063,6 +2068,22 @@ private fun MgrRenameModal(
 }
 
 // skeletons + errors =======================================================
+
+@Composable
+private fun MgrInlineError(message: String, onRetry: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MgrInk.Rose10)
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(message, color = MirrorArt.TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(8.dp))
+        MgrPillButton(label = "Try again", amber = false, onClick = onRetry)
+    }
+}
 
 @Composable
 private fun MgrSkeleton() {

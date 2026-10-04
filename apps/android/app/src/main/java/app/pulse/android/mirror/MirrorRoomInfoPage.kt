@@ -25,6 +25,7 @@ import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -71,12 +72,13 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FontFamily
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -317,11 +319,10 @@ private fun InfoSpinner(tint: Color, modifier: Modifier = Modifier) {
 }
 
 private fun Modifier.graphicsLayerRotate(angle: Float): Modifier =
-    this.then(Modifier.graphicsLayerRotation(angle))
+    this.graphicsLayer { rotationZ = angle }
 
 private fun Modifier.graphicsLayerRotation(angle: Float): Modifier =
-    androidx.compose.ui.graphics.graphicsLayer(angle = angle) { rotationZ = angle }.let { this }
-        .then(Modifier)
+    this.graphicsLayer { rotationZ = angle }
 
 /** Static state pill (Off / 24h / 30d / On / Off) - amber when active. */
 @Composable
@@ -1012,7 +1013,8 @@ internal fun MirrorRoomInfoPage(
         "Global default · ${infoWallpaperLabel(globalWallpaper)}"
     } else {
         var text = "Custom · ${infoWallpaperLabel(themeOverride.wallpaper)}"
-        if (themeOverride.tint != null) text += " · ${infoTintLabel(themeOverride.tint)} tint"
+        val tintToken = themeOverride.tint
+        if (tintToken != null) text += " · ${infoTintLabel(tintToken)} tint"
         text
     }
     val directoryById = remember(directory) { directory.associateBy { it.id } }
@@ -1143,7 +1145,7 @@ internal fun MirrorRoomInfoPage(
                                         Modifier
                                             .size(68.dp)
                                             .clip(RoundedCornerShape(20.dp))
-                                            .background(MirrorArt.avatarBrush(isGroup = true, id = conversationId)),
+                                            .background(MirrorArt.avatarBrush(null, isGroup = true, id = conversationId)),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Text(
@@ -1343,8 +1345,7 @@ internal fun MirrorRoomInfoPage(
                             InfoSkeleton(heightDp = 48)
                         }
                     }
-                    else -> {
-                        val m = meta ?: return@let
+                    else -> if (meta != null) {
                         InfoGlassCard(Modifier.fillMaxWidth().padding(6.dp)) {
                             // a. MUTE - real per-user watermark presets
                             InfoPressableRow {
@@ -1750,7 +1751,7 @@ internal fun MirrorRoomInfoPage(
                 Spacer(Modifier.height(16.dp))
                 InfoSectionLabel(
                     if (automationsLoading && automations.isEmpty()) "AUTOMATIONS" else "AUTOMATIONS · ${automations.size}",
-                    Modifier.padding(horizontal = 8.dp, bottom = 6.dp),
+                    Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
                 )
                 InfoAutomationsSection(
                     repository = repository,
@@ -1768,7 +1769,7 @@ internal fun MirrorRoomInfoPage(
                 // ENCRYPTION section (DMs only)
                 if (!isGroup && peerId != null) {
                     Spacer(Modifier.height(16.dp))
-                    InfoSectionLabel("ENCRYPTION", Modifier.padding(horizontal = 8.dp, bottom = 6.dp))
+                    InfoSectionLabel("ENCRYPTION", Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp))
                     InfoGlassCard(Modifier.fillMaxWidth().padding(6.dp)) {
                         InfoPressableRow(onClick = { safetyOpen = true }) {
                             MirrorLucideIcon(
@@ -1825,7 +1826,7 @@ internal fun MirrorRoomInfoPage(
                         append(if (isChannel) "SUBSCRIBERS" else "MEMBERS")
                         if (conversation != null) append(" · ${members.size}")
                     },
-                    Modifier.padding(horizontal = 8.dp, bottom = 6.dp),
+                    Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
                 )
                 InfoGlassCard(Modifier.fillMaxWidth().padding(6.dp)) {
                     if (conversation == null) {
@@ -3008,7 +3009,7 @@ private fun InfoSafetySheet(
                     horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
                 ) {
                     if (pending) {
-                        InfoSpinner(MirrorArt.Rose, Modifier.size(14.dp))
+                        InfoSpinner(InfoInk.Rose, Modifier.size(14.dp))
                     }
                     Text(
                         "Unverify",
