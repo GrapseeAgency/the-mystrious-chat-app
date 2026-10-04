@@ -454,7 +454,7 @@ fun PulseRoot(
         }
         webBaseReady = app.pulse.core.PulseEndpoints.isConfigured
     }
-    val webShellActive = webUi && webBaseReady
+    val webShellActive = (webUi || isNativeAuditBuild) && webBaseReady
     // R2-C item 3 - the selected design language (web pulse.uiTheme.v2).
     val uiTheme = app.pulse.ui.PulseUiTheme.fromId(uiThemeRaw)
 
@@ -518,21 +518,21 @@ fun PulseRoot(
                 // interface, and PulseShell keeps serving the rest.
                 // R57 - the WebView frames the artboard with Chrome geometry
                 // (inset strips + pinned textZoom).
-                // R59 - the native-audit build (-PpulseAppId=app.pulse.chat.native)
-                // renders the SAME artboard NATIVELY (Compose) instead: the
-                // 1:1 mirror driven by the same repository flows.
-                if (isNativeAuditBuild) {
-                    app.pulse.android.mirror.MirrorRoot(session = session, repository = repository)
-                } else {
-                    val activeName = viewerName.orEmpty()
-                    key(activeName) {
-                        WebShellScreen(
-                            serverBase = app.pulse.core.PulseEndpoints.gatewayHttpUrl,
-                            viewerName = activeName,
-                            onFallback = { session.setWebUi(false) },
-                            onUpdateServerBase = { session.setServerBase(it) },
-                        )
-                    }
+                // R61 - the native-audit build boots the SAME web shell: the
+                // hand-drawn mirror is retired for good (the audit verdict was
+                // that it never matched the artwork) and both flavors render
+                // the exact web surface the Preview Panel shows. The audit
+                // flavor also hides the "classic interface" opt-out, so the
+                // old native screen is unreachable there.
+                val activeName = viewerName.orEmpty()
+                key(activeName) {
+                    WebShellScreen(
+                        serverBase = app.pulse.core.PulseEndpoints.gatewayHttpUrl,
+                        viewerName = activeName,
+                        onFallback = { if (!isNativeAuditBuild) session.setWebUi(false) },
+                        onUpdateServerBase = { session.setServerBase(it) },
+                        showClassicOptOut = !isNativeAuditBuild,
+                    )
                 }
             } else if (onboarding) {
                 OnboardingScreen(

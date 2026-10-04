@@ -104,6 +104,9 @@ fun WebShellScreen(
     viewerName: String,
     onFallback: () -> Unit,
     onUpdateServerBase: (String) -> Unit,
+    // R61 - the audit flavor hides the classic-interface opt-out entirely:
+    // the old native shell is dead there (no path back to it).
+    showClassicOptOut: Boolean = true,
 ) {
     val context = LocalContext.current
 
@@ -411,16 +414,18 @@ private fun ConnectPanel(
                 )
                 Spacer(Modifier.height(10.dp))
                 GlassChip(label = "Server link", onClick = onEditLink)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Open the classic interface",
-                    color = ArtFaint,
-                    fontSize = 13.sp,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(onClick = onClassic)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                )
+                if (showClassicOptOut) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Open the classic interface",
+                        color = ArtFaint,
+                        fontSize = 13.sp,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(onClick = onClassic)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
             } else {
                 Text("Server link", color = ArtText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
