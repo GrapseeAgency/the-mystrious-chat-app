@@ -886,7 +886,7 @@ private fun MirrorRoomSearchSheet(messages: List<Message>, onDismiss: () -> Unit
     var query by remember { mutableStateOf("") }
     val hits = remember(query, messages) {
         if (query.isBlank()) emptyList()
-        else messages.filter { it.content.contains(query, ignoreCase = true) }.take(40)
+        else messages.filter { it.body.contains(query, ignoreCase = true) }.take(40)
     }
     Box(
         Modifier
@@ -942,7 +942,7 @@ private fun MirrorRoomSearchSheet(messages: List<Message>, onDismiss: () -> Unit
                 for (hit in hits) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
                         Text(
-                            hit.content,
+                            hit.body,
                             color = MirrorArt.TextSoft,
                             fontSize = 13.sp,
                             maxLines = 2,
@@ -1011,7 +1011,7 @@ private fun MirrorPinnedSheet(
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    message.content.ifBlank { "Photo" },
+                                    message.body.ifBlank { "Photo" },
                                     color = MirrorArt.TextSoft,
                                     fontSize = 13.sp,
                                     maxLines = 2,
