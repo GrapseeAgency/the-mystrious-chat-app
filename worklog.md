@@ -5371,3 +5371,22 @@ Stage Summary:
 - The home kebab is now 15/15 rows matching the web screenshots exactly: ACTIONS (Search, New chat with the cool pencil glyph, New group, Join with code) / BROWSE (Contacts, Calls, Archived+count, Note to Self Open/New, Mentions+count, Channels+count, Folders) / SYSTEM (Saved, Stories, Settings, Appearance Dark) - scrollable like the web so nothing can ever clip, with the web's press tint.
 - The user's on-device "everything missing" is an APK-vintage issue: their installed build predates R62/R64. Everything ships in the final APK build (user will say "finally").
 - Next: user is still hunting errors; APK build + audit clobber deferred to their go signal.
+---
+Task ID: R68-b (correction)
+Agent: orchestrator (Z.ai main session)
+Task: User challenged the R68 history claim ("check again i dont believe you"). Re-verified against git archaeology. THE R68 ENTRY HAD A WRONG CLAIM - this correction supersedes it.
+
+Work Log:
+- WRONG CLAIM in R68: "the full sectioned kebab was added in R62 and re-sectioned in R64". ACTUAL FACTS (verified by git show per commit):
+  - R62 (7671923, Oct 4 07:42): kebab had only THREE rows - Search, Stories (LCamera glyph), Profile (LChevronRight). Nothing like the web's 15.
+  - R64 (0d6b8fe, Oct 4 10:16): the web-truth sectioned menu (ACTIONS/BROWSE/SYSTEM) was FIRST built here - 14 rows.
+  - R68 (5d0d7a6, Oct 4 14:43): 15th row (Appearance) + web pencil glyph + scroll clamp + press tint. 15/15 at HEAD, CI green (run 37210295826).
+- APK vintages (release page):
+  - Pulse-v0.23.0.0.5.apk (Oct 3 16:31): PREDATES the native mirror entirely - WebView-shell era (c35aa64 had no mirror/ folder; WebShellScreen only). Its three-dot is not the native kebab at all.
+  - Pulse-native-audit-0.23.0.0.5.apk (asset replaced Oct 4 10:38, built from e5c5bcc): contains the R64 14-row menu (only Appearance missing).
+  - Any audit APK downloaded BEFORE Oct 4 10:38 was cut from R62/R63-era code = the 3-row menu (Search, Stories, Profile). The user's "every single one missing" matches this vintage exactly.
+- So: if the user sees almost no rows, they are on a pre-R64 download; the 15/15 menu ships with the final build.
+
+Stage Summary:
+- History corrected: full menu is R64+R68 work, NOT R62. User's disbelief was justified.
+- Current main (5d0d7a6) verified row-by-row vs chats-tab.tsx L1547-1716: 15/15 rows, icons verbatim (PencilSimple bold, Search, Users, Ticket, BookUser, Phone, Archive, NotebookPen, AtSign, Radio, FolderPlus, Bookmark, CircleDashed, Settings, Sun), trailing counts, three hairline-separated sections, scrollable max-h. CI green.
