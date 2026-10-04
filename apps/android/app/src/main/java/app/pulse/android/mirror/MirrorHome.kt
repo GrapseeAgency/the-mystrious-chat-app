@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -113,6 +114,9 @@ internal fun MirrorHome(
         state = rememberLazyListState(),
         modifier = Modifier
             .fillMaxSize()
+            // R60 - the artboard starts BELOW the status bar; the audited build
+            // painted "Chats" and the clock on top of each other.
+            .statusBarsPadding()
             .padding(bottom = 96.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -211,25 +215,18 @@ private fun MirrorStoryDisc(label: String, name: String, color: String, ringSeen
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
             if (isYou) {
-                // You cell: no ring, hairline border tile + ember plus dot
+                // R60 - artboard You cell: a quiet dark tile with a CENTERED
+                // plus glyph. The old rendering put an initials avatar inside
+                // the ring, so a blank viewer name painted a loud orange "?".
                 Box(
                     Modifier
                         .fillMaxSize()
                         .clip(CircleShape)
-                        .border(1.dp, MirrorArt.Hairline, CircleShape)
-                        .padding(3.dp),
-                ) {
-                    MirrorAvatar(name = name, color = color, isGroup = false, groupId = "", online = false, showPresence = false, sizeDp = 44, cornerDp = 22)
-                }
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .size(16.dp)
-                        .clip(CircleShape)
-                        .background(MirrorArt.FabGradient),
+                        .background(MirrorArt.Chip)
+                        .border(1.dp, MirrorArt.Hairline, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
-                    MirrorLucideIcon("LPlus", tint = Color.White, modifier = Modifier.size(11.dp), strokeWidth = 3f)
+                    MirrorLucideIcon("LPlus", tint = MirrorArt.TextSoft, modifier = Modifier.size(20.dp), strokeWidth = 2f)
                 }
             } else {
                 Box(
@@ -303,7 +300,9 @@ private fun MirrorConversationRow(row: ConversationRow, onOpen: () -> Unit) {
             online = row.online,
             showPresence = !row.isGroup,
             sizeDp = 50,
-            cornerDp = 16,
+            // R60 - artboard parity: groups wear the rounded square, DMs are
+            // full circles (the audited build rendered every row as a square).
+            cornerDp = if (row.isGroup) 16 else 25,
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {

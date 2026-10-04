@@ -471,8 +471,13 @@ fun PulseRoot(
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
             WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = !dark
-                isAppearanceLightNavigationBars = !dark
+                // R60 - the mirror surfaces are ALWAYS dark regardless of the
+                // system theme, so the native-audit build keeps light system
+                // icons (a light-mode phone used to paint a dark clock on the
+                // carbon artboard).
+                val lightIcons = if (isNativeAuditBuild) false else !dark
+                isAppearanceLightStatusBars = lightIcons
+                isAppearanceLightNavigationBars = lightIcons
             }
         }
     }

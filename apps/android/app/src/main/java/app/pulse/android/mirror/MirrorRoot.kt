@@ -142,11 +142,15 @@ fun MirrorRoot(
                     MirrorTab.Calls -> MirrorPlaceholder("Calls")
                     MirrorTab.Updates -> MirrorPlaceholder("Updates")
                 }
+                // R60 - the dock pins to the BOTTOM of the root Box. It used to
+                // be the last child with no alignment, so it painted at the TOP
+                // over the header (the audited build's "navigation bar on top").
                 MirrorDock(
                     activeTab = tab,
                     unread = conversations.sumOf { it.unreadCount },
                     onTab = { tab = it },
                     onFab = { },
+                    modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
         }

@@ -32,9 +32,10 @@ internal fun MirrorDock(
     unread: Int,
     onTab: (MirrorTab) -> Unit,
     onFab: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        Modifier
+        modifier
             .navigationBarsPadding()
             .padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
