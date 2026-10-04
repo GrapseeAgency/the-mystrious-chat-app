@@ -1788,11 +1788,11 @@ struct MirrorRoomSheetView: View {
                 }
             case .pinned:
                 MirrorPanelScroll {
-                    if let pinned {
-                        if pinned.isEmpty {
+                    if let pins = pinned {
+                        if pins.isEmpty {
                             MirrorPanelHint("Nothing pinned yet")
                         }
-                        ForEach(pinned, id: \.id) { message in
+                        ForEach(pins, id: \.id) { message in
                             HStack(alignment: .top, spacing: 8) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(message.content ?? "Photo")
