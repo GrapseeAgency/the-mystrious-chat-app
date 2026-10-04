@@ -180,6 +180,10 @@ data class ConversationSummaryDto(
     val isGroup: Boolean = false,
     val name: String? = null,
     val photo: String? = null,
+    // R70 - web ConversationDetail.description (serializers.ts L544) - the
+    // channel purpose line the room-info hero renders. Summaries tolerate
+    // the key (defaulted null) exactly like the other detail-only keys.
+    val description: String? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null,
     val members: List<ConversationMemberDto> = emptyList(),

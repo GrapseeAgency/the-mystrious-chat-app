@@ -114,7 +114,9 @@ fun MirrorRoot(
     var foldersOpen by remember { mutableStateOf(false) }
     var mentionCount by remember { mutableStateOf(0) }
     var rowOptions by remember { mutableStateOf<Conversation?>(null) }
+    // R70 - full room-info page + the classic group manager it hands off to
     var roomInfoFor by remember { mutableStateOf<Conversation?>(null) }
+    var managerFor by remember { mutableStateOf<Conversation?>(null) }
 
     // R64 - typing state: relay events → per-conversation typer list (4s TTL).
     var typers by remember { mutableStateOf<List<MirrorTyper>>(emptyList()) }
@@ -214,6 +216,7 @@ fun MirrorRoot(
                     },
                     onClose = { openRoom = null },
                     onRoomInfo = { roomInfoFor = convo },
+                    onManageGroup = { managerFor = convo },
                     onStartCall = onStartCall,
                 )
             }
@@ -520,20 +523,38 @@ fun MirrorRoot(
 
         if (roomInfoFor != null) {
             val convo = roomInfoFor!!
-            MirrorRoomInfoSheet(
+            // R70 - the web RoomInfoPage parity (hero, stats, actions,
+            // automations, encryption, members) over the real repository.
+            MirrorRoomInfoPage(
                 conversationId = convo.id,
-                title = convo.title,
-                color = convo.accentColor,
-                isGroup = convo.isGroupish,
-                members = convo.members,
-                presence = presence,
                 viewerId = viewerId.orEmpty(),
-                muted = convo.isMuted,
+                viewerName = viewerName.orEmpty(),
                 repository = repository,
+                presence = presence,
                 onChanged = {
                     CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
                 },
                 onDismiss = { roomInfoFor = null },
+                onOpenManager = {
+                    managerFor = roomInfoFor
+                    roomInfoFor = null
+                },
+            )
+        }
+        if (managerFor != null) {
+            val convo = managerFor!!
+            // R70 - the web GroupInfoSheet parity (webhooks, leaderboard,
+            // tournaments, role actions, rename/leave).
+            MirrorGroupManagerSheet(
+                conversationId = convo.id,
+                viewerId = viewerId.orEmpty(),
+                viewerName = viewerName.orEmpty(),
+                repository = repository,
+                presence = presence,
+                onChanged = {
+                    CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
+                },
+                onDismiss = { managerFor = null },
             )
         }
     }
@@ -634,6 +655,7 @@ private fun MirrorRoomScaffold(
     onTogglePip: () -> Unit,
     onClose: () -> Unit,
     onRoomInfo: () -> Unit,
+    onManageGroup: () -> Unit,
     onStartCall: ((Conversation, video: Boolean) -> Unit)?,
 ) {
     val messages by repository.observeMessages(convo.id).collectAsState(initial = emptyList<Message>())
@@ -737,20 +759,16 @@ private fun MirrorRoomScaffold(
             onStartCall?.invoke(convo, video)
         },
         onRoomInfo = onRoomInfo,
+        onManageGroup = onManageGroup,
         onMuteChoice = { until ->
             CoroutineScope(Dispatchers.IO).launch {
                 runCatching {
-                    if (until == null) {
-                        repository.setMutedUntil(convo.id, null)
-                        kotlinx.coroutines.withContext(Dispatchers.Main) { muted = false }
-                    } else {
-                        val epoch = when (until) {
-                            "8h" -> System.currentTimeMillis() + 8L * 3_600_000L
-                            "1w" -> System.currentTimeMillis() + 7L * 86_400_000L
-                            else -> 3_252_524_799_999L
-                        }
-                        repository.setMutedUntil(convo.id, java.time.Instant.ofEpochMilli(epoch).toString())
-                        kotlinx.coroutines.withContext(Dispatchers.Main) { muted = true }
+                    // R70 fix: the wire /mute route ONLY accepts the preset
+                    // strings ("8h" | "1w" | "always" | null) - the old ISO
+                    // stamp body was rejected 400 and mute silently failed.
+                    repository.setMutedUntil(convo.id, until)
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        muted = until != null
                     }
                 }
             }

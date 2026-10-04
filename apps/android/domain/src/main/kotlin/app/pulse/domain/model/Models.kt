@@ -443,6 +443,21 @@ data class GroupMeta(
     // "You can no longer message this account" notice; the server 403
     // remains the real enforcement.
     val dmBlocked: Boolean = false,
+    // R70 - web ConversationDetail fields the room-info page renders live.
+    /** Channel purpose line / group description (web detail `description`). */
+    val description: String? = null,
+    /** Group/channel photo path (null = initials avatar). */
+    val photo: String? = null,
+    /** THIS viewer's mute watermark on the wire (null = unmuted). */
+    val myMutedUntilIso: String? = null,
+    /** Viewer's live streak in THIS conversation (count 0 = none). */
+    val myStreakCount: Int = 0,
+    val myStreakBest: Int = 0,
+    /** A live chain that dies at tonight's UTC midnight (amber "ends tonight"). */
+    val deadStreakCount: Int = 0,
+    /** An honestly lost chain (rose "streak lost"). */
+    val lostStreakCount: Int = 0,
+    val lostStreakBest: Int = 0,
 ) {
     val isAdmin: Boolean get() = myRole == "admin"
 

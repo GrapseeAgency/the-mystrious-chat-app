@@ -254,6 +254,7 @@ internal fun MirrorRoom(
     onTyping: (Boolean) -> Unit,
     onCall: (video: Boolean) -> Unit,
     onRoomInfo: () -> Unit,
+    onManageGroup: () -> Unit,
     onMuteChoice: (String?) -> Unit,
     onTtlChoice: (Int) -> Unit,
     onUnpinMessage: (String) -> Unit,
@@ -979,7 +980,9 @@ internal fun MirrorRoom(
                 }
                 MirrorRoomMenuItem("LUserPlus", if (isGroup) "Manage group" else "Manage chat") {
                     menuOpen = false
-                    onRoomInfo()
+                    // web parity: groups open the classic manager (webhooks,
+                    // leaderboard, roles); DMs ride the info page
+                    if (isGroup) onManageGroup() else onRoomInfo()
                 }
                 // room tools - the same surfaces the composer tray opens on the web
                 MirrorRoomMenuLabel("Tools")

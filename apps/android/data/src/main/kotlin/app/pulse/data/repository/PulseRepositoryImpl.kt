@@ -1370,6 +1370,15 @@ class PulseRepositoryImpl @Inject constructor(
                         // R6 - M5: the server computes dmBlocked for DM details
                         // only (src/lib/serializers.ts buildConversationDetail).
                         dmBlocked = dto.dmBlocked == true,
+                        // R70 - the web room-info page's live detail fields.
+                        description = dto.description,
+                        photo = dto.photo,
+                        myMutedUntilIso = dto.mutedUntil,
+                        myStreakCount = streakCountOf(dto.myStreak),
+                        myStreakBest = streakBestOf(dto.myStreak),
+                        deadStreakCount = streakCountOf(dto.deadStreak),
+                        lostStreakCount = streakCountOf(dto.lostStreak),
+                        lostStreakBest = streakBestOf(dto.lostStreak),
                     ),
                 )
             }
@@ -3190,6 +3199,11 @@ private fun streakCountOf(el: kotlinx.serialization.json.JsonElement?): Int = ru
     (el?.jsonObject?.get("count") as? JsonPrimitive)?.intOrNull
         ?: el?.jsonPrimitive?.intOrNull
         ?: 0
+}.getOrDefault(0)
+
+/** R70 - the streak "best" field the room-info streak row renders (0 = absent). */
+private fun streakBestOf(el: kotlinx.serialization.json.JsonElement?): Int = runCatching {
+    (el?.jsonObject?.get("best") as? JsonPrimitive)?.intOrNull ?: 0
 }.getOrDefault(0)
 
 fun UserDto.toDomain(): User = User(
