@@ -5486,3 +5486,17 @@ Work Log:
 Stage Summary:
 - The app now has the full channel + group info surfaces from the screenshots, every row backed by the real gateway routes the web uses. CI compiles both new files plus the protocol/domain/data extensions.
 - Honest gaps: member row tap does not open a user profile page (the web navigates to #/user/:id - that page does not exist natively yet); group photo hero renders initials fallback until a photo is set. No emulator runtime pass yet - first device pass with the final build.
+---
+Task ID: R70 (CI shakedown + GREEN)
+Agent: orchestrator (Z.ai main session)
+
+Work Log:
+- 3 CI iterations to green on the ~5,900-line round:
+  1. 3bf826d FAIL: 20 unique errors across both new files - MGM: two-trailing-lambda MgrIconButton call sites, missing MgrInlineError, invalid padding(horizontal,bottom) overload, MgrMemberRow referencing the card-scoped `user`; MIP: missing animateFloat/graphicsLayer imports, FontFamily imported from the wrong package, ConvTheme.tint smart-cast across modules, avatarBrush missing color arg, prohibited return@let, same invalid padding overload.
+  2. ecd0460 FAIL: my if-guard fix removed the `m` local that the whole actions card captures (33 cascading "Unresolved reference 'm'" + one type mismatch) - replaced with `else -> meta?.let { m -> ... }` (inline lambda keeps composable calls legal).
+  3. 1bc5d85 GREEN: build (incl. signed release assemble) + instrumented api 30 + instrumented api 34 all success. publish skipped by design - version 0.23.0.0.5 / versionCode 46 frozen, release v0.23.0.0.5 assets untouched, NO APK build (user: final build later).
+- WEB ARTWORK UNTOUCHED across all iterations (src/ zero diff). db/custom.db never staged.
+
+Stage Summary:
+- R70 shipped CI-green: the full web room-info page (group + channel + DM variants) and the classic group manager are native on the real repository contracts; room kebab mute preset bug fixed; protocol/domain extensions in place.
+- Next candidates: user profile page for member taps (web #/user/:id parity), emulator runtime pass of both surfaces during the final build, webhooks copy origin fallback hardening.
