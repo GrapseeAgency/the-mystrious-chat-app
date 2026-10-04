@@ -5183,3 +5183,32 @@ Work Log:
 Stage Summary:
 - The user re-downloads Pulse-native-audit-0.23.0.0.5.apk (same file name, same version) and reinstalls: the mirror now boots as the artboard - header under the status bar, dock at the bottom, quiet You tile, circle DM avatars. The gateway link they entered once still stands.
 - If the audit passes, the mirror direction continues (Calls/Updates tabs, new-chat FAB, animations).
+---
+Task ID: R61
+Agent: orchestrator (Z.ai main session)
+Task: Audit verdict was final - "what you have done is nothing like the web artwork, I can't click anything, badges broken, dock spans the whole screen; web has the tomato colour and that is very good". Kill the old native screen for good; make the audit APK boot straight into the web artwork.
+
+Work Log:
+- DIAGNOSIS: the audited screenshot was the R60-fixed native MIRROR (real gateway data: Bot & Webhook QA, Nova "Golden path R54", Announcements-0b7sxp) - proving the audit app on the device HAS a working gateway configured in its vault. The mirror itself is what the user rejects: hand-drawn chips/badges/dock that never matched the web artwork and dead interactions.
+- KILL EXECUTED (2 files, zero web changes): MainActivity no longer branches to MirrorRoot for the audit flavor - BOTH flavors render WebShellScreen (the WebView shell that loads the gateway web app, ?login= deep-links the stored identity, ConnectPanel handles unreachable origins). The audit gate now ORs webUi with isNativeAuditBuild so even a stranded opt-out can never resurrect PulseShell there. WebShellScreen gained showClassicOptOut (default true); the audit flavor passes false so the "Open the classic interface" hatch is GONE - the legacy screen is unreachable in the audit app for good. Mirror sources stay on disk unreferenced.
+- WEB ARTWORK VERIFIED LIVE (agent-browser through :81, 390x844, ?login=Alice Chen): splash -> ember home renders 1:1 with real data (Chats header + camera/kebab, quiet You tile, All/Unread/Groups/Inner circle chip rail, circle DM avatars + square group avatars, centered floating glass dock Chats/Calls/Updates/Profile + round FAB, warm ember scene). Tap-through proven: Nova row -> room opens (header + composer correct). Zero page errors. Evidence: download/qa-r61-webshell-home.png, qa-r61-webshell-home2.png, qa-r61-webshell-room.png. THIS exact surface is what Pulse Native now boots into.
+- CI SHAKEDOWN: first audit run 37184597793 FAILED fast - Unresolved reference 'showClassicOptOut' at WebShellScreen.kt:417 (ConnectPanel is its own composable; the flag must ride down as a parameter). Fixed by forwarding showClassicOptOut into ConnectPanel (default true keeps the main flavor byte-identical in behavior); committed eaa7c3a and re-dispatched run 37184787772.
+- LIVE DB NOTE: db/custom.db shows as locally modified (real server writes) - deliberately NOT staged in either R61 commit; repo copy stays at the last safe checkpoint.
+
+Stage Summary:
+- Pulse Native (audit APK) IS the web artwork now: same WebShellScreen as the shipping app, boots the gateway web surface with the user's persisted gateway + identity - no hand-drawn mirror, no legacy screen, no escape hatch back to them. The user reinstalls the same Pulse-native-audit-0.23.0.0.5.apk asset (same name/version, versionCode 46) once the run is green.
+- Fresh-install path unchanged: native onboarding with the connect gate (enter the gateway link once), then the web onboarding/artwork takes over.
+- Next: poll run 37184787772 to green, verify the release asset clobber, then continue the web artwork stream (styling/feature rounds) per the standing 24h mode.
+---
+Task ID: R61-ship
+Agent: orchestrator (Z.ai main session)
+Task: Shipped the R61 web-artwork audit APK to the release.
+
+Work Log:
+- CI: Pulse Android Native Audit run 37184787772 GREEN on eaa7c3a (mirror retired; both flavors boot WebShellScreen; ConnectPanel compiles with the forwarded showClassicOptOut flag). Android main CI also picked up the same commits on push.
+- RELEASE: Pulse-native-audit-0.23.0.0.5.apk REPLACED on v0.23.0.0.5 (--clobber): 25,513,224 bytes, updated 07:11:17Z. The release's own Pulse-v0.23.0.0.5.apk is UNTOUCHED (25,461,965 bytes, 2026-10-03T16:31:03Z) and versionCode 46 / versionName 0.23.0.0.5 unchanged.
+- 15-minute webDevReview cron created (job 434935, fixed_rate 900s).
+
+Stage Summary:
+- USER ACTION: re-download Pulse-native-audit-0.23.0.0.5.apk from the v0.23.0.0.5 release page and install over the existing "Pulse Native" (same package, data survives: gateway link + identity persist). It now boots STRAIGHT into the web artwork - the centered floating dock, tomato/ember accents, real chats, working taps - because the app IS the web surface now. The old native mirror/legacy screens are unreachable: no MirrorRoot branch, the gate ORs the audit flag over any stranded webUi=false, and the "Open the classic interface" hatch is removed in the audit flavor.
+- Next round (cron): continue the web artwork stream - styling detail passes and feature additions per the standing 24h mode.
