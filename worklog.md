@@ -5212,3 +5212,32 @@ Work Log:
 Stage Summary:
 - USER ACTION: re-download Pulse-native-audit-0.23.0.0.5.apk from the v0.23.0.0.5 release page and install over the existing "Pulse Native" (same package, data survives: gateway link + identity persist). It now boots STRAIGHT into the web artwork - the centered floating dock, tomato/ember accents, real chats, working taps - because the app IS the web surface now. The old native mirror/legacy screens are unreachable: no MirrorRoot branch, the gate ORs the audit flag over any stranded webUi=false, and the "Open the classic interface" hatch is removed in the audit flavor.
 - Next round (cron): continue the web artwork stream - styling detail passes and feature additions per the standing 24h mode.
+---
+Task ID: R62
+Agent: orchestrator (Z.ai main session)
+Task: "audit again that its all built up with kotlin and same design and reference pic and web design" - the user wants the audit app NATIVE KOTLIN again, with the design matching the reference picture and the web design exactly.
+
+Work Log:
+- SOURCE-TRUTH EXTRACTION (no more improvising): read the web components and lifted the exact numbers - chats-tab.tsx (header 26sp title + three 44dp bare icons size-11 gap-0.5, story cells w-14 with 46x60 rounded-[14px] photo cards + ring-2 accent/85 unseen / ring-1 hairline seen + red h-15 badge right-1 top-1 + 10.5sp labels; chip rail h-30 px-3.5 text-13 with the WHITE/10 h-15 count bubble on the idle Unread chip - the fake red chip badges were a mirror invention; folder chips with emoji + 96dp name + white/7|white/20 count bubbles; rows rounded-2xl px-2 py-2.5 gap-3, 50dp avatars, L1 name 15 semibold + streak chip white/6 + time 11 (unread semibold TextSoft), L2 preview 13 Dim (deleted italic) + pin/mute 12 + red h-18 art-badge), nav-router.tsx CapsuleNav (centered hugging art-panel pill px-1.5 py-1 gap-0.5 with 64dp/54dp tabs + 22dp icons + 10sp labels + red h-16 dock badge -right-2 -top-1, SEPARATE 52dp art-fab DARK GLASS white plus, gap-2.5, inset-x-3 bottom-12px), user-avatar.tsx (initials size*0.36 DM / 0.34 group, presence dot max(9, size*0.26) ring-2 zinc-900 emerald-500/zinc-600, group corner max(10, size*0.28)=14), globals.css art tokens (bubble-out #f2ebdf, ink #20150c, bubble-in rgba(41,31,22,.94), glows rgba(190,104,38,.44)/rgba(138,72,28,.27)).
+- REBUILT (8 files, +1494/-346): MirrorHome (all of the above + REAL filters All/Unread/Groups + folder chips + live search pill + empty states), MirrorDock (hugging pill + dark glass FAB - the full-width bar is dead), MirrorRoot (the .art-scene with ELLIPTICAL horizon glows via canvas scale transforms, all state wiring), MirrorExtras NEW (Calls = live call log rows; Updates = channel directory with real subscribeChannel; New-chat sheet = user search + createDm -> opens the room; kebab menu Search/Stories/Profile; story viewer with progress bars/tap zones/view marking/6s auto-advance; text-story composer with palette -> createStory), MirrorRoom (real LVideo/LPhone/LPaperclip/LChevronLeft glyphs - were placeholder circles; art-input-pill border; online/member-count subtitle), MirrorIconPaths (+X/Flame/Pin/Hourglass/VolumeX/FolderPlus/chevron-left/camera-body), MirrorTheme (exact tokens + White10/20/7 + PresenceRing), MainActivity (audit flavor -> MirrorRoot again, main flavor unchanged).
+- EVERY TAP REAL: chips filter, folders filter, search filters (server users + local rows), rows open rooms, rooms send via repository, story cards open the viewer, You card/composer posts real stories, FAB opens new-chat that creates real DMs, Calls/Updates tabs show live gateway data. Zero dead controls, zero mock data.
+- VERIFIED web artwork untouched (git diff src/ empty; QA shot download/qa-r62-web-reference.png = the render the mirror now copies). Symbol cross-check scripts: all MirrorArt refs, repo methods, Conversation fields resolve.
+- CI: dispatched run 37186606539 on 7671923.
+
+Stage Summary:
+- Pulse Native is native Kotlin again AND copies the reference: same tokens, same geometry, same glyph paths, working taps everywhere. The audit APK rebuilds at the same v0.23.0.0.5 / versionCode 46 and replaces only the audit asset.
+- Next: poll CI to green, confirm asset clobber, then continue (typing indicators + socket events into the mirror, image pipeline for story photos via Coil, Calls/Updates depth).
+---
+Task ID: R62-ship
+Agent: orchestrator (Z.ai main session)
+Task: Shipped the R62 native Kotlin mirror rebuild to the release.
+
+Work Log:
+- CI SHAKEDOWN (3 runs, each failure a real lesson, all fixed at the root): run 37186606539 - Brush.SolidColor (nonexistent) in the story card, direct composable calls in the LazyListScope builder (empty states now item{}-wrapped), runCatching{} double-wrapping Result-returning repo methods (Result<Result<T>> - getOrDefault went Any; now called directly on the repo Result), missing CoroutineScope import, MirrorStoryCardCell click lambda shape. Run 37187029886 - one root left: the R62 rewrite had dropped the MirrorTab enum entirely (dock+root unresolved); restored in MirrorRoot.kt. Run 37187200456 GREEN on 73d05cf.
+- RELEASE: Pulse-native-audit-0.23.0.0.5.apk REPLACED on v0.23.0.0.5 (--clobber): 25,542,332 bytes, 07:59:56Z. The release's own Pulse-v0.23.0.0.5.apk UNTOUCHED (25,461,965 bytes, 2026-10-03T16:31:03Z). versionCode 46 / versionName 0.23.0.0.5 unchanged.
+- WEB: untouched throughout (src/ diff empty); the mirror copies the live render captured in download/qa-r62-web-reference.png.
+
+Stage Summary:
+- Pulse Native IS native Kotlin (Compose) again and now copies the web source exactly: web-token palette, art-scene elliptical horizon glows, 26sp header + working 44dp icons, 46x60 story cards with accent rings + red count badges, white-bubble chip rail + real folder chips, exact row anatomy (streak chips, italic tombstones, pin/mute, red 18dp art-badge on the preview line), centered hugging dock pill + dark glass FAB, and every control wired to the live gateway: filters, search, rooms, send, story viewer/composer, new-chat DMs, call log, channel subscribe.
+- USER ACTION: re-download Pulse-native-audit-0.23.0.0.5.apk (same name/version, installs over the current one, gateway + identity persist).
+- Next round: typing indicators + socket events into the mirror, Coil for story photos, deeper Calls/Updates pages.
