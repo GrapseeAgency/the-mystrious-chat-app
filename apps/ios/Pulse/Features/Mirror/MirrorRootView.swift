@@ -421,12 +421,12 @@ private struct MirrorProfileIdentity: View {
 
             MirrorStatsCardView(model: model)
 
-            MirrorSectionLabel("SAVED")
+            MirrorSectionLabel(text: "SAVED")
             MirrorCard {
                 MirrorAccountRow(icon: "star", iconTint: MirrorArt.starAmber, title: "Saved messages", subtitle: "Long-press any message in a chat, then Save", titleTint: MirrorArt.text)
             }
 
-            MirrorSectionLabel("ACCOUNT")
+            MirrorSectionLabel(text: "ACCOUNT")
             MirrorCard {
                 MirrorAccountRow(icon: "touchid", iconTint: MirrorArt.textSoft, title: "Copy account ID", subtitle: session.viewer?.id ?? "", titleTint: MirrorArt.text)
                 Rectangle().fill(MirrorArt.hairline).frame(height: 1)
@@ -499,10 +499,10 @@ private struct MirrorStatsCardView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            MirrorStatCell("\(model.stats?.messages ?? 0)", "MESSAGES", MirrorArt.text)
-            MirrorStatCell("\(model.stats?.chats ?? 0)", "ROOMS", MirrorArt.text)
-            MirrorStatCell("\(model.coins)", "COINS", MirrorArt.accent)
-            MirrorStatCell(MirrorSince.short(model.stats?.joinedAt), "SINCE", MirrorArt.text, small: true)
+            MirrorStatCell(value: "\(model.stats?.messages ?? 0)", label: "MESSAGES", tint: MirrorArt.text)
+            MirrorStatCell(value: "\(model.stats?.chats ?? 0)", label: "ROOMS", tint: MirrorArt.text)
+            MirrorStatCell(value: "\(model.coins)", label: "COINS", tint: MirrorArt.accent)
+            MirrorStatCell(value: MirrorSince.short(model.stats?.joinedAt), label: "SINCE", tint: MirrorArt.text, small: true)
         }
         .padding(.vertical, 16)
         .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(MirrorArt.hairline))
