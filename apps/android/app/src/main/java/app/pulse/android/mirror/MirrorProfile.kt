@@ -458,11 +458,11 @@ private fun MirrorCoverHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                MirrorPhosphorIcon(
-                    if (coverBusy) "PLoaderCircle" else "PPhoto",
-                    tint = Color.White,
-                    modifier = Modifier.size(14.dp),
-                )
+                if (coverBusy) {
+                    MirrorLucideIcon("LLoaderCircle", tint = Color.White, modifier = Modifier.size(14.dp))
+                } else {
+                    MirrorPhosphorIcon("PPhoto", tint = Color.White, modifier = Modifier.size(14.dp))
+                }
                 Text(
                     if (hasCover) "Change" else "Add cover",
                     color = Color.White,
