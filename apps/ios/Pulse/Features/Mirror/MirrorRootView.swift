@@ -76,6 +76,7 @@ public struct MirrorProfileRow: Codable, Sendable {
 @MainActor
 final class MirrorViewModel: ObservableObject {
     @Published var rows: [MirrorRow] = []
+    @Published var archivedRows: [MirrorRow] = []
     @Published var profile: MirrorProfileRow?
     @Published var stats: WireUserStats?
     @Published var coins: Int = 0
@@ -94,6 +95,11 @@ final class MirrorViewModel: ObservableObject {
         let pinned: Bool
         let muted: Bool
         let subtitle: String
+        // R64 - web row affordances
+        var isArchived: Bool = false
+        var manualUnread: Bool = false
+        var streak: Int = 0
+        var draft: String? = nil
     }
 
     private var timer: Timer?
@@ -135,7 +141,11 @@ final class MirrorViewModel: ObservableObject {
             muted: summary.mutedUntil != nil,
             subtitle: summary.isGroup
                 ? summary.members.map { $0.name }.filter { !$0.isEmpty }.joined(separator: ", ")
-                : ""
+                : "",
+            isArchived: summary.isArchived,
+            manualUnread: summary.manualUnread,
+            streak: summary.myStreak?.count ?? 0,
+            draft: (summary.myDraft ?? "").isEmpty ? nil : summary.myDraft
         )
     }
 
@@ -153,9 +163,12 @@ final class MirrorViewModel: ObservableObject {
     func refresh() {
         guard let client else { return }
         Task { @MainActor in
-            // rows - real summaries, same mapping the web home uses
+            // rows - real summaries, same mapping the web home uses;
+            // R64 web parity: the main list EXCLUDES archived chats
             if let page = try? await client.conversations() {
-                rows = page.map { MirrorViewModel.buildRow(summary: $0, viewerId: client.userId) }
+                let built = page.map { MirrorViewModel.buildRow(summary: $0, viewerId: client.userId) }
+                rows = built.filter { !$0.isArchived }
+                archivedRows = built.filter { $0.isArchived }
             }
             // profile row (tolerant subset), stats, coins
             if let url = URL(string: PulseEndpoints.gatewayURL.absoluteString + "/api/users/" + client.userId) {
@@ -223,7 +236,7 @@ struct MirrorRootView: View {
             } else {
                 VStack(spacing: 0) {
                     switch tab {
-                    case 0: MirrorHomeView(model: model, onOpen: { openRow = $0 })
+                    case 0: MirrorHomeView(model: model, session: session, onOpen: { openRow = $0 })
                     case 3: MirrorProfileView(model: model, session: session)
                     default: MirrorLaterView(title: tab == 1 ? "Calls" : "Updates")
                     }
@@ -244,96 +257,638 @@ struct MirrorRootView: View {
 
 struct MirrorHomeView: View {
     @ObservedObject var model: MirrorViewModel
+    @ObservedObject var session: PulseSession
     let onOpen: (MirrorViewModel.MirrorRow) -> Void
 
+    // R64 - live filters (web rails), search, kebab menu, row long-press
+    @State private var chip: Int = 0
+    @State private var searching = false
+    @State private var query = ""
+    @State private var kebabOpen = false
+    @State private var optionsRow: MirrorViewModel.MirrorRow?
+    @State private var activeSheet: MirrorHomeSheet?
+
+    private var visibleRows: [MirrorViewModel.MirrorRow] {
+        let base: [MirrorViewModel.MirrorRow]
+        switch chip {
+        case 1: base = model.rows.filter { $0.unread > 0 }
+        case 2: base = model.rows.filter { $0.isGroup }
+        default: base = model.rows
+        }
+        if query.trimmingCharacters(in: .whitespaces).isEmpty { return base }
+        let q = query.lowercased()
+        return base.filter { $0.title.lowercased().contains(q) || $0.preview.lowercased().contains(q) }
+    }
+
     var body: some View {
-        ScrollView {
+        ZStack(alignment: .topTrailing) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        Text("Chats")
+                            .font(.system(size: 26, weight: .bold))
+                            .foregroundColor(MirrorArt.text)
+                        Spacer()
+                        Button {
+                            withAnimation { searching = true }
+                        } label: {
+                            Image(systemName: "magnifyingglass").font(.system(size: 20)).foregroundColor(MirrorArt.text)
+                                .frame(width: 44, height: 44)
+                        }
+                        Image(systemName: "camera").font(.system(size: 20)).foregroundColor(MirrorArt.text)
+                            .frame(width: 44, height: 44)
+                        Button {
+                            kebabOpen = true
+                        } label: {
+                            Image(systemName: "ellipsis").font(.system(size: 20)).foregroundColor(MirrorArt.text)
+                                .frame(width: 44, height: 44)
+                        }
+                    }
+                    .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 6)
+
+                    if searching {
+                        HStack(spacing: 10) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundColor(MirrorArt.faint)
+                                TextField("Search chats and messages…", text: $query)
+                                    .font(.system(size: 14)).foregroundColor(MirrorArt.text)
+                                    .autocorrectionDisabled()
+                                if !query.isEmpty {
+                                    Button {
+                                        query = ""
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundColor(MirrorArt.dim)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16).frame(height: 40)
+                            .background(MirrorArt.glass7)
+                            .overlay(Capsule().strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                            .clipShape(Capsule())
+                            Button {
+                                searching = false
+                                query = ""
+                            } label: {
+                                Image(systemName: "xmark").font(.system(size: 18)).foregroundColor(MirrorArt.dim)
+                                    .frame(width: 40, height: 40)
+                            }
+                        }
+                        .padding(.horizontal, 12).padding(.bottom, 8)
+                    }
+
+                    HStack(spacing: 6) {
+                        MirrorChipText(label: "All", active: chip == 0) { chip = 0 }
+                        MirrorChipCount(label: "Unread", count: model.totalUnread, active: chip == 1) { chip = 1 }
+                        MirrorChipText(label: "Groups", active: chip == 2) { chip = 2 }
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+
+                    ForEach(visibleRows) { row in
+                        MirrorRowView(row: row)
+                            .contentShape(Rectangle())
+                            .onTapGesture { onOpen(row) }
+                            .onLongPressGesture(minimumDuration: 0.45) { optionsRow = row }
+                    }
+                    if visibleRows.isEmpty {
+                        VStack(spacing: 4) {
+                            Text(query.isEmpty ? "No chats here yet" : "No matches")
+                                .font(.system(size: 14, weight: .medium)).foregroundColor(MirrorArt.dim)
+                            Text(query.isEmpty ? "Your next great chat is one tap away. Find someone and break the ice."
+                                 : "Try a different word or check the spelling.")
+                                .font(.system(size: 12)).foregroundColor(MirrorArt.faint)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 48)
+                    }
+                }
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
+            }
+
+            if kebabOpen {
+                MirrorHomeKebab(
+                    archivedCount: model.archivedRows.count,
+                    onDismiss: { kebabOpen = false },
+                    onSearch: { kebabOpen = false; withAnimation { searching = true } },
+                    onNewChat: { kebabOpen = false; activeSheet = .newChat },
+                    onNewGroup: { kebabOpen = false; activeSheet = .newGroup },
+                    onContacts: { kebabOpen = false; activeSheet = .contacts },
+                    onArchived: { kebabOpen = false; activeSheet = .archived }
+                )
+            }
+        }
+        .sheet(item: $optionsRow) { row in
+            MirrorRowOptions(row: row, session: session, onDone: { model.refresh() })
+        }
+        .sheet(item: $activeSheet) { sheet in
+            MirrorHomeSheetView(sheet: sheet, model: model, session: session, onOpenRow: { row in
+                activeSheet = nil
+                onOpen(row)
+            })
+        }
+    }
+}
+
+/// R64 - the home kebab rows the mirror makes REAL natively (no dead taps).
+struct MirrorHomeKebab: View {
+    let archivedCount: Int
+    let onDismiss: () -> Void
+    let onSearch: () -> Void
+    let onNewChat: () -> Void
+    let onNewGroup: () -> Void
+    let onContacts: () -> Void
+    let onArchived: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.001)
+                .contentShape(Rectangle())
+                .onTapGesture { onDismiss() }
             VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("Chats")
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundColor(MirrorArt.text)
-                    Spacer()
-                    Image(systemName: "magnifyingglass").font(.system(size: 20)).foregroundColor(MirrorArt.text)
-                        .padding(.horizontal, 8)
-                    Image(systemName: "camera").font(.system(size: 20)).foregroundColor(MirrorArt.text)
-                        .padding(.horizontal, 8)
-                    Image(systemName: "ellipsis").font(.system(size: 20)).foregroundColor(MirrorArt.text)
-                        .padding(.horizontal, 8)
-                }
-                .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 6)
+                MirrorKebabRow(icon: "magnifyingglass", label: "Search", action: onSearch)
+                MirrorKebabRow(icon: "bubble.left", label: "New chat", action: onNewChat)
+                MirrorKebabRow(icon: "person.2", label: "New group", action: onNewGroup)
+                MirrorKebabRow(icon: "book", label: "Contacts", action: onContacts)
+                MirrorKebabRow(icon: "archivebox", label: "Archived", trailing: "\(archivedCount)", action: onArchived)
+            }
+            .frame(width: 240)
+            .background(Color(red: 0x1C/255.0, green: 0x16/255.0, blue: 0x10/255.0).opacity(0.95))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.trailing, 12)
+            .padding(.top, 60)
+            .shadow(color: .black.opacity(0.5), radius: 18, y: 8)
+        }
+    }
+}
 
-                HStack(spacing: 8) {
-                    MirrorChipText(label: "All", active: true)
-                    MirrorChipCount(label: "Unread", count: model.totalUnread)
-                    MirrorChipText(label: "Groups", active: false)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 6)
+struct MirrorKebabRow: View {
+    let icon: String
+    let label: String
+    var trailing: String = ""
+    let action: () -> Void
 
-                ForEach(model.rows) { row in
-                    MirrorRowView(row: row)
-                        .contentShape(Rectangle())
-                        .onTapGesture { onOpen(row) }
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.system(size: 15)).foregroundColor(MirrorArt.dim).frame(width: 20)
+                Text(label).font(.system(size: 13.5, weight: .medium)).foregroundColor(MirrorArt.text)
+                Spacer(minLength: 0)
+                if !trailing.isEmpty {
+                    Text(trailing).font(.system(size: 11, weight: .semibold)).foregroundColor(MirrorArt.faint)
                 }
             }
-            .frame(maxWidth: 560)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Sheet destinations behind the home kebab (all gateway-backed).
+enum MirrorHomeSheet: String, Identifiable {
+    case newChat, newGroup, contacts, archived
+    var id: String { rawValue }
+}
+
+struct MirrorHomeSheetView: View {
+    let sheet: MirrorHomeSheet
+    @ObservedObject var model: MirrorViewModel
+    @ObservedObject var session: PulseSession
+    let onOpenRow: (MirrorViewModel.MirrorRow) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var users: [WireUser] = []
+    @State private var query = ""
+    @State private var groupName = ""
+    @State private var picked: Set<String> = []
+    @State private var busy = false
+
+    private var filteredUsers: [WireUser] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        if q.isEmpty { return users }
+        return users.filter { $0.name.lowercased().contains(q) }
+    }
+
+    var body: some View {
+        MirrorPanel(title: panelTitle) {
+            if sheet == .newGroup {
+                TextField("Group name", text: $groupName)
+                    .font(.system(size: 14)).foregroundColor(MirrorArt.text)
+                    .padding(.horizontal, 16).frame(height: 40)
+                    .background(MirrorArt.glass7)
+                    .overlay(Capsule().strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                    .clipShape(Capsule())
+                    .padding(.bottom, 8)
+            }
+            if sheet == .archived {
+                MirrorPanelScroll {
+                    if model.archivedRows.isEmpty {
+                        MirrorPanelHint("Nothing archived")
+                    }
+                    ForEach(model.archivedRows) { row in
+                        MirrorPanelUserRow(
+                            name: row.title,
+                            color: row.color,
+                            isGroup: row.isGroup,
+                            id: row.id,
+                            subtitle: row.preview,
+                            trailingIcon: "arrow.up.bin",
+                            onTap: { onOpenRow(row) }
+                        )
+                    }
+                }
+            } else {
+                MirrorPanelSearch(query: $query)
+                MirrorPanelScroll {
+                    ForEach(filteredUsers) { user in
+                        if sheet == .newGroup {
+                            MirrorPanelUserRow(
+                                name: user.name,
+                                color: user.color,
+                                isGroup: false,
+                                id: user.id,
+                                subtitle: "",
+                                checked: picked.contains(user.id),
+                                onTap: {
+                                    if picked.contains(user.id) { picked.remove(user.id) } else { picked.insert(user.id) }
+                                }
+                            )
+                        } else {
+                            MirrorPanelUserRow(
+                                name: user.name,
+                                color: user.color,
+                                isGroup: false,
+                                id: user.id,
+                                subtitle: user.about ?? "",
+                                onTap: { openOrCreateDM(with: user) }
+                            )
+                        }
+                    }
+                }
+                if sheet == .newGroup {
+                    Button {
+                        createGroup()
+                    } label: {
+                        Text(busy ? "Creating…" : "Create group")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(canCreateGroup ? .white : MirrorArt.faint)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(canCreateGroup ? MirrorArt.accent : MirrorArt.glass7)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canCreateGroup)
+                }
+            }
+        }
+        .task {
+            users = (try? await session.api.users()) ?? []
+        }
+    }
+
+    private var panelTitle: String {
+        switch sheet {
+        case .newChat: return "New chat"
+        case .newGroup: return "New group"
+        case .contacts: return "Contacts"
+        case .archived: return "Archived"
+        }
+    }
+
+    private var canCreateGroup: Bool {
+        !groupName.trimmingCharacters(in: .whitespaces).isEmpty && picked.count >= 2 && !busy
+    }
+
+    private func openOrCreateDM(with user: WireUser) {
+        guard !busy else { return }
+        busy = true
+        Task {
+            if let existing = model.rows.first(where: { !$0.isGroup && $0.title == user.name }) {
+                onOpenRow(existing)
+            } else {
+                _ = try? await session.api.createConversation(memberIds: [user.id], isGroup: false)
+                model.refresh()
+                if let created = model.rows.first(where: { !$0.isGroup && $0.title == user.name }) {
+                    onOpenRow(created)
+                } else {
+                    onDismissSheet()
+                }
+            }
+        }
+    }
+
+    private func createGroup() {
+        busy = true
+        Task {
+            _ = try? await session.api.createConversation(
+                memberIds: Array(picked), isGroup: true,
+                name: groupName.trimmingCharacters(in: .whitespaces)
+            )
+            model.refresh()
+            onDismissSheet()
+        }
+    }
+
+    private func onDismissSheet() { busy = false; dismiss() }
+}
+
+/// Row long-press options - the web ChatOptionsSheet rows, real API calls.
+struct MirrorRowOptions: View {
+    let row: MirrorViewModel.MirrorRow
+    @ObservedObject var session: PulseSession
+    let onDone: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var muteStrip = false
+    @State private var note = ""
+
+    var body: some View {
+        MirrorPanel(title: row.title) {
+            if muteStrip {
+                MirrorPanelHint("Mute for")
+                HStack(spacing: 6) {
+                    ForEach(["8h", "1w", "Always"], id: \.self) { preset in
+                        Button {
+                            mute(until: preset == "8h" ? "8h" : preset == "1w" ? "1w" : "always")
+                        } label: {
+                            Text(preset)
+                                .font(.system(size: 12, weight: .semibold)).foregroundColor(MirrorArt.textSoft)
+                                .frame(maxWidth: .infinity).frame(height: 36)
+                                .background(MirrorArt.glass7)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } else {
+                MirrorPanelOption(icon: row.pinned ? "pin.slash" : "pin", label: row.pinned ? "Unpin from top" : "Pin to top") {
+                    Task { try? await session.api.togglePin(conversationId: row.id); finish() }
+                }
+                MirrorPanelOption(icon: "archivebox", label: "Archive chat") {
+                    Task { try? await session.api.archive(conversationId: row.id, archived: true); finish() }
+                }
+                MirrorPanelOption(icon: row.manualUnread ? "envelope.open" : "envelope", label: row.manualUnread ? "Mark as read" : "Mark as unread") {
+                    Task { try? await session.api.markUnread(conversationId: row.id, on: !row.manualUnread); finish() }
+                }
+                MirrorPanelOption(icon: "bell.slash", label: "Mute notifications") { muteStrip = true }
+                if !note.isEmpty {
+                    MirrorPanelHint(note)
+                }
+            }
+        }
+    }
+
+    private func finish() { onDone(); dismiss() }
+
+    private func mute(until: String?) {
+        Task {
+            try? await session.api.setMuted(conversationId: row.id, until: until)
+            finish()
+        }
+    }
+}
+
+/// Shared dark artboard panel chrome for every mirror sheet.
+struct MirrorPanel<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(title).font(.system(size: 18, weight: .bold)).foregroundColor(MirrorArt.text)
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark").font(.system(size: 14)).foregroundColor(MirrorArt.dim)
+                        .frame(width: 32, height: 32)
+                        .background(MirrorArt.glass7)
+                        .clipShape(Circle())
+                }
+            }
+            .padding(.bottom, 12)
+            content()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 0x1C/255.0, green: 0x16/255.0, blue: 0x10/255.0))
+        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+    }
+}
+
+struct MirrorPanelScroll<Content: View>: View {
+    @ViewBuilder let content: Content
+    var body: some View {
+        ScrollView { VStack(alignment: .leading, spacing: 0) { content() } }
+            .frame(maxHeight: 380)
+    }
+}
+
+struct MirrorPanelSearch: View {
+    @Binding var query: String
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundColor(MirrorArt.faint)
+            TextField("Search people…", text: $query)
+                .font(.system(size: 14)).foregroundColor(MirrorArt.text)
+        }
+        .padding(.horizontal, 16).frame(height: 40)
+        .background(MirrorArt.glass7)
+        .overlay(Capsule().strokeBorder(MirrorArt.hairline, lineWidth: 1))
+        .clipShape(Capsule())
+        .padding(.bottom, 8)
+    }
+}
+
+struct MirrorPanelHint: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .bold))
+            .kerning(1.2)
+            .foregroundColor(MirrorArt.faint)
+            .padding(.horizontal, 8).padding(.vertical, 6)
+    }
+}
+
+struct MirrorPanelUserRow: View {
+    let name: String
+    let color: String?
+    let isGroup: Bool
+    let id: String
+    var subtitle: String = ""
+    var trailingIcon: String? = nil
+    var checked: Bool? = nil
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                MirrorAvatarTile(name: name, color: color, isGroup: isGroup, id: id, online: false, showPresence: false, size: isGroup ? 44 : 38, corner: isGroup ? 14 : 19)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).font(.system(size: 14, weight: .semibold)).foregroundColor(MirrorArt.text).lineLimit(1)
+                    if !subtitle.isEmpty {
+                        Text(subtitle).font(.system(size: 11)).foregroundColor(MirrorArt.faint).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if let checked {
+                    ZStack {
+                        Circle().fill(checked ? MirrorArt.accent : MirrorArt.glass7)
+                            .overlay(Circle().strokeBorder(checked ? Color.clear : MirrorArt.hairline, lineWidth: 1))
+                        if checked {
+                            Image(systemName: "check").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
+                        }
+                    }
+                    .frame(width: 22, height: 22)
+                }
+                if let trailingIcon {
+                    Image(systemName: trailingIcon).font(.system(size: 14)).foregroundColor(MirrorArt.dim)
+                }
+            }
+            .padding(.horizontal, 4).padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct MirrorPanelOption: View {
+    let icon: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.system(size: 15)).foregroundColor(MirrorArt.dim).frame(width: 20)
+                Text(label).font(.system(size: 13.5, weight: .medium)).foregroundColor(MirrorArt.text)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
 struct MirrorChipText: View {
     let label: String
     let active: Bool
+    var action: (() -> Void)? = nil
     var body: some View {
-        Text(label)
-            .font(.system(size: 13, weight: .medium))
-            .foregroundColor(active ? MirrorArt.text : MirrorArt.textSoft)
-            .padding(.horizontal, 14).padding(.vertical, 5)
-            .background(active ? MirrorArt.chipActive : MirrorArt.chip)
-            .clipShape(Capsule())
+        Button {
+            action?()
+        } label: {
+            Text(label)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(active ? MirrorArt.text : MirrorArt.textSoft)
+                .padding(.horizontal, 14).padding(.vertical, 5)
+                .background(active ? MirrorArt.chipActive : MirrorArt.chip)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }
 
 struct MirrorChipCount: View {
     let label: String
     let count: Int
+    var active: Bool = false
+    var action: (() -> Void)? = nil
     var body: some View {
-        HStack(spacing: 6) {
-            if count > 0 {
-                Text("\(min(count, 99))")
-                    .font(.system(size: 11, weight: .bold)).foregroundColor(.white)
-                    .frame(width: 18, height: 18).background(MirrorArt.red).clipShape(Capsule())
+        Button {
+            action?()
+        } label: {
+            HStack(spacing: 6) {
+                if count > 0 {
+                    Text("\(min(count, 99))")
+                        .font(.system(size: 11, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 18, height: 18).background(MirrorArt.red).clipShape(Capsule())
+                }
+                Text(label).font(.system(size: 13, weight: .medium)).foregroundColor(active ? MirrorArt.text : MirrorArt.textSoft)
             }
-            Text(label).font(.system(size: 13, weight: .medium)).foregroundColor(MirrorArt.textSoft)
+            .padding(.horizontal, 14).padding(.vertical, 5)
+            .background(active ? MirrorArt.chipActive : MirrorArt.chip)
+            .clipShape(Capsule())
         }
-        .padding(.horizontal, 14).padding(.vertical, 5)
-        .background(MirrorArt.chip).clipShape(Capsule())
+        .buttonStyle(.plain)
     }
 }
 
+/**
+ * R64 - web ArtConversationRow anatomy verbatim: L1 name (baseline) with the
+ * streak chip + time on the RIGHT (web items-baseline); L2 typing/Draft/
+ * preview with the rotated FILLED pin, the BellOff muted chip and the FLAT
+ * signal-red 18pt art-badge (the old gradient pill is dead on the web).
+ */
 struct MirrorRowView: View {
     let row: MirrorViewModel.MirrorRow
     var body: some View {
-        HStack(spacing: 12) {
-            MirrorAvatarTile(name: row.title, color: row.color, isGroup: row.isGroup, id: row.id, online: row.online, showPresence: !row.isGroup, size: 50, corner: 16)
+        HStack(alignment: .center, spacing: 12) {
+            MirrorAvatarTile(name: row.title, color: row.color, isGroup: row.isGroup, id: row.id, online: row.online, showPresence: !row.isGroup, size: 50, corner: row.isGroup ? 14 : 25)
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).font(.system(size: 15, weight: .semibold)).foregroundColor(MirrorArt.text).lineLimit(1)
-                Text(row.preview).font(.system(size: 13)).foregroundColor(MirrorArt.dim).lineLimit(1)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(row.time).font(.system(size: 11, weight: .semibold)).foregroundColor(MirrorArt.faint)
-                if row.unread > 0 {
-                    Text("\(min(row.unread, 99))")
-                        .font(.system(size: 11, weight: .bold)).foregroundColor(.white)
-                        .padding(.horizontal, 6).padding(.vertical, 1)
-                        .background(LinearGradient(colors: [MirrorArt.badgeTop, MirrorArt.badgeDeep], startPoint: .leading, endPoint: .trailing))
+                // L1 - name ... streak chip + time (baseline feel)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(row.title).font(.system(size: 15, weight: .semibold)).foregroundColor(MirrorArt.text).lineLimit(1)
+                    Spacer(minLength: 8)
+                    if row.streak > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "flame").font(.system(size: 9)).foregroundColor(MirrorArt.dim)
+                            Text("\(row.streak)").font(.system(size: 10, weight: .bold)).foregroundColor(MirrorArt.dim)
+                        }
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(MirrorArt.chip)
+                        .overlay(Capsule().strokeBorder(MirrorArt.hairline, lineWidth: 1))
                         .clipShape(Capsule())
+                    }
+                    Text(row.time)
+                        .font(.system(size: 11, weight: (row.unread > 0 || row.manualUnread) ? .semibold : .regular))
+                        .foregroundColor((row.unread > 0 || row.manualUnread) ? MirrorArt.textSoft : MirrorArt.faint)
+                }
+                // L2 - typing | Draft | preview ... pin + muted + flat red badge
+                HStack(spacing: 6) {
+                    if let draft = row.draft, !draft.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Image(systemName: "pencil.line").font(.system(size: 9)).foregroundColor(MirrorArt.accent)
+                        Text("Draft:").font(.system(size: 13, weight: .semibold)).foregroundColor(MirrorArt.accent2)
+                        Text(draft).font(.system(size: 13).italic()).foregroundColor(MirrorArt.dim).lineLimit(1)
+                    } else {
+                        Text(row.preview).font(.system(size: 13)).foregroundColor(MirrorArt.dim).lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    if row.pinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 9))
+                            .rotationEffect(.degrees(45))
+                            .foregroundColor(MirrorArt.faint)
+                    }
+                    if row.unread > 0 {
+                        Text("\(min(row.unread, 99))")
+                            .font(.system(size: 11, weight: .bold)).foregroundColor(.white)
+                            .padding(.horizontal, 6).frame(height: 18)
+                            .background(MirrorArt.red)
+                            .clipShape(Capsule())
+                    } else if row.manualUnread {
+                        Circle().fill(MirrorArt.red).frame(width: 10, height: 10)
+                    }
                 }
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
+    }
+}
+
+private extension Optional where Wrapped == String {
+    var isNilOrEmpty: Bool {
+        switch self {
+        case .some(let v): return v.trimmingCharacters(in: .whitespaces).isEmpty
+        case .none: return true
+        }
     }
 }
 
@@ -810,7 +1365,12 @@ struct MirrorRoomView: View {
     let onBack: () -> Void
     @State private var messages: [WireChatMessage] = []
     @State private var memberNames: [String] = []
+    @State private var memberRows: [WireConversationMember] = []
     @State private var draft = ""
+    // R64 - room kebab + sheets + the composer focus ring
+    @State private var menuOpen = false
+    @State private var activeSheet: MirrorRoomSheet?
+    @State private var composerFocused = false
 
     private var bubbleMax: CGFloat { UIScreen.main.bounds.width * 0.78 }
 
@@ -831,7 +1391,12 @@ struct MirrorRoomView: View {
                     Spacer(minLength: 6)
                     Image(systemName: "video").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft).frame(width: 44, height: 44)
                     Image(systemName: "phone").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft).frame(width: 44, height: 44)
-                    Image(systemName: "ellipsis").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft).frame(width: 44, height: 44)
+                    Button {
+                        menuOpen = true
+                    } label: {
+                        Image(systemName: "ellipsis").font(.system(size: 18)).foregroundColor(MirrorArt.textSoft)
+                            .frame(width: 44, height: 44)
+                    }
                 }
                 .padding(.horizontal, 6).frame(minHeight: 56)
                 Rectangle().fill(MirrorArt.hairline).frame(height: 1)
@@ -883,12 +1448,18 @@ struct MirrorRoomView: View {
                         .font(.system(size: 15)).foregroundColor(MirrorArt.text)
                         .lineLimit(1...5)
                         .padding(.vertical, 6)
+                        .focused($composerFocused)
                     Image(systemName: "camera").font(.system(size: 17)).foregroundColor(MirrorArt.dim)
                         .frame(width: 36, height: 36)
                 }
                 .padding(.horizontal, 4).padding(.vertical, 6)
                 .frame(minHeight: 48)
                 .background(MirrorArt.glass7)
+                // web focus hairline: ring-2 inset ring-accent/45 over the WHOLE pill
+                .overlay(
+                    Capsule().strokeBorder(MirrorArt.accent.opacity(0.45), lineWidth: 2)
+                        .opacity(composerFocused ? 1 : 0)
+                )
                 .overlay(Capsule().strokeBorder(MirrorArt.hairline, lineWidth: 1))
                 .clipShape(Capsule())
 
@@ -903,6 +1474,33 @@ struct MirrorRoomView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 12)
         }
+        .overlay(alignment: .topTrailing) {
+            if menuOpen {
+                MirrorRoomKebab(
+                    isGroup: row.isGroup,
+                    muted: row.muted,
+                    onDismiss: { menuOpen = false },
+                    onRoomInfo: { menuOpen = false; activeSheet = .info },
+                    onSearch: { menuOpen = false; activeSheet = .search },
+                    onPinned: { menuOpen = false; activeSheet = .pinned },
+                    onMute: { preset in
+                        menuOpen = false
+                        Task {
+                            try? await session.api.setMuted(conversationId: row.id, until: preset)
+                        }
+                    }
+                )
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            MirrorRoomSheetView(
+                sheet: sheet,
+                row: row,
+                session: session,
+                messages: messages,
+                memberRows: memberRows
+            )
+        }
         .task {
             await load()
             try? await session.api.markRead(conversationId: row.id)
@@ -911,9 +1509,9 @@ struct MirrorRoomView: View {
 
     private func load() async {
         messages = (try? await session.api.messages(conversationId: row.id).messages) ?? []
-        if let summaries = try? await session.api.conversations(),
-           let summary = summaries.first(where: { $0.id == row.id }) {
+        if let summary = try? await session.api.conversationDetail(id: row.id, userId: session.api.userId) {
             memberNames = summary.members.map { $0.name }
+            memberRows = summary.members
         }
     }
 
@@ -1076,6 +1674,161 @@ struct MirrorLaterView: View {
             Text("Native mirror audit - this tab mirrors the web next round")
                 .font(.system(size: 13)).foregroundColor(MirrorArt.dim)
             Spacer()
+        }
+    }
+}
+
+// R64 - room kebab + sheets (mirror parity with the web Conversation menu)
+
+enum MirrorRoomSheet: String, Identifiable {
+    case info, search, pinned
+    var id: String { rawValue }
+}
+
+struct MirrorRoomKebab: View {
+    let isGroup: Bool
+    let muted: Bool
+    let onDismiss: () -> Void
+    let onRoomInfo: () -> Void
+    let onSearch: () -> Void
+    let onPinned: () -> Void
+    let onMute: (String?) -> Void
+    @State private var muteStrip = false
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.opacity(0.001)
+                .contentShape(Rectangle())
+                .onTapGesture { onDismiss() }
+            VStack(alignment: .leading, spacing: 0) {
+                MirrorKebabRow(icon: "info.circle", label: "Room info", action: onRoomInfo)
+                MirrorKebabRow(icon: "magnifyingglass", label: "Search in conversation", action: onSearch)
+                MirrorKebabRow(icon: "pin", label: "Pinned messages", action: onPinned)
+                if muteStrip {
+                    MirrorPanelHint("Mute for")
+                    HStack(spacing: 4) {
+                        ForEach(["8h", "1w", "Always"], id: \.self) { preset in
+                            Button {
+                                onDismiss()
+                                onMute(preset == "8h" ? "8h" : preset == "1w" ? "1w" : "always")
+                            } label: {
+                                Text(preset)
+                                    .font(.system(size: 12, weight: .semibold)).foregroundColor(MirrorArt.textSoft)
+                                    .frame(maxWidth: .infinity).frame(height: 30)
+                                    .background(MirrorArt.glass7)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 8).padding(.bottom, 8)
+                } else {
+                    MirrorKebabRow(
+                        icon: muted ? "bell" : "bell.slash",
+                        label: muted ? "Unmute notifications" : "Mute notifications",
+                        action: { muted ? onMute(nil) : (muteStrip = true) }
+                    )
+                }
+            }
+            .frame(width: 224)
+            .background(Color(red: 0x1C/255.0, green: 0x16/255.0, blue: 0x10/255.0).opacity(0.95))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .padding(.trailing, 8)
+            .padding(.top, 62)
+            .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
+        }
+    }
+}
+
+struct MirrorRoomSheetView: View {
+    let sheet: MirrorRoomSheet
+    let row: MirrorViewModel.MirrorRow
+    @ObservedObject var session: PulseSession
+    let messages: [WireChatMessage]
+    let memberRows: [WireConversationMember]
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var pinned: [WireChatMessage]?
+
+    var body: some View {
+        MirrorPanel(title: panelTitle) {
+            switch sheet {
+            case .info:
+                MirrorPanelScroll {
+                    ForEach(memberRows, id: \.id) { member in
+                        MirrorPanelUserRow(
+                            name: member.name,
+                            color: member.color,
+                            isGroup: false,
+                            id: member.id,
+                            subtitle: member.id == session.api.userId ? "you" : ""
+                        )
+                    }
+                }
+            case .search:
+                MirrorPanelSearch(query: $query)
+                MirrorPanelScroll {
+                    let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+                    let hits = q.isEmpty
+                        ? []
+                        : messages.filter { ($0.content ?? "").lowercased().contains(q) }.suffix(40)
+                    if !q.isEmpty && hits.isEmpty {
+                        MirrorPanelHint("No matches in this conversation")
+                    }
+                    ForEach(Array(hits), id: \.id) { hit in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(hit.content ?? "").font(.system(size: 13)).foregroundColor(MirrorArt.textSoft).lineLimit(2)
+                            Text(MirrorRowTime.short(hit.createdAt))
+                                .font(.system(size: 10)).foregroundColor(MirrorArt.faint)
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 6)
+                    }
+                }
+            case .pinned:
+                MirrorPanelScroll {
+                    if let pinned {
+                        if pinned.isEmpty {
+                            MirrorPanelHint("Nothing pinned yet")
+                        }
+                        ForEach(pinned, id: \.id) { message in
+                            HStack(alignment: .top, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(message.content ?? "Photo")
+                                        .font(.system(size: 13)).foregroundColor(MirrorArt.textSoft).lineLimit(2)
+                                    Text(MirrorRowTime.short(message.createdAt))
+                                        .font(.system(size: 10)).foregroundColor(MirrorArt.faint)
+                                }
+                                Spacer(minLength: 0)
+                                Button {
+                                    Task {
+                                        _ = try? await session.api.toggleMessagePin(id: message.id, userId: session.api.userId)
+                                        pinned = (try? await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)) ?? []
+                                    }
+                                } label: {
+                                    Image(systemName: "pin.slash").font(.system(size: 13)).foregroundColor(MirrorArt.dim)
+                                        .frame(width: 32, height: 32)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 6)
+                        }
+                    } else {
+                        MirrorPanelHint("Loading pins…")
+                    }
+                }
+                .task {
+                    pinned = (try? await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)) ?? []
+                }
+            }
+        }
+    }
+
+    private var panelTitle: String {
+        switch sheet {
+        case .info: return row.isGroup ? "Group info" : "Chat info"
+        case .search: return "Search in conversation"
+        case .pinned: return "Pinned messages"
         }
     }
 }
