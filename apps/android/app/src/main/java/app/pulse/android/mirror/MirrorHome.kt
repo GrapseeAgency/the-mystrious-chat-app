@@ -14,13 +14,16 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -206,13 +209,21 @@ internal fun MirrorHome(
         } }
         .filter { activeFolder == null || it.id in activeFolder.conversationIds }
 
+    // Web overlay parity: the list viewport runs EDGE-TO-EDGE so rows scroll
+    // BEHIND the floating glass dock and stay visible through its translucent
+    // panel, exactly like the web's absolute-positioned dock. A layout padding
+    // here was a hard clip line that amputated rows mid-glyph above the dock.
+    // Only the LAST item must clear the dock, so the 108dp dock clearance plus
+    // the system nav inset live in contentPadding, which scrolls with content.
     LazyColumn(
         state = rememberLazyListState(),
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(bottom = 108.dp),
+            .statusBarsPadding(),
+        contentPadding = PaddingValues(
+            bottom = 108.dp +
+                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+        ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         item {
