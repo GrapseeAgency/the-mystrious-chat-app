@@ -118,6 +118,11 @@ fun MirrorRoot(
     var roomInfoFor by remember { mutableStateOf<Conversation?>(null) }
     var managerFor by remember { mutableStateOf<Conversation?>(null) }
 
+    // R71 - the web SettingsScreen + profile sub-surfaces (profile-tab.tsx)
+    var settingsOpen by remember { mutableStateOf(false) }
+    var profileEditOpen by remember { mutableStateOf(false) }
+    var profileSavedOpen by remember { mutableStateOf(false) }
+
     // R64 - typing state: relay events → per-conversation typer list (4s TTL).
     var typers by remember { mutableStateOf<List<MirrorTyper>>(emptyList()) }
     LaunchedEffect(viewerId) {
@@ -309,7 +314,10 @@ fun MirrorRoot(
                             repository = repository,
                             iAmOnline = viewerId != null && presence.contains(viewerId),
                             onSignOut = { session.forgetViewer() },
-                            onCopyId = { },
+                            onOpenHub = { tab = MirrorTab.Hub },
+                            onOpenSettings = { settingsOpen = true },
+                            onOpenSaved = { profileSavedOpen = true },
+                            onEditProfile = { profileEditOpen = true },
                         )
                     }
                 }
@@ -401,13 +409,12 @@ fun MirrorRoot(
                         onMentions = { mentionsOpen = true },
                         onChannels = { channelsOpen = true },
                         onFolders = { foldersOpen = true },
-                        onSaved = { tab = MirrorTab.Profile },
+                        // web kebab Saved opens the saved-messages library
+                        onSaved = { profileSavedOpen = true },
                         onStories = { composerOpen = true },
-                        onSettings = { tab = MirrorTab.Profile },
-                        // web kebab Appearance: toggleTheme(); the native mirror is
-                        // dark-locked, so the row routes to the settings (Profile)
-                        // surface until a light engine exists - a real action, never dead.
-                        onAppearance = { tab = MirrorTab.Profile },
+                        // R71 - Settings + Appearance open the REAL settings screen
+                        onSettings = { settingsOpen = true },
+                        onAppearance = { settingsOpen = true },
                         onDismiss = { kebabOpen = false },
                     )
                 }
@@ -555,6 +562,43 @@ fun MirrorRoot(
                     CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
                 },
                 onDismiss = { managerFor = null },
+            )
+        }
+        // R71 - the web SettingsScreen overlay (root + 9 sections)
+        if (settingsOpen) {
+            MirrorSettingsScreen(
+                repository = repository,
+                viewerId = viewerId.orEmpty(),
+                onEditProfile = {
+                    settingsOpen = false
+                    profileEditOpen = true
+                },
+                onOpenHub = {
+                    settingsOpen = false
+                    tab = MirrorTab.Hub
+                },
+                onClose = { settingsOpen = false },
+            )
+        }
+        // R71 - the web Edit profile sub-page (real PATCH /api/users/:id)
+        if (profileEditOpen) {
+            MirrorEditProfilePage(
+                repository = repository,
+                viewerId = viewerId.orEmpty(),
+                onSaved = { profileEditOpen = false },
+                onDismiss = { profileEditOpen = false },
+            )
+        }
+        // R71 - the saved-messages library drawer (profile kebab + kebab row)
+        if (profileSavedOpen) {
+            MirrorSavedSheet(
+                repository = repository,
+                viewerId = viewerId.orEmpty(),
+                onOpenConversation = { conversationId, _ ->
+                    profileSavedOpen = false
+                    openById(conversationId)
+                },
+                onDismiss = { profileSavedOpen = false },
             )
         }
     }

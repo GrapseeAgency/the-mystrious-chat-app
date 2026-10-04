@@ -1,5 +1,6 @@
 package app.pulse.android.mirror
 
+import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -35,28 +36,54 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.domain.model.UserProfile
 import app.pulse.domain.model.UserStats
+import app.pulse.domain.model.ProfilePatch
 import app.pulse.domain.repository.PulseRepository
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
-/** Profile surface: cover ridges, ringed avatar, pills, stats, SAVED / ACCOUNT (reference 1). */
+/**
+ * Profile surface (web profile-tab.tsx R26-d parity): cover ridges, ringed
+ * avatar, handle chip, status line, bio, Edit profile / Share pills, the
+ * real stats instrument row, SAVED + ACCOUNT sections. The corner kebab
+ * opens the web ProfileMoreMenu (Hub / Settings / Saved messages); Add
+ * cover rides the real upload pipeline (POST /api/uploads + PATCH
+ * coverImage); Share fires the OS share sheet with clipboard fallback;
+ * sign-out carries the web's confirm dialog. Zero dead controls.
+ */
 @Composable
 internal fun MirrorProfile(
     viewerId: String,
     repository: PulseRepository,
     iAmOnline: Boolean,
     onSignOut: () -> Unit,
-    onCopyId: (String) -> Unit,
+    onOpenHub: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenSaved: () -> Unit,
+    onEditProfile: () -> Unit,
 ) {
+    val context = LocalContext.current
     var profile by remember { mutableStateOf<UserProfile?>(null) }
     var stats by remember { mutableStateOf<UserStats?>(null) }
     var coins by remember { mutableStateOf<Long?>(null) }
+    var kebabOpen by remember { mutableStateOf(false) }
+    var signOutOpen by remember { mutableStateOf(false) }
+    var coverBusy by remember { mutableStateOf(false) }
+
+    fun reloadProfile() {
+        CoroutineScope(Dispatchers.IO).launch {
+            profile = runCatching { repository.userProfile(viewerId) }.getOrNull()?.getOrNull()
+        }
+    }
 
     LaunchedEffect(viewerId) {
         profile = runCatching { repository.userProfile(viewerId) }.getOrNull()?.getOrNull()
@@ -65,191 +92,309 @@ internal fun MirrorProfile(
         runCatching { repository.wallet() }.getOrNull()?.getOrNull()?.let { coins = it.wallet.coins }
     }
 
-    val scroll = rememberScrollState()
-    Column(
-        Modifier
-            .fillMaxSize()
-            // R60 - the profile starts below the status bar like the web's
-            // safe-area padding (the audited build tucked the cover under the clock).
-            .statusBarsPadding()
-            .verticalScroll(scroll)
-            .padding(bottom = 110.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Column(Modifier.widthIn(max = 560.dp)) {
-            MirrorCoverHeader(profile?.coverImage != null)
+    // R39 - cover picture pipeline: pick -> compress -> POST /api/uploads ->
+    // PATCH coverImage (web coverMutation verbatim flow).
+    val pickCover = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) {
+            coverBusy = true
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    val dataUrl = mirrorProfileUriToDataUrl(context, uri, maxSide = 1280)
+                    val path = repository.uploadMedia(dataUrl).getOrThrow()
+                    repository.patchProfile(ProfilePatch(coverImage = path))
+                }
+                coverBusy = false
+                reloadProfile()
+            }
+        }
+    }
+    val removeCover = {
+        coverBusy = true
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { repository.patchProfile(ProfilePatch(coverImage = "")) }
+            coverBusy = false
+            reloadProfile()
+        }
+        kotlin.Unit
+    }
 
-            Box(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(horizontal = 20.dp)) {
-                    // overlapping avatar: gradient ring + carbon gap + 84dp disc
-                    Box(
-                        Modifier
-                            .offset(y = (-44).dp)
-                            .size(92.dp),
-                    ) {
+    val scroll = rememberScrollState()
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                // R60 - the profile starts below the status bar like the web's
+                // safe-area padding (the audited build tucked the cover under the clock).
+                .statusBarsPadding()
+                .verticalScroll(scroll)
+                .padding(bottom = 110.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Column(Modifier.widthIn(max = 560.dp)) {
+                MirrorCoverHeader(
+                    hasCover = profile?.coverImage != null,
+                    coverBusy = coverBusy,
+                    onKebab = { kebabOpen = true },
+                    onAddCover = {
+                        pickCover.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            ),
+                        )
+                    },
+                    onRemoveCover = removeCover,
+                )
+
+                Box(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 20.dp)) {
+                        // overlapping avatar: gradient ring + carbon gap + 84dp disc
                         Box(
                             Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape)
-                                .background(
-                                    androidx.compose.ui.graphics.Brush.linearGradient(
-                                        MirrorArt.avatarGradient(profile?.color),
-                                    ),
-                                )
-                                .padding(2.5.dp),
+                                .offset(y = (-44).dp)
+                                .size(92.dp),
                         ) {
                             Box(
                                 Modifier
                                     .fillMaxSize()
                                     .clip(CircleShape)
-                                    .background(Color(0xFF1E1610))
+                                    .background(
+                                        androidx.compose.ui.graphics.Brush.linearGradient(
+                                            MirrorArt.avatarGradient(profile?.color),
+                                        ),
+                                    )
                                     .padding(2.5.dp),
                             ) {
-                                MirrorAvatar(
-                                    name = profile?.name ?: "...",
-                                    color = profile?.color,
-                                    isGroup = false,
-                                    groupId = "",
-                                    online = iAmOnline,
-                                    showPresence = true,
-                                    sizeDp = 84,
-                                    cornerDp = 42,
-                                )
+                                Box(
+                                    Modifier
+                                        .fillMaxSize()
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF1E1610))
+                                        .padding(2.5.dp),
+                                ) {
+                                    MirrorAvatar(
+                                        name = profile?.name ?: "...",
+                                        color = profile?.color,
+                                        isGroup = false,
+                                        groupId = "",
+                                        online = iAmOnline,
+                                        showPresence = true,
+                                        sizeDp = 84,
+                                        cornerDp = 42,
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    // name + quiet trust mark
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            profile?.name ?: viewerId,
-                            color = MirrorArt.Text,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        MirrorPhosphorIcon("PSeal", tint = MirrorArt.SealAmber, modifier = Modifier.size(16.dp))
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-                    // @handle chip
-                    Row(
-                        Modifier
-                            .height(32.dp)
-                            .clip(CircleShape)
-                            .background(MirrorArt.Chip)
-                            .padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "@" + (profile?.handle?.takeIf { it.isNotBlank() } ?: (profile?.name ?: "").lowercase().replace("\\s+".toRegex(), "")),
-                            color = MirrorArt.Accent2,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-
-                    if (!profile?.about.isNullOrBlank()) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(profile?.about.orEmpty(), color = MirrorArt.TextSoft, fontSize = 14.sp, lineHeight = 18.sp)
-                    }
-
-                    Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        // Edit profile - ember pill, dark ink text (artboard truth)
-                        Row(
-                            Modifier
-                                .height(40.dp)
-                                .clip(CircleShape)
-                                .background(MirrorArt.FabGradient)
-                                .clickable { }
-                                .padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            MirrorPhosphorIcon("PEdit", tint = Color(0xFF241304), modifier = Modifier.size(16.dp))
-                            Text("Edit profile", color = Color(0xFF241304), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        // name + quiet trust mark
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                profile?.name ?: viewerId,
+                                color = MirrorArt.Text,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            MirrorPhosphorIcon("PSeal", tint = MirrorArt.SealAmber, modifier = Modifier.size(16.dp))
                         }
-                        // Share - glass pill
+
+                        Spacer(Modifier.height(10.dp))
+                        // @handle chip - tap to copy (web copyHandle)
                         Row(
                             Modifier
-                                .height(40.dp)
+                                .height(32.dp)
                                 .clip(CircleShape)
                                 .background(MirrorArt.Chip)
                                 .border(1.dp, MirrorArt.Hairline, CircleShape)
-                                .clickable { }
-                                .padding(horizontal = 16.dp),
+                                .clickable {
+                                    val handle = profile?.handle
+                                    if (!handle.isNullOrBlank()) {
+                                        mirrorCopyText(context, "@$handle", "Handle copied")
+                                    } else {
+                                        onEditProfile()
+                                    }
+                                }
+                                .padding(horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            MirrorPhosphorIcon("PShare", tint = MirrorArt.Text, modifier = Modifier.size(16.dp))
-                            Text("Share", color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            MirrorPhosphorIcon("PAt", tint = MirrorArt.Accent2, modifier = Modifier.size(13.dp))
+                            Text(
+                                if (!profile?.handle.isNullOrBlank()) "@${profile?.handle}" else "Set your handle",
+                                color = MirrorArt.Accent2,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
                         }
+
+                        // status glyph + text (web parity row)
+                        if (!profile?.statusEmoji.isNullOrBlank() || !profile?.statusText.isNullOrBlank()) {
+                            Spacer(Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                mirrorStatusGlyphName(profile?.statusEmoji)?.let { glyph ->
+                                    MirrorLucideIcon(glyph, tint = MirrorArt.Accent, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                                Text(
+                                    profile?.statusText.orEmpty(),
+                                    color = MirrorArt.TextSoft,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+
+                        if (!profile?.about.isNullOrBlank()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(profile?.about.orEmpty(), color = MirrorArt.TextSoft, fontSize = 14.sp, lineHeight = 18.sp)
+                        }
+
+                        Spacer(Modifier.height(14.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            // Edit profile - ember pill, dark ink text (artboard truth)
+                            Row(
+                                Modifier
+                                    .height(40.dp)
+                                    .clip(CircleShape)
+                                    .background(MirrorArt.FabGradient)
+                                    .clickable(onClick = onEditProfile)
+                                    .padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                MirrorPhosphorIcon("PEdit", tint = Color(0xFF241304), modifier = Modifier.size(16.dp))
+                                Text("Edit profile", color = Color(0xFF241304), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                            // Share - glass pill, OS share sheet + clipboard fallback
+                            Row(
+                                Modifier
+                                    .height(40.dp)
+                                    .clip(CircleShape)
+                                    .background(MirrorArt.Chip)
+                                    .border(1.dp, MirrorArt.Hairline, CircleShape)
+                                    .clickable {
+                                        val handle = profile?.handle
+                                        if (handle.isNullOrBlank()) {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Claim a handle first - it is how people find you",
+                                                android.widget.Toast.LENGTH_SHORT,
+                                            ).show()
+                                            onEditProfile()
+                                        } else {
+                                            val text = "Find me on Pulse - @$handle"
+                                            runCatching {
+                                                val send = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(Intent.EXTRA_TEXT, text)
+                                                }
+                                                context.startActivity(Intent.createChooser(send, "Share your profile"))
+                                            }.onFailure {
+                                                mirrorCopyText(context, text, "Share text copied")
+                                            }
+                                        }
+                                    }
+                                    .padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                MirrorPhosphorIcon("PShare", tint = MirrorArt.Text, modifier = Modifier.size(16.dp))
+                                Text("Share", color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                        MirrorStatsCard(
+                            messages = stats?.messages ?: 0,
+                            rooms = stats?.chats ?: 0,
+                            coins = coins,
+                            since = MirrorMonthYear(stats?.joinedAtIso),
+                        )
                     }
+                }
 
-                    Spacer(Modifier.height(16.dp))
-                    MirrorStatsCard(
-                        messages = stats?.messages ?: 0,
-                        rooms = stats?.chats ?: 0,
-                        coins = coins,
-                        since = MirrorMonthYear(stats?.joinedAtIso),
-                    )
+                MirrorSectionLabel("SAVED")
+                Column(Modifier.padding(horizontal = 12.dp)) {
+                    MirrorAccountCard {
+                        MirrorAccountRow(
+                            phosphor = "PStar",
+                            iconTint = Color(0xFFE5A33C),
+                            circleTint = Color(0x14E5A33C),
+                            title = "Saved messages",
+                            subtitle = "Long-press any message in a chat, then Save",
+                            titleTint = MirrorArt.Text,
+                            onClick = onOpenSaved,
+                        )
+                    }
+                }
+
+                MirrorSectionLabel("ACCOUNT")
+                Column(Modifier.padding(horizontal = 12.dp)) {
+                    MirrorAccountCard {
+                        MirrorAccountRow(
+                            phosphor = "PFingerprint",
+                            iconTint = MirrorArt.TextSoft,
+                            circleTint = MirrorArt.Chip,
+                            title = "Copy account ID",
+                            subtitle = viewerId,
+                            titleTint = MirrorArt.Text,
+                            onClick = { mirrorCopyText(context, viewerId, "Account ID copied") },
+                        )
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(MirrorArt.Hairline),
+                        )
+                        MirrorAccountRow(
+                            phosphor = "PSignOut",
+                            iconTint = MirrorArt.Red,
+                            circleTint = Color(0x1FFF453A),
+                            title = "Sign out",
+                            subtitle = "Return to the welcome screen - nothing is deleted",
+                            titleTint = MirrorArt.Red,
+                            onClick = { signOutOpen = true },
+                        )
+                    }
                 }
             }
+        }
 
-            MirrorSectionLabel("SAVED")
-            Column(Modifier.padding(horizontal = 12.dp)) {
-                MirrorAccountCard {
-                    MirrorAccountRow(
-                        phosphor = "PStar",
-                        iconTint = Color(0xFFE5A33C),
-                        circleTint = Color(0x14E5A33C),
-                        title = "Saved messages",
-                        subtitle = "Long-press any message in a chat, then Save",
-                        titleTint = MirrorArt.Text,
-                    )
-                }
-            }
-
-            MirrorSectionLabel("ACCOUNT")
-            Column(Modifier.padding(horizontal = 12.dp)) {
-                MirrorAccountCard {
-                    MirrorAccountRow(
-                        phosphor = "PFingerprint",
-                        iconTint = MirrorArt.TextSoft,
-                        circleTint = MirrorArt.Chip,
-                        title = "Copy account ID",
-                        subtitle = viewerId,
-                        titleTint = MirrorArt.Text,
-                        onClick = { onCopyId(viewerId) },
-                    )
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(MirrorArt.Hairline),
-                    )
-                    MirrorAccountRow(
-                        phosphor = "PSignOut",
-                        iconTint = MirrorArt.Red,
-                        circleTint = Color(0x1FFF453A),
-                        title = "Sign out",
-                        subtitle = "Return to the welcome screen - nothing is deleted",
-                        titleTint = MirrorArt.Red,
-                        onClick = onSignOut,
-                    )
-                }
-            }
+        if (kebabOpen) {
+            MirrorProfileMoreMenu(
+                onOpenHub = onOpenHub,
+                onOpenSettings = onOpenSettings,
+                onOpenSaved = onOpenSaved,
+                onDismiss = { kebabOpen = false },
+            )
+        }
+        if (signOutOpen) {
+            MirrorSignOutDialog(
+                onConfirm = {
+                    signOutOpen = false
+                    onSignOut()
+                },
+                onDismiss = { signOutOpen = false },
+            )
         }
     }
 }
 
-/** Cover band: 132dp warm gradient with the fine horizontal ridge texture + Add cover pill. */
+/** Cover band: 132dp warm gradient with the fine horizontal ridge texture + kebab + cover pills. */
 @Composable
-private fun MirrorCoverHeader(hasCover: Boolean) {
+private fun MirrorCoverHeader(
+    hasCover: Boolean,
+    coverBusy: Boolean,
+    onKebab: () -> Unit,
+    onAddCover: () -> Unit,
+    onRemoveCover: () -> Unit,
+) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -265,19 +410,32 @@ private fun MirrorCoverHeader(hasCover: Boolean) {
                 y += 6f
             }
         }
+        // the signal line - hairline bright edge grounding the cover
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(
+                    androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        listOf(Color.Transparent, Color(0xCCFFFFFF), Color.Transparent),
+                    ),
+                ),
+        )
         Row(
             Modifier
                 .align(Alignment.TopEnd)
                 .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // corner kebab (three dots) - 40dp glass circle
+            // corner kebab (three dots) - 40dp glass circle (web ProfileMoreMenu trigger)
             Box(
                 Modifier
                     .size(40.dp)
                     .clip(CircleShape)
                     .background(MirrorArt.Chip)
-                    .border(1.dp, MirrorArt.Hairline, CircleShape),
+                    .border(1.dp, MirrorArt.Hairline, CircleShape)
+                    .clickable(onClick = onKebab),
                 contentAlignment = Alignment.Center,
             ) {
                 MirrorLucideIcon("LKebab", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
@@ -288,19 +446,41 @@ private fun MirrorCoverHeader(hasCover: Boolean) {
                 .align(Alignment.CenterEnd)
                 .padding(end = 16.dp)
                 .offset(y = (-8).dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
                 Modifier
                     .clip(CircleShape)
                     .background(Color(0x59000000))
                     .border(1.dp, Color(0x40FFFFFF), CircleShape)
-                    .clickable { }
+                    .clickable(enabled = !coverBusy, onClick = onAddCover)
                     .padding(horizontal = 10.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                MirrorPhosphorIcon("PPhoto", tint = Color.White, modifier = Modifier.size(14.dp))
-                Text("Add cover", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                MirrorPhosphorIcon(
+                    if (coverBusy) "PLoaderCircle" else "PPhoto",
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text(
+                    if (hasCover) "Change" else "Add cover",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            if (hasCover) {
+                Box(
+                    Modifier
+                        .clip(CircleShape)
+                        .background(Color(0x59000000))
+                        .border(1.dp, Color(0x40FFFFFF), CircleShape)
+                        .clickable(enabled = !coverBusy, onClick = onRemoveCover)
+                        .padding(5.dp),
+                ) {
+                    MirrorLucideIcon("LTrash2", tint = Color.White, modifier = Modifier.size(13.dp))
+                }
             }
         }
     }
