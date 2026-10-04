@@ -28,6 +28,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/** Mirror destinations - the artboard dock set (Chats / Calls / Updates / Profile). */
+internal enum class MirrorTab { Chats, Calls, Updates, Profile }
+
 /**
  * R62 - native mirror root: the ARTBOARD rendered natively in Compose with
  * the web's EXACT tokens and full interactivity - real filters, real search,
