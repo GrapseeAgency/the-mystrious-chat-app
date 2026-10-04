@@ -611,7 +611,7 @@ internal fun MirrorScheduledSheet(
                 }
             } else if (loaded.isEmpty()) {
                 Text(
-                    "Draft a message and choose "Schedule message" - it sends itself later.",
+                    "Draft a message and choose \u201CSchedule message\u201D - it sends itself later.",
                     color = ToolsInk.Zinc500,
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center,
