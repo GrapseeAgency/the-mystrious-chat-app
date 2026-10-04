@@ -652,7 +652,7 @@ struct MirrorRowOptions: View {
 /// Shared dark artboard panel chrome for every mirror sheet.
 struct MirrorPanel<Content: View>: View {
     let title: String
-    @ViewBuilder let content: Content
+    @ViewBuilder var content: Content
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -670,7 +670,7 @@ struct MirrorPanel<Content: View>: View {
                 }
             }
             .padding(.bottom, 12)
-            content()
+            content
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -681,9 +681,9 @@ struct MirrorPanel<Content: View>: View {
 }
 
 struct MirrorPanelScroll<Content: View>: View {
-    @ViewBuilder let content: Content
+    @ViewBuilder var content: Content
     var body: some View {
-        ScrollView { VStack(alignment: .leading, spacing: 0) { content() } }
+        ScrollView { VStack(alignment: .leading, spacing: 0) { content } }
             .frame(maxHeight: 380)
     }
 }
@@ -1370,7 +1370,7 @@ struct MirrorRoomView: View {
     // R64 - room kebab + sheets + the composer focus ring
     @State private var menuOpen = false
     @State private var activeSheet: MirrorRoomSheet?
-    @State private var composerFocused = false
+    @FocusState private var composerFocused: Bool
 
     private var bubbleMax: CGFloat { UIScreen.main.bounds.width * 0.78 }
 
@@ -1762,7 +1762,8 @@ struct MirrorRoomSheetView: View {
                             color: member.color,
                             isGroup: false,
                             id: member.id,
-                            subtitle: member.id == session.api.userId ? "you" : ""
+                            subtitle: member.id == session.api.userId ? "you" : "",
+                            onTap: {}
                         )
                     }
                 }
