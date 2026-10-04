@@ -1345,7 +1345,7 @@ internal fun MirrorRoomInfoPage(
                             InfoSkeleton(heightDp = 48)
                         }
                     }
-                    else -> if (meta != null) {
+                    else -> meta?.let { m ->
                         InfoGlassCard(Modifier.fillMaxWidth().padding(6.dp)) {
                             // a. MUTE - real per-user watermark presets
                             InfoPressableRow {
