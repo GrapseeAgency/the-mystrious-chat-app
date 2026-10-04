@@ -1034,9 +1034,11 @@ internal fun MirrorStageSheet(
                 state != null -> {
                     val stage = state!!
 
-                    // HOST
+                    // HOST - local val: smart cast on the cross-module host
+                    // property is impossible, capture once and use everywhere
                     MirrorLiveSectionLabel("HOST")
-                    if (stage.host != null) {
+                    val host = stage.host
+                    if (host != null) {
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -1048,11 +1050,11 @@ internal fun MirrorStageSheet(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             MirrorLucideIcon("LBadgeCheck", tint = LiveAmber300, modifier = Modifier.size(16.dp))
-                            MirrorLivePeerAvatar(stage.host.name, stage.host.color, 40, stage.host.id in speaking)
+                            MirrorLivePeerAvatar(host.name, host.color, 40, host.id in speaking)
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        stage.host.name,
+                                        host.name,
                                         color = MirrorArt.Text,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
@@ -1060,7 +1062,7 @@ internal fun MirrorStageSheet(
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f, fill = false),
                                     )
-                                    if (stage.host.id == viewerId) {
+                                    if (host.id == viewerId) {
                                         Spacer(Modifier.width(6.dp))
                                         Text(
                                             "YOU",
@@ -1963,8 +1965,8 @@ internal fun MirrorTournamentSheet(
             val outcome = runCatching { repository.tournaments(conversationId) }
             withContext(Dispatchers.Main) {
                 outcome.fold(
-                    onSuccess = {
-                        seasons = it.tournaments
+                    onSuccess = { page ->
+                        seasons = page.tournaments
                         loadError = false
                     },
                     onFailure = {
