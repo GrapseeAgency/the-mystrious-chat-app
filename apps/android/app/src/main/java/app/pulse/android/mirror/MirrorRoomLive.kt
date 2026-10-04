@@ -1963,6 +1963,7 @@ internal fun MirrorTournamentSheet(
     fun refresh() {
         CoroutineScope(Dispatchers.IO).launch {
             val outcome = runCatching { repository.tournaments(conversationId) }
+                .getOrElse { Result.failure(it) }
             withContext(Dispatchers.Main) {
                 outcome.fold(
                     onSuccess = { page ->
@@ -1990,6 +1991,7 @@ internal fun MirrorTournamentSheet(
         actionError = ""
         CoroutineScope(Dispatchers.IO).launch {
             val outcome = runCatching { repository.createTournament(conversationId, trimmed.take(40)) }
+                .getOrElse { Result.failure(it) }
             withContext(Dispatchers.Main) {
                 pending = false
                 outcome.fold(
@@ -2011,6 +2013,7 @@ internal fun MirrorTournamentSheet(
         actionError = ""
         CoroutineScope(Dispatchers.IO).launch {
             val outcome = runCatching { repository.joinTournament(seasonId) }
+                .getOrElse { Result.failure(it) }
             withContext(Dispatchers.Main) {
                 joiningId = null
                 outcome.fold(
