@@ -28,6 +28,11 @@ enum MirrorArt {
     static let presenceOnline = Color(red: 0x22/255.0, green: 0xC5/255.0, blue: 0x5E/255.0)
     static let presenceOffline = Color(red: 0x52/255.0, green: 0x52/255.0, blue: 0x5B/255.0)
     static let sealAmber = Color(red: 0xC9/255.0, green: 0x76/255.0, blue: 0x2B/255.0)
+    static let gapInk = Color(red: 0x1E/255.0, green: 0x16/255.0, blue: 0x10/255.0)
+    static let pillInk = Color(red: 0x24/255.0, green: 0x13/255.0, blue: 0x04/255.0)
+    static let ridgeFloor = Color(red: 0x19/255.0, green: 0x10/255.0, blue: 0x09/255.0)
+    static let starAmber = Color(red: 0xE5/255.0, green: 0xA3/255.0, blue: 0x3C/255.0)
+    static let fabGradient = LinearGradient(colors: [fabTop, accent, fabDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
     static let fabTop = Color(red: 0xF0/255.0, green: 0xA3/255.0, blue: 0x5C/255.0)
     static let fabDeep = Color(red: 0xD9/255.0, green: 0x5F/255.0, blue: 0x22/255.0)
     static let badgeTop = Color(red: 0xF4/255.0, green: 0x3F/255.0, blue: 0x5E/255.0)
@@ -364,97 +369,8 @@ struct MirrorProfileView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ZStack(alignment: .topTrailing) {
-                    MirrorRidges().frame(height: 132).frame(maxWidth: .infinity)
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 18)).foregroundColor(MirrorArt.text)
-                        .frame(width: 40, height: 40).background(MirrorArt.chip).clipShape(Circle())
-                        .padding(12)
-                }
-                VStack(alignment: .leading, spacing: 0) {
-                    ZStack(alignment: .bottomTrailing) {
-                        Circle()
-                            .fill(LinearGradient(colors: MirrorArt.avatarGradient(model.profile?.color ?? session.viewer?.color), startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 92, height: 92)
-                            .overlay(Circle().fill(Color(red: 0x1E/255, green: 0x16/255, blue: 0x10/255)).frame(width: 87, height: 87))
-                            .overlay(
-                                Text(MirrorArt.initials(model.profile?.name ?? session.viewer?.name ?? "?"))
-                                    .font(.system(size: 28, weight: .semibold)).foregroundColor(.white)
-                            )
-                        Circle()
-                            .fill(session.onlineUserIds.contains(session.viewer?.id ?? "-") ? MirrorArt.presenceOnline : MirrorArt.presenceOffline)
-                            .frame(width: 22, height: 22)
-                            .overlay(Circle().strokeBorder(MirrorArt.bg, lineWidth: 3))
-                            .offset(x: 2, y: 2)
-                    }
-                    .offset(y: -44)
-                    .padding(.bottom, -30)
-
-                    HStack(spacing: 6) {
-                        Text(model.profile?.name ?? session.viewer?.name ?? "")
-                            .font(.system(size: 22, weight: .bold)).foregroundColor(MirrorArt.text)
-                        Image(systemName: "seal.fill").font(.system(size: 13)).foregroundColor(MirrorArt.sealAmber)
-                    }
-                    .padding(.top, 8)
-
-                    Text("@" + (model.profile?.username ?? session.viewer?.username ?? (model.profile?.name ?? "").lowercased()))
-                        .font(.system(size: 13, weight: .semibold)).foregroundColor(MirrorArt.accent2)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(MirrorArt.chip).clipShape(Capsule())
-                        .padding(.top, 10)
-
-                    if let about = model.profile?.about, !about.isEmpty {
-                        Text(about).font(.system(size: 14)).foregroundColor(MirrorArt.textSoft).padding(.top, 10)
-                    }
-
-                    HStack(spacing: 10) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "pencil").font(.system(size: 13, weight: .bold)).foregroundColor(Color(red: 0x24/255, green: 0x13/255, blue: 0x04/255))
-                            Text("Edit profile").font(.system(size: 13, weight: .bold)).foregroundColor(Color(red: 0x24/255, green: 0x13/255, blue: 0x04/255))
-                        }
-                        .padding(.horizontal, 16).frame(height: 40)
-                        .background(LinearGradient(colors: [MirrorArt.fabTop, MirrorArt.accent, MirrorArt.fabDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .clipShape(Capsule())
-                        HStack(spacing: 8) {
-                            Image(systemName: "dot.radioworld.left.and.right").font(.system(size: 13)).foregroundColor(MirrorArt.text)
-                            Text("Share").font(.system(size: 13, weight: .bold)).foregroundColor(MirrorArt.text)
-                        }
-                        .padding(.horizontal, 16).frame(height: 40)
-                        .background(MirrorArt.chip).clipShape(Capsule())
-                    }
-                    .padding(.top, 14)
-
-                    HStack(spacing: 0) {
-                        MirrorStatCell("\(model.stats?.messages ?? 0)", "MESSAGES", MirrorArt.text)
-                        MirrorStatCell("\(model.stats?.chats ?? 0)", "ROOMS", MirrorArt.text)
-                        MirrorStatCell("\(model.coins)", "COINS", MirrorArt.accent)
-                        MirrorStatCell(MirrorSince.short(model.stats?.joinedAt), "SINCE", MirrorArt.text, small: true)
-                    }
-                    .padding(.vertical, 16)
-                    .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(MirrorArt.hairline))
-                    .background(MirrorArt.panel)
-                    .clipShape(RoundedRectangle(cornerRadius: 24))
-                    .padding(.top, 16)
-
-                    MirrorSectionLabel("SAVED")
-                    VStack(spacing: 0) {
-                        MirrorAccountRow(icon: "star", iconTint: Color(red: 0xE5/255, green: 0xA3/255, blue: 0x3C/255), title: "Saved messages", subtitle: "Long-press any message in a chat, then Save", titleTint: MirrorArt.text)
-                    }
-                    .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(MirrorArt.hairline))
-                    .background(MirrorArt.panel)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-
-                    MirrorSectionLabel("ACCOUNT")
-                    VStack(spacing: 0) {
-                        MirrorAccountRow(icon: "touchid", iconTint: MirrorArt.textSoft, title: "Copy account ID", subtitle: session.viewer?.id ?? "", titleTint: MirrorArt.text)
-                        Rectangle().fill(MirrorArt.hairline).frame(height: 1)
-                        MirrorAccountRow(icon: "rectangle.portrait.and.arrow.right", iconTint: MirrorArt.red, title: "Sign out", subtitle: "Return to the welcome screen - nothing is deleted", titleTint: MirrorArt.red)
-                    }
-                    .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(MirrorArt.hairline))
-                    .background(MirrorArt.panel)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                }
-                .padding(.horizontal, 20)
+                MirrorProfileCover()
+                MirrorProfileIdentity(model: model, session: session)
             }
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
@@ -462,10 +378,155 @@ struct MirrorProfileView: View {
     }
 }
 
+/// Cover band with ridges + corner kebab (reference 1 top).
+private struct MirrorProfileCover: View {
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            MirrorRidges().frame(height: 132).frame(maxWidth: .infinity)
+            Image(systemName: "ellipsis")
+                .font(.system(size: 18)).foregroundColor(MirrorArt.text)
+                .frame(width: 40, height: 40).background(MirrorArt.chip).clipShape(Circle())
+                .padding(12)
+        }
+    }
+}
+
+/// Ringed avatar, name + seal, handle chip, bio, pills, stats, SAVED, ACCOUNT.
+private struct MirrorProfileIdentity: View {
+    @ObservedObject var model: MirrorViewModel
+    @ObservedObject var session: PulseSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            MirrorProfileAvatar(model: model, session: session)
+
+            HStack(spacing: 6) {
+                Text(model.profile?.name ?? session.viewer?.name ?? "")
+                    .font(.system(size: 22, weight: .bold)).foregroundColor(MirrorArt.text)
+                Image(systemName: "seal.fill").font(.system(size: 13)).foregroundColor(MirrorArt.sealAmber)
+            }
+            .padding(.top, 8)
+
+            Text("@" + MirrorHandleText(model: model, session: session))
+                .font(.system(size: 13, weight: .semibold)).foregroundColor(MirrorArt.accent2)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(MirrorArt.chip).clipShape(Capsule())
+                .padding(.top, 10)
+
+            if let about = model.profile?.about, !about.isEmpty {
+                Text(about).font(.system(size: 14)).foregroundColor(MirrorArt.textSoft).padding(.top, 10)
+            }
+
+            MirrorProfilePills()
+
+            MirrorStatsCardView(model: model)
+
+            MirrorSectionLabel("SAVED")
+            MirrorCard {
+                MirrorAccountRow(icon: "star", iconTint: MirrorArt.starAmber, title: "Saved messages", subtitle: "Long-press any message in a chat, then Save", titleTint: MirrorArt.text)
+            }
+
+            MirrorSectionLabel("ACCOUNT")
+            MirrorCard {
+                MirrorAccountRow(icon: "touchid", iconTint: MirrorArt.textSoft, title: "Copy account ID", subtitle: session.viewer?.id ?? "", titleTint: MirrorArt.text)
+                Rectangle().fill(MirrorArt.hairline).frame(height: 1)
+                MirrorAccountRow(icon: "rectangle.portrait.and.arrow.right", iconTint: MirrorArt.red, title: "Sign out", subtitle: "Return to the welcome screen - nothing is deleted", titleTint: MirrorArt.red)
+            }
+        }
+        .padding(.horizontal, 20)
+    }
+}
+
+private func MirrorHandleText(model: MirrorViewModel, session: PulseSession) -> String {
+    if let handle = model.profile?.username, !handle.isEmpty { return handle }
+    if let viewerHandle = session.viewer?.username, !viewerHandle.isEmpty { return viewerHandle }
+    return (model.profile?.name ?? "").lowercased()
+}
+
+/// The ringed 84dp avatar with presence dot, overlapping the cover.
+private struct MirrorProfileAvatar: View {
+    @ObservedObject var model: MirrorViewModel
+    @ObservedObject var session: PulseSession
+
+    var body: some View {
+        let gradient = MirrorArt.avatarGradient(model.profile?.color ?? session.viewer?.color)
+        let online = session.onlineUserIds.contains(session.viewer?.id ?? "-")
+        return ZStack(alignment: .bottomTrailing) {
+            Circle()
+                .fill(LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: 92, height: 92)
+                .overlay(Circle().fill(MirrorArt.gapInk).frame(width: 87, height: 87))
+                .overlay(
+                    Text(MirrorArt.initials(model.profile?.name ?? session.viewer?.name ?? "?"))
+                        .font(.system(size: 28, weight: .semibold)).foregroundColor(.white)
+                )
+            Circle()
+                .fill(online ? MirrorArt.presenceOnline : MirrorArt.presenceOffline)
+                .frame(width: 22, height: 22)
+                .overlay(Circle().strokeBorder(MirrorArt.bg, lineWidth: 3))
+                .offset(x: 2, y: 2)
+        }
+        .offset(y: -44)
+        .padding(.bottom, -30)
+    }
+}
+
+/// Edit profile (ember pill, ink text) + Share (glass pill).
+private struct MirrorProfilePills: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "pencil").font(.system(size: 13, weight: .bold)).foregroundColor(MirrorArt.pillInk)
+                Text("Edit profile").font(.system(size: 13, weight: .bold)).foregroundColor(MirrorArt.pillInk)
+            }
+            .padding(.horizontal, 16).frame(height: 40)
+            .background(MirrorArt.fabGradient).clipShape(Capsule())
+            HStack(spacing: 8) {
+                Image(systemName: "dot.radioworld.left.and.right").font(.system(size: 13)).foregroundColor(MirrorArt.text)
+                Text("Share").font(.system(size: 13, weight: .bold)).foregroundColor(MirrorArt.text)
+            }
+            .padding(.horizontal, 16).frame(height: 40)
+            .background(MirrorArt.chip).clipShape(Capsule())
+        }
+        .padding(.top, 14)
+    }
+}
+
+/// 4 column stats card (messages / rooms / coins / since).
+private struct MirrorStatsCardView: View {
+    @ObservedObject var model: MirrorViewModel
+
+    var body: some View {
+        HStack(spacing: 0) {
+            MirrorStatCell("\(model.stats?.messages ?? 0)", "MESSAGES", MirrorArt.text)
+            MirrorStatCell("\(model.stats?.chats ?? 0)", "ROOMS", MirrorArt.text)
+            MirrorStatCell("\(model.coins)", "COINS", MirrorArt.accent)
+            MirrorStatCell(MirrorSince.short(model.stats?.joinedAt), "SINCE", MirrorArt.text, small: true)
+        }
+        .padding(.vertical, 16)
+        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(MirrorArt.hairline))
+        .background(MirrorArt.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .padding(.top, 16)
+    }
+}
+
+/// Panel card shell with the hairline border.
+private struct MirrorCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) { content }
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(MirrorArt.hairline))
+            .background(MirrorArt.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+}
+
 struct MirrorRidges: View {
     var body: some View {
         Canvas { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(Gradient(colors: [MirrorArt.sceneTop, Color(red: 0x19/255, green: 0x10/255, blue: 0x09/255)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(Gradient(colors: [MirrorArt.sceneTop, MirrorArt.ridgeFloor]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
             var y: CGFloat = 0
             while y < size.height {
                 var line = Path()
