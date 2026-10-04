@@ -95,9 +95,28 @@ private val ROOM_STAMP: DateTimeFormatter =
 private val ROOM_DAY: DateTimeFormatter =
     DateTimeFormatter.ofPattern("d MMM").withZone(ZoneId.systemDefault())
 
+/**
+ * Tolerant room timestamp parse: ISO-8601 first (the REST shape), then a
+ * pure-digit fallback as epoch seconds / epoch millis (the relay shape).
+ * Without the fallback a relay-shaped stamp fails Instant.parse, which used
+ * to blank its cluster stamp and day label and leave invisible dead boxes
+ * between bubbles. Returns null only when nothing can be read.
+ */
+internal fun MirrorRoomInstant(iso: String): Instant? {
+    if (iso.isBlank()) return null
+    val asIso = runCatching { Instant.parse(iso) }.getOrNull()
+    if (asIso != null) return asIso
+    val trimmed = iso.trim()
+    if (trimmed.isNotEmpty() && trimmed.all { it.isDigit() }) {
+        val n = trimmed.toLongOrNull() ?: return null
+        return if (trimmed.length >= 13) Instant.ofEpochMilli(n) else Instant.ofEpochSecond(n)
+    }
+    return null
+}
+
 /** web formatDayChip: Today / Yesterday / "3 Aug" (web pulse-utils parity). */
 internal fun MirrorRoomDayLabel(iso: String): String {
-    val d = runCatching { Instant.parse(iso).atZone(ZoneId.systemDefault()) }.getOrNull() ?: return ""
+    val d = MirrorRoomInstant(iso)?.atZone(ZoneId.systemDefault()) ?: return ""
     val today = java.time.ZonedDateTime.now(ZoneId.systemDefault()).toLocalDate()
     val day = d.toLocalDate()
     return when (day) {
@@ -108,12 +127,12 @@ internal fun MirrorRoomDayLabel(iso: String): String {
 }
 
 internal fun MirrorRoomEpoch(iso: String): Long =
-    runCatching { Instant.parse(iso).toEpochMilli() }.getOrNull() ?: 0L
+    MirrorRoomInstant(iso)?.toEpochMilli() ?: 0L
 
 private fun MirrorSameDayIso(aIso: String, bIso: String): Boolean {
     val zone = ZoneId.systemDefault()
-    val a = runCatching { Instant.parse(aIso).atZone(zone).toLocalDate() }.getOrNull() ?: return false
-    val b = runCatching { Instant.parse(bIso).atZone(zone).toLocalDate() }.getOrNull() ?: return false
+    val a = MirrorRoomInstant(aIso)?.atZone(zone)?.toLocalDate() ?: return false
+    val b = MirrorRoomInstant(bIso)?.atZone(zone)?.toLocalDate() ?: return false
     return a == b
 }
 
@@ -144,10 +163,23 @@ private fun buildRoomEntries(messages: List<Message>): List<RoomEntry> {
     for ((i, e) in built.withIndex()) {
         if (dayIso == null || !MirrorSameDayIso(dayIso, e.message.createdAt)) {
             val label = MirrorRoomDayLabel(e.message.createdAt)
-            out.add(RoomEntry.DayLabel(label, "day-${e.message.id}-$i"))
+            // A blank label (timestamp that failed to parse) must NEVER become
+            // an invisible fillMaxWidth box - 39dp of dead air between bubbles
+            // (the dead band the user circled). Skip it; the next valid row
+            // re-opens the day group on its own.
+            if (label.isNotEmpty()) {
+                out.add(RoomEntry.DayLabel(label, "day-${e.message.id}-$i"))
+            }
             dayIso = e.message.createdAt
         }
-        if (e.head) out.add(RoomEntry.Stamp(e.message.createdAt, "stamp-${e.message.id}"))
+        if (e.head) {
+            // Same guard for the cluster stamp: a blank HH:mm means the iso
+            // did not parse - an invisible 23dp box, part of the same dead band.
+            val stamp = MirrorRoomTimeLabel(e.message.createdAt)
+            if (stamp.isNotEmpty()) {
+                out.add(RoomEntry.Stamp(e.message.createdAt, "stamp-${e.message.id}"))
+            }
+        }
         out.add(RoomEntry.Msg(e.message, e.head))
     }
     return out
@@ -1814,13 +1846,13 @@ private suspend fun mirrorUriToDocumentDataUrl(context: Context, uri: Uri): Pair
 
 /** HH:mm cluster stamp (en-US h23 parity - "08:16"). */
 internal fun MirrorRoomTimeLabel(iso: String): String {
-    val parsed = runCatching { Instant.parse(iso) }.getOrNull() ?: return ""
+    val parsed = MirrorRoomInstant(iso) ?: return ""
     return ROOM_STAMP.format(parsed)
 }
 
 /** Whole minutes between two ISO stamps (null-safe, gaps drive clusters). */
 internal fun MirrorGapMinutes(prevIso: String?, nextIso: String?): Long {
-    val a = prevIso?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return Long.MAX_VALUE
-    val b = nextIso?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return Long.MAX_VALUE
+    val a = prevIso?.let { MirrorRoomInstant(it) } ?: return Long.MAX_VALUE
+    val b = nextIso?.let { MirrorRoomInstant(it) } ?: return Long.MAX_VALUE
     return kotlin.math.abs(java.time.Duration.between(a, b).toMinutes())
 }

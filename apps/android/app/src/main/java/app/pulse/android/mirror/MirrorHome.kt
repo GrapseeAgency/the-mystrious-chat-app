@@ -644,7 +644,13 @@ private fun MirrorConversationRow(
             cornerDp = if (row.isGroup) 14 else 25,
         )
         Column(Modifier.weight(1f)) {
-            // L1 - BASELINE row: name ... streak chip + time (web items-baseline)
+            // L1 - BASELINE row: name ... streak chip + time (web items-baseline).
+            // The name OWNS all the free space (weight fill) so the chip + time
+            // right group sits flush at the row end on EVERY row - the web's
+            // justify-between. The old weight(fill=false) name + second weighted
+            // spacer split the free space 50/50 regardless of the name width,
+            // leaving the time floating at a name-length-dependent x (crooked
+            // column the user circled).
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     row.title,
@@ -654,9 +660,8 @@ private fun MirrorConversationRow(
                     lineHeight = 20.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false).alignByBaseline(),
+                    modifier = Modifier.weight(1f).alignByBaseline(),
                 )
-                Spacer(Modifier.weight(1f))
                 if (row.streak > 0) {
                     // web streak chip: bg-white/[0.06] px-1.5 py-0.5 text-10 bold Dim ring hairline
                     Row(
