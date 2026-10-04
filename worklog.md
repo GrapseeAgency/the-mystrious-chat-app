@@ -5390,3 +5390,65 @@ Work Log:
 Stage Summary:
 - History corrected: full menu is R64+R68 work, NOT R62. User's disbelief was justified.
 - Current main (5d0d7a6) verified row-by-row vs chats-tab.tsx L1547-1716: 15/15 rows, icons verbatim (PencilSimple bold, Search, Users, Ticket, BookUser, Phone, Archive, NotebookPen, AtSign, Radio, FolderPlus, Bookmark, CircleDashed, Settings, Sun), trailing counts, three hairline-separated sections, scrollable max-h. CI green.
+---
+Task ID: R69-a
+Agent: general-purpose sub agent
+Task: Build MirrorRoomTools.kt - the three room tools sheets (Reminders, Scheduled sends, AI recap) as faithful 1:1 Kotlin/Compose conversions of the web surfaces. One new file, no edits to existing files.
+
+Web sources read (design truth):
+- src/components/chat/reminders-sheet.tsx (RemindersSheet: count title, upcoming vs History groups, formatReminderCountdown, reminderText, cancel = DELETE with optimistic remove + onSettled refetch, per-row pending, web strings)
+- src/components/chat/chat-room.tsx: recapMutation / requestRecap + AI recap card render (L5037-5104: "AI recap", "Based on N messages", "Summarizing the latest messages", Copy pill, "Reading the room", "Recap is unavailable right now"), scheduledQuery / scheduleSend / cancelScheduled (L2218-2269), "Scheduled sends" kebab row (L4230), "Recap with AI" (L4362), ScheduledListDrawer (L8842-8936) and ScheduleSheet (L8710-8838), "Remind me" picker (L5754 - message action menu, NOT the sheet)
+- src/lib/types.ts ReminderItem / ScheduledItem, src/lib/pulse-utils.ts formatListStamp / formatTime / formatters, glass-menu.tsx GlassMenuLabel
+
+Kotlin sources read:
+- domain PulseRepository.kt: reminders(dueOnly), cachedReminders(), createReminder(...), resolveReminder(...), deleteReminder(...), scheduledMessages(conversationId), scheduleMessage(...), cancelScheduled(...), aiRecap(conversationId)
+- protocol DTOs: RemindersPageDto / ReminderItemDto (note, snippet, remindAt, firedAt, conversation.name) / ReminderResolveDto (Wave7Dtos.kt), AiRecapDto { recap: String, basedOn: Int, cached: Boolean } (Room2Dtos.kt), domain ScheduledItem { scheduledAtIso, cancelledAtIso, ... } (Models.kt)
+- mirror idioms: MirrorExtras.kt MirrorSheet / MirrorSheetScroll / MirrorContactsSheet fetch idiom + clickable(indication = null) press idiom; MirrorRoom.kt MirrorPinnedSheet pattern + internal MirrorRoomInstant (tolerant parse, reused); MirrorArt tokens (MirrorTheme.kt); MirrorIconPaths glyph inventory
+
+Created: apps/android/app/src/main/java/app/pulse/android/mirror/MirrorRoomTools.kt (package app.pulse.android.mirror), exactly three internal composables:
+- internal fun MirrorRemindersSheet(repository: PulseRepository, viewerId: String, conversationId: String, onDismiss: () -> Unit)
+- internal fun MirrorScheduledSheet(repository: PulseRepository, conversationId: String, onDismiss: () -> Unit)
+- internal fun MirrorRecapSheet(repository: PulseRepository, conversationId: String, onDismiss: () -> Unit)
+(all @Composable; everything else in the file is private helpers: ToolsInk palette, en-US formatters, toolsCountdown/toolsListStamp/toolsReminderText, ToolsSpinner, ToolsSkeletonRow pulse, ToolsRetryPill, ToolsLoadError, ToolsIconButton, ToolsReminderRow, ToolsScheduledRow)
+
+Repository methods wired (real calls, no mocks):
+- reminders(false) on open + cachedReminders() as instant paint seed; deleteReminder(id) = web cancel; resolveReminder(id) = mark-handled; refetch after every mutation settle
+- scheduledMessages(conversationId) on open; cancelScheduled(id) per row with spinner; refetch on success (a refused row re-renders rose "NOT SENT - BLOCKED", server truth)
+- aiRecap(conversationId) on open; retry re-calls it
+
+Decisions / caveats:
+- Reminders sheet: web has NO create form inside the sheet (creation lives in the "Remind me" message-action picker + /remind command), so none was invented; createReminder stays unwired in this file by design.
+- Reminders rows carry resolve (LCheck, task-mandated) next to the web's cancel (LBellOff, web-exact); each has its own pending spinner (web variables+isPending parity, concurrent per-row ops allowed). Fired rows are web-exact: static "fired" label, 60% alpha, no actions. Error copy "Could not update the reminder" is the only string not on the web (resolve has no web failure path); everything else is verbatim web copy.
+- Rows are NOT tappable: the web tap-to-jump fires a room navigation event; the mandated sheet signatures carry no navigation callback, and dead buttons are banned.
+- Sheet titles are the web's live count strings ("1 reminder"/"N reminders", "Nothing scheduled"/"N scheduled message(s)") - rendered in the MirrorSheet title row; the web's small-caps bell header is represented by that title (container idiom is fixed by MirrorSheet).
+- Icon substitutions (glyphs absent from MirrorIconPaths, no existing file may be edited): History -> LClock, History chevron -> LChevronRight rotated 90/-90, scheduled cancel + refused Ban -> LX, recap Copy pill is text-only (no LCopy). All other glyphs (LBell, LBellOff, LCalendarClock, LSparkles, LLoaderCircle spin, LRefreshCw, LCloudOff) are web-exact.
+- Loading states render pulse skeletons (web Skeleton h-14 x2); error states are inline rows with retry (the mirror has no toast system).
+- Recap: renders the AiRecapDto fields that exist (recap text pre-line + basedOn count); `cached` is not displayed because the web card does not display it either. The web's "needs 5 messages" gate belongs to the call site (it needs the live message count the sheet does not carry). Copy uses the platform clipboard and shows an inline "Recap copied" note (web toast parity) that clears after 2s.
+- viewerId/conversationId on MirrorRemindersSheet kept for call-site symmetry (gateway scopes reminders to this identity); the web's dueOnly=1 poll loop is a shell-level concern, not a sheet concern.
+- Not compiled locally per rules (CI compiles remotely); syntax hand-verified: brace/paren balance, string termination, no em-dash, no emoji, no TODO/stub markers, all imports used, MirrorRoomInstant/MirrorSheet/MirrorSheetScroll/MirrorArt signatures cross-checked.
+---
+Task ID: R69
+Agent: orchestrator (Z.ai main session)
+Task: User posted two screenshots of the GROUP room three-dot menu on web ("Bot & Webhook QA") and ordered: every single row must show up in the app exactly like the web, "add them into app now."
+
+Work Log:
+- WEB TRUTH (chat-room.tsx L4086-4454): the room kebab is 18 rows + a TOOLS label - Room info, Search in conversation, Reminders (upcoming-count accent pill), Pinned messages (pin rotate-45, count pill), Voice room (accent tint + "N live" pill when in room), Mini chat window (PiP toggle), Topics (group-only, Shown/Hidden pill), Scheduled sends, [DM-only: safety number], Mute notifications (inline 8h/1w/Always strip, Unmute+VolumeX when muted), Disappearing messages (inline Off/24h/7d/30d strip + ttl badge), Recap with AI, Manage group, then TOOLS: Events, Whiteboard, Kanban, Stage, Space, Tournament (groups-only). Container: max-h-[min(72vh,520px)] overflow-y-auto min-w-56.
+- APK STATE: the room menu on device had only 7 of the rows (R64 work).
+- REPOSITORY WAS ALREADY FULLY WIRED (biggest discovery): PulseRepository already carries reminders/scheduled/aiRecap/topics(create+delete+per-topic message refresh)/voice roster+PTT/stage full role model/space positions/whiteboard strokes/kanban CRUD/events CRUD/tournaments - the protocol layer existed since the Wave DTOs; only the mirror UI was missing.
+- EXECUTION: parallel subagents built the sheet surfaces in three NEW files (contracts fixed up-front so integration stayed mechanical):
+  - R69-a MirrorRoomTools.kt (862 lines): MirrorRemindersSheet (reminders(false) + cached seed, resolve/delete, web strings), MirrorScheduledSheet (list + cancelScheduled, rose blocked rows), MirrorRecapSheet (aiRecap, Copy pill, retry).
+  - R69-b MirrorRoomBoard.kt (1926 lines): MirrorEventsSheet (list/create/delete), MirrorKanbanSheet (columns + create/move/delete), MirrorWhiteboardSheet (Canvas draw + strokes post/undo/clear).
+  - R69-c MirrorRoomLive.kt (2411 lines): MirrorVoiceRoomSheet (roster via repository.events(), join/leave/PTT/captions, DisposableEffect leave), MirrorStageSheet (role model: host/speakers/queue/hand/approve/mute/end), MirrorSpaceSheet (spatial map, join/move/leave, defensive JsonElement parse), MirrorTournamentSheet (list/create/join/finish).
+  - Note: agents b/c hit the subagent deadline after writing their files but before logging; files verified complete (balanced braces, all 7 signatures, every repository.* call cross-checked against PulseRepository.kt, zero missing glyph keys, zero em-dash/emoji, no top-level name collisions).
+- ORCHESTRATOR INTEGRATION (mine):
+  - MirrorIconPaths.kt: +7 verbatim lucide glyphs from the same npm package (MessagesSquare, CalendarClock, CalendarDays, SquareKanban, Map, PictureInPicture2, VolumeX); circles/rects converted per the established arc convention.
+  - MirrorRoom.kt: the menu rebuilt to the web's exact 18-row order with web-exact pills (neutral white/8, accent solid, accentSoft, accentUp uppercase), press tint white/10, disabled Tournament for DMs (opacity semantics via enabled), menu clamped to min(72vh,520dp) + verticalScroll (18 rows can never clip), LBell/LVolumeX row states; menu-open fetches live pinnedCount + upcomingReminders; live VoiceRoster collection feeds the Voice room pill; TOOLS label added.
+  - Topics: the kebab row toggles the REAL web TopicBar (topic-bar.tsx conversion) - General + topic chips with message counts + inline create composer on the real createTopic; chip select refetches messages per topic (refreshMessages(conversationId, topicId)).
+  - Mini chat window: real PiP - MirrorPipChat floating card in MirrorRoot (bottom-start above dock, Expand opens the room, Close kills it, live observeMessages + real send), label toggles "Close mini chat window", state lives in MirrorRoot so it survives across tabs like the web.
+  - MirrorRoom gained repository/viewerColor params; MirrorRoomScaffold bridges.
+  - MirrorSheet/MirrorSheetScroll flipped private->internal in MirrorExtras.kt for reuse.
+- CI: compile run 37215323863 on 6d54980. WEB ARTWORK UNTOUCHED (src/ zero diff). db/custom.db NOT staged. versionCode 46 / versionName 0.23.0.0.5 frozen; NO release assets touched; NO APK build (user: final build later).
+
+Stage Summary:
+- The room kebab now mirrors the web's menu 1:1: every row present, every row real (no dead rows), badges live, strips inline, TOOLS surfaces fully native on the real repository/relay contracts.
+- Remaining honest gaps: DM-only "Verify safety number" row (web DM variant) still absent; topic chips render name+count without the per-topic icon glyphs; note: agents' sheet code is CI-compiled but has NOT been runtime-tested on an emulator yet - first device pass happens with the final build.
