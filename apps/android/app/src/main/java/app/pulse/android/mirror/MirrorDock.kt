@@ -29,18 +29,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * R62 - the artboard dock EXACTLY as nav-router.tsx CapsuleNav renders it:
+ * R66 - the artboard dock EXACTLY as nav-router.tsx CapsuleNav renders it:
  * a HUGGING centered glass pill (each tab 64dp wide, 54dp tall) plus the
  * SEPARATE 52dp dark glass art-fab on the right, gap 10dp, inset 12dp.
- * The audited build stretched the pill full-width with weight(1f) - the
- * "navigation bar spans the whole screen" complaint. Fixed by wrapping
- * content: the pill is exactly as wide as its four tabs, centered.
+ * The web CapsuleNav HARD-CODES four slots: Chats (badge) / Calls (ALWAYS
+ * inactive - tapping it opens the zinc-900 calls SUB-PAGE and stays on
+ * chats) / Updates (which IS the hub tab) / Profile. The mirror follows
+ * that wiring 1:1 - Calls is an action, Updates lights up on the hub tab.
  */
 @Composable
 internal fun MirrorDock(
     activeTab: MirrorTab,
     unread: Int,
     onTab: (MirrorTab) -> Unit,
+    onCalls: () -> Unit,
     onFab: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -63,8 +65,22 @@ internal fun MirrorDock(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             MirrorDockItem(MirrorTab.Chats, "PChats", "Chats", activeTab == MirrorTab.Chats, badge = unread, onTab = onTab)
-            MirrorDockItem(MirrorTab.Calls, "PPhone", "Calls", activeTab == MirrorTab.Calls, badge = 0, onTab = onTab)
-            MirrorDockItem(MirrorTab.Updates, "PHub", "Updates", activeTab == MirrorTab.Updates, badge = 0, onTab = onTab)
+            // web: the Calls slot NEVER activates - it opens the calls sub-page
+            Box(
+                Modifier
+                    .width(64.dp)
+                    .heightIn(min = 54.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onCalls),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    MirrorPhosphorIcon("PPhone", tint = MirrorArt.Dim, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.height(2.dp))
+                    Text("Calls", color = MirrorArt.Dim, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+            MirrorDockItem(MirrorTab.Hub, "PHub", "Updates", activeTab == MirrorTab.Hub, badge = 0, onTab = onTab)
             MirrorDockItem(MirrorTab.Profile, "PProfile", "Profile", activeTab == MirrorTab.Profile, badge = 0, onTab = onTab)
         }
         // art-fab: 52dp dark glass circle, white Plus 24dp - NOT an ember bomb
@@ -115,6 +131,8 @@ private fun MirrorDockItem(
                             .widthIn(min = 16.dp)
                             .clip(CircleShape)
                             .background(MirrorArt.BadgeGradient)
+                            // web UnreadBadge carries ring-2 ring-zinc-900 in dark
+                            .border(2.dp, MirrorArt.PresenceRing, CircleShape)
                             .padding(horizontal = 4.dp),
                         contentAlignment = Alignment.Center,
                     ) {

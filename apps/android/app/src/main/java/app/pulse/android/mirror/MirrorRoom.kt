@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
@@ -370,12 +371,48 @@ internal fun MirrorRoom(
             )
         }
 
-        // List viewport: px-3 pt-3 pb-2
+        // List viewport: px-3 pt-3 pb-2. The web paints the wallpaper veil on
+        // the scroll container (chat-room.tsx:4538): top + bottom soft glows
+        // and a 16px dot grid over the art-scene - the mirror draws the same
+        // three layers behind the bubbles.
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .drawBehind {
+                    val w = size.width
+                    val h = size.height
+                    // top glow: radial-gradient(ellipse 90% 34% at 50% -8%, rgba(245,158,11,0.055), transparent 62%)
+                    sceneGlow(
+                        core = Color(0x0EF59E0B),
+                        cx = w / 2f,
+                        cy = -0.08f * h,
+                        rx = 0.90f * w,
+                        ry = 0.34f * h,
+                        fadeStop = 0.62f,
+                    )
+                    // bottom glow: radial-gradient(ellipse 110% 40% at 50% 110%, rgba(20,184,166,0.04), transparent 62%)
+                    sceneGlow(
+                        core = Color(0x0A14B8A6),
+                        cx = w / 2f,
+                        cy = 1.10f * h,
+                        rx = 1.10f * w,
+                        ry = 0.40f * h,
+                        fadeStop = 0.62f,
+                    )
+                    // dot grid: radial-gradient(circle, rgba(255,255,255,0.055) 1px, transparent 1px) @ 16px
+                    val step = 16.dp.toPx()
+                    var gx = step / 2f
+                    while (gx < w) {
+                        var gy = step / 2f
+                        while (gy < h) {
+                            drawCircle(color = Color(0x0EFFFFFF), radius = 1f, center = Offset(gx, gy))
+                            gy += step
+                        }
+                        gx += step
+                    }
+                },
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = 12.dp,
                 top = 12.dp,

@@ -1,9 +1,12 @@
 package app.pulse.android.mirror
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -18,6 +21,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.indication.IndicationNodeFactory
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.fastOutSlowInEasing
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import app.pulse.android.SessionViewModel
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
@@ -30,8 +41,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Mirror destinations - the artboard dock set (Chats / Calls / Updates / Profile). */
-internal enum class MirrorTab { Chats, Calls, Updates, Profile }
+/**
+ * Mirror destinations behind the artboard dock. The web CapsuleNav hard-codes
+ * FOUR slots but only three are tabs: Chats / Calls(sub-page action) /
+ * Updates(= the Hub tab) / Profile; Contacts rides the kebab (web '#/contacts').
+ */
+internal enum class MirrorTab { Chats, Hub, Contacts, Profile }
+
+/** No-op indication: the web has no material ripples - taps flip bg tints only. */
+private object MirrorNoIndication : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode = object : Modifier.Node() {}
+    override fun equals(other: Any?) = other === MirrorNoIndication
+    override fun hashCode() = 17
+}
 
 /** One typer in flight - the relay's typing event with a 4s expiry stamp. */
 private data class MirrorTyper(val conversationId: String, val userId: String, val userName: String, val expiresAt: Long)
@@ -65,6 +87,8 @@ fun MirrorRoot(
     var searching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var kebabOpen by remember { mutableStateOf(false) }
+    var callsOpen by remember { mutableStateOf(false) }
+    var channelsOpen by remember { mutableStateOf(false) }
     var newChatOpen by remember { mutableStateOf(false) }
     var composerOpen by remember { mutableStateOf(false) }
     var viewingStory by remember { mutableStateOf<StoryGroup?>(null) }
@@ -138,11 +162,23 @@ fun MirrorRoot(
         conversations.firstOrNull { it.id == conversationId }?.let { openRoom = it }
     }
 
+    // art-scene ::before breathe: opacity 1 -> 0.86 -> 1 over 7s (globals.css)
+    val sceneBreathe = rememberInfiniteTransition(label = "sceneBreathe")
+    val breatheAlpha by sceneBreathe.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.86f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3_500, easing = fastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "sceneBreatheAlpha",
+    )
+    CompositionLocalProvider(LocalIndication provides MirrorNoIndication) {
     Box(
         Modifier
             .fillMaxSize()
             .background(MirrorArt.Bg)
-            .drawBehind { MirrorScene(this) },
+            .drawBehind { MirrorScene(this, breatheAlpha) },
     ) {
         when {
             viewingStory != null -> {
@@ -232,6 +268,23 @@ fun MirrorRoot(
                             typingIds = typers.map { it.conversationId }.toSet(),
                         )
                     }
+                    MirrorTab.Hub -> {
+                        MirrorHub(
+                            repository = repository,
+                            viewerId = viewerId.orEmpty(),
+                            onOpenConversation = { openById(it) },
+                        )
+                    }
+                    MirrorTab.Contacts -> {
+                        MirrorContacts(
+                            repository = repository,
+                            viewerId = viewerId.orEmpty(),
+                            onOpenConversation = { openById(it) },
+                            onGoProfile = { tab = MirrorTab.Profile },
+                            onNewGroup = { groupOpen = true },
+                            onAdd = { newChatOpen = true },
+                        )
+                    }
                     MirrorTab.Profile -> {
                         MirrorProfile(
                             viewerId = viewerId.orEmpty(),
@@ -241,17 +294,40 @@ fun MirrorRoot(
                             onCopyId = { },
                         )
                     }
-                    MirrorTab.Calls -> MirrorCalls(repository)
-                    MirrorTab.Updates -> MirrorUpdates(repository)
+                }
+
+                // R66 - zinc-900 sub-pages over the scene (web calls/channels pages)
+                if (callsOpen) {
+                    MirrorCallsPage(
+                        repository = repository,
+                        onOpenConversation = {
+                            callsOpen = false
+                            openById(it)
+                        },
+                        onClose = { callsOpen = false },
+                    )
+                }
+                if (channelsOpen) {
+                    MirrorChannelsPage(
+                        repository = repository,
+                        onOpenConversation = {
+                            channelsOpen = false
+                            openById(it)
+                        },
+                        onClose = { channelsOpen = false },
+                    )
                 }
 
                 MirrorDock(
                     activeTab = tab,
                     unread = activeConversations.sumOf { it.unreadCount },
                     onTab = { tab = it },
+                    // web: the Calls slot opens the zinc-900 calls sub-page, tab stays
+                    onCalls = { callsOpen = true },
                     onFab = { newChatOpen = true },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
+
 
                 if (kebabOpen) {
                     MirrorKebabMenu(
@@ -266,8 +342,9 @@ fun MirrorRoot(
                         onNewChat = { newChatOpen = true },
                         onNewGroup = { groupOpen = true },
                         onJoinCode = { joinOpen = true },
-                        onContacts = { contactsOpen = true },
-                        onCalls = { tab = MirrorTab.Calls },
+                        // web kebab Contacts -> '#/contacts' (the contacts TAB)
+                        onContacts = { tab = MirrorTab.Contacts },
+                        onCalls = { callsOpen = true },
                         onArchived = { archivedOpen = true },
                         onNoteToSelf = {
                             // web handleSelfPress: open the existing self chat or create it
@@ -287,7 +364,7 @@ fun MirrorRoot(
                             }
                         },
                         onMentions = { mentionsOpen = true },
-                        onChannels = { tab = MirrorTab.Updates },
+                        onChannels = { channelsOpen = true },
                         onFolders = { foldersOpen = true },
                         onSaved = { tab = MirrorTab.Profile },
                         onStories = { composerOpen = true },
@@ -423,6 +500,90 @@ fun MirrorRoot(
                 onDismiss = { roomInfoFor = null },
             )
         }
+    }
+    }
+}
+
+/**
+ * art-scene (globals.css .art-scene, verbatim): the linear wash + TWO
+ * elliptical horizon glows + the ::before breathing glow. The R62 port drew
+ * the glows through a pivot scale that flung their centers far off-screen,
+ * so the phone showed a flat wash while the web bloomed - fixed here by
+ * translating to the glow center first, then scaling the unit circle.
+ */
+private fun MirrorScene(scope: DrawScope, breatheAlpha: Float) {
+    // linear-gradient(180deg, #2b1c10 0%, #241609 30%, #170e07 58%, #0d0906 92%)
+    scope.drawRect(
+        Brush.verticalGradient(
+            0f to Color(0xFF2B1C10),
+            0.30f to Color(0xFF241609),
+            0.58f to Color(0xFF170E07),
+            0.92f to Color(0xFF0D0906),
+            1f to Color(0xFF0D0906),
+        ),
+    )
+    // radial-gradient(135% 44% at 50% 63%, glow1 0%, transparent 62%)
+    scope.sceneGlow(
+        core = Color(0x70BE6826),
+        cx = scope.size.width / 2f,
+        cy = scope.size.height * 0.63f,
+        rx = scope.size.width * 1.35f,
+        ry = scope.size.height * 0.44f,
+        fadeStop = 0.62f,
+    )
+    // radial-gradient(170% 64% at 50% 70%, glow2 0%, transparent 72%)
+    scope.sceneGlow(
+        core = Color(0x458A481C),
+        cx = scope.size.width / 2f,
+        cy = scope.size.height * 0.70f,
+        rx = scope.size.width * 1.70f,
+        ry = scope.size.height * 0.64f,
+        fadeStop = 0.72f,
+    )
+    // .art-scene::before: radial-gradient(100% 34% at 50% 63%, glow1 0%, transparent 58%)
+    scope.sceneGlow(
+        core = Color(0x70BE6826),
+        cx = scope.size.width / 2f,
+        cy = scope.size.height * 0.63f,
+        rx = scope.size.width,
+        ry = scope.size.height * 0.34f,
+        fadeStop = 0.58f,
+        alpha = breatheAlpha,
+    )
+}
+
+/**
+ * One elliptical radial glow with CSS-exact stops: translate to the glow
+ * center, scale a unit radial circle to (rx, ry), fade to transparent at
+ * [fadeStop] (the web gradient's percentage radius).
+ */
+internal fun DrawScope.sceneGlow(
+    core: Color,
+    cx: Float,
+    cy: Float,
+    rx: Float,
+    ry: Float,
+    fadeStop: Float,
+    alpha: Float = 1f,
+) {
+    if (rx <= 0f || ry <= 0f) return
+    withTransform({
+        translate(cx, cy)
+        scale(scaleX = rx, scaleY = ry)
+    }) {
+        drawCircle(
+            brush = Brush.radialGradient(
+                *arrayOf(
+                    0f to core.copy(alpha = core.alpha * alpha),
+                    fadeStop to core.copy(alpha = 0f),
+                    1f to Color.Transparent,
+                ),
+                center = Offset.Zero,
+                radius = 1f,
+            ),
+            radius = 1f,
+            center = Offset.Zero,
+        )
     }
 }
 
@@ -572,52 +733,6 @@ private fun MirrorRoomScaffold(
             runCatching { repository.pinnedMessages(convo.id) }.getOrDefault(emptyList())
         },
     )
-}
-
-/** art-scene: linear wash + two elliptical horizon glows, CSS-exact. */
-private fun MirrorScene(scope: DrawScope) {
-    // linear-gradient(180deg, #2b1c10 0%, #241609 30%, #170e07 58%, #0d0906 92%)
-    scope.drawRect(
-        Brush.verticalGradient(
-            0f to Color(0xFF2B1C10),
-            0.30f to Color(0xFF241609),
-            0.58f to Color(0xFF170E07),
-            0.92f to Color(0xFF0D0906),
-            1f to Color(0xFF0D0906),
-        ),
-    )
-    // radial-gradient(135% 44% at 50% 63%, glow1 0%, transparent 62%)
-    scope.ellipseGlow(
-        core = Color(0x70BE6826),
-        cx = scope.size.width / 2f,
-        cy = scope.size.height * 0.63f,
-        rx = scope.size.width * 1.35f,
-        ry = scope.size.height * 0.44f,
-    )
-    // radial-gradient(170% 64% at 50% 70%, glow2 0%, transparent 72%)
-    scope.ellipseGlow(
-        core = Color(0x458A481C),
-        cx = scope.size.width / 2f,
-        cy = scope.size.height * 0.70f,
-        rx = scope.size.width * 1.70f,
-        ry = scope.size.height * 0.64f,
-    )
-}
-
-/** One elliptical radial glow: scale the canvas, draw a unit radial circle. */
-private fun DrawScope.ellipseGlow(core: Color, cx: Float, cy: Float, rx: Float, ry: Float) {
-    if (rx <= 0f || ry <= 0f) return
-    withTransform({ scale(scaleX = rx, scaleY = ry, pivot = Offset(cx, cy)) }) {
-        drawCircle(
-            brush = Brush.radialGradient(
-                listOf(core, core.copy(alpha = 0f)),
-                center = Offset.Zero,
-                radius = 1f,
-            ),
-            radius = 1f,
-            center = Offset.Zero,
-        )
-    }
 }
 
 private fun Conversation.toRow(presence: Set<String>, viewerId: String?): ConversationRow {
