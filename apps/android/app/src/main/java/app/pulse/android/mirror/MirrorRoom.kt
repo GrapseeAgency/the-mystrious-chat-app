@@ -235,7 +235,7 @@ internal fun MirrorRoom(
                 Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(if (hasText) MirrorArt.FabGradient else Color(0x12FFFFFF))
+                    .background(if (hasText) MirrorArt.FabGradient else androidx.compose.ui.graphics.SolidColor(Color(0x12FFFFFF)))
                     .clickable {
                         if (hasText) {
                             onSend(draft)

@@ -48,10 +48,10 @@ internal fun MirrorDock(
                 .background(MirrorArt.Panel),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MirrorDockItem(MirrorTab.Chats, "PChats", "Chats", activeTab == MirrorTab.Chats, badge = unread, onTab = onTab)
-            MirrorDockItem(MirrorTab.Calls, "PPhone", "Calls", activeTab == MirrorTab.Calls, badge = 0, onTab = onTab)
-            MirrorDockItem(MirrorTab.Updates, "PHub", "Updates", activeTab == MirrorTab.Updates, badge = 0, onTab = onTab)
-            MirrorDockItem(MirrorTab.Profile, "PProfile", "Profile", activeTab == MirrorTab.Profile, badge = 0, onTab = onTab)
+            Box(Modifier.weight(1f)) { MirrorDockItem(MirrorTab.Chats, "PChats", "Chats", activeTab == MirrorTab.Chats, badge = unread, onTab = onTab) }
+            Box(Modifier.weight(1f)) { MirrorDockItem(MirrorTab.Calls, "PPhone", "Calls", activeTab == MirrorTab.Calls, badge = 0, onTab = onTab) }
+            Box(Modifier.weight(1f)) { MirrorDockItem(MirrorTab.Updates, "PHub", "Updates", activeTab == MirrorTab.Updates, badge = 0, onTab = onTab) }
+            Box(Modifier.weight(1f)) { MirrorDockItem(MirrorTab.Profile, "PProfile", "Profile", activeTab == MirrorTab.Profile, badge = 0, onTab = onTab) }
         }
         // Separate 52dp ember FAB (new chat)
         Box(
@@ -79,7 +79,6 @@ private fun MirrorDockItem(
     val tint = if (active) MirrorArt.Text else MirrorArt.Dim
     Box(
         Modifier
-            .weight(1f)
             .height(64.dp)
             .clickable { onTab(tab) },
         contentAlignment = Alignment.Center,

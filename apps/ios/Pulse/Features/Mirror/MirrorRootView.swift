@@ -72,6 +72,8 @@ final class MirrorViewModel: ObservableObject {
     @Published var stats: WireUserStats?
     @Published var coins: Int = 0
 
+    var totalUnread: Int { rows.reduce(0) { $0 + $1.unread } }
+
     struct MirrorRow: Identifiable, Hashable {
         let id: String
         let title: String
@@ -152,7 +154,9 @@ final class MirrorViewModel: ObservableObject {
                 }
                 if let (data, _) = try? await URLSession.shared.data(for: req) {
                     let root = try? JSONDecoder().decode(MirrorEnvelope<MirrorProfileRow>.self, from: data)
-                    profile = root?.user ?? root
+                    if let unwrapped = root?.user {
+                        profile = unwrapped
+                    }
                 }
             }
             if let s = try? await client.userStats(client.userId) { stats = s }
@@ -215,7 +219,7 @@ struct MirrorRootView: View {
                 }
                 VStack {
                     Spacer()
-                    MirrorDock(tab: $tab, unread: model.rows.reduce(0) { $0 + $1.unread }, onFab: {})
+                    MirrorDock(tab: $tab, unread: model.totalUnread, onFab: {})
                 }
             }
         }
@@ -249,7 +253,7 @@ struct MirrorHomeView: View {
 
                 HStack(spacing: 8) {
                     MirrorChipText(label: "All", active: true)
-                    MirrorChipCount("Unread", count: model.rows.reduce(0) { $0 + $1.unread })
+                    MirrorChipCount(label: "Unread", count: model.totalUnread)
                     MirrorChipText(label: "Groups", active: false)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)
