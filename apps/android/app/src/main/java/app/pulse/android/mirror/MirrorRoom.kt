@@ -66,9 +66,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,6 +78,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
@@ -86,7 +91,11 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -104,6 +113,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import app.pulse.core.PulseEndpoints
+import app.pulse.core.fx.PulseFx
 import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.LocationPayload
 import app.pulse.domain.model.Message
@@ -112,12 +122,14 @@ import app.pulse.domain.model.QuickPhrase
 import app.pulse.domain.model.Topic
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.protocol.EffectPayloadDto
 import app.pulse.protocol.VoicePeerDto
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -242,6 +254,110 @@ private fun groupReactions(message: Message, viewerId: String): List<ReactionChi
 }
 
 /**
+ * R74 - submit-time slash text transforms. Web parseSlashResult text cases
+ * (chat-room.tsx L445-540) + the reminder parser (reminders-sheet.tsx L130).
+ * null = not a slash command, plain send. Sealed so every branch is explicit.
+ */
+internal sealed class MirrorSlashBody {
+    data class Send(val content: String) : MirrorSlashBody()
+    data class Error(val message: String) : MirrorSlashBody()
+    data class Reminder(val note: String, val remindAtIso: String) : MirrorSlashBody()
+}
+
+/** web rollDice L310 - AdM spec, count 1..12, sides 2..1000. */
+internal fun mirrorRollDice(spec: String): Pair<List<Int>, Int>? {
+    val m = Regex("^(\\d{1,2})d(\\d{1,3})$", RegexOption.IGNORE_CASE).find(spec.trim()) ?: return null
+    val count = m.groupValues[1].toInt().coerceIn(1, 12)
+    val sides = m.groupValues[2].toInt().coerceIn(2, 1000)
+    val rolls = List(count) { kotlin.random.Random.nextInt(sides) + 1 }
+    return rolls to rolls.sum()
+}
+
+/** web durationToMs - s/m/h/d tokens for the relative reminder parser. */
+private fun mirrorDurationToMs(n: Int, token: String): Long? = when (token) {
+    "s" -> n * 1_000L
+    "m" -> n * 60_000L
+    "h" -> n * 3_600_000L
+    "d" -> n * 86_400_000L
+    else -> null
+}
+
+/**
+ * web parseRelativeReminder (reminders-sheet.tsx L130): trailing
+ * "in 30m" / "30m" / "next week" / "tomorrow" / "tonight" patterns;
+ * tomorrow = 09:00 local, tonight = 20:00 local, next week = +7d.
+ */
+internal fun mirrorParseRelativeReminder(arg: String, now: java.time.ZonedDateTime = java.time.ZonedDateTime.now()): Pair<String, String>? {
+    val input = arg.trim().replace(Regex("\\s+"), " ")
+    if (input.isEmpty()) return null
+    data class Hit(val regex: Regex, val stripIn: Boolean, val at: (MatchResult) -> java.time.ZonedDateTime?)
+    val patterns = listOf(
+        Hit(Regex("\\s+in\\s+(\\d+)\\s*([smhd])$", RegexOption.IGNORE_CASE), false) { m ->
+            val ms = mirrorDurationToMs(m.groupValues[1].toInt(), m.groupValues[2].lowercase())
+            if (ms == null) null else now.plusSeconds(ms / 1000)
+        },
+        Hit(Regex("\\s+(\\d+)\\s*([smhd])$", RegexOption.IGNORE_CASE), true) { m ->
+            val ms = mirrorDurationToMs(m.groupValues[1].toInt(), m.groupValues[2].lowercase())
+            if (ms == null) null else now.plusSeconds(ms / 1000)
+        },
+        Hit(Regex("\\s+next\\s+week$", RegexOption.IGNORE_CASE), false) { now.plusSeconds(7L * 86_400) },
+        Hit(Regex("\\s+tomorrow$", RegexOption.IGNORE_CASE), false) {
+            now.plusDays(1).with(java.time.LocalTime.of(9, 0))
+        },
+        Hit(Regex("\\s+tonight$", RegexOption.IGNORE_CASE), false) {
+            now.with(java.time.LocalTime.of(20, 0))
+        },
+    )
+    for (hit in patterns) {
+        val m = hit.regex.find(input) ?: continue
+        val at = hit.at(m) ?: continue
+        var note = input.substring(0, m.range.first).trim()
+        if (hit.stripIn) note = note.replace(Regex("\\s+in$", RegexOption.IGNORE_CASE), "").trim()
+        if (note.isEmpty() || note.equals("in", ignoreCase = true)) return null
+        return note to at.format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+    }
+    return null
+}
+
+/** The slash text-command dispatch used by sendNow (web L445-540). */
+internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
+    val input = inputRaw.trim()
+    val m = Regex("^/(\\w+)(?:\\s+([\\s\\S]+))?$").find(input) ?: return null
+    val word = m.groupValues[1].lowercase()
+    val arg = (m.groupValues[2] ?: "").trim()
+    return when (word) {
+        "me" -> {
+            if (arg.isEmpty()) MirrorSlashBody.Error("Usage: /me waves hello")
+            else MirrorSlashBody.Send("_" + arg.take(1998) + "_")
+        }
+        "shrug" -> MirrorSlashBody.Send("${arg}${if (arg.isNotEmpty()) " " else ""}¯\\_(ツ)_/¯")
+        "tableflip" -> MirrorSlashBody.Send("${arg}${if (arg.isNotEmpty()) " " else ""}(╯°□°）╯︵ ┻━┻")
+        "unflip" -> MirrorSlashBody.Send("┬┬ ノ( ゜-゜ノ${if (arg.isNotEmpty()) " $arg" else ""}")
+        "roll" -> {
+            if (arg.isEmpty()) {
+                val roll = mirrorRollDice("1d6")
+                MirrorSlashBody.Send("Rolled **1d6**: *${roll?.second ?: "?"}*")
+            } else {
+                val roll = mirrorRollDice(arg)
+                if (roll == null) MirrorSlashBody.Error("Usage: /roll AdM - e.g. /roll 2d6")
+                else MirrorSlashBody.Send("Rolled **${arg.lowercase()}**: ${roll.first.joinToString(" + ")} = *${roll.second}*")
+            }
+        }
+        "remind" -> {
+            val parsed = mirrorParseRelativeReminder(arg)
+            if (parsed == null) {
+                MirrorSlashBody.Error("Usage: /remind buy milk in 30m - try 30m, 2h, tomorrow, tonight, next week")
+            } else {
+                MirrorSlashBody.Reminder(parsed.first, parsed.second)
+            }
+        }
+        // R21-a bot commands ride as a normal message - the server bot answers
+        "math", "flip", "8ball", "rps", "dice", "time", "wallet" -> MirrorSlashBody.Send(input)
+        else -> MirrorSlashBody.Error("Unknown command \"/$word\" - try /help")
+    }
+}
+
+/**
  * R63 - the chat room as a 1:1 conversion of the web chat-room.tsx render:
  * art-scene canvas, 56dp header (back / 40dp avatar / title+subtitle / three
  * 44dp bare icons), px-3 list with day chips + centered per-cluster "HH:mm"
@@ -288,6 +404,8 @@ internal fun MirrorRoom(
     fetchPinned: suspend () -> List<Message>,
     pipActive: Boolean,
     onTogglePip: () -> Unit,
+    /** web prefs.reducedMotion - gates every full-screen effect (chat-room L1471). */
+    reducedMotion: Boolean = false,
 ) {
     // R73 - the composer draft is a TextFieldValue: the mention autocomplete
     // needs the caret position to replace the @token in place (web L2923-2961).
@@ -353,6 +471,24 @@ internal fun MirrorRoom(
     var tournamentOpen by remember { mutableStateOf(false) }
     var topicsVisible by remember { mutableStateOf(false) }
     var activeTopicId by remember { mutableStateOf<String?>(null) }
+    // R74 - the seven parity surfaces: slash palette arming, incognito,
+    // red packet, effects queue, effects tray chooser, help sheet.
+    var redPacketOpen by remember { mutableStateOf(false) }
+    var trayEffectsOpen by remember { mutableStateOf(false) }
+    var pendingEffect by remember { mutableStateOf<MirrorMessageEffect?>(null) }
+    var anonNext by remember { mutableStateOf(false) }
+    var slashHelpOpen by remember { mutableStateOf(false) }
+    var gameBusy by remember { mutableStateOf(false) }
+    // full-screen message effects (confetti/lasers/echo/sparkles) - one
+    // canvas, queue capped at 3, nonce per run (web L1460-1512). All per-room
+    // state keys on groupId so a room switch never replays the old history.
+    var activeEffect by remember { mutableStateOf<MirrorActiveEffect?>(null) }
+    val effectQueue = remember { mutableStateListOf<MirrorActiveEffect>() }
+    val effectNonce = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    val seenEffectIds = remember(groupId) { androidx.compose.runtime.mutableStateSetOf<String>() }
+    // live bubble geometry for the effect origin (web querySelector data-mid)
+    val bubbleRects: SnapshotStateMap<String, Rect> = androidx.compose.runtime.mutableStateMapOf()
+    var effectsHostRect by remember { mutableStateOf(Rect.Zero) }
     // menu badges, fetched live each time the menu opens (web queries)
     var pinnedCount by remember { mutableStateOf(0) }
     var upcomingReminders by remember { mutableStateOf(0) }
@@ -454,23 +590,149 @@ internal fun MirrorRoom(
         slowModeSecondsLeft = 0
     }
 
+    // R74 - effect trigger (web triggerEffectFor L1464): full-screen particle
+    // companion from the composer position + the per-message canvas layer
+    // anchored at the bubble, queue capped at 3, nonce per run.
+    fun triggerEffectFor(messageId: String, effect: MirrorMessageEffect) {
+        if (reducedMotion) return
+        when (effect) {
+            MirrorMessageEffect.CONFETTI -> PulseFx.fire(PulseFx.BurstKind.CONFETTI, 90)
+            MirrorMessageEffect.SPARKLES -> PulseFx.fire(PulseFx.BurstKind.STARS, 90)
+            else -> PulseFx.fire(PulseFx.BurstKind.BURST, 90)
+        }
+        val host = effectsHostRect
+        val bubble = bubbleRects[messageId]
+        val origin = if (host.width > 0f && host.height > 0f && bubble != null) {
+            MirrorEffectOrigin(
+                x = ((bubble.center.x - host.left) / host.width).coerceIn(0.03f, 0.97f),
+                y = ((bubble.center.y - host.top) / host.height).coerceIn(0.03f, 0.97f),
+            )
+        } else {
+            MirrorEffectOrigin(0.5f, 0.62f)
+        }
+        if (activeEffect == null) {
+            effectNonce.longValue += 1L
+            activeEffect = MirrorActiveEffect(effect, origin, effectNonce.longValue)
+        } else if (effectQueue.size < 3) {
+            effectQueue.add(MirrorActiveEffect(effect, origin, 0L))
+        }
+    }
+
+    fun handleEffectDone() {
+        activeEffect = null
+        if (effectQueue.isNotEmpty()) {
+            val next = effectQueue.removeAt(0)
+            effectNonce.longValue += 1L
+            activeEffect = MirrorActiveEffect(next.effect, next.origin, effectNonce.longValue)
+        }
+    }
+
+    // R74 - fire payload effects for messages appended to the tail of the
+    // cache (web L1519-1541): seed silently on first load, never replay
+    // history, exactly-once per id.
+    LaunchedEffect(messages) {
+        if (messages.isEmpty()) return@LaunchedEffect
+        val tailId = messages.last().id
+        if (seenEffectIds.isEmpty()) {
+            // first load or room switch - seed, never replay
+            messages.forEach { seenEffectIds.add(it.id) }
+            return@LaunchedEffect
+        }
+        if (!seenEffectIds.contains(tailId)) {
+            for (m in messages.reversed()) {
+                if (seenEffectIds.contains(m.id)) break
+                seenEffectIds.add(m.id)
+                val payload = m.payload?.let { raw ->
+                    runCatching { Json.decodeFromString(EffectPayloadDto.serializer(), raw) }.getOrNull()
+                }
+                val effect = MirrorMessageEffect.parse(payload?.effect)
+                if (payload != null && effect != null) {
+                    triggerEffectFor(m.id, effect)
+                }
+            }
+        }
+        if (seenEffectIds.size > 400) {
+            seenEffectIds.clear()
+            messages.forEach { seenEffectIds.add(it.id) }
+        }
+    }
+
     // R73 - the REAL send path lives here (web submitDraft): edit-vs-send
     // fork, replyToId + topicId on the wire, draft clear, slow-mode 429
     // surfacing, typing stop. Zero silent failures.
+    // R74 - armed effects ride kind:"text" + payload {effect} (web L1646);
+    // incognito arms anon + the deterministic alias preview (web L1672).
     var sending by remember { mutableStateOf(false) }
     fun sendNow() {
-        val text = draftValue.text.trim()
+        val rawText = draftValue.text.trim()
         if (broadcastLocked || sending) return
-        if (text.isEmpty()) return
+        if (rawText.isEmpty()) return
         if (slowModeUntil > System.currentTimeMillis() && editing == null) return
+        // R74 - submit-time slash text transforms (web parseSlashResult text
+        // cases + bot pass-through): /me /shrug /tableflip /unflip /roll send
+        // transformed bodies, /remind creates a real reminder, unknown words
+        // surface the /help affordance (web L530-540).
+        val text: String = when (val slash = mirrorSlashSendBody(rawText)) {
+            is MirrorSlashBody.Error -> {
+                sendError = slash.message
+                return
+            }
+            is MirrorSlashBody.Reminder -> {
+                val parsed = slash
+                stopTyping()
+                CoroutineScope(Dispatchers.IO).launch {
+                    val ok = runCatching {
+                        repository.createReminder(
+                            conversationId = groupId,
+                            messageId = null,
+                            note = parsed.note,
+                            remindAtIso = parsed.remindAtIso,
+                        ).getOrThrow()
+                    }.isSuccess
+                    CoroutineScope(Dispatchers.Main).launch {
+                        draftValue = TextFieldValue("")
+                        sendError = if (ok) "Reminder set" else "Could not set the reminder"
+                    }
+                }
+                return
+            }
+            is MirrorSlashBody.Send -> slash.content
+            null -> rawText
+        }
         val editTarget = editing
         val replyTarget = replyTo
+        // R74 - web consumes the armed effect at submit time (chat-room L3137:
+        // "const armedEffect = pendingEffect; if (!== null) setPendingEffect(null)")
+        val effectTarget = pendingEffect
+        if (effectTarget != null) pendingEffect = null
+        val anonTarget = anonNext && isGroup && editTarget == null && effectTarget == null
         stopTyping()
         sending = true
         CoroutineScope(Dispatchers.IO).launch {
             val outcome = runCatching {
                 if (editTarget != null) {
                     repository.editMessage(editTarget.id, text).getOrThrow()
+                } else if (effectTarget != null) {
+                    val payload = Json.encodeToString(
+                        EffectPayloadDto.serializer(),
+                        EffectPayloadDto(effect = effectTarget.wire),
+                    )
+                    repository.sendRichMessage(
+                        conversationId = groupId,
+                        body = text.take(2000),
+                        kind = "text",
+                        payload = payload,
+                        replyToId = replyTarget?.id,
+                    ).getOrThrow()
+                } else if (anonTarget) {
+                    repository.sendRichMessage(
+                        conversationId = groupId,
+                        body = text.take(2000),
+                        replyToId = replyTarget?.id,
+                        topicId = if (replyTarget == null) activeTopicId else null,
+                        anon = true,
+                        anonAliasPreview = mirrorAnonAliasPreview(viewerId, groupId),
+                    ).getOrThrow()
                 } else {
                     repository.sendMessage(
                         conversationId = groupId,
@@ -487,6 +749,11 @@ internal fun MirrorRoom(
                     replyTo = null
                     editing = null
                     sendError = null
+                    // R74 - the effect arm is one-shot like the web pendingEffect
+                    // (armed stays until a send consumes it - web L3103 keeps it
+                    // armed across sends until dismissed; the chip shows it).
+                    // R24-b - incognito IS one-shot (web L1751): disarm on success.
+                    if (anonTarget) anonNext = false
                     if (editTarget != null) {
                         runCatching { repository.clearDraft(groupId) }
                     }
@@ -507,6 +774,105 @@ internal fun MirrorRoom(
                     }
                 }
             }
+        }
+    }
+
+    // R74 - /game palette entry (web createGame chat-room.tsx L1276): DM
+    // challenges the peer directly, group creates an open challenge anyone
+    // can claim. The created invite message rides the normal refresh.
+    fun startTicTacToe() {
+        if (gameBusy) return
+        gameBusy = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val opponentId = if (!isGroup) members.firstOrNull { it.id != viewerId }?.id else null
+            val outcome = runCatching {
+                repository.createGame(groupId, opponentId).getOrThrow()
+            }
+            CoroutineScope(Dispatchers.Main).launch {
+                gameBusy = false
+                outcome.onSuccess {
+                    sendError = "Tic-tac-toe challenge sent"
+                    runCatching { repository.refreshMessages(groupId, activeTopicId) }
+                }.onFailure {
+                    sendError = "Could not start the game"
+                }
+            }
+        }
+    }
+
+    // R74 - the slash fast-path (web handleSlashSelect L3000+): the palette
+    // and the tray Commands tile dispatch through the same parser branches.
+    fun runSlashCommand(rawCmd: String) {
+        val cmd = rawCmd.trim()
+        // text-transform commands stage the arg into the draft (web L3356)
+        fun stageWithArgs() {
+            val args = draftValue.text.replace(Regex("^/\\S*\\s*"), "").trim()
+            draftValue = TextFieldValue(if (args.isNotEmpty()) "$cmd $args" else "$cmd ")
+        }
+        when {
+            cmd == "/poll" -> { draftValue = TextFieldValue(""); pollOpen = true }
+            cmd == "/schedule" -> { draftValue = TextFieldValue(""); scheduleOpen = true }
+            cmd == "/sticker" -> { draftValue = TextFieldValue(""); stickerOpen = true }
+            cmd == "/location" -> { draftValue = TextFieldValue(""); locationOpen = true }
+            cmd == "/whiteboard" -> { draftValue = TextFieldValue(""); whiteboardOpen = true }
+            cmd == "/redpacket" -> { draftValue = TextFieldValue(""); redPacketOpen = true }
+            cmd == "/kanban" -> { draftValue = TextFieldValue(""); kanbanOpen = true }
+            cmd == "/events" -> { draftValue = TextFieldValue(""); eventsOpen = true }
+            cmd == "/stage" -> { draftValue = TextFieldValue(""); stageOpen = true }
+            cmd == "/space" -> { draftValue = TextFieldValue(""); spaceOpen = true }
+            cmd == "/recap" -> { draftValue = TextFieldValue(""); recapOpen = true }
+            cmd == "/help" -> { draftValue = TextFieldValue(""); slashHelpOpen = true }
+            cmd == "/game" -> { draftValue = TextFieldValue(""); startTicTacToe() }
+            cmd == "/tournament" -> {
+                draftValue = TextFieldValue("")
+                if (!isGroup) {
+                    sendError = "Tournaments are for groups only"
+                } else {
+                    tournamentOpen = true
+                }
+            }
+            cmd == "/topic" -> {
+                // /topic <name> - create the topic now and file the next send
+                val name = draftValue.text.replace(Regex("^/\\S*\\s*"), "").trim()
+                if (name.isEmpty()) {
+                    sendError = "Usage: /topic Design"
+                } else {
+                    draftValue = TextFieldValue("")
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val created = runCatching {
+                            repository.createTopic(groupId, name, null).getOrThrow()
+                        }.getOrNull()
+                        CoroutineScope(Dispatchers.Main).launch {
+                            if (created != null) {
+                                activeTopicId = created.id
+                                runCatching { repository.refreshTopics(groupId) }
+                            } else {
+                                sendError = "Could not create the topic"
+                            }
+                        }
+                    }
+                }
+            }
+            cmd.startsWith("/effects") -> {
+                val effectWord = cmd.split(Regex("\\s+")).getOrNull(1)?.lowercase() ?: ""
+                val effect = MirrorMessageEffect.parse(effectWord)
+                if (effect == null) {
+                    sendError = "Usage: /effects confetti|lasers|echo|sparkles [text]"
+                } else {
+                    val rest = draftValue.text.replace(Regex("^/\\S*\\s*"), "").trim()
+                    draftValue = TextFieldValue("")
+                    if (rest.isNotEmpty()) {
+                        // content present - send immediately with the payload
+                        pendingEffect = effect
+                        draftValue = TextFieldValue(rest)
+                        sendNow()
+                    } else {
+                        pendingEffect = effect
+                        sendError = "${effect.wire} effect armed - type a message and send"
+                    }
+                }
+            }
+            else -> stageWithArgs()
         }
     }
 
@@ -904,6 +1270,17 @@ internal fun MirrorRoom(
                                 }
                             },
                             onToggleReaction = onToggleReaction,
+                            // R74 - swipe-to-reply + effect origin registration
+                            onReply = {
+                                replyTo = entry.message
+                            },
+                            registerRect = { rect -> bubbleRects[entry.message.id] = rect },
+                            repository = repository,
+                            onRematch = {
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    runCatching { repository.refreshMessages(groupId, activeTopicId) }
+                                }
+                            },
                         )
                     }
                 }
@@ -1000,6 +1377,26 @@ internal fun MirrorRoom(
                         tint = MirrorArt.Accent2,
                         text = "Filing to #$topicName",
                         onCancel = { activeTopicId = null },
+                    )
+                }
+                // R74 - incognito armed chip (web L5010-5031): pulsing mask,
+                // "next message hides your name", X disarms.
+                if (anonNext && isGroup) {
+                    MirrorComposerBar(
+                        glyph = "LVenetianMask",
+                        tint = MirrorArt.Accent2,
+                        text = "Incognito on - next message hides your name",
+                        onCancel = { anonNext = false },
+                    )
+                }
+                // R74 - armed effect chip (web toast L5213 + the armed state):
+                // the next send carries payload {effect}.
+                pendingEffect?.let { armed ->
+                    MirrorComposerBar(
+                        glyph = "LSparkles",
+                        tint = MirrorArt.Accent2,
+                        text = "${armed.wire} effect armed - type a message and send",
+                        onCancel = { pendingEffect = null },
                     )
                 }
                 replyTo?.let { target ->
@@ -1110,6 +1507,14 @@ internal fun MirrorRoom(
             val newText = (before.substring(0, at) + "@$name ") + text.substring(caret)
             val newCaret = at + name.length + 2
             draftValue = TextFieldValue(newText, selection = androidx.compose.ui.text.TextRange(newCaret))
+        }
+        // R74 - the slash palette (web SlashPalette): anchored above the
+        // composer whenever the draft starts with '/', fuzzy filtered.
+        if (draftValue.text.startsWith("/")) {
+            MirrorSlashPalette(
+                query = draftValue.text,
+                onPick = { cmd -> runSlashCommand(cmd) },
+            )
         }
         if (broadcastLocked) {
             Row(
@@ -1429,6 +1834,69 @@ internal fun MirrorRoom(
                         ) {
                             trayOpen = false
                             topicsVisible = !topicsVisible
+                        }
+                    }
+                }
+                // R74 - the web tray tail (chat-room L2700/2657/2796/2826):
+                // Game, Red packet, Effects chooser, Incognito + Commands.
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MirrorTrayTile("LGamepad2", "Game", "Start tic-tac-toe here") {
+                        trayOpen = false
+                        startTicTacToe()
+                    }
+                    MirrorTrayTile("LGift", "Red packet", "Wrap coins as a gift") {
+                        trayOpen = false
+                        redPacketOpen = true
+                    }
+                    MirrorTrayTile("LSparkles", "Effects", "Confetti, lasers, echo, sparkles") {
+                        trayEffectsOpen = !trayEffectsOpen
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (isGroup) {
+                        MirrorTrayTile(
+                            "LVenetianMask",
+                            "Incognito",
+                            if (anonNext) "Armed - next send is anonymous" else "Next send hides your name",
+                        ) {
+                            anonNext = !anonNext
+                            if (anonNext) trayOpen = false
+                        }
+                    }
+                    MirrorTrayTile("LDices", "Commands", "Every slash command") {
+                        trayOpen = false
+                        draftValue = TextFieldValue("/")
+                    }
+                }
+                // effects chooser pills (web trayEffectsOpen L5194): arm on tap
+                if (trayEffectsOpen) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (effect in MirrorMessageEffect.entries) {
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .clip(CircleShape)
+                                    .background(MirrorArt.White7)
+                                    .border(1.dp, MirrorArt.Hairline, CircleShape)
+                                    .clickable {
+                                        pendingEffect = effect
+                                        trayOpen = false
+                                        trayEffectsOpen = false
+                                        sendError = "${effect.wire} effect armed - type a message and send"
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    effect.wire,
+                                    color = MirrorArt.Text,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
                         }
                     }
                 }
@@ -1795,6 +2263,72 @@ internal fun MirrorRoom(
             busy = uploadingImage,
             onDismiss = { if (!uploadingImage) captionFor = null },
             onSend = { caption -> sendStagedImage(staged.first, caption) },
+        )
+    }
+
+    // R74 - red packet composer (web useRedPacketSheet wiring)
+    if (redPacketOpen) {
+        MirrorRedPacketSheet(
+            conversationId = groupId,
+            repository = repository,
+            onDismiss = { redPacketOpen = false },
+            onSent = {
+                redPacketOpen = false
+                // the server-created packet message rides the next refresh
+                CoroutineScope(Dispatchers.IO).launch {
+                    runCatching { repository.refreshMessages(groupId, activeTopicId) }
+                }
+            },
+        )
+    }
+
+    // R74 - /help sheet: every command with its args + help line
+    if (slashHelpOpen) {
+        MirrorSheet(title = "Slash commands", onDismiss = { slashHelpOpen = false }) {
+            Column(
+                Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                for (command in MIRROR_SLASH_COMMANDS) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(MirrorArt.White7),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon(command.glyph, tint = command.tone, modifier = Modifier.size(14.dp))
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(command.cmd, color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text(command.help, color = MirrorArt.Dim, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // R74 - the full-screen message effects canvas (web MessageEffectsLayer
+    // L6290): pointer-transparent overlay, one shared instance, queue shifted
+    // on done. The host rect feeds the normalized bubble origin.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { effectsHostRect = it.boundsInRoot() },
+    ) {
+        MirrorMessageEffectsLayer(
+            active = activeEffect,
+            onDone = { handleEffectDone() },
         )
     }
 }
@@ -2346,7 +2880,19 @@ private fun MirrorBubbleRow(
     onOpenMenu: () -> Unit,
     onVote: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
+    // R74 - swipe-to-reply trigger + the effect-origin registration
+    onReply: () -> Unit = {},
+    registerRect: (Rect) -> Unit = {},
+    repository: PulseRepository? = null,
+    onRematch: () -> Unit = {},
 ) {
+    // R74 - effect origin registration (web data-mid querySelector): report
+    // this row's live geometry so a payload effect can burst from the bubble.
+    BoxWithConstraints(
+        Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { registerRect(it.boundsInRoot()) },
+    ) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -2378,6 +2924,11 @@ private fun MirrorBubbleRow(
             val reactionChips = groupReactions(message, viewerId)
             val mentionsMe = mirrorMentionsViewer(message.body, viewerName) && message.deletedAt == null
             val isImage = message.kind == Message.Kind.IMAGE && message.imagePath != null && message.deletedAt == null
+            // R74 - self-contained cards (web plainChrome L7400): red packet +
+            // game boards render WITHOUT bubble chrome, taps belong to the card.
+            val redPacketInfo = if (message.kind == Message.Kind.RED_PACKET) mirrorParseRedPacketPayload(message.payload) else null
+            val gameInfo = if (message.kind == Message.Kind.GAME) mirrorParseGamePayload(message.payload) else null
+            val isCard = message.deletedAt == null && (redPacketInfo != null || gameInfo != null)
             // R73 - web bubble entrance physics (chat-room.tsx:7510-7520):
             // mine = squash (scaleX 1.06 / scaleY 0.94 -> 1), incoming = 0.85
             // -> 1, both on the bouncy spring with the origin at the bubble base.
@@ -2398,39 +2949,108 @@ private fun MirrorBubbleRow(
                 }
             }
             val haptics = LocalHapticFeedback.current
+            // R74 - swipe-to-reply (web chat-room L7424-7451): drag the bubble
+            // toward the center past the 28dp threshold to reply; the Reply
+            // hint fades in with the drag; the bubble springs back on release.
+            val swipeX = remember(message.id) { Animatable(0f) }
+            val swipeScope = rememberCoroutineScope()
+            val swipeThreshold = with(LocalDensity.current) { 28.dp.toPx() }
+            val swipeClamp = with(LocalDensity.current) { 64.dp.toPx() }
+            val swipeToward = if (mine) -swipeX.value else swipeX.value
+            val hintAlpha = ((swipeToward - 4f) / (swipeThreshold - 4f)).coerceIn(0f, 1f)
+            val hintScale = (0.5f + (swipeToward / swipeThreshold) * 0.6f).coerceIn(0.5f, 1.1f)
             Column(
                 Modifier.fillMaxWidth(),
                 horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
             ) {
+                Box(Modifier.fillMaxWidth()) {
+                // R74 - reply hint (web hintOpacity/hintScale L7424-7432):
+                // revealed from under the edge as the bubble slides toward it
+                if (hintAlpha > 0.02f) {
+                    Box(
+                        Modifier
+                            .align(if (mine) Alignment.CenterEnd else Alignment.CenterStart)
+                            .graphicsLayer {
+                                alpha = hintAlpha
+                                scaleX = hintScale
+                                scaleY = hintScale
+                            },
+                    ) {
+                        MirrorLucideIcon("LCornerDownRight", tint = MirrorArt.Accent2, modifier = Modifier.size(18.dp))
+                    }
+                }
                 // bubble block - tap AND long-press open the web action panel;
                 // double-tap fires the heart reaction (web L7558-7563)
+                // R74: self-contained cards drop the chrome AND the tap-to-open
+                // panel - their taps belong to the card (web data-card-interactive).
                 Column(
                     Modifier
-                        .widthIn(max = bubbleMax)
+                        .widthIn(max = if (isCard) 304.dp else bubbleMax)
                         .graphicsLayer {
                             scaleX = entranceX.value
                             scaleY = entranceY.value
                             transformOrigin = TransformOrigin(0.5f, 1f)
                         }
-                        .mirrorBubbleShape(mine, message.deletedAt != null)
-                        .mirrorBubbleBackground(mine, message.deletedAt != null)
-                        .then(if (mentionsMe) Modifier.border(2.dp, Color(0xB3FFAB5E), mirrorBubbleShapeOf(mine, deleted = false)) else Modifier)
-                        .combinedClickable(
-                            onClick = { if (message.deletedAt == null) onOpenMenu() },
-                            onLongClick = {
-                                if (message.deletedAt == null) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onOpenMenu()
-                                }
-                            },
-                            onDoubleClick = {
-                                if (message.deletedAt == null) onToggleReaction(message.id, "heart")
+                        .offset { androidx.compose.ui.unit.IntOffset(swipeX.value.roundToInt(), 0) }
+                        .then(
+                            if (isCard) {
+                                Modifier
+                            } else {
+                                Modifier
+                                    .mirrorBubbleShape(mine, message.deletedAt != null)
+                                    .mirrorBubbleBackground(mine, message.deletedAt != null)
                             },
                         )
-                        .padding(
-                            horizontal = if (isImage) 4.dp else 12.dp,
-                            vertical = if (isImage) 4.dp else 8.dp,
-                        ),
+                        .then(if (mentionsMe) Modifier.border(2.dp, Color(0xB3FFAB5E), mirrorBubbleShapeOf(mine, deleted = false)) else Modifier)
+                        .then(
+                            if (isCard) {
+                                Modifier
+                            } else {
+                                Modifier.combinedClickable(
+                                    onClick = { if (message.deletedAt == null) onOpenMenu() },
+                                    onLongClick = {
+                                        if (message.deletedAt == null) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onOpenMenu()
+                                        }
+                                    },
+                                    onDoubleClick = {
+                                        if (message.deletedAt == null) onToggleReaction(message.id, "heart")
+                                    },
+                                )
+                            },
+                        )
+                        .then(
+                            if (isCard) {
+                                Modifier
+                            } else {
+                                Modifier.padding(
+                                    horizontal = if (isImage) 4.dp else 12.dp,
+                                    vertical = if (isImage) 4.dp else 8.dp,
+                                )
+                            },
+                        )
+                        // R74 - the horizontal drag gesture (web drag="x"
+                        // constraints ±64, snapToOrigin, threshold 28)
+                        .pointerInput(message.id, mine) {
+                            detectHorizontalDragGestures(
+                                onDragEnd = {
+                                    val toward = if (mine) -swipeX.value else swipeX.value
+                                    if (toward >= swipeThreshold) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onReply()
+                                    }
+                                    swipeScope.launch { swipeX.animateTo(0f, MirrorMotion.snappy()) }
+                                },
+                                onDragCancel = {
+                                    swipeScope.launch { swipeX.animateTo(0f, MirrorMotion.snappy()) }
+                                },
+                            ) { change, dragAmount ->
+                                change.consume()
+                                val next = (swipeX.value + dragAmount).coerceIn(-swipeClamp, swipeClamp)
+                                swipeX.snapTo(next)
+                            }
+                        },
                 ) {
                     if (message.deletedAt != null) {
                         Text(
@@ -2465,6 +3085,24 @@ private fun MirrorBubbleRow(
                         // poll tallies, stamps, location pins, voice waveform
                         // players, document cards, images, plain text.
                         when {
+                            // R74 - self-contained cards (web plainChrome branch)
+                            redPacketInfo != null -> {
+                                MirrorRedPacketBubble(
+                                    packetId = redPacketInfo.packetId,
+                                    viewerId = viewerId,
+                                    mine = mine,
+                                    senderName = message.authorName,
+                                    repository = repository!!,
+                                )
+                            }
+                            gameInfo != null -> {
+                                MirrorTicTacToeCard(
+                                    matchId = gameInfo.matchId,
+                                    viewerId = viewerId,
+                                    repository = repository!!,
+                                    onRematch = onRematch,
+                                )
+                            }
                             message.kind == Message.Kind.POLL && message.poll != null -> {
                                 MirrorPollBubble(
                                     poll = message.poll!!,
@@ -2626,6 +3264,7 @@ private fun MirrorBubbleRow(
                         }
                     }
                 }
+                }
                 // reactions: -mt-1.5 overlap, gap-1, chips hug the bubble side
                 if (reactionChips.isNotEmpty() && message.deletedAt == null) {
                     Row(
@@ -2700,6 +3339,7 @@ private fun MirrorBubbleRow(
                 }
             }
         }
+    }
     }
 }
 

@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
@@ -42,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +53,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -57,11 +64,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import app.pulse.domain.model.MessageHit
 import app.pulse.domain.repository.PulseRepository
 import coil.compose.AsyncImage
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
 
 /**
@@ -403,6 +414,21 @@ internal fun MirrorHome(
                     row = if (row.id in typingIds) row.copy(typing = true) else row,
                     onOpen = { onOpenConversation(row) },
                     onOptions = { onRowOptions(row) },
+                    // R74 - swipe chips run the SAME handlers the option sheet uses
+                    onPin = {
+                        repository?.let { repo ->
+                            CoroutineScope(Dispatchers.IO).launch {
+                                runCatching { repo.togglePin(row.id, !row.pinned) }
+                            }
+                        }
+                    },
+                    onArchive = {
+                        repository?.let { repo ->
+                            CoroutineScope(Dispatchers.IO).launch {
+                                runCatching { repo.archive(row.id, true) }
+                            }
+                        }
+                    },
                 )
             }
         }
@@ -710,28 +736,133 @@ private fun MirrorConversationRow(
     row: ConversationRow,
     onOpen: () -> Unit,
     onOptions: () -> Unit,
+    // R74 - swipe-left action chips (web chats-row.tsx R27-e/R43): the same
+    // pin/archive handlers the option menu uses, revealed behind the row.
+    onPin: (() -> Unit)? = null,
+    onArchive: (() -> Unit)? = null,
 ) {
+    val haptics = LocalHapticFeedback.current
     val hasUnread = row.unread > 0 || row.manualUnread
-    Row(
+    // swipe state (web SWIPE_REVEAL_PX 112 / SWIPE_OPEN_THRESHOLD_PX 56)
+    val density = LocalDensity.current
+    val revealPx = with(density) { 112.dp.toPx() }
+    val openThresholdPx = with(density) { 56.dp.toPx() }
+    val dragX = remember(row.id) { Animatable(0f) }
+    val swipeScope = rememberCoroutineScope()
+    var swipeOpen by remember(row.id) { mutableStateOf(false) }
+    val chipsVisible = swipeOpen && (onPin != null || onArchive != null)
+    Box(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .combinedClickable(onClick = onOpen, onLongClick = onOptions)
-            .padding(horizontal = 8.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+            .clip(RoundedCornerShape(16.dp)),
     ) {
-        MirrorAvatar(
-            name = row.title,
-            color = row.color,
-            isGroup = row.isGroup,
-            groupId = row.id,
-            online = row.online,
-            showPresence = !row.isGroup,
-            sizeDp = 50,
-            // web: DMs are full circles, groups corner = max(10, size*0.28) = 14
-            cornerDp = if (row.isGroup) 14 else 25,
-        )
+        // swipe-left glass action chips (web L230-296): Pin/Unpin + Archive
+        if (chipsVisible) {
+            Row(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (onPin != null) {
+                    Column(
+                        Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MirrorArt.Chip)
+                            .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
+                            .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                swipeScope.launch { dragX.animateTo(0f) }
+                                swipeOpen = false
+                                onPin()
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        MirrorLucideIcon(if (row.pinned) "LPinOff" else "LPin", tint = MirrorArt.Accent2, modifier = Modifier.size(17.dp))
+                        Text(
+                            if (row.pinned) "Unpin" else "Pin",
+                            color = MirrorArt.Dim,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+                if (onArchive != null) {
+                    Column(
+                        Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MirrorArt.Chip)
+                            .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
+                            .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                swipeScope.launch { dragX.animateTo(0f) }
+                                swipeOpen = false
+                                onArchive()
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        MirrorLucideIcon("LArchive", tint = MirrorArt.Accent2, modifier = Modifier.size(17.dp))
+                        Text(
+                            "Archive",
+                            color = MirrorArt.Dim,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .offset { androidx.compose.ui.unit.IntOffset(dragX.value.roundToInt(), 0) }
+                .pointerInput(row.id) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            val opened = -dragX.value >= openThresholdPx
+                            swipeOpen = opened
+                            swipeScope.launch { dragX.animateTo(if (opened) -revealPx else 0f) }
+                        },
+                        onDragCancel = {
+                            swipeScope.launch { dragX.animateTo(if (swipeOpen) -revealPx else 0f) }
+                        },
+                    ) { change, dragAmount ->
+                        change.consume()
+                        val next = (dragX.value + dragAmount).coerceIn(-revealPx, 0f)
+                        dragX.snapTo(next)
+                    }
+                }
+                .combinedClickable(
+                    onClick = {
+                        if (swipeOpen) {
+                            // web L193: a tap on an open row closes the tray
+                            swipeOpen = false
+                            swipeScope.launch { dragX.animateTo(0f) }
+                        } else {
+                            onOpen()
+                        }
+                    },
+                    onLongClick = onOptions,
+                )
+                .padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            MirrorAvatar(
+                name = row.title,
+                color = row.color,
+                isGroup = row.isGroup,
+                groupId = row.id,
+                online = row.online,
+                showPresence = !row.isGroup,
+                sizeDp = 50,
+                // web: DMs are full circles, groups corner = max(10, size*0.28) = 14
+                cornerDp = if (row.isGroup) 14 else 25,
+            )
         Column(Modifier.weight(1f)) {
             // L1 - BASELINE row: name ... streak chip + time (web items-baseline).
             // The name OWNS all the free space (weight fill) so the chip + time
@@ -900,6 +1031,7 @@ private fun MirrorConversationRow(
                 }
             }
         }
+    }
     }
 }
 

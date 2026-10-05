@@ -110,6 +110,8 @@ fun MirrorRoot(
     var filter by remember { mutableStateOf(MirrorFilter.All) }
     var filterSeeded by remember { mutableStateOf(false) }
     val savedListFilter by session.chatsListFilter.collectAsState()
+    // R74 - web prefs.reducedMotion: gates the full-screen message effects
+    val reducedMotion by session.reducedMotion.collectAsState()
     LaunchedEffect(savedListFilter) {
         if (!filterSeeded) {
             filterSeeded = true
@@ -599,6 +601,7 @@ fun MirrorRoot(
                     onRoomInfo = { roomInfoFor = convo },
                     onManageGroup = { managerFor = convo },
                     onStartCall = onStartCall,
+                    reducedMotion = reducedMotion,
                 )
             }
         }
@@ -800,6 +803,8 @@ private fun MirrorRoomScaffold(
     onRoomInfo: () -> Unit,
     onManageGroup: () -> Unit,
     onStartCall: ((Conversation, video: Boolean) -> Unit)?,
+    /** R74 - web prefs.reducedMotion gate for the full-screen effects layer. */
+    reducedMotion: Boolean = false,
 ) {
     val messages by repository.observeMessages(convo.id).collectAsState(initial = emptyList<Message>())
     var phrases by remember { mutableStateOf<List<QuickPhrase>>(emptyList()) }
