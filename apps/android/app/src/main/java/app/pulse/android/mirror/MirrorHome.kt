@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.domain.model.MessageHit
 import app.pulse.domain.repository.PulseRepository
+import coil.compose.AsyncImage
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -430,61 +431,63 @@ internal fun MirrorHome(
             }
         }
         // R72 - MESSAGES section: the web home search ALSO queries the real
-        // /api/search endpoint and renders message hits (chats-tab 1880-1899)
+        // /api/search endpoint and renders message hits (chats-tab 1880-1899).
+        // R73 CI fix: the fetch state must live INSIDE an item{} (LazyListScope
+        // is not a composable context).
         if (searchQuery.length >= 2 && repository != null) {
-            var hits by remember(searchQuery) { mutableStateOf<List<MessageHit>?>(null) }
-            LaunchedEffect(searchQuery) {
-                kotlinx.coroutines.delay(250)
-                hits = runCatching { repository.searchMessages(searchQuery).getOrNull() }.getOrNull()
-            }
-            val loaded = hits
-            if (loaded != null && loaded.isNotEmpty()) {
-                item {
-                    Text(
-                        "MESSAGES",
-                        color = MirrorArt.Faint,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.2.sp,
-                        modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 4.dp),
-                    )
+            item {
+                var hits by remember(searchQuery) { mutableStateOf<List<MessageHit>?>(null) }
+                LaunchedEffect(searchQuery) {
+                    kotlinx.coroutines.delay(250)
+                    hits = runCatching { repository.searchMessages(searchQuery).getOrNull() }.getOrNull()
                 }
-                items(loaded.take(12), key = { "hit-" + it.id }) { hit ->
-                    Column(
-                        Modifier
-                            .widthIn(max = maxW)
-                            .fillMaxWidth()
-                            .clickable { onOpenConversationId(hit.conversationId) }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(
-                                hit.senderName,
-                                color = MirrorArt.Text,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                hit.conversationName,
-                                color = MirrorArt.Faint,
-                                fontSize = 10.5.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                val loaded = hits
+                if (loaded != null && loaded.isNotEmpty()) {
+                    Column {
                         Text(
-                            hit.content,
-                            color = MirrorArt.Dim,
-                            fontSize = 12.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
+                            "MESSAGES",
+                            color = MirrorArt.Faint,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.2.sp,
+                            modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 4.dp),
                         )
+                        for (hit in loaded.take(12)) {
+                            Column(
+                                Modifier
+                                    .widthIn(max = maxW)
+                                    .fillMaxWidth()
+                                    .clickable { onOpenConversationId(hit.conversationId) }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        hit.senderName,
+                                        color = MirrorArt.Text,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        hit.conversationName,
+                                        color = MirrorArt.Faint,
+                                        fontSize = 10.5.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Text(
+                                    hit.content,
+                                    color = MirrorArt.Dim,
+                                    fontSize = 12.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     }
-                }
-            } else if (loaded != null && loaded.isEmpty() && shown.isEmpty()) {
-                item {
+                } else if (loaded != null && loaded.isEmpty() && shown.isEmpty()) {
                     Text(
                         "No messages found for \u201C$searchQuery\u201D",
                         color = MirrorArt.Faint,

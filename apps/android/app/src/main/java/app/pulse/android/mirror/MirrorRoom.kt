@@ -517,7 +517,7 @@ internal fun MirrorRoom(
     var voiceBusy by remember { mutableStateOf(false) }
     var recordStartAt by remember { mutableStateOf(0L) }
     val recorderRef = remember { mutableStateOf<MediaRecorder?>(null) }
-    var recordFileRef by remember { mutableStateOf<File?>(null) }
+    val recordFileRef = remember { mutableStateOf<File?>(null) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             val context = context
@@ -3418,8 +3418,8 @@ private fun MirrorScheduleComposerSheet(
                     inner()
                 },
             )
-            if (error != null) {
-                Text(error, color = MirrorArt.Red, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            error?.let {
+                Text(it, color = MirrorArt.Red, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
             }
             Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp).height(46.dp)
@@ -3593,9 +3593,9 @@ private fun MirrorVoiceNoteBubble(message: Message, mine: Boolean, filePath: Str
     }
     // deterministic bars (web voiceBars hash LCG)
     val bars = remember(message.id) {
-        var h = MirrorArt.hashString(message.id)
+        var h = MirrorArt.hashString(message.id).toLong()
         List(22) {
-            h = (h * 1103515245 + 12345) % 2147483648
+            h = java.lang.Long.remainderUnsigned(h * 1103515245L + 12345L, 2147483648L)
             val v = (h / 2147483648.0)
             0.28f + (v.toFloat() * 0.72f)
         }

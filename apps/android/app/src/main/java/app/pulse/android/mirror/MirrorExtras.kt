@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -44,7 +47,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
@@ -471,7 +473,7 @@ internal fun MirrorStoryViewer(
                 1f,
                 androidx.compose.animation.core.tween(6_000, easing = androidx.compose.animation.core.LinearEasing),
             )
-            if (done == androidx.compose.animation.core.AnimationResultType.End) {
+            if (done.endReason == androidx.compose.animation.core.AnimationEndReason.End) {
                 if (index < stories.size - 1) index += 1 else onDismiss()
             }
         }
@@ -783,18 +785,15 @@ internal fun MirrorSheet(
                 .navigationBarsPadding()
                 // web drag-to-dismiss: pull down past the threshold releases the
                 // sheet, a short drag springs back (stories-sheet.tsx elastic 0.65)
-                .pointerInput(Unit) {
-                    androidx.compose.foundation.gestures.detectVerticalDragGestures(
-                        onVerticalDrag = { change, amount ->
-                            dragPx = (dragPx + amount).coerceAtLeast(0f)
-                            change.consume()
-                        },
-                        onDragEnd = {
-                            if (dragPx > with(density) { 88.dp.toPx() }) leaving = true else dragPx = 0f
-                        },
-                        onDragCancel = { dragPx = 0f },
-                    )
-                },
+                .draggable(
+                    orientation = Orientation.Vertical,
+                    state = rememberDraggableState { delta ->
+                        dragPx = (dragPx + delta).coerceAtLeast(0f)
+                    },
+                    onDragStopped = {
+                        if (dragPx > with(density) { 88.dp.toPx() }) leaving = true else dragPx = 0f
+                    },
+                ),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

@@ -177,9 +177,10 @@ internal fun MirrorUserPage(
                     // cover: photo over the palette gradient (web h-44)
                     Box(Modifier.fillMaxWidth().height(176.dp)) {
                         Box(Modifier.fillMaxSize().background(MirrorArt.avatarBrush(user.color, false, user.id)))
-                        if (!user.coverImage.isNullOrBlank()) {
+                        val coverIso = user.coverImage
+                        if (!coverIso.isNullOrBlank()) {
                             AsyncImage(
-                                model = mirrorUploadHttp(user.coverImage),
+                                model = mirrorUploadHttp(coverIso),
                                 contentDescription = "Cover picture of ${user.name}",
                                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize(),
@@ -216,10 +217,13 @@ internal fun MirrorUserPage(
                                         .background(if (online) MirrorArt.PresenceOnline else MirrorArt.PresenceOffline),
                                 )
                                 Text(
-                                    text = when {
-                                        online -> "Online now"
-                                        !user.lastSeenIso.isNullOrBlank() -> userActiveAgoLabel(user.lastSeenIso, nowTick)
-                                        else -> "Last seen hidden"
+                                    text = run {
+                                        val seenIso = user.lastSeenIso
+                                        when {
+                                            online -> "Online now"
+                                            !seenIso.isNullOrBlank() -> userActiveAgoLabel(seenIso, nowTick)
+                                            else -> "Last seen hidden"
+                                        }
                                     },
                                     color = MirrorArt.Dim, fontSize = 11.sp, fontWeight = FontWeight.Bold,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -271,8 +275,9 @@ internal fun MirrorUserPage(
                                 mirrorStatusGlyphName(user.statusEmoji)?.let { glyph ->
                                     MirrorLucideIcon(glyph, tint = MirrorArt.Accent2, modifier = Modifier.size(16.dp))
                                 }
-                                if (!user.statusText.isNullOrBlank()) {
-                                    Text(user.statusText, color = MirrorArt.TextSoft, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                val statusValue = user.statusText
+                                if (!statusValue.isNullOrBlank()) {
+                                    Text(statusValue, color = MirrorArt.TextSoft, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -290,11 +295,12 @@ internal fun MirrorUserPage(
                         ) {
                             MirrorUserStampRow("LCalendarDays", "Member since", memberSinceLabel(user))
                             Box(Modifier.padding(horizontal = 12.dp).height(1.dp).fillMaxWidth().background(MirrorArt.Hairline))
+                            val seenIso2 = user.lastSeenIso
                             MirrorUserStampRow(
                                 "LWaves", "Last seen",
                                 when {
                                     online -> "Online now"
-                                    !user.lastSeenIso.isNullOrBlank() -> userActiveAgoLabel(user.lastSeenIso, nowTick)
+                                    !seenIso2.isNullOrBlank() -> userActiveAgoLabel(seenIso2, nowTick)
                                     else -> "Hidden"
                                 },
                             )
