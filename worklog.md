@@ -5577,3 +5577,19 @@ Stage Summary:
 - The 7 quoted gaps are implemented natively on the real backend contracts: slash palette (25 commands + parser), swipe-to-reply (28dp threshold + hint motion), effects particles (4 full-screen canvas effects + companion bursts + tail-triggered + armed sends), incognito UI (group-only tray tile, armed chip, one-shot, deterministic alias matching the server), red packet (composer sheet + self-fetching grab bubble + ledger), tictactoe (live 1.5s-poll card, join, rematch, win confetti), chats-list swipe (pin/archive chips). Version bumped to 47 / 0.24.0.0.1 for the final build.
 - Honest notes: /me italic body uses single underscores (web parity); archived sheet exposes Unarchive as a button rather than swipe chips (the action exists; the shared-row chip variant is a cosmetic follow-up); Spotlight People section + Hub category page remain next-round candidates (not in the user's quoted 7).
 - APK: CI builds the signed artifact on push; tagging v0.24.0.0.1 triggers the publish job (release asset). Waiting for CI green before the tag.
+---
+Task ID: R74-b
+Agent: orchestrator (Z.ai main session)
+Task: R74 shakedown + the "finally" APK delivery - CI green, release published, CDN manifest pinned.
+
+Work Log:
+- CI SHAKEDOWN run 1 (37321813672, f39f9a6) RED - 15 Kotlin errors, all mine, all real: (1) snapTo/suspend calls inside detectHorizontalDragGestures drag lambdas (NOT coroutine contexts) in MirrorHome + MirrorRoom; (2) androidx.compose.runtime.mutableStateSetOf unresolved cascade (5 downstream add/size/compareTo errors); (3) createTopic's third param is String = TOPIC_ICON_DEFAULT, null rejected; (4) delegated-property smart cast on the wallet balance; (5) Brush lives in ui.graphics, not foundation. FIXED in a46829d: swipe rewritten as plain offset state + state-driven settle spring (targetValue = dragging?offset : open?-reveal : 0, NoBouncy spring), seenEffectIds -> remember(groupId) { HashSet<String>() }, createTopic(groupId, name), val coins = balance local, ui.graphics.Brush.
+- CI run 37323141332 (a46829d) GREEN: build SUCCESS, instrumented api 30 SUCCESS, instrumented api 34 SUCCESS. publish skipped by design on main.
+- FINALLY: tagged v0.24.0.0.1 on a46829d, pushed the tag; publish job created GitHub RELEASE v0.24.0.0.1 with asset Pulse-v0.24.0.0.1.apk, 26,267,621 bytes, state=uploaded.
+- BYTES VERIFIED: downloaded the release asset, sha256 = 2e992c01fdde098315ccaf65767e9a958551a402c17f7d2fc1a35d6108f6dfea; download/Pulse.apk mirror overwritten with IDENTICAL bytes (re-hashed, same digest); download/update-manifest.json pinned to versionCode 47 / 0.24.0.0.1 with the release URL, the sha256, the size and the round notes.
+
+Stage Summary:
+- The "finally" APK exists and is published: Pulse-v0.24.0.0.1.apk on release v0.24.0.0.1 (versionCode 47), signed with the committed LiveUpdate keystore, smoke-tested on api 30 + api 34 before publish (CI gate, not a claim).
+- Remote main = a46829d + worklog receipt; tag v0.24.0.0.1; release asset + CDN mirror byte-identical (sha256 2e992c01...).
+- No revert anywhere in the round; no force push; web src/ zero diff; db/custom.db never staged; PAT inline only.
+- Next-round candidates (honest, unchanged): Spotlight People section, Hub category page as a full page, archived-sheet rows as shared swipe chips.
