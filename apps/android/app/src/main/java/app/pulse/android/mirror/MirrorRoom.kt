@@ -3,23 +3,38 @@ package app.pulse.android.mirror
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaPlayer
+import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +62,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,9 +82,11 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -77,6 +95,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,20 +105,26 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import app.pulse.core.PulseEndpoints
 import app.pulse.domain.model.ConversationMember
+import app.pulse.domain.model.LocationPayload
 import app.pulse.domain.model.Message
+import app.pulse.domain.model.PulseApiException
 import app.pulse.domain.model.QuickPhrase
 import app.pulse.domain.model.Topic
 import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.VoicePeerDto
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 
 private val ROOM_STAMP: DateTimeFormatter =
     DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
@@ -249,9 +275,6 @@ internal fun MirrorRoom(
     /** stored group/channel photo (web renders it in the header avatar) */
     avatarPath: String? = null,
     onBack: () -> Unit,
-    onSend: (String) -> Unit,
-    onSendImage: (String) -> Unit,
-    onSendDocument: (String, String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
     onAddPhrase: (String) -> Unit,
     onDeletePhrase: (String) -> Unit,
@@ -266,7 +289,9 @@ internal fun MirrorRoom(
     pipActive: Boolean,
     onTogglePip: () -> Unit,
 ) {
-    var draft by remember { mutableStateOf("") }
+    // R73 - the composer draft is a TextFieldValue: the mention autocomplete
+    // needs the caret position to replace the @token in place (web L2923-2961).
+    var draftValue by remember { mutableStateOf(TextFieldValue("")) }
     var composerFocused by remember { mutableStateOf(false) }
     var phraseManagerOpen by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -275,6 +300,45 @@ internal fun MirrorRoom(
     var pinnedOpen by remember { mutableStateOf(false) }
     var muteStripOpen by remember { mutableStateOf(false) }
     var ttlStripOpen by remember { mutableStateOf(false) }
+    // R73 - message-level state (web chat-room.tsx): reply bar, edit bar,
+    // the long-press action panel and the surfaces it opens.
+    var replyTo by remember { mutableStateOf<Message?>(null) }
+    var editing by remember { mutableStateOf<Message?>(null) }
+    var actionFor by remember { mutableStateOf<Message?>(null) }
+    var forwardFor by remember { mutableStateOf<Message?>(null) }
+    var threadFor by remember { mutableStateOf<Message?>(null) }
+    var infoFor by remember { mutableStateOf<Message?>(null) }
+    var pollOpen by remember { mutableStateOf(false) }
+    var stickerOpen by remember { mutableStateOf(false) }
+    var locationOpen by remember { mutableStateOf(false) }
+    var captionFor by remember { mutableStateOf<Pair<String, String>?>(null) } // dataUrl, fileName
+    var uploadingImage by remember { mutableStateOf(false) }
+    // R73 - slow mode: server 429 retryAfter drives the countdown chip
+    var slowModeUntil by remember { mutableStateOf(0L) }
+    var slowModeSecondsLeft by remember { mutableStateOf(0) }
+    var sendError by remember { mutableStateOf<String?>(null) }
+    // R73 - offline outbox pill (web pulse-outbox: queued sends count)
+    val outboxRows by repository.observeOutbox().collectAsState(initial = emptyList())
+    val pendingOutbox = outboxRows.count { it.conversationId == groupId }
+    // R73 - scheduled sends chip above the composer (web scheduled chip)
+    var scheduledCount by remember { mutableStateOf(0) }
+    LaunchedEffect(groupId) {
+        scheduledCount = runCatching { repository.scheduledMessages(groupId).getOrDefault(emptyList()).size }.getOrDefault(0)
+    }
+    // R73 - composer draft persistence (web pulse-drafts): restore once,
+    // debounced 600ms save, clear on send (web saveDraft cadence).
+    var draftRestored by remember { mutableStateOf(false) }
+    LaunchedEffect(groupId) {
+        val saved = runCatching { repository.observeDraft(groupId).firstOrNull() }.getOrNull()
+        if (!saved.isNullOrBlank()) draftValue = TextFieldValue(saved)
+        draftRestored = true
+    }
+    LaunchedEffect(draftValue.text, draftRestored) {
+        if (!draftRestored) return@LaunchedEffect
+        if (draftValue.text.isBlank()) return@LaunchedEffect
+        delay(600)
+        runCatching { repository.saveDraft(groupId, draftValue.text) }
+    }
     // R69 - the web Conversation menu full set (chat-room.tsx L4096-4454):
     // every row opens the same real surface the web opens.
     var remindersOpen by remember { mutableStateOf(false) }
@@ -380,6 +444,167 @@ internal fun MirrorRoom(
         }
     }
 
+    // R73 - slow-mode 429: the server body carries retryAfter seconds; the
+    // chip counts down live (web slow-mode chip 500ms tick, chat-room L4949).
+    LaunchedEffect(slowModeUntil) {
+        while (slowModeUntil > System.currentTimeMillis()) {
+            slowModeSecondsLeft = ((slowModeUntil - System.currentTimeMillis()) / 1000L).toInt() + 1
+            delay(500)
+        }
+        slowModeSecondsLeft = 0
+    }
+
+    // R73 - the REAL send path lives here (web submitDraft): edit-vs-send
+    // fork, replyToId + topicId on the wire, draft clear, slow-mode 429
+    // surfacing, typing stop. Zero silent failures.
+    var sending by remember { mutableStateOf(false) }
+    fun sendNow() {
+        val text = draftValue.text.trim()
+        if (broadcastLocked || sending) return
+        if (text.isEmpty()) return
+        if (slowModeUntil > System.currentTimeMillis() && editing == null) return
+        val editTarget = editing
+        val replyTarget = replyTo
+        stopTyping()
+        sending = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val outcome = runCatching {
+                if (editTarget != null) {
+                    repository.editMessage(editTarget.id, text).getOrThrow()
+                } else {
+                    repository.sendMessage(
+                        conversationId = groupId,
+                        body = text,
+                        replyToId = replyTarget?.id,
+                        topicId = if (replyTarget == null) activeTopicId else null,
+                    ).getOrThrow()
+                }
+            }
+            CoroutineScope(Dispatchers.Main).launch {
+                sending = false
+                outcome.onSuccess {
+                    draftValue = TextFieldValue("")
+                    replyTo = null
+                    editing = null
+                    sendError = null
+                    if (editTarget != null) {
+                        runCatching { repository.clearDraft(groupId) }
+                    }
+                }.onFailure { failure ->
+                    val api = failure as? PulseApiException
+                    if (api?.retryAfter != null) {
+                        slowModeUntil = System.currentTimeMillis() + api.retryAfter!! * 1000L
+                    } else if (api?.kind == "NETWORK" && editTarget == null && replyTarget == null) {
+                        // offline text sends already ride the repository outbox -
+                        // the optimistic echo stays, the offline pill explains it
+                        draftValue = TextFieldValue("")
+                        replyTo = null
+                    } else {
+                        sendError = when {
+                            api?.status == 403 -> "You cannot post here"
+                            else -> "Message failed to send"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // R73 - voice notes (web startRecording chat-room.tsx:3550-3620): real
+    // MediaRecorder AAC capture, live timer, discard below 600ms on cancel.
+    var recording by remember { mutableStateOf(false) }
+    var recordSeconds by remember { mutableStateOf(0) }
+    var voiceBusy by remember { mutableStateOf(false) }
+    var recordStartAt by remember { mutableStateOf(0L) }
+    val recorderRef = remember { mutableStateOf<MediaRecorder?>(null) }
+    var recordFileRef by remember { mutableStateOf<File?>(null) }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            val context = context
+            runCatching {
+                val file = File(context.cacheDir, "voice-note-${System.currentTimeMillis()}.m4a")
+                val recorder = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else {
+                    @Suppress("DEPRECATION") MediaRecorder()
+                }
+                recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+                recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                recorder.setAudioEncodingBitRate(96_000)
+                recorder.setAudioSamplingRate(44_100)
+                recorder.setOutputFile(file.absolutePath)
+                recorder.prepare()
+                recorder.start()
+                recorderRef.value = recorder
+                recordFileRef.value = file
+                recording = true
+                recordStartAt = System.currentTimeMillis()
+                recordSeconds = 0
+            }.onFailure { sendError = "Microphone unavailable" }
+        } else {
+            sendError = "Microphone permission needed for voice notes"
+        }
+    }
+    LaunchedEffect(recording) {
+        while (recording) {
+            delay(200)
+            recordSeconds = ((System.currentTimeMillis() - recordStartAt) / 1000L).toInt()
+        }
+    }
+    fun cancelRecording() {
+        runCatching {
+            recorderRef.value?.stop()
+        }
+        runCatching { recorderRef.value?.release() }
+        recorderRef.value = null
+        recordFileRef.value?.delete()
+        recordFileRef.value = null
+        recording = false
+        recordSeconds = 0
+    }
+    fun sendRecording() {
+        val file = recordFileRef.value
+        if (file == null) {
+            recording = false
+            return
+        }
+        val durationMs = (System.currentTimeMillis() - recordStartAt).coerceAtLeast(0L)
+        if (durationMs < 600) {
+            // web MIN_VOICE_MS=600 - too-short recordings are discarded
+            cancelRecording()
+            return
+        }
+        recording = false
+        voiceBusy = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val outcome = runCatching {
+                val dataUrl = "data:audio/mp4;base64," + Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                val uploaded = repository.uploadMedia(dataUrl).getOrThrow()
+                repository.sendMediaMessage(
+                    conversationId = groupId,
+                    body = "",
+                    audioPath = uploaded,
+                    durationMs = durationMs,
+                ).getOrThrow()
+            }
+            CoroutineScope(Dispatchers.Main).launch {
+                voiceBusy = false
+                outcome.onSuccess {
+                    runCatching { recorderRef.value?.release() }
+                    recorderRef.value = null
+                    recordFileRef.value?.delete()
+                    recordFileRef.value = null
+                    recordSeconds = 0
+                }.onFailure { sendError = "Voice note failed to send" }
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { recorderRef.value?.release() }
+            recorderRef.value = null
+        }
+    }
+
     LaunchedEffect(messages.size) {
         if (entries.isNotEmpty()) listState.animateScrollToItem(entries.size - 1)
     }
@@ -388,20 +613,53 @@ internal fun MirrorRoom(
         onDispose { stopTyping() }
     }
 
+    // R73 - photo pipeline in the room: pick - STAGED caption sheet (web
+    // caption-sheet flow) - upload - imagePath row with the caption body.
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             CoroutineScope(Dispatchers.IO).launch {
                 val dataUrl = mirrorUriToDataUrl(context, uri)
-                if (dataUrl != null) onSendImage(dataUrl)
+                if (dataUrl != null) {
+                    CoroutineScope(Dispatchers.Main).launch { captionFor = dataUrl to "" }
+                }
             }
         }
     }
-    // R64 - attachments tray document pick: any file → base64 data URL → upload.
+    fun sendStagedImage(dataUrl: String, caption: String) {
+        if (viewerId.isBlank()) return
+        uploadingImage = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val outcome = runCatching {
+                val path = repository.uploadMedia(dataUrl).getOrThrow()
+                repository.sendMediaMessage(groupId, caption, imagePath = path).getOrThrow()
+            }
+            CoroutineScope(Dispatchers.Main).launch {
+                uploadingImage = false
+                outcome.onSuccess { captionFor = null }.onFailure { sendError = "Photo failed to send" }
+            }
+        }
+    }
+    // R64 - attachments tray document pick - upload - kind "file" row; the
+    // composer draft rides as the caption when present (web R40 flow).
     val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             CoroutineScope(Dispatchers.IO).launch {
                 val doc = mirrorUriToDocumentDataUrl(context, uri)
-                if (doc != null) onSendDocument(doc.first, doc.second)
+                if (doc != null) {
+                    val caption = draftValue.text.trim()
+                    runCatching {
+                        val path = repository.uploadMedia(doc.first).getOrThrow()
+                        repository.sendMediaMessage(
+                            groupId,
+                            caption.take(2000),
+                            filePath = path,
+                            fileName = doc.second,
+                            kind = "file",
+                        ).getOrThrow()
+                    }.onSuccess {
+                        CoroutineScope(Dispatchers.Main).launch { draftValue = TextFieldValue("") }
+                    }
+                }
             }
         }
     }
@@ -432,7 +690,7 @@ internal fun MirrorRoom(
                 ) {
                     MirrorLucideIcon("LChevronLeft", tint = MirrorArt.TextSoft, modifier = Modifier.size(24.dp))
                 }
-                // ONE tap target: 40dp avatar + title + subtitle → room info
+                // ONE tap target: 40dp avatar + title + subtitle - room info
                 Row(
                     Modifier
                         .weight(1f)
@@ -621,6 +879,10 @@ internal fun MirrorRoom(
                         val readers = members.filter {
                             it.id != viewerId && (it.lastReadAt ?: 0L) >= created
                         }
+                        // R73 - the web bubble entrance (chat-room.tsx:7510-7520):
+                        // the NEWEST row plays the Telegram squash & stretch on
+                        // arrival; history rows render settled.
+                        val isNewest = entry.message.id == messages.lastOrNull()?.id
                         MirrorBubbleRow(
                             message = entry.message,
                             mine = mine,
@@ -632,13 +894,22 @@ internal fun MirrorRoom(
                             othersCount = members.count { it.id != viewerId },
                             readers = readers,
                             showReadBy = showReadBy,
+                            animateIn = isNewest && entry.message.deletedAt == null,
+                            onOpenMenu = { actionFor = entry.message },
+                            onVote = { optionId ->
+                                entry.message.poll?.let { poll ->
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        runCatching { repository.votePoll(poll.id, optionId) }
+                                    }
+                                }
+                            },
                             onToggleReaction = onToggleReaction,
                         )
                     }
                 }
             }
             // R64 - the web typing indicator: 24dp avatar + art-bubble-in pill
-            // whose borderRadius breathes 1.25rem → 0.875rem → 1.25rem (0.72s
+            // whose borderRadius breathes 1.25rem - 0.875rem - 1.25rem (0.72s
             // loop) around three squash-and-stretch dots. Shows ONLY when
             // someone else is typing (web chat-room.tsx:4684).
             if (typers.isNotEmpty()) {
@@ -688,6 +959,74 @@ internal fun MirrorRoom(
             }
         }
 
+        // R73 - composer chips stack (web AnimatePresence bars above the
+        // composer): offline pill, slow-mode countdown, scheduled chip, topic
+        // filing pill, reply bar, edit bar. One expand/fade for the stack.
+        val chipsVisible = pendingOutbox > 0 || slowModeSecondsLeft > 0 ||
+            scheduledCount > 0 || activeTopicId != null || replyTo != null ||
+            editing != null || sendError != null
+        AnimatedVisibility(
+            visible = chipsVisible && !broadcastLocked,
+            enter = expandVertically(MirrorMotion.snappy()) + fadeIn(),
+            exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut(),
+        ) {
+            Column(Modifier.padding(horizontal = 12.dp)) {
+                if (pendingOutbox > 0) {
+                    MirrorComposerBar(
+                        glyph = "LCloudOff",
+                        tint = MirrorArt.Dim,
+                        text = "Offline - messages you send will be queued ($pendingOutbox waiting)",
+                    )
+                }
+                if (slowModeSecondsLeft > 0) {
+                    MirrorComposerBar(
+                        glyph = "LTimer",
+                        tint = MirrorArt.Accent2,
+                        text = "Slow mode on - next message in ${slowModeSecondsLeft}s",
+                    )
+                }
+                if (scheduledCount > 0) {
+                    MirrorComposerBar(
+                        glyph = "LCalendarClock",
+                        tint = MirrorArt.Dim,
+                        text = "next - $scheduledCount pending - tap to manage",
+                        onClick = { scheduledOpen = true },
+                    )
+                }
+                if (activeTopicId != null) {
+                    val topicName = topics.firstOrNull { it.id == activeTopicId }?.name ?: "topic"
+                    MirrorComposerBar(
+                        glyph = "LMessagesSquare",
+                        tint = MirrorArt.Accent2,
+                        text = "Filing to #$topicName",
+                        onCancel = { activeTopicId = null },
+                    )
+                }
+                replyTo?.let { target ->
+                    MirrorComposerBar(
+                        glyph = "LCornerDownRight",
+                        tint = MirrorArt.Accent2,
+                        text = "Replying to ${target.authorName} - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
+                        onCancel = { replyTo = null },
+                    )
+                }
+                editing?.let { target ->
+                    MirrorComposerBar(
+                        glyph = "LPencilLine",
+                        tint = MirrorArt.Accent2,
+                        text = "Editing message - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
+                        onCancel = {
+                            editing = null
+                            draftValue = TextFieldValue("")
+                        },
+                    )
+                }
+                sendError?.let {
+                    MirrorComposerBar(glyph = "LTriangleAlert", tint = MirrorArt.Red, text = it, onCancel = { sendError = null })
+                }
+            }
+        }
+
         // F-MS-29 quick phrases rail: glass chips ABOVE the composer; tap
         // INSERTS into the draft; the 28dp pencil opens the manage sheet.
         // R72: hidden while broadcast-locked (web hides phrases for viewers).
@@ -699,14 +1038,22 @@ internal fun MirrorRoom(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                for (phrase in phrases.take(6)) {
+                for (phrase in phrases) {
                     Box(
                         Modifier
                             .widthIn(max = 220.dp)
                             .clip(CircleShape)
                             .background(MirrorArt.White7)
                             .border(1.dp, MirrorArt.Hairline, CircleShape)
-                            .clickable { draft = if (draft.isBlank()) phrase.text else "$draft ${phrase.text}" }
+                            .clickable {
+                                val base = draftValue.text
+                                draftValue = TextFieldValue(
+                                    if (base.isBlank()) phrase.text else "$base ${phrase.text}",
+                                    selection = androidx.compose.ui.text.TextRange(
+                                        (if (base.isBlank()) phrase.text else "$base ${phrase.text}").length,
+                                    ),
+                                )
+                            }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     ) {
                         Text(
@@ -733,10 +1080,37 @@ internal fun MirrorRoom(
             }
         }
 
-        // R54-c composer row: ONE art-input-pill (paperclip / Type here /
+        // R54-c/R73 composer row: ONE art-input-pill (paperclip / Type here /
         // camera) with the 44dp dark-glass art-fab OUTSIDE on the right.
         // R72: broadcast channels swap it for the locked pill (web 5230:
         // glass-deep rounded-2xl Lock + "Only admins can post").
+        // R73: voice recording swaps the pill for the recorder UI (web
+        // in-pill recording view, chat-room.tsx:5460-5518); the mention
+        // autocomplete floats above the pill.
+        // R73 - @mention autocomplete (web L2923-2961): the token after the
+        // caret's last @ matched against the room roster, top-5.
+        val mentionSuggestion = run {
+            val text = draftValue.text
+            val caret = draftValue.selection.end.coerceIn(0, text.length)
+            val before = text.substring(0, caret)
+            val at = before.lastIndexOf('@')
+            val token = if (at >= 0) before.substring(at + 1) else ""
+            if (at >= 0 && token.length in 1..16 && !token.contains(' ')) {
+                memberNames.filter { it.contains(token, ignoreCase = true) && it != viewerName }.take(5)
+            } else {
+                emptyList()
+            }
+        }
+        fun insertMention(name: String) {
+            val text = draftValue.text
+            val caret = draftValue.selection.end.coerceIn(0, text.length)
+            val before = text.substring(0, caret)
+            val at = before.lastIndexOf('@')
+            if (at < 0) return
+            val newText = (before.substring(0, at) + "@$name ") + text.substring(caret)
+            val newCaret = at + name.length + 2
+            draftValue = TextFieldValue(newText, selection = androidx.compose.ui.text.TextRange(newCaret))
+        }
         if (broadcastLocked) {
             Row(
                 Modifier
@@ -757,120 +1131,233 @@ internal fun MirrorRoom(
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-        } else
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        } else if (recording) {
+            // R73 - the in-pill recorder (web chat-room.tsx:5460-5518): cancel,
+            // pulsing radar ring, live timer, send FAB
             Row(
                 Modifier
-                    .weight(1f)
-                    .heightIn(min = 48.dp)
-                    .clip(CircleShape)
-                    .background(MirrorArt.White7)
-                    .border(1.dp, MirrorArt.Hairline, CircleShape)
-                    // web focus hairline: ring-2 ring-inset ring-accent/45 over
-                    // the WHOLE pill (R64 fix - the old drawCircle painted a
-                    // floating circle INSIDE the pill instead of the inset ring).
-                    .drawBehind {
-                        if (composerFocused) {
-                            drawRoundRect(
-                                color = Color(0x73FF7A3D), // accent /45
-                                cornerRadius = CornerRadius(size.height / 2f, size.height / 2f),
-                                style = Stroke(width = 2.dp.toPx()),
-                            )
-                        }
-                    }
-                    .padding(horizontal = 4.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // paperclip: size-9 circle, size-5 dim glyph - toggles the tray
-                Box(
+                Row(
                     Modifier
-                        .size(36.dp)
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
                         .clip(CircleShape)
-                        .background(if (trayOpen) MirrorArt.White10 else Color.Transparent)
-                        .clickable { trayOpen = !trayOpen },
-                    contentAlignment = Alignment.Center,
+                        .background(MirrorArt.White7)
+                        .border(1.dp, MirrorArt.Hairline, CircleShape)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    MirrorLucideIcon("LPaperclip", tint = if (trayOpen) MirrorArt.Text else MirrorArt.Dim, modifier = Modifier.size(20.dp))
-                }
-                Box(Modifier.weight(1f).padding(bottom = 8.dp)) {
-                    if (draft.isBlank()) {
-                        Text("Type here", color = MirrorArt.Faint, fontSize = 15.sp, lineHeight = 20.sp)
+                    Box(
+                        Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .mirrorPressClick(onClick = { cancelRecording() }),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
                     }
-                    BasicTextField(
-                        value = draft,
-                        onValueChange = {
-                            draft = it
-                            pumpTyping(it)
-                        },
-                        textStyle = TextStyle(
-                            color = MirrorArt.Text,
-                            fontSize = 15.sp,
-                            lineHeight = 20.sp,
-                        ),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(MirrorArt.Accent),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onFocusChanged {
-                                composerFocused = it.isFocused
-                                if (!it.isFocused) stopTyping()
-                            },
-                        maxLines = 5,
+                    val radar = rememberInfiniteTransition(label = "radar")
+                    val radarAlpha by radar.animateFloat(
+                        initialValue = 0.25f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                        label = "radarAlpha",
+                    )
+                    Box(
+                        Modifier
+                            .size(14.dp)
+                            .graphicsLayer { alpha = radarAlpha }
+                            .clip(CircleShape)
+                            .background(MirrorArt.Red),
+                    )
+                    Text(
+                        "Recording voice note - %02d:%02d".format(recordSeconds / 60, recordSeconds % 60),
+                        color = MirrorArt.TextSoft,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
-                // camera: size-9 circle, size-5 dim glyph - the artboard photo button
                 Box(
                     Modifier
-                        .size(36.dp)
+                        .size(44.dp)
                         .clip(CircleShape)
-                        .clickable {
-                            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        },
+                        .background(MirrorArt.White7)
+                        .border(1.dp, MirrorArt.Hairline, CircleShape)
+                        .mirrorPressClick(onClick = { sendRecording() }),
                     contentAlignment = Alignment.Center,
                 ) {
-                    MirrorLucideIcon("LCamera", tint = MirrorArt.Dim, modifier = Modifier.size(20.dp))
+                    MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
                 }
             }
-            // art-fab: 44dp DARK GLASS always - plus (opens the tray) becomes
-            // the send plane the moment the draft holds text; rotates 45°
-            // while the tray is open (web parity).
-            val hasText = draft.isNotBlank()
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .graphicsLayer { rotationZ = if (!hasText && trayOpen) 45f else 0f }
-                    .clip(CircleShape)
-                    .background(MirrorArt.White7)
-                    .border(1.dp, MirrorArt.Hairline, CircleShape)
-                    .clickable {
-                        if (hasText) {
-                            stopTyping()
-                            onSend(draft)
-                            draft = ""
-                            trayOpen = false
-                        } else {
-                            trayOpen = !trayOpen
+        } else
+        Column {
+            if (mentionSuggestion.isNotEmpty()) {
+                // web mention popup: listbox, first-row highlight, avatars
+                Column(
+                    Modifier
+                        .padding(horizontal = 12.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xF21C1610))
+                        .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
+                        .padding(6.dp),
+                ) {
+                    for ((index, name) in mentionSuggestion.withIndex()) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (index == 0) MirrorArt.ChipActive else Color.Transparent)
+                                .clickable { insertMention(name) }
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            MirrorAvatar(
+                                name = name,
+                                color = members.firstOrNull { it.name == name }?.color,
+                                isGroup = false,
+                                groupId = "",
+                                online = false,
+                                showPresence = false,
+                                sizeDp = 20,
+                                cornerDp = 10,
+                            )
+                            Text(name, color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
-                    },
-                contentAlignment = Alignment.Center,
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (hasText) {
-                    MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
-                } else {
-                    MirrorLucideIcon("LPlus", tint = MirrorArt.Text, modifier = Modifier.size(22.dp))
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .clip(CircleShape)
+                        .background(MirrorArt.White7)
+                        .border(1.dp, MirrorArt.Hairline, CircleShape)
+                        // web focus hairline: ring-2 ring-inset ring-accent/45 over
+                        // the WHOLE pill (R64 fix - the old drawCircle painted a
+                        // floating circle INSIDE the pill instead of the inset ring).
+                        .drawBehind {
+                            if (composerFocused) {
+                                drawRoundRect(
+                                    color = Color(0x73FF7A3D), // accent /45
+                                    cornerRadius = CornerRadius(size.height / 2f, size.height / 2f),
+                                    style = Stroke(width = 2.dp.toPx()),
+                                )
+                            }
+                        }
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    // paperclip: size-9 circle, size-5 dim glyph - toggles the tray
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(if (trayOpen) MirrorArt.White10 else Color.Transparent)
+                            .clickable { trayOpen = !trayOpen },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MirrorLucideIcon("LPaperclip", tint = if (trayOpen) MirrorArt.Text else MirrorArt.Dim, modifier = Modifier.size(20.dp))
+                    }
+                    Box(Modifier.weight(1f).padding(bottom = 8.dp)) {
+                        if (draftValue.text.isBlank()) {
+                            Text("Type here", color = MirrorArt.Faint, fontSize = 15.sp, lineHeight = 20.sp)
+                        }
+                        BasicTextField(
+                            value = draftValue,
+                            onValueChange = {
+                                // web maxLength 2000 (chat-room.tsx:5549)
+                                draftValue = if (it.text.length > 2000) it.copy(it.text.take(2000)) else it
+                                pumpTyping(it.text)
+                            },
+                            textStyle = TextStyle(
+                                color = MirrorArt.Text,
+                                fontSize = 15.sp,
+                                lineHeight = 20.sp,
+                            ),
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(MirrorArt.Accent),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = { sendNow() }),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged {
+                                    composerFocused = it.isFocused
+                                    if (!it.isFocused) stopTyping()
+                                },
+                            maxLines = 5,
+                        )
+                    }
+                    // camera: size-9 circle, size-5 dim glyph - the artboard photo button
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable {
+                                pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MirrorLucideIcon("LCamera", tint = MirrorArt.Dim, modifier = Modifier.size(20.dp))
+                    }
+                }
+                // art-fab: 44dp DARK GLASS always - plus (opens the tray) becomes
+                // the send plane the moment the draft holds text; the rotation
+                // ANIMATES with the web snappy spring (web L5609) and the plane
+                // shows a spinner while the send is in flight.
+                val hasText = draftValue.text.isNotBlank()
+                val fabRotation by animateFloatAsState(
+                    targetValue = if (!hasText && trayOpen) 45f else 0f,
+                    animationSpec = MirrorMotion.press(),
+                    label = "fabRotation",
+                )
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .graphicsLayer { rotationZ = fabRotation }
+                        .clip(CircleShape)
+                        .background(MirrorArt.White7)
+                        .border(1.dp, MirrorArt.Hairline, CircleShape)
+                        .mirrorPressClick(onClick = {
+                            if (hasText) {
+                                sendNow()
+                                trayOpen = false
+                            } else {
+                                trayOpen = !trayOpen
+                            }
+                        }),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (sending || voiceBusy || uploadingImage) {
+                        MirrorLucideIcon("LLoaderCircle", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
+                    } else if (hasText) {
+                        MirrorLucideIcon("LSendHorizontal", tint = MirrorArt.Text, modifier = Modifier.size(20.dp))
+                    } else {
+                        MirrorLucideIcon("LPlus", tint = MirrorArt.Text, modifier = Modifier.size(22.dp))
+                    }
                 }
             }
         }
     }
 
-    // R64 - the attachments tray: web CREATE grid subset that is REAL here
-    // (photo pick, document pick + upload, quick-phrase manager). No dead tiles.
+    // R64/R73 - the attachments tray: the web CREATE grid rows that are REAL
+    // here (photo pick, document pick + upload, quick-phrase manager,
+    // schedule, poll builder, stamps, location, voice note, topic toggle).
+    // No dead tiles.
     if (trayOpen && !broadcastLocked) {
         Box(
             Modifier
@@ -911,6 +1398,38 @@ internal fun MirrorRoom(
                     MirrorTrayTile("LCalendarClock", "Schedule", "Send it at a set time") {
                         trayOpen = false
                         scheduleOpen = true
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MirrorTrayTile("LPoll", "Poll", "Ask the room a question") {
+                        trayOpen = false
+                        pollOpen = true
+                    }
+                    MirrorTrayTile("LSticker", "Stamp", "Send a designed glyph") {
+                        trayOpen = false
+                        stickerOpen = true
+                    }
+                    MirrorTrayTile("LLocation", "Location", "Share where you are") {
+                        trayOpen = false
+                        locationOpen = true
+                    }
+                    MirrorTrayTile("LMic", "Voice note", "Record and send audio") {
+                        trayOpen = false
+                        micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                    }
+                }
+                if (isGroup) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MirrorTrayTile(
+                            "LMessagesSquare",
+                            if (topicsVisible) "Hide topics" else "Topics",
+                            "File messages by topic",
+                        ) {
+                            trayOpen = false
+                            topicsVisible = !topicsVisible
+                        }
                     }
                 }
             }
@@ -1133,8 +1652,8 @@ internal fun MirrorRoom(
         MirrorScheduleComposerSheet(
             repository = repository,
             conversationId = groupId,
-            initialDraft = draft,
-            onConsumedDraft = { draft = "" },
+            initialDraft = draftValue.text,
+            onConsumedDraft = { draftValue = TextFieldValue("") },
             onDismiss = { scheduleOpen = false },
         )
     }
@@ -1169,6 +1688,113 @@ internal fun MirrorRoom(
             onAdd = onAddPhrase,
             onDelete = onDeletePhrase,
             onDismiss = { phraseManagerOpen = false },
+        )
+    }
+
+    // R73 - the message-level surfaces (web chat-room.tsx mounts)
+    actionFor?.let { target ->
+        MirrorMessageActionPanel(
+            message = target,
+            conversationId = groupId,
+            viewerId = viewerId,
+            members = members,
+            repository = repository,
+            onReply = { replyTo = target },
+            onEdit = {
+                editing = target
+                draftValue = TextFieldValue(target.body)
+            },
+            onThread = { threadFor = target },
+            onForward = { forwardFor = target },
+            onRemind = { remindersOpen = true },
+            onInfo = { infoFor = target },
+            onDeleted = { actionFor = null },
+            onTaskCreated = { note -> sendError = note },
+            onDismiss = { actionFor = null },
+        )
+    }
+    forwardFor?.let { target ->
+        MirrorForwardSheet(
+            repository = repository,
+            source = target,
+            onDismiss = { forwardFor = null },
+            onForwarded = { name -> sendError = "Forwarded to $name" },
+        )
+    }
+    threadFor?.let { root ->
+        MirrorThreadSheet(
+            repository = repository,
+            root = root,
+            viewerId = viewerId,
+            viewerName = viewerName,
+            memberNames = memberNames,
+            onDismiss = { threadFor = null },
+        )
+    }
+    if (pollOpen) {
+        MirrorPollBuilderSheet(
+            repository = repository,
+            conversationId = groupId,
+            onDismiss = { pollOpen = false },
+            onPosted = { note ->
+                pollOpen = false
+                sendError = note
+            },
+        )
+    }
+    if (stickerOpen) {
+        MirrorStickerSheet(
+            onDismiss = { stickerOpen = false },
+            onPick = { emoji, pack ->
+                stickerOpen = false
+                CoroutineScope(Dispatchers.IO).launch {
+                    runCatching {
+                        repository.sendRichMessage(
+                            conversationId = groupId,
+                            body = "",
+                            kind = "sticker",
+                            payload = "{\"emoji\":\"$emoji\",\"pack\":\"$pack\"}",
+                        )
+                    }
+                }
+            },
+        )
+    }
+    if (locationOpen) {
+        MirrorLocationSheet(
+            onDismiss = { locationOpen = false },
+            onSend = { lat, lng, label ->
+                locationOpen = false
+                CoroutineScope(Dispatchers.IO).launch {
+                    runCatching {
+                        val payload = Json.encodeToString(
+                            LocationPayload.serializer(),
+                            LocationPayload(lat = lat, lng = lng, label = label),
+                        )
+                        repository.sendRichMessage(
+                            conversationId = groupId,
+                            body = label,
+                            kind = "location",
+                            payload = payload,
+                        )
+                    }
+                }
+            },
+        )
+    }
+    infoFor?.let { target ->
+        MirrorMessageInfoPanel(
+            message = target,
+            members = members,
+            onDismiss = { infoFor = null },
+        )
+    }
+    captionFor?.let { staged ->
+        MirrorCaptionSheet(
+            imagePath = staged.first,
+            busy = uploadingImage,
+            onDismiss = { if (!uploadingImage) captionFor = null },
+            onSend = { caption -> sendStagedImage(staged.first, caption) },
         )
     }
 }
@@ -1556,7 +2182,7 @@ private fun MirrorRoomTypingDots() {
     }
 }
 
-private fun MirrorRoomStamp(iso: String): String =
+internal fun MirrorRoomStamp(iso: String): String =
     runCatching { ROOM_STAMP.format(Instant.parse(iso)) }.getOrDefault("")
 
 @Composable
@@ -1704,6 +2330,7 @@ private fun MirrorPhraseManager(
 
 /** One message row - the full R54-c web anatomy. */
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun MirrorBubbleRow(
     message: Message,
     mine: Boolean,
@@ -1715,6 +2342,9 @@ private fun MirrorBubbleRow(
     othersCount: Int,
     readers: List<ConversationMember>,
     showReadBy: Boolean,
+    animateIn: Boolean,
+    onOpenMenu: () -> Unit,
+    onVote: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
 ) {
     Row(
@@ -1748,17 +2378,55 @@ private fun MirrorBubbleRow(
             val reactionChips = groupReactions(message, viewerId)
             val mentionsMe = mirrorMentionsViewer(message.body, viewerName) && message.deletedAt == null
             val isImage = message.kind == Message.Kind.IMAGE && message.imagePath != null && message.deletedAt == null
+            // R73 - web bubble entrance physics (chat-room.tsx:7510-7520):
+            // mine = squash (scaleX 1.06 / scaleY 0.94 -> 1), incoming = 0.85
+            // -> 1, both on the bouncy spring with the origin at the bubble base.
+            val entranceX = remember(message.id) { Animatable(if (animateIn && mine) 1.06f else 1f) }
+            val entranceY = remember(message.id) { Animatable(if (animateIn && mine) 0.94f else (if (animateIn) 0.85f else 1f)) }
+            LaunchedEffect(message.id) {
+                if (animateIn) {
+                    launch {
+                        entranceX.animateTo(
+                            1f,
+                            spring(dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+                        )
+                    }
+                    entranceY.animateTo(
+                        1f,
+                        spring(dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy, stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow),
+                    )
+                }
+            }
+            val haptics = LocalHapticFeedback.current
             Column(
                 Modifier.fillMaxWidth(),
                 horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
             ) {
-                // bubble block
+                // bubble block - tap AND long-press open the web action panel;
+                // double-tap fires the heart reaction (web L7558-7563)
                 Column(
                     Modifier
                         .widthIn(max = bubbleMax)
+                        .graphicsLayer {
+                            scaleX = entranceX.value
+                            scaleY = entranceY.value
+                            transformOrigin = TransformOrigin(0.5f, 1f)
+                        }
                         .mirrorBubbleShape(mine, message.deletedAt != null)
                         .mirrorBubbleBackground(mine, message.deletedAt != null)
                         .then(if (mentionsMe) Modifier.border(2.dp, Color(0xB3FFAB5E), mirrorBubbleShapeOf(mine, deleted = false)) else Modifier)
+                        .combinedClickable(
+                            onClick = { if (message.deletedAt == null) onOpenMenu() },
+                            onLongClick = {
+                                if (message.deletedAt == null) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onOpenMenu()
+                                }
+                            },
+                            onDoubleClick = {
+                                if (message.deletedAt == null) onToggleReaction(message.id, "heart")
+                            },
+                        )
                         .padding(
                             horizontal = if (isImage) 4.dp else 12.dp,
                             vertical = if (isImage) 4.dp else 8.dp,
@@ -1793,32 +2461,136 @@ private fun MirrorBubbleRow(
                                 modifier = Modifier.padding(bottom = 4.dp),
                             )
                         }
-                        if (isImage) {
-                            AsyncImage(
-                                model = PulseEndpoints.http("/api/uploads/${message.imagePath}"),
-                                contentDescription = "Shared photo",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .widthIn(max = 240.dp)
-                                    .heightIn(max = 300.dp)
-                                    .clip(RoundedCornerShape(12.dp)),
-                            )
-                            if (message.body.isNotBlank()) {
+                        // R73 - the full wire-kind renderers (web bubble switch):
+                        // poll tallies, stamps, location pins, voice waveform
+                        // players, document cards, images, plain text.
+                        when {
+                            message.kind == Message.Kind.POLL && message.poll != null -> {
+                                MirrorPollBubble(
+                                    poll = message.poll!!,
+                                    mine = mine,
+                                    viewerId = viewerId,
+                                    onVote = onVote,
+                                )
+                            }
+                            message.kind == Message.Kind.STICKER -> {
+                                val stamp = message.payload?.let { raw ->
+                                    runCatching {
+                                        Json.decodeFromString(StickerPayload.serializer(), raw)
+                                    }.getOrNull()
+                                }
+                                val glyph = stamp?.let { MirrorStickerGlyphs[it.emoji] } ?: "LStar"
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    MirrorLucideIcon(glyph, tint = MirrorArt.Accent2, modifier = Modifier.size(44.dp))
+                                    if (stamp?.pack != null) {
+                                        Text(
+                                            "${stamp!!.pack} - ${stamp.emoji}",
+                                            color = MirrorArt.Faint,
+                                            fontSize = 10.sp,
+                                        )
+                                    }
+                                }
+                            }
+                            message.kind == Message.Kind.LOCATION -> {
+                                val loc = message.payload?.let { raw ->
+                                    runCatching { Json.decodeFromString(LocationPayload.serializer(), raw) }.getOrNull()
+                                }
+                                Column {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        MirrorLucideIcon("LLocation", tint = MirrorArt.Accent2, modifier = Modifier.size(18.dp))
+                                        Text(
+                                            loc?.label?.ifBlank { null } ?: "Current location",
+                                            color = if (mine) MirrorArt.Ink else MirrorArt.Text,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                    if (loc != null) {
+                                        Text(
+                                            "Lat %.5f  -  Lng %.5f".format(loc.lat, loc.lng),
+                                            color = if (mine) MirrorArt.InkSoft else MirrorArt.Dim,
+                                            fontSize = 11.sp,
+                                        )
+                                    }
+                                }
+                            }
+                            message.kind == Message.Kind.VOICE && message.audioPath != null -> {
+                                MirrorVoiceNoteBubble(
+                                    message = message,
+                                    mine = mine,
+                                    filePath = message.audioPath!!,
+                                )
+                            }
+                            message.kind == Message.Kind.FILE && message.filePath != null -> {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .size(34.dp)
+                                            .clip(CircleShape)
+                                            .background(if (mine) Color(0x1A000000) else MirrorArt.White10),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        MirrorLucideIcon("LFile", tint = if (mine) MirrorArt.Ink else MirrorArt.Text, modifier = Modifier.size(16.dp))
+                                    }
+                                    Column {
+                                        Text(
+                                            message.fileName ?: "Document",
+                                            color = if (mine) MirrorArt.Ink else MirrorArt.Text,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            "File - ${(message.fileSize ?: 0L) / 1024} KB",
+                                            color = if (mine) MirrorArt.InkSoft else MirrorArt.Dim,
+                                            fontSize = 10.sp,
+                                        )
+                                    }
+                                }
+                                if (message.body.isNotBlank()) {
+                                    Text(
+                                        mirrorAnnotated(message.body, mine, memberNames),
+                                        color = if (mine) MirrorArt.Ink else MirrorArt.Text,
+                                        fontSize = 13.sp,
+                                        lineHeight = 17.sp,
+                                    )
+                                }
+                            }
+                            isImage -> {
+                                AsyncImage(
+                                    model = PulseEndpoints.http("/api/uploads/${message.imagePath}"),
+                                    contentDescription = "Shared photo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .widthIn(max = 240.dp)
+                                        .heightIn(max = 300.dp)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                )
+                                if (message.body.isNotBlank()) {
+                                    Text(
+                                        mirrorAnnotated(message.body, mine, memberNames),
+                                        color = if (mine) MirrorArt.Ink else MirrorArt.Text,
+                                        fontSize = 15.sp,
+                                        lineHeight = 20.sp,
+                                        modifier = Modifier.padding(top = 2.dp, start = 2.dp, end = 2.dp, bottom = 2.dp),
+                                    )
+                                }
+                            }
+                            else -> {
                                 Text(
                                     mirrorAnnotated(message.body, mine, memberNames),
                                     color = if (mine) MirrorArt.Ink else MirrorArt.Text,
                                     fontSize = 15.sp,
                                     lineHeight = 20.sp,
-                                    modifier = Modifier.padding(top = 2.dp, start = 2.dp, end = 2.dp, bottom = 2.dp),
                                 )
                             }
-                        } else {
-                            Text(
-                                mirrorAnnotated(message.body, mine, memberNames),
-                                color = if (mine) MirrorArt.Ink else MirrorArt.Text,
-                                fontSize = 15.sp,
-                                lineHeight = 20.sp,
-                            )
                         }
                         // meta row: mine && !deleted always renders (web 7795)
                         if (mine) {
@@ -1968,7 +2740,7 @@ private fun MirrorReplyQuote(author: String, body: String, mine: Boolean, modifi
 }
 
 /** Bubble shape+background: art-bubble-out/in radii (18/18/6/18 vs 18/18/18/6). */
-private fun mirrorBubbleShapeOf(mine: Boolean, deleted: Boolean) =
+internal fun mirrorBubbleShapeOf(mine: Boolean, deleted: Boolean) =
     if (deleted) {
         RoundedCornerShape(16.dp)
     } else if (mine) {
@@ -1977,10 +2749,10 @@ private fun mirrorBubbleShapeOf(mine: Boolean, deleted: Boolean) =
         RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 6.dp, bottomEnd = 18.dp)
     }
 
-private fun Modifier.mirrorBubbleShape(mine: Boolean, deleted: Boolean): Modifier =
+internal fun Modifier.mirrorBubbleShape(mine: Boolean, deleted: Boolean): Modifier =
     this.clip(mirrorBubbleShapeOf(mine, deleted))
 
-private fun Modifier.mirrorBubbleBackground(mine: Boolean, deleted: Boolean): Modifier =
+internal fun Modifier.mirrorBubbleBackground(mine: Boolean, deleted: Boolean): Modifier =
     when {
         deleted -> this.drawBehind {
             drawRoundRect(
@@ -2157,7 +2929,7 @@ private fun AnnotatedString.Builder.appendPlainWithLinks(text: String, mine: Boo
     }
 }
 
-/** Pick → downscale (max 1280px) → JPEG 82 → data URL (web compressImageToDataUrl parity). */
+/** Pick - downscale (max 1280px) - JPEG 82 - data URL (web compressImageToDataUrl parity). */
 private suspend fun mirrorUriToDataUrl(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
     runCatching {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -2189,7 +2961,7 @@ private suspend fun mirrorUriToDataUrl(context: Context, uri: Uri): String? = wi
 }
 
 /**
- * R64 - document pick → base64 data URL + display name (attachments tray
+ * R64 - document pick - base64 data URL + display name (attachments tray
  * Document tile). Reads ANY file the picker returns; the upload route is
  * mime-agnostic so PDF/TXT/CSV/ZIP all ride the same POST /api/uploads.
  */
@@ -2665,5 +3437,234 @@ private fun MirrorScheduleComposerSheet(
                 )
             }
         }
+    }
+}
+
+// R73 - composer-level helpers ==================================================
+
+/** Serializable sticker payload blob (web { emoji, pack }, chat-room L3227). */
+@kotlinx.serialization.Serializable
+internal data class StickerPayload(val emoji: String, val pack: String = "")
+
+/** stamp item name -> the lucide glyph the MirrorStickerSheet tile used. */
+internal val MirrorStickerGlyphs = mapOf(
+    "bolt" to "LZap", "flame" to "LFlame", "sparkles" to "LSparkles", "rocket" to "LRocket",
+    "target" to "LTarget", "star" to "LStar", "trophy" to "LTrophy", "crown" to "LCrown",
+    "gift" to "LGift", "cake" to "LCake", "music" to "LMusic", "heart" to "LHeart",
+    "palette" to "LPalette", "camera" to "LCamera", "mic" to "LMic", "gamepad" to "LGamepad",
+    "brain" to "LBrain", "drama" to "LSticker", "leaf" to "LLeaf", "moon" to "LMoon",
+    "drop" to "LDroplet", "planet" to "LPlanet", "coffee" to "LCoffee", "paw" to "LPaw",
+    "smile" to "LSmile", "pin" to "LPin", "sun" to "LSun", "shield" to "LShieldCheck",
+    "key" to "LKey", "thumbsup" to "LThumbsUp", "thumbsdown" to "LThumbsDown",
+)
+
+/** One dismissible composer bar (web AnimatePresence chip anatomy). */
+@Composable
+private fun MirrorComposerBar(
+    glyph: String,
+    tint: Color,
+    text: String,
+    onClick: (() -> Unit)? = null,
+    onCancel: (() -> Unit)? = null,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(MirrorArt.White7)
+            .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(10.dp))
+            .clickable(enabled = onClick != null, onClick = { onClick?.invoke() })
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        MirrorLucideIcon(glyph, tint = tint, modifier = Modifier.size(14.dp))
+        Text(
+            text,
+            color = MirrorArt.TextSoft,
+            fontSize = 11.5.sp,
+            lineHeight = 15.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (onCancel != null) {
+            Box(
+                Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onCancel),
+                contentAlignment = Alignment.Center,
+            ) {
+                MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(12.dp))
+            }
+        }
+    }
+}
+
+/** R73 - the photo caption sheet (web caption-sheet chat-room.tsx:5868-5945). */
+@Composable
+private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -> Unit, onSend: (String) -> Unit) {
+    var caption by remember { mutableStateOf("") }
+    MirrorSheet(title = "Add a caption", onDismiss = onDismiss) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            AsyncImage(
+                model = imagePath,
+                contentDescription = "Staged photo",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 220.dp)
+                    .clip(RoundedCornerShape(14.dp)),
+            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(CircleShape)
+                    .background(MirrorArt.White7)
+                    .border(1.dp, MirrorArt.Hairline, CircleShape)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Box(Modifier.weight(1f)) {
+                    if (caption.isBlank()) {
+                        Text("Add a caption...", color = MirrorArt.Faint, fontSize = 13.sp)
+                    }
+                    BasicTextField(
+                        value = caption,
+                        onValueChange = { if (it.length <= 500) caption = it },
+                        textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
+                        cursorBrush = SolidColor(MirrorArt.Accent),
+                        maxLines = 2,
+                    )
+                }
+                if (caption.length > 450) {
+                    Text(
+                        "${500 - caption.length}",
+                        color = MirrorArt.Accent2,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .clip(CircleShape)
+                        .clickable(enabled = !busy, onClick = onDismiss)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Text("Cancel", color = MirrorArt.Dim, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Box(
+                    Modifier
+                        .clip(CircleShape)
+                        .background(MirrorArt.Accent)
+                        .clickable(enabled = !busy, onClick = { onSend(caption.trim()) })
+                        .padding(horizontal = 18.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        if (busy) "Sending..." else "Send",
+                        color = Color(0xFF20150C),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * R73 - the voice-note bubble (web voice renderer + voiceBars): deterministic
+ * decorative waveform bars from the message id, the real duration, and a REAL
+ * MediaPlayer playback path over the uploaded /api/uploads file.
+ */
+@Composable
+private fun MirrorVoiceNoteBubble(message: Message, mine: Boolean, filePath: String) {
+    val context = LocalContext.current
+    val player = remember(message.id) { MediaPlayer() }
+    var playing by remember { mutableStateOf(false) }
+    var positionMs by remember { mutableStateOf(0) }
+    androidx.compose.runtime.DisposableEffect(message.id) {
+        onDispose {
+            runCatching { player.release() }
+        }
+    }
+    // deterministic bars (web voiceBars hash LCG)
+    val bars = remember(message.id) {
+        var h = MirrorArt.hashString(message.id)
+        List(22) {
+            h = (h * 1103515245 + 12345) % 2147483648
+            val v = (h / 2147483648.0)
+            0.28f + (v.toFloat() * 0.72f)
+        }
+    }
+    LaunchedEffect(playing) {
+        while (playing) {
+            positionMs = runCatching { player.currentPosition }.getOrDefault(0)
+            delay(200)
+        }
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(if (mine) Color(0x1A000000) else MirrorArt.White10)
+                .mirrorPressClick(onClick = {
+                    if (playing) {
+                        runCatching { player.pause() }
+                        playing = false
+                    } else {
+                        runCatching {
+                            player.reset()
+                            player.setDataSource(PulseEndpoints.http("/api/uploads/$filePath"))
+                            player.setAudioAttributes(
+                                android.media.AudioAttributes.Builder()
+                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                    .build(),
+                            )
+                            player.prepare()
+                            player.start()
+                            playing = true
+                        }.onFailure { playing = false }
+                    }
+                }),
+            contentAlignment = Alignment.Center,
+        ) {
+            MirrorLucideIcon(
+                if (playing) "LSquare" else "LPlay",
+                tint = if (mine) MirrorArt.Ink else MirrorArt.Text,
+                modifier = Modifier.size(15.dp),
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier.height(26.dp),
+        ) {
+            for (bar in bars) {
+                Box(
+                    Modifier
+                        .width(3.dp)
+                        .height((10.dp.value * bar).dp.coerceAtLeast(4.dp))
+                        .clip(CircleShape)
+                        .background(if (mine) MirrorArt.InkSoft else MirrorArt.Dim),
+                )
+            }
+        }
+        val totalSec = ((message.durationMs ?: 0L) / 1000L).toInt()
+        Text(
+            if (playing) "%d:%02d".format(positionMs / 60000, (positionMs / 1000) % 60)
+            else "%d:%02d".format(totalSec / 60, totalSec % 60),
+            color = if (mine) MirrorArt.InkSoft else MirrorArt.Dim,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }

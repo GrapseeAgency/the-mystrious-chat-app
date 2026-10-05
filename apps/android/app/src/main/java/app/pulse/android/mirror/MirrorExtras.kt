@@ -43,7 +43,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -85,174 +88,6 @@ import kotlinx.coroutines.launch
 internal fun mirrorUploadHttp(path: String): String =
     PulseEndpoints.http(if (path.startsWith("/api/uploads/")) path else "/api/uploads/$path")
 
-/** Calls tab: the live call log, direction/status/duration per row. */
-@Composable
-internal fun MirrorCalls(repository: PulseRepository) {
-    val log by repository.observeCallLog().collectAsState(initial = emptyList())
-    LaunchedEffect(Unit) { runCatching { repository.refreshCallLog() } }
-    MirrorListScaffold(title = "Calls") {
-        if (log.isEmpty()) {
-            item { MirrorEmptyState("No calls yet", "Voice and video calls you make show up here.") }
-        }
-        items(log, key = { it.id }) { entry ->
-            MirrorCallRow(entry)
-        }
-    }
-}
-
-@Composable
-private fun MirrorCallRow(entry: CallLogEntry) {
-    val peer = entry.peer
-    val missed = entry.status == app.pulse.domain.model.CallStatus.MISSED
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .padding(horizontal = 8.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        MirrorAvatar(
-            name = peer?.name ?: "Unknown",
-            color = peer?.color,
-            isGroup = false,
-            groupId = "",
-            online = false,
-            showPresence = false,
-            sizeDp = 50,
-            cornerDp = 25,
-        )
-        Column(Modifier.weight(1f)) {
-            Text(
-                peer?.name ?: "Unknown",
-                color = if (missed) MirrorArt.Red else MirrorArt.Text,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(2.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                MirrorLucideIcon(
-                    if (entry.outgoing) "LPhone" else "LArrowLeft",
-                    tint = if (missed) MirrorArt.Red else MirrorArt.Dim,
-                    modifier = Modifier.size(12.dp),
-                )
-                val label = buildString {
-                    append(
-                        when {
-                            missed -> "Missed"
-                            entry.outgoing -> "Outgoing"
-                            else -> "Incoming"
-                        },
-                    )
-                    if (entry.durationSec > 0) append(" · ${entry.durationSec / 60}m ${entry.durationSec % 60}s")
-                }
-                Text(label, color = MirrorArt.Dim, fontSize = 13.sp)
-            }
-        }
-        Text(
-            MirrorRowTime(entry.startedAt),
-            color = MirrorArt.Faint,
-            fontSize = 11.sp,
-        )
-    }
-}
-
-/** Updates tab: the real channel directory with working subscribe. */
-@Composable
-internal fun MirrorUpdates(repository: PulseRepository) {
-    var channels by remember { mutableStateOf<List<Channel>>(emptyList()) }
-    var busyId by remember { mutableStateOf<String?>(null) }
-
-    fun load() {
-        CoroutineScope(Dispatchers.IO).launch {
-            channels = repository.channels(mineOnly = false).getOrDefault(emptyList())
-        }
-    }
-    LaunchedEffect(Unit) { load() }
-
-    MirrorListScaffold(title = "Updates") {
-        if (channels.isEmpty()) {
-            item { MirrorEmptyState("No channels yet", "Broadcast channels you create or join show up here.") }
-        }
-        items(channels, key = { it.id }) { channel ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                // Channel tile: the web GroupAvatar language - rounded-14 gradient square
-                Box(
-                    Modifier
-                        .size(50.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Brush.verticalGradient(MirrorArt.groupGradient(channel.id))),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        MirrorArt.initials(channel.name),
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        channel.name,
-                        color = MirrorArt.Text,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        channel.preview ?: "${channel.memberCount} subscribers",
-                        color = MirrorArt.Dim,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (!channel.isSubscribed) {
-                    Box(
-                        Modifier
-                            .clip(CircleShape)
-                            .background(MirrorArt.ChipActive)
-                            .clickable(enabled = busyId != channel.id) {
-                                busyId = channel.id
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    runCatching { repository.subscribeChannel(channel.id) }
-                                    channels = repository.channels(mineOnly = false).getOrDefault(emptyList())
-                                    busyId = null
-                                }
-                            }
-                            .padding(horizontal = 14.dp, vertical = 7.dp),
-                    ) {
-                        Text(
-                            if (busyId == channel.id) "Joining" else "Join",
-                            color = MirrorArt.Accent2,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                } else {
-                    Text(
-                        "${channel.memberCount}",
-                        color = MirrorArt.Faint,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
-        }
-    }
-}
-
 /** New chat sheet: real user directory + createDm on tap. */
 @Composable
 internal fun MirrorNewChatSheet(
@@ -263,6 +98,13 @@ internal fun MirrorNewChatSheet(
     var users by remember { mutableStateOf<List<User>>(emptyList()) }
     var query by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf<String?>(null) }
+    // R73 - the web NewChatSheet carries THREE modes (dm/group/channel,
+    // main-shell.tsx:529). The mirror had DM only - channel creation rides
+    // the real POST /api/channels + subscribe chain here.
+    var mode by remember { mutableStateOf("dm") }
+    var channelName by remember { mutableStateOf("") }
+    var channelDesc by remember { mutableStateOf("") }
+    var channelError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         users = repository.users("").getOrDefault(emptyList())
@@ -272,7 +114,114 @@ internal fun MirrorNewChatSheet(
         users = repository.users(query).getOrDefault(emptyList())
     }
 
-    MirrorSheet(title = "New chat", onDismiss = onDismiss) {
+    MirrorSheet(title = if (mode == "dm") "New chat" else "New channel", onDismiss = onDismiss) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            for ((value, label) in listOf("dm" to "Direct message", "channel" to "Channel")) {
+                Box(
+                    Modifier
+                        .clip(CircleShape)
+                        .background(if (mode == value) MirrorArt.ChipActive else MirrorArt.White7)
+                        .border(1.dp, if (mode == value) MirrorArt.Hairline else Color.Transparent, CircleShape)
+                        .mirrorPressClick(onClick = { mode = value })
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        label,
+                        color = if (mode == value) MirrorArt.Text else MirrorArt.Dim,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+        if (mode == "channel") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MirrorArt.White7)
+                        .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        if (channelName.isBlank()) Text("Channel name", color = MirrorArt.Faint, fontSize = 13.sp)
+                        BasicTextField(
+                            value = channelName,
+                            onValueChange = { if (it.length <= 48) channelName = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
+                            cursorBrush = SolidColor(MirrorArt.Accent),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MirrorArt.White7)
+                        .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        if (channelDesc.isBlank()) Text("Purpose (optional)", color = MirrorArt.Faint, fontSize = 13.sp)
+                        BasicTextField(
+                            value = channelDesc,
+                            onValueChange = { if (it.length <= 140) channelDesc = it },
+                            textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
+                            cursorBrush = SolidColor(MirrorArt.Accent),
+                            maxLines = 2,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                channelError?.let { Text(it, color = MirrorArt.Red, fontSize = 12.sp) }
+                Box(
+                    Modifier
+                        .align(Alignment.End)
+                        .clip(CircleShape)
+                        .background(MirrorArt.Accent)
+                        .mirrorPressClick(enabled = busy == null, onClick = {
+                            if (channelName.isBlank()) {
+                                channelError = "Give the channel a name"
+                            } else {
+                                busy = "channel"
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    val outcome = runCatching {
+                                        val channel = repository.createChannel(
+                                            channelName.trim(),
+                                            channelDesc.trim().ifBlank { null },
+                                            null,
+                                        ).getOrThrow()
+                                        // the creator auto-subscribes server-side; refresh the directory
+                                        runCatching { repository.channels(mineOnly = false) }
+                                        channel
+                                    }
+                                    CoroutineScope(Dispatchers.Main).launch {
+                                        busy = null
+                                        outcome.onSuccess { channel -> onOpened(channel.id) }
+                                            .onFailure { channelError = "Could not create the channel" }
+                                    }
+                                }
+                            }
+                        })
+                        .padding(horizontal = 18.dp, vertical = 9.dp),
+                ) {
+                    Text(
+                        if (busy == "channel") "Creating..." else "Create channel",
+                        color = Color(0xFF20150C),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        } else {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -350,6 +299,7 @@ internal fun MirrorNewChatSheet(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -506,14 +456,24 @@ internal fun MirrorStoryViewer(
 ) {
     var index by remember { mutableStateOf(0) }
     val stories = group.stories
+    // R73 - the web story viewer (stories-sheet.tsx:150-183) drives a
+    // CONTINUOUS rAF progress bar per segment; the mirror now runs the same
+    // 6s sweep with Animatable instead of the old binary bars.
+    val progress = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(group.user?.id, index) {
         val story = stories.getOrNull(index) ?: return@LaunchedEffect
         if (!story.viewedByMe) {
             runCatching { repository.markStoryViewed(story.id) }
         }
         if (stories.isNotEmpty()) {
-            delay(6_000)
-            if (index < stories.size - 1) index += 1 else onDismiss()
+            progress.snapTo(0f)
+            val done = progress.animateTo(
+                1f,
+                androidx.compose.animation.core.tween(6_000, easing = androidx.compose.animation.core.LinearEasing),
+            )
+            if (done == androidx.compose.animation.core.AnimationResultType.End) {
+                if (index < stories.size - 1) index += 1 else onDismiss()
+            }
         }
     }
     val story = stories.getOrNull(index)
@@ -541,7 +501,8 @@ internal fun MirrorStoryViewer(
                     .clickable { if (index < stories.size - 1) index += 1 else onDismiss() },
             )
         }
-        // progress bars - one segment per story
+        // progress bars - one segment per story, the ACTIVE one fills with
+        // the real elapsed fraction (web rAF parity)
         Row(
             Modifier
                 .statusBarsPadding()
@@ -550,15 +511,23 @@ internal fun MirrorStoryViewer(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             for (i in stories.indices) {
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .height(2.5.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (i <= index) MirrorArt.Text.copy(alpha = 0.9f) else MirrorArt.Text.copy(alpha = 0.25f),
-                        ),
-                )
+                Box(Modifier.weight(1f).height(2.5.dp).clip(CircleShape).background(MirrorArt.Text.copy(alpha = 0.25f))) {
+                    if (i < index) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(2.5.dp)
+                                .background(MirrorArt.Text.copy(alpha = 0.9f)),
+                        )
+                    } else if (i == index) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth(progress.value)
+                                .height(2.5.dp)
+                                .background(MirrorArt.Text.copy(alpha = 0.9f)),
+                        )
+                    }
+                }
             }
         }
         // header: avatar + name + close
@@ -747,29 +716,85 @@ internal fun MirrorEmptyState(title: String, body: String) {
     }
 }
 
-/** Bottom sheet chrome: scrim + artboard panel with the title row. */
+/**
+ * R73 - bottom sheet chrome with REAL motion (web sheets spring every where):
+ * scrim fade, panel spring slide-up (web spring 380/34, stories-sheet.tsx
+ * L280-287), drag-to-dismiss with the web's elastic release, and a spring
+ * slide-down exit before composing out. The signature is UNCHANGED so every
+ * existing call site inherits the motion.
+ */
 @Composable
 internal fun MirrorSheet(
     title: String,
     onDismiss: () -> Unit,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // enter/exit progress 0..1 driven by spring physics (web AnimatePresence)
+    val progress = remember { androidx.compose.animation.core.Animatable(0f) }
+    var leaving by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var dragPx by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        progress.animateTo(
+            1f,
+            androidx.compose.animation.core.spring(
+                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+            ),
+        )
+    }
+    LaunchedEffect(leaving) {
+        if (leaving) {
+            progress.animateTo(
+                0f,
+                androidx.compose.animation.core.tween(170, easing = androidx.compose.animation.core.FastOutLinearInEasing),
+            )
+            onDismiss()
+        }
+    }
+    val scrimAlpha = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (leaving) 0f else 0.4f,
+        animationSpec = androidx.compose.animation.core.tween(170),
+        label = "sheetScrim",
+    )
+    val panelTranslation = with(density) { (1f - progress.value) * 220.dp.toPx() + dragPx }
+    val panelScale = 0.94f + 0.06f * progress.value
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0x66000000))
-            .clickable(onClick = onDismiss),
+            .background(Color.Black.copy(alpha = scrimAlpha.value.coerceIn(0f, 0.66f)))
+            .clickable(onClick = { leaving = true }),
     ) {
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .graphicsLayer {
+                    translationY = panelTranslation
+                    scaleX = panelScale
+                    scaleY = panelScale
+                    alpha = progress.value.coerceIn(0f, 1f)
+                }
                 .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .background(Color(0xF21C1610))
                 .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .clickable(enabled = false) {}
                 .padding(16.dp)
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                // web drag-to-dismiss: pull down past the threshold releases the
+                // sheet, a short drag springs back (stories-sheet.tsx elastic 0.65)
+                .pointerInput(Unit) {
+                    androidx.compose.foundation.gestures.detectVerticalDragGestures(
+                        onVerticalDrag = { change, amount ->
+                            dragPx = (dragPx + amount).coerceAtLeast(0f)
+                            change.consume()
+                        },
+                        onDragEnd = {
+                            if (dragPx > with(density) { 88.dp.toPx() }) leaving = true else dragPx = 0f
+                        },
+                        onDragCancel = { dragPx = 0f },
+                    )
+                },
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -783,7 +808,7 @@ internal fun MirrorSheet(
                     Modifier
                         .size(32.dp)
                         .clip(CircleShape)
-                        .clickable(onClick = onDismiss),
+                        .clickable(onClick = { leaving = true }),
                     contentAlignment = Alignment.Center,
                 ) {
                     MirrorLucideIcon("LX", tint = MirrorArt.Dim, modifier = Modifier.size(18.dp))
@@ -837,68 +862,6 @@ private fun MirrorSheetSearch(query: String, placeholder: String, onQuery: (Stri
                 cursorBrush = SolidColor(MirrorArt.Accent),
                 modifier = Modifier.fillMaxWidth(),
             )
-        }
-    }
-}
-
-/** Contacts: real users() search; tap opens (creates) the DM. */
-@Composable
-internal fun MirrorContactsSheet(
-    repository: PulseRepository,
-    onOpened: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var query by remember { mutableStateOf("") }
-    var users by remember { mutableStateOf<List<User>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    LaunchedEffect(query) {
-        loading = true
-        delay(180)
-        users = repository.users(query.trim()).getOrDefault(emptyList())
-        loading = false
-    }
-    MirrorSheet(title = "Contacts", onDismiss = onDismiss) {
-        MirrorSheetSearch(query, "Search people…", onQuery = { query = it })
-        Spacer(Modifier.height(10.dp))
-        MirrorSheetScroll {
-            if (!loading && users.isEmpty()) {
-                Text("Nobody here matches that", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
-            }
-            for (user in users) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            CoroutineScope(Dispatchers.IO).launch {
-                                repository.createDm(user.id).onSuccess { convo ->
-                                    kotlinx.coroutines.withContext(Dispatchers.Main) { onOpened(convo.id) }
-                                }
-                            }
-                        }
-                        .padding(horizontal = 4.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    MirrorAvatar(
-                        name = user.name,
-                        color = user.color,
-                        isGroup = false,
-                        groupId = "",
-                        online = false,
-                        showPresence = false,
-                        sizeDp = 40,
-                        cornerDp = 20,
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(user.name, color = MirrorArt.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        val status = user.statusText
-                        if (!status.isNullOrBlank()) {
-                            Text(status, color = MirrorArt.Faint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-            }
         }
     }
 }

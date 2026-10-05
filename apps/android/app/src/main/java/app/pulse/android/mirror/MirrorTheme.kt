@@ -1,8 +1,85 @@
 package app.pulse.android.mirror
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import kotlin.math.abs
+
+/**
+ * R73 - the mirror motion tokens. The web drives every interaction through
+ * src/lib/motion.ts spring presets; the mirror carries the SAME numbers so
+ * press states, sheet entrances and dock motion feel identical.
+ */
+internal object MirrorMotion {
+    /** web pressSpring (motion.ts) - the whileTap response. */
+    fun <T> press(): androidx.compose.animation.core.SpringSpec<T> = spring(
+        dampingRatio = Spring.DampingRatioMediumBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+    )
+
+    /** web spring.snappy (500/34) - entrances that must feel immediate. */
+    fun <T> snappy(): androidx.compose.animation.core.SpringSpec<T> = spring(
+        dampingRatio = Spring.DampingRatioLowBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+    )
+
+    /** web spring.soft (300/28) - larger surfaces, room/sheet slides. */
+    fun <T> soft(): androidx.compose.animation.core.SpringSpec<T> = spring(
+        dampingRatio = Spring.DampingRatioMediumBouncy,
+        stiffness = Spring.StiffnessLow,
+    )
+
+    /** web pressTap scale (motion.ts pressTap { scale: 0.94 }). */
+    const val PRESS_SCALE = 0.94f
+}
+
+/**
+ * R73 - web whileTap press physics, drop-in for `.clickable {}`: the surface
+ * squashes to the pressTap scale with the pressSpring spring and springs back
+ * on release (motion.ts pressTap). Fires the web press haptic (8ms pattern)
+ * on press-down. Ripple-free like the web (indication = null).
+ */
+internal fun Modifier.mirrorPressClick(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    scaleDown: Float = MirrorMotion.PRESS_SCALE,
+): Modifier = composed {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) scaleDown else 1f,
+        animationSpec = MirrorMotion.press(),
+        label = "mirrorPress",
+    )
+    val haptics = LocalHapticFeedback.current
+    androidx.compose.runtime.LaunchedEffect(pressed) {
+        if (pressed) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+    this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .clickable(
+            interactionSource = interaction,
+            indication = null,
+            enabled = enabled,
+            onClick = onClick,
+        )
+}
 
 /**
  * R59 - the artboard palette, lifted verbatim from the web's globals.css

@@ -39,12 +39,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import app.pulse.android.SessionViewModel
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
@@ -88,6 +98,9 @@ fun MirrorRoot(
     val presence by repository.observePresence().collectAsState(initial = emptySet())
     var tab by remember { mutableStateOf(MirrorTab.Chats) }
     var openRoom by remember { mutableStateOf<Conversation?>(null) }
+    // R73 - keeps the room composed while the close slide-out plays
+    // (openRoom flips null immediately; the exit animation needs the convo).
+    var roomShown by remember { mutableStateOf<Conversation?>(null) }
     var stories by remember { mutableStateOf<List<StoryGroup>>(emptyList()) }
     var folders by remember { mutableStateOf<List<MirrorFolderChip>>(emptyList()) }
 
@@ -138,7 +151,7 @@ fun MirrorRoot(
     var profileEditOpen by remember { mutableStateOf(false) }
     var profileSavedOpen by remember { mutableStateOf(false) }
 
-    // R64 - typing state: relay events → per-conversation typer list (4s TTL).
+    // R64 - typing state: relay events - per-conversation typer list (4s TTL).
     var typers by remember { mutableStateOf<List<MirrorTyper>>(emptyList()) }
     LaunchedEffect(viewerId) {
         if (viewerId == null) return@LaunchedEffect
@@ -220,27 +233,6 @@ fun MirrorRoot(
                     MirrorStoryViewer(group = group, repository = repository, onDismiss = { viewingStory = null })
                 }
             }
-            openRoom != null -> {
-                val convo = openRoom!!
-                val roomTypers = typers
-                    .filter { it.conversationId == convo.id }
-                    .map { it.userName }
-                MirrorRoomScaffold(
-                    convo = convo,
-                    repository = repository,
-                    viewerId = viewerId.orEmpty(),
-                    presence = presence,
-                    typers = roomTypers,
-                    pipActive = pipFor?.id == convo.id,
-                    onTogglePip = {
-                        pipFor = if (pipFor?.id == convo.id) null else convo
-                    },
-                    onClose = { openRoom = null },
-                    onRoomInfo = { roomInfoFor = convo },
-                    onManageGroup = { managerFor = convo },
-                    onStartCall = onStartCall,
-                )
-            }
             else -> {
                 val myGroup = stories.firstOrNull { it.mine }
                 val otherGroups = stories.filter { !it.mine }
@@ -272,8 +264,23 @@ fun MirrorRoot(
                         )
                     }
                 }
-
-                when (tab) {
+                // R73 - web tab slide (main-shell.tsx:425-488): direction-aware
+                // ±24px slide + fade, 0.22s swift-out, AnimatePresence custom=dir.
+                AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = {
+                        val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                        (
+                            slideInHorizontally(MirrorMotion.snappy()) { dir * it / 12 } +
+                                fadeIn(tween(160))
+                            ) togetherWith (
+                            slideOutHorizontally(tween(190, easing = FastOutLinearInEasing)) { -dir * it / 12 } +
+                                fadeOut(tween(140))
+                            )
+                    },
+                    label = "mirrorTabSlide",
+                ) { current ->
+                when (current) {
                     MirrorTab.Chats -> {
                         MirrorHome(
                             conversations = activeConversations.map { it.toRow(presence, viewerId) },
@@ -350,6 +357,7 @@ fun MirrorRoot(
                             onEditProfile = { profileEditOpen = true },
                         )
                     }
+                }
                 }
 
                 // R66 - zinc-900 sub-pages over the scene (web calls/channels pages)
@@ -559,6 +567,38 @@ fun MirrorRoot(
                         onDismiss = { rowOptions = null },
                     )
                 }
+            }
+        }
+
+        // R73 - the room slides over the shell with the web's signature
+        // full-screen entrance (chat-room.tsx:3895 slide-up spring 320/34,
+        // exit slides back down). roomShown keeps the convo composed through
+        // the exit so the slide-down is visible.
+        LaunchedEffect(openRoom) { if (openRoom != null) roomShown = openRoom }
+        AnimatedVisibility(
+            visible = viewingStory == null && openRoom != null,
+            enter = slideInVertically(MirrorMotion.soft()) { it } + fadeIn(tween(90)),
+            exit = slideOutVertically(tween(210, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(150)),
+        ) {
+            roomShown?.let { convo ->
+                val roomTypers = typers
+                    .filter { it.conversationId == convo.id }
+                    .map { it.userName }
+                MirrorRoomScaffold(
+                    convo = convo,
+                    repository = repository,
+                    viewerId = viewerId.orEmpty(),
+                    presence = presence,
+                    typers = roomTypers,
+                    pipActive = pipFor?.id == convo.id,
+                    onTogglePip = {
+                        pipFor = if (pipFor?.id == convo.id) null else convo
+                    },
+                    onClose = { openRoom = null },
+                    onRoomInfo = { roomInfoFor = convo },
+                    onManageGroup = { managerFor = convo },
+                    onStartCall = onStartCall,
+                )
             }
         }
 
@@ -805,40 +845,6 @@ private fun MirrorRoomScaffold(
         isBroadcast = convo.kind == Conversation.Kind.CHANNEL,
         avatarPath = convo.avatar,
         onBack = onClose,
-        onSend = { text ->
-            if (viewerId.isNotBlank() && text.isNotBlank()) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    runCatching { repository.sendMessage(convo.id, text) }
-                }
-            }
-        },
-        onSendImage = { dataUrl ->
-            if (viewerId.isNotBlank()) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    // web flow: compress → POST /api/uploads → send the imagePath row
-                    runCatching {
-                        val path = repository.uploadMedia(dataUrl).getOrThrow()
-                        repository.sendMediaMessage(convo.id, "", imagePath = path)
-                    }
-                }
-            }
-        },
-        onSendDocument = { dataUrl, fileName ->
-            if (viewerId.isNotBlank()) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    // web handleDocumentPicked flow: upload → kind="file" row
-                    runCatching {
-                        val path = repository.uploadMedia(dataUrl).getOrThrow()
-                        repository.sendMediaMessage(
-                            convo.id, "",
-                            filePath = path,
-                            fileName = fileName,
-                            kind = "file",
-                        )
-                    }
-                }
-            }
-        },
         onToggleReaction = { messageId, emoji ->
             CoroutineScope(Dispatchers.IO).launch {
                 runCatching { repository.react(messageId, emoji) }
