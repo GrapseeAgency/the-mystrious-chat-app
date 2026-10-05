@@ -1418,7 +1418,7 @@ class PulseRepositoryImpl @Inject constructor(
         }
 
     override suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit> =
-        when (val r = api.patchConversation(conversationId, viewerId ?: "", photo = photoPath)) {
+        when (val r = api.patchConversation(conversationId, viewerId ?: "", photo = normalizeUploadPath(photoPath))) {
             is PulseResult.Success -> {
                 conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
                 Result.success(Unit)
@@ -2898,8 +2898,11 @@ class PulseRepositoryImpl @Inject constructor(
             patch.name?.let { put("name", it) }
             patch.about?.let { put("about", it) }
             patch.color?.let { put("color", it) }
-            patch.avatar?.let { put("avatar", it) }
-            patch.coverImage?.let { put("coverImage", it) }
+            // The uploads route returns a bare filename; the users PATCH route
+            // only accepts a server-managed "/api/uploads/<file>" path (the
+            // web prefixes before PATCHing). "" = clear stays untouched.
+            patch.avatar?.let { put("avatar", normalizeUploadPath(it)) }
+            patch.coverImage?.let { put("coverImage", normalizeUploadPath(it)) }
             patch.statusEmoji?.let { put("statusEmoji", it) }
             patch.statusText?.let { put("statusText", it) }
             // username is "explicit key" on the wire: null = untouched, "" = clear.
@@ -3343,6 +3346,17 @@ fun ScheduledItemDto.toDomainScheduled(): ScheduledItem = ScheduledItem(
     cancelledAtIso = cancelledAt,
     cancelledReason = cancelledReason,
 )
+
+/**
+ * Upload paths the wire accepts are "/api/uploads/<file>" (validated by the
+ * users + conversations PATCH routes); the uploads route itself returns a
+ * bare "<uuid>.<ext>" filename. Blank ("clear") passes through untouched.
+ */
+internal fun normalizeUploadPath(path: String): String {
+    val trimmed = path.trim()
+    if (trimmed.isEmpty()) return trimmed
+    return if (trimmed.startsWith("/api/uploads/")) trimmed else "/api/uploads/$trimmed"
+}
 
 private fun kindOf(wire: String): Message.Kind = when (wire) {
     "text" -> Message.Kind.TEXT

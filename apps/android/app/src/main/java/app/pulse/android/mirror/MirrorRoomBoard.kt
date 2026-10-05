@@ -304,6 +304,7 @@ internal fun MirrorEventsSheet(
     repository: PulseRepository,
     conversationId: String,
     viewerId: String,
+    viewerIsAdmin: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     var events by remember { mutableStateOf<List<GroupEventDto>?>(null) }
@@ -721,8 +722,8 @@ private fun MirrorEventRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                    // two-tap delete, creator-only (web canDelete with member role)
-                    if (event.createdById == viewerId) {
+                    // two-tap delete, creator OR admin (web canDelete)
+                    if (event.createdById == viewerId || viewerIsAdmin) {
                         Box(
                             Modifier
                                 .size(28.dp)
@@ -1002,6 +1003,7 @@ internal fun MirrorKanbanSheet(
     repository: PulseRepository,
     conversationId: String,
     viewerId: String,
+    viewerIsAdmin: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     var cards by remember { mutableStateOf<List<KanbanCardDto>?>(null) }
@@ -1364,7 +1366,7 @@ private fun MirrorKanbanCard(
                     MirrorLucideIcon("LArrowRight", tint = MirrorArt.Dim, modifier = Modifier.size(12.dp))
                 }
             }
-            if (card.createdById == viewerId) {
+            if (card.createdById == viewerId || viewerIsAdmin) {
                 Box(
                     Modifier
                         .size(24.dp)

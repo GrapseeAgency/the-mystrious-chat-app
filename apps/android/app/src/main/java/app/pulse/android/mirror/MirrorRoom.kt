@@ -77,6 +77,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -244,6 +245,9 @@ internal fun MirrorRoom(
     phrases: List<QuickPhrase>,
     muted: Boolean,
     ttlSeconds: Int,
+    isBroadcast: Boolean,
+    /** stored group/channel photo (web renders it in the header avatar) */
+    avatarPath: String? = null,
     onBack: () -> Unit,
     onSend: (String) -> Unit,
     onSendImage: (String) -> Unit,
@@ -288,6 +292,23 @@ internal fun MirrorRoom(
     // menu badges, fetched live each time the menu opens (web queries)
     var pinnedCount by remember { mutableStateOf(0) }
     var upcomingReminders by remember { mutableStateOf(0) }
+    // R72 - channel truth (web broadcastLocked chat-room.tsx:2294): only
+    // admins post in a broadcast room - the composer is replaced with the
+    // locked pill and every input path is gated, not swallowed server-side.
+    val viewerIsAdmin = members.any { it.id == viewerId && it.role == "admin" }
+    val broadcastLocked = isGroup && isBroadcast && !viewerIsAdmin
+    // R72 - DM safety number (web ShieldCheck row chat-room.tsx:4232)
+    val dmPeerId = if (!isGroup) members.firstOrNull { it.id != viewerId }?.id else null
+    var safetyVerified by remember { mutableStateOf<Boolean?>(null) }
+    var safetyOpen by remember { mutableStateOf(false) }
+    // R72 - schedule message (web /schedule palette entry + drawer)
+    var scheduleOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(menuOpen, dmPeerId) {
+        if (menuOpen && !isGroup && dmPeerId != null) {
+            safetyVerified = runCatching { repository.safetyState(dmPeerId).getOrNull() }
+                .getOrNull()?.verified
+        }
+    }
     // live voice roster for the Voice room pill (web voice.inRoom / roster.length)
     var voiceRoster by remember { mutableStateOf(emptyList<VoicePeerDto>()) }
     val voiceInRoom = voiceRoster.any { it.userId == viewerId }
@@ -430,18 +451,42 @@ internal fun MirrorRoom(
                         showPresence = !isGroup,
                         sizeDp = 40,
                         cornerDp = 20,
+                        // R72 - the stored group/channel photo (DMs carry the
+                        // peer's avatar in Conversation.avatar)
+                        photo = avatarPath,
                     )
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            title,
-                            color = MirrorArt.Text,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = (-0.2).sp,
-                            lineHeight = 19.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        // web: title row carries the "Channel" broadcast pill
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                title,
+                                color = MirrorArt.Text,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = (-0.2).sp,
+                                lineHeight = 19.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            if (isGroup && isBroadcast) {
+                                Row(
+                                    Modifier.clip(RoundedCornerShape(50))
+                                        .background(MirrorArt.Accent.copy(alpha = 0.15f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    MirrorLucideIcon("LRadio", tint = MirrorArt.Accent2, modifier = Modifier.size(10.dp))
+                                    Text(
+                                        "Channel",
+                                        color = MirrorArt.Accent2,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+                        }
                         // web: the typing label wins and renders italic accent-2
                         Text(
                             if (typerLabel.isNotEmpty()) typerLabel else subtitle,
@@ -475,9 +520,9 @@ internal fun MirrorRoom(
                 topics = topics,
                 activeTopicId = activeTopicId,
                 onSelect = { topicId -> activeTopicId = topicId },
-                onCreate = { name ->
+                onCreate = { name, icon ->
                     CoroutineScope(Dispatchers.IO).launch {
-                        val created = runCatching { repository.createTopic(groupId, name).getOrNull() }.getOrNull()
+                        val created = runCatching { repository.createTopic(groupId, name, icon).getOrNull() }.getOrNull()
                         if (created != null) {
                             runCatching { repository.refreshTopics(groupId) }
                             withContext(Dispatchers.Main) { activeTopicId = created.id }
@@ -645,7 +690,8 @@ internal fun MirrorRoom(
 
         // F-MS-29 quick phrases rail: glass chips ABOVE the composer; tap
         // INSERTS into the draft; the 28dp pencil opens the manage sheet.
-        if (phrases.isNotEmpty()) {
+        // R72: hidden while broadcast-locked (web hides phrases for viewers).
+        if (phrases.isNotEmpty() && !broadcastLocked) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -689,6 +735,29 @@ internal fun MirrorRoom(
 
         // R54-c composer row: ONE art-input-pill (paperclip / Type here /
         // camera) with the 44dp dark-glass art-fab OUTSIDE on the right.
+        // R72: broadcast channels swap it for the locked pill (web 5230:
+        // glass-deep rounded-2xl Lock + "Only admins can post").
+        if (broadcastLocked) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MirrorArt.White7)
+                    .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            ) {
+                MirrorLucideIcon("LLock", tint = MirrorArt.Accent2, modifier = Modifier.size(16.dp))
+                Text(
+                    "Only admins can post",
+                    color = MirrorArt.Dim,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        } else
         Row(
             Modifier
                 .fillMaxWidth()
@@ -802,7 +871,7 @@ internal fun MirrorRoom(
 
     // R64 - the attachments tray: web CREATE grid subset that is REAL here
     // (photo pick, document pick + upload, quick-phrase manager). No dead tiles.
-    if (trayOpen) {
+    if (trayOpen && !broadcastLocked) {
         Box(
             Modifier
                 .fillMaxSize()
@@ -838,6 +907,10 @@ internal fun MirrorRoom(
                     MirrorTrayTile("LMessageCircle", "Quick phrase", "Save lines you send often") {
                         trayOpen = false
                         phraseManagerOpen = true
+                    }
+                    MirrorTrayTile("LCalendarClock", "Schedule", "Send it at a set time") {
+                        trayOpen = false
+                        scheduleOpen = true
                     }
                 }
             }
@@ -925,6 +998,17 @@ internal fun MirrorRoom(
                 MirrorRoomMenuItem("LCalendarClock", "Scheduled sends") {
                     menuOpen = false
                     scheduledOpen = true
+                }
+                // R72 - DM-only safety number row (web ShieldCheck item,
+                // chat-room.tsx:4232): label + tint flip when verified
+                if (!isGroup && dmPeerId != null) {
+                    MirrorRoomMenuItem(
+                        "LShieldCheck",
+                        if (safetyVerified == true) "Verified safety number" else "Verify safety number",
+                    ) {
+                        menuOpen = false
+                        safetyOpen = true
+                    }
                 }
                 if (muteStripOpen) {
                     MirrorMenuStrip("Mute for", listOf("8h", "1w", "Always")) { choice ->
@@ -1040,14 +1124,28 @@ internal fun MirrorRoom(
     if (scheduledOpen) {
         MirrorScheduledSheet(repository, groupId) { scheduledOpen = false }
     }
+    // R72 - DM safety number sheet (verify/unverify on the real contract)
+    if (safetyOpen && dmPeerId != null) {
+        MirrorRoomSafetySheet(repository, dmPeerId) { safetyOpen = false }
+    }
+    // R72 - schedule message composer (web /schedule drawer)
+    if (scheduleOpen) {
+        MirrorScheduleComposerSheet(
+            repository = repository,
+            conversationId = groupId,
+            initialDraft = draft,
+            onConsumedDraft = { draft = "" },
+            onDismiss = { scheduleOpen = false },
+        )
+    }
     if (recapOpen) {
         MirrorRecapSheet(repository, groupId) { recapOpen = false }
     }
     if (eventsOpen) {
-        MirrorEventsSheet(repository, groupId, viewerId) { eventsOpen = false }
+        MirrorEventsSheet(repository, groupId, viewerId, viewerIsAdmin) { eventsOpen = false }
     }
     if (kanbanOpen) {
-        MirrorKanbanSheet(repository, groupId, viewerId) { kanbanOpen = false }
+        MirrorKanbanSheet(repository, groupId, viewerId, viewerIsAdmin) { kanbanOpen = false }
     }
     if (whiteboardOpen) {
         MirrorWhiteboardSheet(repository, groupId, viewerId) { whiteboardOpen = false }
@@ -2131,10 +2229,13 @@ private fun MirrorTopicRail(
     topics: List<Topic>,
     activeTopicId: String?,
     onSelect: (String?) -> Unit,
-    onCreate: (String) -> Unit,
+    onCreate: (String, String) -> Unit,
 ) {
     var createOpen by remember { mutableStateOf(false) }
     var nameDraft by remember { mutableStateOf("") }
+    // R72 - the web topic icon-id picker (topic-bar.tsx + icon-ids.ts):
+    // the persisted value is an icon id, rendered as its designed glyph.
+    var iconDraft by remember { mutableStateOf(TOPIC_ICON_DEFAULT) }
     Column(Modifier.background(Color(0xCC18181B))) {
         Row(
             Modifier
@@ -2148,6 +2249,7 @@ private fun MirrorTopicRail(
                 label = "General",
                 count = -1,
                 active = activeTopicId == null,
+                glyph = "LMessageCircle",
                 onClick = { onSelect(null) },
             )
             for (topic in topics) {
@@ -2155,6 +2257,7 @@ private fun MirrorTopicRail(
                     label = topic.name,
                     count = topic.messageCount,
                     active = topic.id == activeTopicId,
+                    glyph = topicGlyphName(topic.emoji),
                     onClick = { onSelect(topic.id) },
                 )
             }
@@ -2173,13 +2276,36 @@ private fun MirrorTopicRail(
             }
         }
         if (createOpen) {
-            Row(
+            Column(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    for (icon in TOPIC_ICON_IDS) {
+                        val active = icon == iconDraft
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(if (active) MirrorArt.Accent else MirrorArt.White7)
+                                .clickable { iconDraft = icon },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon(topicGlyphName(icon) ?: "LMessageCircle", tint = if (active) Color.White else MirrorArt.TextSoft, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                 BasicTextField(
                     value = nameDraft,
                     onValueChange = { nameDraft = it },
@@ -2206,12 +2332,14 @@ private fun MirrorTopicRail(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
                         .clickable(enabled = nameDraft.isNotBlank()) {
-                            onCreate(nameDraft.trim())
+                            onCreate(nameDraft.trim(), iconDraft)
                             nameDraft = ""
+                            iconDraft = TOPIC_ICON_DEFAULT
                             createOpen = false
                         }
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                 )
+                }
             }
         }
         Box(
@@ -2223,9 +2351,30 @@ private fun MirrorTopicRail(
     }
 }
 
+/**
+ * R72 - the web topic icon-id registry (icon-ids.ts TOPIC_ICON_IDS +
+ * topicIconId()): the wire carries the id, each surface renders its own
+ * glyph. Unknown/stale ids resolve to the default (web registry contract).
+ */
+private val TOPIC_ICON_IDS = listOf("chat", "palette", "rocket", "brain", "confetti", "wrench", "pin", "coffee")
+private const val TOPIC_ICON_DEFAULT = "chat"
+
+/** Topic icon id -> native lucide glyph (web TOPIC_ICON_GLYPHS mapping). */
+internal fun topicGlyphName(value: String?): String? = when (value) {
+    "chat" -> "LMessageCircle"
+    "palette" -> "LPalette"
+    "rocket" -> "LRocket"
+    "brain" -> "LBrain"
+    "confetti" -> "LPartyPopper"
+    "wrench" -> "LWrench"
+    "pin" -> "LPin"
+    "coffee" -> "LCoffee"
+    else -> null
+}
+
 /** One topic chip (web h-9 rounded-full px-3 12.5px semibold, amber active). */
 @Composable
-private fun MirrorTopicChip(label: String, count: Int, active: Boolean, onClick: () -> Unit) {
+private fun MirrorTopicChip(label: String, count: Int, active: Boolean, glyph: String?, onClick: () -> Unit) {
     Row(
         Modifier
             .height(36.dp)
@@ -2244,6 +2393,10 @@ private fun MirrorTopicChip(label: String, count: Int, active: Boolean, onClick:
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // R72 - persisted topic icon glyph (web TopicIconGlyph)
+        if (glyph != null) {
+            MirrorLucideIcon(glyph, tint = if (active) Color.White else MirrorArt.TextSoft, modifier = Modifier.size(12.dp))
+        }
         Text(
             label,
             color = if (active) Color(0xFFFFFFFF) else MirrorArt.TextSoft,
@@ -2260,6 +2413,257 @@ private fun MirrorTopicChip(label: String, count: Int, active: Boolean, onClick:
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
             )
+        }
+    }
+}
+
+/**
+ * R72 - the DM safety number sheet from the room kebab row (web safety
+ * sheet via chat-room.tsx setSafetyOpen): renders the REAL 60-digit safety
+ * number from /api/users/{id}/safety and verify/unverify on the same wire.
+ * Mirrors the info-page ENCRYPTION section behaviour (MirrorRoomInfoPage).
+ */
+@Composable
+private fun MirrorRoomSafetySheet(
+    repository: PulseRepository,
+    peerId: String,
+    onDismiss: () -> Unit,
+) {
+    var state by remember { mutableStateOf<app.pulse.domain.model.SafetyState?>(null) }
+    var failed by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var reloadKey by remember { mutableStateOf(0) }
+
+    LaunchedEffect(reloadKey) {
+        failed = false
+        state = runCatching { repository.safetyState(peerId).getOrThrow() }.getOrNull()
+        if (state == null) failed = true
+    }
+
+    fun toggle(verify: Boolean) {
+        if (busy) return
+        busy = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val next = runCatching {
+                if (verify) repository.verifyPeer(peerId).getOrThrow() else repository.unverifyPeer(peerId).getOrThrow()
+            }.getOrNull()
+            withContext(Dispatchers.Main) {
+                busy = false
+                if (next != null) state = next
+            }
+        }
+    }
+
+    MirrorSheet(title = "Safety number", onDismiss = onDismiss) {
+        MirrorSheetScroll {
+            when {
+                failed -> Text(
+                    "Could not load the safety number",
+                    color = MirrorArt.Red, fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth().clickable { reloadKey++ }.padding(vertical = 16.dp),
+                    textAlign = TextAlign.Center,
+                )
+                state == null -> Text(
+                    "Loading...",
+                    color = MirrorArt.Faint, fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    textAlign = TextAlign.Center,
+                )
+                else -> {
+                    val loaded = state!!
+                    Text(
+                        "Verify this account's safety number to confirm the end-to-end encryption identity.",
+                        color = MirrorArt.Dim, fontSize = 12.sp, lineHeight = 17.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    )
+                    Text(
+                        loaded.safetyNumber,
+                        color = MirrorArt.Text,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 20.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp))
+                                .background(if (loaded.verified) MirrorArt.White7 else MirrorArt.Accent)
+                                .clickable(enabled = !busy && !loaded.verified) { toggle(true) }
+                                .padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                        ) {
+                            MirrorLucideIcon("LShieldCheck", tint = if (loaded.verified) MirrorArt.Accent2 else Color.White, modifier = Modifier.size(16.dp))
+                            Text(
+                                if (loaded.verified) "Verified" else "Verify",
+                                color = if (loaded.verified) MirrorArt.Accent2 else Color.White,
+                                fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Row(
+                            Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp))
+                                .background(MirrorArt.White7)
+                                .clickable(enabled = !busy && loaded.verified) { toggle(false) }
+                                .padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                        ) {
+                            MirrorLucideIcon("LEyeOff", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))
+                            Text("Unverify", color = MirrorArt.TextSoft, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * R72 - the schedule-message composer (web /schedule palette entry + drawer,
+ * chat-room.tsx scheduleSend): drafts a message with a real future time and
+ * POSTs /api/conversations/{id}/scheduled via the repository - the relay
+ * sends itself later. The current composer draft rides in as the default.
+ */
+@Composable
+private fun MirrorScheduleComposerSheet(
+    repository: PulseRepository,
+    conversationId: String,
+    initialDraft: String,
+    onConsumedDraft: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var body by remember { mutableStateOf(initialDraft) }
+    var customWhen by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var done by remember { mutableStateOf(false) }
+
+    fun parseWhen(iso: String): java.time.Instant? = runCatching {
+        java.time.LocalDateTime.parse(iso).atZone(java.time.ZoneId.systemDefault()).toInstant()
+    }.getOrNull()
+
+    fun scheduleAt(whenIso: String?) {
+        if (busy) return
+        val text = body.trim()
+        if (text.isEmpty()) {
+            error = "Write the message first"
+            return
+        }
+        val instant = if (whenIso != null) {
+            parseWhen(whenIso)
+        } else {
+            parseWhen(customWhen.trim())
+        }
+        if (instant == null) {
+            error = "Use the YYYY-MM-DD HH:MM format"
+            return
+        }
+        if (!instant.isAfter(java.time.Instant.now())) {
+            error = "Pick a time in the future"
+            return
+        }
+        error = null
+        busy = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val ok = runCatching {
+                repository.scheduleMessage(conversationId, text, instant.toString()).getOrThrow()
+            }.isSuccess
+            withContext(Dispatchers.Main) {
+                busy = false
+                if (ok) {
+                    done = true
+                    onConsumedDraft()
+                    onDismiss()
+                } else {
+                    error = "Could not schedule - try again"
+                }
+            }
+        }
+    }
+
+    MirrorSheet(title = "Schedule message", onDismiss = onDismiss) {
+        MirrorSheetScroll {
+            BasicTextField(
+                value = body,
+                onValueChange = { body = it },
+                textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp, lineHeight = 18.sp),
+                cursorBrush = SolidColor(MirrorArt.Accent2),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MirrorArt.White7)
+                    .padding(horizontal = 10.dp, vertical = 10.dp),
+                decorationBox = { inner ->
+                    if (body.isBlank()) {
+                        Text("Message to send later", color = MirrorArt.Faint, fontSize = 13.sp)
+                    }
+                    inner()
+                },
+            )
+            Text(
+                "QUICK TIMES",
+                color = MirrorArt.Faint, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (preset in listOf("In 1 hour" to java.time.LocalDateTime.now().plusHours(1).withSecond(0).withNano(0), "Tonight 20:00" to java.time.LocalDate.now().atTime(20, 0), "Tomorrow 09:00" to java.time.LocalDate.now().plusDays(1).atTime(9, 0))) {
+                    Text(
+                        preset.first,
+                        color = MirrorArt.TextSoft, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(MirrorArt.White7)
+                            .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(50))
+                            .clickable { scheduleAt(preset.second.toString()) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+            }
+            Text(
+                "OR PICK EXACTLY (YYYY-MM-DD HH:MM)",
+                color = MirrorArt.Faint, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp),
+            )
+            BasicTextField(
+                value = customWhen,
+                onValueChange = { customWhen = it },
+                singleLine = true,
+                textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
+                cursorBrush = SolidColor(MirrorArt.Accent2),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MirrorArt.White7)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                decorationBox = { inner ->
+                    if (customWhen.isBlank()) {
+                        Text(java.time.LocalDateTime.now().plusDays(2).withSecond(0).withNano(0).toString().take(16), color = MirrorArt.Faint, fontSize = 13.sp)
+                    }
+                    inner()
+                },
+            )
+            if (error != null) {
+                Text(error, color = MirrorArt.Red, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 12.dp).height(46.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MirrorArt.Accent)
+                    .clickable(enabled = !busy) { scheduleAt(null) }
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+            ) {
+                MirrorLucideIcon("LCalendarClock", tint = Color.White, modifier = Modifier.size(16.dp))
+                Text(
+                    if (busy) "Scheduling..." else "Schedule message",
+                    color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }

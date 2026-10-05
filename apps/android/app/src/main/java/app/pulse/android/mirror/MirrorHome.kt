@@ -38,7 +38,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +57,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.pulse.domain.model.MessageHit
+import app.pulse.domain.repository.PulseRepository
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -140,6 +146,8 @@ internal fun MirrorAvatar(
     sizeDp: Int,
     cornerDp: Int,
     modifier: Modifier = Modifier,
+    /** Real uploaded photo path (bare filename or "/api/uploads/...") - null = initials. */
+    photo: String? = null,
 ) {
     Box(modifier = modifier.size(sizeDp.dp)) {
         Box(
@@ -148,13 +156,23 @@ internal fun MirrorAvatar(
                 .clip(RoundedCornerShape(cornerDp.dp))
                 .background(MirrorArt.avatarBrush(color, isGroup, groupId)),
         ) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                // web: DM initials round(size*0.36), group round(size*0.34)
-                Text(
-                    text = MirrorArt.initials(name),
-                    color = Color.White,
-                    fontSize = (sizeDp * if (isGroup) 0.34f else 0.36f).sp,
-                    fontWeight = FontWeight.SemiBold,
+            if (photo.isNullOrBlank()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    // web: DM initials round(size*0.36), group round(size*0.34)
+                    Text(
+                        text = MirrorArt.initials(name),
+                        color = Color.White,
+                        fontSize = (sizeDp * if (isGroup) 0.34f else 0.36f).sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            } else {
+                // web UserAvatar/GroupAvatar: the photo covers the whole tile
+                AsyncImage(
+                    model = mirrorUploadHttp(photo),
+                    contentDescription = "$name profile photo",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         }
@@ -195,6 +213,9 @@ internal fun MirrorHome(
     onOpenConversation: (ConversationRow) -> Unit,
     onRowOptions: (ConversationRow) -> Unit,
     typingIds: Set<String> = emptySet(),
+    // R72 - server message search (web /api/search rail in the home search)
+    repository: PulseRepository? = null,
+    onOpenConversationId: (String) -> Unit = {},
 ) {
     val maxW = 560.dp
     val unreadTotal = conversations.sumOf { it.unread }
@@ -404,6 +425,71 @@ internal fun MirrorHome(
                         color = MirrorArt.Faint,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp, start = 32.dp, end = 32.dp),
+                    )
+                }
+            }
+        }
+        // R72 - MESSAGES section: the web home search ALSO queries the real
+        // /api/search endpoint and renders message hits (chats-tab 1880-1899)
+        if (searchQuery.length >= 2 && repository != null) {
+            var hits by remember(searchQuery) { mutableStateOf<List<MessageHit>?>(null) }
+            LaunchedEffect(searchQuery) {
+                kotlinx.coroutines.delay(250)
+                hits = runCatching { repository.searchMessages(searchQuery).getOrNull() }.getOrNull()
+            }
+            val loaded = hits
+            if (loaded != null && loaded.isNotEmpty()) {
+                item {
+                    Text(
+                        "MESSAGES",
+                        color = MirrorArt.Faint,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                        modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 4.dp),
+                    )
+                }
+                items(loaded.take(12), key = { "hit-" + it.id }) { hit ->
+                    Column(
+                        Modifier
+                            .widthIn(max = maxW)
+                            .fillMaxWidth()
+                            .clickable { onOpenConversationId(hit.conversationId) }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                hit.senderName,
+                                color = MirrorArt.Text,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                hit.conversationName,
+                                color = MirrorArt.Faint,
+                                fontSize = 10.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Text(
+                            hit.content,
+                            color = MirrorArt.Dim,
+                            fontSize = 12.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            } else if (loaded != null && loaded.isEmpty() && shown.isEmpty()) {
+                item {
+                    Text(
+                        "No messages found for \u201C$searchQuery\u201D",
+                        color = MirrorArt.Faint,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(start = 16.dp, top = 8.dp),
                     )
                 }
             }

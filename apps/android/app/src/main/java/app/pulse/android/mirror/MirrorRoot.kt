@@ -91,7 +91,21 @@ fun MirrorRoot(
     var stories by remember { mutableStateOf<List<StoryGroup>>(emptyList()) }
     var folders by remember { mutableStateOf<List<MirrorFolderChip>>(emptyList()) }
 
+    // R72 - the settings "Default list filter" row now DRIVES this filter
+    // (web chats-tab.tsx:795 applies the persisted listFilter on load).
     var filter by remember { mutableStateOf(MirrorFilter.All) }
+    var filterSeeded by remember { mutableStateOf(false) }
+    val savedListFilter by session.chatsListFilter.collectAsState()
+    LaunchedEffect(savedListFilter) {
+        if (!filterSeeded) {
+            filterSeeded = true
+            filter = when (savedListFilter) {
+                "unread" -> MirrorFilter.Unread
+                "groups" -> MirrorFilter.Groups
+                else -> MirrorFilter.All
+            }
+        }
+    }
     var activeFolderId by remember { mutableStateOf<String?>(null) }
     var searching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -106,7 +120,6 @@ fun MirrorRoot(
     var viewingStory by remember { mutableStateOf<StoryGroup?>(null) }
 
     // R64 - kebab destinations + row options (all REAL repository-backed)
-    var contactsOpen by remember { mutableStateOf(false) }
     var groupOpen by remember { mutableStateOf(false) }
     var joinOpen by remember { mutableStateOf(false) }
     var archivedOpen by remember { mutableStateOf(false) }
@@ -117,6 +130,8 @@ fun MirrorRoot(
     // R70 - full room-info page + the classic group manager it hands off to
     var roomInfoFor by remember { mutableStateOf<Conversation?>(null) }
     var managerFor by remember { mutableStateOf<Conversation?>(null) }
+    // R72 - the web #/user/:id profile page (member taps, contacts rows)
+    var userPageFor by remember { mutableStateOf<String?>(null) }
 
     // R71 - the web SettingsScreen + profile sub-surfaces (profile-tab.tsx)
     var settingsOpen by remember { mutableStateOf(false) }
@@ -173,8 +188,9 @@ fun MirrorRoot(
         }
     }
 
-    // Web parity: the main list EXCLUDES archived chats (they live in the menu).
-    val activeConversations = conversations.filter { !it.isArchived }
+    // Web parity: the main list EXCLUDES archived chats (they live in the menu)
+    // and the Note to Self chat (web R24-a - isSelf rows never render at home).
+    val activeConversations = conversations.filter { !it.isArchived && !it.isSelf }
     val archivedConversations = conversations.filter { it.isArchived }
 
     fun openById(conversationId: String) {
@@ -274,8 +290,21 @@ fun MirrorRoot(
                             onOpenSearch = { searching = true },
                             onCamera = { composerOpen = true },
                             onKebab = { kebabOpen = true },
+                            // R72 - server message search rides the same repository
+                            repository = repository,
+                            onOpenConversationId = { openById(it) },
                             filter = filter,
-                            onFilter = { filter = it },
+                            onFilter = {
+                                filter = it
+                                // R72 - persist the choice so Settings shows the live value
+                                session.setChatsListFilter(
+                                    when (it) {
+                                        MirrorFilter.Unread -> "unread"
+                                        MirrorFilter.Groups -> "groups"
+                                        else -> "all"
+                                    },
+                                )
+                            },
                             activeFolderId = activeFolderId,
                             onFolder = { activeFolderId = it },
                             onStory = { card ->
@@ -303,6 +332,7 @@ fun MirrorRoot(
                             repository = repository,
                             viewerId = viewerId.orEmpty(),
                             onOpenConversation = { openById(it) },
+                            onOpenProfile = { userPageFor = it },
                             onGoProfile = { tab = MirrorTab.Profile },
                             onNewGroup = { groupOpen = true },
                             onAdd = { newChatOpen = true },
@@ -378,6 +408,7 @@ fun MirrorRoot(
                         selfOpen = conversations.any { it.isSelf },
                         mentionCount = mentionCount,
                         channelCount = activeConversations.count { it.isChannel },
+                        archivedUnread = archivedConversations.sumOf { it.unreadCount },
                         onSearch = {
                             tab = MirrorTab.Chats
                             searching = true
@@ -411,7 +442,12 @@ fun MirrorRoot(
                         onFolders = { foldersOpen = true },
                         // web kebab Saved opens the saved-messages library
                         onSaved = { profileSavedOpen = true },
-                        onStories = { composerOpen = true },
+                        // web openMyStatus: open the viewer when the viewer has
+                        // an active story, otherwise the composer (You card parity)
+                        onStories = {
+                            val mine = stories.firstOrNull { it.mine }
+                            if (mine != null) viewingStory = mine else composerOpen = true
+                        },
                         // R71 - Settings + Appearance open the REAL settings screen
                         onSettings = { settingsOpen = true },
                         onAppearance = { settingsOpen = true },
@@ -438,13 +474,6 @@ fun MirrorRoot(
                                 stories = repository.stories().getOrDefault(emptyList())
                             }
                         },
-                    )
-                }
-                if (contactsOpen) {
-                    MirrorContactsSheet(
-                        repository = repository,
-                        onOpened = { contactsOpen = false; openById(it) },
-                        onDismiss = { contactsOpen = false },
                     )
                 }
                 if (groupOpen) {
@@ -499,12 +528,17 @@ fun MirrorRoot(
                 }
                 if (foldersOpen) {
                     MirrorFoldersSheet(
-                        folders = folders,
+                        repository = repository,
+                        conversations = conversations,
                         activeFolderId = activeFolderId,
                         onPick = {
                             activeFolderId = it
                             foldersOpen = false
                             tab = MirrorTab.Chats
+                        },
+                        onChanged = {
+                            // the rail rides its 5s refresh; nudge the list once for snappiness
+                            CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
                         },
                         onDismiss = { foldersOpen = false },
                     )
@@ -546,6 +580,10 @@ fun MirrorRoot(
                     managerFor = roomInfoFor
                     roomInfoFor = null
                 },
+                onOpenUser = {
+                    roomInfoFor = null
+                    userPageFor = it
+                },
             )
         }
         if (managerFor != null) {
@@ -562,6 +600,25 @@ fun MirrorRoot(
                     CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
                 },
                 onDismiss = { managerFor = null },
+                onOpenUser = {
+                    managerFor = null
+                    userPageFor = it
+                },
+            )
+        }
+        // R72 - the web #/user/:id full-screen profile page (topmost overlay)
+        if (userPageFor != null) {
+            MirrorUserPage(
+                userId = userPageFor!!,
+                viewerId = viewerId.orEmpty(),
+                repository = repository,
+                conversations = conversations,
+                presence = presence,
+                onDismiss = { userPageFor = null },
+                onOpenConversation = { conversationId ->
+                    userPageFor = null
+                    openById(conversationId)
+                },
             )
         }
         // R71 - the web SettingsScreen overlay (root + 9 sections)
@@ -743,6 +800,10 @@ private fun MirrorRoomScaffold(
         phrases = phrases,
         muted = muted,
         ttlSeconds = ttlSeconds,
+        // R72 - channel truth: broadcast rooms carry the Channel pill and the
+        // locked composer for non-admin viewers (web broadcastLocked parity)
+        isBroadcast = convo.kind == Conversation.Kind.CHANNEL,
+        avatarPath = convo.avatar,
         onBack = onClose,
         onSend = { text ->
             if (viewerId.isNotBlank() && text.isNotBlank()) {
@@ -856,6 +917,11 @@ private fun MirrorPipChat(
 ) {
     val messages by repository.observeMessages(convo.id).collectAsState(initial = emptyList<Message>())
     var draft by remember { mutableStateOf("") }
+    // R72 - channel truth: the pip window cannot send into a broadcast room
+    // either (the server would 403 - mirror the locked composer honestly)
+    val pipLocked = convo.isGroupish &&
+        convo.kind == Conversation.Kind.CHANNEL &&
+        convo.members.none { it.id == viewerId && it.role == "admin" }
     Column(
         modifier
             .width(272.dp)
@@ -941,6 +1007,17 @@ private fun MirrorPipChat(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
         ) {
+            if (pipLocked) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MirrorArt.White7)
+                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                ) {
+                    MirrorLucideIcon("LLock", tint = MirrorArt.Accent2, modifier = Modifier.size(14.dp))
+                    Text("Only admins can post", color = MirrorArt.Dim, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            } else {
             BasicTextField(
                 value = draft,
                 onValueChange = { draft = it },
@@ -977,6 +1054,7 @@ private fun MirrorPipChat(
                     }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
             )
+            }
         }
     }
 }

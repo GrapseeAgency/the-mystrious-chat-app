@@ -597,6 +597,8 @@ internal fun MirrorRoomInfoPage(
     onChanged: () -> Unit,
     onDismiss: () -> Unit,
     onOpenManager: () -> Unit,
+    // R72 - the web #/user/:id page (member row tap = openProfileForUser)
+    onOpenUser: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -1133,7 +1135,9 @@ internal fun MirrorRoomInfoPage(
                                 val photo = meta?.photo
                                 if (photo != null) {
                                     AsyncImage(
-                                        model = PulseEndpoints.http("/api/uploads/$photo"),
+                                        // stored photo paths are "/api/uploads/<file>" (or a
+                                        // bare legacy filename) - never double-prefix
+                                        model = mirrorUploadHttp(photo),
                                         contentDescription = "Group photo",
                                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                         modifier = Modifier
@@ -1861,6 +1865,7 @@ internal fun MirrorRoomInfoPage(
                                     rolePendingHere = rolePendingId == member.id,
                                     demoteArmed = demoteArmed,
                                     removeArmed = removeArmed,
+                                    onOpenUser = { onOpenUser(member.id) },
                                     onPromote = { setMemberRole(member.id, true) },
                                     onDemote = { tapConfirm("demote", member.id) { setMemberRole(member.id, false) } },
                                     onRemove = { tapConfirm("remove", member.id) { kickMember(member.id) } },
@@ -3413,6 +3418,7 @@ private fun InfoMemberRow(
     rolePendingHere: Boolean,
     demoteArmed: Boolean,
     removeArmed: Boolean,
+    onOpenUser: () -> Unit,
     onPromote: () -> Unit,
     onDemote: () -> Unit,
     onRemove: () -> Unit,
@@ -3421,6 +3427,7 @@ private fun InfoMemberRow(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onOpenUser)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

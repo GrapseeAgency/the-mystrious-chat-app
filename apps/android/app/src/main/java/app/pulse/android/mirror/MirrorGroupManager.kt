@@ -155,6 +155,8 @@ internal fun MirrorGroupManagerSheet(
     presence: Set<String>,
     onChanged: () -> Unit,
     onDismiss: () -> Unit,
+    // R72 - the web #/user/:id page (member row tap = openProfileForUser)
+    onOpenUser: (String) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -318,6 +320,7 @@ internal fun MirrorGroupManagerSheet(
                         viewerId = viewerId,
                         isAdmin = isAdmin,
                         onManage = { memberAction = it },
+                        onOpenUser = onOpenUser,
                     )
                     Spacer(Modifier.height(24.dp))
                     if (note.isNotEmpty()) {
@@ -1392,6 +1395,7 @@ private fun MgrMembersCard(
     viewerId: String,
     isAdmin: Boolean,
     onManage: (app.pulse.domain.model.ConversationMember) -> Unit,
+    onOpenUser: (String) -> Unit,
 ) {
     val sorted = remember(members) {
         members.sortedWith(
@@ -1449,6 +1453,7 @@ private fun MgrMembersCard(
                     online = presence.contains(member.id),
                     isAdmin = isAdmin,
                     isTargetAdmin = member.role == "admin",
+                    onOpenUser = { onOpenUser(member.id) },
                     onManage = { onManage(member) },
                 )
             }
@@ -1465,6 +1470,7 @@ private fun MgrMemberRow(
     online: Boolean,
     isAdmin: Boolean,
     isTargetAdmin: Boolean,
+    onOpenUser: () -> Unit,
     onManage: () -> Unit,
 ) {
     Row(
@@ -1472,6 +1478,7 @@ private fun MgrMemberRow(
             .fillMaxWidth()
             .heightIn(min = 60.dp)
             .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onOpenUser)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

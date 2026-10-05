@@ -136,6 +136,7 @@ internal fun MirrorProfile(
                 MirrorCoverHeader(
                     hasCover = profile?.coverImage != null,
                     coverBusy = coverBusy,
+                    coverPath = profile?.coverImage,
                     onKebab = { kebabOpen = true },
                     onAddCover = {
                         pickCover.launch(
@@ -182,6 +183,9 @@ internal fun MirrorProfile(
                                         showPresence = true,
                                         sizeDp = 84,
                                         cornerDp = 42,
+                                        // R72 - the uploaded avatar photo renders
+                                        // (web UserAvatar avatar={me.avatar})
+                                        photo = profile?.avatar,
                                     )
                                 }
                             }
@@ -250,10 +254,11 @@ internal fun MirrorProfile(
                             }
                         }
 
-                        if (!profile?.about.isNullOrBlank()) {
-                            Spacer(Modifier.height(10.dp))
-                            Text(profile?.about.orEmpty(), color = MirrorArt.TextSoft, fontSize = 14.sp, lineHeight = 18.sp)
-                        }
+                        Text(
+                            // web: "No bio yet" placeholder (profile-tab.tsx:753)
+                            profile?.about?.trim()?.ifBlank { null } ?: "No bio yet",
+                            color = MirrorArt.TextSoft, fontSize = 14.sp, lineHeight = 18.sp,
+                        )
 
                         Spacer(Modifier.height(14.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -391,6 +396,7 @@ internal fun MirrorProfile(
 private fun MirrorCoverHeader(
     hasCover: Boolean,
     coverBusy: Boolean,
+    coverPath: String? = null,
     onKebab: () -> Unit,
     onAddCover: () -> Unit,
     onRemoveCover: () -> Unit,
@@ -409,6 +415,16 @@ private fun MirrorCoverHeader(
                 drawLine(Color(0x0DFFFFFF), Offset(0f, y), Offset(size.width, y), 1f)
                 y += 6f
             }
+        }
+        // R72 - the uploaded cover picture renders over the palette wash
+        // (web profile-tab.tsx 609-615 renders me.coverImage the same way)
+        if (hasCover && !coverPath.isNullOrBlank()) {
+            coil.compose.AsyncImage(
+                model = mirrorUploadHttp(coverPath),
+                contentDescription = "Profile cover picture",
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
         // the signal line - hairline bright edge grounding the cover
         Box(

@@ -62,6 +62,7 @@ internal fun MirrorContacts(
     repository: PulseRepository,
     viewerId: String,
     onOpenConversation: (String) -> Unit,
+    onOpenProfile: (String) -> Unit,
     onGoProfile: () -> Unit,
     onNewGroup: () -> Unit,
     onAdd: () -> Unit,
@@ -288,6 +289,8 @@ internal fun MirrorContacts(
                                     person = person,
                                     online = person.id in onlineIds,
                                     sharesDm = dmByUserId.containsKey(person.id),
+                                    // row tap = profile page (web #/user/:id), Chat chip = DM
+                                    onProfile = { onOpenProfile(person.id) },
                                     onPress = {
                                         val existing = dmByUserId[person.id]
                                         if (existing != null) {
@@ -317,12 +320,12 @@ private fun indexLetterOf(name: String): String {
 
 /** PersonRow: 44dp avatar + presence halo, name/@handle, Chat chip, divider. */
 @Composable
-private fun MirrorPersonRow(person: User, online: Boolean, sharesDm: Boolean, onPress: () -> Unit) {
+private fun MirrorPersonRow(person: User, online: Boolean, sharesDm: Boolean, onProfile: () -> Unit, onPress: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onPress)
+                .clickable(onClick = onProfile)
                 .padding(horizontal = 8.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -386,6 +389,7 @@ private fun MirrorPersonRow(person: User, online: Boolean, sharesDm: Boolean, on
                                 .clip(CircleShape)
                                 .background(Color(0x1AF59E0B))
                                 .border(1.dp, Color(0x33F59E0B), CircleShape)
+                                .clickable(onClick = onPress)
                                 .padding(horizontal = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),

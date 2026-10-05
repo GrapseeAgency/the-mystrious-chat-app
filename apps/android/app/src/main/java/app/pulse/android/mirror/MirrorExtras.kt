@@ -3,6 +3,7 @@ package app.pulse.android.mirror
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -56,10 +57,12 @@ import app.pulse.domain.model.CallLogEntry
 import app.pulse.domain.model.Channel
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
+import app.pulse.domain.model.FolderSummary
 import app.pulse.domain.model.MentionItem
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.core.PulseEndpoints
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -72,6 +75,15 @@ import kotlinx.coroutines.launch
  * the text-story composer. Every tap does something against the gateway -
  * zero dead controls, zero mock data.
  */
+
+/**
+ * Absolute gateway URL for a stored upload path. The wire stores photos as
+ * "/api/uploads/<file>" (web uploads) or a bare "<file>" (older rows), so
+ * the prefix is applied only when missing - the old double-prefix made every
+ * web-uploaded photo render blank inside the app.
+ */
+internal fun mirrorUploadHttp(path: String): String =
+    PulseEndpoints.http(if (path.startsWith("/api/uploads/")) path else "/api/uploads/$path")
 
 /** Calls tab: the live call log, direction/status/duration per row. */
 @Composable
@@ -358,6 +370,7 @@ internal fun MirrorKebabMenu(
     selfOpen: Boolean,
     mentionCount: Int,
     channelCount: Int,
+    archivedUnread: Int = 0,
     onSearch: () -> Unit,
     onNewChat: () -> Unit,
     onNewGroup: () -> Unit,
@@ -405,7 +418,17 @@ internal fun MirrorKebabMenu(
             MirrorKebabLabel("Browse")
             MirrorKebabItem("LBookUser", "Contacts", onClick = { onDismiss(); onContacts() })
             MirrorKebabItem("LPhone", "Calls", onClick = { onDismiss(); onCalls() })
-            MirrorKebabItem("LArchive", "Archived", trailing = archivedCount.toString(), onClick = { onDismiss(); onArchived() })
+            // web: Archived trailing shows the unread sum when one exists
+            MirrorKebabItem(
+                "LArchive",
+                "Archived",
+                trailing = when {
+                    archivedUnread > 0 -> "${if (archivedUnread > 99) 99 else archivedUnread} unread"
+                    archivedCount > 0 -> archivedCount.toString()
+                    else -> ""
+                },
+                onClick = { onDismiss(); onArchived() },
+            )
             MirrorKebabItem("LNotebookPen", "Note to Self", trailing = if (selfOpen) "Open" else "New", onClick = { onDismiss(); onNoteToSelf() })
             MirrorKebabItem("LAtSign", "Mentions", trailing = if (mentionCount > 0) (if (mentionCount > 99) "99+" else mentionCount.toString()) else "", onClick = { onDismiss(); onMentions() })
             MirrorKebabItem("LRadio", "Channels", trailing = channelCount.toString(), onClick = { onDismiss(); onChannels() })
@@ -1177,35 +1200,357 @@ internal fun MirrorMentionsSheet(
 /** Folders: pick a live folder filter (tap again to clear). */
 @Composable
 internal fun MirrorFoldersSheet(
-    folders: List<MirrorFolderChip>,
+    repository: PulseRepository,
+    conversations: List<Conversation>,
     activeFolderId: String?,
     onPick: (String?) -> Unit,
+    onChanged: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // R72 - the web FoldersSheet parity (folders-sheet.tsx): create with the
+    // 8-icon registry, rename, delete (2-tap, chats stay), membership editor
+    // (FULL ordered PUT replace) - every action on the real /api/folders wire.
+    var folders by remember { mutableStateOf<List<FolderSummary>?>(null) }
+    var loadFailed by remember { mutableStateOf(false) }
+    var reloadKey by remember { mutableStateOf(0) }
+    var createOpen by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+    var newIcon by remember { mutableStateOf("folder") }
+    var createBusy by remember { mutableStateOf(false) }
+    var renamingId by remember { mutableStateOf<String?>(null) }
+    var renameDraft by remember { mutableStateOf("") }
+    var confirmDeleteId by remember { mutableStateOf<String?>(null) }
+    var editingFolder by remember { mutableStateOf<FolderSummary?>(null) }
+    var notice by remember { mutableStateOf("") }
+
+    LaunchedEffect(reloadKey) {
+        loadFailed = false
+        val page = runCatching { repository.folders().getOrThrow() }.getOrNull()
+        if (page == null) {
+            loadFailed = true
+        } else {
+            folders = page
+        }
+    }
+
     MirrorSheet(title = "Folders", onDismiss = onDismiss) {
         MirrorSheetScroll {
-            if (folders.isEmpty()) {
-                Text("No folders yet - create them on the web and they appear here", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+            if (editingFolder != null) {
+                // membership editor - checkbox list of every conversation,
+                // Save runs the FULL replace PUT the web uses
+                val folder = editingFolder!!
+                val selected = remember(folder.id) { folder.conversationIds.toMutableSet() }
+                Text(
+                    "Chats in \u201C${folder.name}\u201D",
+                    color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+                for (convo in conversations.filter { !it.isSelf }) {
+                    val checked = convo.id in selected
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (checked) MirrorArt.ChipActive else Color.Transparent)
+                            .clickable {
+                                if (checked) selected.remove(convo.id) else selected.add(convo.id)
+                            }
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        MirrorLucideIcon(if (checked) "LCheck" else "LFolder", tint = if (checked) MirrorArt.Accent2 else MirrorArt.Faint, modifier = Modifier.size(16.dp))
+                        Text(convo.title, color = MirrorArt.Text, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    Text(
+                        "Cancel",
+                        color = MirrorArt.Dim, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MirrorArt.White7)
+                            .clickable { editingFolder = null }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                    Text(
+                        "Save chats",
+                        color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MirrorArt.Accent)
+                            .clickable {
+                                CoroutineScope(Dispatchers.IO).launch {
+                                    val ok = runCatching {
+                                        repository.setFolderConversations(folder.id, selected.toList()).getOrThrow()
+                                    }.isSuccess
+                                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                        if (ok) {
+                                            editingFolder = null
+                                            notice = "Folder chats saved"
+                                            reloadKey++
+                                            onChanged()
+                                        } else {
+                                            notice = "Could not save the folder chats"
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            } else {
+            if (folders == null) {
+                if (loadFailed) {
+                    Text(
+                        "Could not load folders - tap to retry",
+                        color = MirrorArt.Red, fontSize = 12.sp,
+                        modifier = Modifier.fillMaxWidth().clickable { reloadKey++ }.padding(vertical = 12.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                } else {
+                    Text("Loading...", color = MirrorArt.Faint, fontSize = 12.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), textAlign = TextAlign.Center)
+                }
             }
-            for (folder in folders) {
+            val loaded = folders
+            if (loaded != null && loaded.isEmpty()) {
+                Text("No folders yet - create your first one below", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+            }
+            for (folder in loaded ?: emptyList()) {
                 val active = folder.id == activeFolderId
-                Row(
+                if (renamingId == folder.id) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        BasicTextField(
+                            value = renameDraft,
+                            onValueChange = { if (it.length <= 24) renameDraft = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
+                            cursorBrush = SolidColor(MirrorArt.Accent2),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MirrorArt.White7)
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                        )
+                        Text(
+                            "Save",
+                            color = MirrorArt.Accent2, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable(enabled = renameDraft.isNotBlank()) {
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        val ok = runCatching {
+                                            repository.updateFolder(folder.id, renameDraft.trim(), null, null).getOrThrow()
+                                        }.isSuccess
+                                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                            if (ok) {
+                                                renamingId = null
+                                                notice = "Renamed to \u201C${renameDraft.trim()}\u201D"
+                                                reloadKey++
+                                                onChanged()
+                                            } else {
+                                                notice = "Could not rename the folder"
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                        )
+                    }
+                } else {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (active) MirrorArt.ChipActive else Color.Transparent)
+                            .clickable { onPick(if (active) null else folder.id) }
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        MirrorLucideIcon(folderGlyphName(folder.emoji) ?: "LFolder", tint = MirrorArt.Accent2, modifier = Modifier.size(16.dp))
+                        Text(folder.name, color = MirrorArt.Text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        Text(folder.conversationIds.size.toString(), color = MirrorArt.Faint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        // web row kebab: rename / chats / delete
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .clickable { renamingId = folder.id; renameDraft = folder.name },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon("LPenLine", tint = MirrorArt.Faint, modifier = Modifier.size(14.dp))
+                        }
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .clickable { editingFolder = folder },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon("LUsers", tint = MirrorArt.Faint, modifier = Modifier.size(14.dp))
+                        }
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(if (confirmDeleteId == folder.id) MirrorArt.Red else Color.Transparent)
+                                .clickable {
+                                    if (confirmDeleteId == folder.id) {
+                                        confirmDeleteId = null
+                                        CoroutineScope(Dispatchers.IO).launch {
+                                            val ok = runCatching { repository.deleteFolder(folder.id).getOrThrow() }.isSuccess
+                                            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                                if (ok) {
+                                                    notice = "Folder deleted - chats stay in your list"
+                                                    reloadKey++
+                                                    onChanged()
+                                                } else {
+                                                    notice = "Could not delete the folder"
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        confirmDeleteId = folder.id
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon("LTrash2", tint = if (confirmDeleteId == folder.id) Color.White else MirrorArt.Red, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
+            if (!createOpen) {
+                Text(
+                    "+ New folder",
+                    color = MirrorArt.Accent2, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MirrorArt.White7)
+                        .clickable { createOpen = true }
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                    textAlign = TextAlign.Center,
+                )
+            } else {
+                Column(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(if (active) MirrorArt.ChipActive else Color.Transparent)
-                        .clickable { onPick(if (active) null else folder.id) }
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        .background(MirrorArt.White7)
+                        .padding(8.dp),
                 ) {
-                    Text(folder.emoji, fontSize = 16.sp)
-                    Text(folder.name, color = MirrorArt.Text, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                    Text(folder.count.toString(), color = MirrorArt.Faint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    BasicTextField(
+                        value = newName,
+                        onValueChange = { if (it.length <= 24) newName = it },
+                        singleLine = true,
+                        textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
+                        cursorBrush = SolidColor(MirrorArt.Accent2),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MirrorArt.White10)
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        decorationBox = { inner ->
+                            if (newName.isBlank()) {
+                                Text("Folder name (1-24 characters)", color = MirrorArt.Faint, fontSize = 13.sp)
+                            }
+                            inner()
+                        },
+                    )
+                    Text(
+                        "ICON",
+                        color = MirrorArt.Faint, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp,
+                        modifier = Modifier.padding(start = 2.dp, top = 8.dp, bottom = 4.dp),
+                    )
+                    // web FOLDER_ICON_IDS registry - the 8 designed icons
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        for (icon in listOf("folder", "briefcase", "game", "heart", "flame", "target", "music", "brain")) {
+                            val active = icon == newIcon
+                            Box(
+                                Modifier
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(if (active) MirrorArt.Accent else MirrorArt.White10)
+                                    .clickable { newIcon = icon },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                MirrorLucideIcon(folderGlyphName(icon) ?: "LFolder", tint = if (active) Color.White else MirrorArt.TextSoft, modifier = Modifier.size(15.dp))
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
+                        Text(
+                            "Cancel",
+                            color = MirrorArt.Dim, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { createOpen = false; newName = "" }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                        )
+                        Text(
+                            if (createBusy) "Creating..." else "Create folder",
+                            color = if (newName.isNotBlank()) Color.White else MirrorArt.Faint,
+                            fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (newName.isNotBlank() && !createBusy) MirrorArt.Accent else MirrorArt.White10)
+                                .clickable(enabled = newName.isNotBlank() && !createBusy) {
+                                    createBusy = true
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        val created = runCatching {
+                                            repository.createFolder(newName.trim(), newIcon).getOrThrow()
+                                        }.getOrNull()
+                                        kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                            createBusy = false
+                                            if (created != null) {
+                                                notice = "Folder \u201C${created.name}\u201D created"
+                                                newName = ""
+                                                newIcon = "folder"
+                                                createOpen = false
+                                                reloadKey++
+                                                onChanged()
+                                            } else {
+                                                notice = "Could not create the folder"
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                        )
+                    }
                 }
+            }
+            if (notice.isNotEmpty()) {
+                Text(notice, color = MirrorArt.Dim, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+            }
             }
         }
     }
+}
+
+/** Folder icon id -> native lucide glyph (web FOLDER_ICON_GLYPHS mapping). */
+internal fun folderGlyphName(value: String?): String? = when (value) {
+    "folder" -> "LFolder"
+    "briefcase" -> "LBriefcase"
+    "game" -> "LGamepad2"
+    "heart" -> "LHeart"
+    "flame" -> "LFlame"
+    "target" -> "LTarget"
+    "music" -> "LMusic"
+    "brain" -> "LBrain"
+    else -> null
 }
 
 /**
@@ -1258,12 +1603,17 @@ internal fun MirrorRowOptionsSheet(
                                     .background(MirrorArt.White7)
                                     .clickable {
                                         act {
+                                            // R72 fix - the /mute route ONLY accepts the
+                                            // preset strings ("8h"|"1w"|"always"|null); the
+                                            // old ISO timestamps were a silent 400 and the
+                                            // mute never landed (same bug R70 fixed in the
+                                            // room kebab strip).
                                             repository.setMutedUntil(
                                                 conversationId,
                                                 when (choice) {
-                                                    "8h" -> java.time.Instant.ofEpochMilli(System.currentTimeMillis() + 8L * 3_600_000L).toString()
-                                                    "1w" -> java.time.Instant.ofEpochMilli(System.currentTimeMillis() + 7L * 86_400_000L).toString()
-                                                    else -> java.time.Instant.ofEpochMilli(3_252_524_799_999L).toString()
+                                                    "8h" -> "8h"
+                                                    "1w" -> "1w"
+                                                    else -> "always"
                                                 },
                                             )
                                         }
