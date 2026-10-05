@@ -743,13 +743,28 @@ private fun MirrorConversationRow(
 ) {
     val haptics = LocalHapticFeedback.current
     val hasUnread = row.unread > 0 || row.manualUnread
-    // swipe state (web SWIPE_REVEAL_PX 112 / SWIPE_OPEN_THRESHOLD_PX 56)
+    // swipe state (web SWIPE_REVEAL_PX 112 / SWIPE_OPEN_THRESHOLD_PX 56).
+    // Plain offset state + a state-driven settle spring: no suspend calls
+    // inside the drag lambda (it is not a coroutine context).
     val density = LocalDensity.current
     val revealPx = with(density) { 112.dp.toPx() }
     val openThresholdPx = with(density) { 56.dp.toPx() }
-    val dragX = remember(row.id) { Animatable(0f) }
-    val swipeScope = rememberCoroutineScope()
+    var dragOffsetPx by remember(row.id) { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var dragging by remember(row.id) { mutableStateOf(false) }
     var swipeOpen by remember(row.id) { mutableStateOf(false) }
+    val settle by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = when {
+            dragging -> dragOffsetPx
+            swipeOpen -> -revealPx
+            else -> 0f
+        },
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+        ),
+        label = "swipeSettle",
+    )
+    val dragX = if (dragging) dragOffsetPx else settle
     val chipsVisible = swipeOpen && (onPin != null || onArchive != null)
     Box(
         Modifier
@@ -773,8 +788,9 @@ private fun MirrorConversationRow(
                             .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
                             .clickable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                swipeScope.launch { dragX.animateTo(0f) }
                                 swipeOpen = false
+                                dragging = false
+                                dragOffsetPx = 0f
                                 onPin()
                             },
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -798,8 +814,9 @@ private fun MirrorConversationRow(
                             .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
                             .clickable {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                swipeScope.launch { dragX.animateTo(0f) }
                                 swipeOpen = false
+                                dragging = false
+                                dragOffsetPx = 0f
                                 onArchive()
                             },
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -819,21 +836,23 @@ private fun MirrorConversationRow(
         Row(
             Modifier
                 .fillMaxWidth()
-                .offset { androidx.compose.ui.unit.IntOffset(dragX.value.roundToInt(), 0) }
+                .offset { androidx.compose.ui.unit.IntOffset(dragX.roundToInt(), 0) }
                 .pointerInput(row.id) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
-                            val opened = -dragX.value >= openThresholdPx
+                            val opened = -dragOffsetPx >= openThresholdPx
                             swipeOpen = opened
-                            swipeScope.launch { dragX.animateTo(if (opened) -revealPx else 0f) }
+                            dragging = false
+                            dragOffsetPx = 0f
                         },
                         onDragCancel = {
-                            swipeScope.launch { dragX.animateTo(if (swipeOpen) -revealPx else 0f) }
+                            dragging = false
+                            dragOffsetPx = 0f
                         },
                     ) { change, dragAmount ->
                         change.consume()
-                        val next = (dragX.value + dragAmount).coerceIn(-revealPx, 0f)
-                        dragX.snapTo(next)
+                        dragging = true
+                        dragOffsetPx = (dragOffsetPx + dragAmount).coerceIn(-revealPx, 0f)
                     }
                 }
                 .combinedClickable(
@@ -841,7 +860,8 @@ private fun MirrorConversationRow(
                         if (swipeOpen) {
                             // web L193: a tap on an open row closes the tray
                             swipeOpen = false
-                            swipeScope.launch { dragX.animateTo(0f) }
+                            dragging = false
+                            dragOffsetPx = 0f
                         } else {
                             onOpen()
                         }

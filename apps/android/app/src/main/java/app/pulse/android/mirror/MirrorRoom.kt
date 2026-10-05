@@ -485,7 +485,7 @@ internal fun MirrorRoom(
     var activeEffect by remember { mutableStateOf<MirrorActiveEffect?>(null) }
     val effectQueue = remember { mutableStateListOf<MirrorActiveEffect>() }
     val effectNonce = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    val seenEffectIds = remember(groupId) { androidx.compose.runtime.mutableStateSetOf<String>() }
+    val seenEffectIds = remember(groupId) { HashSet<String>() }
     // live bubble geometry for the effect origin (web querySelector data-mid)
     val bubbleRects: SnapshotStateMap<String, Rect> = androidx.compose.runtime.mutableStateMapOf()
     var effectsHostRect by remember { mutableStateOf(Rect.Zero) }
@@ -840,7 +840,7 @@ internal fun MirrorRoom(
                     draftValue = TextFieldValue("")
                     CoroutineScope(Dispatchers.IO).launch {
                         val created = runCatching {
-                            repository.createTopic(groupId, name, null).getOrThrow()
+                            repository.createTopic(groupId, name).getOrThrow()
                         }.getOrNull()
                         CoroutineScope(Dispatchers.Main).launch {
                             if (created != null) {
@@ -2952,11 +2952,19 @@ private fun MirrorBubbleRow(
             // R74 - swipe-to-reply (web chat-room L7424-7451): drag the bubble
             // toward the center past the 28dp threshold to reply; the Reply
             // hint fades in with the drag; the bubble springs back on release.
-            val swipeX = remember(message.id) { Animatable(0f) }
-            val swipeScope = rememberCoroutineScope()
+            // Plain offset state + a state-driven settle spring: no suspend
+            // calls inside the drag lambda (it is not a coroutine context).
+            var swipeDragPx by remember(message.id) { androidx.compose.runtime.mutableFloatStateOf(0f) }
+            var swipeDragging by remember(message.id) { mutableStateOf(false) }
+            val swipeSettle by animateFloatAsState(
+                targetValue = if (swipeDragging) swipeDragPx else 0f,
+                animationSpec = MirrorMotion.snappy(),
+                label = "swipeSettle",
+            )
+            val swipeX = if (swipeDragging) swipeDragPx else swipeSettle
             val swipeThreshold = with(LocalDensity.current) { 28.dp.toPx() }
             val swipeClamp = with(LocalDensity.current) { 64.dp.toPx() }
-            val swipeToward = if (mine) -swipeX.value else swipeX.value
+            val swipeToward = if (mine) -swipeX else swipeX
             val hintAlpha = ((swipeToward - 4f) / (swipeThreshold - 4f)).coerceIn(0f, 1f)
             val hintScale = (0.5f + (swipeToward / swipeThreshold) * 0.6f).coerceIn(0.5f, 1.1f)
             Column(
@@ -2991,7 +2999,7 @@ private fun MirrorBubbleRow(
                             scaleY = entranceY.value
                             transformOrigin = TransformOrigin(0.5f, 1f)
                         }
-                        .offset { androidx.compose.ui.unit.IntOffset(swipeX.value.roundToInt(), 0) }
+                        .offset { androidx.compose.ui.unit.IntOffset(swipeX.roundToInt(), 0) }
                         .then(
                             if (isCard) {
                                 Modifier
@@ -3035,20 +3043,22 @@ private fun MirrorBubbleRow(
                         .pointerInput(message.id, mine) {
                             detectHorizontalDragGestures(
                                 onDragEnd = {
-                                    val toward = if (mine) -swipeX.value else swipeX.value
+                                    val toward = if (mine) -swipeDragPx else swipeDragPx
                                     if (toward >= swipeThreshold) {
                                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         onReply()
                                     }
-                                    swipeScope.launch { swipeX.animateTo(0f, MirrorMotion.snappy()) }
+                                    swipeDragging = false
+                                    swipeDragPx = 0f
                                 },
                                 onDragCancel = {
-                                    swipeScope.launch { swipeX.animateTo(0f, MirrorMotion.snappy()) }
+                                    swipeDragging = false
+                                    swipeDragPx = 0f
                                 },
                             ) { change, dragAmount ->
                                 change.consume()
-                                val next = (swipeX.value + dragAmount).coerceIn(-swipeClamp, swipeClamp)
-                                swipeX.snapTo(next)
+                                swipeDragging = true
+                                swipeDragPx = (swipeDragPx + dragAmount).coerceIn(-swipeClamp, swipeClamp)
                             }
                         },
                 ) {

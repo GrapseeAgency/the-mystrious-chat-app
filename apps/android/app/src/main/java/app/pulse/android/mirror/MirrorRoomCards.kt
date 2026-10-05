@@ -126,7 +126,8 @@ internal fun MirrorRedPacketSheet(
     val totalValid = total != null && total >= RP_TOTAL_MIN && total <= RP_TOTAL_MAX
     val countValid = count in RP_COUNT_MIN..RP_COUNT_MAX
     val countFitsTotal = totalValid && count <= (total ?: 0L)
-    val affordable = balance == null || (totalValid && (total ?: 0L) <= balance)
+    val coins = balance
+    val affordable = coins == null || (totalValid && (total ?: 0L) <= coins)
     val valid = totalValid && countValid && countFitsTotal && affordable
     val avg = if (totalValid && countFitsTotal) floor(total.toDouble() / count).toLong() else 0L
 
@@ -322,9 +323,9 @@ internal fun MirrorRedPacketSheet(
                     .clip(RoundedCornerShape(16.dp))
                     .background(
                         if (valid && !pending) {
-                            androidx.compose.foundation.Brush.linearGradient(RP_GRADIENT)
+                            androidx.compose.ui.graphics.Brush.linearGradient(RP_GRADIENT)
                         } else {
-                            androidx.compose.foundation.Brush.linearGradient(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
                                 listOf(MirrorArt.Chip, MirrorArt.Chip),
                             )
                         },
@@ -462,7 +463,7 @@ internal fun MirrorRedPacketBubble(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(androidx.compose.foundation.Brush.linearGradient(RP_GRADIENT))
+                .background(androidx.compose.ui.graphics.Brush.linearGradient(RP_GRADIENT))
                 .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(24.dp))
                 .clickable {
                     when {
@@ -529,7 +530,7 @@ internal fun MirrorRedPacketBubble(
         }
 
         // grabs ledger (web L234-296): owner detail + claim history
-        if (expanded && detail != null) {
+        if (expanded && detail?.packet != null) {
             Column(
                 Modifier
                     .padding(top = 6.dp)
