@@ -473,9 +473,9 @@ internal fun MirrorStoryViewer(
                 1f,
                 androidx.compose.animation.core.tween(6_000, easing = androidx.compose.animation.core.LinearEasing),
             )
-            if (done.endReason == androidx.compose.animation.core.AnimationEndReason.End) {
-                if (index < stories.size - 1) index += 1 else onDismiss()
-            }
+            // a tap that switches segments cancels this effect, so reaching
+            // this line means the full sweep completed
+            if (index < stories.size - 1) index += 1 else onDismiss()
         }
     }
     val story = stories.getOrNull(index)
