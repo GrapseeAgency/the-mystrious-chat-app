@@ -1,10 +1,18 @@
 package app.pulse.android.mirror
 
+import androidx.compose.ui.graphics.Color
+
 /**
  * R66 - the 100-platform Apps Matrix, ported VERBATIM from the web's
  * src/lib/hub-catalog.ts (the static catalog the Hub > Apps panel renders).
  * Same 10 categories, same nav styles, same input/secret copy - the mirror
  * renders the exact data the browser renders.
+ *
+ * R75 - full category-page support: CATEGORY_META (slug, label, blurb,
+ * accent pair), slug helpers, brand accent overrides and the per-app
+ * editorial taglines are ported verbatim from hub-catalog.ts so the
+ * native #/hub/c/<slug> full page renders the exact copy and gradients
+ * the browser renders.
  */
 internal data class MatrixApp(
     val n: Int,
@@ -13,6 +21,14 @@ internal data class MatrixApp(
     val input: String,
     val category: String,
     val secret: String,
+)
+
+/** Web CategoryMeta (hub-catalog.ts): slug, label, blurb, accent [from, to]. */
+internal data class CategoryMeta(
+    val slug: String,
+    val label: String,
+    val blurb: String,
+    val accent: List<String>,
 )
 
 internal object HubCatalog {
@@ -138,4 +154,215 @@ internal object HubCatalog {
         MatrixApp(99, "MeWe", "Persistent Solid Split Rail", "Non-tracking data privacy switch controls", "Stark Privacy Minimalist", "Chronological ad-free personal social feeds"),
         MatrixApp(100, "Nextdoor", "Persistent Solid Split Rail", "Verified address localized proximity grids", "Spatial 3D Environments", "Amber safety notice alert container plates"),
     )
+
+    // CATEGORY_META - hub-catalog.ts lines 183-245, verbatim.
+
+    val CATEGORY_META: Map<String, CategoryMeta> = mapOf(
+        "Dev-Ops / Community Boards" to CategoryMeta(
+            slug = "dev-ops",
+            label = "Dev-Ops",
+            blurb = "Community engines, guild halls and live-ops command centers.",
+            accent = listOf("#6366f1", "#2563eb"),
+        ),
+        "Workplace Canvas / Dev-Ops" to CategoryMeta(
+            slug = "workplace",
+            label = "Workplace",
+            blurb = "Structured work chat - boards, threads and operational flows.",
+            accent = listOf("#0ea5e9", "#0891b2"),
+        ),
+        "E-Commerce Showcase" to CategoryMeta(
+            slug = "e-commerce",
+            label = "E-Commerce",
+            blurb = "Storefront chat, social selling and conversational commerce.",
+            accent = listOf("#10b981", "#0d9488"),
+        ),
+        "E-Commerce / Global FinTech" to CategoryMeta(
+            slug = "global-fintech",
+            label = "Global FinTech",
+            blurb = "Chat platforms that doubled as national payment rails.",
+            accent = listOf("#f59e0b", "#ea580c"),
+        ),
+        "E-Commerce / Hyper-Apps" to CategoryMeta(
+            slug = "hyper-apps",
+            label = "Hyper-Apps",
+            blurb = "Everything-apps - messaging fused with services and mini-programs.",
+            accent = listOf("#84cc16", "#16a34a"),
+        ),
+        "Web3 FinTech / Hyper-Apps" to CategoryMeta(
+            slug = "web3",
+            label = "Web3",
+            blurb = "Wallet-native messengers with on-chain rails in every thread.",
+            accent = listOf("#8b5cf6", "#7e22ce"),
+        ),
+        "Stark Privacy Minimalist" to CategoryMeta(
+            slug = "privacy",
+            label = "Privacy",
+            blurb = "Zero-knowledge, ephemeral and audit-first communication.",
+            accent = listOf("#64748b", "#374151"),
+        ),
+        "Cross-Server Bridges / Matrix" to CategoryMeta(
+            slug = "bridges",
+            label = "Bridges",
+            blurb = "Federation fabrics that stitch many networks into one.",
+            accent = listOf("#06b6d4", "#0284c7"),
+        ),
+        "Spatial 3D Environments" to CategoryMeta(
+            slug = "spatial-3d",
+            label = "Spatial 3D",
+            blurb = "Presence as a place - avatars, rooms and proximity audio.",
+            accent = listOf("#d946ef", "#9333ea"),
+        ),
+        "Spatial 2D/3D Art" to CategoryMeta(
+            slug = "spatial-art",
+            label = "Spatial Art",
+            blurb = "Expressive canvases - voice stages, visual threads, motion mail.",
+            accent = listOf("#f43f5e", "#db2777"),
+        ),
+    )
+
+    /** Web MINE_SLUG (hub-category-page.tsx:41). */
+    const val MINE_SLUG: String = "mine"
+
+    /** URL slug for a matrix category (web slugForCategory). */
+    fun slugForCategory(category: String): String? = CATEGORY_META[category]?.slug
+
+    /** Reverse lookup: #/hub/c/<slug> -> category, or null for an unknown slug (web categoryBySlug). */
+    fun categoryBySlug(slug: String): String? =
+        CATEGORY_META.entries.firstOrNull { it.value.slug == slug }?.key
+
+    /** Brand-true accent overrides, keyed by matrix id (hub-catalog.ts BRAND_ACCENTS). */
+    private val BRAND_ACCENTS: Map<Int, List<String>> = mapOf(
+        1 to listOf("#5865f2", "#404eed"), // Discord
+        3 to listOf("#25d366", "#128c7e"), // WhatsApp
+        4 to listOf("#2aabee", "#229ed9"), // Telegram
+        5 to listOf("#3a76f0", "#1c5cd6"), // Signal
+        11 to listOf("#07c160", "#059a4c"), // WeChat
+        12 to listOf("#06c755", "#04a044"), // LINE
+        17 to listOf("#9146ff", "#6441a5"), // Twitch
+        32 to listOf("#1b2838", "#2a475e"), // Steam Chat
+        51 to listOf("#4360df", "#2c3ea5"), // Status
+        41 to listOf("#34c759", "#0a9e4a"), // iMessage
+    )
+
+    /** Per-app accent gradient - brand override, else the category accent (web appAccent). */
+    fun appAccent(app: MatrixApp): List<String> =
+        BRAND_ACCENTS[app.n] ?: (CATEGORY_META[app.category]?.accent ?: listOf("#c9762b", "#0d9488"))
+
+    /** Web CATEGORY_META fallback for the My apps page accent (hub-category-page.tsx:80). */
+    val MINE_ACCENT: List<String> = listOf("#c9762b", "#0d9488")
+
+    // APP_TAGLINES - hub-catalog.ts lines 296-396, verbatim (static catalog copy).
+
+    private val APP_TAGLINES: Map<Int, String> = mapOf(
+        1 to "Communities that never sleep, in voice and text",
+        2 to "Where work conversations get organized in channels",
+        3 to "The world in one simple, secure messenger",
+        4 to "Speed-first chats with mini-app superpowers",
+        5 to "Encrypted by default, metadata-free by design",
+        6 to "Open federation for decentralized rooms",
+        7 to "The open-source community hangout",
+        8 to "Every messenger, one unified inbox",
+        9 to "Anonymous IDs instead of phone numbers",
+        10 to "Communities and calls, with hidden text vaults",
+        11 to "Payments, mini-programs and chats in one",
+        12 to "Stickers, communities and everything cute",
+        13 to "Korea\u2019s everything platform for friends",
+        14 to "Untraceable sessions over onion routing",
+        15 to "Enterprise secrecy with shredder timers",
+        16 to "The protocol that became a network",
+        17 to "Live streams with chat as the main stage",
+        18 to "Meetings that turn into message threads",
+        19 to "Google-grade chat inside the workspace",
+        20 to "Video calls that grow a whiteboard",
+        21 to "Webex rooms with live captions and AI tuning",
+        22 to "Small-team chat that ships tasks fast",
+        23 to "Checklists and chats in one dock",
+        24 to "Kanban-built conversations for teams",
+        25 to "Self-hosted DevOps command channels",
+        26 to "Tickets, translators and team inboxes",
+        27 to "Threads with mandatory topic rigor",
+        28 to "Code links land live in the room",
+        29 to "Guilds, brackets and tournament boards",
+        30 to "Voice servers with push-to-talk DNA",
+        31 to "Low-latency voice with directional audio",
+        32 to "Friends, invites and hardware readouts",
+        33 to "Calls to anywhere, blurred backgrounds on",
+        34 to "Be anyone in a world of user rooms",
+        35 to "Rooms, gadgets and creative code",
+        36 to "The camera is the conversation",
+        37 to "Stories-first messaging with loop video",
+        38 to "Trends, sounds and reply-by-video",
+        39 to "Spaces and DMs on the town square",
+        40 to "Text-first threads, branching lanes",
+        41 to "Bubbles with physics and particle joy",
+        42 to "RCS messaging with carrier smarts",
+        43 to "Verified business chat over carrier rails",
+        44 to "Push-to-talk with scrolling waveforms",
+        45 to "Dispatch channels for field crews",
+        46 to "Video diaries your friends answer",
+        47 to "Drop into live audio rooms",
+        48 to "Stage-grade audio with glowing talkers",
+        49 to "Dual-camera posts with realmoji sheets",
+        50 to "Timeline moments on a flat grid",
+        51 to "Web3 chat with on-chain ledgers",
+        52 to "Decentralized IDs meet secure chat",
+        53 to "Cross-app permissions, cryptographic keys",
+        54 to "Onion hops you can actually read",
+        55 to "One-way invite keys, zero metadata",
+        56 to "Mesh networking when the internet is gone",
+        57 to "Peer-to-peer calls without servers",
+        58 to "Uncensorable P2P messaging lanes",
+        59 to "Sovereign encryption for enterprises",
+        60 to "Screenshots detected, messages shredded",
+        61 to "Signed git commits from your chat",
+        62 to "Email reimagined as chat bubbles",
+        63 to "Co-write emails in real time",
+        64 to "Customer conversations with full context",
+        65 to "Help desks that slide into any site",
+        66 to "Calendar popups close the lead",
+        67 to "Watch agents browse with the visitor",
+        68 to "Shopify carts answered in chat",
+        69 to "Macros and tabs for support agents",
+        70 to "CRM timelines inside the thread",
+        71 to "Lead funnels on autopilot",
+        72 to "Carousels and flows for Meta apps",
+        73 to "Ad campaigns that route themselves",
+        74 to "Fullscreen media choice chips",
+        75 to "Thumb-optimized form tunnels",
+        76 to "One question at a time, beautifully",
+        77 to "Internal updates with magazine flair",
+        78 to "The corporate social workplace",
+        79 to "Campfires for project check-ins",
+        80 to "Sprints, docs and chat in one lane",
+        81 to "Task dependencies, verified live",
+        82 to "Status columns that update the room",
+        83 to "Discussions anchored to the page",
+        84 to "Cursor particles on a shared canvas",
+        85 to "Vector feedback in the margin",
+        86 to "Pixel offices with proximity chat",
+        87 to "Floor plans that host presentations",
+        88 to "Video bubbles that fade behind you",
+        89 to "Museums you walk with your wallet",
+        90 to "Play-safe chat for blocky worlds",
+        91 to "Server console in your pocket",
+        92 to "Emergency meetings, voting cards",
+        93 to "Board games with built-in chat",
+        94 to "Gift animations over game rails",
+        95 to "Swipe rooms with equal camera tiles",
+        96 to "Delivery maps meet volunteer routes",
+        97 to "Fandoms with wiki-grade toolsets",
+        98 to "Rosters, check-ins and team balance",
+        99 to "Ad-free feeds, chronological and calm",
+        100 to "Neighbors verified by the block map",
+    )
+
+    /** Tagline for an app (catalog copy - falls back to the input toolkit line, web appTagline). */
+    fun appTagline(app: MatrixApp): String = APP_TAGLINES[app.n] ?: app.input
+
+    /** Hex accent pairs -> Compose colors (tiles render the exact web gradients). */
+    fun accentColors(accent: List<String>): List<Color> = accent.map { it.toColor() }
+
+    /** Web #RRGGBB -> Compose Color (the catalog stores hex strings). */
+    private fun String.toColor(): Color =
+        Color(android.graphics.Color.parseColor(this))
 }

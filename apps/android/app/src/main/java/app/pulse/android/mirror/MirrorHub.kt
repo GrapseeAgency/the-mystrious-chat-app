@@ -1,5 +1,18 @@
 package app.pulse.android.mirror
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,10 +45,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -72,6 +89,8 @@ internal fun MirrorHub(
     var walletCoins by remember { mutableStateOf<Long?>(null) }
     var walletGems by remember { mutableStateOf<Long?>(null) }
     var panel by remember { mutableStateOf("wallet") }
+    // R75 - the full-page category surface (web #/hub/c/<slug>, MINE_SLUG = "mine")
+    var categoryPage by remember { mutableStateOf<String?>(null) }
 
     suspend fun loadWallet() {
         repository.wallet().onSuccess { page ->
@@ -81,12 +100,17 @@ internal fun MirrorHub(
     }
     LaunchedEffect(Unit) { loadWallet() }
 
-    Column(
+    Box(
         Modifier
             .fillMaxSize()
-            .background(SubPageInk.Page)
-            .statusBarsPadding(),
+            .background(SubPageInk.Page),
     ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(SubPageInk.Page)
+                .statusBarsPadding(),
+        ) {
         // header: glass-deep px-4 pb-3 pt-3 - Flame tile + Hub + wallet chip
         Column(
             Modifier
@@ -202,8 +226,28 @@ internal fun MirrorHub(
                 "market" -> HubMarketPanel(repository, viewerId, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
                 "swap" -> HubSwapPanel(repository, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
                 "logs" -> HubLogsPanel(repository)
-                "apps" -> HubAppsPanel(repository, viewerId)
+                "apps" -> HubAppsPanel(repository, viewerId, onOpenCategory = { categoryPage = it })
                 else -> HubWalletPanel(repository, onCoinsChanged = { walletCoins = it.first; walletGems = it.second })
+            }
+        }
+        }
+
+        // R75 - web #/hub/c/<slug>: the category full page slides over the whole
+        // tab (hub-tab.tsx AnimatePresence; push slides in from the right).
+        AnimatedVisibility(
+            visible = categoryPage != null,
+            enter = slideInHorizontally(MirrorMotion.snappy()) { it } + fadeIn(tween(160)),
+            exit = slideOutHorizontally(tween(190, easing = FastOutLinearInEasing)) { it } + fadeOut(tween(140)),
+        ) {
+            // keep the last non-null slug mounted so the exit animation keeps its content
+            val shown = remember { mutableStateOf(categoryPage) }
+            if (categoryPage != null) shown.value = categoryPage
+            shown.value?.let { slug ->
+                MirrorHubCategoryPage(
+                    slug = slug,
+                    repository = repository,
+                    onBack = { categoryPage = null },
+                )
             }
         }
     }
@@ -1065,9 +1109,12 @@ private fun HubLogsPanel(repository: PulseRepository) {
 // ── Apps panel (100 matrix) ──────────────────────────────────────────────────
 
 @Composable
-private fun HubAppsPanel(repository: PulseRepository, viewerId: String) {
+private fun HubAppsPanel(
+    repository: PulseRepository,
+    viewerId: String,
+    onOpenCategory: (String) -> Unit,
+) {
     var search by remember { mutableStateOf("") }
-    var chip by remember { mutableStateOf("all") }
     var installed by remember { mutableStateOf<Set<String>>(emptySet()) } // matrix app.n ids
     var busyId by remember { mutableStateOf<String?>(null) }
     var detail by remember { mutableStateOf<MatrixApp?>(null) }
@@ -1117,11 +1164,15 @@ private fun HubAppsPanel(repository: PulseRepository, viewerId: String) {
             }
         }
     }
+    // web AppsPanel counts map (hub-tab.tsx:792-794): category -> platform count
+    val counts = HubCatalog.MATRIX.groupingBy { it.category }.eachCount()
 
+    // web root: tiles are search-filtered ONLY - the chips NAVIGATE to the
+    // full category page instead of filtering in place (hub-tab.tsx:849-883)
     val q = search.trim().lowercase()
     val filtered = HubCatalog.MATRIX.filter { app ->
-        (chip == "all" || (chip == "mine" && app.n.toString() in installed) || app.category == chip) &&
-            (q.isEmpty() || app.name.lowercase().contains(q) || app.input.lowercase().contains(q) || app.secret.lowercase().contains(q))
+        q.isEmpty() || app.name.lowercase().contains(q) ||
+            app.input.lowercase().contains(q) || app.secret.lowercase().contains(q)
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1151,19 +1202,24 @@ private fun HubAppsPanel(repository: PulseRepository, viewerId: String) {
             }
         }
 
-        // chips: My apps (amber) + category chips (horizontal scroll)
+        // chips: My apps (amber) + category chips (horizontal scroll) - each
+        // OPENS the full category page (web navigateHash to #/hub/c/<slug>)
         Row(
             Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            val haptics = LocalHapticFeedback.current
             Box(
                 Modifier
                     .clip(CircleShape)
                     .background(Color(0x1AF59E0B))
                     .border(1.dp, Color(0x66F59E0B), CircleShape)
-                    .clickable { chip = "mine" }
+                    .mirrorPressClick(onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onOpenCategory(HubCatalog.MINE_SLUG)
+                    })
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
@@ -1174,18 +1230,20 @@ private fun HubAppsPanel(repository: PulseRepository, viewerId: String) {
                 )
             }
             for ((id, label) in chips) {
-                val active = chip == id
                 Box(
                     Modifier
                         .clip(CircleShape)
-                        .background(if (active) Color(0x1AF59E0B) else Color(0x0DFFFFFF))
-                        .border(1.dp, if (active) Color(0x66F59E0B) else SubPageInk.PanelBorder, CircleShape)
-                        .clickable { chip = id }
+                        .background(Color(0x0DFFFFFF))
+                        .border(1.dp, SubPageInk.PanelBorder, CircleShape)
+                        .mirrorPressClick(onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onOpenCategory(HubCatalog.slugForCategory(id) ?: id)
+                        })
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                 ) {
                     Text(
-                        label,
-                        color = if (active) SubPageInk.Amber400 else SubPageInk.Zinc300,
+                        "$label · ${counts[id] ?: 0}",
+                        color = SubPageInk.Zinc300,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -1379,5 +1437,556 @@ private fun HubDetailRow(label: String, value: String) {
     Column(Modifier.padding(vertical = 4.dp)) {
         Text(label.uppercase(), color = SubPageInk.Zinc500, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
         Text(value, color = SubPageInk.Zinc100, fontSize = 13.sp, lineHeight = 17.sp)
+    }
+}
+
+// ── R75 - the category FULL PAGE (web hub-category-page.tsx) ────────────────
+
+/** Static category -> lucide glyph map (web CATEGORY_ICONS, hub-primitives.tsx:42). */
+private val CATEGORY_GLYPHS: Map<String, String> = mapOf(
+    "Dev-Ops / Community Boards" to "LMessagesSquare",
+    "Workplace Canvas / Dev-Ops" to "LBriefcase",
+    "E-Commerce Showcase" to "LShoppingBag",
+    "E-Commerce / Global FinTech" to "LLandmark",
+    "E-Commerce / Hyper-Apps" to "LRocket",
+    "Web3 FinTech / Hyper-Apps" to "LHexagon",
+    "Stark Privacy Minimalist" to "LShieldCheck",
+    "Cross-Server Bridges / Matrix" to "LNetwork",
+    "Spatial 3D Environments" to "LOrbit",
+    "Spatial 2D/3D Art" to "LPalette",
+)
+
+/**
+ * The #/hub/c/<slug> surface as a FULL page over the Hub tab: glass
+ * sub-header, accent identity band behind a glass-deep card, then the
+ * category's platforms (or the "mine" = My apps install truth). Zero
+ * mocks - install states fan the real /api/hub/apps/<id>/install routes
+ * exactly like the root panel does.
+ */
+@Composable
+internal fun MirrorHubCategoryPage(
+    slug: String,
+    repository: PulseRepository,
+    onBack: () -> Unit,
+) {
+    val isMine = slug == HubCatalog.MINE_SLUG
+    val category = HubCatalog.categoryBySlug(slug)
+    val meta = category?.let { HubCatalog.CATEGORY_META[it] }
+    val haptics = LocalHapticFeedback.current
+    var detail by remember { mutableStateOf<MatrixApp?>(null) }
+
+    // real install set - badges on rows + the My apps filter (web hydrateInstalledSet)
+    var installed by remember { mutableStateOf<Set<String>?>(null) }
+    var installFailed by remember { mutableStateOf(false) }
+
+    fun loadInstalled() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val ids = mutableSetOf<String>()
+                for (batch in HubCatalog.MATRIX.chunked(8)) {
+                    val results = batch.map { app ->
+                        CoroutineScope(Dispatchers.IO).async {
+                            val state = runCatching {
+                                repository.appInstallState(app.n.toString()).getOrNull()
+                            }.getOrNull()
+                            app to (state?.installed == true)
+                        }
+                    }.map { it.await() }
+                    for ((app, on) in results) if (on) ids.add(app.n.toString())
+                }
+                installed = ids
+                installFailed = false
+            } catch (_: Exception) {
+                installFailed = true
+            }
+        }
+    }
+    LaunchedEffect(slug) {
+        installed = null
+        installFailed = false
+        loadInstalled()
+    }
+
+    val apps = when {
+        isMine -> (installed ?: emptySet()).let { set -> HubCatalog.MATRIX.filter { it.n.toString() in set } }
+        category != null -> HubCatalog.MATRIX.filter { it.category == category }
+        else -> emptyList()
+    }
+
+    // header copy (web lines 74-81)
+    val title = when {
+        isMine -> "My apps"
+        meta != null -> meta.label
+        else -> "Unknown category"
+    }
+    val blurb = when {
+        isMine -> "Everything you have connected, live from your install history."
+        meta != null -> meta.blurb
+        else -> "This corner of the matrix does not exist."
+    }
+    val accent = meta?.accent ?: HubCatalog.MINE_ACCENT
+    val accentColors = HubCatalog.accentColors(accent)
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(SubPageInk.Page)
+            .statusBarsPadding(),
+    ) {
+        // HubSubHeader (hub-primitives.tsx:129): glass-deep h-14, 40dp back pill
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(SubPageInk.Panel)
+                .border(1.dp, SubPageInk.PanelBorder)
+                .padding(start = 10.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x14FFFFFF))
+                    .mirrorPressClick(onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onBack()
+                    }),
+                contentAlignment = Alignment.Center,
+            ) {
+                MirrorLucideIcon("LChevronLeft", tint = SubPageInk.Zinc300, modifier = Modifier.size(19.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = SubPageInk.Zinc50,
+                    fontSize = 15.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (category != null) {
+                    Text(
+                        "${apps.size} platform${if (apps.size == 1) "" else "s"} in the matrix",
+                        color = SubPageInk.Zinc500,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else if (isMine) {
+                    Text(
+                        "${apps.size} connected",
+                        color = SubPageInk.Zinc500,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+
+        // accent identity band - the category wash sits BEHIND the glass card
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        colorStops = arrayOf(
+                            0f to accentColors[0].copy(alpha = 0x26 / 255f),
+                            0.55f to accentColors[1].copy(alpha = 0x14 / 255f),
+                            1f to Color.Transparent,
+                        ),
+                    ),
+                )
+                .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(SubPageInk.Panel)
+                    .border(1.dp, SubPageInk.PanelBorder, RoundedCornerShape(24.dp))
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                HubAccentTile(
+                    gradient = accentColors,
+                    glyph = if (isMine) "LLayers" else CATEGORY_GLYPHS[category ?: ""],
+                    initials = null,
+                    sizeDp = 44,
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        blurb,
+                        color = SubPageInk.Zinc50,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        if (meta != null) "Category · ${meta.slug}" else "Live from your Pulse installs",
+                        color = SubPageInk.Zinc500,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+
+        // body
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+        ) {
+            when {
+                // unknown slug (web lines 140-159)
+                category == null && !isMine -> HubCategoryStateCard(
+                    glyph = "LCompass",
+                    title = "Category not found",
+                    body = "That slug does not map to any corner of the matrix.",
+                    actionLabel = "Back to the Hub",
+                    onAction = onBack,
+                )
+                // hydrating the install set for My apps (web lines 160-164)
+                isMine && installed == null && !installFailed -> {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(SubPageInk.Panel)
+                            .border(1.dp, SubPageInk.PanelBorder, RoundedCornerShape(24.dp))
+                            .padding(vertical = 44.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        HubSkeletonDots()
+                        Text(
+                            "Checking your connections…",
+                            color = SubPageInk.Zinc500,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+                // failed install verification (web lines 165-169)
+                isMine && installFailed -> HubCategoryStateCard(
+                    glyph = "LSearchX",
+                    title = "Something went wrong",
+                    body = "Could not verify your connected apps.",
+                    actionLabel = "Retry",
+                    onAction = { loadInstalled() },
+                )
+                // empty (web lines 170-190)
+                apps.isEmpty() -> HubCategoryStateCard(
+                    glyph = "LSearchX",
+                    title = if (isMine) "No connections yet" else "Nothing here yet",
+                    body = if (isMine) {
+                        "You haven\u2019t connected any apps yet - open one in the matrix and tap Connect."
+                    } else {
+                        "Nothing lives in this category yet."
+                    },
+                    actionLabel = null,
+                    onAction = {},
+                )
+                // the app list (web lines 192-236) with staggered entrances
+                else -> {
+                    var shown by remember { mutableStateOf(false) }
+                    LaunchedEffect(slug) { shown = true }
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(SubPageInk.Panel)
+                            .border(1.dp, SubPageInk.PanelBorder, RoundedCornerShape(24.dp)),
+                    ) {
+                        apps.forEachIndexed { index, app ->
+                            if (index > 0) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(1.dp)
+                                        .background(Color(0x17FFFFFF)),
+                                )
+                            }
+                            val appear by animateFloatAsState(
+                                targetValue = if (shown) 1f else 0f,
+                                animationSpec = tween(320, delayMillis = index * 45, easing = FastOutSlowInEasing),
+                                label = "hubCatStagger",
+                            )
+                            HubCategoryAppRow(
+                                app = app,
+                                installed = installed?.contains(app.n.toString()) == true,
+                                appear = appear,
+                                onOpen = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    detail = app
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // row tap opens the real app detail (the R66 install-toggle sheet)
+    detail?.let { app ->
+        HubAppDetailSheet(
+            app = app,
+            installed = installed?.contains(app.n.toString()) == true,
+            busy = false,
+            onToggle = {
+                CoroutineScope(Dispatchers.IO).launch {
+                    if (app.n.toString() in (installed ?: emptySet())) {
+                        repository.uninstallApp(app.n.toString())
+                    } else {
+                        repository.installApp(app.n.toString())
+                    }
+                    loadInstalled()
+                }
+            },
+            onDismiss = { detail = null },
+        )
+    }
+}
+
+/** One app row of the category list (web motion.li rows, hub-category-page.tsx:199). */
+@Composable
+private fun HubCategoryAppRow(
+    app: MatrixApp,
+    installed: Boolean,
+    appear: Float,
+    onOpen: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                alpha = appear
+                translationY = (1f - appear) * 10.dp.toPx()
+            }
+            .mirrorPressClick(onClick = onOpen)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val tileColors = HubCatalog.accentColors(HubCatalog.appAccent(app))
+        HubAccentTile(
+            gradient = tileColors,
+            glyph = null,
+            initials = MirrorArt.initials(app.name),
+            sizeDp = 44,
+        )
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    app.name,
+                    color = SubPageInk.Zinc50,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Text(
+                    "#" + app.n.toString().padStart(3, '0'),
+                    color = SubPageInk.Zinc400,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Text(
+                HubCatalog.appTagline(app),
+                color = SubPageInk.Zinc500,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (installed) HubConnectedBadge()
+        MirrorLucideIcon("LChevronRight", tint = SubPageInk.Zinc400, modifier = Modifier.size(16.dp))
+    }
+}
+
+/**
+ * Accent gradient icon tile (web AppIconTile / CategoryIconTile,
+ * hub-primitives.tsx:61-125): brand gradient, specular top highlight,
+ * initials or a lucide glyph.
+ */
+@Composable
+private fun HubAccentTile(gradient: List<Color>, glyph: String?, initials: String?, sizeDp: Int) {
+    Box(
+        Modifier
+            .size(sizeDp.dp)
+            .clip(RoundedCornerShape(((sizeDp * 0.3f).toInt()).coerceAtLeast(10).dp))
+            .background(Brush.linearGradient(gradient))
+            .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(((sizeDp * 0.3f).toInt()).coerceAtLeast(10).dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        // specular top highlight (white 55% -> 0 across the top half, 40% opacity)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height((sizeDp / 2).dp)
+                .align(Alignment.TopStart)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0x8CFFFFFF), Color(0x00FFFFFF)),
+                    ),
+                )
+                .alpha(0.4f),
+        )
+        when {
+            glyph != null -> MirrorLucideIcon(
+                glyph,
+                tint = Color.White,
+                modifier = Modifier.size((sizeDp * 0.46f).dp),
+            )
+            initials != null -> Text(
+                initials,
+                color = Color.White,
+                fontSize = ((sizeDp * 0.34f).coerceAtLeast(11)).sp,
+                fontWeight = FontWeight.Black,
+            )
+        }
+    }
+}
+
+/** Connected pill with the live ping dot (web ConnectedBadge, hub-primitives.tsx:171). */
+@Composable
+private fun HubConnectedBadge() {
+    val ping = rememberInfiniteTransition(label = "hubBadgePing")
+    val pingAlpha by ping.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Restart),
+        label = "hubBadgePingAlpha",
+    )
+    val pingScale by ping.animateFloat(
+        initialValue = 1f,
+        targetValue = 2.2f,
+        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Restart),
+        label = "hubBadgePingScale",
+    )
+    Row(
+        Modifier
+            .heightIn(min = 32.dp)
+            .clip(CircleShape)
+            .border(1.dp, Color(0x66F59E0B), CircleShape)
+            .background(Color(0x1AF59E0B))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .graphicsLayer {
+                        scaleX = pingScale
+                        scaleY = pingScale
+                        this.alpha = pingAlpha
+                    }
+                    .clip(CircleShape)
+                    .background(SubPageInk.Amber500),
+            )
+            Box(Modifier.size(6.dp).clip(CircleShape).background(SubPageInk.Amber500))
+        }
+        Text("Connected", color = SubPageInk.Amber400, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+/** Three pulsing skeleton dots (web SkeletonDots, hub-data.tsx). */
+@Composable
+private fun HubSkeletonDots() {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (i in 0 until 3) {
+            val alpha by rememberInfiniteTransition(label = "hubSkeleton$i").animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    tween(650, delayMillis = i * 160),
+                    RepeatMode.Reverse,
+                ),
+                label = "hubSkeletonAlpha$i",
+            )
+            Box(
+                Modifier
+                    .size(7.dp)
+                    .graphicsLayer { this.alpha = alpha }
+                    .clip(CircleShape)
+                    .background(SubPageInk.Amber500),
+            )
+        }
+    }
+}
+
+/** Full-width glass state card with an optional outline pill action. */
+@Composable
+private fun HubCategoryStateCard(
+    glyph: String,
+    title: String,
+    body: String,
+    actionLabel: String?,
+    onAction: () -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(SubPageInk.Panel)
+            .border(1.dp, SubPageInk.PanelBorder, RoundedCornerShape(24.dp))
+            .padding(horizontal = 24.dp, vertical = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0x1AF59E0B)),
+            contentAlignment = Alignment.Center,
+        ) {
+            MirrorLucideIcon(glyph, tint = SubPageInk.Amber500, modifier = Modifier.size(28.dp))
+        }
+        Text(
+            title,
+            color = SubPageInk.Zinc100,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            body,
+            color = SubPageInk.Zinc500,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        if (actionLabel != null) {
+            Box(
+                Modifier
+                    .heightIn(min = 36.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, SubPageInk.PanelBorder, CircleShape)
+                    .mirrorPressClick(onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onAction()
+                    })
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+            ) {
+                Text(actionLabel, color = SubPageInk.Zinc300, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
     }
 }

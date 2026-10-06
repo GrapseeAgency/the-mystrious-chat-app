@@ -10,8 +10,8 @@ plugins {
 // Release channel plumbing - CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
 // R74: the "finally" wave - slash palette, swipe-to-reply, effects particles,
 // incognito, red packet, tic-tac-toe, chats-list swipe - ships as 0.24.0.0.1.
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 47
-val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.24.0.0.1"
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 48
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.24.0.0.2"
 
 android {
     namespace = "app.pulse.android"

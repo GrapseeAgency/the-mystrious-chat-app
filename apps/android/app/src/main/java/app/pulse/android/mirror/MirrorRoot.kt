@@ -3,6 +3,7 @@ package app.pulse.android.mirror
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -112,6 +113,14 @@ fun MirrorRoot(
     val savedListFilter by session.chatsListFilter.collectAsState()
     // R74 - web prefs.reducedMotion: gates the full-screen message effects
     val reducedMotion by session.reducedMotion.collectAsState()
+    // R75 - Spotlight theme action needs the RESOLVED dark state (web resolvedTheme)
+    val darkOverride by session.darkOverride.collectAsState()
+    val systemDark = isSystemInDarkTheme()
+    val darkResolved = when (darkOverride) {
+        "light" -> false
+        "dark" -> true
+        else -> systemDark
+    }
     LaunchedEffect(savedListFilter) {
         if (!filterSeeded) {
             filterSeeded = true
@@ -126,6 +135,9 @@ fun MirrorRoot(
     var searching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var kebabOpen by remember { mutableStateOf(false) }
+    // R75 - the web SpotlightOverlay (shell-global search palette); the home
+    // kebab "Search" opens it, the header icon keeps the in-tab search mode.
+    var spotlightOpen by remember { mutableStateOf(false) }
     // R69 - the web PiP mini chat window: floats over any tab, independent of
     // the open room (web startPipChat/closePipChat).
     var pipFor by remember { mutableStateOf<Conversation?>(null) }
@@ -421,8 +433,10 @@ fun MirrorRoot(
                         channelCount = activeConversations.count { it.isChannel },
                         archivedUnread = archivedConversations.sumOf { it.unreadCount },
                         onSearch = {
-                            tab = MirrorTab.Chats
-                            searching = true
+                            // R75 - kebab Search opens the SPOTLIGHT palette (the web
+                            // shell overflow "Search" action opens Spotlight too); the
+                            // in-tab search mode stays on the header search icon.
+                            spotlightOpen = true
                         },
                         onNewChat = { newChatOpen = true },
                         onNewGroup = { groupOpen = true },
@@ -701,6 +715,43 @@ fun MirrorRoot(
                     openById(conversationId)
                 },
                 onDismiss = { profileSavedOpen = false },
+            )
+        }
+
+        // R75 - the Spotlight search palette, TOPMOST (web main-shell z-90,
+        // above everything incl. the dock); People rows open real DMs.
+        if (spotlightOpen) {
+            MirrorSpotlightOverlay(
+                conversations = conversations,
+                viewerId = viewerId.orEmpty(),
+                repository = repository,
+                onOpenConversation = { conversationId ->
+                    spotlightOpen = false
+                    openById(conversationId)
+                },
+                onOpenDm = { userId ->
+                    // web onOpenDm (main-shell.tsx:377): open or lazily create the 1:1
+                    spotlightOpen = false
+                    val id = viewerId.orEmpty()
+                    if (id.isNotBlank()) {
+                        CoroutineScope(Dispatchers.IO).launch {
+                            repository.createDm(userId).onSuccess { created ->
+                                runCatching { repository.refreshConversations() }
+                                kotlinx.coroutines.withContext(Dispatchers.Main) { openRoom = created }
+                            }
+                        }
+                    }
+                },
+                onNewChat = {
+                    spotlightOpen = false
+                    newChatOpen = true
+                },
+                onCheckInToHub = { tab = MirrorTab.Hub },
+                darkResolved = darkResolved,
+                onToggleTheme = {
+                    session.setDarkOverride(if (darkResolved) "light" else "dark")
+                },
+                onDismiss = { spotlightOpen = false },
             )
         }
     }
