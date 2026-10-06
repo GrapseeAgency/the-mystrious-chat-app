@@ -103,6 +103,12 @@ internal fun MirrorRoot(
     /** R76 - the jump half of pulse://room/<id>?jump=<mid> reminder links. */
     pendingJumpMessageId: String? = null,
     onConsumePendingJumpMessage: () -> Unit = {},
+    /** R76 - pulse://user/<id> deep links open the profile page. */
+    pendingUserId: String? = null,
+    onConsumePendingUser: () -> Unit = {},
+    /** R76 - launcher shortcut actions (new_message / search). */
+    shortcutAction: String? = null,
+    onConsumeShortcutAction: () -> Unit = {},
 ) {
     val viewerId by session.viewerId.collectAsState()
     val viewerName by session.viewerName.collectAsState()
@@ -195,6 +201,24 @@ internal fun MirrorRoot(
     var managerFor by remember { mutableStateOf<Conversation?>(null) }
     // R72 - the web #/user/:id profile page (member taps, contacts rows)
     var userPageFor by remember { mutableStateOf<String?>(null) }
+    // R76 - pulse://user/<id> deep links open the profile page like member rows.
+    LaunchedEffect(pendingUserId) {
+        val id = pendingUserId ?: return@LaunchedEffect
+        userPageFor = id
+        onConsumePendingUser()
+    }
+    // R76 - launcher shortcut actions (web shell parity: new message / search).
+    LaunchedEffect(shortcutAction) {
+        val action = shortcutAction ?: return@LaunchedEffect
+        when (action) {
+            "new_message" -> newChatOpen = true
+            "search" -> {
+                tab = MirrorTab.Chats
+                searching = true
+            }
+        }
+        onConsumeShortcutAction()
+    }
 
     // R71 - the web SettingsScreen + profile sub-surfaces (profile-tab.tsx)
     var settingsOpen by remember { mutableStateOf(false) }
