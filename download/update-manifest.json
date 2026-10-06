@@ -1,15 +1,15 @@
 {
-  "versionCode": 48,
-  "versionName": "0.24.0.0.2",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.24.0.0.2/Pulse-v0.24.0.0.2.apk",
+  "versionCode": 49,
+  "versionName": "0.24.0.0.3",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.24.0.0.3/Pulse-v0.24.0.0.3.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "aed9cfc26711121460719d97bce7321dab34426f08e63c145aa5678d204f0c5d",
-  "notes": "R75 - Spotlight + Hub category page: the Spotlight search palette (Recents / Actions / Chats / People / Messages - real /api/users directory with one-tap DMs, real wallet check-in, real server message search, theme toggle, persisted recents) and the Hub category FULL page (My apps + all 10 matrix categories, real install states, verbatim accents/blurbs/taglines, connected badges with live ping, staggered entrances). Version 0.24.0.0.2, versionCode 48.",
+  "sha256": "921aa30df88b67cb49368eef8283178f7d94626267b15c1d822be1cd78c89fe5",
+  "notes": "R76 - native-only: the WebView artboard shell is deleted and the native Kotlin mirror boots on EVERY build (app.pulse.chat included); the Hub app detail page is a FULL page (Overview / Community / Connectors over the real install + community + wallet routes, related rail, founder state, installer roster); Spotlight message hits, home search hits and pulse://room?jump= links jump-to-message with the flash; user/invite deep links, share-in and shortcut actions all land on the mirror; PulseShell + the classic docks deleted. Version 0.24.0.0.3, versionCode 49.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-10-06T07:30:00Z",
-  "apkSize": 26306965,
-  "version": "0.24.0.0.2",
-  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.24.0.0.2/Pulse-v0.24.0.0.2.apk"
+  "updatedAt": "2026-10-06T08:55:00Z",
+  "apkSize": 26224575,
+  "version": "0.24.0.0.3",
+  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.24.0.0.3/Pulse-v0.24.0.0.3.apk"
 }
