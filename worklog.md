@@ -5615,3 +5615,36 @@ Stage Summary:
 - The two quoted gaps are closed natively: the Spotlight palette (with its People section - the real user directory, one tap to a real DM) and the Hub category page as a FULL page (My apps + all 10 categories on real install truth, exact web copy/accents/taglines).
 - SHIPPED: v0.24.0.0.2 (versionCode 48) on release v0.24.0.0.2, CDN mirror + manifest byte-verified.
 - Honest notes: (1) the kebab "Search" row now opens Spotlight instead of the in-tab search - the header search icon keeps the in-tab mode (web's own shell-overflow behavior; the in-tab search is still one tap away); (2) category-page rows open the R66 app detail SHEET while web routes to a full #/hub/app/<n> page - the app page as a full page remains a next-round candidate; (3) Spotlight Messages rows open the conversation (the mirror room has no jump-to-message id yet, same as the R72 home search).
+
+---
+Task ID: R76
+Agent: orchestrator (Z.ai main session)
+Task: the user ordered the final step - the native application built by GitHub Action ("i will check everything after that"), then hunt every leftover, then final build. Hard rule restated: everything built in native Kotlin/Swift, never the web language inside the native apps.
+
+Work Log:
+- SYNC: remote main = local main at round start (608b124, R75 receipt); nothing to push, no revert anywhere.
+- NATIVE-ONLY AUDIT: iOS verified 146 pure Swift files + Metal shader (no web). Android exposed the violation: WebShellScreen.kt (550 lines of WebView) still wired in MainActivity behind `webShellActive = (webUi || isNativeAuditBuild) && webBaseReady`, with the `webUi` pref DEFAULTING TRUE - the shipping release APK (app.pulse.chat) booted the WebView artboard, and the whole Mirror UI (R62-R75) was only reachable in the side-loaded audit flavor (applicationId .native).
+- R76 native-only surgery (d258c84, 10 files, +93/-717):
+  - MainActivity: the gate is gone - onboarding OR MirrorRoot + CallOverlay + GroupCallOverlay, nothing else, on EVERY build; system icons stay light (mirror always dark); the cold-start gateway race guard kept, now unconditional.
+  - WebShellScreen.kt DELETED; webUi/setWebUi/repairWebUiOptOutOnce + the WEB_UI prefs keys removed end to end (domain interface, prefs impl, SessionViewModel, PulseApplication, the classic settings "Web interface" row).
+  - MirrorRoot gained external entry params (tabRequest/pendingRoomId, self-consuming); MirrorRoot made internal.
+  - versionCode 49 / 0.24.0.0.3.
+- CI shakedown run 37432217058 (d258c84) RED with exactly one error: MirrorRoot is public exposing the internal MirrorTab param. Fixed in e16b693 (internal fun MirrorRoot).
+- R76 hunt 1 - the hub app detail FULL page (e16b693, +1837/-113):
+  - NEW MirrorHubAppPage.kt (1752 lines): the complete web #/hub/app/<n> surface (app-detail-sheet.tsx AppDetailPage 997-1141) - HubSubHeader (title=app name, subtitle=category, trailing ConnectedBadge), sliding-underline DetailTabBar with pop count badges, Overview (hero: accent wash blob, 60dp tile, tagline, category chip navigating to the category page, #00n pill, live wallet pill via /api/hub/wallet, install stats with CountPulse + installer avatar stack + Connected-on date, Connect/Connected with ping dot + spinner on the real POST/DELETE install routes, Open/Join community on the real community routes, glass overflow menu with Remove connection; FeatureList over real matrix fields via new HubCatalog.appFeatures + MATRIX_TO_NAV; RelatedRail 10 same-category cards + See all), Community (skeleton / founder moment / identity card with broadcast pill + avatar stack / member roster with admin crowns / +N more), Connectors (viewer state card + live installer roster, viewer-only relative dates), unknown-id 404 ("No platform in the matrix answers to...").
+  - Routing parity: category rows AND root tiles navigate to the page (web navigateHash), related cards open other app pages, hero chip swaps to the category page, back always lands on the hub root (web backHash('/hub')); the R66 install-toggle sheet is DELETED the way web retired its sheet variant; MirrorHub hosts the page layered ABOVE the category page.
+  - 3 verbatim lucide glyphs: shield-question, cable, ellipsis (arc convention).
+- R76 hunt 2 - jump-to-message (bd0479c, +108/-7):
+  - MirrorRoom jumpMessageId/onJumpConsumed: waits for the cold-open cache seed, pages back through the real cache (web 14x60 cap, repository.messagesPage), animateScrollToItem to the entry, amber flash ring on the row (web flashHighlight, zero layout shift), bottom-chase suspended while a jump is pending.
+  - Anchors wired: Spotlight Messages rows (onOpenMessage, web spotlight.tsx:396), home search hits (onOpenConversationId carries the hit id), pulse://room/<id>?jump=<mid> reminder deep links.
+- R76 hunt 3 - every external entry lands on the mirror (63a3618 + 4e9986a, +75/-2410):
+  - pulse://user/<id> opens the MirrorUserPage; pulse://invite/<code> mounts the native JoinInviteSheet; share-in mounts the native ShareInSheet (both hand off to pendingRoom); shortcut actions new_message/search open the composer/home search.
+  - PulseShell + the entire classic dock machinery DELETED (2470 dead lines, MainActivity 3099 -> 709); CI run 37436019091 caught my sed clipping AppLockGate's @Composable - restored (4e9986a).
+- Gates: web src/ ZERO diff; db/custom.db never staged; emoji scan zero; no em-dash; no mock data (install/community/wallet/search all real REST); no force push; PAT inline only.
+
+Stage Summary:
+- The shipping APK now boots the native Kotlin mirror on every build - the WebView/web-language path no longer exists in the Android app (the user's hard rule).
+- The two promised leftovers are closed natively: the Hub app detail page is a FULL page (not the R66 sheet) and Spotlight/home-search message hits + reminder links jump-to-message with the web's flash.
+- Every external entry point (room/user/invite deep links, tab + action shortcuts, share-in) lands on the mirror.
+- CI at receipt time: e16b693 GREEN; 4e9986a build in flight; the v0.24.0.0.3 tag + release publish happens only after the run is green.
+- Honest remaining notes: iOS is native Swift but its surface set is its own parity track (not touched this round); the classic feature-* modules remain as libraries (JoinInviteSheet/ShareInSheet are native Compose surfaces the mirror reuses).
