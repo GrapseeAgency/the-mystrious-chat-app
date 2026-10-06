@@ -1855,7 +1855,7 @@ private fun HubAccentTile(gradient: List<Color>, glyph: String?, initials: Strin
             initials != null -> Text(
                 initials,
                 color = Color.White,
-                fontSize = ((sizeDp * 0.34f).coerceAtLeast(11)).sp,
+                fontSize = ((sizeDp * 0.34f).coerceAtLeast(11f)).sp,
                 fontWeight = FontWeight.Black,
             )
         }

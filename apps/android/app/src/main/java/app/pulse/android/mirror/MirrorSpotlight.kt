@@ -2,6 +2,13 @@ package app.pulse.android.mirror
 
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -49,7 +57,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.domain.model.Conversation
-import app.pulse.domain.model.Kind
 import app.pulse.domain.model.MessageHit
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseRepository
@@ -240,13 +247,11 @@ private data class RMessage(val hit: MessageHit) : SpotRow
 /** Rotating degree 0 -> 360 (the web's animate-spin loader). */
 @Composable
 private fun rememberInfiniteRotation(): Float {
-    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "spotSpin")
+    val t = rememberInfiniteTransition(label = "spotSpin")
     val v by t.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            androidx.compose.animation.core.tween(900, easing = androidx.compose.animation.core.LinearEasing),
-        ),
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
         label = "spotSpinAngle",
     )
     return v
@@ -364,7 +369,7 @@ internal fun MirrorSpotlightOverlay(
 
     // Chat rows (web spotlight.tsx:306-324): title or preview contains, top 6
     val chatRows = conversations
-        .map { c -> SpotChat(c, c.title, c.lastMessagePreview, c.unreadCount, c.kind != Kind.DM) }
+        .map { c -> SpotChat(c, c.title, c.lastMessagePreview, c.unreadCount, c.isGroupish) }
         .filter { sc -> ql.isEmpty() || sc.title.lowercase().contains(ql) || (sc.subtitle ?: "").lowercase().contains(ql) }
         .take(6)
 
@@ -411,6 +416,10 @@ internal fun MirrorSpotlightOverlay(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth(),
         ) {
+            // R75 CI fix - capture the overlay height OUTSIDE the card Column:
+            // BoxWithConstraintsScope's maxHeight is not callable through the
+            // Column content's implicit receiver chain.
+            val overlayHeight = maxHeight
             Column(
                 Modifier
                     .align(Alignment.TopCenter)
@@ -472,7 +481,7 @@ internal fun MirrorSpotlightOverlay(
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 120.dp, max = maxHeight * 0.58f)
+                        .heightIn(min = 120.dp, max = overlayHeight * 0.58f)
                         .verticalScroll(rememberScrollState())
                         .padding(bottom = 8.dp),
                 ) {
@@ -659,7 +668,7 @@ private fun SpotRecentContent(text: String) {
 }
 
 @Composable
-private fun SpotActionContent(action: SpotAction) {
+private fun androidx.compose.foundation.layout.RowScope.SpotActionContent(action: SpotAction) {
     SpotGlyphTile(action.glyph, SubPageInk.Amber500, Color(0x1AF59E0B))
     Column(Modifier.weight(1f)) {
         Text(
@@ -681,7 +690,7 @@ private fun SpotActionContent(action: SpotAction) {
 }
 
 @Composable
-private fun SpotChatContent(chat: SpotChat, query: String) {
+private fun androidx.compose.foundation.layout.RowScope.SpotChatContent(chat: SpotChat, query: String) {
     MirrorAvatar(
         name = chat.title,
         color = chat.conv.accentColor,
@@ -718,7 +727,7 @@ private fun SpotChatContent(chat: SpotChat, query: String) {
 }
 
 @Composable
-private fun SpotPersonContent(user: User, query: String) {
+private fun androidx.compose.foundation.layout.RowScope.SpotPersonContent(user: User, query: String) {
     MirrorAvatar(
         name = user.name,
         color = user.color,
@@ -758,7 +767,7 @@ private fun SpotPersonContent(user: User, query: String) {
 }
 
 @Composable
-private fun SpotMessageContent(hit: MessageHit, query: String) {
+private fun androidx.compose.foundation.layout.RowScope.SpotMessageContent(hit: MessageHit, query: String) {
     SpotGlyphTile("LMessagesSquare", SubPageInk.Amber400, Color(0x12FFFFFF))
     Column(Modifier.weight(1f)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
