@@ -1,15 +1,15 @@
 {
-  "versionCode": 47,
-  "versionName": "0.24.0.0.1",
-  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.24.0.0.1/Pulse-v0.24.0.0.1.apk",
+  "versionCode": 48,
+  "versionName": "0.24.0.0.2",
+  "apkUrl": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.24.0.0.2/Pulse-v0.24.0.0.2.apk",
   "apkUrlMirror": "https://raw.githubusercontent.com/GrapseeAgency/the-mystrious-chat-app/main/download/Pulse.apk",
-  "sha256": "2e992c01fdde098315ccaf65767e9a958551a402c17f7d2fc1a35d6108f6dfea",
-  "notes": "R74 the-finally wave - the seven parity gaps closed: slash palette (25 commands + full parser), swipe-to-reply (28dp threshold + hint motion), message effects (confetti/lasers/echo/sparkles full-screen canvas + companion bursts + payload trigger), incognito (group-only arming, one-shot, deterministic alias), red packet (composer sheet + self-fetching grab bubble + lucky ledger), tic-tac-toe (1.5s live poll card, join-as-O, rematch, win confetti), chats-list swipe (pin/archive chips). Version 0.24.0.0.1, versionCode 47.",
+  "sha256": "aed9cfc26711121460719d97bce7321dab34426f08e63c145aa5678d204f0c5d",
+  "notes": "R75 - Spotlight + Hub category page: the Spotlight search palette (Recents / Actions / Chats / People / Messages - real /api/users directory with one-tap DMs, real wallet check-in, real server message search, theme toggle, persisted recents) and the Hub category FULL page (My apps + all 10 matrix categories, real install states, verbatim accents/blurbs/taglines, connected badges with live ping, staggered entrances). Version 0.24.0.0.2, versionCode 48.",
   "gateway": "",
   "socket": "",
   "minRequired": false,
-  "updatedAt": "2026-10-05T15:00:00Z",
-  "apkSize": 26267621,
-  "version": "0.24.0.0.1",
-  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.24.0.0.1/Pulse-v0.24.0.0.1.apk"
+  "updatedAt": "2026-10-06T07:30:00Z",
+  "apkSize": 26306965,
+  "version": "0.24.0.0.2",
+  "apk": "https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/download/v0.24.0.0.2/Pulse-v0.24.0.0.2.apk"
 }
