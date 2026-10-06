@@ -184,10 +184,6 @@ private val DockInactiveLight = Color(0xFF71717A)
  *  but stays a registered route reachable from the chats header menu. */
 private val TAB_ROUTES = listOf("chats", "calls", "hub", "profile")
 
-/** R59 - the native-audit build (applicationId .native) draws the artboard natively. */
-private val isNativeAuditBuild: Boolean
-    get() = app.pulse.android.BuildConfig.PULSE_APP_ID.endsWith(".native")
-
 private data class DockTab(
     val route: String,
     val label: String,
@@ -435,26 +431,39 @@ fun PulseRoot(
     val darkRaw by session.darkOverride.collectAsStateWithLifecycle()
     val uiThemeRaw by session.uiTheme.collectAsStateWithLifecycle()
     val reduced by session.reducedMotion.collectAsStateWithLifecycle()
-    // R56 - the interface renderer gate: the gateway web app (the artboard
-    // shell) IS the app whenever a gateway is configured - identity or not
-    // (no identity boots the WEB onboarding, same surface as the Preview
-    // Panel). The native Compose shell is reachable ONLY through the explicit
-    // opt-out in the connect panel / settings - never automatically.
-    val webUi by session.webUi.collectAsStateWithLifecycle()
     val viewerName by session.viewerName.collectAsStateWithLifecycle()
     val storedBase by session.serverBase.collectAsStateWithLifecycle()
     // Cold-start race guard (R54): PulseApplication applies the stored gateway
     // asynchronously - if composition lands first, re-apply the persisted base
-    // here so the web shell can mount on the very first launch. The result is
-    // mirrored into a compose state so the shell actually recomposes.
-    var webBaseReady by remember(storedBase) { mutableStateOf(app.pulse.core.PulseEndpoints.isConfigured) }
-    LaunchedEffect(webUi, viewerName, storedBase) {
-        if (webUi && !viewerName.isNullOrBlank() && !app.pulse.core.PulseEndpoints.isConfigured && !storedBase.isNullOrBlank()) {
+    // here so the native mirror mounts with the gateway on the very first launch.
+    LaunchedEffect(viewerName, storedBase) {
+        if (!viewerName.isNullOrBlank() && !app.pulse.core.PulseEndpoints.isConfigured && !storedBase.isNullOrBlank()) {
             app.pulse.core.PulseEndpoints.applyBase(storedBase)
         }
-        webBaseReady = app.pulse.core.PulseEndpoints.isConfigured
     }
-    val webShellActive = (webUi || isNativeAuditBuild) && webBaseReady
+
+    // R76 - native entry bridges (the retired shells owned these): a
+    // pulse://room deep link opens the room once the live cache knows it and
+    // launcher tab shortcuts switch tabs cold or warm. Share-in payloads and
+    // user/invite deep links stay honest leftovers for the parity hunt.
+    var pendingRoomId by remember { mutableStateOf<String?>(null) }
+    var pendingTab by remember { mutableStateOf<app.pulse.android.mirror.MirrorTab?>(null) }
+    LaunchedEffect(deepLink) {
+        val link = deepLink ?: return@LaunchedEffect
+        if (link is app.pulse.core.link.PulseDeepLink.Room) pendingRoomId = link.conversationId
+        onConsumeDeepLink()
+    }
+    val shortcutRequest = shortcutFlow.collectAsStateWithLifecycle().value
+    LaunchedEffect(shortcutRequest) {
+        val request = shortcutRequest ?: return@LaunchedEffect
+        pendingTab = when (request.tab) {
+            "chats" -> app.pulse.android.mirror.MirrorTab.Chats
+            "hub" -> app.pulse.android.mirror.MirrorTab.Hub
+            "profile" -> app.pulse.android.mirror.MirrorTab.Profile
+            else -> null
+        }
+        onConsumeShortcut()
+    }
     // R2-C item 3 - the selected design language (web pulse.uiTheme.v2).
     val uiTheme = app.pulse.ui.PulseUiTheme.fromId(uiThemeRaw)
 
@@ -471,11 +480,10 @@ fun PulseRoot(
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
             WindowCompat.getInsetsController(window, view).apply {
-                // R60 - the mirror surfaces are ALWAYS dark regardless of the
-                // system theme, so the native-audit build keeps light system
-                // icons (a light-mode phone used to paint a dark clock on the
-                // carbon artboard).
-                val lightIcons = if (isNativeAuditBuild) false else !dark
+                // R76 - the mirror is the ONLY shell on every build (the
+                // WebView artboard is deleted): mirror surfaces are ALWAYS
+                // dark, so the system icons stay light everywhere.
+                val lightIcons = false
                 isAppearanceLightStatusBars = lightIcons
                 isAppearanceLightNavigationBars = lightIcons
             }
@@ -510,61 +518,7 @@ fun PulseRoot(
                 modifier = Modifier.fillMaxSize(),
             )
 
-            if (webShellActive) {
-                // R56 - the artboard shell outranks every native surface: with
-                // a gateway configured the app IS the web (identity or not -
-                // no identity boots the web onboarding).
-                // R61 - the audit verdict: the hand-drawn mirror never matched
-                // the artwork, so the audit flavor briefly booted the web shell.
-                // R62 - the user wants the audit app NATIVE KOTLIN again, with
-                // the design lifted 1:1 from the web source (chats-tab.tsx +
-                // nav-router.tsx geometry, globals.css tokens) and every tap
-                // wired to a real gateway action. The mirror is back - exact.
-                // R64 - the mirror also owns the call engines now: the room
-                // header video/phone icons dial real 1:1/group calls through
-                // the same engines the shell uses.
-                if (isNativeAuditBuild) {
-                    val callVm: CallViewModel = hiltViewModel()
-                    val groupCallVm: GroupCallViewModel = hiltViewModel()
-                    app.pulse.android.mirror.MirrorRoot(
-                        session = session,
-                        repository = repository,
-                        onStartCall = { convo, video ->
-                            val viewer = viewerName.orEmpty().ifBlank { "You" }
-                            if (convo.isGroupish) {
-                                groupCallVm.setActiveConversation(convo.id, convo.title)
-                                groupCallVm.startCall(
-                                    if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE,
-                                    convo.title,
-                                )
-                            } else {
-                                val peer = convo.members.firstOrNull { it.id != viewerId.orEmpty() }
-                                callVm.startOutgoing(
-                                    peerId = peer?.id ?: convo.otherUserId.orEmpty(),
-                                    name = convo.title,
-                                    color = convo.accentColor,
-                                    avatar = convo.avatar,
-                                    callerName = viewer,
-                                    kind = if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE,
-                                )
-                            }
-                        },
-                    )
-                    CallOverlay(callVm)
-                    GroupCallOverlay(groupCallVm)
-                } else {
-                    val activeName = viewerName.orEmpty()
-                    key(activeName) {
-                        WebShellScreen(
-                            serverBase = app.pulse.core.PulseEndpoints.gatewayHttpUrl,
-                            viewerName = activeName,
-                            onFallback = { session.setWebUi(false) },
-                            onUpdateServerBase = { session.setServerBase(it) },
-                            showClassicOptOut = true,
-                        )
-                    }
-                }
-            } else if (onboarding) {
+            if (onboarding) {
                 OnboardingScreen(
                     sessionNotice = sessionNotice,
                     // R50-a - the connect gate adopts the probed gateway through
@@ -572,17 +526,44 @@ fun PulseRoot(
                     onApplyServerBase = { base -> session.setServerBase(base) },
                 )
             } else {
-                PulseShell(
-                    viewerId = viewerId,
+                // R76 - the native mirror IS the app on EVERY build: the
+                // WebView artboard shell is deleted (user directive - the app
+                // is built in Kotlin, never in the web language). The design
+                // is lifted 1:1 from the web source, every tap is wired to a
+                // real gateway action, and the room header video/phone icons
+                // dial real 1:1/group calls through the same call engines.
+                val callVm: CallViewModel = hiltViewModel()
+                val groupCallVm: GroupCallViewModel = hiltViewModel()
+                app.pulse.android.mirror.MirrorRoot(
                     session = session,
-                    deepLink = deepLink,
-                    onConsumeDeepLink = onConsumeDeepLink,
                     repository = repository,
-                    shareIn = shareInFlow.collectAsStateWithLifecycle().value,
-                    onConsumeShareIn = onConsumeShareIn,
-                    shortcutRequest = shortcutFlow.collectAsStateWithLifecycle().value,
-                    onConsumeShortcut = onConsumeShortcut,
+                    onStartCall = { convo, video ->
+                        val viewer = viewerName.orEmpty().ifBlank { "You" }
+                        if (convo.isGroupish) {
+                            groupCallVm.setActiveConversation(convo.id, convo.title)
+                            groupCallVm.startCall(
+                                if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE,
+                                convo.title,
+                            )
+                        } else {
+                            val peer = convo.members.firstOrNull { it.id != viewerId.orEmpty() }
+                            callVm.startOutgoing(
+                                peerId = peer?.id ?: convo.otherUserId.orEmpty(),
+                                name = convo.title,
+                                color = convo.accentColor,
+                                avatar = convo.avatar,
+                                callerName = viewer,
+                                kind = if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE,
+                            )
+                        }
+                    },
+                    tabRequest = pendingTab,
+                    onConsumeTabRequest = { pendingTab = null },
+                    pendingRoomId = pendingRoomId,
+                    onConsumePendingRoom = { pendingRoomId = null },
                 )
+                CallOverlay(callVm)
+                GroupCallOverlay(groupCallVm)
             }
 
             ParticleBurstHost(

@@ -8,10 +8,10 @@ plugins {
 }
 
 // Release channel plumbing - CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
-// R74: the "finally" wave - slash palette, swipe-to-reply, effects particles,
-// incognito, red packet, tic-tac-toe, chats-list swipe - ships as 0.24.0.0.1.
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 48
-val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.24.0.0.2"
+// R76: the native-only wave - the WebView artboard shell is deleted, the
+// mirror boots on EVERY build (applicationId app.pulse.chat included).
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 49
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.24.0.0.3"
 
 android {
     namespace = "app.pulse.android"

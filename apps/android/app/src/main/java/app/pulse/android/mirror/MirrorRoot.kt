@@ -93,6 +93,13 @@ fun MirrorRoot(
     session: SessionViewModel,
     repository: PulseRepository,
     onStartCall: ((Conversation, video: Boolean) -> Unit)? = null,
+    // R76 - external entry points (the retired shells owned them): launcher
+    // tab shortcuts land here as tab requests; pulse://room deep links as
+    // pending room ids. Both work cold and warm, both self-consume.
+    tabRequest: MirrorTab? = null,
+    onConsumeTabRequest: () -> Unit = {},
+    pendingRoomId: String? = null,
+    onConsumePendingRoom: () -> Unit = {},
 ) {
     val viewerId by session.viewerId.collectAsState()
     val viewerName by session.viewerName.collectAsState()
@@ -103,6 +110,22 @@ fun MirrorRoot(
     // R73 - keeps the room composed while the close slide-out plays
     // (openRoom flips null immediately; the exit animation needs the convo).
     var roomShown by remember { mutableStateOf<Conversation?>(null) }
+
+    // R76 - launcher tab shortcuts switch tabs cold or warm, then self-consume.
+    LaunchedEffect(tabRequest) {
+        val request = tabRequest ?: return@LaunchedEffect
+        tab = request
+        onConsumeTabRequest()
+    }
+    // R76 - pulse://room deep links open the conversation once the live cache
+    // knows it (a cold link races the first REST load - the effect re-runs on
+    // every cache emission until the id resolves), then self-consume.
+    LaunchedEffect(pendingRoomId, conversations) {
+        val id = pendingRoomId ?: return@LaunchedEffect
+        val convo = conversations.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        openRoom = convo
+        onConsumePendingRoom()
+    }
     var stories by remember { mutableStateOf<List<StoryGroup>>(emptyList()) }
     var folders by remember { mutableStateOf<List<MirrorFolderChip>>(emptyList()) }
 

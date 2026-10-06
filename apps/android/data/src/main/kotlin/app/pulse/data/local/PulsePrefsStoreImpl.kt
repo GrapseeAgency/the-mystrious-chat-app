@@ -50,10 +50,6 @@ class PulsePrefsStoreImpl @Inject constructor(
         val QUIET_END = stringPreferencesKey("pulse.settings.quietEnd")
         // R10-a - biometric App lock (device-local; never rides the server blob).
         val APP_LOCK_ON = booleanPreferencesKey("pulse.settings.appLockOn")
-        // R54 - interface renderer gate (true = WebView-first, the artboard shell).
-        val WEB_UI = booleanPreferencesKey("ui.webFirst")
-        // R56 - one-shot marker for the auto-opt-out repair (repairWebUiOptOutOnce).
-        val WEB_UI_REPAIR_R56 = booleanPreferencesKey("ui.webFirst.repairR56")
     }
 
     override val viewerId: Flow<String?> = context.pulsePrefs.data.map { it[Keys.VIEWER_ID] }
@@ -80,25 +76,6 @@ class PulsePrefsStoreImpl @Inject constructor(
     // R10-a - App lock defaults OFF (an honest opt-in; enabling runs one
     // confirmation BiometricPrompt in Settings).
     override val appLockEnabled: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.APP_LOCK_ON] ?: false }
-
-    // R54 - the shell renders the gateway web app by default (the reference
-    // artboards ARE the web UI); native Compose stays the fallback + opt-out.
-    override val webUi: Flow<Boolean> = context.pulsePrefs.data.map { it[Keys.WEB_UI] ?: true }
-
-    override suspend fun setWebUi(value: Boolean) {
-        context.pulsePrefs.edit { it[Keys.WEB_UI] = value }
-    }
-
-    override suspend fun repairWebUiOptOutOnce() {
-        context.pulsePrefs.edit { prefs ->
-            if (prefs[Keys.WEB_UI_REPAIR_R56] != true) {
-                prefs[Keys.WEB_UI_REPAIR_R56] = true
-                // Only an explicitly persisted false (the R54/R55 auto flip)
-                // is repaired; an absent key already maps to the true default.
-                if (prefs[Keys.WEB_UI] == false) prefs[Keys.WEB_UI] = true
-            }
-        }
-    }
 
     override suspend fun setHapticsOn(value: Boolean) {
         context.pulsePrefs.edit { it[Keys.HAPTICS_ON] = value }

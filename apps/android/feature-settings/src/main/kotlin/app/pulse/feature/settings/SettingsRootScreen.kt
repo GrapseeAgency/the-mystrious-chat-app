@@ -1038,15 +1038,6 @@ fun RealtimeSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewM
                 }
             }
         }
-        // R54 - interface renderer toggle: the web shell (the reference
-        // artboards, rendered from the gateway) vs the native Compose shell.
-        val webUi by viewModel.webUi.collectAsStateWithLifecycle()
-        RowToggle(
-            "Web interface",
-            "Render the reference artboard UI from the gateway. Off = the native interface.",
-            webUi,
-            viewModel::setWebUi,
-        )
         // R7 item 6 - web StaticRow parity (settings-screen.tsx:1419-1424):
         // "People online now" / "Live presence snapshot from the socket
         // server." with the count in a zinc info-tone StatusBadge pill.

@@ -235,26 +235,6 @@ interface PulsePrefsStore {
     suspend fun setServerBase(value: String?)
     suspend fun setVoiceRate(value: Float)
     suspend fun setVoiceCaptions(value: Boolean)
-
-    /**
-     * R54 - interface renderer gate. TRUE (default) = the shell renders the
-     * GATEWAY WEB APP inside a WebView (the reference artboards are web
-     * surfaces: the user directed that the UI be built in the language that
-     * supports every animation/interaction - the web). FALSE = the native
-     * Compose shell. The web renderer auto-falls-back to native on a main
-     * frame load failure; the toggle keeps the native shell one tap away.
-     */
-    val webUi: Flow<Boolean>
-    suspend fun setWebUi(value: Boolean)
-
-    /**
-     * R56 - one-time upgrade repair. R54/R55 auto-flipped [webUi] to false on
-     * ANY transient WebView load failure (and persisted it), stranding users
-     * in the native shell with its retired icon language. The first boot
-     * after this version resets the flag to the web-first default; opt-outs
-     * made afterwards persist normally.
-     */
-    suspend fun repairWebUiOptOutOnce()
 }
 
 /** Contract every Pulse data source (remote-first, Room cache) must honor. */
