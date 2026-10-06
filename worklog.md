@@ -5648,3 +5648,20 @@ Stage Summary:
 - Every external entry point (room/user/invite deep links, tab + action shortcuts, share-in) lands on the mirror.
 - CI at receipt time: e16b693 GREEN; 4e9986a build in flight; the v0.24.0.0.3 tag + release publish happens only after the run is green.
 - Honest remaining notes: iOS is native Swift but its surface set is its own parity track (not touched this round); the classic feature-* modules remain as libraries (JoinInviteSheet/ShareInSheet are native Compose surfaces the mirror reuses).
+
+---
+Task ID: R76-ship
+Agent: orchestrator (Z.ai main session)
+Task: the R76 final build - tag, publish, byte-verify, pin the CDN.
+
+Work Log:
+- Tag v0.24.0.0.3 pushed on dac5a5e (R76 receipt; code = 4e9986a GREEN).
+- Tag CI run 37438298733 SUCCESS (build + instrumented api 30 + api 34); iOS CI on the same sha also ran (own track).
+- Release v0.24.0.0.3 PUBLISHED: asset Pulse-v0.24.0.0.3.apk, 26,224,575 bytes, state=uploaded.
+- BYTES VERIFIED: downloaded the release asset, sha256 = 921aa30df88b67cb49368eef8283178f7d94626267b15c1d822be1cd78c89fe5; download/Pulse.apk mirror overwritten with IDENTICAL bytes (re-hashed, same digest); update-manifest.json pinned 49 / 0.24.0.0.3 with the release URL, the sha256, the size and the round notes; pushed 9107e97.
+- LIVE VERIFIED: raw manifest serves versionCode 49 / 0.24.0.0.3 / sha 921aa30df88b; the live mirror APK streams the identical digest.
+
+Stage Summary:
+- The native-only wave is SHIPPED: v0.24.0.0.3 (versionCode 49) on release v0.24.0.0.3, CDN mirror + manifest byte-verified.
+- The user can check the APK: the native Kotlin mirror boots on every build (no WebView anywhere), the hub app detail page is a full page, jump-to-message works from Spotlight / home search / reminder links, user/invite/share-in/shortcuts all land on the mirror.
+- Honest leftovers for the next round (not pretending): iOS surface parity is its own track (the Swift app was verified native but not extended this round); the classic feature-* gradle modules still ship as libraries the mirror reuses from (native Compose surfaces, no web).
