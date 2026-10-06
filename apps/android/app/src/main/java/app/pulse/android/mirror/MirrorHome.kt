@@ -227,7 +227,8 @@ internal fun MirrorHome(
     typingIds: Set<String> = emptySet(),
     // R72 - server message search (web /api/search rail in the home search)
     repository: PulseRepository? = null,
-    onOpenConversationId: (String) -> Unit = {},
+    /** R76 - (conversationId, jumpMessageId?) - web jumpToMessage anchor. */
+    onOpenConversationId: (String, String?) -> Unit = { _, _ -> },
 ) {
     val maxW = 560.dp
     val unreadTotal = conversations.sumOf { it.unread }
@@ -483,7 +484,7 @@ internal fun MirrorHome(
                                 Modifier
                                     .widthIn(max = maxW)
                                     .fillMaxWidth()
-                                    .clickable { onOpenConversationId(hit.conversationId) }
+                                    .clickable { onOpenConversationId(hit.conversationId, hit.id) }
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

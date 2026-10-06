@@ -133,6 +133,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -390,6 +391,9 @@ internal fun MirrorRoom(
     isBroadcast: Boolean,
     /** stored group/channel photo (web renders it in the header avatar) */
     avatarPath: String? = null,
+    /** R76 - web jumpToMessage (chat-room.tsx:1039): open anchored at one message. */
+    jumpMessageId: String? = null,
+    onJumpConsumed: () -> Unit = {},
     onBack: () -> Unit,
     onToggleReaction: (String, String) -> Unit,
     onAddPhrase: (String) -> Unit,
@@ -545,6 +549,44 @@ internal fun MirrorRoom(
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val entries = remember(messages) { buildRoomEntries(messages) }
+    // R76 - jump-to-message (web jumpToMessage, chat-room.tsx:1039-1120):
+    // page back through the real cache until the hit lands, scroll to it and
+    // flash the bubble - the Spotlight / home search / reminder links all
+    // anchor the room this way.
+    var jumpFlashId by remember { mutableStateOf<String?>(null) }
+    val jumpActive = jumpMessageId != null
+    LaunchedEffect(jumpMessageId, groupId) {
+        val target = jumpMessageId ?: return@LaunchedEffect
+        // cold-open race: wait for the open-triggered refresh to seed the cache
+        var seed = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
+        var waited = 0
+        while (seed.isEmpty() && waited < 40) {
+            delay(150)
+            seed = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
+            waited++
+        }
+        // page back (web caps at 14 pages of 60)
+        var paged = 0
+        while (paged < 14) {
+            val current = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
+            if (current.any { it.id == target }) break
+            val oldest = current.minByOrNull { MirrorRoomEpoch(it.createdAt) } ?: break
+            val page = runCatching {
+                repository.messagesPage(groupId, oldest.createdAt, 60)
+            }.getOrNull() ?: break
+            if (page.first.isEmpty()) break
+            paged++
+        }
+        val fresh = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
+        val idx = buildRoomEntries(fresh).indexOfFirst { it is RoomEntry.Msg && it.message.id == target }
+        if (idx >= 0) {
+            listState.animateScrollToItem(idx.coerceAtLeast(0))
+            jumpFlashId = target
+            delay(1700)
+            jumpFlashId = null
+        }
+        onJumpConsumed()
+    }
     // R64 - the web typing label: DM = "typing…", groups roll names
     // (chat-room.tsx typerLabel verbatim) and it WINS over the subtitle.
     val typerLabel = when {
@@ -972,7 +1014,9 @@ internal fun MirrorRoom(
     }
 
     LaunchedEffect(messages.size) {
-        if (entries.isNotEmpty()) listState.animateScrollToItem(entries.size - 1)
+        // R76 - while a jump is pending the bottom chase is suspended (the
+        // jump scroll owns the list until it lands or gives up)
+        if (!jumpActive && entries.isNotEmpty()) listState.animateScrollToItem(entries.size - 1)
     }
     // Leaving the room always cancels the typing signal (web unmount parity).
     androidx.compose.runtime.DisposableEffect(Unit) {
@@ -1249,6 +1293,22 @@ internal fun MirrorRoom(
                         // the NEWEST row plays the Telegram squash & stretch on
                         // arrival; history rows render settled.
                         val isNewest = entry.message.id == messages.lastOrNull()?.id
+                        // R76 - the jump flash ring (web flashHighlight): an amber
+                        // border drawn OVER the row bounds - zero layout shift.
+                        val flashing = jumpFlashId == entry.message.id
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (flashing) {
+                                        Modifier
+                                            .background(Color(0x1AF59E0B), RoundedCornerShape(16.dp))
+                                            .border(1.5.dp, Color(0x8CF59E0B), RoundedCornerShape(16.dp))
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        ) {
                         MirrorBubbleRow(
                             message = entry.message,
                             mine = mine,
@@ -1282,6 +1342,7 @@ internal fun MirrorRoom(
                                 }
                             },
                         )
+                        }
                     }
                 }
             }

@@ -263,6 +263,8 @@ internal fun MirrorSpotlightOverlay(
     viewerId: String,
     repository: PulseRepository,
     onOpenConversation: (String) -> Unit,
+    /** R76 - web spotlight.tsx:396: message rows anchor the room at the hit. */
+    onOpenMessage: (conversationId: String, messageId: String) -> Unit = { _, _ -> },
     onOpenDm: (String) -> Unit,
     onNewChat: () -> Unit,
     onCheckInToHub: () -> Unit,
@@ -555,7 +557,7 @@ internal fun MirrorSpotlightOverlay(
                                                         }
                                                         is RMessage -> {
                                                             if (q.isNotBlank()) spotPushRecent(context, q)
-                                                            onOpenConversation(row.hit.conversationId)
+                                                            onOpenMessage(row.hit.conversationId, row.hit.id)
                                                         }
                                                     }
                                                     if (!keep) onDismiss()

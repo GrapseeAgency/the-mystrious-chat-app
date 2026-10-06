@@ -447,10 +447,14 @@ fun PulseRoot(
     // launcher tab shortcuts switch tabs cold or warm. Share-in payloads and
     // user/invite deep links stay honest leftovers for the parity hunt.
     var pendingRoomId by remember { mutableStateOf<String?>(null) }
+    var pendingJumpMessageId by remember { mutableStateOf<String?>(null) }
     var pendingTab by remember { mutableStateOf<app.pulse.android.mirror.MirrorTab?>(null) }
     LaunchedEffect(deepLink) {
         val link = deepLink ?: return@LaunchedEffect
-        if (link is app.pulse.core.link.PulseDeepLink.Room) pendingRoomId = link.conversationId
+        if (link is app.pulse.core.link.PulseDeepLink.Room) {
+            pendingRoomId = link.conversationId
+            pendingJumpMessageId = link.jumpMessageId
+        }
         onConsumeDeepLink()
     }
     val shortcutRequest = shortcutFlow.collectAsStateWithLifecycle().value
@@ -561,6 +565,8 @@ fun PulseRoot(
                     onConsumeTabRequest = { pendingTab = null },
                     pendingRoomId = pendingRoomId,
                     onConsumePendingRoom = { pendingRoomId = null },
+                    pendingJumpMessageId = pendingJumpMessageId,
+                    onConsumePendingJumpMessage = { pendingJumpMessageId = null },
                 )
                 CallOverlay(callVm)
                 GroupCallOverlay(groupCallVm)

@@ -100,6 +100,9 @@ internal fun MirrorRoot(
     onConsumeTabRequest: () -> Unit = {},
     pendingRoomId: String? = null,
     onConsumePendingRoom: () -> Unit = {},
+    /** R76 - the jump half of pulse://room/<id>?jump=<mid> reminder links. */
+    pendingJumpMessageId: String? = null,
+    onConsumePendingJumpMessage: () -> Unit = {},
 ) {
     val viewerId by session.viewerId.collectAsState()
     val viewerName by session.viewerName.collectAsState()
@@ -110,6 +113,10 @@ internal fun MirrorRoot(
     // R73 - keeps the room composed while the close slide-out plays
     // (openRoom flips null immediately; the exit animation needs the convo).
     var roomShown by remember { mutableStateOf<Conversation?>(null) }
+    // R76 - jump-to-message anchor: Spotlight message hits, home search hits
+    // and pulse://room/<id>?jump=<mid> deep links all open the room ANCHORED
+    // at one message (web jumpToMessage parity).
+    var pendingJumpId by remember { mutableStateOf<String?>(null) }
 
     // R76 - launcher tab shortcuts switch tabs cold or warm, then self-consume.
     LaunchedEffect(tabRequest) {
@@ -119,11 +126,16 @@ internal fun MirrorRoot(
     }
     // R76 - pulse://room deep links open the conversation once the live cache
     // knows it (a cold link races the first REST load - the effect re-runs on
-    // every cache emission until the id resolves), then self-consume.
+    // every cache emission until the id resolves), then self-consume. A jump
+    // payload rides along and anchors the room at the message.
     LaunchedEffect(pendingRoomId, conversations) {
         val id = pendingRoomId ?: return@LaunchedEffect
         val convo = conversations.firstOrNull { it.id == id } ?: return@LaunchedEffect
         openRoom = convo
+        if (pendingJumpMessageId != null) {
+            pendingJumpId = pendingJumpMessageId
+            onConsumePendingJumpMessage()
+        }
         onConsumePendingRoom()
     }
     var stories by remember { mutableStateOf<List<StoryGroup>>(emptyList()) }
@@ -337,7 +349,11 @@ internal fun MirrorRoot(
                             onKebab = { kebabOpen = true },
                             // R72 - server message search rides the same repository
                             repository = repository,
-                            onOpenConversationId = { openById(it) },
+                            // R76 - hits anchor the room at the message (web jumpToMessage)
+                            onOpenConversationId = { conversationId, jumpId ->
+                                if (jumpId != null) pendingJumpId = jumpId
+                                openById(conversationId)
+                            },
                             filter = filter,
                             onFilter = {
                                 filter = it
@@ -639,6 +655,8 @@ internal fun MirrorRoot(
                     onManageGroup = { managerFor = convo },
                     onStartCall = onStartCall,
                     reducedMotion = reducedMotion,
+                    jumpMessageId = pendingJumpId,
+                    onJumpConsumed = { pendingJumpId = null },
                 )
             }
         }
@@ -750,6 +768,13 @@ internal fun MirrorRoot(
                 repository = repository,
                 onOpenConversation = { conversationId ->
                     spotlightOpen = false
+                    openById(conversationId)
+                },
+                // R76 - web message rows anchor the room at the hit
+                // (spotlight.tsx:396 onOpenConversation(convId, null, hit.id))
+                onOpenMessage = { conversationId, messageId ->
+                    spotlightOpen = false
+                    pendingJumpId = messageId
                     openById(conversationId)
                 },
                 onOpenDm = { userId ->
@@ -879,6 +904,9 @@ private fun MirrorRoomScaffold(
     onStartCall: ((Conversation, video: Boolean) -> Unit)?,
     /** R74 - web prefs.reducedMotion gate for the full-screen effects layer. */
     reducedMotion: Boolean = false,
+    /** R76 - web jumpToMessage: open anchored at one message. */
+    jumpMessageId: String? = null,
+    onJumpConsumed: () -> Unit = {},
 ) {
     val messages by repository.observeMessages(convo.id).collectAsState(initial = emptyList<Message>())
     var phrases by remember { mutableStateOf<List<QuickPhrase>>(emptyList()) }
@@ -920,6 +948,9 @@ private fun MirrorRoomScaffold(
         phrases = phrases,
         muted = muted,
         ttlSeconds = ttlSeconds,
+        // R76 - the jump anchor flows through the scaffold into the room
+        jumpMessageId = jumpMessageId,
+        onJumpConsumed = onJumpConsumed,
         // R72 - channel truth: broadcast rooms carry the Channel pill and the
         // locked composer for non-admin viewers (web broadcastLocked parity)
         isBroadcast = convo.kind == Conversation.Kind.CHANNEL,
