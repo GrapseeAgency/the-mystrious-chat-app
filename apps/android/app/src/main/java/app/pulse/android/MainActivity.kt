@@ -623,6 +623,15 @@ fun PulseRoot(
     }
 }
 
+/**
+ * R10-a - the App lock gate overlay: a full-screen Compose surface that
+ * covers EVERYTHING (onboarding, shell, rooms, the share-in sheet) while
+ * [PulseAppLock.locked] is true. The system BiometricPrompt is the real
+ * gate - this overlay is the honest fallback surface (prompt dismissed,
+ * backoff countdown, or a device that lost its credentials), never a fake
+ * unlock.
+ */
+@Composable
 private fun AppLockGate(
     appLock: app.pulse.android.security.PulseAppLock,
     onRequestUnlock: () -> Unit,
