@@ -89,7 +89,7 @@ private data class MirrorTyper(val conversationId: String, val userId: String, v
  * Data rides the same repository flows as the rest of the app - zero mock.
  */
 @Composable
-fun MirrorRoot(
+internal fun MirrorRoot(
     session: SessionViewModel,
     repository: PulseRepository,
     onStartCall: ((Conversation, video: Boolean) -> Unit)? = null,

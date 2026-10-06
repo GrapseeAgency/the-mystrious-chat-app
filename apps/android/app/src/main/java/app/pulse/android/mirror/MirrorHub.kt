@@ -91,6 +91,10 @@ internal fun MirrorHub(
     var panel by remember { mutableStateOf("wallet") }
     // R75 - the full-page category surface (web #/hub/c/<slug>, MINE_SLUG = "mine")
     var categoryPage by remember { mutableStateOf<String?>(null) }
+    // R76 - the full-page app surface (web #/hub/app/<n>) - layered ABOVE the
+    // category page; the app page's back always lands on the hub root (web
+    // backHash('/hub') behavior, app-detail-sheet.tsx:1077)
+    var appPage by remember { mutableStateOf<Int?>(null) }
 
     suspend fun loadWallet() {
         repository.wallet().onSuccess { page ->
@@ -226,7 +230,7 @@ internal fun MirrorHub(
                 "market" -> HubMarketPanel(repository, viewerId, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
                 "swap" -> HubSwapPanel(repository, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
                 "logs" -> HubLogsPanel(repository)
-                "apps" -> HubAppsPanel(repository, viewerId, onOpenCategory = { categoryPage = it })
+                "apps" -> HubAppsPanel(repository, viewerId, onOpenCategory = { categoryPage = it }, onOpenApp = { appPage = it })
                 else -> HubWalletPanel(repository, onCoinsChanged = { walletCoins = it.first; walletGems = it.second })
             }
         }
@@ -247,6 +251,37 @@ internal fun MirrorHub(
                     slug = slug,
                     repository = repository,
                     onBack = { categoryPage = null },
+                    onOpenApp = { appPage = it },
+                )
+            }
+        }
+
+        // R76 - web #/hub/app/<n>: the app detail FULL page, layered ABOVE the
+        // category page (web hash routes are independent surfaces; the app
+        // page's back pops to the hub root - backHash('/hub'))
+        AnimatedVisibility(
+            visible = appPage != null,
+            enter = slideInHorizontally(MirrorMotion.snappy()) { it } + fadeIn(tween(160)),
+            exit = slideOutHorizontally(tween(190, easing = FastOutLinearInEasing)) { it } + fadeOut(tween(140)),
+        ) {
+            val shownApp = remember { mutableStateOf(appPage) }
+            if (appPage != null) shownApp.value = appPage
+            shownApp.value?.let { n ->
+                MirrorHubAppPage(
+                    appId = n,
+                    repository = repository,
+                    viewerId = viewerId,
+                    onBack = {
+                        appPage = null
+                        categoryPage = null
+                    },
+                    onOpenCategory = { slug ->
+                        // web navigateHash REPLACES the app page with the category page
+                        appPage = null
+                        categoryPage = slug
+                    },
+                    onOpenApp = { next -> appPage = next },
+                    onOpenConversation = onOpenConversation,
                 )
             }
         }
@@ -1113,11 +1148,11 @@ private fun HubAppsPanel(
     repository: PulseRepository,
     viewerId: String,
     onOpenCategory: (String) -> Unit,
+    onOpenApp: (Int) -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
     var installed by remember { mutableStateOf<Set<String>>(emptySet()) } // matrix app.n ids
     var busyId by remember { mutableStateOf<String?>(null) }
-    var detail by remember { mutableStateOf<MatrixApp?>(null) }
 
     suspend fun loadInstalled() {
         // fan the real install states across the catalog (web hydrateInstalledSet:
@@ -1261,7 +1296,9 @@ private fun HubAppsPanel(
                         installed = app.n.toString() in installed,
                         busy = busyId == app.n.toString(),
                         onToggle = { toggleApp(app) },
-                        onOpen = { detail = app },
+                        // R76 - web root tiles NAVIGATE to the full app page
+                        // (hub-tab.tsx:875 navigateHash('/hub/app/${a.n}'))
+                        onOpen = { onOpenApp(app.n) },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -1282,19 +1319,6 @@ private fun HubAppsPanel(
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
         }
-    }
-
-    detail?.let { app ->
-        HubAppDetailSheet(
-            app = app,
-            installed = app.n.toString() in installed,
-            busy = busyId == app.n.toString(),
-            onToggle = {
-                toggleApp(app)
-                if (app.n.toString() in installed) detail = null
-            },
-            onDismiss = { detail = null },
-        )
     }
 }
 
@@ -1369,77 +1393,6 @@ private fun HubAppTile(
     }
 }
 
-/** App detail: the tile's full catalog fields + the real install toggle. */
-@Composable
-private fun HubAppDetailSheet(app: MatrixApp, installed: Boolean, busy: Boolean, onToggle: () -> Unit, onDismiss: () -> Unit) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0x8C000000))
-            .clickable(onClick = onDismiss),
-    ) {
-        Column(
-            Modifier
-                .align(Alignment.Center)
-                .padding(20.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(Color(0xFF1C1610))
-                .border(1.dp, SubPageInk.PanelBorder, RoundedCornerShape(20.dp))
-                .clickable(enabled = false) {}
-                .padding(16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    app.name,
-                    color = SubPageInk.Zinc50,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f),
-                )
-                Box(
-                    Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(Color(0x12FFFFFF))
-                        .clickable(onClick = onDismiss),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    MirrorLucideIcon("LX", tint = SubPageInk.Zinc300, modifier = Modifier.size(14.dp))
-                }
-            }
-            Text(
-                "#" + app.n.toString().padStart(3, '0') + " · " + app.category,
-                color = SubPageInk.Amber400,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(12.dp))
-            HubDetailRow("Nav style", app.nav)
-            HubDetailRow("Input toolkit", app.input)
-            HubDetailRow("Secret feature", app.secret)
-            Spacer(Modifier.height(14.dp))
-            HubPrimaryButton(
-                label = when {
-                    busy -> "Working…"
-                    installed -> "Connected - tap to disconnect"
-                    else -> "Connect this app"
-                },
-                enabled = !busy,
-                onClick = onToggle,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-}
-
-@Composable
-private fun HubDetailRow(label: String, value: String) {
-    Column(Modifier.padding(vertical = 4.dp)) {
-        Text(label.uppercase(), color = SubPageInk.Zinc500, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
-        Text(value, color = SubPageInk.Zinc100, fontSize = 13.sp, lineHeight = 17.sp)
-    }
-}
-
 // ── R75 - the category FULL PAGE (web hub-category-page.tsx) ────────────────
 
 /** Static category -> lucide glyph map (web CATEGORY_ICONS, hub-primitives.tsx:42). */
@@ -1468,12 +1421,13 @@ internal fun MirrorHubCategoryPage(
     slug: String,
     repository: PulseRepository,
     onBack: () -> Unit,
+    // R76 - web rows navigateHash('/hub/app/<n>') - the FULL app page
+    onOpenApp: (Int) -> Unit = {},
 ) {
     val isMine = slug == HubCatalog.MINE_SLUG
     val category = HubCatalog.categoryBySlug(slug)
     val meta = category?.let { HubCatalog.CATEGORY_META[it] }
     val haptics = LocalHapticFeedback.current
-    var detail by remember { mutableStateOf<MatrixApp?>(null) }
 
     // real install set - badges on rows + the My apps filter (web hydrateInstalledSet)
     var installed by remember { mutableStateOf<Set<String>?>(null) }
@@ -1728,7 +1682,7 @@ internal fun MirrorHubCategoryPage(
                                 appear = appear,
                                 onOpen = {
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    detail = app
+                                    onOpenApp(app.n)
                                 },
                             )
                         }
@@ -1736,26 +1690,6 @@ internal fun MirrorHubCategoryPage(
                 }
             }
         }
-    }
-
-    // row tap opens the real app detail (the R66 install-toggle sheet)
-    detail?.let { app ->
-        HubAppDetailSheet(
-            app = app,
-            installed = installed?.contains(app.n.toString()) == true,
-            busy = false,
-            onToggle = {
-                CoroutineScope(Dispatchers.IO).launch {
-                    if (app.n.toString() in (installed ?: emptySet())) {
-                        repository.uninstallApp(app.n.toString())
-                    } else {
-                        repository.installApp(app.n.toString())
-                    }
-                    loadInstalled()
-                }
-            },
-            onDismiss = { detail = null },
-        )
     }
 }
 
@@ -1824,7 +1758,7 @@ private fun HubCategoryAppRow(
  * initials or a lucide glyph.
  */
 @Composable
-private fun HubAccentTile(gradient: List<Color>, glyph: String?, initials: String?, sizeDp: Int) {
+internal fun HubAccentTile(gradient: List<Color>, glyph: String?, initials: String?, sizeDp: Int) {
     Box(
         Modifier
             .size(sizeDp.dp)
@@ -1864,7 +1798,7 @@ private fun HubAccentTile(gradient: List<Color>, glyph: String?, initials: Strin
 
 /** Connected pill with the live ping dot (web ConnectedBadge, hub-primitives.tsx:171). */
 @Composable
-private fun HubConnectedBadge() {
+internal fun HubConnectedBadge() {
     val ping = rememberInfiniteTransition(label = "hubBadgePing")
     val pingAlpha by ping.animateFloat(
         initialValue = 0.6f,
@@ -1908,7 +1842,7 @@ private fun HubConnectedBadge() {
 
 /** Three pulsing skeleton dots (web SkeletonDots, hub-data.tsx). */
 @Composable
-private fun HubSkeletonDots() {
+internal fun HubSkeletonDots() {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for (i in 0 until 3) {
             val alpha by rememberInfiniteTransition(label = "hubSkeleton$i").animateFloat(

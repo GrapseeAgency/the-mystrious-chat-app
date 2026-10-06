@@ -359,6 +359,25 @@ internal object HubCatalog {
     /** Tagline for an app (catalog copy - falls back to the input toolkit line, web appTagline). */
     fun appTagline(app: MatrixApp): String = APP_TAGLINES[app.n] ?: app.input
 
+    /** web MATRIX_TO_NAV (hub-catalog.ts:28) - the four nav styles map 1:1. */
+    private val MATRIX_TO_NAV: Map<String, String> = mapOf(
+        "Floating Acrylic Bottom Dock" to "acrylic",
+        "Persistent Solid Split Rail" to "rail",
+        "Minimalist Hidden Edge Rail" to "edge",
+        "Volumetric Radial Overlay" to "radial",
+    )
+
+    /**
+     * Feature list for the app sub-page (web appFeatures, hub-catalog.ts:399):
+     * derived from REAL matrix fields - input toolkit, secret UI feature, the
+     * Pulse nav mapping. No invented stats.
+     */
+    fun appFeatures(app: MatrixApp): List<String> = listOf(
+        app.input,
+        app.secret,
+        "Ships with Pulse's " + (MATRIX_TO_NAV[app.nav] ?: app.nav) + " nav pattern - switchable live in Profile → Navigation",
+    )
+
     /** Hex accent pairs -> Compose colors (tiles render the exact web gradients). */
     fun accentColors(accent: List<String>): List<Color> = accent.map { it.toColor() }
 

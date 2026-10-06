@@ -1017,6 +1017,25 @@ internal object MirrorIconPaths {
             "M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7",
             "M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z",
         ),
+        // R76 - the app detail page trio (verbatim lucide-react defs; the
+        // ellipsis dots use the circle-to-arc-pair convention)
+        "LShieldQuestion" to listOf(
+            "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
+            "M9.1 9a3 3 0 0 1 5.82 1c0 2-3 3-3 3",
+            "M12 17h.01",
+        ),
+        "LCable" to listOf(
+            "M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1",
+            "M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9",
+            "M21 21v-2h-4",
+            "M3 5h4V3",
+            "M7 5a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1V3",
+        ),
+        "LEllipsis" to listOf(
+            "M 4,12 a 1,1 0 1,0 2,0 a 1,1 0 1,0 -2,0",
+            "M 11,12 a 1,1 0 1,0 2,0 a 1,1 0 1,0 -2,0",
+            "M 18,12 a 1,1 0 1,0 2,0 a 1,1 0 1,0 -2,0",
+        ),
         "LSunMedium" to listOf(
             "M 12,8 a 4,4 0 1,0 0,8 a 4,4 0 1,0 0,-8",
             "M12 3v1",
