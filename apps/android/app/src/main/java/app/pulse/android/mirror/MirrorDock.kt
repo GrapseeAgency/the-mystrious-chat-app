@@ -34,11 +34,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * R66/R73 - the artboard dock exactly as nav-router.tsx CapsuleNav renders
- * it, now with the web's REAL motion: the active pill slides between slots
- * with spring.snappy (web layoutId pill), the active icon pops 1.08 with a
- * -1dp lift (bouncy), the unread badge scales in (bouncy 0.4->1), and every
- * slot carries the whileTap press physics.
+ * R78 - the artboard dock EXACTLY as nav-router.tsx CapsuleNav renders it:
+ * the container IS the art-panel glass pill (globals.css .art-panel:
+ * rgba(24,18,13,0.66) bg + 1px hairline border + blur, rounded-full,
+ * px-1.5 py-1) and the active tab is a COLOR-ONLY swap
+ * (text #f5efe8 vs dim #9b8c7b) - the web capsule has NO pill, NO glow,
+ * NO per-item background. The R73 white sliding pill was a native
+ * invention (user report: "every individual has a background... web glows
+ * with the theme color not white") - removed for 1:1 web parity.
+ * Motion kept: active icon pops 1.08 with a -1dp lift (bouncy), unread
+ * badge scales in, every slot carries the whileTap press physics.
  */
 @Composable
 internal fun MirrorDock(
@@ -57,27 +62,15 @@ internal fun MirrorDock(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // art-panel pill: px-1.5 py-1, gap-0.5, rounded-full, hairline ring.
-        // R73: the active slot highlight is ONE sliding pill (web layoutId).
-        Box {
-            val slots = listOf(MirrorTab.Chats, null, MirrorTab.Hub, MirrorTab.Profile)
-            val activeIndex = slots.indexOfFirst { it == activeTab }.coerceAtLeast(0)
-            val pillX by animateDpAsState(
-                targetValue = (activeIndex * 66).dp,
-                animationSpec = spring(
-                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
-                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-                ),
-                label = "dockPillX",
-            )
-            Box(
-                Modifier
-                    .offset(x = 6.dp + pillX, y = 4.dp)
-                    .width(64.dp)
-                    .heightIn(min = 54.dp)
-                    .clip(CircleShape)
-                    .background(MirrorArt.White7),
-            )
+        // art-panel pill: bg rgba(24,18,13,0.66) + hairline ring + rounded-full,
+        // px-1.5 py-1, gap-0.5. The glass carries its own warm-dark color so
+        // the dock reads as a PANEL, never as backgroundless floating icons.
+        Box(
+            Modifier
+                .clip(CircleShape)
+                .background(MirrorArt.Panel)
+                .border(1.dp, MirrorArt.Hairline, CircleShape),
+        ) {
             Row(
                 Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),

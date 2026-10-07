@@ -1,9 +1,12 @@
 package app.pulse.feature.calls
 
 import app.pulse.ui.PulseIcons
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,25 +15,35 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.background
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.domain.call.CallSnapshot
 import app.pulse.domain.model.CallDirection
@@ -58,6 +71,39 @@ fun CallOverlay(vm: CallViewModel) {
     val videoNotice by vm.videoNotice.collectAsStateWithLifecycle()
 
     if (snapshot.state == CallState.IDLE) return
+
+    // R78 - MINIMIZE: the live call collapses to a floating ember chip so the
+    // user can keep using the app underneath (user report: "when I go to the
+    // call page I can't go anywhere - update, profile, messages"). The chip
+    // restores the full screen on tap; hangup stays an explicit button.
+    // System back: minimize while a call is live, dismiss when ended - the
+    // back gesture NEVER kills a live call and never exits the app from here.
+    var minimized by remember { mutableStateOf(false) }
+    BackHandler {
+        when {
+            minimized -> minimized = false
+            snapshot.state == CallState.ENDED -> vm.dismiss()
+            else -> minimized = true
+        }
+    }
+    if (minimized && snapshot.state != CallState.ENDED) {
+        CallMinimizedChip(
+            title = snapshot.peer?.name ?: "Call",
+            status = statusLine(snapshot, micMuted),
+            onExpand = { minimized = false },
+            onHangup = {
+                minimized = false
+                if (snapshot.direction == CallDirection.OUTGOING &&
+                    snapshot.state == CallState.OUTGOING_RINGING
+                ) {
+                    vm.cancel()
+                } else {
+                    vm.hangup()
+                }
+            },
+        )
+        return
+    }
 
     val isVideoCall = snapshot.kind == CallKind.VIDEO
 
@@ -97,6 +143,21 @@ fun CallOverlay(vm: CallViewModel) {
             .background(Color(0xE6121212))
             .semantics { contentDescription = "Call screen" },
     ) {
+        // R78 - minimize affordance (top-start ghost): collapses the live
+        // call to the floating chip; the call keeps running.
+        if (snapshot.state != CallState.ENDED) {
+            IconButton(
+                onClick = { minimized = true },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 12.dp, top = 8.dp)
+                    .size(44.dp)
+                    .background(Color(0x33FFFFFF), CircleShape),
+            ) {
+                Icon(PulseIcons.ChevronDown, contentDescription = "Minimize call", tint = Color.White)
+            }
+        }
         // Remote video - full-bleed behind everything (web object-cover parity);
         // renders only when the peer's video track actually arrives.
         if (isVideoCall &&
@@ -322,5 +383,69 @@ private fun CallButton(
             .semantics { contentDescription = description },
     ) {
         Icon(icon, contentDescription = null, tint = tint)
+    }
+}
+
+/**
+ * R78 - the minimized live-call chip (the web PiP-call language): a small
+ * floating ember-glass pill bottom-start, above the shell dock. Tap = expand
+ * back to the full call screen; the red button hangs up. The call keeps its
+ * audio path while the user chats / browses underneath.
+ */
+@Composable
+private fun CallMinimizedChip(
+    title: String,
+    status: String,
+    onExpand: () -> Unit,
+    onHangup: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize()) {
+        Row(
+            Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(start = 12.dp, bottom = 96.dp)
+                .shadow(elevation = 16.dp, shape = RoundedCornerShape(26.dp), spotColor = Color(0x8C000000))
+                .clip(RoundedCornerShape(26.dp))
+                .background(Color(0xF21C1610))
+                .border(1.dp, Color(0x14FFFFFF), RoundedCornerShape(26.dp))
+                .clickable(onClick = onExpand)
+                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            // live ember pulse dot
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFFF7A3D)),
+            )
+            Column(Modifier.widthIn(max = 176.dp)) {
+                Text(
+                    text = title,
+                    color = Color(0xFFF5EFE8),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = status,
+                    color = Color(0xFF9B8C7B),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(
+                onClick = onHangup,
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color(0xFFE11D48), CircleShape),
+            ) {
+                Icon(PulseIcons.PhoneDown, contentDescription = "End call", tint = Color.White)
+            }
+        }
     }
 }

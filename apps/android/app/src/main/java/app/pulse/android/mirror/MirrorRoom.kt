@@ -8,6 +8,7 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.util.Base64
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -115,6 +116,7 @@ import coil.compose.AsyncImage
 import app.pulse.core.PulseEndpoints
 import app.pulse.core.fx.PulseFx
 import app.pulse.domain.model.ConversationMember
+import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.LocationPayload
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.PulseApiException
@@ -124,6 +126,7 @@ import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.EffectPayloadDto
 import app.pulse.protocol.VoicePeerDto
+import app.pulse.protocol.WirePulsePrefs
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.Instant
@@ -411,6 +414,31 @@ internal fun MirrorRoom(
     /** web prefs.reducedMotion - gates every full-screen effect (chat-room L1471). */
     reducedMotion: Boolean = false,
 ) {
+    // R78 - LIVE conversation wallpaper (web effectiveConvWallpaper +
+    // applyConvTint, conv-theme.ts): the per-conversation override from the
+    // prefs key chat.convThemes wins, else the global prefs wallpaper. The
+    // R73 room hardcoded the "none" defaults, so picking a theme in Room
+    // info never changed anything on screen (user report: "even after I
+    // add the chat room theme it doesn't change").
+    val convThemes by repository.convThemes.collectAsState(initial = emptyMap<String, ConvTheme>())
+    val prefsWire by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
+    val themeOverride = convThemes[groupId]
+    val effectiveWallpaper = themeOverride?.wallpaper ?: prefsWire.resolvedOrDefaults().wallpaper
+    val (glowTop, glowBottom) = mirrorWallpaperGlows(effectiveWallpaper, themeOverride?.tint)
+
+    // art-scene ::before breathe: opacity 1 -> 0.86 -> 1 over 7s (globals.css).
+    // The room carries its OWN opaque scene now (R78), so it animates here.
+    val sceneBreathe = rememberInfiniteTransition(label = "roomSceneBreathe")
+    val breatheAlpha by sceneBreathe.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.86f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3_500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "roomSceneBreatheAlpha",
+    )
+
     // R73 - the composer draft is a TextFieldValue: the mention autocomplete
     // needs the caret position to replace the @token in place (web L2923-2961).
     var draftValue by remember { mutableStateOf(TextFieldValue("")) }
@@ -1074,9 +1102,55 @@ internal fun MirrorRoom(
         }
     }
 
+    // R78 - the room's own back contract: the topmost internal overlay
+    // closes first (Compose picks the LAST enabled handler; this one composes
+    // inside the room, so it beats the MirrorRoot room-close handler). When
+    // no overlay is open the shell-level handler closes the room itself.
+    val roomOverlayBack: (() -> Unit)? = when {
+        captionFor != null -> { { captionFor = null } }
+        infoFor != null -> { { infoFor = null } }
+        threadFor != null -> { { threadFor = null } }
+        forwardFor != null -> { { forwardFor = null } }
+        actionFor != null -> { { actionFor = null } }
+        pollOpen -> { { pollOpen = false } }
+        stickerOpen -> { { stickerOpen = false } }
+        locationOpen -> { { locationOpen = false } }
+        safetyOpen -> { { safetyOpen = false } }
+        scheduledOpen -> { { scheduledOpen = false } }
+        remindersOpen -> { { remindersOpen = false } }
+        recapOpen -> { { recapOpen = false } }
+        eventsOpen -> { { eventsOpen = false } }
+        kanbanOpen -> { { kanbanOpen = false } }
+        whiteboardOpen -> { { whiteboardOpen = false } }
+        tournamentOpen -> { { tournamentOpen = false } }
+        voiceOpen -> { { voiceOpen = false } }
+        stageOpen -> { { stageOpen = false } }
+        spaceOpen -> { { spaceOpen = false } }
+        roomSearchOpen -> { { roomSearchOpen = false } }
+        pinnedOpen -> { { pinnedOpen = false } }
+        phraseManagerOpen -> { { phraseManagerOpen = false } }
+        menuOpen -> { { menuOpen = false } }
+        trayOpen -> { { trayOpen = false } }
+        muteStripOpen -> { { muteStripOpen = false } }
+        ttlStripOpen -> { { ttlStripOpen = false } }
+        editing != null -> { { editing = null } }
+        replyTo != null -> { { replyTo = null } }
+        else -> null
+    }
+    if (roomOverlayBack != null) {
+        BackHandler { roomOverlayBack.invoke() }
+    }
+
+    // R78 - the room is an OPAQUE art-scene surface (web chat-room.tsx:3900
+    // root motion.div className="art-scene absolute inset-0 z-40"): the old
+    // Column had NO background, so the shell dock + FAB + PiP bled straight
+    // through the transparent room (user report: "all of the thing gathering
+    // and the navigation bar doesn't go invisible"). The room now paints the
+    // full ember gradient + horizon glows itself and covers everything.
     Column(
         Modifier
             .fillMaxSize()
+            .drawBehind { MirrorScene(this, breatheAlpha) }
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding(),
@@ -1212,18 +1286,19 @@ internal fun MirrorRoom(
                 .drawBehind {
                     val w = size.width
                     val h = size.height
-                    // top glow: radial-gradient(ellipse 90% 34% at 50% -8%, rgba(245,158,11,0.055), transparent 62%)
+                    // top glow: radial-gradient(ellipse 90% 34% at 50% -8%, <glowTop>, transparent 62%)
+                    // R78: LIVE wallpaper glows (web wallpaperGlows + tint table)
                     sceneGlow(
-                        core = Color(0x0EF59E0B),
+                        core = glowTop,
                         cx = w / 2f,
                         cy = -0.08f * h,
                         rx = 0.90f * w,
                         ry = 0.34f * h,
                         fadeStop = 0.62f,
                     )
-                    // bottom glow: radial-gradient(ellipse 110% 40% at 50% 110%, rgba(20,184,166,0.04), transparent 62%)
+                    // bottom glow: radial-gradient(ellipse 110% 40% at 50% 110%, <glowBottom>, transparent 62%)
                     sceneGlow(
-                        core = Color(0x0A14B8A6),
+                        core = glowBottom,
                         cx = w / 2f,
                         cy = 1.10f * h,
                         rx = 1.10f * w,
@@ -3448,6 +3523,31 @@ private fun MirrorReplyQuote(author: String, body: String, mine: Boolean, modifi
             )
         }
     }
+}
+
+/**
+ * R78 - the web wallpaper veil truth (chat-room.tsx wallpaperGlows dark branch
+ * - the room is ALWAYS dark - plus conv-theme.ts applyConvTint): returns the
+ * (glowTop, glowBottom) pair for the effective wallpaper; a set tint replaces
+ * glowTop only, exactly like the web.
+ */
+internal fun mirrorWallpaperGlows(wallpaper: String, tint: String?): Pair<Color, Color> {
+    val base = when (wallpaper) {
+        "aurora" -> Color(0x1FF59E0B) to Color(0x178B5CF6) // amber .12 / violet .09
+        "dusk" -> Color(0x1AF59E0B) to Color(0x17F43F5E) // amber .10 / rose .09
+        "forest" -> Color(0x21059669) to Color(0x1284CC16) // emerald .13 / lime .07
+        "mono" -> Color.Transparent to Color.Transparent
+        else -> Color(0x0EF59E0B) to Color(0x0A14B8A6) // "none": amber .055 / teal .04
+    }
+    val top = when (tint) {
+        "emerald" -> Color(0x2B10B981) // rgba(16,185,129,0.17)
+        "rose" -> Color(0x29F43F5E) // rgba(244,63,94,0.16)
+        "amber" -> Color(0x29F59E0B) // rgba(245,158,11,0.16)
+        "violet" -> Color(0x2B8B5CF6) // rgba(139,92,246,0.17)
+        "teal" -> Color(0x2914B8A6) // rgba(20,184,166,0.16)
+        else -> null
+    }
+    return (top ?: base.first) to base.second
 }
 
 /** Bubble shape+background: art-bubble-out/in radii (18/18/6/18 vs 18/18/18/6). */

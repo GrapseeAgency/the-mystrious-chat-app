@@ -1,6 +1,7 @@
 package app.pulse.feature.calls
 
 import app.pulse.ui.PulseIcons
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -28,9 +32,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
@@ -80,6 +88,36 @@ fun GroupCallOverlay(vm: GroupCallViewModel) {
     // Idle with no cards → nothing to render (web :755).
     if (snapshot.phase == GroupCallEngine.UiPhase.IDLE && snapshot.error == null && snapshot.summary == null) return
 
+    // R78 - MINIMIZE + BACK: the group call collapses to a floating chip so
+    // the user can keep using the app (user report: trapped on the call
+    // page). Back minimizes a live call, dismisses the error/ended cards;
+    // leaving stays an explicit red button. The chip restores on tap.
+    var minimized by remember { mutableStateOf(false) }
+    val groupCallLive = snapshot.phase == GroupCallEngine.UiPhase.JOINING ||
+        snapshot.phase == GroupCallEngine.UiPhase.ACTIVE ||
+        (snapshot.phase == GroupCallEngine.UiPhase.IDLE && snapshot.error == null && snapshot.summary == null && snapshot.ring != null)
+    BackHandler {
+        when {
+            minimized -> minimized = false
+            snapshot.error != null -> vm.dismissError()
+            snapshot.phase == GroupCallEngine.UiPhase.ENDED -> vm.dismissSummary()
+            groupCallLive -> minimized = true
+            else -> vm.dismissSummary()
+        }
+    }
+    if (minimized && groupCallLive) {
+        GroupCallMinimizedChip(
+            title = snapshot.title.ifBlank { "Group call" },
+            status = groupStatusLine(snapshot),
+            onExpand = { minimized = false },
+            onLeave = {
+                minimized = false
+                vm.leaveCall()
+            },
+        )
+        return
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -87,10 +125,11 @@ fun GroupCallOverlay(vm: GroupCallViewModel) {
             .semantics { contentDescription = "Group call" },
     ) {
         Column(Modifier.fillMaxSize()) {
-            // header (web :775-790)
+            // header (web :775-790) + the R78 minimize affordance
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .statusBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -129,6 +168,21 @@ fun GroupCallOverlay(vm: GroupCallViewModel) {
                         color = Color(0xCCFFFFFF),
                         fontSize = 12.sp,
                     )
+                }
+                Spacer(Modifier.width(8.dp))
+                // R78 - minimize affordance: collapse the live group call to
+                // the floating chip; audio keeps flowing underneath.
+                if (snapshot.phase == GroupCallEngine.UiPhase.JOINING ||
+                    snapshot.phase == GroupCallEngine.UiPhase.ACTIVE
+                ) {
+                    IconButton(
+                        onClick = { minimized = true },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color(0x33FFFFFF), CircleShape),
+                    ) {
+                        Icon(PulseIcons.ChevronDown, contentDescription = "Minimize group call", tint = Color.White)
+                    }
                 }
             }
 
@@ -505,5 +559,69 @@ private fun BannerRow(
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .semantics { contentDescription = joinDescription },
         )
+    }
+}
+
+/**
+ * R78 - the minimized GROUP-call chip (same language as the 1:1 chip): a
+ * floating ember-glass pill bottom-start, above the shell dock. Tap = expand;
+ * the red button leaves the call. Audio keeps flowing while the user
+ * navigates the app underneath.
+ */
+@Composable
+private fun GroupCallMinimizedChip(
+    title: String,
+    status: String,
+    onExpand: () -> Unit,
+    onLeave: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize()) {
+        Row(
+            Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(start = 12.dp, bottom = 96.dp)
+                .shadow(elevation = 16.dp, shape = RoundedCornerShape(26.dp), spotColor = Color(0x8C000000))
+                .clip(RoundedCornerShape(26.dp))
+                .background(Color(0xF21C1610))
+                .border(1.dp, Color(0x14FFFFFF), RoundedCornerShape(26.dp))
+                .clickable(onClick = onExpand)
+                .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            // live emerald pulse dot (group calls ring emerald on web)
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(PulsePalette.Emerald),
+            )
+            Column(Modifier.widthIn(max = 176.dp)) {
+                Text(
+                    text = title,
+                    color = Color(0xFFF5EFE8),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = status,
+                    color = Color(0xFF9B8C7B),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(
+                onClick = onLeave,
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color(0xFFE11D48), CircleShape),
+            ) {
+                Icon(PulseIcons.PhoneDown, contentDescription = "Leave group call", tint = Color.White)
+            }
+        }
     }
 }

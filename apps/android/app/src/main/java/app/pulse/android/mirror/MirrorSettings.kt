@@ -13,6 +13,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -238,6 +239,10 @@ internal fun MirrorSettingsScreen(
     val presence by repository.observePresence().collectAsState(initial = emptySet())
 
     var section by remember { mutableStateOf<SettingsSection?>(null) }
+    // R78 - GlassMenu popup slot at the SCREEN level (hoisted out of the
+    // scrollable section column - the old in-scroll fillMaxSize overlay
+    // rendered at the scroll position, i.e. "at the bottom of the page").
+    var overlayMenu by remember { mutableStateOf<String?>(null) }
 
     fun savePrefs(patch: WirePulsePrefs) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -409,6 +414,7 @@ internal fun MirrorSettingsScreen(
                             onUiTheme = { value -> session.setUiTheme(value) },
                             onNavStyle = { value -> session.setNavStyle(value) },
                             onFxMode = { savePrefs(WirePulsePrefs(fxWebglMode = it)) },
+                            onOpenMenu = { overlayMenu = it },
                         )
                         SettingsSection.Chat -> ChatSection(
                             prefs = prefs,
@@ -454,6 +460,49 @@ internal fun MirrorSettingsScreen(
                     }
                 }
             }
+        }
+
+        // R78 - BACK inside a settings section pops the section first
+        // (composed after the MirrorRoot settings handler → wins first).
+        BackHandler(enabled = section != null) { section = null }
+
+        // R78 - the GlassMenu popups render at the SCREEN level: centered
+        // over a dimmed backdrop exactly like the web MenuBackdrop + GlassMenu
+        // (settings-screen.tsx:2052-2079), never inside the scroll flow.
+        if (overlayMenu == "ui-theme") {
+            MirrorSettingsMenu(
+                title = "UI language",
+                width = 272.dp,
+                rows = UI_THEMES.map { (id, label, glyph) ->
+                    MirrorSettingsMenuRow(glyph, label, if (uiTheme == id) "check" else "", id)
+                },
+                footnote = THEME_DETAIL[uiTheme],
+                onPick = {
+                    session.setUiTheme(it)
+                    overlayMenu = null
+                },
+                onDismiss = { overlayMenu = null },
+            )
+        }
+        if (overlayMenu == "nav-style") {
+            MirrorSettingsMenu(
+                title = "Navigation style",
+                width = 288.dp,
+                rows = NAV_STYLES.map { (id, meta) ->
+                    MirrorSettingsMenuRow(
+                        meta.second,
+                        meta.first,
+                        if (navStyle == id) "check" else meta.third,
+                        id.id,
+                    )
+                },
+                footnote = null,
+                onPick = { id ->
+                    NAV_STYLES.firstOrNull { it.first.id == id }?.let { session.setNavStyle(it.first) }
+                    overlayMenu = null
+                },
+                onDismiss = { overlayMenu = null },
+            )
         }
     }
 }
@@ -823,7 +872,8 @@ private fun MirrorSettingsMenu(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0x66000000))
+            // web MenuBackdrop dark: bg-zinc-950/45 (settings-screen.tsx:652)
+            .background(Color(0x7309090B))
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center,
     ) {
@@ -1109,8 +1159,11 @@ private fun AppearanceSection(
     onUiTheme: (String) -> Unit,
     onNavStyle: (PulseNavStyle) -> Unit,
     onFxMode: (String) -> Unit,
+    /** R78 - opens the SCREEN-level GlassMenu popup (hoisted out of this
+     *  scrollable column - in-scroll overlays rendered at the scroll
+     *  position, which read as "stuck at the bottom of the page"). */
+    onOpenMenu: (String) -> Unit,
 ) {
-    var menu by remember { mutableStateOf<String?>(null) }
     val themeMeta = UI_THEMES.firstOrNull { it.first == uiTheme } ?: UI_THEMES[0]
     val navMeta = NAV_STYLES.firstOrNull { it.first == navStyle } ?: NAV_STYLES[0]
 
@@ -1139,7 +1192,7 @@ private fun AppearanceSection(
             title = "Design language",
             caption = THEME_DETAIL[themeMeta.first] ?: "",
             value = themeMeta.second,
-            onClick = { menu = "ui-theme" },
+            onClick = { onOpenMenu("ui-theme") },
         )
         SettingsFooterNote(
             "Running ${themeMeta.second} with elastic motion - each language restyles every surface through its own design tokens, instantly.",
@@ -1152,7 +1205,7 @@ private fun AppearanceSection(
             title = "Navigation style",
             caption = "${NAV_HINTS[navMeta.first]} - ${navMeta.second.third} zone",
             value = navMeta.second.first,
-            onClick = { menu = "nav-style" },
+            onClick = { onOpenMenu("nav-style") },
         )
         SettingsFooterNote(
             "Thirteen architectures are available - switching applies to the shell navigation immediately.",
@@ -1193,42 +1246,8 @@ private fun AppearanceSection(
             "Six realtime shader modes - off keeps the DOM particle layer instead. Each mode is a different ambient world: aurora bands, glass caustics, gradient mesh, star drift, liquid metaballs.",
         )
     }
-
-    if (menu == "ui-theme") {
-        MirrorSettingsMenu(
-            title = "UI language",
-            width = 272.dp,
-            rows = UI_THEMES.map { (id, label, glyph) ->
-                MirrorSettingsMenuRow(glyph, label, if (uiTheme == id) "check" else "", id)
-            },
-            footnote = THEME_DETAIL[uiTheme],
-            onPick = {
-                onUiTheme(it)
-                menu = null
-            },
-            onDismiss = { menu = null },
-        )
-    }
-    if (menu == "nav-style") {
-        MirrorSettingsMenu(
-            title = "Navigation style",
-            width = 288.dp,
-            rows = NAV_STYLES.map { (id, meta) ->
-                MirrorSettingsMenuRow(
-                    meta.second,
-                    meta.first,
-                    if (navStyle == id) "check" else meta.third,
-                    id.id,
-                )
-            },
-            footnote = null,
-            onPick = { id ->
-                NAV_STYLES.firstOrNull { it.first.id == id }?.let { onNavStyle(it.first) }
-                menu = null
-            },
-            onDismiss = { menu = null },
-        )
-    }
+    // R78 - the GlassMenu popups moved to the SCREEN level
+    // (MirrorSettingsScreen renders them over a centered backdrop).
 }
 
 // CHAT

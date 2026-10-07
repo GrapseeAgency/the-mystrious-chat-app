@@ -8,6 +8,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -652,6 +654,203 @@ private fun MirrorChannelRow(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * R78 - the ARCHIVED full sub-page (web chats-archived-page.tsx parity: the
+ * kebab "Archived" destination is a PAGE, not a bottom sheet). Same zinc-900
+ * scaffold as calls/channels: back pill, title + amber count chip, subtitle
+ * "Muted here - a new message moves a chat back to your inbox".
+ */
+@Composable
+internal fun MirrorArchivedPage(
+    archived: List<app.pulse.domain.model.Conversation>,
+    presence: Set<String>,
+    viewerId: String,
+    onOpen: (app.pulse.domain.model.Conversation) -> Unit,
+    onUnarchive: (app.pulse.domain.model.Conversation) -> Unit,
+    onClose: () -> Unit,
+) {
+    MirrorSubPageScaffold(
+        title = "Archived",
+        subtitle = "Muted here - a new message moves a chat back to your inbox",
+        countChip = archived.size,
+        onClose = onClose,
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
+            if (archived.isEmpty()) {
+                Box(Modifier.fillMaxWidth().padding(top = 96.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(
+                            Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(SubPageInk.Panel)
+                                .border(1.dp, SubPageInk.PanelBorder, RoundedCornerShape(24.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon("LArchive", tint = SubPageInk.Zinc500, modifier = Modifier.size(26.dp))
+                        }
+                        Text(
+                            "No archived chats",
+                            color = SubPageInk.Zinc500,
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
+            }
+            for (convo in archived) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { onOpen(convo) }
+                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    MirrorAvatar(
+                        name = convo.title,
+                        color = convo.accentColor,
+                        isGroup = convo.isGroupish,
+                        groupId = convo.id,
+                        online = convo.otherUserId != null && presence.contains(convo.otherUserId),
+                        showPresence = !convo.isGroupish,
+                        sizeDp = 44,
+                        cornerDp = if (convo.isGroupish) 14 else 22,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            convo.title,
+                            color = SubPageInk.Zinc50,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            convo.lastMessagePreview ?: "No messages yet",
+                            color = SubPageInk.Zinc500,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(SubPageInk.GlassPill)
+                            .border(1.dp, SubPageInk.PanelBorder, CircleShape)
+                            .clickable { onUnarchive(convo) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        MirrorLucideIcon("LArchiveRestore", tint = SubPageInk.Zinc300, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * R78 - the MENTIONS full sub-page (web mentions-page.tsx parity: the kebab
+ * "Mentions" destination is a PAGE). Amber count chip, live GET /api/mentions
+ * rows; tap jumps into the conversation.
+ */
+@Composable
+internal fun MirrorMentionsPage(
+    repository: PulseRepository,
+    onOpenConv: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    var items by remember { mutableStateOf<List<app.pulse.domain.model.MentionItem>?>(null) }
+    LaunchedEffect(Unit) {
+        items = repository.mentions().getOrDefault(emptyList())
+    }
+    MirrorSubPageScaffold(
+        title = "Mentions",
+        subtitle = "Messages that mention you - tap a row to jump in",
+        countChip = items?.size ?: 0,
+        onClose = onClose,
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
+            val list = items
+            when {
+                list == null -> Text(
+                    "Loading mentions…",
+                    color = SubPageInk.Zinc500,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(8.dp),
+                )
+                list.isEmpty() -> Box(Modifier.fillMaxWidth().padding(top = 96.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(
+                            Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(SubPageInk.Panel)
+                                .border(1.dp, SubPageInk.PanelBorder, RoundedCornerShape(24.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MirrorLucideIcon("LAtSign", tint = SubPageInk.Zinc500, modifier = Modifier.size(26.dp))
+                        }
+                        Text(
+                            "No mentions yet - when someone @-names you it lands here",
+                            color = SubPageInk.Zinc500,
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
+                else -> for (mention in list) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { onOpenConv(mention.conversationId) }
+                            .padding(horizontal = 6.dp, vertical = 10.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                mention.conversationName ?: "Conversation",
+                                color = SubPageInk.Zinc50,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                MirrorRowTime(mention.createdAt),
+                                color = SubPageInk.Zinc500,
+                                fontSize = 11.sp,
+                            )
+                        }
+                        Text(
+                            (if (mention.authorName.isNotBlank()) mention.authorName + ": " else "") + mention.snippet,
+                            color = SubPageInk.Zinc500,
+                            fontSize = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }

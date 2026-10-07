@@ -582,6 +582,10 @@ fun PulseRoot(
                     onConsumePendingUser = { pendingUserId = null },
                     shortcutAction = pendingAction,
                     onConsumeShortcutAction = { pendingAction = null },
+                    // R78 - double-tap system back at the shell root exits the
+                    // activity (WhatsApp/Telegram exit contract) instead of the
+                    // default dispatcher killing the app on the FIRST press.
+                    onExit = { finish() },
                 )
                 CallOverlay(callVm)
                 GroupCallOverlay(groupCallVm)

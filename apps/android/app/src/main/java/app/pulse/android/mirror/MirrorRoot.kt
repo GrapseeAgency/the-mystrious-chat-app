@@ -57,6 +57,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import app.pulse.android.SessionViewModel
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
@@ -109,9 +112,16 @@ internal fun MirrorRoot(
     /** R76 - launcher shortcut actions (new_message / search). */
     shortcutAction: String? = null,
     onConsumeShortcutAction: () -> Unit = {},
+    /** R78 - system back exit hook: double-tap back at the shell root
+     *  finishes the activity (WhatsApp/Telegram exit contract). */
+    onExit: () -> Unit = {},
 ) {
     val viewerId by session.viewerId.collectAsState()
     val viewerName by session.viewerName.collectAsState()
+    // R78 - the LIVE navigation style (web useNavStyle) - hoisted: both the
+    // shell content and the room overlay need the rail zone exception.
+    val navStyle by session.navStyle.collectAsState()
+    val navRail = navStyle == app.pulse.protocol.PulseNavStyle.RAIL
     val conversations by repository.observeConversations().collectAsState(initial = emptyList())
     val presence by repository.observePresence().collectAsState(initial = emptySet())
     var tab by remember { mutableStateOf(MirrorTab.Chats) }
@@ -224,6 +234,55 @@ internal fun MirrorRoot(
     var settingsOpen by remember { mutableStateOf(false) }
     var profileEditOpen by remember { mutableStateOf(false) }
     var profileSavedOpen by remember { mutableStateOf(false) }
+
+    // R78 - THE SYSTEM BACK CONTRACT (user report: "the app doesn't listen to
+    // the phone's back button - it just exits. Back should go to where the
+    // user came from; double-tap back on the home page exits").
+    // Compose resolves the LAST enabled BackHandler in composition order, so
+    // this chain is composed lowest-priority-first: the root double-tap-exit
+    // fires only when every surface above it is closed; each surface's own
+    // handler consumes back while it is visible - exactly WhatsApp/Telegram.
+    val backContext = LocalContext.current
+    var lastBackAt by remember { mutableStateOf(0L) }
+    BackHandler {
+        val now = System.currentTimeMillis()
+        if (now - lastBackAt < 2_000L) {
+            onExit()
+        } else {
+            lastBackAt = now
+            Toast.makeText(backContext, "Press back again to exit", Toast.LENGTH_SHORT).show()
+        }
+    }
+    // shell-level surfaces (composing order = back priority order)
+    BackHandler(enabled = searching) {
+        searching = false
+        searchQuery = ""
+    }
+    BackHandler(enabled = viewingStory != null) { viewingStory = null }
+    BackHandler(enabled = callsOpen) { callsOpen = false }
+    BackHandler(enabled = channelsOpen) { channelsOpen = false }
+    BackHandler(enabled = kebabOpen) { kebabOpen = false }
+    BackHandler(enabled = composerOpen) { composerOpen = false }
+    BackHandler(enabled = newChatOpen) { newChatOpen = false }
+    BackHandler(enabled = groupOpen) { groupOpen = false }
+    BackHandler(enabled = joinOpen) { joinOpen = false }
+    BackHandler(enabled = archivedOpen) { archivedOpen = false }
+    BackHandler(enabled = mentionsOpen) { mentionsOpen = false }
+    BackHandler(enabled = foldersOpen) { foldersOpen = false }
+    BackHandler(enabled = rowOptions != null) { rowOptions = null }
+    // the room covers the shell + the dock; its internal overlays (kebab,
+    // tray, action panels) register their own handlers inside MirrorRoom,
+    // which compose after this one and therefore win first
+    BackHandler(enabled = openRoom != null) { openRoom = null }
+    // full pages layered above the room
+    BackHandler(enabled = roomInfoFor != null) { roomInfoFor = null }
+    BackHandler(enabled = managerFor != null) { managerFor = null }
+    BackHandler(enabled = userPageFor != null) { userPageFor = null }
+    BackHandler(enabled = settingsOpen) { settingsOpen = false }
+    BackHandler(enabled = profileEditOpen) { profileEditOpen = false }
+    BackHandler(enabled = profileSavedOpen) { profileSavedOpen = false }
+    // Spotlight is the topmost shell surface (web z-90)
+    BackHandler(enabled = spotlightOpen) { spotlightOpen = false }
 
     // R64 - typing state: relay events - per-conversation typer list (4s TTL).
     var typers by remember { mutableStateOf<List<MirrorTyper>>(emptyList()) }
@@ -340,6 +399,12 @@ internal fun MirrorRoot(
                 }
                 // R73 - web tab slide (main-shell.tsx:425-488): direction-aware
                 // ±24px slide + fade, 0.22s swift-out, AnimatePresence custom=dir.
+                // R78 - the rail insets the content column 68dp (web w-[68px]).
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(start = if (navRail) 68.dp else 0.dp),
+                ) {
                 AnimatedContent(
                     targetState = tab,
                     transitionSpec = {
@@ -437,6 +502,7 @@ internal fun MirrorRoot(
                     }
                 }
                 }
+                } // end rail-inset content Box
 
                 // R66 - zinc-900 sub-pages over the scene (web calls/channels pages)
                 if (callsOpen) {
@@ -459,16 +525,71 @@ internal fun MirrorRoot(
                         onClose = { channelsOpen = false },
                     )
                 }
+                if (archivedOpen) {
+                    // R78 - the kebab Archived destination is a FULL PAGE
+                    // (web chats-archived-page.tsx), composed before the dock
+                    // so the dock stays reachable like the calls/channels pages.
+                    MirrorArchivedPage(
+                        archived = archivedConversations,
+                        presence = presence,
+                        viewerId = viewerId.orEmpty(),
+                        onOpen = {
+                            archivedOpen = false
+                            openRoom = it
+                        },
+                        onUnarchive = { convo ->
+                            CoroutineScope(Dispatchers.IO).launch {
+                                repository.archive(convo.id, false)
+                                runCatching { repository.refreshConversations() }
+                            }
+                        },
+                        onClose = { archivedOpen = false },
+                    )
+                }
+                if (mentionsOpen) {
+                    // R78 - the kebab Mentions destination is a FULL PAGE
+                    // (web mentions-page.tsx), composed before the dock.
+                    MirrorMentionsPage(
+                        repository = repository,
+                        onOpenConv = {
+                            mentionsOpen = false
+                            openById(it)
+                        },
+                        onClose = { mentionsOpen = false },
+                    )
+                }
 
-                MirrorDock(
-                    activeTab = tab,
-                    unread = activeConversations.sumOf { it.unreadCount },
-                    onTab = { tab = it },
-                    // web: the Calls slot opens the zinc-900 calls sub-page, tab stays
-                    onCalls = { callsOpen = true },
-                    onFab = { newChatOpen = true },
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
+                // R78 - the web unmounts the nav while a surface owns the screen
+                // (main-shell.tsx:515-527: openConversationId === null &&
+                // navZone !== 'side' && !settingsVisible && !sheetMounted).
+                // The rail is the side-zone exception: it STAYS visible while a
+                // room is open (web renders it beside the room). The capsule and
+                // the 12 other architectures render through MirrorNavRouter -
+                // the LIVE style the settings picker persists.
+                AnimatedVisibility(
+                    visible = navRail || (openRoom == null && !settingsOpen && !profileEditOpen &&
+                        !newChatOpen && !groupOpen && !joinOpen && !composerOpen),
+                    enter = slideInVertically(MirrorMotion.soft()) { it } + fadeIn(tween(160)),
+                    exit = slideOutVertically(tween(190, easing = FastOutLinearInEasing)) { it } + fadeOut(tween(140)),
+                ) {
+                    // BoxScope host: the style renderers align themselves to
+                    // their own zone (top/bottom/side/overlay) inside this Box.
+                    Box(Modifier.fillMaxSize()) {
+                        MirrorNavRouter(
+                            navStyle = navStyle,
+                            activeTab = tab,
+                            unread = activeConversations.sumOf { it.unreadCount },
+                            onTab = { tab = it },
+                            // web: the Calls slot opens the zinc-900 calls sub-page, tab stays
+                            onCalls = { callsOpen = true },
+                            onFab = { newChatOpen = true },
+                            // web NavOverflowButton / command-bar trailing dot → the kebab
+                            onKebab = { kebabOpen = true },
+                            // web command-bar search → the Spotlight palette
+                            onSearch = { spotlightOpen = true },
+                        )
+                    }
+                }
 
                 // R69 - the web mini chat window floats over everything
                 pipFor?.let { pipConvo ->
@@ -586,34 +707,6 @@ internal fun MirrorRoot(
                         onDismiss = { joinOpen = false },
                     )
                 }
-                if (archivedOpen) {
-                    MirrorArchivedSheet(
-                        archived = archivedConversations,
-                        presence = presence,
-                        viewerId = viewerId.orEmpty(),
-                        onOpen = {
-                            archivedOpen = false
-                            openRoom = it
-                        },
-                        onUnarchive = { convo ->
-                            CoroutineScope(Dispatchers.IO).launch {
-                                repository.archive(convo.id, false)
-                                runCatching { repository.refreshConversations() }
-                            }
-                        },
-                        onDismiss = { archivedOpen = false },
-                    )
-                }
-                if (mentionsOpen) {
-                    MirrorMentionsSheet(
-                        repository = repository,
-                        onOpenConv = {
-                            mentionsOpen = false
-                            openById(it)
-                        },
-                        onDismiss = { mentionsOpen = false },
-                    )
-                }
                 if (foldersOpen) {
                     MirrorFoldersSheet(
                         repository = repository,
@@ -655,6 +748,13 @@ internal fun MirrorRoot(
         // exit slides back down). roomShown keeps the convo composed through
         // the exit so the slide-down is visible.
         LaunchedEffect(openRoom) { if (openRoom != null) roomShown = openRoom }
+        // R78 - rail exception: the room overlays the CONTENT column, not
+        // the rail (web main-shell renders the rail beside the room).
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(start = if (navRail && openRoom != null) 68.dp else 0.dp),
+        ) {
         AnimatedVisibility(
             visible = viewingStory == null && openRoom != null,
             enter = slideInVertically(MirrorMotion.soft()) { it } + fadeIn(tween(90)),
@@ -684,6 +784,7 @@ internal fun MirrorRoot(
                 )
             }
         }
+        } // end rail-inset room Box
 
         if (roomInfoFor != null) {
             val convo = roomInfoFor!!
@@ -836,7 +937,7 @@ internal fun MirrorRoot(
  * so the phone showed a flat wash while the web bloomed - fixed here by
  * translating to the glow center first, then scaling the unit circle.
  */
-private fun MirrorScene(scope: DrawScope, breatheAlpha: Float) {
+internal fun MirrorScene(scope: DrawScope, breatheAlpha: Float) {
     // linear-gradient(180deg, #2b1c10 0%, #241609 30%, #170e07 58%, #0d0906 92%)
     scope.drawRect(
         Brush.verticalGradient(
