@@ -13,6 +13,7 @@ ktor = "2.3.12"
 room = "2.6.1"
 workManager = "2.9.1"
 socketIo = "2.1.0"
+haze = "1.2.2"
 datastore = "1.1.1"
 coreKtx = "1.15.0"
 splashscreen = "1.0.1"
@@ -81,6 +82,8 @@ room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 socketio-client = { module = "io.socket:socket.io-client", version.ref = "socketIo" }
 
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
+# R79 - real backdrop blur (web backdrop-filter parity) for the frosted glass panels
+haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
 stream-webrtc = { module = "io.getstream:stream-webrtc-android", version.ref = "webrtc" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging", version.ref = "firebaseMessaging" }
 

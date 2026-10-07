@@ -10,8 +10,8 @@ plugins {
 // Release channel plumbing - CI/local overrides via -PpulseVersionCode / -PpulseVersionName.
 // R76: the native-only wave - the WebView artboard shell is deleted, the
 // mirror boots on EVERY build (applicationId app.pulse.chat included).
-val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 50
-val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.25.0.0.1"
+val pulseVersionCode = (project.findProperty("pulseVersionCode") as String?)?.toInt() ?: 51
+val pulseVersionName = (project.findProperty("pulseVersionName") as String?) ?: "0.25.0.0.2"
 
 android {
     namespace = "app.pulse.android"
@@ -140,6 +140,10 @@ dependencies {
 
     // R63 mirror room - photo bubbles load from {gateway}/api/uploads via Coil
     implementation(libs.coil.compose)
+    // R79 - real backdrop blur: every glass panel (dock art-panel, the 12 nav
+    // style containers, kebab dropdowns, room header) frosts the content that
+    // scrolls behind it, exactly like the web backdrop-filter stack.
+    implementation(libs.haze)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

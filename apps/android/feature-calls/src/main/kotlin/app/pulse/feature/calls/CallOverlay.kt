@@ -76,10 +76,12 @@ fun CallOverlay(vm: CallViewModel) {
     // user can keep using the app underneath (user report: "when I go to the
     // call page I can't go anywhere - update, profile, messages"). The chip
     // restores the full screen on tap; hangup stays an explicit button.
-    // System back: minimize while a call is live, dismiss when ended - the
-    // back gesture NEVER kills a live call and never exits the app from here.
+    // R79 - BACK OWNERSHIP: while the call is MINIMIZED the overlay no longer
+    // consumes system back - the app beneath (room/settings/home) owns it,
+    // exactly like WhatsApp's floating-call behavior. Back minimizes only
+    // while the full call screen is showing; it never kills a live call.
     var minimized by remember { mutableStateOf(false) }
-    BackHandler {
+    BackHandler(enabled = !minimized || snapshot.state == CallState.ENDED) {
         when {
             minimized -> minimized = false
             snapshot.state == CallState.ENDED -> vm.dismiss()

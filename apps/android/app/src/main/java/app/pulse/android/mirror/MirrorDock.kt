@@ -62,13 +62,17 @@ internal fun MirrorDock(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // art-panel pill: bg rgba(24,18,13,0.66) + hairline ring + rounded-full,
-        // px-1.5 py-1, gap-0.5. The glass carries its own warm-dark color so
-        // the dock reads as a PANEL, never as backgroundless floating icons.
+        // art-panel pill (R79 real frost): web .art-panel = backdrop
+        // blur(22px) saturate(1.4) + rgba(24,18,13,0.66) + 1px hairline,
+        // rounded-full, px-1.5 py-1, gap-0.5. The frosted content scrolling
+        // behind it is what makes the panel read as GLASS with substance -
+        // the flat tint remains the API<31 fallback (user report: "the glass
+        // has no color itself... like there is no background in it").
+        val haze = LocalHazeState.current
         Box(
             Modifier
                 .clip(CircleShape)
-                .background(MirrorArt.Panel)
+                .mirrorGlassPanel(haze, MirrorArt.Panel, 22.dp)
                 .border(1.dp, MirrorArt.Hairline, CircleShape),
         ) {
             Row(
@@ -95,13 +99,15 @@ internal fun MirrorDock(
                 MirrorDockItem(MirrorTab.Profile, "PProfile", "Profile", activeTab == MirrorTab.Profile, badge = 0, onTab = onTab)
             }
         }
-        // art-fab: 52dp dark glass circle, white Plus 24dp - NOT an ember bomb
+        // art-fab (R79 real frost): web .art-fab = rgba(255,255,255,0.07) bg +
+        // hairline + backdrop blur(18px) + the two-layer box-shadow. 52dp,
+        // cream Plus 24dp - NOT an ember bomb.
         Box(
             Modifier
                 .size(52.dp)
                 .shadow(elevation = 18.dp, shape = CircleShape, spotColor = Color(0x8C000000))
                 .clip(CircleShape)
-                .background(MirrorArt.Chip)
+                .mirrorGlassPanel(haze, MirrorArt.Chip, 18.dp)
                 .border(1.dp, MirrorArt.Hairline, CircleShape)
                 .mirrorPressClick(onClick = onFab),
             contentAlignment = Alignment.Center,

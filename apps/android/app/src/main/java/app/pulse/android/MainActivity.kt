@@ -591,6 +591,17 @@ fun PulseRoot(
                     // default dispatcher killing the app on the FIRST press.
                     onExit = { exitActivity?.finish() },
                 )
+                // R79 - the incoming group-call ring banner (web
+                // GroupCallRingBanner, GroupCallOverlay.kt:455): it was
+                // imported but NEVER composed, so an incoming group call
+                // had no visible UI at all. Mounted over the mirror top edge.
+                GroupCallBanner(
+                    vm = groupCallVm,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 4.dp),
+                )
                 CallOverlay(callVm)
                 GroupCallOverlay(groupCallVm)
                 // R76 - the same native entry sheets the retired shells used,

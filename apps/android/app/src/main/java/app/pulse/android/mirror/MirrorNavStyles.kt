@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -97,6 +98,8 @@ internal fun mirrorNavZoneOf(style: PulseNavStyle): MirrorNavZone = when (style)
  * The router: web PulseNavBar switch (nav-router.tsx:1352-1391). Rendered
  * from MirrorRoot inside the shell Box; each renderer aligns itself to its
  * own zone. The capsule delegates to MirrorDock (the R78 fixed art-panel).
+ * R79 adds the contextual-dock per-tab chip actions (web CONTEXT_ACTION
+ * nav-router.tsx:1245-1250) + real frosted glass on every container.
  */
 @Composable
 internal fun BoxScope.MirrorNavRouter(
@@ -108,6 +111,8 @@ internal fun BoxScope.MirrorNavRouter(
     onFab: () -> Unit,
     onKebab: () -> Unit,
     onSearch: () -> Unit,
+    onNewGroup: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     when (navStyle) {
         PulseNavStyle.CAPSULE -> MirrorDock(
@@ -127,9 +132,9 @@ internal fun BoxScope.MirrorNavRouter(
         PulseNavStyle.COMMAND_BAR -> MirrorCommandBarNav(activeTab, unread, onTab, onCalls, onSearch, onKebab)
         PulseNavStyle.RAIL -> MirrorRailNav(activeTab, unread, onTab, onCalls)
         PulseNavStyle.ISLAND -> MirrorIslandNav(activeTab, unread, onTab, onCalls)
-        PulseNavStyle.RADIAL -> MirrorRadialNav(activeTab, unread, onTab, onCalls, onFab)
+        PulseNavStyle.RADIAL -> MirrorRadialNav(activeTab, unread, onTab, onCalls)
         PulseNavStyle.GESTURE -> MirrorGestureNav(activeTab, unread, onTab, onCalls)
-        PulseNavStyle.CONTEXTUAL_DOCK -> MirrorContextualDockNav(activeTab, unread, onTab, onCalls, onFab)
+        PulseNavStyle.CONTEXTUAL_DOCK -> MirrorContextualDockNav(activeTab, unread, onTab, onCalls, onFab, onSearch, onNewGroup, onSettings)
     }
 }
 
@@ -188,12 +193,19 @@ private fun NavBadge(count: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** A glass container using the web GLASS_PANEL dark recipe. */
-private fun Modifier.navGlassPanel(shape: RoundedCornerShape): Modifier = this
-    .shadow(elevation = 24.dp, shape = shape, spotColor = NavGlass.Shadow)
-    .clip(shape)
-    .background(NavGlass.Panel)
-    .border(1.dp, NavGlass.Border, shape)
+/** A glass container using the web GLASS_PANEL dark recipe. R79: REAL
+ *  frosted backdrop (blur-2xl + zinc-900/65 tint) - the content scrolling
+ *  behind the nav frosts through it exactly like the web backdrop-filter;
+ *  below API 31 (and in tests) it degrades to the flat tint. */
+@Composable
+private fun Modifier.navGlassPanel(shape: RoundedCornerShape): Modifier {
+    val haze = LocalHazeState.current
+    return this
+        .shadow(elevation = 24.dp, shape = shape, spotColor = NavGlass.Shadow)
+        .clip(shape)
+        .mirrorGlassPanel(haze, NavGlass.Panel, 24.dp)
+        .border(1.dp, NavGlass.Border, shape)
+}
 
 /* ────────────────────────── the 12 renderers ────────────────────────── */
 
@@ -488,7 +500,7 @@ private fun BoxScope.MirrorTabBarNav(
                         .padding(horizontal = 10.dp, vertical = 3.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(if (active) Color(0x1AFBBF24) else Color.Transparent)
-                        .border(1.dp, if (active) Color(0x40FBBF24) else Color.Transparent, RoundedCornerShape(16.dp))
+                        .border(1.dp, if (active) Color(0x40F59E0B) else Color.Transparent, RoundedCornerShape(16.dp))
                         .mirrorPressClick(onClick = { if (dest.tab != null) onTab(dest.tab!!) else onCalls() }),
                 ) {
                     Column(
@@ -638,11 +650,11 @@ private fun BoxScope.MirrorCommandBarNav(
                     }
                 }
                 Spacer(Modifier.height(3.dp))
-                // 2.5dp amber underline
+                // 2.5dp amber underline (web h-[2.5px])
                 Box(
                     Modifier
                         .width(26.dp)
-                        .height(2.dp)
+                        .height(2.5.dp)
                         .clip(CircleShape)
                         .background(if (active) NavGlass.Amber500 else Color.Transparent),
                 )
@@ -818,36 +830,63 @@ private fun BoxScope.MirrorIslandNav(
     }
 }
 
-/** radial (nav-router.tsx:1136): the new-chat FAB; tap fans the four
- *  destinations in an arc of glass circles; active icon is amber. */
+/** radial (nav-router.tsx:1097-1164): a CENTERED amber FAB that fans the
+ *  four destinations as 68dp glass circles across the upper hemisphere over
+ *  a zinc-950/35 veil. R79 parity fix: the FAB is the web's amber-400→
+ *  orange-600 gradient with a WHITE plus anchored bottom-CENTER (was a dark
+ *  chip in the corner), it TOGGLES the fan (the web FAB is the nav trigger,
+ *  not new-chat), the fan arcs from the screen bottom-center at radius 96
+ *  step 34°, and the active fan icon is amber-600. */
 @Composable
 private fun BoxScope.MirrorRadialNav(
     activeTab: MirrorTab,
     unread: Int,
     onTab: (MirrorTab) -> Unit,
     onCalls: () -> Unit,
-    onFab: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
-    Box(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 16.dp)) {
-        // the fan: four circles arcing up-left
-        val fanAngles = listOf(-90f, -60f, -30f, 0f) // deg from the FAB
-        if (open) {
-            fanAngles.forEachIndexed { index, angle ->
-                val dest = NAV_DESTS.getOrNull(index) ?: return@forEachIndexed
+    val haze = LocalHazeState.current
+    val rotation by animateFloatAsState(
+        targetValue = if (open) 45f else 0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "radialFabRotate",
+    )
+    // web radial-veil (nav-router.tsx:1112): bg-zinc-950/35 full-screen
+    // catcher - tap anywhere dismisses the fan.
+    AnimatedVisibility(visible = open, enter = fadeIn(tween(120)), exit = fadeOut(tween(120))) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color(0x5909090B))
+                .clickable { open = false },
+        )
+    }
+    // the fan: web anchors each 68dp circle at bottom-6 left-1/2, radius 96,
+    // step 34° fanning the upper hemisphere (nav-router.tsx:1115-1142).
+    AnimatedVisibility(
+        visible = open,
+        enter = scaleIn(initialScale = 0.6f, animationSpec = MirrorMotion.snappy()) + fadeIn(tween(120)),
+        exit = scaleOut(targetScale = 0.6f) + fadeOut(tween(120)),
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            NAV_DESTS.forEachIndexed { index, dest ->
                 val active = dest.tab != null && dest.tab == activeTab
                 // math in raw floats (Dp/Float have no Double times overload)
-                val radius = 92f
-                val rad = Math.toRadians(angle.toDouble() + 180) // fan to the left-up
-                val x = radius * Math.cos(rad).toFloat()
-                val y = radius * Math.sin(rad).toFloat()
+                val deg = -90f + (index - (NAV_DESTS.size - 1) / 2f) * 34f
+                val rad = Math.toRadians(deg.toDouble())
+                val x = (96f * Math.cos(rad)).toFloat()
+                val y = (96f * Math.sin(rad)).toFloat()
                 Box(
                     Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 24.dp)
                         .offset(x = x.dp, y = y.dp)
-                        .size(52.dp)
+                        .size(68.dp)
                         .shadow(elevation = 16.dp, shape = CircleShape, spotColor = NavGlass.Shadow)
                         .clip(CircleShape)
-                        .background(NavGlass.Panel)
+                        // web dark: bg-zinc-900/90 + border-white/10 + backdrop-blur-xl
+                        .mirrorGlassPanel(haze, Color(0xE618181B), 24.dp)
                         .border(1.dp, NavGlass.Border, CircleShape)
                         .clickable {
                             open = false
@@ -856,44 +895,61 @@ private fun BoxScope.MirrorRadialNav(
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        MirrorPhosphorIcon(
-                            dest.phosphor,
-                            tint = if (active) NavGlass.Amber400 else MirrorArt.Text,
-                            modifier = Modifier.size(19.dp),
+                        Box {
+                            MirrorPhosphorIcon(
+                                dest.phosphor,
+                                tint = if (active) NavGlass.Amber600 else MirrorArt.Text,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            if (dest.tab == MirrorTab.Chats) {
+                                NavBadge(unread, Modifier.align(Alignment.TopEnd).offset(x = 12.dp, y = (-6).dp))
+                            }
+                        }
+                        Text(
+                            dest.label,
+                            color = MirrorArt.Text,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
                         )
-                        Text(dest.label, color = if (active) NavGlass.Amber400 else MirrorArt.Dim, fontSize = 8.sp)
                     }
                 }
             }
         }
-        // the FAB itself
+    }
+    // the FAB itself (web nav-router.tsx:1146-1161): size-14 (56dp) centered,
+    // bg-gradient-to-br from-amber-400 to-orange-600, WHITE Plus 24dp rotating
+    // 45° while open, shadow 0_10px_36px_-6px rgba(245,158,11,0.65).
+    Box(
+        Modifier
+            .align(Alignment.BottomCenter)
+            .navigationBarsPadding()
+            .padding(bottom = 14.dp),
+    ) {
         Box(
             Modifier
-                .size(52.dp)
-                .shadow(elevation = 18.dp, shape = CircleShape, spotColor = Color(0x8C000000))
+                .size(56.dp)
+                .shadow(elevation = 18.dp, shape = CircleShape, spotColor = Color(0xA6F59E0B))
                 .clip(CircleShape)
-                .background(MirrorArt.Chip)
-                .border(1.dp, MirrorArt.Hairline, CircleShape)
-                .clickable { if (open) onFab() else open = true },
+                .background(Brush.linearGradient(listOf(NavGlass.Amber400, NavGlass.Orange600)))
+                .mirrorPressClick(onClick = { open = !open }),
             contentAlignment = Alignment.Center,
         ) {
-            val rotation by animateFloatAsState(
-                targetValue = if (open) 45f else 0f,
-                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
-                label = "radialFabRotate",
-            )
             MirrorLucideIcon(
                 "LPlus",
-                tint = MirrorArt.Text,
+                tint = Color.White,
                 modifier = Modifier.size(24.dp).graphicsLayer { rotationZ = rotation },
             )
         }
     }
 }
 
-/** gesture (nav-router.tsx:1183): minimal bottom pill showing the active
- *  destination; tap cycles, drag switches (the web edge-swipe idiom,
- *  mobile-honest as a compact switcher pill). */
+/** gesture (nav-router.tsx:1169-1241): a BARE drag handle at the bottom -
+ *  h-9 w-40 with the 5px inner bar (closed: w-24 zinc-600, open: w-16
+ *  amber-500) - that expands the GLASS quick-switcher above it (56dp
+ *  rounded-2xl tiles, amber-500/18 active fill + amber-500/30 ring, labels
+ *  9px semibold). R79 parity fix: the R78 glass dots-pill container was a
+ *  native invention - the web collapsed state is JUST the handle, no panel. */
 @Composable
 private fun BoxScope.MirrorGestureNav(
     activeTab: MirrorTab,
@@ -902,78 +958,102 @@ private fun BoxScope.MirrorGestureNav(
     onCalls: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
+    val haze = LocalHazeState.current
     Column(
         Modifier
             .align(Alignment.BottomCenter)
             .navigationBarsPadding()
-            .padding(bottom = 12.dp),
+            .padding(bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // the quick-switcher (web 1183-1219): GLASS_PANEL rounded-[24px] p-1.5,
+        // 56dp rounded-2xl tiles with 9px semibold labels
         AnimatedVisibility(
             visible = open,
-            enter = scaleIn(initialScale = 0.9f) + fadeIn(),
-            exit = scaleOut(targetScale = 0.9f) + fadeOut(),
+            enter = scaleIn(initialScale = 0.92f) + fadeIn(),
+            exit = scaleOut(targetScale = 0.92f) + fadeOut(),
         ) {
             Row(
                 Modifier
-                    .padding(bottom = 8.dp)
-                    .navGlassPanel(RoundedCornerShape(22.dp))
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    .padding(bottom = 10.dp)
+                    .shadow(elevation = 24.dp, shape = RoundedCornerShape(24.dp), spotColor = NavGlass.Shadow)
+                    .clip(RoundedCornerShape(24.dp))
+                    .mirrorGlassPanel(haze, NavGlass.Panel, 24.dp)
+                    .border(1.dp, NavGlass.Border, RoundedCornerShape(24.dp))
+                    .padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 for (dest in NAV_DESTS) {
                     val active = dest.tab != null && dest.tab == activeTab
                     Box(
                         Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(18.dp))
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            // web active tile: bg-amber-500/18 + ring-amber-500/30
                             .background(if (active) Color(0x2EF59E0B) else Color.Transparent)
-                            .border(1.dp, if (active) Color(0x4DF59E0B) else Color.Transparent, RoundedCornerShape(18.dp))
+                            .border(1.dp, if (active) Color(0x4DF59E0B) else Color.Transparent, RoundedCornerShape(16.dp))
                             .mirrorPressClick(onClick = {
                                 open = false
                                 if (dest.tab != null) onTab(dest.tab!!) else onCalls()
                             }),
                         contentAlignment = Alignment.Center,
                     ) {
-                        MirrorPhosphorIcon(
-                            dest.phosphor,
-                            tint = if (active) NavGlass.Amber400 else MirrorArt.Dim,
-                            modifier = Modifier.size(19.dp),
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box {
+                                MirrorPhosphorIcon(
+                                    dest.phosphor,
+                                    // web dark: inactive zinc-400, active amber-400
+                                    tint = if (active) NavGlass.Amber400 else Color(0xFFA1A1AA),
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                if (dest.tab == MirrorTab.Chats) {
+                                    NavBadge(unread, Modifier.align(Alignment.TopEnd).offset(x = 8.dp, y = (-5).dp))
+                                }
+                            }
+                            Text(
+                                dest.label,
+                                // web dark: zinc-300, active amber-400
+                                color = if (active) NavGlass.Amber400 else Color(0xFFD4D4D8),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
             }
         }
-        // the pill
-        Row(
+        // the collapsed state: a BARE drag handle (web 1230-1238) - h-9 w-40
+        // touch target, inner 5px bar, animated width, NO container panel.
+        val handleWidth by animateDpAsState(
+            targetValue = if (open) 64.dp else 96.dp,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+            label = "gestureHandleWidth",
+        )
+        Box(
             Modifier
-                .navGlassPanel(RoundedCornerShape(50))
-                .mirrorPressClick(onClick = { open = !open })
-                .padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .size(width = 160.dp, height = 36.dp)
+                .mirrorPressClick(onClick = { open = !open }),
+            contentAlignment = Alignment.BottomCenter,
         ) {
-            // four dots: the active one is amber
-            for (dest in NAV_DESTS) {
-                val active = dest.tab != null && dest.tab == activeTab
-                Box(
-                    Modifier
-                        .size(if (active) 8.dp else 5.dp)
-                        .clip(CircleShape)
-                        .background(if (active) NavGlass.Amber500 else MirrorArt.Dim),
-                )
-            }
-            if (unread > 0) {
-                Spacer(Modifier.width(2.dp))
-                NavBadge(unread)
-            }
+            Box(
+                Modifier
+                    .padding(bottom = 6.dp)
+                    .size(width = handleWidth, height = 5.dp)
+                    .clip(CircleShape)
+                    // web dark: closed zinc-600, open amber-500
+                    .background(if (open) NavGlass.Amber500 else Color(0xFF52525B)),
+            )
         }
     }
 }
 
-/** contextual-dock (nav-router.tsx:1267): the dock whose trailing chip morphs
- *  per active tab (chats → New chat, hub → Explore, profile → Settings). */
+/** contextual-dock (nav-router.tsx:1252-1306): the dock whose trailing chip
+ *  morphs per active tab with the tab's OWN action - chats → New chat,
+ *  hub → Search, contacts → New group, profile → Settings (web
+ *  CONTEXT_ACTION map) - as a SOLID amber-500→orange-600 gradient chip
+ *  with WHITE bold text (the R78 10% tint was a parity miss). */
 @Composable
 private fun BoxScope.MirrorContextualDockNav(
     activeTab: MirrorTab,
@@ -981,6 +1061,9 @@ private fun BoxScope.MirrorContextualDockNav(
     onTab: (MirrorTab) -> Unit,
     onCalls: () -> Unit,
     onFab: () -> Unit,
+    onSearch: () -> Unit,
+    onNewGroup: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     Row(
         Modifier
@@ -1023,26 +1106,37 @@ private fun BoxScope.MirrorContextualDockNav(
                 }
             }
         }
-        // the morphing contextual chip
-        val chip = when (activeTab) {
-            MirrorTab.Chats -> "New chat" to "LPlus"
-            MirrorTab.Hub -> "Explore" to "LCompass"
-            MirrorTab.Profile -> "Settings" to "LSettings"
-            else -> "New chat" to "LPlus"
+        // the morphing contextual chip (web nav-router.tsx:1282-1301):
+        // h-[52px] rounded-[20px] bg-gradient-to-br from-amber-500 to-orange-600
+        // + WHITE 11px bold text + the amber glow shadow, running the ACTIVE
+        // TAB's action (CONTEXT_ACTION, nav-router.tsx:1245-1250).
+        val chipLabel: String
+        val chipIcon: String
+        val chipAction: () -> Unit
+        when (activeTab) {
+            MirrorTab.Chats -> { chipLabel = "New chat"; chipIcon = "LPlus"; chipAction = onFab }
+            MirrorTab.Hub -> { chipLabel = "Search"; chipIcon = "LSearch"; chipAction = onSearch }
+            MirrorTab.Contacts -> { chipLabel = "New group"; chipIcon = "PContacts"; chipAction = onNewGroup }
+            MirrorTab.Profile -> { chipLabel = "Settings"; chipIcon = "LSettings"; chipAction = onSettings }
         }
         Box(
             Modifier
-                .heightIn(min = 50.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(Color(0x1AF59E0B))
-                .border(1.dp, Color(0x4DF59E0B), RoundedCornerShape(22.dp))
-                .mirrorPressClick(onClick = onFab)
+                .padding(start = 2.dp)
+                .height(52.dp)
+                .shadow(elevation = 16.dp, shape = RoundedCornerShape(20.dp), spotColor = Color(0xB3F59E0B))
+                .clip(RoundedCornerShape(20.dp))
+                .background(Brush.linearGradient(listOf(NavGlass.Amber500, NavGlass.Orange600)))
+                .mirrorPressClick(onClick = chipAction)
                 .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                MirrorLucideIcon(chip.second, tint = NavGlass.Amber400, modifier = Modifier.size(16.dp))
-                Text(chip.first, color = NavGlass.Amber400, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                if (chipIcon.startsWith("P")) {
+                    MirrorPhosphorIcon(chipIcon, tint = Color.White, modifier = Modifier.size(16.dp))
+                } else {
+                    MirrorLucideIcon(chipIcon, tint = Color.White, modifier = Modifier.size(16.dp))
+                }
+                Text(chipLabel, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

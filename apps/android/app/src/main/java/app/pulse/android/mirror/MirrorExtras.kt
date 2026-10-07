@@ -354,7 +354,8 @@ internal fun MirrorKebabMenu(
                 // web KEBAB_CONTENT_CLS: max-h-[min(70vh,560px)] overflow-y-auto
                 .heightIn(max = minOf(LocalConfiguration.current.screenHeightDp * 0.7f, 560f).dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xF21C1610))
+                // web: bg-[#1c1610]/95 + backdrop-blur-xl (R79 real frost)
+                .mirrorGlassPanel(LocalHazeState.current, Color(0xF21C1610), 24.dp)
                 .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
                 .verticalScroll(rememberScrollState())
                 .padding(6.dp)

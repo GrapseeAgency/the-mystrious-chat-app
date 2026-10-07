@@ -92,11 +92,13 @@ fun GroupCallOverlay(vm: GroupCallViewModel) {
     // the user can keep using the app (user report: trapped on the call
     // page). Back minimizes a live call, dismisses the error/ended cards;
     // leaving stays an explicit red button. The chip restores on tap.
+    // R79 - BACK OWNERSHIP: while MINIMIZED the overlay no longer consumes
+    // system back - the app beneath owns it (WhatsApp floating-call parity).
     var minimized by remember { mutableStateOf(false) }
     val groupCallLive = snapshot.phase == GroupCallEngine.UiPhase.JOINING ||
         snapshot.phase == GroupCallEngine.UiPhase.ACTIVE ||
         (snapshot.phase == GroupCallEngine.UiPhase.IDLE && snapshot.error == null && snapshot.summary == null && snapshot.ring != null)
-    BackHandler {
+    BackHandler(enabled = !minimized || !groupCallLive) {
         when {
             minimized -> minimized = false
             snapshot.error != null -> vm.dismissError()

@@ -72,6 +72,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
+import dev.chrisbanes.haze.HazeState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -428,6 +429,12 @@ internal fun MirrorRoom(
     // so the same default is applied inline here).
     val effectiveWallpaper = themeOverride?.wallpaper ?: (prefsWire.wallpaper ?: "none")
     val (glowTop, glowBottom) = mirrorWallpaperGlows(effectiveWallpaper, themeOverride?.tint)
+
+    // R79 - the room's own frosted-glass source: the message list is what the
+    // kebab dropdown floats over (web chat-room.tsx:4059: #1c1610/95 +
+    // backdrop-blur-xl over the scrolling bubbles). Sibling-above-source
+    // layout - the kebab panel frosts the REAL content behind it.
+    val roomHaze = remember { HazeState() }
 
     // art-scene ::before breathe: opacity 1 -> 0.86 -> 1 over 7s (globals.css).
     // The room carries its OWN opaque scene now (R78), so it animates here.
@@ -1286,6 +1293,7 @@ internal fun MirrorRoom(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .mirrorHazeSource(roomHaze)
                 .drawBehind {
                     val w = size.width
                     val h = size.height
@@ -2061,7 +2069,8 @@ internal fun MirrorRoom(
                     // must scroll, never clip
                     .heightIn(max = minOf(LocalConfiguration.current.screenHeightDp * 0.72f, 520f).dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xF21C1610))
+                    // web: bg-[#1c1610]/95 + backdrop-blur-xl + shadow-2xl
+                    .mirrorGlassPanel(roomHaze, Color(0xF21C1610), 24.dp)
                     .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
                     .verticalScroll(rememberScrollState())
                     .padding(6.dp)

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -71,6 +72,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import dev.chrisbanes.haze.HazeState
 
 /**
  * Mirror destinations behind the artboard dock. The web CapsuleNav hard-codes
@@ -354,6 +356,16 @@ internal fun MirrorRoot(
         ),
         label = "sceneBreatheAlpha",
     )
+    // R79 - the shell frosted-glass source. The web stacks every glass surface
+    // as backdrop-filter (blur + saturate + translucent tint) over the content
+    // scrolling behind it; Haze reproduces that exact stack for the dock
+    // art-panel, the 12 nav-style containers and the kebab dropdown. The
+    // source is the tab content + sub-pages; the glass panels are siblings
+    // ABOVE it (the canonical haze layout - never an effect inside its own
+    // source). Below API 31 the panels degrade to their flat tint = the R78
+    // look, so the glass always keeps its color.
+    val shellHaze = remember { HazeState() }
+    CompositionLocalProvider(LocalHazeState provides shellHaze) {
     Box(
         Modifier
             .fillMaxSize()
@@ -397,6 +409,10 @@ internal fun MirrorRoot(
                         )
                     }
                 }
+                // R79 - haze SOURCE: the tab content + the zinc-900 sub-pages are
+                // what the glass panels floating above (dock, nav styles, kebab)
+                // frost - web backdrop-filter parity.
+                Box(Modifier.fillMaxSize().mirrorHazeSource(shellHaze)) {
                 // R73 - web tab slide (main-shell.tsx:425-488): direction-aware
                 // ±24px slide + fade, 0.22s swift-out, AnimatePresence custom=dir.
                 // R78 - the rail insets the content column 68dp (web w-[68px]).
@@ -558,17 +574,21 @@ internal fun MirrorRoot(
                         onClose = { mentionsOpen = false },
                     )
                 }
+                } // end R79 haze source Box (tab content + sub-pages)
 
-                // R78 - the web unmounts the nav while a surface owns the screen
-                // (main-shell.tsx:515-527: openConversationId === null &&
+                // R78/R79 - the web unmounts the nav while a surface owns the
+                // screen (main-shell.tsx:515-527: openConversationId === null &&
                 // navZone !== 'side' && !settingsVisible && !sheetMounted).
-                // The rail is the side-zone exception: it STAYS visible while a
-                // room is open (web renders it beside the room). The capsule and
-                // the 12 other architectures render through MirrorNavRouter -
-                // the LIVE style the settings picker persists.
+                // R79 FIX: the R78 "rail stays visible in the room" exception was
+                // a native invention - on the web the room is absolute inset-0
+                // z-40 and COVERS the rail entirely, and main-shell.tsx:403 hides
+                // the rail over Settings. NO nav of ANY style (rail included) is
+                // visible while a room, settings or a creation sheet owns the
+                // screen - the owner's hard rule. All 13 architectures render
+                // through MirrorNavRouter - the LIVE style the picker persists.
                 AnimatedVisibility(
-                    visible = navRail || (openRoom == null && !settingsOpen && !profileEditOpen &&
-                        !newChatOpen && !groupOpen && !joinOpen && !composerOpen),
+                    visible = openRoom == null && !settingsOpen && !profileEditOpen &&
+                        !newChatOpen && !groupOpen && !joinOpen && !composerOpen,
                     enter = slideInVertically(MirrorMotion.soft()) { it } + fadeIn(tween(160)),
                     exit = slideOutVertically(tween(190, easing = FastOutLinearInEasing)) { it } + fadeOut(tween(140)),
                 ) {
@@ -587,6 +607,10 @@ internal fun MirrorRoot(
                             onKebab = { kebabOpen = true },
                             // web command-bar search → the Spotlight palette
                             onSearch = { spotlightOpen = true },
+                            // R79 - web contextual-dock per-tab chip actions
+                            // (nav-router.tsx:1245-1250 CONTEXT_ACTION)
+                            onNewGroup = { groupOpen = true },
+                            onSettings = { settingsOpen = true },
                         )
                     }
                 }
@@ -748,12 +772,13 @@ internal fun MirrorRoot(
         // exit slides back down). roomShown keeps the convo composed through
         // the exit so the slide-down is visible.
         LaunchedEffect(openRoom) { if (openRoom != null) roomShown = openRoom }
-        // R78 - rail exception: the room overlays the CONTENT column, not
-        // the rail (web main-shell renders the rail beside the room).
+        // R79 - the room is FULL-BLEED: the web room root is absolute inset-0
+        // z-40 covering the ENTIRE shell including the rail column, and the
+        // rail itself unmounts (fixed above). No 68dp start inset - the room
+        // owns every pixel while it is open.
         Box(
             Modifier
-                .fillMaxSize()
-                .padding(start = if (navRail && openRoom != null) 68.dp else 0.dp),
+                .fillMaxSize(),
         ) {
         AnimatedVisibility(
             visible = viewingStory == null && openRoom != null,
@@ -927,7 +952,8 @@ internal fun MirrorRoot(
                 onDismiss = { spotlightOpen = false },
             )
         }
-    }
+    } // end root art-scene Box
+    } // end R79 shell haze CompositionLocalProvider
 }
 
 /**
