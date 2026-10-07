@@ -51,16 +51,23 @@ internal fun Modifier.mirrorHazeSource(state: HazeState?): Modifier =
  * A web frosted panel: blurred backdrop + translucent tint + (below API 31)
  * the same tint as a flat fallback scrim. Replaces `.background(tint)` in a
  * clip->background->border chain: `.clip(shape).mirrorGlassPanel(...).border(...)`.
+ *
+ * [backgroundColor] is REQUIRED by Haze's API 31+ RenderEffect path (it fills
+ * the blur's edge-sampling zone where the source has no pixels) - it defaults
+ * to the opaque art-scene base #0D0906, which is the true backdrop under
+ * every glass surface in the shell AND the room.
  */
 internal fun Modifier.mirrorGlassPanel(
     state: HazeState?,
     tint: Color,
     blurRadius: Dp = 24.dp,
+    backgroundColor: Color = MirrorArt.Bg,
 ): Modifier {
     if (state == null) return background(tint)
     return hazeEffect(
         state,
         style = HazeStyle(
+            backgroundColor = backgroundColor,
             tint = HazeTint(tint),
             blurRadius = blurRadius,
             fallbackTint = HazeTint(tint),
