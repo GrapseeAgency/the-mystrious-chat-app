@@ -549,6 +549,10 @@ fun PulseRoot(
                 // dial real 1:1/group calls through the same call engines.
                 val callVm: CallViewModel = hiltViewModel()
                 val groupCallVm: GroupCallViewModel = hiltViewModel()
+                // R78 - double-tap system back exits via the captured activity
+                // (PulseRoot is a top-level composable - finish() is not in
+                // scope here, so the context cast carries it).
+                val exitActivity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
                 app.pulse.android.mirror.MirrorRoot(
                     session = session,
                     repository = repository,
@@ -585,7 +589,7 @@ fun PulseRoot(
                     // R78 - double-tap system back at the shell root exits the
                     // activity (WhatsApp/Telegram exit contract) instead of the
                     // default dispatcher killing the app on the FIRST press.
-                    onExit = { finish() },
+                    onExit = { exitActivity?.finish() },
                 )
                 CallOverlay(callVm)
                 GroupCallOverlay(groupCallVm)

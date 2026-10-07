@@ -836,10 +836,11 @@ private fun BoxScope.MirrorRadialNav(
             fanAngles.forEachIndexed { index, angle ->
                 val dest = NAV_DESTS.getOrNull(index) ?: return@forEachIndexed
                 val active = dest.tab != null && dest.tab == activeTab
-                val radius = 92.dp
+                // math in raw floats (Dp/Float have no Double times overload)
+                val radius = 92f
                 val rad = Math.toRadians(angle.toDouble() + 180) // fan to the left-up
-                val x = (radius * Math.cos(rad)).toFloat()
-                val y = (radius * Math.sin(rad)).toFloat()
+                val x = radius * Math.cos(rad).toFloat()
+                val y = radius * Math.sin(rad).toFloat()
                 Box(
                     Modifier
                         .offset(x = x.dp, y = y.dp)

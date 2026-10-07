@@ -423,7 +423,10 @@ internal fun MirrorRoom(
     val convThemes by repository.convThemes.collectAsState(initial = emptyMap<String, ConvTheme>())
     val prefsWire by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
     val themeOverride = convThemes[groupId]
-    val effectiveWallpaper = themeOverride?.wallpaper ?: prefsWire.resolvedOrDefaults().wallpaper
+    // WirePulsePrefs.wallpaper is nullable; the web default token is "none"
+    // (prefs-defaults.ts:41 - resolvedOrDefaults is private to MirrorSettings,
+    // so the same default is applied inline here).
+    val effectiveWallpaper = themeOverride?.wallpaper ?: (prefsWire.wallpaper ?: "none")
     val (glowTop, glowBottom) = mirrorWallpaperGlows(effectiveWallpaper, themeOverride?.tint)
 
     // art-scene ::before breathe: opacity 1 -> 0.86 -> 1 over 7s (globals.css).
