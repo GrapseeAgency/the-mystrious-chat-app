@@ -5714,3 +5714,21 @@ Stage Summary:
 - Bubbles were already web-exact (sent right bone-cream 18/18/6/18, received left dark 18/18/18/6, 78% width, group avatars on cluster heads) - the "Discord look" was the transparent room bleeding the shell through; now the room reads like WhatsApp.
 - Not touched (owner's hard rule): vibration - zero changes to any haptics code path.
 - Honest leftovers: iOS parity is its own track (untouched); the rail style approximates the web content squeeze via inset padding; ShareInSheet/JoinInviteSheet/AppLock back handling not added (minor); old MirrorArchivedSheet/MirrorMentionsSheet remain as dead internal code (harmless).
+
+---
+Task ID: R78-ship
+Agent: zai-code (orchestrator)
+Task: Ship the R78 parity fix wave as the installable release.
+
+Work Log:
+- Tag v0.25.0.0.1 pushed on fcddd3c (R78 receipt; code = 870d4a1 GREEN).
+- Tag Android CI run 37686115849 SUCCESS (build + instrumented api-30 + api-34); iOS CI ran its own track on the same tag.
+- Release v0.25.0.0.1 PUBLISHED: asset Pulse-v0.25.0.0.1.apk, 26,263,062 bytes, state=uploaded; release notes document every fix.
+- BYTES VERIFIED: release asset sha256 = f5fc6fddcf09346fc63dd76965381c108e9d07c5475493da58e2cbb421b5c961; download/Pulse.apk mirror overwritten with IDENTICAL bytes (re-hashed, same digest); update-manifest.json pinned 50 / 0.25.0.0.1 with the release URL, sha256, size and the round notes; pushed 3d4385a.
+- LIVE VERIFIED: raw manifest serves versionCode 50 / 0.25.0.0.1 / sha f5fc6fddcf09.
+
+Stage Summary:
+- The owner can install Pulse-v0.25.0.0.1.apk from the release (or via the in-app updater hitting the CDN manifest) and re-test every reported defect: opaque chat room + hidden nav, art-panel glass dock with no white pill, working system back with double-tap exit, minimizable calls, live room themes, centered settings popups, Archived/Mentions pages, and 13 live nav styles.
+- Vibration: untouched (hard rule respected - zero changes to haptics paths).
+- Web app: untouched this round; preview verified healthy (clean render, zero console errors).
+- Honest leftovers for next round: iOS parity is its own track; ShareInSheet/JoinInviteSheet/AppLock back handling; the old MirrorArchivedSheet/MirrorMentionsSheet remain as dead internal code; the rail style approximates the web content squeeze via inset padding.
