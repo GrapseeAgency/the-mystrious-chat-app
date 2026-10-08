@@ -243,6 +243,12 @@ internal fun MirrorSettingsScreen(
     // inline composition clipped the scrim to the section slice and docked
     // the menu to the page bottom).
     var pickerMenu by remember { mutableStateOf<String?>(null) }
+    // R95 - back pops the picker first; only when it is closed does back
+    // fall through to the root contract, which closes the whole settings
+    // overlay (MirrorRoot.kt settingsOpen).
+    androidx.activity.compose.BackHandler(enabled = pickerMenu != null) {
+        pickerMenu = null
+    }
 
     fun savePrefs(patch: WirePulsePrefs) {
         CoroutineScope(Dispatchers.IO).launch {

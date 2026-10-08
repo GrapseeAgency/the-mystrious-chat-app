@@ -78,6 +78,15 @@ internal fun MirrorProfile(
     var kebabOpen by remember { mutableStateOf(false) }
     var signOutOpen by remember { mutableStateOf(false) }
     var coverBusy by remember { mutableStateOf(false) }
+    // R95 - back pops the topmost profile surface first (the sign-out dialog
+    // sits above the More menu) before the root contract switches tabs -
+    // the same layering rule the room got in R93.
+    androidx.activity.compose.BackHandler(enabled = signOutOpen || kebabOpen) {
+        when {
+            signOutOpen -> signOutOpen = false
+            kebabOpen -> kebabOpen = false
+        }
+    }
 
     fun reloadProfile() {
         CoroutineScope(Dispatchers.IO).launch {
