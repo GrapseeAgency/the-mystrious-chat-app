@@ -520,7 +520,16 @@ internal fun MirrorRoot(
                 MirrorDock(
                     activeTab = tab,
                     unread = activeConversations.sumOf { it.unreadCount },
-                    onTab = { tab = it },
+                    // R90 - a dock tab press dismisses the calls/channels
+                    // sub-pages: on web the dock floats above the sub-page and
+                    // every slot navigates; before this round the sub-page
+                    // swallowed the shell and trapped the user on the calls
+                    // page (the report's fatal-mistake complaint).
+                    onTab = {
+                        tab = it
+                        callsOpen = false
+                        channelsOpen = false
+                    },
                     // web: the Calls slot opens the zinc-900 calls sub-page, tab stays
                     onCalls = { callsOpen = true },
                     onFab = { newChatOpen = true },
