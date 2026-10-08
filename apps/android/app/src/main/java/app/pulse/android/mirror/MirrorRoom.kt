@@ -114,6 +114,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import app.pulse.core.PulseEndpoints
 import app.pulse.core.fx.PulseFx
+import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.LocationPayload
 import app.pulse.domain.model.Message
@@ -124,6 +125,7 @@ import app.pulse.domain.repository.PulseEvent
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.protocol.EffectPayloadDto
 import app.pulse.protocol.VoicePeerDto
+import app.pulse.protocol.WirePulsePrefs
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.Instant
@@ -1074,9 +1076,42 @@ internal fun MirrorRoom(
         }
     }
 
+    // R87 - web chat-room.tsx:3876 - effective wallpaper = the per-conversation
+    // theme override (chat.convThemes) ?? the global Appearance default; the
+    // optional tint replaces the top glow color (web applyConvTint). The room
+    // is always dark (web R54-c) so the dark glow palette is the only one.
+    val convThemes by repository.convThemes.collectAsState(initial = emptyMap<String, ConvTheme>())
+    val globalPrefs by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
+    val roomTheme = convThemes[groupId]
+    val roomWallpaper = roomTheme?.wallpaper ?: (globalPrefs.wallpaper ?: "none")
+    val roomTint = roomTheme?.tint
+    val glowTop = when {
+        roomTint == "emerald" -> Color(0x2B10B981)
+        roomTint == "rose" -> Color(0x29F43F5E)
+        roomTint == "amber" -> Color(0x29F59E0B)
+        roomTint == "violet" -> Color(0x2B8B5CF6)
+        roomTint == "teal" -> Color(0x2914B8A6)
+        roomWallpaper == "aurora" -> Color(0x1FF59E0B)
+        roomWallpaper == "dusk" -> Color(0x1AF59E0B)
+        roomWallpaper == "forest" -> Color(0x21059669)
+        roomWallpaper == "mono" -> Color.Transparent
+        else -> Color(0x0EF59E0B)
+    }
+    val glowBottom = when (roomWallpaper) {
+        "aurora" -> Color(0x178B5CF6)
+        "dusk" -> Color(0x17F43F5E)
+        "forest" -> Color(0x1284CC16)
+        "mono" -> Color.Transparent
+        else -> Color(0x0A14B8A6)
+    }
+
     Column(
         Modifier
             .fillMaxSize()
+            // R87 - the room canvas is OPAQUE (web art-scene absolute inset-0):
+            // without this base the shell tab content and the dock bleed
+            // through every surface of the room.
+            .background(MirrorArt.Bg)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding(),
@@ -1212,18 +1247,18 @@ internal fun MirrorRoom(
                 .drawBehind {
                     val w = size.width
                     val h = size.height
-                    // top glow: radial-gradient(ellipse 90% 34% at 50% -8%, rgba(245,158,11,0.055), transparent 62%)
+                    // top glow: the themed color (R87) - default radial-gradient(ellipse 90% 34% at 50% -8%, rgba(245,158,11,0.055), transparent 62%)
                     sceneGlow(
-                        core = Color(0x0EF59E0B),
+                        core = glowTop,
                         cx = w / 2f,
                         cy = -0.08f * h,
                         rx = 0.90f * w,
                         ry = 0.34f * h,
                         fadeStop = 0.62f,
                     )
-                    // bottom glow: radial-gradient(ellipse 110% 40% at 50% 110%, rgba(20,184,166,0.04), transparent 62%)
+                    // bottom glow: the themed color (R87) - default radial-gradient(ellipse 110% 40% at 50% 110%, rgba(20,184,166,0.04), transparent 62%)
                     sceneGlow(
-                        core = Color(0x0A14B8A6),
+                        core = glowBottom,
                         cx = w / 2f,
                         cy = 1.10f * h,
                         rx = 1.10f * w,
@@ -3052,8 +3087,11 @@ private fun MirrorBubbleRow(
                 // double-tap fires the heart reaction (web L7558-7563)
                 // R74: self-contained cards drop the chrome AND the tap-to-open
                 // panel - their taps belong to the card (web data-card-interactive).
+                // R87 - the block MUST align inside the full-width Box: own
+                // bubbles right, incoming left (web justify-end/justify-start).
                 Column(
                     Modifier
+                        .align(if (mine) Alignment.CenterEnd else Alignment.CenterStart)
                         .widthIn(max = if (isCard) 304.dp else bubbleMax)
                         .graphicsLayer {
                             scaleX = entranceX.value
