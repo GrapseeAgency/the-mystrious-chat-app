@@ -5665,3 +5665,20 @@ Stage Summary:
 - The native-only wave is SHIPPED: v0.24.0.0.3 (versionCode 49) on release v0.24.0.0.3, CDN mirror + manifest byte-verified.
 - The user can check the APK: the native Kotlin mirror boots on every build (no WebView anywhere), the hub app detail page is a full page, jump-to-message works from Spotlight / home search / reminder links, user/invite/share-in/shortcuts all land on the mirror.
 - Honest leftovers for the next round (not pretending): iOS surface parity is its own track (the Swift app was verified native but not extended this round); the classic feature-* gradle modules still ship as libraries the mirror reuses from (native Compose surfaces, no web).
+
+---
+Task ID: R87
+Agent: orchestrator (Z.ai main session)
+Task: WhatsApp bug report round 1 - the chat room fundamentals (the report's "most horrible thing"): room transparency bleed-through, dock visible in room, own messages rendered left, chat room theme not applying.
+
+Work Log:
+- Fresh clone at 49ad05b (the restored good state after the outside-agent rollback); zero pulls from his R77-R86 line.
+- Root cause 1 (bleed-through): the MirrorRoom root Column had NO background - the room is an AnimatedVisibility overlay over the shell, so the chats list, the home story cards (the ghost "You" label) and the dock showed through every surface. Fix: the room canvas now paints the opaque art-scene base MirrorArt.Bg (web chat-room.tsx:3888 art-scene absolute inset-0). This also covers the dock in room exactly like the web's hidden rail.
+- Root cause 2 (own messages left): the bubble block Column sat inside a full-width Box and never aligned - every bubble defaulted to TopStart. Fix: BoxScope .align(CenterEnd for mine / CenterStart for incoming) - the swipe-to-reply drag directions were already authored for the right-aligned own bubble contract. Reaction chips and read-by rows ride the outer Column horizontalAlignment (verified by brace-depth count; no scope-sensitive edits there).
+- Root cause 3 (theme not applying): the room painted one static glow pair and ignored both the global Appearance wallpaper AND the per-conversation chat.convThemes override. Fix: effective wallpaper = repository.convThemes[groupId].wallpaper ?? repository.pulsePrefs.wallpaper ?? "none" (web conv-theme.ts effectiveConvWallpaper); the tint replaces the top glow (web applyConvTint); glow hex values byte-matched to web wallpaperGlows dark palette (none/aurora/dusk/forest/mono + emerald/rose/amber/violet/teal tints); room always dark (web R54-c).
+- Gates: web src/ ZERO diff; no emoji; no em-dash; no mock data; no force push; PAT inline only; db/custom.db never staged.
+
+Stage Summary:
+- MirrorRoom.kt +42/-4: opaque canvas + themed glows + bubble alignment; single-file, single-concern round (the report's room cluster only).
+- The dock-glow/glass tint, the fullscreen three-dots menus, the system back contract, the calls-page nav trap and the per-row sub-pages are the NEXT rounds in that order - each its own commit and CI run.
+- CI: run triggered on push (build + api-30 + api-34); receipt updated after green.
