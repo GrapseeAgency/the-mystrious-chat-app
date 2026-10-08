@@ -39,6 +39,10 @@ import androidx.compose.ui.unit.sp
  * with spring.snappy (web layoutId pill), the active icon pops 1.08 with a
  * -1dp lift (bouncy), the unread badge scales in (bouncy 0.4->1), and every
  * slot carries the whileTap press physics.
+ * R88 - web truth (nav-router.tsx:444 CapsuleNav + globals.css art-panel):
+ * the capsule is the art-panel glass (rgba(24,18,13,0.66) + hairline ring),
+ * the active tab GLOWS the theme accent #ff7a3d (icon + label, no white
+ * pill behind it), and the FAB is the art-fab ember gradient.
  */
 @Composable
 internal fun MirrorDock(
@@ -58,26 +62,16 @@ internal fun MirrorDock(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // art-panel pill: px-1.5 py-1, gap-0.5, rounded-full, hairline ring.
-        // R73: the active slot highlight is ONE sliding pill (web layoutId).
-        Box {
-            val slots = listOf(MirrorTab.Chats, null, MirrorTab.Hub, MirrorTab.Profile)
-            val activeIndex = slots.indexOfFirst { it == activeTab }.coerceAtLeast(0)
-            val pillX by animateDpAsState(
-                targetValue = (activeIndex * 66).dp,
-                animationSpec = spring(
-                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
-                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-                ),
-                label = "dockPillX",
-            )
-            Box(
-                Modifier
-                    .offset(x = 6.dp + pillX, y = 4.dp)
-                    .width(64.dp)
-                    .heightIn(min = 54.dp)
-                    .clip(CircleShape)
-                    .background(MirrorArt.White7),
-            )
+        // R88 - the capsule carries the REAL art-panel glass now (the web
+        // CapsuleNav nav element) - before this round the glass had no
+        // background at all and the active slot hid behind a white pill the
+        // web default never draws.
+        Box(
+            Modifier
+                .clip(CircleShape)
+                .background(MirrorArt.Panel)
+                .border(1.dp, MirrorArt.Hairline, CircleShape),
+        ) {
             Row(
                 Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -102,18 +96,24 @@ internal fun MirrorDock(
                 MirrorDockItem(MirrorTab.Profile, "PProfile", "Profile", activeTab == MirrorTab.Profile, badge = 0, onTab = onTab)
             }
         }
-        // art-fab: 52dp dark glass circle, white Plus 24dp - NOT an ember bomb
+        // art-fab: 52dp EMBER gradient circle (globals.css art-fab: 160deg
+        // #f0a35c -> #ff7a3d 58% -> #d95f22, ember shadow) + white Plus 24dp
         Box(
             Modifier
                 .size(52.dp)
-                .shadow(elevation = 18.dp, shape = CircleShape, spotColor = Color(0x8C000000))
+                .shadow(elevation = 18.dp, shape = CircleShape, spotColor = Color(0x8CFF7A3D))
                 .clip(CircleShape)
-                .background(MirrorArt.Chip)
-                .border(1.dp, MirrorArt.Hairline, CircleShape)
+                .background(
+                    androidx.compose.foundation.Brush.linearGradient(
+                        0f to Color(0xFFF0A35C),
+                        0.58f to Color(0xFFFF7A3D),
+                        1f to Color(0xFFD95F22),
+                    ),
+                )
                 .mirrorPressClick(onClick = onFab),
             contentAlignment = Alignment.Center,
         ) {
-            MirrorLucideIcon("LPlus", tint = MirrorArt.Text, modifier = Modifier.size(24.dp))
+            MirrorLucideIcon("LPlus", tint = Color.White, modifier = Modifier.size(24.dp))
         }
     }
 }
@@ -129,7 +129,9 @@ private fun MirrorDockItem(
     onTab: (MirrorTab) -> Unit,
 ) {
     val tint by animateColorAsState(
-        targetValue = if (active) MirrorArt.Text else MirrorArt.Dim,
+        // R88 - web DockTab: active = var(--art-accent) #ff7a3d (the theme
+        // glow), inactive = var(--art-dim) - NOT white.
+        targetValue = if (active) MirrorArt.Accent else MirrorArt.Dim,
         animationSpec = spring(
             dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
             stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,
