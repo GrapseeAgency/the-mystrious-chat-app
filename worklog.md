@@ -5717,3 +5717,18 @@ Stage Summary:
 - Every code-level complaint from the WhatsApp report now has a source-verified fix on main: room fundamentals, dock glass + glow, back contract (+ room refinement), calls untrap, settings picker overlay, kebab sub-pages.
 - iOS audited: dock active-tint fixed; iOS sheets (settings/calls/saved) are system modals with native swipe-dismiss - not the Android trap shape.
 - HONEST leftovers: (1) iOS NavDockStyles 13-style renderers still use a uniform white-active + white pill (:285/:402/:513/:613/:707/:847/:995/:1105) - each web style carries its OWN active language (PillNav = amber-400 dark, CapsuleNav = art-text) so the fix is a per-style truth sweep, its own round; (2) v0.25.0.0.x release/CDN still pinned to the outside agent's code - next tag re-pins to clean main; (3) CI runs for R91-R94 in flight at receipt time (45e586a, 460ac07, 259c373).
+
+---
+Task ID: R91-R94-ci
+Agent: orchestrator (Z.ai main session)
+Task: CI verdicts for the R91-R95 rounds.
+
+Work Log:
+- 45e586a (R92 archived/mentions pages): SUCCESS.
+- 460ac07 (R93 room-internal back): SUCCESS.
+- 259c373 (R94 dock tint byte-truth): SUCCESS on BOTH tracks (Android + iOS CI).
+- 08a379f (R95 settings/profile back layering): SUCCESS.
+
+Stage Summary:
+- Five consecutive green runs on main; every claim in the R91-R94 receipt now carries commit + green CI evidence.
+- Next rounds remain as logged: iOS NavDockStyles per-style active-tint sweep; re-tag to re-pin the CDN manifest to clean main.
