@@ -104,7 +104,7 @@ internal fun MirrorDock(
                 .shadow(elevation = 18.dp, shape = CircleShape, spotColor = Color(0x8CFF7A3D))
                 .clip(CircleShape)
                 .background(
-                    androidx.compose.foundation.Brush.linearGradient(
+                    androidx.compose.ui.graphics.Brush.linearGradient(
                         0f to Color(0xFFF0A35C),
                         0.58f to Color(0xFFFF7A3D),
                         1f to Color(0xFFD95F22),
