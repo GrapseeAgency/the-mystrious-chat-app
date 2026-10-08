@@ -5754,3 +5754,15 @@ Stage Summary:
 - The last logged leftover from the WhatsApp report round is CLOSED: iOS nav styles now render each web style's own active language instead of a uniform white wash (31 amber/orange token usages across the file, zero white active tints left except PillNav's white-on-gradient which IS the web truth).
 - iOS audit receipts for the rest of the report surface recorded above with file:line evidence - room, back idioms, sub-pages, calls all sound.
 - CI runs for this commit will be verified before any completion claim; the Android track needed no changes this round.
+
+---
+Task ID: R96-ci
+Agent: orchestrator (Z.ai main session)
+Task: CI verdict for the R96 iOS nav-truth sweep.
+
+Work Log:
+- 3351505 (R96): Pulse iOS CI run 37847638184 SUCCESS (compile + tests on the macos-15 toolchain).
+
+Stage Summary:
+- R96 carries commit + green CI evidence; the uniform white wash is gone from all 13 iOS nav renderers.
+- Open items for future rounds, unchanged: re-tag to re-pin the CDN manifest to clean main; iOS parity track continues to inherit web truths as they are audited.
