@@ -41,8 +41,10 @@ import androidx.compose.ui.unit.sp
  * slot carries the whileTap press physics.
  * R88 - web truth (nav-router.tsx:444 CapsuleNav + globals.css art-panel):
  * the capsule is the art-panel glass (rgba(24,18,13,0.66) + hairline ring),
- * the active tab GLOWS the theme accent #ff7a3d (icon + label, no white
- * pill behind it), and the FAB is the art-fab ember gradient.
+ * the active tab renders the warm ember cream (web var(--art-text)) and the
+ * FAB is the art-fab ember gradient.
+ * R94 - active tint corrected to the byte-matched web value (art-text,
+ * nav-router.tsx:426) - R88's accent reading misquoted the DockTab source.
  */
 @Composable
 internal fun MirrorDock(
@@ -129,9 +131,12 @@ private fun MirrorDockItem(
     onTab: (MirrorTab) -> Unit,
 ) {
     val tint by animateColorAsState(
-        // R88 - web DockTab: active = var(--art-accent) #ff7a3d (the theme
-        // glow), inactive = var(--art-dim) - NOT white.
-        targetValue = if (active) MirrorArt.Accent else MirrorArt.Dim,
+        // R94 - web DockTab truth (nav-router.tsx:426/429): active =
+        // var(--art-text) #f5efe8 (the warm ember cream the web glows -
+        // NOT pure white and NOT the orange accent), inactive = var(--art-dim)
+        // #9b8c7b. R88's accent reading misquoted the web; this is the
+        // byte-matched value.
+        targetValue = if (active) MirrorArt.Text else MirrorArt.Dim,
         animationSpec = spring(
             dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
             stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,

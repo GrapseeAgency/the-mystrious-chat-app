@@ -382,6 +382,11 @@ extension PulseTheme {
     static let emberOnline = PulseUiThemeColor(hex: "#FF9F0A").color
     /// Ring color for dots/badges floating on the ember ground.
     static let emberDotRing = PulseUiThemeColor(hex: "#1C1410").color
+    /// R94 - web art-token truth (globals.css:432/434): the dock's active
+    /// tab renders the warm ember cream (--art-text), inactive the ember
+    /// dim (--art-dim) - never pure white.
+    static let emberText = PulseUiThemeColor(hex: "#F5EFE8").color
+    static let emberDim = PulseUiThemeColor(hex: "#9B8C7B").color
 }
 
 // ─────────────────────────────────────────────────────────────

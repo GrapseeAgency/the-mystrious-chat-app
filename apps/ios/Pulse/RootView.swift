@@ -623,8 +623,9 @@ struct RootView: View {
 // ─────────────────────────────────────────────────────────────
 // The floating capsule dock - PULSE EMBER chrome (EMB-I): a 64pt dark
 // warm pill (white 8% ring) with the four registry tabs + More, and the
-// 56pt plus FAB floating to its right (compose). Active tab = white icon
-// + label with a 4pt red dot under the icon; inactive = white 45%.
+// 56pt plus FAB floating to its right (compose). Active tab = the warm
+// ember cream (R94: web --art-text truth) icon + label with a 4pt red dot
+// under the icon; inactive = the ember dim (web --art-dim).
 // Routing, badges, the More menu, haptics and the wobble are unchanged.
 // ─────────────────────────────────────────────────────────────
 private struct CapsuleDock: View {
@@ -695,10 +696,12 @@ private struct CapsuleDock: View {
             VStack(spacing: 3) {
                 Image(systemName: isActive ? filled : icon)
                     .font(.system(size: 22, weight: isActive ? .semibold : .medium))
-                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+                    // R94 - web DockTab truth (nav-router.tsx:426/429): active =
+                    // --art-text warm ember cream, inactive --art-dim.
+                    .foregroundStyle(isActive ? PulseTheme.emberText : PulseTheme.emberDim)
                 Text(label)
                     .font(.system(size: 10, weight: isActive ? .semibold : .medium))
-                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+                    .foregroundStyle(isActive ? PulseTheme.emberText : PulseTheme.emberDim)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
