@@ -238,6 +238,11 @@ internal fun MirrorSettingsScreen(
     val presence by repository.observePresence().collectAsState(initial = emptySet())
 
     var section by remember { mutableStateOf<SettingsSection?>(null) }
+    // R91 - the GlassMenu pickers hoist to the settings overlay root (web
+    // settings-screen.tsx:2020 mounts both popups above ALL scroll content;
+    // inline composition clipped the scrim to the section slice and docked
+    // the menu to the page bottom).
+    var pickerMenu by remember { mutableStateOf<String?>(null) }
 
     fun savePrefs(patch: WirePulsePrefs) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -406,9 +411,8 @@ internal fun MirrorSettingsScreen(
                             navStyle = navStyle,
                             fxMode = prefs.fxWebglMode,
                             onColorMode = { value -> session.setDarkOverride(value) },
-                            onUiTheme = { value -> session.setUiTheme(value) },
-                            onNavStyle = { value -> session.setNavStyle(value) },
                             onFxMode = { savePrefs(WirePulsePrefs(fxWebglMode = it)) },
+                            onMenu = { pickerMenu = it },
                         )
                         SettingsSection.Chat -> ChatSection(
                             prefs = prefs,
@@ -454,6 +458,44 @@ internal fun MirrorSettingsScreen(
                     }
                 }
             }
+        }
+        // R91 - the pickers render HERE: last sibling inside the settings Box,
+        // so the centered scrim covers the whole overlay (web MenuBackdrop
+        // settings-screen.tsx:656 absolute inset-0 z-40 items-center
+        // justify-center) instead of docking to the bottom of the scrolled
+        // Appearance section.
+        when (pickerMenu) {
+            "ui-theme" -> MirrorSettingsMenu(
+                title = "UI language",
+                width = 272.dp,
+                rows = UI_THEMES.map { (id, label, glyph) ->
+                    MirrorSettingsMenuRow(glyph, label, if (uiTheme == id) "check" else "", id)
+                },
+                footnote = THEME_DETAIL[uiTheme],
+                onPick = {
+                    session.setUiTheme(it)
+                    pickerMenu = null
+                },
+                onDismiss = { pickerMenu = null },
+            )
+            "nav-style" -> MirrorSettingsMenu(
+                title = "Navigation style",
+                width = 288.dp,
+                rows = NAV_STYLES.map { (id, meta) ->
+                    MirrorSettingsMenuRow(
+                        meta.second,
+                        meta.first,
+                        if (navStyle == id) "check" else meta.third,
+                        id.id,
+                    )
+                },
+                footnote = null,
+                onPick = { id ->
+                    NAV_STYLES.firstOrNull { it.first.id == id }?.let { session.setNavStyle(it.first) }
+                    pickerMenu = null
+                },
+                onDismiss = { pickerMenu = null },
+            )
         }
     }
 }
@@ -823,7 +865,8 @@ private fun MirrorSettingsMenu(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0x66000000))
+            // R91 - web MenuBackdrop dark scrim: bg-zinc-950/45 (0x7309090B)
+            .background(Color(0x7309090B))
             .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center,
     ) {
@@ -1106,11 +1149,11 @@ private fun AppearanceSection(
     navStyle: PulseNavStyle,
     fxMode: String,
     onColorMode: (String) -> Unit,
-    onUiTheme: (String) -> Unit,
-    onNavStyle: (PulseNavStyle) -> Unit,
     onFxMode: (String) -> Unit,
+    // R91 - the picker popups hoisted to the overlay root; the rows only
+    // request which menu to open (web settings-screen.tsx:2020).
+    onMenu: (String) -> Unit,
 ) {
-    var menu by remember { mutableStateOf<String?>(null) }
     val themeMeta = UI_THEMES.firstOrNull { it.first == uiTheme } ?: UI_THEMES[0]
     val navMeta = NAV_STYLES.firstOrNull { it.first == navStyle } ?: NAV_STYLES[0]
 
@@ -1139,7 +1182,7 @@ private fun AppearanceSection(
             title = "Design language",
             caption = THEME_DETAIL[themeMeta.first] ?: "",
             value = themeMeta.second,
-            onClick = { menu = "ui-theme" },
+            onClick = { onMenu("ui-theme") },
         )
         SettingsFooterNote(
             "Running ${themeMeta.second} with elastic motion - each language restyles every surface through its own design tokens, instantly.",
@@ -1152,7 +1195,7 @@ private fun AppearanceSection(
             title = "Navigation style",
             caption = "${NAV_HINTS[navMeta.first]} - ${navMeta.second.third} zone",
             value = navMeta.second.first,
-            onClick = { menu = "nav-style" },
+            onClick = { onMenu("nav-style") },
         )
         SettingsFooterNote(
             "Thirteen architectures are available - switching applies to the shell navigation immediately.",
@@ -1191,42 +1234,6 @@ private fun AppearanceSection(
         }
         SettingsFooterNote(
             "Six realtime shader modes - off keeps the DOM particle layer instead. Each mode is a different ambient world: aurora bands, glass caustics, gradient mesh, star drift, liquid metaballs.",
-        )
-    }
-
-    if (menu == "ui-theme") {
-        MirrorSettingsMenu(
-            title = "UI language",
-            width = 272.dp,
-            rows = UI_THEMES.map { (id, label, glyph) ->
-                MirrorSettingsMenuRow(glyph, label, if (uiTheme == id) "check" else "", id)
-            },
-            footnote = THEME_DETAIL[uiTheme],
-            onPick = {
-                onUiTheme(it)
-                menu = null
-            },
-            onDismiss = { menu = null },
-        )
-    }
-    if (menu == "nav-style") {
-        MirrorSettingsMenu(
-            title = "Navigation style",
-            width = 288.dp,
-            rows = NAV_STYLES.map { (id, meta) ->
-                MirrorSettingsMenuRow(
-                    meta.second,
-                    meta.first,
-                    if (navStyle == id) "check" else meta.third,
-                    id.id,
-                )
-            },
-            footnote = null,
-            onPick = { id ->
-                NAV_STYLES.firstOrNull { it.first.id == id }?.let { onNavStyle(it.first) }
-                menu = null
-            },
-            onDismiss = { menu = null },
         )
     }
 }
