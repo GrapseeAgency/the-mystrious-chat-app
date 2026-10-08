@@ -5682,3 +5682,20 @@ Stage Summary:
 - MirrorRoom.kt +42/-4: opaque canvas + themed glows + bubble alignment; single-file, single-concern round (the report's room cluster only).
 - The dock-glow/glass tint, the fullscreen three-dots menus, the system back contract, the calls-page nav trap and the per-row sub-pages are the NEXT rounds in that order - each its own commit and CI run.
 - CI: run triggered on push (build + api-30 + api-34); receipt updated after green.
+
+---
+Task ID: R87-R90
+Agent: orchestrator (Z.ai main session)
+Task: WhatsApp bug report round 1 - room fundamentals, dock glass/glow, system back contract, calls-page trap. Web untouched (frozen at R76 state 49ad05b).
+
+Work Log:
+- R87 (2822622, run 37820930821 SUCCESS): MirrorRoom +42/-4. The room root Column now paints the opaque art-scene base MirrorArt.Bg (web chat-room.tsx:3888) - the chats list, home story ghosts and the dock no longer bleed through any room surface. Effective wallpaper = chat.convThemes override (repository.convThemes) ?? global Appearance default (repository.pulsePrefs) ?? none; tint replaces the top glow (web applyConvTint); glow hex byte-matched to web wallpaperGlows dark palette. The bubble block aligns inside its full-width Box: own right, incoming left (web justify-end); swipe-to-reply directions were already authored for that contract.
+- R88 (65d1e8b FAILED run 37826923868, d82add3 SUCCESS run 37828202821): MirrorDock. Capsule paints the real art-panel glass MirrorArt.Panel rgba(24,18,13,0.66) + hairline ring (web nav-router.tsx:470 + globals.css:457) - the dock finally has its own background. The invented white sliding pill DELETED (web default CapsuleNav draws none); active tab icon+label glow MirrorArt.Accent #ff7a3d (web var(--art-accent)), inactive var(--art-dim). FAB = art-fab ember gradient 160deg #f0a35c -> #ff7a3d 58% -> #d95f22 + ember spot shadow (globals.css:484). CI fix: Brush is androidx.compose.ui.graphics (foundation reference unresolved).
+- R89 (ecc0316, run 37830733059 SUCCESS): MirrorRoot system back contract. The app shipped ZERO BackHandler - first back press killed the Activity from anywhere. Now: topmost surface closes first (story viewer, spotlight, profile saved/edit, settings, user page, group manager, room info, room, row options, kebab, mentions, folders, new chat, composer, group, join, calls page, channels page, search), then non-home tabs fall back to Chats; bare home = toast + second press inside a 2s window moves the task to background (process warm, WhatsApp parity).
+- R90 (ed13978, run 37833245331 SUCCESS): dock tab presses dismiss the calls/channels sub-pages (web dock floats above the sub-page and every slot navigates; the app trapped the user on the calls page).
+- Gates every round: web src/ ZERO diff; no emoji; no em-dash; no mock data; no force push; PAT inline only; db/custom.db never staged.
+
+Stage Summary:
+- The report's "most horrible" (chat room), the dock glow/glass, the "most disrespectful" (back button) and the "fatal mistake" (calls trap) are all closed with commit + green CI evidence.
+- Honest leftovers from the same report, next rounds in order: (1) the three-dots menus render full-width panels instead of the web's compact anchored dropdowns (profile/home/room kebabs), (2) the settings nav-style picker overlay docks to the page bottom instead of anchoring, (3) room-internal back refinement (root contract closes the room before in-room panels), (4) per-row sub-pages for menu rows (the "showcase" complaint).
+- Release note: main moved past v0.24.0.0.3; the v0.25.0.0.x releases shipped by the outside agent carry his R77-R86 code which is NO LONGER on main - the next tag re-pins the CDN manifest to clean code. Publish job runs on tags only (verified skipped on plain main pushes).
