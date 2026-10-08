@@ -225,6 +225,63 @@ internal fun MirrorRoot(
     var profileEditOpen by remember { mutableStateOf(false) }
     var profileSavedOpen by remember { mutableStateOf(false) }
 
+    // R89 - the system back contract. The phone back button must listen like
+    // WhatsApp: every surface closes back to where it came from, topmost
+    // first; a second press on the bare home exits (double-press guard with
+    // the 2s disarm window). Before this round the app shipped ZERO
+    // BackHandler - the default Activity behavior killed the app on the
+    // first press from anywhere.
+    val backActivity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    var backExitArmed by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler {
+        when {
+            viewingStory != null -> viewingStory = null
+            spotlightOpen -> spotlightOpen = false
+            profileSavedOpen -> profileSavedOpen = false
+            profileEditOpen -> profileEditOpen = false
+            settingsOpen -> settingsOpen = false
+            userPageFor != null -> userPageFor = null
+            managerFor != null -> managerFor = null
+            roomInfoFor != null -> roomInfoFor = null
+            openRoom != null -> openRoom = null
+            rowOptions != null -> rowOptions = null
+            kebabOpen -> kebabOpen = false
+            mentionsOpen -> mentionsOpen = false
+            foldersOpen -> foldersOpen = false
+            newChatOpen -> newChatOpen = false
+            composerOpen -> composerOpen = false
+            groupOpen -> groupOpen = false
+            joinOpen -> joinOpen = false
+            callsOpen -> callsOpen = false
+            channelsOpen -> channelsOpen = false
+            searching -> {
+                searching = false
+                searchQuery = ""
+            }
+            tab != MirrorTab.Chats -> tab = MirrorTab.Chats
+            else -> {
+                if (backExitArmed) {
+                    // home + nothing open: the double press exits to the
+                    // launcher with the process kept warm (WhatsApp parity)
+                    backActivity?.moveTaskToBack(true)
+                } else {
+                    backExitArmed = true
+                    android.widget.Toast.makeText(
+                        backActivity,
+                        "Press back again to exit",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        }
+    }
+    LaunchedEffect(backExitArmed) {
+        if (backExitArmed) {
+            kotlinx.coroutines.delay(2000)
+            backExitArmed = false
+        }
+    }
+
     // R64 - typing state: relay events - per-conversation typer list (4s TTL).
     var typers by remember { mutableStateOf<List<MirrorTyper>>(emptyList()) }
     LaunchedEffect(viewerId) {
