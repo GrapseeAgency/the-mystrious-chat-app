@@ -63,7 +63,6 @@ import app.pulse.domain.model.Channel
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
 import app.pulse.domain.model.FolderSummary
-import app.pulse.domain.model.MentionItem
 import app.pulse.domain.model.StoryGroup
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseRepository
@@ -1048,116 +1047,13 @@ internal fun MirrorJoinSheet(
     }
 }
 
-/** Archived chats: every archived row with an unarchive action. */
-@Composable
-internal fun MirrorArchivedSheet(
-    archived: List<Conversation>,
-    presence: Set<String>,
-    viewerId: String,
-    onOpen: (Conversation) -> Unit,
-    onUnarchive: (Conversation) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    MirrorSheet(title = "Archived", onDismiss = onDismiss) {
-        MirrorSheetScroll {
-            if (archived.isEmpty()) {
-                Text("Nothing archived", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
-            }
-            for (convo in archived) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onOpen(convo) }
-                        .padding(horizontal = 4.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    MirrorAvatar(
-                        name = convo.title,
-                        color = convo.accentColor,
-                        isGroup = convo.isGroupish,
-                        groupId = convo.id,
-                        online = convo.otherUserId != null && presence.contains(convo.otherUserId),
-                        showPresence = !convo.isGroupish,
-                        sizeDp = 44,
-                        cornerDp = if (convo.isGroupish) 14 else 22,
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(convo.title, color = MirrorArt.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            convo.lastMessagePreview ?: "No messages yet",
-                            color = MirrorArt.Dim,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Box(
-                        Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .clickable { onUnarchive(convo) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        MirrorLucideIcon("LArchiveRestore", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-        }
-    }
-}
+// R92 - MirrorArchivedSheet and MirrorMentionsSheet DELETED: the web opens
+// Archived (#/chats/archived, chats-tab.tsx:2083) and Mentions (#/mentions,
+// chats-tab.tsx:2113) as full zinc-900 sub-pages, never bottom sheets. The
+// replacements live in MirrorSubPages.kt (MirrorArchivedPage/MirrorMentionsPage).
 
-/** Mentions: live GET /api/mentions rows; tap opens the conversation. */
-@Composable
-internal fun MirrorMentionsSheet(
-    repository: PulseRepository,
-    onOpenConv: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var items by remember { mutableStateOf<List<MentionItem>?>(null) }
-    LaunchedEffect(Unit) {
-        items = repository.mentions().getOrDefault(emptyList())
-    }
-    MirrorSheet(title = "Mentions", onDismiss = onDismiss) {
-        MirrorSheetScroll {
-            val list = items
-            when {
-                list == null -> Text("Loading mentions…", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
-                list.isEmpty() -> Text("No mentions yet - when someone @-names you it lands here", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
-                else -> for (mention in list) {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { onOpenConv(mention.conversationId) }
-                            .padding(horizontal = 4.dp, vertical = 8.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                mention.conversationName ?: "Conversation",
-                                color = MirrorArt.Text,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(MirrorRowTime(mention.createdAt), color = MirrorArt.Faint, fontSize = 11.sp)
-                        }
-                        Text(
-                            (if (mention.authorName.isNotBlank()) mention.authorName + ": " else "") + mention.snippet,
-                            color = MirrorArt.Dim,
-                            fontSize = 13.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
+// R92 - MirrorMentionsSheet deleted with the archived sheet; the mentions
+// feed lives in MirrorSubPages.kt MirrorMentionsPage now.
 
 /** Folders: pick a live folder filter (tap again to clear). */
 @Composable

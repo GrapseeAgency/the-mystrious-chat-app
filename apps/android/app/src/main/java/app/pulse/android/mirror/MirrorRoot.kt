@@ -246,6 +246,7 @@ internal fun MirrorRoot(
             openRoom != null -> openRoom = null
             rowOptions != null -> rowOptions = null
             kebabOpen -> kebabOpen = false
+            archivedOpen -> archivedOpen = false
             mentionsOpen -> mentionsOpen = false
             foldersOpen -> foldersOpen = false
             newChatOpen -> newChatOpen = false
@@ -524,11 +525,15 @@ internal fun MirrorRoot(
                     // sub-pages: on web the dock floats above the sub-page and
                     // every slot navigates; before this round the sub-page
                     // swallowed the shell and trapped the user on the calls
-                    // page (the report's fatal-mistake complaint).
+                    // page (the report's fatal-mistake complaint). R92 - the archived
+                    // and mentions sub-pages ride the same contract (web dock slots
+                    // navigate away from every hash sub-page).
                     onTab = {
                         tab = it
                         callsOpen = false
                         channelsOpen = false
+                        archivedOpen = false
+                        mentionsOpen = false
                     },
                     // web: the Calls slot opens the zinc-900 calls sub-page, tab stays
                     onCalls = { callsOpen = true },
@@ -653,10 +658,12 @@ internal fun MirrorRoot(
                     )
                 }
                 if (archivedOpen) {
-                    MirrorArchivedSheet(
+                    // R92 - the web kebab Archived row opens the FULL #/chats/archived
+                    // sub-page (chats-tab.tsx:1614 -> ChatsArchivedPage:2083), never a
+                    // bottom sheet.
+                    MirrorArchivedPage(
                         archived = archivedConversations,
                         presence = presence,
-                        viewerId = viewerId.orEmpty(),
                         onOpen = {
                             archivedOpen = false
                             openRoom = it
@@ -667,17 +674,20 @@ internal fun MirrorRoot(
                                 runCatching { repository.refreshConversations() }
                             }
                         },
-                        onDismiss = { archivedOpen = false },
+                        onClose = { archivedOpen = false },
                     )
                 }
                 if (mentionsOpen) {
-                    MirrorMentionsSheet(
+                    // R92 - the web kebab Mentions row opens the FULL #/mentions
+                    // sub-page (chats-tab.tsx:1642 -> MentionsPage:2113) with the real
+                    // GET /api/mentions feed.
+                    MirrorMentionsPage(
                         repository = repository,
                         onOpenConv = {
                             mentionsOpen = false
                             openById(it)
                         },
-                        onDismiss = { mentionsOpen = false },
+                        onClose = { mentionsOpen = false },
                     )
                 }
                 if (foldersOpen) {

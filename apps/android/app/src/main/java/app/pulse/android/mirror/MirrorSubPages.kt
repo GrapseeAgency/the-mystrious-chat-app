@@ -37,12 +37,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.domain.model.CallLogEntry
 import app.pulse.domain.model.Channel
+import app.pulse.domain.model.Conversation
+import app.pulse.domain.model.MentionItem
 import app.pulse.domain.repository.PulseRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -656,3 +661,311 @@ private fun MirrorChannelRow(
         }
     }
 }
+
+// ── Archived sub-page (chats-archived-page.tsx, R92) ────────────────────────
+
+/**
+ * R92 - web truth: the kebab Archived row opens the #/chats/archived FULL
+ * sub-page (chats-tab.tsx:1614 openArchivedPage -> ChatsArchivedPage:2083),
+ * never a bottom sheet. Same recipe as the calls page: zinc-900 page +
+ * glass-deep header + count chip; rows reopen the chat, trailing ghost
+ * unarchives (web row carries the same unarchive chip).
+ */
+@Composable
+internal fun MirrorArchivedPage(
+    archived: List<Conversation>,
+    presence: Set<String>,
+    onOpen: (Conversation) -> Unit,
+    onUnarchive: (Conversation) -> Unit,
+    onClose: () -> Unit,
+) {
+    MirrorSubPageScaffold(
+        title = "Archived",
+        // web chats-archived-page.tsx:86 subtitle truth
+        subtitle = "Muted here - a new message moves a chat back to your inbox",
+        countChip = archived.size,
+        onClose = onClose,
+    ) {
+        if (archived.isEmpty()) {
+            // web chats-archived-page.tsx:112-118 empty truth
+            MirrorSubPageEmpty(
+                icon = "LArchive",
+                title = "No archived chats",
+                copy = "Swipe left on a chat and tap Archive - it waits here. A new message brings it straight back to your inbox.",
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                item {
+                    MirrorGlassGroup {
+                        for (convo in archived) {
+                            MirrorArchivedRow(
+                                convo = convo,
+                                online = convo.otherUserId != null && presence.contains(convo.otherUserId),
+                                onPress = { onOpen(convo) },
+                                onUnarchive = { onUnarchive(convo) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MirrorArchivedRow(
+    convo: Conversation,
+    online: Boolean,
+    onPress: () -> Unit,
+    onUnarchive: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPress)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        MirrorAvatar(
+            name = convo.title,
+            color = convo.accentColor,
+            isGroup = convo.isGroupish,
+            groupId = convo.id,
+            online = online,
+            showPresence = !convo.isGroupish,
+            sizeDp = 44,
+            cornerDp = if (convo.isGroupish) 14 else 22,
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                convo.title,
+                color = SubPageInk.Zinc50,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                convo.lastMessagePreview ?: "No messages yet",
+                color = SubPageInk.Zinc400,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        // 34dp ghost unarchive (web swipe chip equivalent)
+        Box(
+            Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onUnarchive),
+            contentAlignment = Alignment.Center,
+        ) {
+            MirrorLucideIcon("LArchiveRestore", tint = SubPageInk.Zinc400, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+// ── Mentions sub-page (mentions-page.tsx, R92) ──────────────────────────────
+
+/**
+ * R92 - web truth: the kebab Mentions row opens the #/mentions FULL sub-page
+ * (chats-tab.tsx:1642 openMentionsPage -> MentionsPage:2113), never a bottom
+ * sheet. Real GET /api/mentions feed, 30s refetch (web refetchInterval),
+ * rows: circular author avatar + semibold name + snippet with the @Me token
+ * highlighted (web mark bg-amber-500/15 text-amber-300, mentions-page.tsx:85)
+ * + @where row + stamp/chevron column. Error state with retry is honest.
+ */
+@Composable
+internal fun MirrorMentionsPage(
+    repository: PulseRepository,
+    onOpenConv: (String) -> Unit,
+    onClose: () -> Unit,
+) {
+    var items by remember { mutableStateOf<List<MentionItem>?>(null) }
+    var errorText by remember { mutableStateOf<String?>(null) }
+    var tick by remember { mutableStateOf(0) }
+
+    fun load() {
+        CoroutineScope(Dispatchers.IO).launch {
+            repository.mentions().fold(
+                onSuccess = {
+                    items = it
+                    errorText = null
+                },
+                onFailure = {
+                    if (items == null) items = emptyList()
+                    errorText = it.message ?: "Something went wrong."
+                },
+            )
+        }
+    }
+    LaunchedEffect(Unit) { load() }
+    LaunchedEffect(tick) {
+        if (tick > 0) load()
+        // web refetchInterval 30_000
+        kotlinx.coroutines.delay(30_000)
+        tick++
+    }
+
+    val list = items
+    MirrorSubPageScaffold(
+        title = "Mentions",
+        // web mentions-page.tsx:204 subtitle truth
+        subtitle = "Messages that mention you - tap a row to jump in",
+        countChip = list?.size ?: 0,
+        onClose = onClose,
+        onRefresh = { tick++ },
+    ) {
+        when {
+            list == null -> Column(Modifier.padding(top = 16.dp)) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                        .height(64.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SubPageInk.Panel),
+                )
+                Spacer(Modifier.height(8.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                        .height(64.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SubPageInk.Panel),
+                )
+            }
+            list.isEmpty() && errorText == null -> MirrorSubPageEmpty(
+                icon = "LAtSign",
+                title = "No mentions yet",
+                copy = "No mentions yet - when someone @-names you it lands here",
+            )
+            errorText != null && list.isEmpty() -> MirrorSubPageEmpty(
+                icon = "LAtSign",
+                title = "Could not load mentions",
+                copy = errorText ?: "Something went wrong.",
+            )
+            else -> LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 24.dp),
+            ) {
+                item {
+                    MirrorGlassGroup {
+                        for (mention in list) {
+                            MirrorMentionRow(
+                                mention = mention,
+                                onPress = { onOpenConv(mention.conversationId) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * web MentionRow (mentions-page.tsx:94-150): circular 44dp author avatar,
+ * 14.5sp semibold author, 13sp snippet with the @Me token in amber, 11sp
+ * @where row, right column stamp + chevron.
+ */
+@Composable
+private fun MirrorMentionRow(mention: MentionItem, onPress: () -> Unit) {
+    val authorName = mention.authorName.ifBlank { "Unknown" }
+    val where = mention.conversationName ?: "Direct message"
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPress)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // people are CIRCLES (web:127) - never squircles
+        MirrorAvatar(
+            name = authorName,
+            color = null,
+            isGroup = false,
+            groupId = "",
+            online = false,
+            showPresence = false,
+            sizeDp = 44,
+            cornerDp = 22,
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                authorName,
+                color = SubPageInk.Zinc50,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            // snippet with the FIRST @AuthorName token highlighted (web:70-91)
+            Text(
+                buildAnnotatedString {
+                    val token = "@" + authorName
+                    val idx = mention.snippet.indexOf(token, ignoreCase = true)
+                    if (idx < 0) {
+                        append(mention.snippet)
+                    } else {
+                        val end = idx + token.length
+                        append(mention.snippet.substring(0, idx))
+                        withStyle(SpanStyle(color = SubPageInk.Amber400, fontWeight = FontWeight.SemiBold)) {
+                            append(mention.snippet.substring(idx, end))
+                        }
+                        append(mention.snippet.substring(end))
+                    }
+                },
+                color = SubPageInk.Zinc400,
+                fontSize = 13.sp,
+                lineHeight = 17.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                MirrorLucideIcon("LAtSign", tint = SubPageInk.Amber400.copy(alpha = 0.7f), modifier = Modifier.size(12.dp))
+                Text(
+                    where,
+                    color = SubPageInk.Zinc500,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                mentionStamp(mention.createdAt),
+                color = SubPageInk.Zinc500,
+                fontSize = 11.sp,
+            )
+            MirrorLucideIcon("LChevronRight", tint = SubPageInk.Zinc600, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+/** web formatListStamp: today HH:mm, yesterday "Yesterday", else "MMM d". */
+private fun mentionStamp(iso: String): String = runCatching {
+    val at = Instant.parse(iso).atZone(ZoneId.systemDefault())
+    val today = java.time.LocalDate.now()
+    val pattern = when (at.toLocalDate()) {
+        today -> DateTimeFormatter.ofPattern("HH:mm")
+        today.minusDays(1) -> null
+        else -> DateTimeFormatter.ofPattern("MMM d")
+    }
+    pattern?.format(at) ?: "Yesterday"
+}.getOrDefault("")
