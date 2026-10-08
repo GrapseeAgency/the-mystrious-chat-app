@@ -12,6 +12,8 @@ extension PulseTheme {
     static let teal600 = Color(red: 0.051, green: 0.580, blue: 0.533)    // #0d9488
     static let amber500 = Color(red: 0.961, green: 0.620, blue: 0.043)   // #f59e0b
     static let amber600 = Color(red: 0.851, green: 0.467, blue: 0.024)   // #d97706
+    static let amber400 = Color(red: 0.984, green: 0.749, blue: 0.141)   // #fbbf24
+    static let orange600 = Color(red: 0.918, green: 0.345, blue: 0.047)  // #ea580c
     static let rose400 = Color(red: 0.984, green: 0.445, blue: 0.522)    // #fb7185
     static let rose500 = Color(red: 0.957, green: 0.247, blue: 0.369)    // #f43f5e
     static let violet400 = Color(red: 0.655, green: 0.545, blue: 0.980)  // #a78bfa

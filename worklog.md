@@ -5732,3 +5732,25 @@ Work Log:
 Stage Summary:
 - Five consecutive green runs on main; every claim in the R91-R94 receipt now carries commit + green CI evidence.
 - Next rounds remain as logged: iOS NavDockStyles per-style active-tint sweep; re-tag to re-pin the CDN manifest to clean main.
+
+---
+Task ID: R96
+Agent: orchestrator (Z.ai main session)
+Task: the user ordered another deep check of the native app code ("check more deeply the native app code again... you can never make a mistake"). Audit both platforms against the web truth, then fix what is broken. Web code is FORBIDDEN to touch.
+
+Work Log:
+- SYNC: fetched remote main = 303ab00 (R95 receipt + CI verdicts), local in sync; git diff of src/ vs HEAD and vs FETCH_HEAD is EMPTY - the web has never been touched, verified again this round.
+- RECONSTRUCTED R87-R95 from the worklog: room fundamentals, dock glass/glow, back contract, calls untrap, settings pickers hoisted, Archived/Mentions sub-pages, room-internal back refinement, dock tint byte-truth, overlay back layering - all on main with green CI.
+- ANDROID AUDIT (read-only): MirrorDock.kt already carries the R94 emberText truth; kebab menu lives in MirrorRoot/MirrorRoomActions with the compact anchored pattern; no new Android defect found this round.
+- IOS AUDIT (the findings):
+  - SOUND: own-bubble alignment ChatRoomView.swift:2878 (VStack alignment mine ? .trailing : .leading); per-conversation themed room background :422; room presented as fullScreenCover so the dock never bleeds into the room (RootView.swift:450 comment + sheet/cover map :351-385); Archived = real fullScreenCover sub-page (ChatsView.swift:182-191) and MentionsView.swift exists; settings nav-style = inline card list (SettingsView.swift:335-451); calls/saved/stories are system sheets with native swipe-dismiss - not the Android trap shape (as already logged in R91-R94).
+  - BROKEN (the logged R91-R94 leftover, still true): NavDockStyles.swift rendered ALL 13 nav styles with the same uniform white active tint + white pill, regardless of each web style's own active language.
+- WEB TRUTH EXTRACTED (read-only, nav-router.tsx): DockTab art-text/art-dim (:427/:435); CapsuleTab dark amber-400 icon/label + amber-400/16->5% wash + amber-400/25 ring (:169/:182/:195); FloatingDock amber-500/25->8% pill + amber-500/40 ring + dark:amber-400 (:591/:598); PillNav white label on amber-600->orange-600 fill (:643/:650); BottomBar dark:amber-400 + amber-500 tick (:691/:703); TabBar amber-400/10 squircle + amber-500/25 ring (:744/:752); FloatingTabBar zinc-800->zinc-900 card + amber-500/30 ring (:805/:813); CommandBar dark:amber-400 + amber-500 underline, NO pill (:887/:894); Rail dark:amber-400 + amber-500 left bar, NO pill (:952/:959); Island amber-500/18 pill + amber-500/30 ring + amber-400 closed icon (:1041/:1048/:1082); Radial amber-600 active icon (:1136) + amber-400->orange-600 FAB (:1157); Gesture amber-400 icon + amber-500/18 pill + amber-500/zinc-600 handle (:1203/:1210/:1235); ContextualDock CapsuleTab truth + amber-500->orange-600 chip (:1297).
+- FIX R96 - PulseTheme+Tokens.swift: added amber400 #fbbf24 and orange600 #ea580c next to the existing amber500/600 (Tailwind-exact RGB).
+- FIX R96 - NavDockStyles.swift per-style truth sweep, all 13 renderers, one file: FloatingTopDock + ContextualDock -> CapsuleTab amber wash pill; PillNavDock -> amber-600->orange-600 sliding fill (white label kept - it IS the web truth); BottomBarDock -> amber400/zinc400 + amber500 tick; TabBarDock -> amber-400/10 squircle + amber-500/25 ring; FloatingTabBarDock -> zinc-800->zinc-900 card + amber-500/30 ring; RailDock -> NO pill (web wears none), amber500 left bar; IslandDock -> amber-500/18 pill + amber-400 closed icon + zinc-300/zinc-200 labels; FloatingDockDock -> amber-500/25->8% pill added (was missing entirely); CommandBarDock -> white capsule replaced by the amber-500 underline; RadialDock -> amber-600 active icon + amber-400->orange-600 gradient FAB; GestureDock -> amber500/zinc600 state-aware handle (open w-64/closed w-96 parity) + zinc-300 switcher labels. Inactive tints switched from white/45 to zinc-400 per the web dark classes.
+- GATES: web src/ ZERO diff; no emoji; no em-dash; no mock data; PAT inline only; db/custom.db never staged; no force push. Trailing-comma style matches the existing shipped code (RootView.swift:238/264/401 precedent, CI green on it).
+
+Stage Summary:
+- The last logged leftover from the WhatsApp report round is CLOSED: iOS nav styles now render each web style's own active language instead of a uniform white wash (31 amber/orange token usages across the file, zero white active tints left except PillNav's white-on-gradient which IS the web truth).
+- iOS audit receipts for the rest of the report surface recorded above with file:line evidence - room, back idioms, sub-pages, calls all sound.
+- CI runs for this commit will be verified before any completion claim; the Android track needed no changes this round.

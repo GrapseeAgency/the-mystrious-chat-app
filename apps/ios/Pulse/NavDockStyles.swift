@@ -17,6 +17,9 @@ import SwiftUI
 // mobile adaptations (floating-dock = magnify-emphasis dock :floating-dock,
 // command-bar = top text strip, radial = FAB arc overlay, gesture = drag
 // pill quick switcher, contextual-dock = per-tab trailing chip).
+// R96 - the per-style ACTIVE TRUTH sweep: every renderer now carries its
+// own web dark-mode language from nav-router.tsx (amber-400 active tints,
+// per-style pill/indicator shapes) instead of the uniform white wash.
 // iOS deviations, both deliberate and documented: compose rides only the
 // capsule (all other styles keep the Chats-header compose entry), and every
 // style carries a More affordance because the dock menu is the ONLY
@@ -221,8 +224,9 @@ private struct PulseNavMenuHost: View {
 // runWobble pattern; floating-top reuses the capsule tab semantics.)
 
 // ── 2 · floating-top - glass capsule bar beneath the top edge ──
-// (web FloatingTopNav :466-501: ALL four tabs + overflow, GLASS_PANEL,
-// rounded-[26px], the SAME CapsuleTab wobble/pill as the default dock.)
+// (web FloatingTopNav :518-553 via CapsuleTab :128-202: active pill is the
+// amber-400 dark wash 16% -> 5% + amber-400/25 inset ring (:169); active
+// icon/label dark:amber-400, inactive dark:zinc-400 (:182/:195).)
 
 struct FloatingTopDock: View {
     let context: PulseDockContext
@@ -282,15 +286,20 @@ struct FloatingTopDock: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+            .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
             .frame(maxWidth: .infinity, minHeight: 52)
             .background {
                 if isActive {
+                    // web CapsuleTab :169 dark truth - amber-400 wash
+                    // 16% -> 5% + amber-400/25 inset ring.
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(Color.white.opacity(0.12))
+                        .fill(LinearGradient(
+                            colors: [PulseTheme.amber400.opacity(0.16), PulseTheme.amber400.opacity(0.05)],
+                            startPoint: .top, endPoint: .bottom,
+                        ))
                         .overlay(
                             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
+                                .strokeBorder(PulseTheme.amber400.opacity(0.25), lineWidth: 1),
                         )
                 }
             }
@@ -348,8 +357,9 @@ struct FloatingTopDock: View {
 }
 
 // ── 4 · pill - single segmented pill with sliding fill ──────
-// (web PillNav :563-613: rounded-full GLASS_PANEL, one emerald gradient
-// fill that slides to the active segment, white label when active.)
+// (web PillNav :615-665: rounded-full GLASS_PANEL, one amber-600 ->
+// orange-600 gradient fill that slides to the active segment (:650),
+// white label when active, dark:zinc-400 inactive (:643).)
 
 struct PillNavDock: View {
     let context: PulseDockContext
@@ -399,14 +409,17 @@ struct PillNavDock: View {
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+            .foregroundStyle(isActive ? Color.white : PulseTheme.zinc(400))
             .frame(maxWidth: .infinity, minHeight: 44)
             .background {
                 if isActive {
                     // The sliding fill - matchedGeometryEffect ≙ the web's
-                    // layoutId "nav-pill-fill" (:596).
+                    // layoutId "nav-pill-fill" (:650) - amber-600 -> orange-600.
                     Capsule()
-                        .fill(Color.white.opacity(0.12))
+                        .fill(LinearGradient(
+                            colors: [PulseTheme.amber600, PulseTheme.orange600],
+                            startPoint: .leading, endPoint: .trailing,
+                        ))
                         .matchedGeometryEffect(id: "pulse-nav-pill-fill", in: fillNamespace)
                 }
             }
@@ -449,8 +462,8 @@ struct PillNavDock: View {
 }
 
 // ── 5 · bottom-bar - classic edge-to-edge bar with labels ───
-// (web BottomBar :617-660: full-width bar, border-t, active emerald with
-// a top-center dot, icon-over-label rows.)
+// (web BottomBar :669-712: full-width bar, border-t, active dark:amber-400
+// (:691) with a top-center amber-500 tick (:703), icon-over-label rows.)
 
 struct BottomBarDock: View {
     let context: PulseDockContext
@@ -510,13 +523,13 @@ struct BottomBarDock: View {
                     .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+            .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) {
                 if isActive {
-                    // web "nav-bottombar-dot" (:649-653) - top-center tick.
+                    // web "nav-bottombar-dot" (:703) - top-center amber-500 tick.
                     Capsule()
-                        .fill(PulseTheme.emberGlowBottom)
+                        .fill(PulseTheme.amber500)
                         .frame(width: 32, height: 3)
                         .offset(y: -3)
                 }
@@ -550,8 +563,8 @@ struct BottomBarDock: View {
 }
 
 // ── 6 · tab-bar - iOS-style tinted squircles ────────────────
-// (web TabBarNav :664-715: full-width bar, active tab wears a rounded
-// emerald-15% squircle with an inset ring.)
+// (web TabBarNav :716-767: full-width bar, active tab wears a rounded
+// amber-400/10 dark squircle with an amber-500/25 inset ring (:744).)
 
 struct TabBarDock: View {
     let context: PulseDockContext
@@ -610,17 +623,17 @@ struct TabBarDock: View {
                     .font(.system(size: 10, weight: isActive ? .semibold : .medium))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+            .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 if isActive {
-                    // web "nav-tabbar-squircle" (:690-694) - inset-x-3
-                    // inset-y-1 rounded-2xl emerald-500/15 + inset ring.
+                    // web "nav-tabbar-squircle" (:744 dark) - rounded-2xl
+                    // amber-400/10 fill + amber-500/25 inset ring.
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.white.opacity(0.10))
+                        .fill(PulseTheme.amber400.opacity(0.10))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
+                                .strokeBorder(PulseTheme.amber500.opacity(0.25), lineWidth: 1),
                         )
                 }
             }
@@ -655,8 +668,9 @@ struct TabBarDock: View {
 }
 
 // ── 7 · floating-tab-bar - detached elevated card, active lifted ──
-// (web FloatingTabBar :719-782: detached GLASS_PANEL card, the active tab
-// translates -4 and wears a white/zinc card + emerald ring.)
+// (web FloatingTabBar :771-834: detached GLASS_PANEL card, the active tab
+// translates -4 and wears the dark zinc-800 -> zinc-900 card + amber-500/30
+// ring (:805), dark:amber-400 tints (:813/:823).)
 
 struct FloatingTabBarDock: View {
     let context: PulseDockContext
@@ -704,18 +718,21 @@ struct FloatingTabBarDock: View {
                     .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+            .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
             .frame(maxWidth: .infinity, minHeight: 54)
             .background {
                 if isActive {
-                    // web "nav-ftab-card" (:750-755) - elevated card.
+                    // web "nav-ftab-card" (:805 dark) - elevated zinc-800 ->
+                    // zinc-900 card + amber-500/30 ring.
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.white.opacity(0.12))
+                        .fill(LinearGradient(
+                            colors: [PulseTheme.zinc(800), PulseTheme.zinc(900)],
+                            startPoint: .top, endPoint: .bottom,
+                        ))
                         .overlay(
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
+                                .strokeBorder(PulseTheme.amber500.opacity(0.30), lineWidth: 1),
                         )
-                        
                 }
             }
             .contentShape(Rectangle())
@@ -764,8 +781,8 @@ struct FloatingTabBarDock: View {
 }
 
 // ── 9 · rail - persistent vertical side rail (left edge) ────
-// (web RailNav :873-921: 68pt rail, "P" logo tile, left indicator bar on
-// the active destination, labels under icons.)
+// (web RailNav :925-973: 68pt rail, "P" logo tile, dark:amber-400 active
+// tint (:952) with the left amber-500 indicator bar (:959) - NO pill fill.)
 
 struct RailDock: View {
     let context: PulseDockContext
@@ -844,20 +861,15 @@ struct RailDock: View {
                     .font(.system(size: 9, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+            .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
             .frame(width: 56)
             .padding(.vertical, 10)
-            .background {
-                if isActive {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.white.opacity(0.10))
-                }
-            }
             .overlay(alignment: .leading) {
                 if isActive {
-                    // web "nav-rail-bar" (:905-909) - left edge indicator.
+                    // web "nav-rail-bar" (:959) - left amber-500 edge
+                    // indicator; RailNav wears NO pill fill, tint + bar only.
                     Capsule()
-                        .fill(PulseTheme.emberGlowBottom)
+                        .fill(PulseTheme.amber500)
                         .frame(width: 4, height: 28)
                         .offset(x: -10)
                 }
@@ -872,9 +884,9 @@ struct RailDock: View {
 }
 
 // ── 10 · island - dynamic-island pill that expands on tap ───
-// (web IslandNav :925-1041: closed 148pt pill showing the active tab,
-// tap expands to the full tab row + labeled More, auto-collapse 4.2s
-// paused while the overflow menu is open.)
+// (web IslandNav :977-1093: closed 148pt pill showing the amber-400 active
+// icon (:1082), tap expands; active tab wears the amber-500/18 pill +
+// amber-500/30 ring (:1041), dark:amber-400 icon (:1048).)
 
 struct IslandDock: View {
     let context: PulseDockContext
@@ -943,7 +955,8 @@ struct IslandDock: View {
         HStack(spacing: 8) {
             Image(systemName: activeItem.filled)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(Color.white)
+                // web :1082 dark truth - the closed-pill icon is amber-400.
+                .foregroundStyle(PulseTheme.amber400)
                 .overlay(alignment: .topTrailing) {
                     if activeItem.tab == PulseNavDestinations.chats.tab {
                         PulseNavBadge(count: context.unread, dark: context.dark, reduceMotion: context.reduceMotion)
@@ -952,7 +965,7 @@ struct IslandDock: View {
                 }
             Text(activeItem.label)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(PulseTheme.titleOnPanel)
+                .foregroundStyle(PulseTheme.zinc(200))
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(PulseTheme.textTertiary)
@@ -989,19 +1002,20 @@ struct IslandDock: View {
                     }
                 Text(item.label)
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(PulseTheme.titleOnPanel)
+                    .foregroundStyle(PulseTheme.zinc(300))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+            .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
             .frame(maxWidth: .infinity, minHeight: 46)
             .background {
                 if isActive {
-                    // web "nav-island-pill" (:986-990).
+                    // web "nav-island-pill" (:1041) - amber-500/18 fill
+                    // + amber-500/30 inset ring.
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.white.opacity(0.14))
+                        .fill(PulseTheme.amber500.opacity(0.18))
                         .overlay(
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1),
+                                .strokeBorder(PulseTheme.amber500.opacity(0.30), lineWidth: 1),
                         )
                 }
             }
@@ -1049,9 +1063,11 @@ struct IslandDock: View {
 }
 
 // ── 3 · floating-dock - desktop dock, mobile magnify emphasis ──
-// (web FloatingDock :507-559 is a hover-magnifying desktop dock; phones
+// (web FloatingDock :557-611 is a hover-magnifying desktop dock; phones
 // have no hover, so the honest adaptation keeps the roomy tile dock and
-// applies the magnification to the ACTIVE destination instead. R14 5-b.)
+// applies the magnification to the ACTIVE destination instead. R14 5-b.
+// Active truth (:591/:598 dark): amber-500/25 -> 8% wash pill + amber-500/40
+// ring, dark:amber-400 icon, dark:zinc-400 inactive.)
 
 struct FloatingDockDock: View {
     let context: PulseDockContext
@@ -1102,11 +1118,26 @@ struct FloatingDockDock: View {
                     }
                 Text(item.label)
                     .font(.system(size: 9.5, weight: isActive ? .bold : .medium))
-                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+                    .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+            .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
             .frame(minWidth: 48)
+            .background {
+                if isActive {
+                    // web "nav-dock-pill" (:591 dark) - amber-500/25 -> 8%
+                    // vertical wash + amber-500/40 inset ring.
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(LinearGradient(
+                            colors: [PulseTheme.amber500.opacity(0.25), PulseTheme.amber500.opacity(0.08)],
+                            startPoint: .top, endPoint: .bottom,
+                        ))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .strokeBorder(PulseTheme.amber500.opacity(0.40), lineWidth: 1),
+                        )
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(PulseButtonStyle())
@@ -1145,8 +1176,9 @@ struct FloatingDockDock: View {
 }
 
 // ── 8 · command-bar - compact text command strip with search ──
-// (web CommandBar :817-869: a TOP text strip - brand, text tab commands,
-// then the search + settings glyphs inline. R14 5-b.)
+// (web CommandBarNav :838-921: a TOP text strip - brand, text tab commands,
+// then the search + settings glyphs inline. Active truth: dark:amber-400
+// text (:887) over an amber-500 bottom bar (:894) - NO pill. R14 5-b.)
 
 struct CommandBarDock: View {
     let context: PulseDockContext
@@ -1200,12 +1232,17 @@ struct CommandBarDock: View {
         } label: {
             Text(item.label)
                 .font(.system(size: 12, weight: isActive ? .bold : .medium))
-                .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+                .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
                 .padding(.horizontal, 10)
                 .frame(minHeight: 36)
-                .background {
+                .overlay(alignment: .bottom) {
                     if isActive {
-                        Capsule().fill(Color.white.opacity(0.12))
+                        // web "nav-cmd-underline" (:894) - amber-500 bar.
+                        Capsule()
+                            .fill(PulseTheme.amber500)
+                            .frame(height: 2.5)
+                            .padding(.horizontal, 8)
+                            .offset(y: 2)
                     }
                 }
                 .overlay(alignment: .topTrailing) {
@@ -1238,8 +1275,10 @@ struct CommandBarDock: View {
 }
 
 // ── 11 · radial - center FAB fanning destinations in an arc ──
-// (web RadialNav :1046-1103: a FAB overlay; tap fans the destinations in
-// an arc above it. Reduced motion → instant placement. R14 5-b.)
+// (web RadialNav :1097-1165: a FAB overlay; tap fans the destinations in
+// an arc above it. Active truth: dark:amber-600 icon (:1136), white label;
+// FAB amber-400 -> orange-600 gradient (:1157). Reduced motion -> instant
+// placement. R14 5-b.)
 
 struct RadialDock: View {
     let context: PulseDockContext
@@ -1300,6 +1339,8 @@ struct RadialDock: View {
             VStack(spacing: 3) {
                 Image(systemName: isActive ? item.filled : item.icon)
                     .font(.system(size: 20, weight: .semibold))
+                    // web :1136 - the active leaf icon is amber-600.
+                    .foregroundStyle(isActive ? PulseTheme.amber600 : Color.white)
                     .overlay(alignment: .topTrailing) {
                         if item.tab == PulseNavDestinations.chats.tab {
                             PulseNavBadge(count: context.unread, dark: context.dark, reduceMotion: context.reduceMotion)
@@ -1310,7 +1351,7 @@ struct RadialDock: View {
                     .font(.system(size: 9, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+            .foregroundStyle(Color.white)
             .frame(width: 58, height: 46)
             .contentShape(Rectangle())
         }
@@ -1356,8 +1397,11 @@ struct RadialDock: View {
             .foregroundStyle(.white)
             .frame(height: 54)
             .padding(.horizontal, 20)
-            .background(Capsule().fill(Color.white.opacity(0.12)))
-            
+            // web RadialNav FAB (:1157) - amber-400 -> orange-600 gradient.
+            .background(Capsule().fill(LinearGradient(
+                colors: [PulseTheme.amber400, PulseTheme.orange600],
+                startPoint: .topLeading, endPoint: .bottomTrailing,
+            )))
         }
         .buttonStyle(PulseButtonStyle())
         .accessibilityLabel(expanded ? "Close navigation" : "Navigation - \(activeItem.label), tap to fan out")
@@ -1365,8 +1409,10 @@ struct RadialDock: View {
 }
 
 // ── 12 · gesture - minimal bar + draggable quick-switcher pill ──
-// (web GestureNav :1107-1160: a minimal bar whose pill drags between tabs
-// and opens the quick switcher. R14 5-b - the shell already carries the
+// (web GestureNav :1169-1241: a minimal bar whose pill drags between tabs
+// and opens the quick switcher. Active truth: dark:amber-400 icon (:1210),
+// amber-500/18 pill (:1203); handle open amber-500 w-16, closed
+// dark:zinc-600 w-24 (:1235). R14 5-b - the shell already carries the
 // edge-swipe route change; the pill adds the in-dock drag + switcher.)
 
 struct GestureDock: View {
@@ -1400,8 +1446,8 @@ struct GestureDock: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(PulseTheme.textSecondary)
             Capsule()
-                .fill(Color.white.opacity(0.12))
-                .frame(width: 96, height: 6)
+                .fill(switcherOpen ? PulseTheme.amber500 : PulseTheme.zinc(600))
+                .frame(width: switcherOpen ? 64 : 96, height: 6)
                 
                 .frame(width: 220, height: 34, alignment: .center)
                 .contentShape(Rectangle())
@@ -1484,11 +1530,11 @@ struct GestureDock: View {
             HStack(spacing: 10) {
                 Image(systemName: isActive ? item.filled : item.icon)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+                    .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
                     .frame(width: 22)
                 Text(item.label)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+                    .foregroundStyle(PulseTheme.zinc(300))
                 Spacer()
                 if item.tab == PulseNavDestinations.chats.tab {
                     PulseNavBadge(count: context.unread, dark: context.dark, reduceMotion: context.reduceMotion)
@@ -1504,9 +1550,9 @@ struct GestureDock: View {
 }
 
 // ── 13 · contextual-dock - dock that adapts to the active tab ──
-// (web ContextualDock :1193-1240: the four destinations plus a trailing
-// gradient chip whose action follows the active tab - chats→New chat,
-// hub→Search, contacts→New group, profile→Settings. R14 5-b.)
+// (web ContextualDock :1252-1306: the four destinations as CapsuleTabs
+// (amber-400 dark truth :169/:182) plus a trailing amber-500 -> orange-600
+// gradient chip (:1297) whose action follows the active tab. R14 5-b.)
 
 struct ContextualDock: View {
     let context: PulseDockContext
@@ -1567,12 +1613,20 @@ struct ContextualDock: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
             }
-            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+            .foregroundStyle(isActive ? PulseTheme.amber400 : PulseTheme.zinc(400))
             .frame(maxWidth: .infinity, minHeight: 50)
             .background {
                 if isActive {
+                    // web CapsuleTab :169 dark truth - amber-400 wash + ring.
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.white.opacity(0.12))
+                        .fill(LinearGradient(
+                            colors: [PulseTheme.amber400.opacity(0.16), PulseTheme.amber400.opacity(0.05)],
+                            startPoint: .top, endPoint: .bottom,
+                        ))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(PulseTheme.amber400.opacity(0.25), lineWidth: 1),
+                        )
                 }
             }
             .contentShape(Rectangle())
@@ -1605,9 +1659,13 @@ struct ContextualDock: View {
             }
             .foregroundStyle(.white)
             .frame(width: 64, height: 50)
+            // web :1297 - amber-500 -> orange-600 gradient chip.
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(0.12)),
+                    .fill(LinearGradient(
+                        colors: [PulseTheme.amber500, PulseTheme.orange600],
+                        startPoint: .topLeading, endPoint: .bottomTrailing,
+                    )),
             )
         }
         .buttonStyle(PulseButtonStyle())
