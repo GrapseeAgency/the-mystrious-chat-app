@@ -519,6 +519,52 @@ internal fun MirrorRoom(
     var voiceRoster by remember { mutableStateOf(emptyList<VoicePeerDto>()) }
     val voiceInRoom = voiceRoster.any { it.userId == viewerId }
 
+    // R93 - room-internal back refinement. The root contract (MirrorRoot.kt)
+    // closes the whole room on back; that is only correct when NO in-room
+    // panel is up. This handler composes AFTER the root one, so while the
+    // room is visible it wins whenever a panel is open and pops the topmost
+    // surface first (menu dropdown over everything, then the full-panel
+    // stack, then the header strips). With nothing open it disables itself
+    // and back falls through to the root handler, which closes the room -
+    // WhatsApp's exact layering.
+    androidx.activity.compose.BackHandler(
+        enabled = menuOpen || trayOpen || roomSearchOpen || pinnedOpen ||
+            muteStripOpen || ttlStripOpen || pollOpen || stickerOpen ||
+            locationOpen || remindersOpen || scheduledOpen || recapOpen ||
+            eventsOpen || kanbanOpen || whiteboardOpen || voiceOpen ||
+            stageOpen || spaceOpen || tournamentOpen || redPacketOpen ||
+            trayEffectsOpen || slashHelpOpen || safetyOpen || scheduleOpen ||
+            phraseManagerOpen,
+    ) {
+        when {
+            menuOpen -> menuOpen = false
+            safetyOpen -> safetyOpen = false
+            redPacketOpen -> redPacketOpen = false
+            tournamentOpen -> tournamentOpen = false
+            spaceOpen -> spaceOpen = false
+            stageOpen -> stageOpen = false
+            voiceOpen -> voiceOpen = false
+            whiteboardOpen -> whiteboardOpen = false
+            kanbanOpen -> kanbanOpen = false
+            eventsOpen -> eventsOpen = false
+            recapOpen -> recapOpen = false
+            scheduledOpen -> scheduledOpen = false
+            remindersOpen -> remindersOpen = false
+            pollOpen -> pollOpen = false
+            locationOpen -> locationOpen = false
+            stickerOpen -> stickerOpen = false
+            trayEffectsOpen -> trayEffectsOpen = false
+            slashHelpOpen -> slashHelpOpen = false
+            muteStripOpen -> muteStripOpen = false
+            ttlStripOpen -> ttlStripOpen = false
+            phraseManagerOpen -> phraseManagerOpen = false
+            roomSearchOpen -> roomSearchOpen = false
+            pinnedOpen -> pinnedOpen = false
+            trayOpen -> trayOpen = false
+            scheduleOpen -> scheduleOpen = false
+        }
+    }
+
     LaunchedEffect(groupId) {
         repository.events().collect { event ->
             if (event is PulseEvent.VoiceRoster && event.payload.conversationId == groupId) {
