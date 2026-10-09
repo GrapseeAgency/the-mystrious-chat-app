@@ -2059,7 +2059,10 @@ internal fun MirrorRoom(
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
                     .padding(top = 60.dp, end = 8.dp)
-                    .widthIn(min = 224.dp)
+                    // web min-w-56 (224px) shrink-wraps to exactly 224px -
+                    // FIXED width, the weighted row labels must not stretch
+                    // the menu edge to edge.
+                    .width(224.dp)
                     // web: max-h-[min(72vh,520px)] overflow-y-auto - 18 rows
                     // must scroll, never clip
                     .heightIn(max = minOf(LocalConfiguration.current.screenHeightDp * 0.72f, 520f).dp)

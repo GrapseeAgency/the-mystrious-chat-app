@@ -93,7 +93,9 @@ internal fun MirrorProfileMoreMenu(
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
                 .padding(top = 62.dp, end = 12.dp)
-                .widthIn(min = 232.dp)
+                // web ProfileMoreMenu GlassMenu w-[232px] - fixed card width,
+                // the fillMaxWidth rows must not stretch the menu edge to edge.
+                .width(232.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color(0xF21C1610))
                 .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))

@@ -349,7 +349,10 @@ internal fun MirrorKebabMenu(
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
                 .padding(top = 62.dp, end = 12.dp)
-                .widthIn(min = 240.dp)
+                // web KEBAB_CONTENT_CLS min-w-[240px] shrink-wraps to exactly
+                // 240px (content is narrower) - a FIXED 240dp card, never the
+                // fillMaxWidth blowout that stretched the menu edge to edge.
+                .width(240.dp)
                 // web KEBAB_CONTENT_CLS: max-h-[min(70vh,560px)] overflow-y-auto
                 .heightIn(max = minOf(LocalConfiguration.current.screenHeightDp * 0.7f, 560f).dp)
                 .clip(RoundedCornerShape(16.dp))

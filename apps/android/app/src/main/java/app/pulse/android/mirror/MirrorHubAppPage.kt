@@ -690,7 +690,10 @@ internal fun MirrorHubAppPage(
                                             ) {
                                                 Column(
                                                     Modifier
-                                                        .widthIn(min = 240.dp)
+                                                        // web GlassMenu default min-w-[228px] -
+                                                        // FIXED 228dp, same blowout guard as the
+                                                        // other corner kebabs.
+                                                        .width(228.dp)
                                                         .padding(top = 50.dp)
                                                         .clip(RoundedCornerShape(16.dp))
                                                         .background(Color(0xF21C1610))
