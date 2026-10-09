@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.pulse.core.fx.PulseFx
 import app.pulse.data.local.SessionVault
 import app.pulse.data.local.SecureSessionStore
+import app.pulse.data.remote.ManifestEndpoints
 import app.pulse.data.repository.OnboardingError
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulsePrefsStore
@@ -94,6 +95,7 @@ class OnboardingViewModel @Inject constructor(
     private val repo: PulseRepository,
     private val prefs: PulsePrefsStore,
     private val secureSessionStore: SecureSessionStore,
+    private val manifestEndpoints: ManifestEndpoints,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(OnboardingUiState())
@@ -136,6 +138,11 @@ class OnboardingViewModel @Inject constructor(
         _state.value = _state.value.copy(serverUrl = value.take(200), connectNotice = null)
     }
 
+    /** R99 - one tap wipes a stale/recycled address out of the gate. */
+    fun clearServerUrl() {
+        _state.value = _state.value.copy(serverUrl = "", connectNotice = null)
+    }
+
     /**
      * Normalize a candidate base the way PulseEndpoints.applyBase expects:
      * trimmed, no trailing slash, http(s) scheme defaulted to https when the
@@ -168,6 +175,11 @@ class OnboardingViewModel @Inject constructor(
                     true to "Connected. This is a live Pulse server."
                 } else if (health.first) {
                     false to "That host answered but it is not a Pulse gateway (HTTP ${health.third})."
+                } else if (health.third == 410 || health.second.contains("Recycled", ignoreCase = true)) {
+                    // R99 - the edge's Recycled page: that deployment mapping
+                    // no longer exists (ephemeral sandbox hosts). Say exactly
+                    // that instead of a generic network error.
+                    false to "That address belongs to a deployment that was recycled. Paste the CURRENT address you open Pulse with in your browser."
                 } else {
                     false to "Could not reach that host - check the address and your network."
                 }
@@ -206,7 +218,8 @@ class OnboardingViewModel @Inject constructor(
     fun connect(onConnected: (String) -> Unit) {
         val s = _state.value
         if (s.probing || s.signingIn) return
-        val base = normalizeBase(s.serverUrl) ?: run {
+        // R99 - var: the published-gateway self-heal may replace the base.
+        var base = normalizeBase(s.serverUrl) ?: run {
             _state.value = _state.value.copy(
                 connectNotice = "Paste the address of a Pulse gateway (https://...).",
                 connectNoticeTone = ConnectNoticeTone.AMBER,
@@ -215,8 +228,26 @@ class OnboardingViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _state.value = _state.value.copy(probing = true, connectNotice = null)
-            val (ok, message) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            var (ok, message) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 probeBase(base)
+            }
+            // R99 self-heal - a failed candidate gets ONE second chance: if a
+            // live gateway is published in the repo manifest and it differs
+            // from what just failed, switch the field to it and probe that.
+            if (!ok) {
+                val published = runCatching { manifestEndpoints.readPublishedGateway() }.getOrNull()
+                val candidate = published?.let { normalizeBase(it) }
+                if (!candidate.isNullOrBlank() && candidate != base) {
+                    val (ok2, message2) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        probeBase(candidate)
+                    }
+                    if (ok2) {
+                        ok = true
+                        message = message2
+                        _state.value = _state.value.copy(serverUrl = candidate)
+                        base = candidate
+                    }
+                }
             }
             if (ok) {
                 onConnected(base)

@@ -92,6 +92,7 @@ import app.pulse.ui.rememberPressSource
 private val Zinc200 = Color(0xFFE4E4E7)
 private val Zinc400 = Color(0xFFA1A1AA)
 private val Zinc500 = Color(0xFF71717A)
+private val Zinc600 = Color(0xFF52525B)
 private val Zinc700 = Color(0xFF3F3F46)
 private val Zinc800 = Color(0xFF27272A)
 // EMB-B: the brand-adjacent shades ride the ember language (the SWATCH
@@ -255,7 +256,30 @@ private fun ConnectStep(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            FieldLabel("Pulse server")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FieldLabel("Pulse server")
+                // R99 - a stale/recycled address must be one tap away from
+                // gone, never a mystery string the user cannot get rid of.
+                if (state.serverUrl.isNotEmpty() && !state.probing) {
+                    Text(
+                        "Clear",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isSystemInDarkTheme()) Zinc400 else Zinc600,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.clearServerUrl()
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
             PulseTextField(
                 value = state.serverUrl,
                 onValueChange = viewModel::setServerUrl,

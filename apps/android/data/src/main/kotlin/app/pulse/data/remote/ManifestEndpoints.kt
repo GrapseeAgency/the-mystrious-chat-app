@@ -85,6 +85,18 @@ class ManifestEndpoints @Inject constructor(
         }
     }
 
+    /**
+     * R99 - READ-ONLY manifest peek for the connect gate: returns the
+     * published `gateway` without applying or persisting anything. Null on
+     * any failure or when the field is blank (offline-first stays honest).
+     * The connect gate uses this to offer the published origin when the
+     * user's saved address turns out to be a recycled deployment.
+     */
+    suspend fun readPublishedGateway(): String? = withContext(Dispatchers.IO) {
+        val (_, gateway, _) = fetchOverrides(CDN_MANIFEST_URL)
+        gateway
+    }
+
     /** 3s-timeout GET - returns (gateway?, socket?, ice?) with nulls on any failure. */
     private fun fetchOverrides(url: String): Triple<String?, String?, String?> = try {
         val conn = URL(url).openConnection() as HttpURLConnection
