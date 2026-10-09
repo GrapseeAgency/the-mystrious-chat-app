@@ -5794,3 +5794,18 @@ Stage Summary:
 - R97 carries commit + green CI evidence; the rail and command-bar brand tiles now wear the web amber-400->orange-600 gradient (nav-router.tsx:932), the last two white-wash survivors found by the deep check.
 - Both platforms now audit byte-clean against the web dark truth as of this round: Android MirrorArt tokens and iOS 13 renderers + 2 brand tiles all verified first-hand.
 - Open items unchanged: re-tag to re-pin the CDN manifest to clean main.
+---
+Task ID: R98
+Agent: orchestrator (Z.ai main session)
+Task: the user asked "did you make a new apk mate?? can i see that?? did you upload any new apk though?" - audit the release channel, ship the fixes.
+
+Work Log:
+- RELEASE AUDIT: the v0.25.0.0.x tags were cut from a side line diverged at 49ad05b (merge-base = 49ad05b) - they carry R77-R79 but NONE of the R87-R97 WhatsApp-report fixes. Main had all fixes (19 commits, R87-R97 confirmed via rev-list) but its version defaults were stale at 49/"0.24.0.0.3".
+- RELEASE R98: bumped apps/android/app/build.gradle.kts defaults to versionCode 52 / versionName "0.25.0.0.3" (monotonic with the release channel's 51), commit 158d69e pushed, tag v0.25.0.0.3 cut on main.
+- PIPELINE: android-ci tag build run 37932487497 SUCCESS (JVM tests + signed assembleRelease + release smoke on the API 30 and API 34 emulator matrix + softprops gh-release publish). iOS tag run 37932487493 SUCCESS.
+- RESULT: Release v0.25.0.0.3 published with Pulse-v0.25.0.0.3.apk (25.0 MB) at https://github.com/GrapseeAgency/the-mystrious-chat-app/releases/tag/v0.25.0.0.3
+- GATES: web src/ ZERO diff; no emoji; no em-dash; no mock data; PAT inline only; db/custom.db never staged; no force push.
+
+Stage Summary:
+- The user can now install an APK that contains the ENTIRE fix wave: dock glass+ember byte-truth, back contract, room suite, compact overlays, calls untrap, Archived/Mentions sub-pages, iOS 13-style nav truth sweep, R97 brand-tile gradients.
+- The "re-tag to re-pin the CDN manifest to clean main" open item is resolved: the release channel is re-anchored on clean main (158d69e).
