@@ -5766,3 +5766,19 @@ Work Log:
 Stage Summary:
 - R96 carries commit + green CI evidence; the uniform white wash is gone from all 13 iOS nav renderers.
 - Open items for future rounds, unchanged: re-tag to re-pin the CDN manifest to clean main; iOS parity track continues to inherit web truths as they are audited.
+---
+Task ID: R97
+Agent: orchestrator (Z.ai main session)
+Task: the user ordered another deep check of the native app code ("would you like to check more deeply the native app code again"). Audit the freshest rounds with fresh eyes instead of trusting prior receipts. Web code is FORBIDDEN to touch.
+
+Work Log:
+- SANDBOX RECOVERY: mid-audit the local sandbox rolled back to the old R54-era snapshot (HEAD fell to 3f12088/a7499d0, R55-R96 objects gone from disk, MirrorDock.kt unreadable). Remote main was verified intact at e6d3179 (R96) via ls-remote; re-fetched and hard-reset local main to FETCH_HEAD. The forbidden local commits stay off main. Web src/ verified ZERO diff after recovery (git diff HEAD --stat -- src/ = empty).
+- WEB TRUTH RE-EXTRACTED first-hand (read-only, src/components/chat/nav-router.tsx): all 13 renderers mapped line-exact - DockTab art-text/art-dim (:426/:429), CapsuleTab dark amber-400 + amber-400/[0.16]->[0.05] wash + amber-400/25 ring (:169/:182/:195), FloatingDock amber-500/25->8% + ring-amber-500/40 (:591/:598), PillNav amber-600->orange-600 fill + white label (:643/:650), BottomBar dark:amber-400 + amber-500 tick w-8 h-[3px] (:691/:703), TabBar amber-400/10 + amber-500/25 (:744/:752), FloatingTabBar dark:zinc-800->zinc-900 + amber-500/30 (:805/:813), CommandBar dark:amber-400 + amber-500 underline (:887/:894), Rail dark:amber-400 + amber-500 left bar w-1 h-7 (:952/:959) + brand tile from-amber-400 to-orange-600 (:932), Island amber-500/18 + amber-500/30 + amber-400 closed icon + zinc-300/zinc-200 labels (:1041/:1048/:1082/:1054/:1085), Radial amber-600 active icon (:1136) + amber-400->orange-600 FAB (:1157), Gesture amber-500/18 pill + amber-400 icon + open-amber-500/closed-zinc-600 handle (:1203/:1210/:1235), ContextualDock CapsuleTab truth + amber-500->orange-600 chip (:1297).
+- ANDROID AUDIT (read-only, byte-level): MirrorDock.kt carries MirrorArt.Panel glass + Hairline ring (:74-75), ember-cream active tint MirrorArt.Text (:139), no white pill, ember FAB gradient (:109-113). MirrorArt.kt byte check: Text 0xFFF5EFE8 = globals.css:432 #f5efe8 EXACT, Dim 0xFF9B8C7B = :434 #9b8c7b EXACT, Panel 0xA818120D = :439 rgba(24,18,13,0.66) EXACT. No Android defect found.
+- IOS AUDIT (NavDockStyles.swift, all 1690 lines read): 12 of 13 renderers byte-match the web dark truth (FloatingTop :296-303, PillNav :419-423, BottomBar :526-534, TabBar :632-637, FloatingTabBar :727-735, FloatingDock :1130-1138, CommandBar :1235-1246, Island :959/:968/:1014-1019, Radial :1343/:1401-1404, Gesture :1449-1450, Contextual :1621-1629/:1663-1669). TWO DEFECTS FOUND, both brand tiles: RailDock wore a flat Color.white.opacity(0.12) fill (:798) and CommandBarDock the same (:1194) where the web brand-tile language is the amber-400->orange-600 gradient (nav-router.tsx:932 rail P tile).
+- FIX R97 - NavDockStyles.swift: both tiles now carry LinearGradient(amber400 -> orange600, topLeading->bottomTrailing) + the amber glow shadow matching web :932's shadow language; amber400/orange600 confirmed Tailwind-exact in PulseTheme+Tokens.swift:15-16. brace_gate.py: BALANCED.
+- GATES: web src/ ZERO diff; no emoji; no em-dash; no mock data; PAT inline only; db/custom.db never staged; no force push.
+
+Stage Summary:
+- The deep check found what the receipts missed: the two iOS brand tiles were the last white-wash survivors of the pre-R96 era. Both now carry the web gradient truth.
+- Commit 320a3f1 pushed (e6d3179..320a3f1). CI verdict to be appended after the runs land.
