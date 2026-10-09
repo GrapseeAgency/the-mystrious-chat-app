@@ -73,6 +73,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -1901,10 +1902,17 @@ internal fun MirrorRoom(
         }
     }
 
-    // R64/R73 - the attachments tray: the web CREATE grid rows that are REAL
-    // here (photo pick, document pick + upload, quick-phrase manager,
-    // schedule, poll builder, stamps, location, voice note, topic toggle).
-    // No dead tiles.
+    // R101 - the attachments tray rebuilt on the web truth (chat-room.tsx
+    // 5113-5256 + trayGroups 2581-2830): the tray is a rounded block that
+    // opens DIRECTLY ABOVE the composer - four purpose groups (Create /
+    // Gather / Organise / Express) with pill section chips, a 2-col tile
+    // grid, tone-tinted 36dp icon chips and the web tile set 1:1. Photo
+    // left the tray on the web - the bar's camera button owns photos.
+    // imePadding + navigationBarsPadding lift the tray above the keyboard
+    // (the overlays are siblings of the inset-padded room Column, so they
+    // must pad themselves) and the 80dp bottom clearance (72dp composer
+    // row + 8dp web gap) keeps the composer visible under the tray.
+    // Every tile opens a real mirror surface - zero dead tiles.
     if (trayOpen && !broadcastLocked) {
         Box(
             Modifier
@@ -1914,105 +1922,151 @@ internal fun MirrorRoom(
             Column(
                 Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(12.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xF21C1610))
-                    .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(20.dp))
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 80.dp)
+                    // web: max-h-[min(58vh,440px)] overflow-y-auto rounded-3xl
+                    .heightIn(max = minOf(LocalConfiguration.current.screenHeightDp * 0.58f, 440f).dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color(0xCC1C1610)) // bg-[#1c1610]/80
+                    .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(24.dp))
+                    .verticalScroll(rememberScrollState())
                     .padding(10.dp)
                     .clickable(enabled = false) {},
             ) {
-                Text(
-                    "CREATE",
-                    color = MirrorArt.Faint,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                MirrorTrayGroup(
+                    "Create",
+                    listOf(
+                        MirrorTrayTileSpec("LFileText", "Document", "Share a PDF, TXT, CSV or ZIP", TrayToneOrange) {
+                            trayOpen = false
+                            pickDocument.launch("*/*")
+                        },
+                        MirrorTrayTileSpec("LMessageSquarePlus", "Quick phrase", "Save lines you send often", TrayToneSky) {
+                            trayOpen = false
+                            phraseManagerOpen = true
+                        },
+                        MirrorTrayTileSpec("LVote", "Poll", "Live votes in this chat", TrayToneViolet) {
+                            trayOpen = false
+                            pollOpen = true
+                        },
+                        MirrorTrayTileSpec("LCalendarClock", "Schedule", "Send this message later", TrayToneOrange) {
+                            trayOpen = false
+                            scheduleOpen = true
+                        },
+                        MirrorTrayTileSpec("LPresentation", "Whiteboard", "Sketch together on one canvas", TrayToneAmber) {
+                            trayOpen = false
+                            whiteboardOpen = true
+                        },
+                        MirrorTrayTileSpec("LGift", "Red packet", "Wrap coins as a gift", TrayToneRose) {
+                            trayOpen = false
+                            redPacketOpen = true
+                        },
+                    ),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MirrorTrayTile("LImagePlus", "Photo", "Camera roll or gallery") {
-                        trayOpen = false
-                        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    }
-                    MirrorTrayTile("LFile", "Document", "PDF, TXT, CSV, ZIP") {
-                        trayOpen = false
-                        pickDocument.launch("*/*")
-                    }
-                    MirrorTrayTile("LMessageCircle", "Quick phrase", "Save lines you send often") {
-                        trayOpen = false
-                        phraseManagerOpen = true
-                    }
-                    MirrorTrayTile("LCalendarClock", "Schedule", "Send it at a set time") {
-                        trayOpen = false
-                        scheduleOpen = true
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MirrorTrayTile("LPoll", "Poll", "Ask the room a question") {
-                        trayOpen = false
-                        pollOpen = true
-                    }
-                    MirrorTrayTile("LSticker", "Stamp", "Send a designed glyph") {
-                        trayOpen = false
-                        stickerOpen = true
-                    }
-                    MirrorTrayTile("LLocation", "Location", "Share where you are") {
-                        trayOpen = false
-                        locationOpen = true
-                    }
-                    MirrorTrayTile("LMic", "Voice note", "Record and send audio") {
-                        trayOpen = false
-                        micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
-                    }
-                }
-                if (isGroup) {
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MirrorTrayTile(
-                            "LMessagesSquare",
-                            if (topicsVisible) "Hide topics" else "Topics",
-                            "File messages by topic",
+                Spacer(Modifier.height(12.dp))
+                MirrorTrayGroup(
+                    "Gather",
+                    listOf(
+                        MirrorTrayTileSpec("LCalendarDays", "Events", "Plan meetups with RSVP", TrayToneAmber) {
+                            trayOpen = false
+                            eventsOpen = true
+                        },
+                        MirrorTrayTileSpec("LPodcast", "Stage", "Live audio stage for the room", TrayToneOrange) {
+                            trayOpen = false
+                            stageOpen = true
+                        },
+                        MirrorTrayTileSpec("LMap", "Space", "Hang out in a spatial room", TrayToneAmber) {
+                            trayOpen = false
+                            spaceOpen = true
+                        },
+                        MirrorTrayTileSpec("LGamepad2", "Game", "Start tic-tac-toe here", TrayToneViolet) {
+                            trayOpen = false
+                            startTicTacToe()
+                        },
+                        MirrorTrayTileSpec(
+                            "LTrophy",
+                            "Tournament",
+                            "Bracketed group competition",
+                            TrayToneRose,
+                            enabled = isGroup,
                         ) {
                             trayOpen = false
-                            topicsVisible = !topicsVisible
+                            tournamentOpen = true
+                        },
+                    ),
+                )
+                Spacer(Modifier.height(12.dp))
+                MirrorTrayGroup(
+                    "Organise",
+                    buildList {
+                        add(
+                            MirrorTrayTileSpec("LSquareKanban", "Kanban", "Group tasks on a board", TrayToneOrange) {
+                                trayOpen = false
+                                kanbanOpen = true
+                            },
+                        )
+                        // web groupOnly filter (chat-room.tsx:2828): Topic hides in DMs
+                        if (isGroup) {
+                            add(
+                                MirrorTrayTileSpec("LMessagesSquare", "Topic", "File the chat under a topic", TrayToneAmber) {
+                                    trayOpen = false
+                                    topicsVisible = !topicsVisible
+                                },
+                            )
                         }
-                    }
-                }
-                // R74 - the web tray tail (chat-room L2700/2657/2796/2826):
-                // Game, Red packet, Effects chooser, Incognito + Commands.
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MirrorTrayTile("LGamepad2", "Game", "Start tic-tac-toe here") {
-                        trayOpen = false
-                        startTicTacToe()
-                    }
-                    MirrorTrayTile("LGift", "Red packet", "Wrap coins as a gift") {
-                        trayOpen = false
-                        redPacketOpen = true
-                    }
-                    MirrorTrayTile("LSparkles", "Effects", "Confetti, lasers, echo, sparkles") {
-                        trayEffectsOpen = !trayEffectsOpen
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (isGroup) {
-                        MirrorTrayTile(
-                            "LVenetianMask",
-                            "Incognito",
-                            if (anonNext) "Armed - next send is anonymous" else "Next send hides your name",
-                        ) {
-                            anonNext = !anonNext
-                            if (anonNext) trayOpen = false
+                    },
+                )
+                Spacer(Modifier.height(12.dp))
+                MirrorTrayGroup(
+                    "Express",
+                    buildList {
+                        add(
+                            MirrorTrayTileSpec("LMic", "Voice note", "Hold-free recording with a live timer", TrayToneAmber) {
+                                trayOpen = false
+                                micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                            },
+                        )
+                        add(
+                            MirrorTrayTileSpec("LSticker", "Sticker", "Send a stamp from the packs", TrayToneAmber) {
+                                trayOpen = false
+                                stickerOpen = true
+                            },
+                        )
+                        add(
+                            MirrorTrayTileSpec("LSparkles", "Effects", "Confetti, lasers, echo, sparkles", TrayToneViolet) {
+                                trayEffectsOpen = !trayEffectsOpen
+                            },
+                        )
+                        add(
+                            MirrorTrayTileSpec("LDices", "Commands", "Every slash command", TrayToneOrange) {
+                                trayOpen = false
+                                draftValue = TextFieldValue("/")
+                            },
+                        )
+                        add(
+                            MirrorTrayTileSpec("LLocation", "Location", "Drop a live map pin", TrayToneOrange) {
+                                trayOpen = false
+                                locationOpen = true
+                            },
+                        )
+                        // web groupOnly filter: Incognito hides in DMs; armed
+                        // state rides the amber tint (chat-room.tsx:2804-2812)
+                        if (isGroup) {
+                            add(
+                                MirrorTrayTileSpec(
+                                    "LVenetianMask",
+                                    "Incognito",
+                                    if (anonNext) "Armed - next send is anonymous" else "Next send hides your name",
+                                    if (anonNext) TrayToneAmber else TrayToneZinc,
+                                ) {
+                                    anonNext = !anonNext
+                                    if (anonNext) trayOpen = false
+                                },
+                            )
                         }
-                    }
-                    MirrorTrayTile("LDices", "Commands", "Every slash command") {
-                        trayOpen = false
-                        draftValue = TextFieldValue("/")
-                    }
-                }
-                // effects chooser pills (web trayEffectsOpen L5194): arm on tap
+                    },
+                )
+                // effects chooser pills (web 5218-5256): violet chips, arm on tap
                 if (trayEffectsOpen) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2021,8 +2075,8 @@ internal fun MirrorRoom(
                                 Modifier
                                     .weight(1f)
                                     .clip(CircleShape)
-                                    .background(MirrorArt.White7)
-                                    .border(1.dp, MirrorArt.Hairline, CircleShape)
+                                    .background(Color(0x1A8B5CF6)) // violet-500/10
+                                    .border(1.dp, Color(0x408B5CF6), CircleShape) // violet-500/25
                                     .clickable {
                                         pendingEffect = effect
                                         trayOpen = false
@@ -2034,7 +2088,7 @@ internal fun MirrorRoom(
                             ) {
                                 Text(
                                     effect.wire,
-                                    color = MirrorArt.Text,
+                                    color = Color(0xFFC4B5FD), // violet-300
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                 )
@@ -2478,24 +2532,92 @@ internal fun MirrorRoom(
     }
 }
 
-/** One attachments-tray tile (web CREATE grid tile anatomy). */
+/** Web tray tone palette (chat-room.tsx trayGroups) - the dark-mode 400 stops. */
+private val TrayToneOrange = Color(0xFFFB923C) // orange-400
+private val TrayToneSky = Color(0xFF38BDF8) // sky-400
+private val TrayToneViolet = Color(0xFFA78BFA) // violet-400
+private val TrayToneAmber = Color(0xFFFBBF24) // amber-400
+private val TrayToneRose = Color(0xFFFB7185) // rose-400
+private val TrayToneZinc = Color(0xFFA1A1AA) // zinc-400
+
+/** One attachments-tray tile spec (web TrayTile): glyph, copy, tone, action. */
+private class MirrorTrayTileSpec(
+    val icon: String,
+    val label: String,
+    val help: String,
+    val tone: Color,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit,
+)
+
+/** Web tray group (5152-5160): pill section chip + a 2-col tile grid, gap-2. */
 @Composable
-private fun MirrorTrayTile(icon: String, label: String, hint: String, onClick: () -> Unit) {
+private fun MirrorTrayGroup(title: String, tiles: List<MirrorTrayTileSpec>) {
+    Text(
+        title.uppercase(),
+        color = MirrorArt.Dim,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.4.sp,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color.White.copy(alpha = 0.06f))
+            .padding(horizontal = 8.dp, vertical = 2.dp), // web px-2 py-0.5 chip
+    )
+    Spacer(Modifier.height(6.dp))
+    for (row in tiles.chunked(2)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (tile in row) {
+                MirrorTrayTile(tile, Modifier.weight(1f))
+            }
+            if (row.size == 1) {
+                Spacer(Modifier.weight(1f))
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** One attachments-tray tile (web 5173-5192): tone chip 36dp + label + help. */
+@Composable
+private fun MirrorTrayTile(spec: MirrorTrayTileSpec, modifier: Modifier = Modifier) {
     Row(
-        Modifier
-            .widthIn(max = 108.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MirrorArt.White7)
-            .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .padding(10.dp),
+        modifier
+            .fillMaxWidth()
+            .alpha(if (spec.enabled) 1f else 0.4f) // web disabled:opacity-40 - whole tile
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.05f))
+            .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
+            .clickable(enabled = spec.enabled, onClick = spec.onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        MirrorLucideIcon(icon, tint = MirrorArt.Accent2, modifier = Modifier.size(18.dp))
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(spec.tone.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            MirrorLucideIcon(spec.icon, tint = spec.tone, modifier = Modifier.size(18.dp))
+        }
         Column {
-            Text(label, color = MirrorArt.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text(hint, color = MirrorArt.Faint, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                spec.label,
+                color = MirrorArt.Text,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                spec.help,
+                color = MirrorArt.Faint,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

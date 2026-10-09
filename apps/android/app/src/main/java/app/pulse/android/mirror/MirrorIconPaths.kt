@@ -258,6 +258,11 @@ internal object MirrorIconPaths {
             "M22 19h-6",
         ),
         "LMessageCircle" to listOf("M7.9 20A9 9 0 1 0 4 16.1L2 22Z"),
+        "LMessageSquarePlus" to listOf(
+            "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+            "M12 7v6",
+            "M9 10h6",
+        ),
         "LTicket" to listOf(
             "M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z",
             "M13 5v2",
