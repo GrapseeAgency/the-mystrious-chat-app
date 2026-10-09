@@ -5809,3 +5809,18 @@ Work Log:
 Stage Summary:
 - The user can now install an APK that contains the ENTIRE fix wave: dock glass+ember byte-truth, back contract, room suite, compact overlays, calls untrap, Archived/Mentions sub-pages, iOS 13-style nav truth sweep, R97 brand-tile gradients.
 - The "re-tag to re-pin the CDN manifest to clean main" open item is resolved: the release channel is re-anchored on clean main (158d69e).
+---
+Task ID: R99
+Agent: orchestrator (Z.ai main session)
+Task: the user installed v0.25.0.0.3 and hit "can't even connect with real url" - the server field was pre-filled with a mangled, dead address. Diagnose and fix.
+
+Work Log:
+- ROOT CAUSE: the prefill comes from prefs.serverBase (the user's persisted Server value, OnboardingViewModel.kt:124 stored ?: gatewayHttpUrl). The stored address belongs to an EPHEMERAL sandbox mapping (chat-scoped space-z.ai host). Probing that host family from the sandbox returns HTTP 410 with an edge page literally titled "Recycled" - the deployment mapping no longer exists. The deployment itself is healthy: localhost:81 gateway answers /api/health 200 {"ok":true,...} and /api/users 200.
+- LOCK-IN CHECK: none - PulseApplication.kt:142-146 the user's explicit serverBase beats every vault/manifest override (applyBase then return), so typing the current address always wins. The CDN manifest on main is clean (gateway "") - not the poison source.
+- FIX (commit f539ba4, tag v0.25.0.0.4, versionCode 53): (1) probeBase now detects 410/Recycled and says "That address belongs to a deployment that was recycled. Paste the CURRENT address you open Pulse with in your browser." instead of a generic network error (OnboardingViewModel.kt:178-182); (2) Clear affordance on the connect gate wipes a stale address in one tap (OnboardingScreen.kt:258-280 + clearServerUrl()); (3) self-heal: a failed probe gets ONE second chance - readPublishedGateway() peeks the repo manifest read-only (ManifestEndpoints.kt:88-98) and if it carries a different live gateway the gate switches and probes it, adopting only after success (OnboardingViewModel.kt:233-250); (4) Zinc600 token added.
+- PIPELINE: android tag run 37942486074 SUCCESS, ios tag run 37942486220 SUCCESS. Release v0.25.0.0.4 published with Pulse-v0.25.0.0.4.apk (25.0 MB).
+- GATES: web src/ ZERO diff; no emoji; no em-dash; no mock data; PAT inline only; db/custom.db never staged; no force push.
+
+Stage Summary:
+- The app now tells the user the TRUTH about recycled addresses, wipes them in one tap, and auto-switches to any published gateway after a live probe.
+- The structural reality remains: a sandbox deployment URL rotates whenever the sandbox recycles. The durable fix is pinning the manifest gateway once a permanent host exists; until then the connect gate + the current browser address is the honest path.
