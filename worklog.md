@@ -5782,3 +5782,15 @@ Work Log:
 Stage Summary:
 - The deep check found what the receipts missed: the two iOS brand tiles were the last white-wash survivors of the pre-R96 era. Both now carry the web gradient truth.
 - Commit 320a3f1 pushed (e6d3179..320a3f1). CI verdict to be appended after the runs land.
+---
+Task ID: R97-ci
+Agent: orchestrator (Z.ai main session)
+Task: CI verdict for the R97 brand-tile truth fix.
+
+Work Log:
+- 320a3f1 (R97): Pulse iOS CI run 37885994879 SUCCESS (compile + tests on the macos-15 toolchain, ~18 min).
+
+Stage Summary:
+- R97 carries commit + green CI evidence; the rail and command-bar brand tiles now wear the web amber-400->orange-600 gradient (nav-router.tsx:932), the last two white-wash survivors found by the deep check.
+- Both platforms now audit byte-clean against the web dark truth as of this round: Android MirrorArt tokens and iOS 13 renderers + 2 brand tiles all verified first-hand.
+- Open items unchanged: re-tag to re-pin the CDN manifest to clean main.
