@@ -1,4 +1,7 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
+import CoreLocation
 
 // R59 - NATIVE MIRROR (iOS SwiftUI). The web artboard - home, profile, dock,
 // room bubble language - redrawn natively with the EXACT palette and geometry
@@ -1371,6 +1374,22 @@ struct MirrorRoomView: View {
     @State private var menuOpen = false
     @State private var activeSheet: MirrorRoomSheet?
     @FocusState private var composerFocused: Bool
+    // R102 - the attachments tray (web chat-room.tsx 5113-5256 + trayGroups
+    // 2581-2830): panel state, armed effect/incognito, the voice recorder,
+    // the document picker and the photo picker - every tile wires a REAL
+    // send, zero dead tiles.
+    @State private var trayOpen = false
+    @State private var trayEffectsOpen = false
+    @State private var armedEffect: String?
+    @State private var anonNext = false
+    @State private var docPickerOpen = false
+    @State private var sendingDoc = false
+    @State private var photoItem: PhotosPickerItem?
+    @State private var recording = false
+    @State private var voiceRecorder: VoiceRecorder?
+    @State private var recordingStartedAt: Date?
+    @State private var recordSeconds = 0
+    @State private var recordTimer: Timer?
 
     private var bubbleMax: CGFloat { UIScreen.main.bounds.width * 0.78 }
 
@@ -1437,42 +1456,119 @@ struct MirrorRoomView: View {
                 .onChange(of: messages.count) { _ in
                     if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
+                // R102 tap-away scrim (web 5113-5131): a transparent catcher
+                // over the message list closes the tray; the tray + composer
+                // themselves stay interactive.
+                .overlay {
+                    if trayOpen {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { trayOpen = false } }
+                    }
+                }
             }
 
-            // composer: art-input-pill + 44dp dark-glass FAB
-            HStack(alignment: .bottom, spacing: 8) {
-                HStack(spacing: 4) {
-                    Image(systemName: "paperclip").font(.system(size: 17)).foregroundColor(MirrorArt.dim)
-                        .frame(width: 36, height: 36)
-                    TextField("Type here", text: $draft, axis: .vertical)
-                        .font(.system(size: 15)).foregroundColor(MirrorArt.text)
-                        .lineLimit(1...5)
-                        .padding(.vertical, 6)
-                        .focused($composerFocused)
-                    Image(systemName: "camera").font(.system(size: 17)).foregroundColor(MirrorArt.dim)
-                        .frame(width: 36, height: 36)
+            // R102 - armed pills (web 4974): the armed effect and the armed
+            // incognito ride above the composer until the send spends them.
+            if armedEffect != nil || anonNext {
+                HStack(spacing: 6) {
+                    if let effect = armedEffect {
+                        armedPill(
+                            icon: "sparkles",
+                            label: "\(effect) effect armed",
+                            tint: Color(red: 0xC4/255.0, green: 0xB5/255.0, blue: 0xFD/255.0),
+                            wash: Color(red: 0x8B/255.0, green: 0x5C/255.0, blue: 0xF6/255.0)
+                        ) { armedEffect = nil }
+                    }
+                    if anonNext {
+                        armedPill(
+                            icon: "theatermasks",
+                            label: "anon armed - next send hides your name",
+                            tint: MirrorArt.accent2,
+                            wash: MirrorArt.accent
+                        ) { anonNext = false }
+                    }
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 4).padding(.vertical, 6)
-                .frame(minHeight: 48)
-                .background(MirrorArt.glass7)
-                // web focus hairline: ring-2 inset ring-accent/45 over the WHOLE pill
-                .overlay(
-                    Capsule().strokeBorder(MirrorArt.accent.opacity(0.45), lineWidth: 2)
-                        .opacity(composerFocused ? 1 : 0)
+                .padding(.horizontal, 12).padding(.bottom, 6)
+            }
+
+            // R102 - the attachments tray (web 5140-5213): an inline block
+            // that opens DIRECTLY ABOVE the composer. SwiftUI's keyboard
+            // avoidance lifts the whole column, so the panel rides above the
+            // IME - the paperclip answers while the keyboard is up, the exact
+            // complaint the Android R101 round fixed on the Kotlin side.
+            if trayOpen && !recording {
+                trayPanel
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            // composer: art-input-pill + 44dp dark-glass FAB. Web 5658: the
+            // plus rotates 45deg into an x while the tray is open and swaps
+            // to the send plane the moment the draft or an armed effect exists.
+            if recording {
+                MirrorRecordingBar(
+                    seconds: recordSeconds,
+                    onCancel: { cancelVoiceRecording() },
+                    onSend: { finishAndSendVoice() }
                 )
-                .overlay(Capsule().strokeBorder(MirrorArt.hairline, lineWidth: 1))
-                .clipShape(Capsule())
+                .padding(.horizontal, 12).padding(.vertical, 12)
+            } else {
+                HStack(alignment: .bottom, spacing: 8) {
+                    HStack(spacing: 4) {
+                        // paperclip: toggles the tray - the active state wears
+                        // white/10 + the text tint (web paperclip language)
+                        Button {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { trayOpen.toggle() }
+                        } label: {
+                            Image(systemName: "paperclip").font(.system(size: 17))
+                                .foregroundColor(trayOpen ? MirrorArt.text : MirrorArt.dim)
+                                .frame(width: 36, height: 36)
+                                .background(trayOpen ? Color.white.opacity(0.1) : Color.clear)
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        TextField("Type here", text: $draft, axis: .vertical)
+                            .font(.system(size: 15)).foregroundColor(MirrorArt.text)
+                            .lineLimit(1...5)
+                            .padding(.vertical, 6)
+                            .focused($composerFocused)
+                        PhotosPicker(selection: $photoItem, matching: .images) {
+                            Image(systemName: "camera").font(.system(size: 17)).foregroundColor(MirrorArt.dim)
+                                .frame(width: 36, height: 36)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 4).padding(.vertical, 6)
+                    .frame(minHeight: 48)
+                    .background(MirrorArt.glass7)
+                    // web focus hairline: ring-2 inset ring-accent/45 over the WHOLE pill
+                    .overlay(
+                        Capsule().strokeBorder(MirrorArt.accent.opacity(0.45), lineWidth: 2)
+                            .opacity(composerFocused ? 1 : 0)
+                    )
+                    .overlay(Capsule().strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                    .clipShape(Capsule())
 
-                Button(action: send) {
-                    Image(systemName: draft.isEmpty ? "plus" : "paperplane.fill")
-                        .font(.system(size: 18)).foregroundColor(MirrorArt.text)
-                        .frame(width: 44, height: 44)
-                        .background(MirrorArt.glass7)
-                        .overlay(Circle().strokeBorder(MirrorArt.hairline, lineWidth: 1))
-                        .clipShape(Circle())
+                    Button {
+                        if hasSendPayload {
+                            send()
+                        } else {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { trayOpen.toggle() }
+                        }
+                    } label: {
+                        Image(systemName: hasSendPayload ? "paperplane.fill" : "plus")
+                            .font(.system(size: 18)).foregroundColor(MirrorArt.text)
+                            .frame(width: 44, height: 44)
+                            .background(MirrorArt.glass7)
+                            .overlay(Circle().strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                            .clipShape(Circle())
+                            .rotationEffect(.degrees(hasSendPayload ? 0 : (trayOpen ? 45 : 0)))
+                    }
+                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 12).padding(.vertical, 12)
             }
-            .padding(.horizontal, 12).padding(.vertical, 12)
         }
         .overlay(alignment: .topTrailing) {
             if menuOpen {
@@ -1498,8 +1594,28 @@ struct MirrorRoomView: View {
                 row: row,
                 session: session,
                 messages: messages,
-                memberRows: memberRows
+                memberRows: memberRows,
+                draftText: draft,
+                onInsertDraft: { text in
+                    draft = text
+                    composerFocused = true
+                },
+                onSent: { Task { await load() } }
             )
+        }
+        // R102 - real tray surfaces: documents via the system picker, photos
+        // via PhotosPicker, and the 1s recording ticker.
+        .fileImporter(
+            isPresented: $docPickerOpen,
+            allowedContentTypes: [.data],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                sendDocument(from: url)
+            }
+        }
+        .onChange(of: photoItem) { item in
+            handlePhotoPick(item)
         }
         .task {
             await load()
@@ -1515,12 +1631,27 @@ struct MirrorRoomView: View {
         }
     }
 
+    // web 5580: the fab swaps to send when the draft holds text OR an
+    // effect is armed - an armed effect can send on its own.
+    private var hasSendPayload: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || armedEffect != nil
+    }
+
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || armedEffect != nil else { return }
+        let payload: [String: Any]? = armedEffect.map { ["effect": $0] }
+        let anon: Bool? = anonNext ? true : nil
+        armedEffect = nil
+        anonNext = false
         draft = ""
         Task {
-            _ = try? await session.api.sendMessage(conversationId: row.id, content: text)
+            _ = try? await session.api.sendMessage(
+                conversationId: row.id,
+                content: text,
+                payload: payload,
+                anon: anon
+            )
             await load()
         }
     }
@@ -1530,6 +1661,366 @@ struct MirrorRoomView: View {
             _ = try? await session.api.react(messageId: messageId, emoji: emoji)
             await load()
         }
+    }
+
+    // MARK: R102 - tray actions (every tile a real send)
+
+    private func closeTray() {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+            trayOpen = false
+            trayEffectsOpen = false
+        }
+    }
+
+    private func armedPill(icon: String, label: String, tint: Color, wash: Color, onClear: @escaping () -> Void) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 11, weight: .bold))
+            Text(label).font(.system(size: 11, weight: .bold)).lineLimit(1)
+            Button(action: onClear) {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundColor(tint)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(wash.opacity(0.1))
+        .overlay(Capsule().strokeBorder(wash.opacity(0.25), lineWidth: 1))
+        .clipShape(Capsule())
+    }
+
+    // R102 - the web tray 1:1 (chat-room.tsx 5140-5213): scrollable panel
+    // capped at min(58vh, 440), rounded-3xl, #1c1610/80, hairline ring,
+    // p-2.5, four purpose groups with pill chips + the 2-col tile grid.
+    private var trayPanel: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    trayGroup("Create", createTiles)
+                    trayGroup("Gather", gatherTiles)
+                    trayGroup("Organise", organiseTiles)
+                    trayGroup("Express", expressTiles)
+                }
+                .padding(10)
+            }
+            .frame(maxHeight: min(UIScreen.main.bounds.height * 0.58, 440))
+            if trayEffectsOpen {
+                effectsRow
+                    .padding(.horizontal, 12).padding(.bottom, 10)
+            }
+        }
+        .background(Color(red: 0x1C/255.0, green: 0x16/255.0, blue: 0x10/255.0).opacity(0.8))
+        .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+        .padding(.horizontal, 12).padding(.bottom, 8)
+    }
+
+    private func trayGroup(_ title: String, _ tiles: [MirrorTrayTileSpec]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .kerning(1.4)
+                .foregroundColor(MirrorArt.dim)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Color.white.opacity(0.06))
+                .clipShape(Capsule())
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                ForEach(Array(tiles.enumerated()), id: \.offset) { _, spec in
+                    MirrorTrayTile(spec: spec)
+                }
+            }
+        }
+        .padding(.bottom, 12)
+    }
+
+    // Web tile set 1:1 (trayGroups 2581-2830). Whiteboard / Red packet /
+    // Stage / Space have NO iOS mirror surface yet - they render exactly
+    // like the web's own disabled tiles (opacity-40, untappable) instead of
+    // pretending. Every other tile wires a real send or a real surface.
+    private var createTiles: [MirrorTrayTileSpec] {
+        [
+            MirrorTrayTileSpec(icon: "doc", label: "Document", help: "Share a PDF, TXT, CSV or ZIP", tone: MirrorTrayTone.orange) {
+                closeTray()
+                docPickerOpen = true
+            },
+            MirrorTrayTileSpec(icon: "text.bubble", label: "Quick phrase", help: "Save lines you send often", tone: MirrorTrayTone.sky) {
+                closeTray()
+                activeSheet = .phrases
+            },
+            MirrorTrayTileSpec(icon: "chart.bar", label: "Poll", help: "Live votes in this chat", tone: MirrorTrayTone.violet) {
+                closeTray()
+                activeSheet = .poll
+            },
+            MirrorTrayTileSpec(icon: "calendar.badge.clock", label: "Schedule", help: "Send this message later", tone: MirrorTrayTone.orange) {
+                closeTray()
+                activeSheet = .schedule
+            },
+            MirrorTrayTileSpec(icon: "scribble", label: "Whiteboard", help: "Sketch together on one canvas", tone: MirrorTrayTone.amber, disabled: true) {},
+            MirrorTrayTileSpec(icon: "gift", label: "Red packet", help: "Wrap coins as a gift", tone: MirrorTrayTone.rose, disabled: true) {},
+        ]
+    }
+
+    private var gatherTiles: [MirrorTrayTileSpec] {
+        [
+            MirrorTrayTileSpec(icon: "calendar", label: "Events", help: "Plan meetups with RSVP", tone: MirrorTrayTone.amber) {
+                closeTray()
+                activeSheet = .events
+            },
+            MirrorTrayTileSpec(icon: "waveform", label: "Stage", help: "Live audio stage for the room", tone: MirrorTrayTone.orange, disabled: true) {},
+            MirrorTrayTileSpec(icon: "map", label: "Space", help: "Hang out in a spatial room", tone: MirrorTrayTone.amber, disabled: true) {},
+            MirrorTrayTileSpec(icon: "gamecontroller", label: "Game", help: "Start tic-tac-toe here", tone: MirrorTrayTone.violet) {
+                closeTray()
+                startGame()
+            },
+            MirrorTrayTileSpec(
+                icon: "trophy", label: "Tournament", help: "Bracketed group competition", tone: MirrorTrayTone.rose,
+                disabled: !row.isGroup
+            ) {
+                closeTray()
+                activeSheet = .tournament
+            },
+        ]
+    }
+
+    // web groupOnly filter (chat-room.tsx:2828): Topic hides in DMs
+    private var organiseTiles: [MirrorTrayTileSpec] {
+        var tiles: [MirrorTrayTileSpec] = [
+            MirrorTrayTileSpec(icon: "list.bullet.rectangle", label: "Kanban", help: "Group tasks on a board", tone: MirrorTrayTone.orange) {
+                closeTray()
+                activeSheet = .kanban
+            },
+        ]
+        if row.isGroup {
+            tiles.append(
+                MirrorTrayTileSpec(icon: "tag", label: "Topic", help: "File the chat under a topic", tone: MirrorTrayTone.amber) {
+                    closeTray()
+                    draft = "/topic "
+                    composerFocused = true
+                }
+            )
+        }
+        return tiles
+    }
+
+    // web groupOnly filter: Incognito hides in DMs; the armed state rides
+    // amber (chat-room.tsx 2804-2812)
+    private var expressTiles: [MirrorTrayTileSpec] {
+        var tiles: [MirrorTrayTileSpec] = [
+            MirrorTrayTileSpec(icon: "mic", label: "Voice note", help: "Hold-free recording with a live timer", tone: MirrorTrayTone.amber) {
+                closeTray()
+                startVoiceRecording()
+            },
+            MirrorTrayTileSpec(icon: "face.smiling", label: "Sticker", help: "Send a stamp from the packs", tone: MirrorTrayTone.amber) {
+                closeTray()
+                activeSheet = .sticker
+            },
+            MirrorTrayTileSpec(icon: "sparkles", label: "Effects", help: "Confetti, lasers, echo, sparkles", tone: MirrorTrayTone.violet) {
+                trayEffectsOpen.toggle()
+            },
+            MirrorTrayTileSpec(icon: "dice", label: "Commands", help: "Every slash command", tone: MirrorTrayTone.orange) {
+                closeTray()
+                draft = "/"
+                composerFocused = true
+            },
+            MirrorTrayTileSpec(icon: "location", label: "Location", help: "Drop a live map pin", tone: MirrorTrayTone.orange) {
+                closeTray()
+                activeSheet = .location
+            },
+        ]
+        if row.isGroup {
+            tiles.append(
+                MirrorTrayTileSpec(
+                    icon: "theatermasks", label: "Incognito",
+                    help: anonNext ? "Armed - next send is anonymous" : "Next send hides your name",
+                    tone: anonNext ? MirrorTrayTone.amber : MirrorTrayTone.zinc
+                ) {
+                    anonNext.toggle()
+                    if anonNext { closeTray() }
+                }
+            )
+        }
+        return tiles
+    }
+
+    // web 5218-5256: violet pills under the panel; arming closes the tray
+    private var effectsRow: some View {
+        HStack(spacing: 6) {
+            ForEach(["confetti", "lasers", "echo", "sparkles"], id: \.self) { name in
+                Button {
+                    armedEffect = name
+                    closeTray()
+                    session.toasts.show("\(name) effect armed - type a message and send")
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: effectsGlyph(name)).font(.system(size: 11, weight: .bold))
+                        Text(name).font(.system(size: 11, weight: .bold))
+                    }
+                    .foregroundColor(Color(red: 0xC4/255.0, green: 0xB5/255.0, blue: 0xFD/255.0))
+                    .frame(maxWidth: .infinity).frame(height: 34)
+                    .background(Color(red: 0x8B/255.0, green: 0x5C/255.0, blue: 0xF6/255.0).opacity(0.1))
+                    .overlay(Capsule().strokeBorder(Color(red: 0x8B/255.0, green: 0x5C/255.0, blue: 0xF6/255.0).opacity(0.25), lineWidth: 1))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func effectsGlyph(_ name: String) -> String {
+        switch name {
+        case "confetti": return "party.popper"
+        case "lasers": return "bolt"
+        case "echo": return "waveform"
+        default: return "sparkles"
+        }
+    }
+
+    private func startGame() {
+        let opponent = row.isGroup ? nil : memberRows.first { $0.id != session.api.userId }?.id
+        Task {
+            do {
+                _ = try await session.api.createGame(conversationId: row.id, opponentId: opponent)
+                session.toasts.show("Tic-tac-toe challenge sent")
+                await load()
+            } catch {
+                session.toasts.show("Could not start the game")
+            }
+        }
+    }
+
+    // R102 documents (web 3469-3486): security-scoped read, mime from the
+    // extension, POST /api/uploads, kind:"file" send with name + size.
+    private func sendDocument(from url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard !sendingDoc, let data = try? Data(contentsOf: url) else {
+            session.toasts.show("Couldn't read that file")
+            return
+        }
+        sendingDoc = true
+        let name = url.lastPathComponent
+        let mime = PulseMediaSupport.mime(forExtension: url.pathExtension) ?? "application/octet-stream"
+        let size = data.count
+        Task {
+            defer { sendingDoc = false }
+            do {
+                let path = try await session.api.uploadMedia(dataUrl: PulseMediaSupport.dataUrl(mime: mime, data: data))
+                _ = try await session.api.sendMessage(
+                    conversationId: row.id,
+                    content: "",
+                    filePath: path,
+                    fileName: name,
+                    fileSize: size,
+                    kind: "file"
+                )
+                await load()
+            } catch {
+                session.toasts.show("Document failed to upload - check the connection")
+            }
+        }
+    }
+
+    // R102 photos: the camera button is real - PhotosPicker data,
+    // downscale to JPEG, POST /api/uploads, imagePath send.
+    private func handlePhotoPick(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+        photoItem = nil
+        Task {
+            do {
+                guard let raw = try await item.loadTransferable(type: Data.self) else {
+                    session.toasts.show("Couldn't read that photo")
+                    return
+                }
+                guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: raw) else {
+                    session.toasts.show("Couldn't read that photo")
+                    return
+                }
+                let path = try await session.api.uploadMedia(dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg))
+                _ = try await session.api.sendMessage(
+                    conversationId: row.id,
+                    content: "",
+                    imagePath: path
+                )
+                await load()
+            } catch {
+                session.toasts.show("Photo failed to upload - check the connection")
+            }
+        }
+    }
+
+    // R102 voice notes - the VoiceRecorder infra the full room already
+    // ships (VoiceNotes.swift) reused 1:1: TCC permission, AAC record,
+    // 100ms rounding, <600ms discard, upload + kind:"audio" send.
+    private func startVoiceRecording() {
+        guard !recording, voiceRecorder == nil else { return }
+        Task {
+            let granted = await VoiceRecorder.requestPermission()
+            guard granted else {
+                session.toasts.show("Microphone access is off - enable it in Settings to record voice notes")
+                return
+            }
+            guard !recording, voiceRecorder == nil else { return }
+            let recorder = VoiceRecorder()
+            do {
+                try recorder.start()
+            } catch {
+                session.toasts.show("Couldn't start recording")
+                return
+            }
+            voiceRecorder = recorder
+            recordingStartedAt = Date()
+            recordSeconds = 0
+            recording = true
+            recordTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+                recordSeconds += 1
+            }
+        }
+    }
+
+    private func finishAndSendVoice() {
+        guard recording, let startedAt = recordingStartedAt else { return }
+        let elapsedMs = Date().timeIntervalSince(startedAt) * 1000
+        let durationMs = VoiceMath.roundedDurationMs(fromElapsedMs: elapsedMs)
+        voiceRecorder?.stop()
+        let fileURL = voiceRecorder?.fileURL
+        teardownRecording()
+        guard !VoiceMath.isTooShort(elapsedMs), let fileURL else {
+            if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
+            session.toasts.show("Too short - voice note discarded")
+            return
+        }
+        Task {
+            defer { try? FileManager.default.removeItem(at: fileURL) }
+            do {
+                let data = try Data(contentsOf: fileURL)
+                let dataUrl = PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data)
+                let path = try await session.api.uploadMedia(dataUrl: dataUrl)
+                _ = try await session.api.sendMessage(
+                    conversationId: row.id,
+                    content: "",
+                    audioPath: path,
+                    durationMs: durationMs,
+                    kind: "audio"
+                )
+                await load()
+            } catch {
+                session.toasts.show("Voice note failed to upload - check the connection")
+            }
+        }
+    }
+
+    private func cancelVoiceRecording() {
+        voiceRecorder?.cancel()
+        teardownRecording()
+    }
+
+    private func teardownRecording() {
+        recordTimer?.invalidate()
+        recordTimer = nil
+        voiceRecorder = nil
+        recordingStartedAt = nil
+        recording = false
+        recordSeconds = 0
     }
 }
 
@@ -1682,6 +2173,8 @@ struct MirrorLaterView: View {
 
 enum MirrorRoomSheet: String, Identifiable {
     case info, search, pinned
+    // R102 - real tray surfaces (every one a live API send)
+    case poll, schedule, phrases, sticker, events, kanban, tournament, location
     var id: String { rawValue }
 }
 
@@ -1747,6 +2240,11 @@ struct MirrorRoomSheetView: View {
     @ObservedObject var session: PulseSession
     let messages: [WireChatMessage]
     let memberRows: [WireConversationMember]
+    // R102 - the tray surfaces read the live draft (schedule) and push
+    // inserts/sends back into the room (topic/commands/phrases, reload).
+    var draftText: String = ""
+    var onInsertDraft: (String) -> Void = { _ in }
+    var onSent: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var pinned: [WireChatMessage]?
@@ -1821,6 +2319,23 @@ struct MirrorRoomSheetView: View {
                 .task {
                     pinned = (try? await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)) ?? []
                 }
+            // R102 - the tray surfaces
+            case .poll:
+                MirrorPollBuilder(session: session, row: row, onSent: onSent)
+            case .schedule:
+                MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent)
+            case .phrases:
+                MirrorPhrasesBuilder(session: session, onInsert: onInsertDraft)
+            case .sticker:
+                MirrorStickerBuilder(session: session, row: row, onSent: onSent)
+            case .events:
+                MirrorEventsBuilder(session: session, row: row, onSent: onSent)
+            case .kanban:
+                MirrorKanbanBuilder(session: session, row: row, onSent: onSent)
+            case .tournament:
+                MirrorTournamentBuilder(session: session, row: row, onSent: onSent)
+            case .location:
+                MirrorLocationBuilder(session: session, row: row, onSent: onSent)
             }
         }
     }
@@ -1830,6 +2345,650 @@ struct MirrorRoomSheetView: View {
         case .info: return row.isGroup ? "Group info" : "Chat info"
         case .search: return "Search in conversation"
         case .pinned: return "Pinned messages"
+        case .poll: return "New poll"
+        case .schedule: return "Schedule a message"
+        case .phrases: return "Quick phrases"
+        case .sticker: return "Stickers"
+        case .events: return "New event"
+        case .kanban: return "Kanban card"
+        case .tournament: return "New tournament"
+        case .location: return "Share location"
         }
+    }
+}
+
+// MARK: R102 - tray shared atoms + real surfaces
+
+/// Web tray tone palette (chat-room.tsx trayGroups) - the dark-mode 400 stops.
+private enum MirrorTrayTone {
+    static let orange = Color(red: 0xFB/255.0, green: 0x92/255.0, blue: 0x3C/255.0) // orange-400
+    static let sky = Color(red: 0x38/255.0, green: 0xBD/255.0, blue: 0xF8/255.0) // sky-400
+    static let violet = Color(red: 0xA7/255.0, green: 0x8B/255.0, blue: 0xFA/255.0) // violet-400
+    static let amber = Color(red: 0xFB/255.0, green: 0xBF/255.0, blue: 0x24/255.0) // amber-400
+    static let rose = Color(red: 0xFB/255.0, green: 0x71/255.0, blue: 0x85/255.0) // rose-400
+    static let zinc = Color(red: 0xA1/255.0, green: 0xA1/255.0, blue: 0xAA/255.0) // zinc-400
+}
+
+/// One attachments-tray tile spec (web TrayTile): glyph, copy, tone, action.
+private struct MirrorTrayTileSpec {
+    let icon: String
+    let label: String
+    let help: String
+    let tone: Color
+    var disabled: Bool = false
+    let run: () -> Void
+    init(icon: String, label: String, help: String, tone: Color, disabled: Bool = false, run: @escaping () -> Void) {
+        self.icon = icon
+        self.label = label
+        self.help = help
+        self.tone = tone
+        self.disabled = disabled
+        self.run = run
+    }
+}
+
+/// One attachments-tray tile (web 5173-5192): 36pt tone chip + 12.5pt
+/// semibold label + 10pt faint help on a white/5 hairline card.
+private struct MirrorTrayTile: View {
+    let spec: MirrorTrayTileSpec
+
+    var body: some View {
+        Button(action: spec.run) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(spec.tone.opacity(0.1))
+                    .frame(width: 36, height: 36)
+                    .overlay(
+                        Image(systemName: spec.icon)
+                            .font(.system(size: 15))
+                            .foregroundColor(spec.tone)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(spec.label)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundColor(MirrorArt.text)
+                        .lineLimit(1)
+                    Text(spec.help)
+                        .font(.system(size: 10))
+                        .foregroundColor(MirrorArt.faint)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(Color.white.opacity(0.05))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .opacity(spec.disabled ? 0.4 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .disabled(spec.disabled)
+    }
+}
+
+/// The recording bar that replaces the composer while a voice note records
+/// (web recording UI + the Android R101 bar): pulsing red dot, live timer,
+/// cancel X, send plane.
+private struct MirrorRecordingBar: View {
+    let seconds: Int
+    let onCancel: () -> Void
+    let onSend: () -> Void
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(MirrorArt.red)
+                .frame(width: 14, height: 14)
+                .opacity(pulse ? 1.0 : 0.3)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                        pulse = true
+                    }
+                }
+            Text(String(format: "Recording voice note - %02d:%02d", seconds / 60, seconds % 60))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(MirrorArt.textSoft)
+            Spacer(minLength: 0)
+            Button(action: onCancel) {
+                Image(systemName: "xmark").font(.system(size: 15)).foregroundColor(MirrorArt.textSoft)
+                    .frame(width: 44, height: 44)
+                    .background(MirrorArt.glass7)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            Button(action: onSend) {
+                Image(systemName: "paperplane.fill").font(.system(size: 17)).foregroundColor(MirrorArt.text)
+                    .frame(width: 44, height: 44)
+                    .background(MirrorArt.glass7)
+                    .overlay(Circle().strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 4).padding(.vertical, 6)
+        .frame(minHeight: 48)
+        .background(MirrorArt.glass7)
+        .overlay(Capsule().strokeBorder(MirrorArt.hairline, lineWidth: 1))
+        .clipShape(Capsule())
+    }
+}
+
+/// Compact dark field for the tray builders.
+private struct MirrorTrayField: View {
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        TextField(placeholder, text: $text, axis: .vertical)
+            .font(.system(size: 14)).foregroundColor(MirrorArt.text)
+            .lineLimit(1...3)
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(MirrorArt.glass7)
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// Accent action pill for the tray builders.
+private struct MirrorTrayAction: View {
+    let label: String
+    var disabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(MirrorArt.gapInk)
+                .frame(maxWidth: .infinity).frame(height: 44)
+                .background(MirrorArt.accent)
+                .clipShape(Capsule())
+                .opacity(disabled ? 0.4 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+    }
+}
+
+/// Poll surface - POST /api/conversations/{id}/poll (question + 2-4 options).
+private struct MirrorPollBuilder: View {
+    @ObservedObject var session: PulseSession
+    let row: MirrorViewModel.MirrorRow
+    let onSent: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var question = ""
+    @State private var options: [String] = ["", "", "", ""]
+    @State private var busy = false
+
+    var body: some View {
+        MirrorPanel(title: "New poll") {
+            VStack(alignment: .leading, spacing: 10) {
+                MirrorPanelHint("QUESTION")
+                MirrorTrayField(placeholder: "Ask the room...", text: $question)
+                MirrorPanelHint("OPTIONS - FIRST TWO REQUIRED")
+                ForEach(0..<4, id: \.self) { i in
+                    MirrorTrayField(placeholder: "Option \(i + 1)", text: $options[i])
+                }
+                MirrorTrayAction(label: "Post poll", disabled: !valid || busy) { send() }
+            }
+        }
+    }
+
+    private var valid: Bool {
+        !question.trimmingCharacters(in: .whitespaces).isEmpty
+            && options.prefix(2).allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+
+    private func send() {
+        busy = true
+        let q = question.trimmingCharacters(in: .whitespaces)
+        let opts = options.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        Task {
+            defer { busy = false }
+            do {
+                _ = try await session.api.createPoll(
+                    conversationId: row.id,
+                    senderId: session.api.userId,
+                    question: q,
+                    options: opts
+                )
+                dismiss()
+                onSent()
+            } catch {
+                session.toasts.show("Poll failed - check the connection")
+            }
+        }
+    }
+}
+
+/// Schedule surface - POST /api/conversations/{id}/scheduled; the live draft
+/// rides in pre-filled (web: "Type the message first, then schedule it").
+private struct MirrorScheduleBuilder: View {
+    @ObservedObject var session: PulseSession
+    let row: MirrorViewModel.MirrorRow
+    let draftText: String
+    let onSent: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var content = ""
+    @State private var when = Date().addingTimeInterval(3600)
+    @State private var busy = false
+
+    var body: some View {
+        MirrorPanel(title: "Schedule a message") {
+            VStack(alignment: .leading, spacing: 10) {
+                MirrorPanelHint("MESSAGE")
+                MirrorTrayField(placeholder: "Type the message first, then schedule it", text: $content)
+                MirrorPanelHint("WHEN - 30 SECONDS TO 30 DAYS OUT")
+                DatePicker("", selection: $when, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                    .labelsHidden()
+                MirrorTrayAction(label: "Schedule send", disabled: !valid || busy) { send() }
+            }
+        }
+        .onAppear { if content.isEmpty { content = draftText } }
+    }
+
+    private var valid: Bool {
+        !content.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func send() {
+        busy = true
+        let iso = ISO8601DateFormatter().string(from: when)
+        let body = content.trimmingCharacters(in: .whitespaces)
+        Task {
+            defer { busy = false }
+            do {
+                _ = try await session.api.scheduleMessage(conversationId: row.id, content: body, scheduledAtIso: iso)
+                dismiss()
+                onSent()
+                session.toasts.show("Scheduled - it sends on its own")
+            } catch {
+                session.toasts.show("Schedule failed - check the connection")
+            }
+        }
+    }
+}
+
+/// Quick-phrase surface - GET/POST/DELETE /api/users/{id}/phrases; tapping
+/// a row inserts the line into the live draft (web F-MS-29 parity).
+private struct MirrorPhrasesBuilder: View {
+    @ObservedObject var session: PulseSession
+    let onInsert: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var phrases: [WireQuickPhrase] = []
+    @State private var text = ""
+
+    var body: some View {
+        MirrorPanel(title: "Quick phrases") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    MirrorTrayField(placeholder: "Add a phrase...", text: $text)
+                    Button {
+                        let body = text.trimmingCharacters(in: .whitespaces)
+                        guard !body.isEmpty else { return }
+                        text = ""
+                        Task {
+                            do {
+                                _ = try await session.api.createQuickPhrase(text: body)
+                                await reload()
+                            } catch {
+                                session.toasts.show("Phrase rejected - max 120 chars, 12 rows")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "plus").font(.system(size: 15, weight: .bold))
+                            .foregroundColor(MirrorArt.gapInk)
+                            .frame(width: 44, height: 44)
+                            .background(MirrorArt.accent)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                MirrorPanelScroll {
+                    if phrases.isEmpty {
+                        MirrorPanelHint("No phrases yet - add your first line above")
+                    }
+                    ForEach(phrases, id: \.id) { phrase in
+                        HStack(spacing: 8) {
+                            Button {
+                                dismiss()
+                                onInsert(phrase.text)
+                            } label: {
+                                Text(phrase.text)
+                                    .font(.system(size: 13, weight: .medium)).foregroundColor(MirrorArt.textSoft)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 10).padding(.vertical, 8)
+                                    .background(Color.white.opacity(0.05))
+                                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                            }
+                            .buttonStyle(.plain)
+                            Button {
+                                Task {
+                                    do {
+                                        try await session.api.deleteQuickPhrase(phrase.id)
+                                        await reload()
+                                    } catch {
+                                        session.toasts.show("Couldn't delete that phrase")
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "trash").font(.system(size: 12)).foregroundColor(MirrorArt.faint)
+                                    .frame(width: 32, height: 32)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+        }
+        .task { await reload() }
+    }
+
+    private func reload() async {
+        phrases = (try? await session.api.quickPhrases()) ?? []
+    }
+}
+
+/// Sticker surface - real kind:"sticker" sends with the {emoji, pack}
+/// payload the web sticker picker rides (chat-room.tsx 3237).
+private struct MirrorStickerBuilder: View {
+    @ObservedObject var session: PulseSession
+    let row: MirrorViewModel.MirrorRow
+    let onSent: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private let packs: [(name: String, emoji: [String])] = [
+        ("Classic", ["\u{1F600}", "\u{1F602}", "\u{1F979}", "\u{1F60D}", "\u{1F914}", "\u{1F60E}", "\u{1F973}", "\u{1F634}"]),
+        ("Hands", ["\u{1F44D}", "\u{1F44E}", "\u{1F44F}", "\u{1F64F}", "\u{1F4AA}", "\u{1F91D}", "\u{1F44C}", "\u{1FAF6}"]),
+        ("Creatures", ["\u{1F431}", "\u{1F436}", "\u{1F98A}", "\u{1F438}", "\u{1F984}", "\u{1F43C}", "\u{1F419}", "\u{1F98B}"]),
+    ]
+
+    var body: some View {
+        MirrorPanel(title: "Stickers") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(packs, id: \.name) { pack in
+                    MirrorPanelHint(pack.name.uppercased())
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                        ForEach(pack.emoji, id: \.self) { glyph in
+                            Button { send(glyph, pack.name) } label: {
+                                Text(glyph).font(.system(size: 30))
+                                    .frame(maxWidth: .infinity).frame(height: 56)
+                                    .background(Color.white.opacity(0.05))
+                                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(MirrorArt.hairline, lineWidth: 1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.bottom, 6)
+                }
+            }
+        }
+    }
+
+    private func send(_ emoji: String, _ pack: String) {
+        Task {
+            do {
+                _ = try await session.api.sendMessage(
+                    conversationId: row.id,
+                    content: "",
+                    kind: "sticker",
+                    payload: ["emoji": emoji, "pack": pack]
+                )
+                dismiss()
+                onSent()
+            } catch {
+                session.toasts.show("Sticker failed - check the connection")
+            }
+        }
+    }
+}
+
+/// Events surface - POST /api/conversations/{id}/events (title + when).
+private struct MirrorEventsBuilder: View {
+    @ObservedObject var session: PulseSession
+    let row: MirrorViewModel.MirrorRow
+    let onSent: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var description = ""
+    @State private var when = Date().addingTimeInterval(86400)
+    @State private var busy = false
+
+    var body: some View {
+        MirrorPanel(title: "New event") {
+            VStack(alignment: .leading, spacing: 10) {
+                MirrorPanelHint("TITLE")
+                MirrorTrayField(placeholder: "What are we planning?", text: $title)
+                MirrorPanelHint("WHEN")
+                DatePicker("", selection: $when, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                    .labelsHidden()
+                MirrorPanelHint("DETAILS - OPTIONAL")
+                MirrorTrayField(placeholder: "Add context...", text: $description)
+                MirrorTrayAction(label: "Post event", disabled: title.trimmingCharacters(in: .whitespaces).isEmpty || busy) { send() }
+            }
+        }
+    }
+
+    private func send() {
+        busy = true
+        let iso = ISO8601DateFormatter().string(from: when)
+        let t = title.trimmingCharacters(in: .whitespaces)
+        let d = description.trimmingCharacters(in: .whitespaces)
+        Task {
+            defer { busy = false }
+            do {
+                _ = try await session.api.createEvent(
+                    conversationId: row.id,
+                    title: t,
+                    startsAtIso: iso,
+                    description: d.isEmpty ? nil : d,
+                    location: nil
+                )
+                dismiss()
+                onSent()
+                session.toasts.show("Event posted - RSVPs are live")
+            } catch {
+                session.toasts.show("Event failed - check the connection")
+            }
+        }
+    }
+}
+
+/// Kanban surface - POST real card (web board columns todo/doing/done).
+private struct MirrorKanbanBuilder: View {
+    @ObservedObject var session: PulseSession
+    let row: MirrorViewModel.MirrorRow
+    let onSent: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var column = "todo"
+    @State private var busy = false
+
+    private let columns: [(id: String, label: String)] = [
+        ("todo", "Todo"), ("doing", "Doing"), ("done", "Done"),
+    ]
+
+    var body: some View {
+        MirrorPanel(title: "Kanban card") {
+            VStack(alignment: .leading, spacing: 10) {
+                MirrorPanelHint("TASK")
+                MirrorTrayField(placeholder: "What needs doing?", text: $title)
+                MirrorPanelHint("COLUMN")
+                HStack(spacing: 6) {
+                    ForEach(columns, id: \.id) { col in
+                        Button {
+                            column = col.id
+                        } label: {
+                            Text(col.label)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(column == col.id ? MirrorArt.gapInk : MirrorArt.textSoft)
+                                .frame(maxWidth: .infinity).frame(height: 34)
+                                .background(column == col.id ? MirrorArt.accent : MirrorArt.glass7)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                MirrorTrayAction(label: "Add card", disabled: title.trimmingCharacters(in: .whitespaces).isEmpty || busy) { send() }
+            }
+        }
+    }
+
+    private func send() {
+        busy = true
+        let t = title.trimmingCharacters(in: .whitespaces)
+        Task {
+            defer { busy = false }
+            do {
+                _ = try await session.api.createKanbanCard(
+                    conversationId: row.id,
+                    title: t,
+                    column: column,
+                    assigneeId: nil,
+                    messageId: nil
+                )
+                dismiss()
+                onSent()
+            } catch {
+                session.toasts.show("Card failed - check the connection")
+            }
+        }
+    }
+}
+
+/// Tournament surface - POST /api/tournaments (web group rule enforced at
+/// the tile: the tile itself is disabled outside groups).
+private struct MirrorTournamentBuilder: View {
+    @ObservedObject var session: PulseSession
+    let row: MirrorViewModel.MirrorRow
+    let onSent: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var busy = false
+
+    var body: some View {
+        MirrorPanel(title: "New tournament") {
+            VStack(alignment: .leading, spacing: 10) {
+                MirrorPanelHint("BRACKET NAME")
+                MirrorTrayField(placeholder: "Friday night tictactoe...", text: $name)
+                MirrorTrayAction(label: "Start tournament", disabled: name.trimmingCharacters(in: .whitespaces).isEmpty || busy) { send() }
+            }
+        }
+    }
+
+    private func send() {
+        busy = true
+        let n = name.trimmingCharacters(in: .whitespaces)
+        Task {
+            defer { busy = false }
+            do {
+                _ = try await session.api.createTournament(conversationId: row.id, name: n)
+                dismiss()
+                onSent()
+                session.toasts.show("Tournament bracket is live")
+            } catch {
+                session.toasts.show("Tournament failed - check the connection")
+            }
+        }
+    }
+}
+
+/// Location surface - one-shot CoreLocation fix, then a real kind:"location"
+/// send with the {lat, lng, label} payload (chat-room.tsx 3257).
+private struct MirrorLocationBuilder: View {
+    @ObservedObject var session: PulseSession
+    let row: MirrorViewModel.MirrorRow
+    let onSent: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var locator = MirrorLocationOnce()
+    @State private var busy = false
+
+    var body: some View {
+        MirrorPanel(title: "Share location") {
+            VStack(alignment: .leading, spacing: 10) {
+                if locator.denied {
+                    MirrorPanelHint("LOCATION ACCESS IS OFF - ENABLE IT IN SETTINGS TO SEND A PIN")
+                } else if let coordinate = locator.coordinate {
+                    MirrorPanelHint("CURRENT POSITION - ONE-TAP PIN")
+                    Text(String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(MirrorArt.textSoft)
+                    MirrorTrayAction(label: "Send map pin", disabled: busy) { send(coordinate) }
+                } else {
+                    MirrorPanelHint("LOCATING...")
+                }
+            }
+        }
+        .onAppear { locator.request() }
+    }
+
+    private func send(_ coordinate: CLLocationCoordinate2D) {
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                _ = try await session.api.sendMessage(
+                    conversationId: row.id,
+                    content: "",
+                    kind: "location",
+                    payload: [
+                        "lat": coordinate.latitude,
+                        "lng": coordinate.longitude,
+                        "label": "My location",
+                    ]
+                )
+                dismiss()
+                onSent()
+            } catch {
+                session.toasts.show("Location failed - check the connection")
+            }
+        }
+    }
+}
+
+/// One-shot CoreLocation helper: when-in-use TCC prompt, single fix.
+private final class MirrorLocationOnce: NSObject, ObservableObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    @Published var coordinate: CLLocationCoordinate2D?
+    @Published var denied = false
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+    }
+
+    func request() {
+        switch manager.authorizationStatus {
+        case .denied, .restricted:
+            denied = true
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        default:
+            manager.requestLocation()
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.requestLocation()
+        case .denied, .restricted:
+            denied = true
+        default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        coordinate = locations.first?.coordinate
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        denied = true
     }
 }
