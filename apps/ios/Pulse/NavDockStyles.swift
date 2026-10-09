@@ -790,12 +790,19 @@ struct RailDock: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            // web :880 - the brand tile.
+            // web RailNav :932 - the brand tile: amber-400 -> orange-600
+            // gradient (from-amber-400 to-orange-600), white P, size-9
+            // rounded-xl. R97 - the flat white/12 fill misquoted the truth.
             Text("P")
                 .font(.system(size: 14, weight: .black))
                 .foregroundStyle(.white)
                 .frame(width: 36, height: 36)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(
+                    LinearGradient(
+                        colors: [PulseTheme.amber400, PulseTheme.orange600],
+                        startPoint: .topLeading, endPoint: .bottomTrailing,
+                    )))
+                .shadow(color: PulseTheme.amber500.opacity(0.45), radius: 8, y: 3)
                 
                 .padding(.bottom, 10)
                 .accessibilityHidden(true)
@@ -1186,12 +1193,19 @@ struct CommandBarDock: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            // web :825 - the brand tile leads the strip.
+            // The brand tile leads the strip - same web brand-tile language
+            // as the rail (nav-router.tsx:932 amber-400 -> orange-600).
+            // R97 - the flat white/12 fill misquoted the brand tile truth.
             Text("P")
                 .font(.system(size: 12, weight: .black))
                 .foregroundStyle(.white)
                 .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white.opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(
+                    LinearGradient(
+                        colors: [PulseTheme.amber400, PulseTheme.orange600],
+                        startPoint: .topLeading, endPoint: .bottomTrailing,
+                    )))
+                .shadow(color: PulseTheme.amber500.opacity(0.45), radius: 6, y: 2)
                 .padding(.trailing, 6)
                 .accessibilityHidden(true)
 
