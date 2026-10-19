@@ -1312,11 +1312,15 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                 Text("Footprint · ${formatBytes(footprint.totalBytes)}", fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
                 Text("Database · ${formatBytes(footprint.databaseBytes)}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
                 Text("Image cache · ${formatBytes(footprint.imageCacheBytes)}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                Text("Saved attachments · ${formatBytes(footprint.attachmentBytes)}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                footprint.error?.let { Text(it, fontSize = 12.sp, color = EmberPalette.Signal) }
             }
         }
         TextButton(onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            viewModel.clearImageCache { Toast.makeText(context, "Image cache cleared", Toast.LENGTH_SHORT).show() }
+            viewModel.clearImageCache { success ->
+                Toast.makeText(context, if (success) "Image cache cleared; saved attachments are kept" else "Image cache could not be cleared", Toast.LENGTH_SHORT).show()
+            }
         }) { Text("Clear image cache") }
         Text("App updates", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
         Card(

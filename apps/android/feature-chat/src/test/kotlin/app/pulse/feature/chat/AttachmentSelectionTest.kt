@@ -32,4 +32,11 @@ class AttachmentSelectionTest {
         assertArrayEquals(byteArrayOf(1, 2, 3), MediaSupport.readBounded(byteArrayOf(1, 2, 3).inputStream(), 3))
     }
 
+    @Test fun `generic provider MIME does not prevent a supported document import`() {
+        assertEquals("application/pdf", MediaSupport.documentMime("application/octet-stream", "receipt.pdf"))
+        assertEquals("text/csv", MediaSupport.documentMime("text/csv; charset=utf-8", "report"))
+        assertEquals("application/zip", MediaSupport.documentMime(null, "ARCHIVE.ZIP"))
+        assertTrue(runCatching { MediaSupport.documentMime("application/octet-stream", "unknown.bin") }.isFailure)
+    }
+
 }

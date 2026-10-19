@@ -1054,3 +1054,19 @@ resumes a previously interrupted automatic Send without user action. The alterna
 Android mirror's pre-upload path is not yet migrated to this draft journal. Upload
 ACK loss can still orphan a server file because upload receipts are not implemented.
 No claim is made that all attachment/call/lifecycle defects are resolved.
+
+### Document-provider compatibility and Android storage controls
+
+Followed saved attachments into Data & Storage. That screen measured only legacy
+`pulse.db`, omitting the active per-account databases, and cleared Coil's files by
+unlinking them under its live journal. It also reported success after a swallowed
+failure. It now measures account databases/WAL files, the actual Coil disk cache
+and retained attachment files; cache clearing uses Coil's memory/disk APIs, reports
+failure honestly and leaves saved drafts/media untouched. Measurement failure keeps
+previous figures with a visible warning rather than fabricating a fresh zero.
+
+Document import now recognizes supported filenames when a provider reports generic
+`application/octet-stream`, and normalizes MIME parameters such as CSV charset.
+Previously valid PDFs/ZIPs could be rejected solely because of the provider's MIME
+label. Added a JVM case for generic/parameterized MIME and unsupported binary data.
+Syntax/diff checks pass; native verification is pending.

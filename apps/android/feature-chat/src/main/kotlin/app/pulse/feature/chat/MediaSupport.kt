@@ -194,7 +194,7 @@ object MediaSupport {
                 throw IllegalStateException("Documents are limited to 10 MB")
             }
             val name = queryDisplayName(context, uri)
-            val mime = resolver.getType(uri) ?: PulseMedia.mimeForFileName(name)
+            val mime = documentMime(resolver.getType(uri), name)
             val size = bytes.size.toLong()
             Document(
                 dataUrl = "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP),
@@ -203,6 +203,15 @@ object MediaSupport {
                 sizeBytes = size,
             )
         }
+    }
+
+    internal fun documentMime(reported: String?, name: String): String {
+        val supported = setOf("application/pdf", "application/zip", "text/plain", "text/csv")
+        val normalized = reported?.substringBefore(';')?.trim()?.lowercase(java.util.Locale.ROOT)
+        if (normalized in supported) return checkNotNull(normalized)
+        val fallback = PulseMedia.mimeForFileName(name)
+        require(fallback in supported) { "Choose a PDF, ZIP, TXT or CSV document" }
+        return fallback // Many document providers report only application/octet-stream.
     }
 
     private fun queryDisplayName(context: Context, uri: Uri): String {
