@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 @testable import Pulse
 
 @MainActor
@@ -30,11 +31,13 @@ final class PulseWhiteboardSessionTests: XCTestCase {
         let loaded = expectation(description: "loaded")
         let posting = expectation(description: "posting")
         var continuation: CheckedContinuation<WireWhiteboardPostResult, Never>?
-        let model = model(defaults: defaults, load: { loaded.fulfill(); return self.page() }, post: { batch in
+        let model = model(defaults: defaults, load: { return self.page() }, post: { batch in
             XCTAssertEqual(PulseWhiteboardDraft.strokes(conversationId: self.key, defaults: defaults), batch)
             posting.fulfill()
             return await withCheckedContinuation { continuation = $0 }
         })
+        let observation = model.$ready.filter { $0 }.prefix(1).sink { _ in loaded.fulfill() }
+        defer { observation.cancel() }
         let worker = Task { await model.run() }
         await fulfillment(of: [loaded], timeout: 2)
         model.draw(color: "#abcdef", width: 3, points: [[0, 0], [1, 1]])
@@ -53,10 +56,12 @@ final class PulseWhiteboardSessionTests: XCTestCase {
         PulseWhiteboardDraft.append(stroke, conversationId: key, defaults: defaults)
         let loaded = expectation(description: "loaded")
         let remote = WireWhiteboardStroke(id: "wb:me:operation-00000001", userId: "me", color: stroke.color, width: 3, points: stroke.points, createdAt: nil)
-        let model = model(defaults: defaults, load: { loaded.fulfill(); return self.page([remote]) }, post: { _ in
+        let model = model(defaults: defaults, load: { return self.page([remote]) }, post: { _ in
             XCTFail("A delivered operation must not be uploaded again")
             throw URLError(.badServerResponse)
         })
+        let observation = model.$ready.filter { $0 }.prefix(1).sink { _ in loaded.fulfill() }
+        defer { observation.cancel() }
         let worker = Task { await model.run() }
         await fulfillment(of: [loaded], timeout: 2)
         XCTAssertTrue(model.pending.isEmpty)
@@ -75,8 +80,11 @@ final class PulseWhiteboardSessionTests: XCTestCase {
             // Malformed ACK must also retain the operation.
             return WireWhiteboardPostResult(ids: [], created: 0, serverTime: 1)
         })
+        let failed = expectation(description: "invalid ACK rejected")
+        let observation = model.$error.compactMap { $0 }.prefix(1).sink { _ in failed.fulfill() }
+        defer { observation.cancel() }
         let worker = Task { await model.run() }
-        await fulfillment(of: [posting], timeout: 2)
+        await fulfillment(of: [posting, failed], timeout: 4)
         XCTAssertEqual(model.pending, [stroke])
         XCTAssertNotNil(model.error)
         model.stop(); worker.cancel(); await worker.value
@@ -88,10 +96,12 @@ final class PulseWhiteboardSessionTests: XCTestCase {
         let legacy = WireWhiteboardStrokePost(color: "#123456", width: 3, points: [[0, 0], [1, 1]])
         PulseWhiteboardDraft.replaceAll(conversationId: key, strokes: [old, legacy], defaults: defaults)
         let loaded = expectation(description: "loaded")
-        let model = model(defaults: defaults, load: { loaded.fulfill(); return self.page(epoch: 7) }, post: { _ in
+        let model = model(defaults: defaults, load: { return self.page(epoch: 7) }, post: { _ in
             XCTFail("Must not resurrect old/unknown drawings after Clear")
             throw URLError(.badServerResponse)
         })
+        let observation = model.$ready.filter { $0 }.prefix(1).sink { _ in loaded.fulfill() }
+        defer { observation.cancel() }
         let worker = Task { await model.run() }
         await fulfillment(of: [loaded], timeout: 2)
         XCTAssertEqual(model.pending, [legacy])
@@ -101,10 +111,12 @@ final class PulseWhiteboardSessionTests: XCTestCase {
     func testLegacyServerDisablesUnsafeReplay() async {
         let defaults = suite()
         let loaded = expectation(description: "loaded")
-        let model = model(defaults: defaults, load: { loaded.fulfill(); return self.page(version: nil) }, post: { _ in
+        let model = model(defaults: defaults, load: { return self.page(version: nil) }, post: { _ in
             XCTFail("Old endpoint cannot deduplicate retries")
             throw URLError(.badServerResponse)
         })
+        let observation = model.$error.compactMap { $0 }.prefix(1).sink { _ in loaded.fulfill() }
+        defer { observation.cancel() }
         let worker = Task { await model.run() }
         await fulfillment(of: [loaded], timeout: 2)
         XCTAssertFalse(model.ready)

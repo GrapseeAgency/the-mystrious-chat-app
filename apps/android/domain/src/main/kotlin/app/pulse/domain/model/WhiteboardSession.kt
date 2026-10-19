@@ -102,8 +102,10 @@ class WhiteboardSession(
     }
 
     fun draw(color: String, width: Double, points: List<List<Double>>): Job? {
-        if (!mutable.value.ready || mutable.value.busy || points.size !in 2..500) return null
-        val stroke = WhiteboardStrokePostDto(color = color, width = width, points = points,
+        if (!mutable.value.ready || mutable.value.busy) return null
+        val normalized = normalizedPoints(points)
+        if (normalized.size < 2) return null
+        val stroke = WhiteboardStrokePostDto(color = color, width = width, points = normalized,
             clientId = UUID.randomUUID().toString(), baseResetAt = epoch)
         return scope.launch(start = CoroutineStart.UNDISPATCHED) {
             attempt {
@@ -142,4 +144,14 @@ class WhiteboardSession(
             } finally { mutable.value = mutable.value.copy(busy = false) }
         }
     }
+    companion object {
+        fun normalizedPoints(raw: List<List<Double>>): List<List<Double>> {
+            val points = raw.filter { it.size >= 2 && it[0].isFinite() && it[1].isFinite() }
+                .map { listOf(it[0].coerceIn(0.0, 1.0), it[1].coerceIn(0.0, 1.0)) }
+            if (points.size == 1) return listOf(points[0], points[0])
+            if (points.size <= 500) return points
+            return (0 until 500).map { points[(it.toLong() * (points.size - 1) / 499).toInt()] }
+        }
+    }
+
 }

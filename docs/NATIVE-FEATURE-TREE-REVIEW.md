@@ -466,3 +466,16 @@ semantics, system permission prompts and schedule recovery on real devices, iOS 
 unscoped drafts, large-board pagination, and other collaboration/Hub trees. Reminder
 creation itself has no server operation ID: an uncertain POST is not automatically
 retried, but a deliberate retry can still duplicate it. No whole-reminder certification.
+
+### Drawing-boundary regression and test synchronization
+
+A further boundary check found Android's old downsampler could turn exactly 1,000
+points into **501**, causing rejection of the finished drawing. The coordinator now
+normalizes finite coordinate pairs, clamps them, supports dots, and samples exactly
+500 points including endpoints. Two tests cover 501/999/1000/1001/10000 inputs and
+malformed/stationary points. This brings this turn's authored native regressions to
+**25 (12 Android + 13 Swift)**, in addition to 9 new executed server tests.
+Swift async fixtures now wait for published ready/error state rather than assuming
+that an HTTP callback expectation also means the coordinator has adopted its result.
+Native results for successor commits remain pending. At 370e41e, server contracts
+and web checks passed; native build/test jobs were still in progress.

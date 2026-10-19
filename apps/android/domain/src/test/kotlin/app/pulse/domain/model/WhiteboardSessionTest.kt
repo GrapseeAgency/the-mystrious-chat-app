@@ -36,6 +36,20 @@ class WhiteboardSessionTest {
         fun draw() = board.draw("#abcdef", 3.0, listOf(listOf(0.0, 0.0), listOf(1.0, 1.0)))
     }
 
+    @Test fun `normalization never produces 501 points and preserves endpoints`() {
+        for (size in listOf(501, 999, 1000, 1001, 10000)) {
+            val points = (0 until size).map { listOf(it.toDouble() / size, 0.5) }
+            val normalized = WhiteboardSession.normalizedPoints(points)
+            assertEquals(500, normalized.size)
+            assertEquals(points.first(), normalized.first())
+            assertEquals(points.last(), normalized.last())
+        }
+    }
+    @Test fun `normalization rejects malformed coordinates and supports stationary dots`() {
+        assertTrue(WhiteboardSession.normalizedPoints(listOf(listOf(Double.NaN, 1.0), listOf(1.0))).isEmpty())
+        assertEquals(listOf(listOf(0.0, 1.0), listOf(0.0, 1.0)), WhiteboardSession.normalizedPoints(listOf(listOf(-2.0, 4.0))))
+    }
+
     @Test fun `draw persists even while previous upload is suspended`() = runTest {
         val f = Fixture(backgroundScope)
         f.board.start(); runCurrent()

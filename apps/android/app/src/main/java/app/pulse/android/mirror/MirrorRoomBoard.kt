@@ -1458,19 +1458,6 @@ internal fun MirrorWhiteboardSheet(
                 listOf((first[0] + off).coerceAtMost(1.0), (first[1] + off).coerceAtMost(1.0)),
             )
         }
-        // respect the 500-point cap - downsample, always keep the last point
-        if (pairs.size > WHITEBOARD_POINTS_MAX) {
-            val keepEvery = (pairs.size + WHITEBOARD_POINTS_MAX - 1) / WHITEBOARD_POINTS_MAX
-            val down = ArrayList<List<Double>>()
-            var index = 0
-            while (index < pairs.size) {
-                down.add(pairs[index])
-                index += keepEvery
-            }
-            val lastPoint = pairs[pairs.size - 1]
-            if (down[down.size - 1] != lastPoint) down.add(lastPoint)
-            pairs = down
-        }
         board.draw(color, width, pairs)
     }
 
