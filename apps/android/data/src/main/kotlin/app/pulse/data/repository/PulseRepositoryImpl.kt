@@ -247,12 +247,14 @@ class PulseRepositoryImpl constructor(
     @Volatile override var viewerId: String? = null
         private set
 
+    @Volatile private var attachmentSession = java.util.UUID.randomUUID().toString()
     @Volatile private var pumpStarted = false
 
     private val flushMutex = Mutex()
     private var selfHealJob: Job? = null
 
     override fun stop() {
+        attachmentSession = java.util.UUID.randomUUID().toString()
         viewerId = null
         socket.disconnect()
         scope.coroutineContext.cancelChildren()
@@ -271,6 +273,12 @@ class PulseRepositoryImpl constructor(
             sessionTokenStore.load()
             if (viewerId != userId || sessionTokenStore.invalidated.value) return@launch
             startPump()
+            launch {
+                if (reminderOwner != null) runCatching {
+                    val references = database.attachmentDraftDao().references().toSet()
+                    withContext(Dispatchers.IO) { attachmentFiles().prune(references) }
+                }.onFailure { Log.w(TAG, "Attachment cleanup deferred", it) }
+            }
             socket.connect(userId)
             launch { runCatching { ensureDemoSeeded(userId) } }
             launch { fetchSettings() }
@@ -1131,6 +1139,86 @@ class PulseRepositoryImpl constructor(
      * No optimistic echo: the staged card in the composer is the progress UI;
      * failures surface on it with a retry, never an outbox row.
      */
+    private fun attachmentFiles(): app.pulse.data.local.AttachmentFiles {
+        val owner = checkNotNull(reminderOwner) { "A verified account is required for attachment storage" }
+        val namespace = app.pulse.data.local.AccountStorageKey.namespace(owner.origin, owner.userId)
+        return app.pulse.data.local.AttachmentFiles(File(context.filesDir, "attachments/$namespace"))
+    }
+
+    override fun attachmentSessionKey(): String? = attachmentSession.takeIf { viewerId != null && reminderOwner?.userId == viewerId }
+
+    private fun requireAttachmentSession(key: String): String {
+        val owner = viewerId
+        if (owner == null || reminderOwner?.userId != owner || key != attachmentSession) throw kotlinx.coroutines.CancellationException("Attachment session ended")
+        return owner
+    }
+
+    override suspend fun saveAttachmentDraft(draft: app.pulse.domain.model.AttachmentDraft, sessionKey: String): Result<Unit> = try {
+        requireAttachmentSession(sessionKey)
+        val validated = withContext(Dispatchers.IO) { app.pulse.data.local.AttachmentValidation.validated(draft) }
+        val key = withContext(Dispatchers.IO) { attachmentFiles().put(draft.selectionId, validated.dataUrl) }
+        database.withTransaction {
+            requireAttachmentSession(sessionKey)
+            database.attachmentDraftDao().upsert(app.pulse.data.local.AttachmentDraftEntity.from(validated, key))
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireAttachmentSession(sessionKey)
+        }
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun loadAttachmentDraft(conversationId: String, sessionKey: String): Result<app.pulse.domain.model.AttachmentDraft?> = try {
+        requireAttachmentSession(sessionKey)
+        val saved = database.attachmentDraftDao().get(conversationId)
+        val draft = saved?.let { withContext(Dispatchers.IO) { it.toDomain(attachmentFiles().read(it.fileKey)) } }
+        requireAttachmentSession(sessionKey)
+        Result.success(draft)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun editAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, revision: Long, sessionKey: String): Result<Unit> = try {
+        requireAttachmentSession(sessionKey)
+        require(caption.length <= 4000) { "Caption is too long" }
+        database.attachmentDraftDao().edit(conversationId, selectionId, caption, viewOnce, revision)
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun discardAttachmentDraft(conversationId: String, selectionId: String, sessionKey: String): Result<Unit> = try {
+        requireAttachmentSession(sessionKey)
+        database.attachmentDraftDao().delete(conversationId, selectionId)
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun queueAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, topicId: String?, sessionKey: String): Result<Message> = try {
+        val owner = requireAttachmentSession(sessionKey)
+        val message = database.withTransaction {
+            requireAttachmentSession(sessionKey)
+            val saved = database.attachmentDraftDao().get(conversationId)
+            if (saved?.selectionId != selectionId) {
+                val pending = outboxDao.pendingByClientId(selectionId)
+                val echo = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + selectionId)
+                check(pending?.conversationId == conversationId && echo?.authorId == owner) { "Attachment changed or was already queued; check the chat" }
+                return@withTransaction checkNotNull(echo).toDomain()
+            }
+            val record = checkNotNull(saved)
+            val draft = app.pulse.data.local.AttachmentValidation.validated(record.toDomain(attachmentFiles().read(record.fileKey)).copy(caption = caption, viewOnce = viewOnce))
+            val temp = Message(id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + selectionId,
+                conversationId = conversationId, authorId = owner, authorName = owner, kind = kindOf(draft.kind),
+                body = caption, createdAt = java.time.Instant.now().toString(), durationMs = draft.durationMs,
+                fileName = draft.fileName.takeIf { draft.kind == "file" }, fileSize = draft.fileSize.takeIf { draft.kind == "file" },
+                viewOnce = viewOnce, topicId = topicId)
+            messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+            outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = selectionId,
+                content = caption, kind = draft.kind, createdAt = temp.createdAt, uploadKey = record.fileKey))
+            database.attachmentDraftDao().delete(conversationId, selectionId)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireAttachmentSession(sessionKey)
+            temp
+        }
+        scope.launch {
+            try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Attachment remains queued", error); scheduleSelfHeal() }
+        }
+        Result.success(message)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
     override suspend fun sendMediaMessage(
         conversationId: String,
         body: String,
@@ -1657,14 +1745,43 @@ class PulseRepositoryImpl constructor(
 
     /** ONE POST attempt - classification rides on OutboxDeliveryException. */
     override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> {
-        if (outboxDao.pendingByClientId(entry.clientId) == null) {
-            return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Operation is no longer pending"))
-        }
+        val current = outboxDao.pendingByClientId(entry.clientId)
+            ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Operation is no longer pending"))
         val owner = viewerId
-        val temp = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+        val stored = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
         if (owner.isNullOrBlank() || sessionTokenStore.cached.isNullOrBlank() ||
-            temp == null || temp.authorId != owner || temp.conversationId != entry.conversationId
+            stored == null || stored.authorId != owner || stored.conversationId != entry.conversationId
         ) return Result.failure(OutboxDeliveryException(OutboxFailureClass.RETRY, "Sign in to the message's original account to send it"))
+        var temp = checkNotNull(stored)
+        if (current.uploadKey != null) {
+            if (current.kind !in setOf("image", "audio", "file")) return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Saved upload kind is invalid"))
+            val bytes = try { withContext(Dispatchers.IO) { attachmentFiles().read(current.uploadKey) } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, error.message ?: "Saved attachment is unavailable")) }
+            val path = when (val upload = api.uploadMedia(bytes)) {
+                is PulseResult.Success -> upload.value.filePath?.takeIf { it.isNotBlank() }
+                    ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Upload receipt was not confirmed; original attachment is kept"))
+                is PulseResult.Failure -> {
+                    val classification = if (upload.kind in setOf(PulseResult.Failure.Kind.VALIDATION, PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND)) OutboxFailureClass.DROP else OutboxFailureClass.RETRY
+                    return Result.failure(OutboxDeliveryException(classification, upload.message ?: "Upload was not confirmed"))
+                }
+            }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (viewerId != owner) throw kotlinx.coroutines.CancellationException("Attachment account ended")
+            val uploaded = database.withTransaction {
+                if (outboxDao.pendingByClientId(entry.clientId) == null) return@withTransaction null
+                val original = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+                    ?: return@withTransaction null
+                if (original.authorId != owner || original.conversationId != entry.conversationId) return@withTransaction null
+                val updated = original.copy(imagePath = path.takeIf { current.kind == "image" },
+                    audioPath = path.takeIf { current.kind == "audio" }, filePath = path.takeIf { current.kind == "file" })
+                messageDao.upsertAll(listOf(updated))
+                outboxDao.finishUpload(entry.clientId)
+                updated
+            } ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Attachment was discarded during upload"))
+            temp = uploaded
+            // The durable path has replaced the upload bytes. A cleanup failure
+            // must not turn that successful receipt into a failed send.
+            withContext(Dispatchers.IO) { runCatching { attachmentFiles().remove(current.uploadKey) } }
+        }
         val queued = temp.toDomain()
         val payload = try {
             (entry.wirePayload ?: queued.payload)?.let {

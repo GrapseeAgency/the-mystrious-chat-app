@@ -86,6 +86,10 @@ data class StagedMedia(
     val sending: Boolean = false,
     val durationMs: Long? = null,
     val intendedTopicId: String? = null,
+    val saved: Boolean = false,
+    val caption: String = "",
+    val revision: Long = 0,
+    val sessionKey: String? = null,
 ) {
     enum class Kind { IMAGE, FILE, AUDIO }
 }
@@ -404,7 +408,13 @@ class ChatRoomViewModel @Inject constructor(
     private var flashJob: Job? = null
     private var jumpExpansionJob: Job? = null
 
+    private var attachmentTask: Job? = null
+    private var attachmentEpoch = 0L
+    private var persistedAttachmentId: String? = null
+    private var recordingAttachmentSession: String? = null
+
     init {
+        restoreAttachmentDraft()
         viewModelScope.launch {
             // Wave 0 draft restore: the local draft table wins; when it is
             // empty fall back to the server-mirrored myDraft on the summary.
@@ -923,9 +933,24 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    // Attachment preparation belongs to one immutable selection. A late upload
-    // must never install A's path into B's preview or resurrect a removed card.
-    private var attachmentTask: Job? = null
+    // A saved selection is a draft, not an upload or a send. Only Send transfers
+    // its bytes into the account-owned outbox in one database transaction.
+    private fun restoreAttachmentDraft() {
+        val key = repo.attachmentSessionKey() ?: return
+        val ticket = attachmentEpoch
+        viewModelScope.launch {
+            repo.loadAttachmentDraft(conversationId, key).onSuccess { draft ->
+                if (draft == null || attachmentEpoch != ticket || _state.value.staged != null || repo.attachmentSessionKey() != key) return@onSuccess
+                val kind = when (draft.kind) { "image" -> StagedMedia.Kind.IMAGE; "audio" -> StagedMedia.Kind.AUDIO; else -> StagedMedia.Kind.FILE }
+                persistedAttachmentId = draft.selectionId
+                _state.value = _state.value.copy(staged = StagedMedia(kind = kind,
+                    localUri = if (kind == StagedMedia.Kind.IMAGE) draft.dataUrl else "",
+                    fileName = draft.fileName, fileSize = draft.fileSize, viewOnce = draft.viewOnce,
+                    selectionId = draft.selectionId, durationMs = draft.durationMs, intendedTopicId = draft.topicId,
+                    saved = true, caption = draft.caption, revision = draft.revision, sessionKey = key))
+            }.onFailure { notify("Saved attachment could not be restored; it has not been discarded", isError = true) }
+        }
+    }
 
     fun onImagePicked(uri: Uri) = selectAttachment(uri, StagedMedia.Kind.IMAGE)
     fun onDocumentPicked(uri: Uri) = selectAttachment(uri, StagedMedia.Kind.FILE)
@@ -935,15 +960,18 @@ class ChatRoomViewModel @Inject constructor(
             notify("Finish or discard the current recording first", isError = true)
             return
         }
+        val key = repo.attachmentSessionKey() ?: run { notify("The account store is not ready", isError = true); return }
+        attachmentEpoch++
         attachmentTask?.cancel()
         val selected = StagedMedia(kind = kind, localUri = uri.toString(), fileName = null,
-            fileSize = null, uploading = true)
+            fileSize = null, uploading = true, sessionKey = key)
         _state.value = _state.value.copy(staged = selected)
-        prepareAndUpload(selected)
+        prepareAttachment(selected)
     }
 
-    private fun prepareAndUpload(selected: StagedMedia, autoSend: Boolean = false) {
+    private fun prepareAttachment(selected: StagedMedia, autoSend: Boolean = false) {
         val id = selected.selectionId
+        val key = selected.sessionKey ?: run { stageFailed(id, "The original account is no longer available"); return }
         attachmentTask = viewModelScope.launch {
             try {
                 val dataUrl = when (selected.kind) {
@@ -952,18 +980,24 @@ class ChatRoomViewModel @Inject constructor(
                     StagedMedia.Kind.FILE -> {
                         val doc = MediaSupport.documentToDataUrl(context, Uri.parse(selected.localUri)).getOrThrow()
                         if (!isActive || _state.value.staged?.selectionId != id) return@launch
-                        _state.value = _state.value.copy(staged = _state.value.staged?.copy(
-                            fileName = doc.fileName, fileSize = doc.sizeBytes, mime = doc.mime))
+                        _state.value = _state.value.copy(staged = _state.value.staged?.copy(fileName = doc.fileName, fileSize = doc.sizeBytes, mime = doc.mime))
                         doc.dataUrl
                     }
                 }
-                if (!isActive || _state.value.staged?.selectionId != id) return@launch
-                val path = repo.uploadMedia(dataUrl).getOrThrow()
-                if (!isActive || _state.value.staged?.selectionId != id) return@launch
-                _state.value = _state.value.copy(staged = _state.value.staged?.copy(uploading = false, uploadedPath = path, error = null))
-                if (autoSend) sendStaged("")
+                if (!isActive || _state.value.staged?.selectionId != id || repo.attachmentSessionKey() != key) return@launch
+                val current = _state.value.staged ?: return@launch
+                val kind = when (selected.kind) { StagedMedia.Kind.IMAGE -> "image"; StagedMedia.Kind.FILE -> "file"; StagedMedia.Kind.AUDIO -> "audio" }
+                repo.saveAttachmentDraft(app.pulse.domain.model.AttachmentDraft(id, conversationId, kind, dataUrl,
+                    current.fileName, current.fileSize, current.durationMs, current.caption, current.viewOnce,
+                    current.intendedTopicId, current.revision), key).getOrThrow()
+                if (!isActive || _state.value.staged?.selectionId != id || repo.attachmentSessionKey() != key) return@launch
+                persistedAttachmentId = id
+                _state.value = _state.value.copy(staged = _state.value.staged?.copy(uploading = false, saved = true, error = null))
+                _state.value.staged?.let { persistAttachmentEdits(it) }
+                if (selected.kind == StagedMedia.Kind.AUDIO) File(selected.localUri).delete() // SQLite owns the bytes now.
+                if (autoSend) sendStaged(_state.value.staged?.caption.orEmpty())
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
-                if (isActive) stageFailed(id, error.message ?: "Couldn't prepare or upload this attachment")
+                if (isActive) stageFailed(id, error.message ?: "Couldn't save this attachment")
             }
         }
     }
@@ -973,57 +1007,85 @@ class ChatRoomViewModel @Inject constructor(
         _state.value = _state.value.copy(staged = current.copy(uploading = false, sending = false, error = message))
     }
 
+    private fun persistAttachmentEdits(staged: StagedMedia) {
+        val key = staged.sessionKey ?: return
+        if (!staged.saved) return
+        viewModelScope.launch {
+            repo.editAttachmentDraft(conversationId, staged.selectionId, staged.caption, staged.viewOnce, staged.revision, key)
+                .onFailure { stageFailed(staged.selectionId, "Latest attachment edits could not be saved") }
+        }
+    }
+
+    fun setAttachmentCaption(value: String) {
+        val staged = _state.value.staged?.takeUnless { it.sending } ?: return
+        val updated = staged.copy(caption = value.take(500), revision = staged.revision + 1)
+        _state.value = _state.value.copy(staged = updated)
+        persistAttachmentEdits(updated)
+    }
+
     fun retryStaged() {
         val current = _state.value.staged ?: return
         if (current.uploading || current.sending) return
-        if (current.uploadedPath != null) {
+        if (current.saved) {
             _state.value = _state.value.copy(staged = current.copy(error = null))
+            persistAttachmentEdits(current)
             return
         }
         attachmentTask?.cancel()
         _state.value = _state.value.copy(staged = current.copy(uploading = true, error = null))
-        prepareAndUpload(current)
+        prepareAttachment(current)
     }
 
     fun cancelStaged() {
-        if (_state.value.staged?.sending == true) return // SQLite enqueue is settling.
+        val current = _state.value.staged?.takeUnless { it.sending } ?: return
+        val key = current.sessionKey ?: return
+        attachmentEpoch++
         attachmentTask?.cancel(); attachmentTask = null
-        _state.value.staged?.takeIf { it.kind == StagedMedia.Kind.AUDIO }?.let { File(it.localUri).delete() }
-        _state.value = _state.value.copy(staged = null)
+        val previous = persistedAttachmentId
+        _state.value = _state.value.copy(staged = current.copy(sending = true))
+        viewModelScope.launch {
+            try {
+                repo.discardAttachmentDraft(conversationId, current.selectionId, key).getOrThrow()
+                if (previous != null && previous != current.selectionId) repo.discardAttachmentDraft(conversationId, previous, key).getOrThrow()
+                if (current.kind == StagedMedia.Kind.AUDIO && current.localUri.isNotEmpty()) File(current.localUri).delete()
+                persistedAttachmentId = null
+                if (_state.value.staged?.selectionId == current.selectionId) _state.value = _state.value.copy(staged = null)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                stageFailed(current.selectionId, "Attachment could not be discarded")
+            }
+        }
     }
 
     fun sendStaged(caption: String) {
         val staged = _state.value.staged ?: return
         if (staged.sending) return
-        val path = staged.uploadedPath
-        if (path == null) {
-            notify("Wait for the attachment to finish uploading", isError = true)
+        val key = staged.sessionKey ?: return
+        if (!staged.saved || staged.uploading) {
+            notify("Wait for this attachment to be saved on the device", isError = true)
             return
         }
+        attachmentEpoch++
         val topicId = if (staged.kind == StagedMedia.Kind.AUDIO) staged.intendedTopicId else _activeTopicId.value
         _state.value = _state.value.copy(staged = staged.copy(sending = true, error = null))
         viewModelScope.launch {
             try {
-                val result = when (staged.kind) {
-                    StagedMedia.Kind.AUDIO -> repo.sendMediaMessage(conversationId = conversationId,
-                        body = caption.trim(), audioPath = path, durationMs = staged.durationMs, kind = "audio", topicId = topicId)
-                    StagedMedia.Kind.IMAGE -> repo.sendMediaMessage(conversationId = conversationId,
-                        body = caption.trim(), imagePath = path, viewOnce = staged.viewOnce.takeIf { it }, topicId = topicId)
-                    StagedMedia.Kind.FILE -> repo.sendMediaMessage(conversationId = conversationId,
-                        body = caption.trim(), filePath = path, fileName = staged.fileName ?: path.substringAfterLast('/'),
-                        fileSize = staged.fileSize, kind = "file", topicId = topicId)
+                val sent = repo.queueAttachmentDraft(conversationId, staged.selectionId, caption.trim(), staged.viewOnce, topicId, key).getOrThrow()
+                if (_state.value.staged?.selectionId == staged.selectionId) {
+                    persistedAttachmentId = null
+                    _state.value = _state.value.copy(staged = null)
                 }
-                val sent = result.getOrThrow()
-                if (staged.kind == StagedMedia.Kind.AUDIO) File(staged.localUri).delete()
-                if (_state.value.staged?.selectionId == staged.selectionId) _state.value = _state.value.copy(staged = null)
                 afterOwnSend(sent)
-            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { stageFailed(staged.selectionId, error.message ?: "Attachment could not be queued") }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                stageFailed(staged.selectionId, error.message ?: "Attachment could not be queued")
+            }
         }
     }
 
     fun setStagedViewOnce(value: Boolean) {
-        val staged = _state.value.staged ?: return
-        if (!staged.sending) _state.value = _state.value.copy(staged = staged.copy(viewOnce = value))
+        val staged = _state.value.staged?.takeIf { it.kind == StagedMedia.Kind.IMAGE && !it.sending } ?: return
+        val updated = staged.copy(viewOnce = value, revision = staged.revision + 1)
+        _state.value = _state.value.copy(staged = updated)
+        persistAttachmentEdits(updated)
     }
 
     // ── file download + open/share (FileProvider hand-off) ─────
@@ -1068,6 +1130,7 @@ class ChatRoomViewModel @Inject constructor(
      */
     fun startRecording() {
         if (_recording.value || _sendingVoice.value || _state.value.staged != null) return
+        val attachmentKey = repo.attachmentSessionKey() ?: return
         if (!app.pulse.core.audio.AudioOwnership.shared.acquireExclusive(recorderAudioToken)) {
             notify("Leave your live room/call or pause playback before recording", isError = true)
             return
@@ -1083,6 +1146,9 @@ class ChatRoomViewModel @Inject constructor(
             mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             mr.setAudioSamplingRate(44100)
+            mr.setAudioChannels(1)
+            // 10 minutes at 32 kbps is ~2.4 MB, below the gateway media cap.
+            mr.setAudioEncodingBitRate(32_000)
             mr.setMaxDuration(600_000)
             // D31 - metering: mr.maxAmplitude reports the raw 0..32767 range
             // while held (the sandbox platform jar omits setMaxAmplitude -
@@ -1098,6 +1164,7 @@ class ChatRoomViewModel @Inject constructor(
             return
         }
         recorder = mr
+        recordingAttachmentSession = attachmentKey
         recordFile = file
         recordStartedAtMs = SystemClock.elapsedRealtime()
         _recordMs.value = 0L
@@ -1145,6 +1212,7 @@ class ChatRoomViewModel @Inject constructor(
     fun stopAndSend() {
         if (!_recording.value) return
         val elapsedMs = if (recordStartedAtMs > 0) SystemClock.elapsedRealtime() - recordStartedAtMs else _recordMs.value
+        val attachmentKey = recordingAttachmentSession
         val finalized = stopRecorderLocked()
         val file = recordFile
         recordFile = null
@@ -1166,12 +1234,15 @@ class ChatRoomViewModel @Inject constructor(
         // retry/discard controls as a file. Delete only after durable enqueue.
         val selected = StagedMedia(kind = StagedMedia.Kind.AUDIO, localUri = file.absolutePath,
             fileName = "Voice note.m4a", fileSize = file.length(), mime = "audio/mp4",
-            uploading = true, durationMs = durationMs, intendedTopicId = _activeTopicId.value)
+            uploading = true, durationMs = durationMs, intendedTopicId = _activeTopicId.value,
+            sessionKey = attachmentKey)
+        attachmentEpoch++
         _state.value = _state.value.copy(staged = selected)
-        prepareAndUpload(selected, autoSend = true)
+        prepareAttachment(selected, autoSend = true)
     }
 
     private fun stopRecorderLocked(): Boolean {
+        recordingAttachmentSession = null
         recordTicker?.cancel()
         recordTicker = null
         val mr = recorder ?: return true

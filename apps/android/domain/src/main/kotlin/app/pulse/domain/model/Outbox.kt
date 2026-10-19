@@ -23,6 +23,7 @@ data class OutboxEntry(
     val failureReason: String? = null,
     /** Exact rich payload, including an intentional empty JSON object. */
     val wirePayload: String? = null,
+    val uploadKey: String? = null,
 )
 
 /** Optimistic queued-bubble id convention: `local_<clientId>` (web `temp-` parity). */

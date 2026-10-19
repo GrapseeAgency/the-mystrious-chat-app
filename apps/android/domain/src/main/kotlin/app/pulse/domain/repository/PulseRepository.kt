@@ -397,6 +397,18 @@ interface PulseRepository {
     /** Soft-delete MY OWN non-deleted messages sequentially - returns the cleared count. */
     suspend fun clearMyMessages(conversationId: String): Result<Int>
 
+    /** Ephemeral session fence, not a credential; preparation must capture it before suspending. */
+    fun attachmentSessionKey(): String? = null
+    suspend fun saveAttachmentDraft(draft: app.pulse.domain.model.AttachmentDraft, sessionKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
+    suspend fun loadAttachmentDraft(conversationId: String, sessionKey: String): Result<app.pulse.domain.model.AttachmentDraft?> = Result.success(null)
+    suspend fun editAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, revision: Long, sessionKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
+    suspend fun discardAttachmentDraft(conversationId: String, selectionId: String, sessionKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
+    suspend fun queueAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, topicId: String?, sessionKey: String): Result<Message> =
+        Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
+
     // offline outbox + drafts (Wave 0 - web pulse-outbox/pulse-drafts parity)
 
     /** Persist an outgoing message for later delivery (FIFO, capped at 50). */

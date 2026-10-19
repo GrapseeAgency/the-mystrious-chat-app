@@ -133,6 +133,8 @@ final class VoiceRecorder {
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 44100,
             AVNumberOfChannelsKey: 1,
+            // Bound a full ten-minute note below the gateway's encoded limit.
+            AVEncoderBitRateKey: 32_000,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
         ]
         let recorder = try AVAudioRecorder(url: url, settings: settings)

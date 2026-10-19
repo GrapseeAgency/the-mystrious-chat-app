@@ -255,7 +255,7 @@ fun ChatRoomScreen(
     val composerFocus = remember { FocusRequester() }
 
     var draft by remember { mutableStateOf("") }
-    var caption by remember(state.staged?.selectionId) { mutableStateOf("") }
+    val caption = state.staged?.caption.orEmpty()
     var actionTarget by remember { mutableStateOf<Message?>(null) }
     var forwardTarget by remember { mutableStateOf<Message?>(null) }
     var infoTarget by remember { mutableStateOf<Message?>(null) }
@@ -1135,7 +1135,7 @@ fun ChatRoomScreen(
                 StagedMediaCard(
                     staged = staged,
                     caption = caption,
-                    onCaptionChange = { caption = it },
+                    onCaptionChange = viewModel::setAttachmentCaption,
                     onViewOnceChange = viewModel::setStagedViewOnce,
                     onSend = {
                         viewModel.sendStaged(caption)
@@ -2911,15 +2911,15 @@ private fun StagedMediaCard(
                             CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.6.dp, color = EmberPalette.Amber)
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                "Uploading…",
+                                "Preparing and saving…",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White.copy(alpha = 0.45f),
                             )
                         }
-                        staged.uploadedPath != null -> {
+                        staged.saved -> {
                             val size = PulseMedia.humanFileSize(staged.fileSize)
                             Text(
-                                if (size.isEmpty()) "Ready to send" else "Ready to send · $size",
+                                if (size.isEmpty()) "Saved on device — ready to send" else "Saved on device · $size",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = EmberPalette.Online,
                             )
@@ -3651,6 +3651,14 @@ private fun MessageRow(
                         )
                     },
                 )
+                message.id.startsWith(TEMP_MESSAGE_PREFIX) && message.imagePath == null && message.audioPath == null && message.filePath == null &&
+                    message.kind in setOf(Message.Kind.IMAGE, Message.Kind.VOICE, Message.Kind.FILE) -> {
+                    Text(when (message.kind) {
+                        Message.Kind.IMAGE -> "Photo queued"
+                        Message.Kind.VOICE -> "Voice note queued"
+                        else -> message.fileName ?: "Document queued"
+                    }, modifier = Modifier.padding(12.dp), color = Color.White.copy(alpha = 0.7f))
+                }
                 message.imagePath != null -> MediaWithQuote(
                     quoteId = message.replyToId,
                     quoteBody = message.replyToBody,

@@ -19,4 +19,17 @@ class AttachmentSelectionTest {
         assertEquals("original-topic", retry.intendedTopicId)
         assertEquals(voice.selectionId, retry.selectionId)
     }
+    @Test fun `document reads stop at the limit instead of reading an unbounded provider stream`() {
+        val source = object : java.io.InputStream() {
+            var supplied = 0
+            override fun read(): Int { supplied++; return 42 }
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                buffer.fill(42, offset, offset + length); supplied += length; return length
+            }
+        }
+        assertTrue(runCatching { MediaSupport.readBounded(source, 100_000) }.isFailure)
+        assertTrue(source.supplied <= 100_000 + 64 * 1024)
+        assertArrayEquals(byteArrayOf(1, 2, 3), MediaSupport.readBounded(byteArrayOf(1, 2, 3).inputStream(), 3))
+    }
+
 }

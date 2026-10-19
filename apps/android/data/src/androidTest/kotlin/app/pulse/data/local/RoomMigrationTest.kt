@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.pulse.domain.model.Message
@@ -276,7 +277,7 @@ class RoomMigrationTest {
             // Wave 1: the compiled schema is now v5, so the REAL open path is
             // 3 → 4 → 5 - both migrations must be present (v5 columns are
             // additive; every assertion below still holds on the v5 state).
-            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11)
+            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12)
             .allowMainThreadQueries()
             .build()
 
@@ -351,7 +352,7 @@ class RoomMigrationTest {
     fun migration4To5PreservesRowsAndAddsMediaAndMembers() = runBlocking {
         createV4DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11)
+            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12)
             .allowMainThreadQueries()
             .build()
 
@@ -446,7 +447,7 @@ class RoomMigrationTest {
     fun migration5To6PreservesRowsAndAddsDepthColumnsAndTables() = runBlocking {
         createV5DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11)
+            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12)
             .allowMainThreadQueries()
             .build()
 
@@ -636,7 +637,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12,
             )
             .allowMainThreadQueries()
             .build()
@@ -652,7 +653,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12,
             )
             .allowMainThreadQueries()
             .build()
@@ -715,7 +716,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12,
             )
             .allowMainThreadQueries()
             .build()
@@ -751,7 +752,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12,
             )
             .allowMainThreadQueries()
             .build()
@@ -798,7 +799,7 @@ class RoomMigrationTest {
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
             .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9,
-                PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11)
+                PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12)
             .build()
         val message = Message(id = "local_failed", conversationId = "recovery-room",
             authorId = "owner", authorName = "Owner", kind = Message.Kind.TEXT,
@@ -816,6 +817,51 @@ class RoomMigrationTest {
         assertEquals("{}", retained.wirePayload)
         assertEquals("next thought", db.draftDao().get("recovery-room")?.text)
         assertTrue(db.messageDao().byId("local_failed")!!.toDomain().anon)
+    }
+
+    @Test fun attachmentDraftReopensWithoutSendingAndQueueTransferRollsBackAtomically() = runBlocking {
+        createV5DatabaseWithSeedRows()
+        fun open() = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
+            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7,
+                PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12).build()
+        db = open()
+        val media = app.pulse.domain.model.AttachmentDraft("attachment-selection-0001", "attachment-room", "image",
+            "data:image/jpeg;base64,aGVsbG8=", caption = "original")
+        val fileKey = media.selectionId + "." + "a".repeat(64)
+        db.attachmentDraftDao().upsert(AttachmentDraftEntity.from(media, fileKey))
+        assertEquals(1, db.attachmentDraftDao().edit(media.conversationId, media.selectionId, "new caption", true, 3))
+        assertEquals(0, db.attachmentDraftDao().edit(media.conversationId, media.selectionId, "stale caption", false, 2))
+        assertEquals(0, db.attachmentDraftDao().delete(media.conversationId, "old-selection"))
+        db.close(); db = open()
+        val restored = db.attachmentDraftDao().get(media.conversationId)!!
+        assertEquals(fileKey, restored.fileKey)
+        assertEquals("new caption", restored.caption)
+        assertTrue(restored.viewOnce)
+        assertNull(db.outboxDao().pendingByClientId(media.selectionId)) // restore is not Send
+        val temp = Message(id = "local_" + media.selectionId, conversationId = media.conversationId,
+            authorId = "owner", authorName = "Owner", kind = Message.Kind.IMAGE, body = restored.caption,
+            createdAt = "2026-10-20T00:00:00Z", viewOnce = true)
+        suspend fun transfer() {
+            db.messageDao().upsertAll(listOf(MessageEntity.from(temp)))
+            db.outboxDao().insert(OutboxEntity(conversationId = media.conversationId, clientId = media.selectionId,
+                content = temp.body, kind = "image", createdAt = temp.createdAt, uploadKey = fileKey))
+            db.attachmentDraftDao().delete(media.conversationId, media.selectionId)
+        }
+        try { db.withTransaction { transfer(); error("synthetic crash before commit") } } catch (_: IllegalStateException) { }
+        assertNotNull(db.attachmentDraftDao().get(media.conversationId))
+        assertNull(db.outboxDao().pendingByClientId(media.selectionId))
+        db.withTransaction { transfer() }
+        assertNull(db.attachmentDraftDao().get(media.conversationId))
+        assertEquals(fileKey, db.outboxDao().pendingByClientId(media.selectionId)?.uploadKey)
+        assertNull(db.outboxDao().allForOwner("owner").first { it.clientId == media.selectionId }.uploadKey) // light summary
+        db.withTransaction {
+            db.messageDao().upsertAll(listOf(MessageEntity.from(temp.copy(imagePath = "confirmed-upload.jpg"))))
+            db.outboxDao().finishUpload(media.selectionId)
+        }
+        db.close(); db = open()
+        assertNull(db.outboxDao().pendingByClientId(media.selectionId)?.uploadKey)
+        assertEquals("confirmed-upload.jpg", db.messageDao().byId(temp.id)?.imagePath)
     }
 
 }

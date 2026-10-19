@@ -999,3 +999,58 @@ the actual new DAO SQL extracted from source against SQLite: ownership filtering
 compare-state retry and unchanged content passed. Kotlin syntax/diff checks pass;
 Room/native compilation remains pending. This is outbox-specific: it does not
 assert that every other local cache or draft manager has been similarly scoped.
+
+### Android pre-upload restart recovery and bounded recording/import sizes
+
+Closed the primary Android composer's pre-upload gap with separate **unsent draft**
+and **queued message** states. A ready draft no longer depends on a picker URI or
+recorder cache file. It survives a process restart with its caption/view-once
+setting and is restored without sending. Send atomically inserts the optimistic
+message and upload reference into the existing outbox and consumes that exact
+draft selection. The single drainer uploads, persists the returned path with the
+pending envelope, then POSTs the original operation identity. Message-ACK loss
+therefore cannot re-upload a known file or create a new send identity. Discard
+while upload is in progress is checked before recording its receipt or sending.
+
+Implementation details and boundaries:
+- Local Room **v11→v12** adds `attachment_draft` plus an optional outbox upload
+  reference. All production/test migration chains register the non-destructive
+  migration. This is a native device migration, not a production server SQL patch.
+- Multi-MB bytes live in app-private account/gateway-namespaced files, not Room
+  TEXT rows: large rows can exceed Android CursorWindow limits. Files are named
+  from selection identity + content hash, written before journal insertion and
+  verified on reopen. Room stores small references/metadata only. Captions use
+  revision-checked updates and never rewrite the media bytes.
+- Preparation captures an ephemeral repository-session key before suspending.
+  A retired/replaced account binding cannot save or queue that old selection in
+  the next account. Recordings capture this key when recording starts. Existing
+  production databases were already account/gateway scoped; the preceding outbox
+  owner-query changes are additional defensive checks, not evidence that normal
+  account switching previously shared one production database.
+- Successful upload receipt persistence permits deleting the local upload file.
+  Interrupted imports/replaced/discarded drafts can leave unreferenced files;
+  account-start cleanup removes them after a one-day safety grace. Referenced
+  drafts/rejections and recent files are retained. Failed metadata edits or file
+  verification never trigger a new automatic send.
+- Oversized Android document/voice imports stop at a bounded read rather than
+  allocating the complete provider stream and checking afterward. Both recorders
+  now target mono AAC at 32 kbps: a ten-minute take is roughly 2.4 MB before container
+  overhead, with margin below the gateway media ceiling; previously an unconstrained
+  bitrate could make a nominally allowed recording unsendable.
+
+Verification: authored three private-file/validation tests, a bounded-stream test,
+and a real Room migration/reopen/revision/atomic-transfer/upload-receipt test.
+Executed the actual new migration/update SQL against SQLite: legacy intent columns
+survive, stale edits lose, and a failed draft→outbox transfer rolls back. Native
+syntax/diff checks pass; this revision still needs Kotlin/Room/device verification.
+The previous 443611b iOS archive/tests and Android build passed; release smoke was
+still in progress at retrieval. An earlier 52d1d49 iOS run timed out in live call
+signaling; the later unchanged Swift revision passed, but this is not proof that
+intermittent signaling behavior is resolved.
+
+Remaining limits: an import is not durable until preparation reports it saved;
+in-progress recordings are not crash-reconstructed. Restoring a voice draft never
+resumes a previously interrupted automatic Send without user action. The alternate
+Android mirror's pre-upload path is not yet migrated to this draft journal. Upload
+ACK loss can still orphan a server file because upload receipts are not implemented.
+No claim is made that all attachment/call/lifecycle defects are resolved.

@@ -538,6 +538,7 @@ data class OutboxEntity(
     val attempts: Int = 0,
     val failureReason: String? = null,
     val wirePayload: String? = null,
+    val uploadKey: String? = null,
 ) {
     fun toEntry() = app.pulse.domain.model.OutboxEntry(
         id = id,
@@ -549,6 +550,7 @@ data class OutboxEntity(
         attempts = attempts,
         failureReason = failureReason,
         wirePayload = wirePayload,
+        uploadKey = uploadKey,
     )
 
     companion object {
@@ -562,8 +564,46 @@ data class OutboxEntity(
             attempts = entry.attempts,
             failureReason = entry.failureReason,
             wirePayload = entry.wirePayload,
+            uploadKey = entry.uploadKey,
         )
     }
+}
+
+/** Bytes are separate from editable metadata: typing never rewrites a multi-MB blob. */
+@Entity(tableName = "attachment_draft")
+data class AttachmentDraftEntity(
+    @PrimaryKey val conversationId: String,
+    val selectionId: String,
+    val fileKey: String,
+    val metadataJson: String,
+    val caption: String,
+    val viewOnce: Boolean,
+    val revision: Long,
+) {
+    fun toDomain(dataUrl: String): app.pulse.domain.model.AttachmentDraft =
+        app.pulse.protocol.PulseJson.decodeFromString(app.pulse.domain.model.AttachmentDraft.serializer(), metadataJson)
+            .copy(dataUrl = dataUrl, caption = caption, viewOnce = viewOnce, revision = revision)
+    companion object {
+        fun from(draft: app.pulse.domain.model.AttachmentDraft, fileKey: String) = AttachmentDraftEntity(
+            draft.conversationId, draft.selectionId, fileKey,
+            app.pulse.protocol.PulseJson.encodeToString(app.pulse.domain.model.AttachmentDraft.serializer(),
+                draft.copy(dataUrl = "", caption = "", viewOnce = false, revision = 0)),
+            draft.caption, draft.viewOnce, draft.revision)
+    }
+}
+
+@Dao
+interface AttachmentDraftDao {
+    @Query("SELECT fileKey FROM attachment_draft UNION SELECT uploadKey AS fileKey FROM outbox WHERE uploadKey IS NOT NULL")
+    suspend fun references(): List<String>
+    @Query("SELECT * FROM attachment_draft WHERE conversationId = :conversationId")
+    suspend fun get(conversationId: String): AttachmentDraftEntity?
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(draft: AttachmentDraftEntity)
+    @Query("UPDATE attachment_draft SET caption = :caption, viewOnce = :viewOnce, revision = :revision WHERE conversationId = :conversationId AND selectionId = :selectionId AND revision < :revision")
+    suspend fun edit(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, revision: Long): Int
+    @Query("DELETE FROM attachment_draft WHERE conversationId = :conversationId AND selectionId = :selectionId")
+    suspend fun delete(conversationId: String, selectionId: String): Int
 }
 
 /** Per-conversation composer draft (Wave 0 - web pulse-drafts parity). */
@@ -679,13 +719,16 @@ interface OutboxDao {
         "AND EXISTS (SELECT 1 FROM messages m WHERE m.id = 'local_' || outbox.clientId AND m.authorId = :owner AND m.conversationId = outbox.conversationId)")
     suspend fun retryFailed(clientId: String, owner: String): Int
 
-    @Query("SELECT o.* FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
+    @Query("SELECT o.id, o.conversationId, o.clientId, o.content, o.kind, o.createdAt, o.attempts, o.failureReason, o.wirePayload, NULL AS uploadKey FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
         "WHERE m.authorId = :owner AND m.conversationId = o.conversationId ORDER BY o.id ASC")
     fun observeOwned(owner: String): Flow<List<OutboxEntity>>
 
-    @Query("SELECT o.* FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
+    @Query("SELECT o.id, o.conversationId, o.clientId, o.content, o.kind, o.createdAt, o.attempts, o.failureReason, o.wirePayload, NULL AS uploadKey FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
         "WHERE m.authorId = :owner AND m.conversationId = o.conversationId ORDER BY o.id ASC")
     suspend fun allOwned(owner: String): List<OutboxEntity>
+
+    @Query("UPDATE outbox SET uploadKey = NULL WHERE clientId = :clientId AND failureReason IS NULL")
+    suspend fun finishUpload(clientId: String): Int
 
     /** Insert/replace by autoGenerate id - clientId uniqueness is enforced by the index. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -698,7 +741,7 @@ interface OutboxDao {
     suspend fun all(): List<OutboxEntity>
 
     /** Unknown/foreign ownership is quarantined, never attributed to the current viewer. */
-    @Query("SELECT o.* FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
+    @Query("SELECT o.id, o.conversationId, o.clientId, o.content, o.kind, o.createdAt, o.attempts, o.failureReason, o.wirePayload, NULL AS uploadKey FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
         "WHERE m.authorId = :owner AND m.conversationId = o.conversationId AND o.failureReason IS NULL ORDER BY o.id ASC LIMIT 50")
     suspend fun allForOwner(owner: String): List<OutboxEntity>
 
@@ -905,6 +948,7 @@ interface Wave7Dao {
         ConversationEntity::class,
         MessageEntity::class,
         OutboxEntity::class,
+        AttachmentDraftEntity::class,
         DraftEntity::class,
         TopicEntity::class,
         SavedMessageEntity::class,
@@ -913,13 +957,14 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
     abstract fun messageDao(): MessageDao
     abstract fun outboxDao(): OutboxDao
+    abstract fun attachmentDraftDao(): AttachmentDraftDao
     abstract fun draftDao(): DraftDao
     abstract fun topicDao(): TopicDao
     abstract fun savedDao(): SavedDao
@@ -1052,6 +1097,14 @@ abstract class PulseDatabase : RoomDatabase() {
                 // Wave 7 rich-object carriers (red packet / game / tournament) -
                 // the raw payload JSON must survive offline restarts.
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
+            }
+        }
+
+        /** v11 → v12: unsent attachment drafts and resumable upload bytes. */
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE outbox ADD COLUMN uploadKey TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS attachment_draft (conversationId TEXT NOT NULL PRIMARY KEY, selectionId TEXT NOT NULL, fileKey TEXT NOT NULL, metadataJson TEXT NOT NULL, caption TEXT NOT NULL, viewOnce INTEGER NOT NULL, revision INTEGER NOT NULL)")
             }
         }
 
