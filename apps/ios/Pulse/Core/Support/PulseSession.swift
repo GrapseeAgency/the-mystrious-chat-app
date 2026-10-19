@@ -102,6 +102,7 @@ public final class PulseSession: ObservableObject {
     public let outboxEvents = PassthroughSubject<PulseOutboxEvent, Never>()
 
     @Published public private(set) var ready = false
+    @Published public private(set) var startupError: String?
     @Published public private(set) var isForeground = false
     private var generation = UUID()
     private var startupTask: Task<Void, Never>?
@@ -199,6 +200,11 @@ public final class PulseSession: ObservableObject {
         // path): the push registry row (token → THIS viewer) must not
         // outlive it. Fire-and-forget DELETE /api/push/register { token } +
         // the stored token cleared synchronously - sign-out never blocks.
+        callEngine?.endCall()
+        groupCallEngine?.leaveCall()
+        voiceRooms?.leaveVoice()
+        voiceRooms?.leaveStage()
+        voiceRooms?.leaveSpace()
         PulsePushNotifications.deactivate()
         generation = UUID()
         startupTask?.cancel()
@@ -207,6 +213,7 @@ public final class PulseSession: ObservableObject {
         reminderDueTask = nil
         outbox?.stop()
         ready = false
+        startupError = nil
         viewer = nil
         store = nil
         pendingOpenRoom = nil
@@ -285,6 +292,7 @@ public final class PulseSession: ObservableObject {
                 }
                 let api = self.api
                 if let due = try? await api.reminders(dueOnly: true).items, !due.isEmpty {
+                    guard !Task.isCancelled, self.viewer?.id == viewer.id else { return }
                     for item in due {
                         let note = (item.note?.isEmpty == false) ? item.note! : "Reminder"
                         let body = item.snippet ?? item.conversation?.name ?? ""
@@ -315,7 +323,7 @@ public final class PulseSession: ObservableObject {
             store = try PulseStore.openAccount(gateway: PulseEndpoints.gatewayURL.absoluteString, viewerId: viewer.id)
         } catch {
             // Never claim an in-memory queue is durable.
-            toasts.show("Local storage could not be opened. Restart Pulse before sending.")
+            startupError = "Local storage could not be opened. Free some device storage and retry."
             return
         }
         startOutbox()

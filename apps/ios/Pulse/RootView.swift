@@ -306,7 +306,14 @@ struct RootView: View {
         // Experimental mirror code is deliberately unreachable: it bypasses
         // durable messaging and navigation. All users get the native feature shell.
         if prefs.viewer != nil, !session.ready {
-            ProgressView("Opening your account…")
+            VStack(spacing: 16) {
+                if let error = session.startupError {
+                    Text(error).multilineTextAlignment(.center)
+                    Button("Retry") { if let viewer = prefs.viewer { session.start(as: viewer) } }
+                } else {
+                    ProgressView("Opening your account…")
+                }
+            }.padding()
         } else if prefs.viewer != nil {
             ZStack {
                 tabPanels

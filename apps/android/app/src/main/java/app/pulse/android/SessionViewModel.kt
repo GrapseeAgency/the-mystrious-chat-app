@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** Device-session state: viewer identity + appearance prefs (DataStore-backed). */
@@ -35,39 +36,32 @@ class SessionViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
-    init {
-        // Cold start order (Wave 0): persisted endpoint overrides BEFORE any
-        // network, then re-seed the plaintext prefs mirror from the encrypted
-        // vault so the identity flows light up even after the legacy viewer.*
-        // keys were folded away.
+    private val _bootstrapped = MutableStateFlow(false)
+
+    private val _startupError = MutableStateFlow<String?>(null)
+    val startupError: StateFlow<String?> = _startupError.asStateFlow()
+
+    fun retryHydration() {
         viewModelScope.launch {
-            runCatching { manifestEndpoints.applyPersisted() }
-            // Wave 8 - the session credential warms the synchronous cache
-            // before the first REST call so the Bearer header rides along.
-            runCatching { sessionTokenStore.load() }
-            runCatching {
-                val vaultJson = secureSessionStore.load() ?: return@runCatching
-                val vault = PulseJson.decodeFromString(SessionVault.serializer(), vaultJson)
-                if (vault.viewerId != null && prefs.viewerId.first() == null) {
-                    prefs.setViewer(vault.viewerId, vault.viewerName, vault.viewerColor)
+            _startupError.value = null
+            try {
+                val userBase = prefs.serverBase.first()
+                if (!userBase.isNullOrBlank()) PulseEndpoints.applyBase(userBase)
+                else manifestEndpoints.applyPersisted()
+                sessionTokenStore.load()
+                secureSessionStore.load()?.let { vaultJson ->
+                    val vault = PulseJson.decodeFromString(SessionVault.serializer(), vaultJson)
+                    if (vault.viewerId != null && prefs.viewerId.first() == null) {
+                        prefs.setViewer(vault.viewerId, vault.viewerName, vault.viewerColor)
+                    }
                 }
-            }
-        }
-        // Authentication failure is not permission to reclaim an identity by name.
-        viewModelScope.launch {
-            sessionTokenStore.invalidated.collect { invalid ->
-                if (invalid) {
-                    repo.stop()
-                    OutboxWorker.cancel(appContext)
-                    _sessionNotice.value = "Session expired. Pending messages are kept; sign in again to synchronize."
-                }
-            }
-        }
-        // Outbox → WorkManager bridge: a pending queue always has an expedited,
-        // network-constrained worker behind it (unique-name REPLACE).
-        viewModelScope.launch {
-            repo.observeOutbox().collect { entries ->
-                if (entries.isNotEmpty()) OutboxWorker.enqueue(appContext)
+                // Never expose the shell after a failed credential/storage read.
+                prefs.viewerId.first()
+                _bootstrapped.value = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _startupError.value = "Could not open local account storage. Retry without clearing your saved messages."
             }
         }
     }
@@ -81,13 +75,10 @@ class SessionViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
-     * True once the persisted prefs have emitted at least once - gates the
-     * onboarding screen so a fresh launch doesn't flash it before DataStore
-     * hands back an existing viewer.
+     * True only after endpoint, credential, and identity storage hydration.
+     * Storage errors leave the shell gated with an explicit retry action.
      */
-    val hydrated: StateFlow<Boolean> = prefs.viewerId
-        .map { true }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val hydrated: StateFlow<Boolean> = _bootstrapped.asStateFlow()
 
     val viewerName: StateFlow<String?> = prefs.viewerName
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -114,6 +105,27 @@ class SessionViewModel @Inject constructor(
 
     val serverBase: StateFlow<String?> = prefs.serverBase
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    init {
+        retryHydration()
+        // Authentication failure is not permission to reclaim an identity by name.
+        viewModelScope.launch {
+            sessionTokenStore.invalidated.collect { invalid ->
+                if (invalid) {
+                    repo.stop()
+                    OutboxWorker.cancel(appContext)
+                    _sessionNotice.value = "Session expired. Pending messages are kept; sign in again to synchronize."
+                }
+            }
+        }
+        // One network-constrained worker owns retries; KEEP avoids canceling
+        // an in-flight delivery on each queue emission.
+        viewModelScope.launch {
+            repo.observeOutbox().collect { entries ->
+                if (entries.isNotEmpty()) OutboxWorker.enqueue(appContext)
+            }
+        }
+    }
 
     fun chooseViewer(id: String, name: String, color: String? = null) {
         viewModelScope.launch {

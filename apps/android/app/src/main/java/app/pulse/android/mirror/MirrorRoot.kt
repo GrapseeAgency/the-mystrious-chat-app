@@ -96,6 +96,7 @@ private data class MirrorTyper(val conversationId: String, val userId: String, v
 internal fun MirrorRoot(
     session: SessionViewModel,
     repository: PulseRepository,
+    readingEnabled: Boolean = true,
     onStartCall: ((Conversation, video: Boolean) -> Unit)? = null,
     // R76 - external entry points (the retired shells owned them): launcher
     // tab shortcuts land here as tab requests; pulse://room deep links as
@@ -751,6 +752,9 @@ internal fun MirrorRoot(
                     .map { it.userName }
                 MirrorRoomScaffold(
                     convo = convo,
+                    readingEnabled = readingEnabled && openRoom != null && viewingStory == null &&
+                        roomInfoFor == null && managerFor == null && userPageFor == null &&
+                        !settingsOpen && !callsOpen && !spotlightOpen,
                     repository = repository,
                     viewerId = viewerId.orEmpty(),
                     presence = presence,
@@ -1001,6 +1005,7 @@ internal fun DrawScope.sceneGlow(
 @Composable
 private fun MirrorRoomScaffold(
     convo: Conversation,
+    readingEnabled: Boolean,
     repository: PulseRepository,
     viewerId: String,
     presence: Set<String>,
@@ -1025,8 +1030,6 @@ private fun MirrorRoomScaffold(
     LaunchedEffect(convo.id) {
         runCatching { repository.refreshMessages(convo.id) }
         phrases = repository.phrases().getOrDefault(emptyList())
-        // entering the room marks it read (web POST /read on open)
-        runCatching { repository.markRead(convo.id) }
         // live room truth for the kebab controls (mute + disappearing TTL)
         runCatching { repository.conversationDetail(convo.id) }
     }
@@ -1041,6 +1044,7 @@ private fun MirrorRoomScaffold(
     }
 
     MirrorRoom(
+        readingEnabled = readingEnabled,
         title = convo.title,
         color = convo.accentColor ?: other?.color,
         isGroup = convo.isGroupish,

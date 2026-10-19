@@ -61,6 +61,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -375,6 +378,7 @@ internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
  */
 @Composable
 internal fun MirrorRoom(
+    readingEnabled: Boolean = false,
     title: String,
     color: String?,
     isGroup: Boolean,
@@ -527,15 +531,32 @@ internal fun MirrorRoom(
     // stack, then the header strips). With nothing open it disables itself
     // and back falls through to the root handler, which closes the room -
     // WhatsApp's exact layering.
-    androidx.activity.compose.BackHandler(
-        enabled = menuOpen || trayOpen || roomSearchOpen || pinnedOpen ||
+    val roomPanelOpen = menuOpen || trayOpen || roomSearchOpen || pinnedOpen ||
             muteStripOpen || ttlStripOpen || pollOpen || stickerOpen ||
             locationOpen || remindersOpen || scheduledOpen || recapOpen ||
             eventsOpen || kanbanOpen || whiteboardOpen || voiceOpen ||
             stageOpen || spaceOpen || tournamentOpen || redPacketOpen ||
             trayEffectsOpen || slashHelpOpen || safetyOpen || scheduleOpen ||
-            phraseManagerOpen,
-    ) {
+            phraseManagerOpen
+    val readerLifecycle = LocalLifecycleOwner.current
+    LaunchedEffect(groupId, readingEnabled, roomPanelOpen, actionFor, forwardFor, threadFor, infoFor) {
+        readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (!readingEnabled || roomPanelOpen || actionFor != null || forwardFor != null ||
+                threadFor != null || infoFor != null
+            ) return@repeatOnLifecycle
+            app.pulse.android.notify.IncomingAttention.activeReadingRoom = groupId
+            try {
+                repository.observeMessages(groupId).collect { rows ->
+                    if (rows.isNotEmpty()) repository.markRead(groupId)
+                }
+            } finally {
+                if (app.pulse.android.notify.IncomingAttention.activeReadingRoom == groupId) {
+                    app.pulse.android.notify.IncomingAttention.activeReadingRoom = null
+                }
+            }
+        }
+    }
+    androidx.activity.compose.BackHandler(enabled = roomPanelOpen) {
         when {
             menuOpen -> menuOpen = false
             safetyOpen -> safetyOpen = false
@@ -972,16 +993,23 @@ internal fun MirrorRoom(
     var recordSeconds by remember { mutableStateOf(0) }
     var voiceBusy by remember { mutableStateOf(false) }
     var recordStartAt by remember { mutableStateOf(0L) }
+    var recordedDurationMs by remember { mutableStateOf(0L) }
     val recorderRef = remember { mutableStateOf<MediaRecorder?>(null) }
     val recordFileRef = remember { mutableStateOf<File?>(null) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
+            if (voiceBusy || recordFileRef.value != null) {
+                sendError = "Send or discard the current voice note first"
+                return@rememberLauncherForActivityResult
+            }
             val context = context
             runCatching {
                 val file = File(context.cacheDir, "voice-note-${System.currentTimeMillis()}.m4a")
+                recordFileRef.value = file
                 val recorder = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else {
                     @Suppress("DEPRECATION") MediaRecorder()
                 }
+                recorderRef.value = recorder
                 recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
                 recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -993,9 +1021,16 @@ internal fun MirrorRoom(
                 recorderRef.value = recorder
                 recordFileRef.value = file
                 recording = true
+                recordedDurationMs = 0L
                 recordStartAt = System.currentTimeMillis()
                 recordSeconds = 0
-            }.onFailure { sendError = "Microphone unavailable" }
+            }.onFailure {
+                runCatching { recorderRef.value?.release() }
+                recorderRef.value = null
+                recordFileRef.value?.delete()
+                recordFileRef.value = null
+                sendError = "Microphone unavailable"
+            }
         } else {
             sendError = "Microphone permission needed for voice notes"
         }
@@ -1023,7 +1058,8 @@ internal fun MirrorRoom(
             recording = false
             return
         }
-        val durationMs = (System.currentTimeMillis() - recordStartAt).coerceAtLeast(0L)
+        val durationMs = recordedDurationMs.takeIf { it > 0L }
+            ?: (System.currentTimeMillis() - recordStartAt).coerceAtLeast(0L)
         if (durationMs < 600) {
             // web MIN_VOICE_MS=600 - too-short recordings are discarded
             cancelRecording()
@@ -1032,8 +1068,8 @@ internal fun MirrorRoom(
         // UI state is not recorder state. Finalize the M4A before reading it.
         val recorder = recorderRef.value
         val finalized = runCatching {
-            checkNotNull(recorder) { "Recording is no longer available" }
-            recorder.stop()
+            if (recorder != null) recorder.stop()
+            check(file.isFile && file.length() > 0L) { "Recording is no longer available" }
         }
         runCatching { recorder?.release() }
         recorderRef.value = null
@@ -1044,6 +1080,7 @@ internal fun MirrorRoom(
             sendError = "Recording could not be finalized. Please record again."
             return
         }
+        recordedDurationMs = durationMs
         voiceBusy = true
         CoroutineScope(Dispatchers.IO).launch {
             val outcome = runCatching {
@@ -1059,6 +1096,7 @@ internal fun MirrorRoom(
             CoroutineScope(Dispatchers.Main).launch {
                 voiceBusy = false
                 outcome.onSuccess {
+                    sendError = null
                     runCatching { recorderRef.value?.release() }
                     recorderRef.value = null
                     recordFileRef.value?.delete()
@@ -1584,6 +1622,12 @@ internal fun MirrorRoom(
                 }
                 sendError?.let {
                     MirrorComposerBar(glyph = "LTriangleAlert", tint = MirrorArt.Red, text = it, onCancel = { sendError = null })
+                }
+                if (!voiceBusy && !recording && recordFileRef.value != null && recordedDurationMs > 0L) {
+                    Row {
+                        androidx.compose.material3.TextButton(onClick = { sendRecording() }) { Text("Retry voice note") }
+                        androidx.compose.material3.TextButton(onClick = { cancelRecording(); sendError = null }) { Text("Discard voice note") }
+                    }
                 }
             }
         }

@@ -259,34 +259,17 @@ class PulseRepositoryImpl @Inject constructor(
         if (viewerId == userId && socket.isJoined) return
         if (viewerId != userId) stop()
         viewerId = userId
-        startPump()
         scope.launch {
+            // One ordering barrier, shared by UI and cold-process workers.
             sessionTokenStore.load()
-            if (viewerId == userId) socket.connect(userId)
-        }
-        // Demo companion: every identity (fresh or upgraded install) gets the
-        // on-device Nova room so the chat surface is explorable offline.
-        scope.launch { runCatching { ensureDemoSeeded(userId) } }
-        // Wave 8 - load the persisted session token into the synchronous cache
-        // BEFORE the refresh wave so the Bearer header rides from request one,
-        // then merge the server prefs blob over the local store (server wins).
-        scope.launch {
-            runCatching { sessionTokenStore.load() }
-                .onFailure { Log.w(TAG, "token load failed", it) }
-            fetchSettings()
-        }
-        scope.launch { refreshConversations() }
-        // Flush trigger: app start with a pending queue (web pwa-provider parity).
-        scope.launch {
-            runCatching {
-                if (outboxDao.count() > 0) flushOutbox()
-            }.onFailure { Log.w(TAG, "start flush failed", it) }
-        }
-        // Call-log queue rides the same trigger (single-writer rows that
-        // died offline must land as soon as the gateway answers).
-        scope.launch {
-            runCatching { if (callLogDao.queueCount() > 0) flushCallLogQueue() }
-                .onFailure { Log.w(TAG, "start call-log flush failed", it) }
+            if (viewerId != userId || sessionTokenStore.invalidated.value) return@launch
+            startPump()
+            socket.connect(userId)
+            launch { runCatching { ensureDemoSeeded(userId) } }
+            launch { fetchSettings() }
+            launch { refreshConversations() }
+            launch { runCatching { if (outboxDao.count() > 0) flushOutbox() } }
+            launch { runCatching { if (callLogDao.queueCount() > 0) flushCallLogQueue() } }
         }
     }
 
@@ -1023,7 +1006,7 @@ class PulseRepositoryImpl @Inject constructor(
             anonAlias = anonAliasPreview.takeIf { anon },
         )
         if (!viewerId.isNullOrBlank()) {
-            messageDao.upsertAll(listOf(MessageEntity.from(temp).copy(kind = (kind ?: "text").uppercase(), payloadJson = payload)))
+            messageDao.upsertAll(listOf(MessageEntity.from(temp).copy(kind = (kind ?: "text").uppercase(java.util.Locale.ROOT), payloadJson = payload)))
         }
         return when (
             val r = api.sendMessage(
@@ -1613,7 +1596,7 @@ class PulseRepositoryImpl @Inject constructor(
         return when (val r = api.sendMessage(
             entry.conversationId, owner, entry.content,
             replyToId = temp.replyToId, parentId = temp.threadRootId,
-            topicId = temp.topicId, kind = temp.kind.lowercase(),
+            topicId = temp.topicId, kind = temp.kind.lowercase(java.util.Locale.ROOT),
             payload = temp.payloadJson?.let { PulseJson.parseToJsonElement(it) as? kotlinx.serialization.json.JsonObject },
         )) {
             is PulseResult.Success -> Result.success(r.value.messageOrThrow())

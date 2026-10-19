@@ -4,7 +4,7 @@
 
 **Baseline source:** `9fc58f9c5a6fa0d034ab6fc538494cea5a11b3a5`
 
-**Execution status:** **All cases below are NOT RUN in this audit.** These are acceptance specifications for the repair work, not passing test results.
+**Execution status:** **All complete acceptance scenarios below remain NOT RUN.** Implementation and partial CI evidence are tracked in the [remediation ledger](NATIVE-REMEDIATION-STATUS.md). Some constituent unit suites have passed on an earlier patch; that is not a pass for these end-to-end scenarios.
 
 ## Test environment and safety
 
@@ -77,7 +77,7 @@ Fixtures should assert the intended safe behavior rather than merely encode toda
 
 ## Safe CI and artifact plan
 
-The current audit did **not** change or dispatch workflows. For remediation:
+The original audit did **not** change or dispatch workflows. Subsequent remediation expanded CI and removed audit-workflow release publishing; see the [ledger](NATIVE-REMEDIATION-STATUS.md) for evidence and remaining gates. The intended validation plan remains:
 
 1. Add an **artifact-only** manually dispatched native validation lane that accepts this session branch/ref and records exact SHA. Do not reuse release-clobbering audit steps.
 2. Android: run all relevant module tests/lint, build the intended variant, validate package/version/signature, and run UI/OS cases on a meaningful API matrix. Store APKs as workflow artifacts, not Git-tracked binaries.

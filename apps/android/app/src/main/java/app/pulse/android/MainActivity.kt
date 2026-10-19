@@ -511,7 +511,7 @@ fun PulseRoot(
     }
 
     // Boot the live layer (REST refresh + socket join) as soon as identity exists.
-    LaunchedEffect(viewerId) { session.bootstrap(viewerId) }
+    LaunchedEffect(viewerId, hydrated) { if (hydrated) session.bootstrap(viewerId) }
 
     // R7 item 8 - the session-rotated re-login notice (SessionViewModel sets
     // it when the stored token was rejected) finally reaches the onboarding
@@ -543,7 +543,19 @@ fun PulseRoot(
                 modifier = Modifier.fillMaxSize(),
             )
 
-            if (onboarding) {
+            if (!hydrated) {
+                val startupError by session.startupError.collectAsStateWithLifecycle()
+                if (startupError == null) {
+                    androidx.compose.material3.CircularProgressIndicator(Modifier.align(Alignment.Center))
+                } else {
+                    androidx.compose.foundation.layout.Column(Modifier.align(Alignment.Center).padding(24.dp)) {
+                        androidx.compose.material3.Text(startupError.orEmpty())
+                        androidx.compose.material3.TextButton(onClick = session::retryHydration) {
+                            androidx.compose.material3.Text("Retry")
+                        }
+                    }
+                }
+            } else if (onboarding) {
                 OnboardingScreen(
                     sessionNotice = sessionNotice,
                     // R50-a - the connect gate adopts the probed gateway through
@@ -561,6 +573,7 @@ fun PulseRoot(
                 val groupCallVm: GroupCallViewModel = hiltViewModel()
                 app.pulse.android.mirror.MirrorRoot(
                     session = session,
+                    readingEnabled = !appLock.locked.collectAsStateWithLifecycle().value,
                     repository = repository,
                     onStartCall = { convo, video ->
                         val viewer = viewerName.orEmpty().ifBlank { "You" }
