@@ -1097,40 +1097,44 @@ private struct RoomContent: View {
     private var chatBodyStyled9: some View {
         chatBodyStyled8
         .sheet(isPresented: $wave7.kanbanOpen) {
+            let roomAPI = session.api
             Wave7KanbanSheet(
                 conversationId: conversation.id,
                 viewerId: session.viewer?.id ?? "",
                 isAdmin: false,
                 prefillTitle: nil,
-                loadBoard: { try? await session.api.kanbanBoard(conversationId: conversation.id) },
+                loadBoard: { try? await roomAPI.kanbanBoard(conversationId: conversation.id) },
                 onAddCard: { title, column, assignee in
-                    wave7.addCard(api: session.api, conversationId: conversation.id, title: title, column: column, assigneeId: assignee)
+                    await wave7.addCard(api: roomAPI, conversationId: conversation.id, title: title, column: column, assigneeId: assignee)
                 },
                 onMoveCard: { cardId, column in
-                    wave7.moveCard(api: session.api, cardId: cardId, column: column)
+                    await wave7.moveCard(api: roomAPI, cardId: cardId, column: column)
                 },
                 onDeleteCard: { cardId in
-                    wave7.deleteCard(api: session.api, cardId: cardId)
+                    await wave7.deleteCard(api: roomAPI, cardId: cardId)
                 },
             )
+            .id("\(session.sessionGeneration):\(conversation.id)")
         }
         .sheet(isPresented: $wave7.whiteboardOpen) {
             Wave7WhiteboardSheet(conversationId: conversation.id,
                 viewerId: session.viewer?.id ?? "", api: session.api)
         }
         .sheet(isPresented: $wave7.eventsOpen) {
+            let roomAPI = session.api
             Wave7EventsSheet(
                 conversationId: conversation.id,
                 viewerId: session.viewer?.id ?? "",
                 isAdmin: false,
-                loadEvents: { try? await session.api.events(conversationId: conversation.id).events },
+                loadEvents: { try? await roomAPI.events(conversationId: conversation.id).events },
                 onCreate: { title, iso, desc, loc in
-                    wave7.createEvent(api: session.api, conversationId: conversation.id, title: title, startsAtIso: iso, description: desc, location: loc)
+                    await wave7.createEvent(api: roomAPI, conversationId: conversation.id, title: title, startsAtIso: iso, description: desc, location: loc)
                 },
-                onRsvp: { eventId, status in wave7.rsvp(api: session.api, eventId: eventId, status: status) },
-                onCheckin: { eventId in wave7.checkin(api: session.api, eventId: eventId) },
-                onDelete: { eventId in wave7.deleteEvent(api: session.api, eventId: eventId) },
+                onRsvp: { eventId, status in await wave7.rsvp(api: roomAPI, eventId: eventId, status: status) },
+                onCheckin: { eventId in await wave7.checkin(api: roomAPI, eventId: eventId) },
+                onDelete: { eventId in await wave7.deleteEvent(api: roomAPI, eventId: eventId) },
             )
+            .id("\(session.sessionGeneration):\(conversation.id)")
         }
     }
 

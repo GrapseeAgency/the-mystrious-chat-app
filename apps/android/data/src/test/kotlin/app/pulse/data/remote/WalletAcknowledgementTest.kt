@@ -11,6 +11,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WalletAcknowledgementTest {
+    @Test fun `daily reward cannot be celebrated from missing or inconsistent acknowledgement`() = runTest {
+        for (body in listOf("{}", """{"wallet":{"userId":"me","coins":50,"gems":0,"streak":2,"lastCheckIn":"2026-10-20T00:00:00Z"},"reward":25,"streak":2}""")) {
+            val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+            try { assertTrue(PulseApi(http, gateway = { "https://wallet.test" }).checkinWallet("me") is PulseResult.Failure) }
+            finally { http.close() }
+        }
+    }
     @Test fun `recipient normalization cannot change with device locale`() = runTest {
         val previous = java.util.Locale.getDefault()
         val http = HttpClient(MockEngine { request ->

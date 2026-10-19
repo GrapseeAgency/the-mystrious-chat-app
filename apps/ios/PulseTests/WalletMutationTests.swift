@@ -73,6 +73,11 @@ final class WalletAcknowledgementTests: XCTestCase {
         let session = URLSession(configuration: config)
         return (PulseAPIClient(baseURL: URL(string: "https://wallet.test")!, userId: "me", session: session), session)
     }
+    func testMalformed200CannotCelebrateDailyReward() async {
+        let (api, session) = client(); defer { session.invalidateAndCancel() }
+        do { _ = try await api.checkinWallet(); XCTFail("Unconfirmed reward") }
+        catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
+    }
     func testMalformed200CannotReportTransferSuccess() async {
         let (api, session) = client(); defer { session.invalidateAndCancel() }
         do { _ = try await api.transferCoins(toUsername: "other", amount: 1, note: nil); XCTFail("Unconfirmed transfer") }

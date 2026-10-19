@@ -80,8 +80,9 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -99,6 +100,21 @@ import kotlinx.coroutines.launch
 // Token note: the web sheets use the zinc + amber palette; the mirror maps it
 // onto the artboard tokens per MirrorTheme (amber -> Accent / Accent2,
 // rose -> Red, zinc text tiers -> Text / TextSoft / Dim / Faint).
+
+/** Do not turn coroutine cancellation into an offline result or mutate a closed sheet. */
+internal suspend fun <T> roomRequest(block: suspend () -> Result<T>): Result<T> {
+    return try {
+        val result = block()
+        currentCoroutineContext().ensureActive()
+        val error = result.exceptionOrNull()
+        if (error is CancellationException) throw error
+        result
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+}
 
 private const val EVENTS_POLL_MS = 5_000L
 private const val KANBAN_POLL_MS = 1_500L
@@ -309,6 +325,21 @@ internal fun MirrorEventsSheet(
     viewerIsAdmin: Boolean = false,
     onDismiss: () -> Unit,
 ) {
+    androidx.compose.runtime.key(repository, conversationId, viewerId, repository.reminderDeliveryOwner()) {
+        MirrorEventsContent(repository, conversationId, viewerId, viewerIsAdmin, onDismiss)
+    }
+}
+
+@Composable
+private fun MirrorEventsContent(
+    repository: PulseRepository,
+    conversationId: String,
+    viewerId: String,
+    viewerIsAdmin: Boolean,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val refreshGate = remember { app.pulse.domain.sync.RoomRefreshGate() }
     var events by remember { mutableStateOf<List<GroupEventDto>?>(null) }
     var offline by remember { mutableStateOf(false) }
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -316,6 +347,7 @@ internal fun MirrorEventsSheet(
     var startsAtLocal by remember { mutableStateOf(defaultStartLocal()) }
     var location by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
+    var busyEventIds by remember { mutableStateOf(emptySet<String>()) }
     var deleteBusy by remember { mutableStateOf(false) }
     var rsvpBusy by remember { mutableStateOf(false) }
     var checkinBusy by remember { mutableStateOf(false) }
@@ -323,105 +355,78 @@ internal fun MirrorEventsSheet(
     var pastOpen by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
 
-    // 5s live poll while open (web refetchInterval parity); first success clears loading.
-    LaunchedEffect(conversationId) {
-        while (isActive) {
-            val page = runCatching { repository.events(conversationId) }.getOrNull()?.getOrNull()
-            if (page == null) {
-                offline = true
-            } else {
-                events = page.events
-                offline = false
-            }
-            delay(EVENTS_POLL_MS)
-        }
-    }
-    // countdown chips recompute every 30s (web TICK_MS).
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            nowMs = System.currentTimeMillis()
-            delay(30_000L)
-        }
-    }
-    // two-tap delete confirm disarms after 2.6s (web DELETE_CONFIRM_MS).
-    LaunchedEffect(confirmDeleteId) {
-        if (confirmDeleteId != null) {
-            delay(DELETE_CONFIRM_MS)
-            confirmDeleteId = null
-        }
-    }
-
+    var draftRevision by remember { mutableStateOf(0L) }
     suspend fun refreshEvents() {
-        val page = runCatching { repository.events(conversationId) }.getOrNull()?.getOrNull()
-        if (page == null) {
-            offline = true
-        } else {
-            events = page.events
-            offline = false
-        }
+        val ticket = refreshGate.beginRead() ?: return
+        val result = roomRequest { repository.events(conversationId) }
+        if (!refreshGate.accepts(ticket)) return
+        val page = result.getOrNull()
+        if (page == null) offline = true
+        else { events = page.events; offline = false }
     }
-
+    LaunchedEffect(conversationId) {
+        while (isActive) { refreshEvents(); delay(EVENTS_POLL_MS) }
+    }
+    LaunchedEffect(Unit) {
+        while (isActive) { nowMs = System.currentTimeMillis(); delay(30_000L) }
+    }
+    LaunchedEffect(confirmDeleteId) {
+        if (confirmDeleteId != null) { delay(DELETE_CONFIRM_MS); confirmDeleteId = null }
+    }
     fun submitCreate() {
         val trimmed = title.trim()
         val startsAtMs = parseLocalStart(startsAtLocal)
         if (trimmed.isEmpty() || startsAtMs == null || creating) return
-        creating = true
-        notice = null
+        creating = true; notice = null
+        val revision = draftRevision
         val startsAtIso = Instant.ofEpochMilli(startsAtMs).toString()
         val locationText = location.trim()
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching {
-                repository.createEvent(conversationId, trimmed, startsAtIso, null, locationText)
-            }.getOrNull()
-            creating = false
-            if (result?.isSuccess == true) {
-                title = ""
-                location = ""
-                startsAtLocal = defaultStartLocal()
-                refreshEvents()
-            } else {
-                notice = "Could not schedule the event."
-            }
+        refreshGate.beginWrite()
+        scope.launch {
+            try {
+                val result = roomRequest { repository.createEvent(conversationId, trimmed, startsAtIso, null, locationText) }
+                if (result.isSuccess) {
+                    if (draftRevision == revision) { title = ""; location = ""; startsAtLocal = defaultStartLocal(); draftRevision++ }
+                } else notice = result.exceptionOrNull()?.message ?: "Could not schedule the event."
+            } finally { creating = false; refreshGate.endWrite() }
+            refreshEvents()
         }
     }
-
     fun handleDeleteTap(eventId: String) {
-        if (confirmDeleteId != eventId) {
-            confirmDeleteId = eventId
-            return
-        }
+        if (confirmDeleteId != eventId) { confirmDeleteId = eventId; return }
         confirmDeleteId = null
-        if (deleteBusy) return
-        deleteBusy = true
-        notice = null
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching { repository.deleteEvent(eventId) }.getOrNull()
-            if (result?.isSuccess != true) notice = "Could not delete the event."
-            deleteBusy = false
+        if (deleteBusy || eventId in busyEventIds) return
+        deleteBusy = true; busyEventIds = busyEventIds + eventId; notice = null
+        refreshGate.beginWrite()
+        scope.launch {
+            try {
+                val result = roomRequest { repository.deleteEvent(eventId) }
+                if (result.isFailure) notice = "Could not delete the event."
+            } finally { deleteBusy = false; busyEventIds = busyEventIds - eventId; refreshGate.endWrite() }
             refreshEvents()
         }
     }
-
     fun handleRsvp(event: GroupEventDto, status: String) {
-        if (event.myStatus == status || rsvpBusy) return
-        rsvpBusy = true
-        notice = null
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching { repository.rsvpEvent(event.id, status) }.getOrNull()
-            if (result?.isSuccess != true) notice = "RSVP failed - try again."
-            rsvpBusy = false
+        if (event.myStatus == status || rsvpBusy || event.id in busyEventIds) return
+        rsvpBusy = true; busyEventIds = busyEventIds + event.id; notice = null
+        refreshGate.beginWrite()
+        scope.launch {
+            try {
+                val result = roomRequest { repository.rsvpEvent(event.id, status) }
+                if (result.isFailure) notice = "RSVP failed - try again."
+            } finally { rsvpBusy = false; busyEventIds = busyEventIds - event.id; refreshGate.endWrite() }
             refreshEvents()
         }
     }
-
     fun handleCheckIn(event: GroupEventDto) {
-        if (checkinBusy) return
-        checkinBusy = true
-        notice = null
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching { repository.checkinEvent(event.id) }.getOrNull()
-            if (result?.isSuccess != true) notice = "Check-in failed - try again."
-            checkinBusy = false
+        if (checkinBusy || event.id in busyEventIds) return
+        checkinBusy = true; busyEventIds = busyEventIds + event.id; notice = null
+        refreshGate.beginWrite()
+        scope.launch {
+            try {
+                val result = roomRequest { repository.checkinEvent(event.id) }
+                if (result.isFailure) notice = "Check-in failed - try again."
+            } finally { checkinBusy = false; busyEventIds = busyEventIds - event.id; refreshGate.endWrite() }
             refreshEvents()
         }
     }
@@ -451,13 +456,13 @@ internal fun MirrorEventsSheet(
             ) {
                 BoardFormTextField(
                     value = title,
-                    onValue = { title = it.take(120) },
+                    onValue = { draftRevision++; title = it.take(120) },
                     placeholder = "Event title",
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BoardFormTextField(
                         value = startsAtLocal,
-                        onValue = { startsAtLocal = it },
+                        onValue = { draftRevision++; startsAtLocal = it },
                         placeholder = "",
                         modifier = Modifier.weight(1f),
                         mono = true,
@@ -465,7 +470,7 @@ internal fun MirrorEventsSheet(
                     )
                     BoardFormTextField(
                         value = location,
-                        onValue = { location = it.take(200) },
+                        onValue = { draftRevision++; location = it.take(200) },
                         placeholder = "Location (optional)",
                         modifier = Modifier.weight(1f),
                     )
@@ -1011,6 +1016,21 @@ internal fun MirrorKanbanSheet(
     viewerIsAdmin: Boolean = false,
     onDismiss: () -> Unit,
 ) {
+    androidx.compose.runtime.key(repository, conversationId, viewerId, repository.reminderDeliveryOwner()) {
+        MirrorKanbanContent(repository, conversationId, viewerId, viewerIsAdmin, onDismiss)
+    }
+}
+
+@Composable
+private fun MirrorKanbanContent(
+    repository: PulseRepository,
+    conversationId: String,
+    viewerId: String,
+    viewerIsAdmin: Boolean,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val refreshGate = remember { app.pulse.domain.sync.RoomRefreshGate() }
     var cards by remember { mutableStateOf<List<KanbanCardDto>?>(null) }
     var offline by remember { mutableStateOf(false) }
     var synced by remember { mutableStateOf(false) }
@@ -1019,76 +1039,61 @@ internal fun MirrorKanbanSheet(
     var addingIn by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
 
-    // 1500ms live poll while open (web POLL_MS parity); first success clears Syncing.
-    LaunchedEffect(conversationId) {
-        while (isActive) {
-            val page = runCatching { repository.kanbanBoard(conversationId) }.getOrNull()?.getOrNull()
-            if (page == null) {
-                offline = true
-            } else {
-                cards = page.cards
-                synced = true
-                offline = false
-            }
-            delay(KANBAN_POLL_MS)
-        }
-    }
-
+    var draftRevisions by remember { mutableStateOf(emptyMap<String, Long>()) }
     suspend fun refreshBoard() {
-        val page = runCatching { repository.kanbanBoard(conversationId) }.getOrNull()?.getOrNull()
-        if (page == null) {
-            offline = true
-        } else {
-            cards = page.cards
-            synced = true
-            offline = false
-        }
+        val ticket = refreshGate.beginRead() ?: return
+        val result = roomRequest { repository.kanbanBoard(conversationId) }
+        if (!refreshGate.accepts(ticket)) return
+        val page = result.getOrNull()
+        if (page == null) offline = true
+        else { cards = page.cards; synced = true; offline = false }
     }
-
+    LaunchedEffect(conversationId) {
+        while (isActive) { refreshBoard(); delay(KANBAN_POLL_MS) }
+    }
     fun addCard(column: String) {
         val text = (drafts[column] ?: "").trim()
         if (text.isEmpty() || addingIn != null) return
-        addingIn = column
-        notice = null
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching {
-                repository.createKanbanCard(conversationId, text, column, null, null)
-            }.getOrNull()
-            if (result?.isSuccess == true) {
-                drafts = drafts + (column to "")
-            } else {
-                notice = "Could not add the card."
-            }
-            addingIn = null
+        val revision = draftRevisions[column] ?: 0L
+        addingIn = column; notice = null
+        refreshGate.beginWrite()
+        scope.launch {
+            try {
+                val result = roomRequest { repository.createKanbanCard(conversationId, text, column, null, null) }
+                if (result.isSuccess) {
+                    if ((draftRevisions[column] ?: 0L) == revision) {
+                        drafts = drafts + (column to "")
+                        draftRevisions = draftRevisions + (column to (revision + 1))
+                    }
+                } else notice = "Could not add the card."
+            } finally { addingIn = null; refreshGate.endWrite() }
             refreshBoard()
         }
     }
-
     fun moveCard(card: KanbanCardDto, direction: Int) {
         val from = KANBAN_COLUMNS.indexOf(asKanbanColumn(card.column))
         val to = from + direction
-        if (to < 0 || to >= KANBAN_COLUMNS.size || busyIds.contains(card.id)) return
-        busyIds = busyIds + card.id
-        notice = null
-        CoroutineScope(Dispatchers.IO).launch {
-            // move-to-end semantics: position null on column change = max+1 in the target (web PATCH)
-            val result = runCatching {
-                repository.updateKanbanCard(card.id, null, KANBAN_COLUMNS[to], null, false, null)
-            }.getOrNull()
-            if (result?.isSuccess != true) notice = "Could not move the card."
-            busyIds = busyIds - card.id
+        if (to !in KANBAN_COLUMNS.indices || card.id in busyIds) return
+        val targetColumn = KANBAN_COLUMNS[to]
+        busyIds = busyIds + card.id; notice = null
+        refreshGate.beginWrite()
+        scope.launch {
+            try {
+                val result = roomRequest { repository.updateKanbanCard(card.id, null, targetColumn, null, false, null) }
+                if (result.isFailure) notice = "Could not move the card."
+            } finally { busyIds = busyIds - card.id; refreshGate.endWrite() }
             refreshBoard()
         }
     }
-
     fun removeCard(card: KanbanCardDto) {
-        if (busyIds.contains(card.id)) return
-        busyIds = busyIds + card.id
-        notice = null
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching { repository.deleteKanbanCard(card.id) }.getOrNull()
-            if (result?.isSuccess != true) notice = "Could not delete the card."
-            busyIds = busyIds - card.id
+        if (card.id in busyIds) return
+        busyIds = busyIds + card.id; notice = null
+        refreshGate.beginWrite()
+        scope.launch {
+            try {
+                val result = roomRequest { repository.deleteKanbanCard(card.id) }
+                if (result.isFailure) notice = "Could not delete the card."
+            } finally { busyIds = busyIds - card.id; refreshGate.endWrite() }
             refreshBoard()
         }
     }
@@ -1129,7 +1134,10 @@ internal fun MirrorKanbanSheet(
                     busyIds = busyIds,
                     viewerId = viewerId,
                     viewerIsAdmin = viewerIsAdmin,
-                    onDraft = { value -> drafts = drafts + (column to value) },
+                    onDraft = { value ->
+                        draftRevisions = draftRevisions + (column to ((draftRevisions[column] ?: 0L) + 1))
+                        drafts = drafts + (column to value)
+                    },
                     onAdd = { addCard(column) },
                     onMove = { card, direction -> moveCard(card, direction) },
                     onDelete = { card -> removeCard(card) },

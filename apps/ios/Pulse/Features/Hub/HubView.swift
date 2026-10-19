@@ -33,7 +33,6 @@ final class HubViewModel: ObservableObject {
     }
 
     @Published var wallet = WalletUi()
-    @Published private(set) var checkinBusy = false
     @Published private(set) var walletMutationBusy = false
     private var walletRequest = UUID()
     private var marketRequest = UUID()
@@ -85,10 +84,12 @@ final class HubViewModel: ObservableObject {
         let ticket = UUID()
         walletRequest = ticket
         let epoch = session.sessionGeneration
+        let capturedAPI = api
         Task { @MainActor in
+            guard walletRequest == ticket, session.sessionGeneration == epoch else { return }
             wallet.loading = true
             wallet.error = nil
-            guard let api = api else {
+            guard let api = capturedAPI else {
                 wallet.loading = false
                 wallet.error = "No gateway configured - set your server in Profile → Connection."
                 return
@@ -107,30 +108,20 @@ final class HubViewModel: ObservableObject {
     }
 
     func checkin() {
-        guard !checkinBusy else { return }
-        checkinBusy = true
-        Task { @MainActor in
-            defer { checkinBusy = false }
-            guard let api = api else { return }
-            do {
-                let result = try await api.checkinWallet()
-                let streak = result.streak ?? 1
-                // R1-W2G D38 - F-HB-02 "Success haptic + particles". The web
-                // check-in is toast-only (hub-tab.tsx:89-99); the native
-                // reward moment exceeds it per spec: ONE confetti burst
-                // through the shared ParticleBus (same pattern as the
-                // ChatRoomView fires; the overlay + Reduce Motion gate live
-                // in RootView) plus ONE success haptic, once per successful
-                // check-in. The failure path stays silent.
-                session.particles.fire(kind: .confetti, count: 60)
+        guard let api else { return }
+        performWalletMutation(operation: {
+            let result = try await api.checkinWallet()
+            return "Checked in - +\(result.reward ?? 0) PC · \(result.streak ?? 0)-day streak"
+        }, completion: { result in
+            switch result {
+            case .success(let message):
+                self.session.particles.fire(kind: .confetti, count: 60)
                 PulseHaptics.success()
-                toast("Checked in - +\(result.reward ?? 25) PC" + (streak > 1 ? " · \(streak)-day streak" : ""))
-                loadWallet()
-            } catch {
-                loadWallet()
-                toast(describe(error), isError: true)
+                self.toast(message)
+            case .failure(let error): self.toast(self.describe(error), isError: true)
             }
-        }
+            self.loadWallet()
+        })
     }
 
     // MARK: transfer
@@ -533,7 +524,7 @@ struct HubView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(checkedIn || vm.wallet.loading || vm.checkinBusy)
+            .disabled(checkedIn || vm.wallet.loading || vm.walletMutationBusy)
             if let w = vm.wallet.page?.wallet, !checkedIn, let streak = w.streak, streak > 0 {
                 Text("Next check-in continues your \(streak)-day streak (+\(min(streak * 2, 20)) bonus)")
                     .font(.caption2)

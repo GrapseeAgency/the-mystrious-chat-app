@@ -655,3 +655,51 @@ won the actor hop. Android transfer-field and transport normalization now use
 `Locale.ROOT`; a Turkish device locale must not rewrite `@INCI` to a different
 recipient handle. Added one regression for each (**34 authored native regressions
 since f725**). These are targeted safeguards, not broad cancellation/locale claims.
+
+## Daily reward and room-sheet continuation — 2026-10-20
+
+Further action-to-storage tracing found another transaction race and independent
+screen lifecycle/draft-loss failures, rather than treating the wallet receipts as
+whole-app correctness.
+
+- **Daily rewards:** eligibility was read before the transaction. Two devices
+  could both see yesterday and both collect today's coins. Eligibility, bounded
+  credit, streak, ledger and log now share one transaction with a conditional UTC
+  day claim. Same-day retries retain the existing 409+wallet contract. Future
+  timestamps cannot award another day during clock rollback; reward/ledger failure
+  leaves the day unclaimed. Bonus/streak arithmetic is bounded.
+- **Daily native confirmation:** both transports reject incomplete/inconsistent
+  reward acknowledgements instead of synthesizing a reward celebration. Swift
+  check-in uses the same synchronous monetary gate/session fence as the other
+  economic actions. The alternate Android feature-hub now has its own shared
+  synchronous gate, owner fence, and supersession checks for wallet loads; it had
+  remained unguarded even though the mirror screen was already protected.
+- **Android Events/Kanban:** removed seven detached IO coroutine launches. Jobs
+  are composition-owned, room/owner keyed, and resume UI state on the main scope.
+  Cancellation is rethrown even when a repository wrapped it inside Result.
+  Pre-write/in-flight stale polls cannot restore old rows, overlapping writes
+  defer reads, and finally blocks release mutation state. Late create ACKs only
+  clear the exact submitted draft revision. Actions on the same event/card cannot
+  race each other locally.
+- **Swift Events/Kanban:** creation callbacks now return an awaited verdict rather
+  than immediately discarding drafts. Failed requests retain form contents. A
+  sheet-owned coordinator gates per-resource actions, invalidates stale reads,
+  cancels work on disappearance, and rejects late completions after teardown.
+  Captured API values and session/room view identities prevent rebinding old sheet
+  closures. Mutations trigger a reconciliation read even while live polling is
+  paused. Failed initial loads are no longer presented as confirmed empty rooms.
+
+Evidence: **48/48 server contracts** (five new daily-reward cases) and **6/6 SQL
+contracts** passed; native syntax parsing and diff checks passed. **13 new native
+regressions authored:** Android refresh ordering 3, cancellation 2, actual alternate
+HubViewModel gate 2, reward ACK 1; Swift room coordinator races/draft retention 4,
+reward ACK 1. Native execution of this revision remains pending. Source inventory
+is regenerated; no local native build artifacts were added.
+
+Limits: cancellation cannot undo an already accepted remote mutation. Event/card
+creation still lacks a durable retry ID; a deliberate retry after a lost create
+response can duplicate a row. Room lists still use existing server page limits.
+The new gates address local request ordering, not cross-device edit versioning or
+OS-level foreground/background timing. Legacy authorization migration remains
+separate, and prior wallet/whiteboard deployment patches remain unapplied to
+production. No all-features or device acceptance claim is made.

@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
-import { transferWallet, swapWallet, walletErrorResponse, buyMarketListing } from '../../src/lib/wallet-contract.ts'
+import { transferWallet, swapWallet, walletErrorResponse, buyMarketListing, checkinWallet } from '../../src/lib/wallet-contract.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 async function fixture(run) {
   const dir = await mkdtemp(join(tmpdir(), 'pulse-wallet-'))
@@ -154,4 +154,48 @@ test('competing buyers cannot pay for the same listing', () => fixture(async db 
   assert.equal((await db.userWallet.findUnique({ where: { userId: 'b' } })).coins, 110)
   assert.equal(await db.walletLedger.count(), 2)
   assert.equal((await db.userWallet.aggregate({ _sum: { coins: true } }))._sum.coins, 310)
+}))
+
+const utc = value => () => new Date(value)
+test('daily check-in retry pays once and keeps one ledger/log entry', () => fixture(async db => {
+  const clock = utc('2026-10-20T12:00:00Z')
+  const first = await checkinWallet(db, 'a', clock)
+  assert.equal(first.reward, 25)
+  assert.equal((await checkinWallet(db, 'a', clock)).alreadyCheckedIn, true)
+  assert.equal(await db.walletLedger.count(), 1)
+  assert.equal(await db.logEvent.count(), 1)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 175)
+}))
+test('daily streak uses UTC boundaries, caps the bonus and resets after a missed day', () => fixture(async db => {
+  await checkinWallet(db, 'a', utc('2026-10-19T23:59:59.999Z'))
+  const second = await checkinWallet(db, 'a', utc('2026-10-20T00:00:00Z'))
+  assert.equal(second.streak, 2); assert.equal(second.reward, 27)
+  await db.userWallet.update({ where: { userId: 'a' }, data: { streak: 2147483647 } })
+  const capped = await checkinWallet(db, 'a', utc('2026-10-21T00:00:00Z'))
+  assert.equal(capped.streak, 2147483647); assert.equal(capped.reward, 45)
+  const reset = await checkinWallet(db, 'a', utc('2026-10-23T12:00:00Z'))
+  assert.equal(reset.streak, 1); assert.equal(reset.reward, 25)
+}))
+test('concurrent check-ins and a retry cannot pay a day twice', () => fixture(async db => {
+  const send = () => checkinWallet(db, 'a', utc('2026-10-20T12:00:00Z'))
+  await Promise.allSettled([send(), send()])
+  await send()
+  assert.equal(await db.walletLedger.count(), 1)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 175)
+}))
+test('daily reward overflow or ledger failure leaves the day unclaimed', () => fixture(async db => {
+  await db.userWallet.update({ where: { userId: 'a' }, data: { coins: 2147483640 } })
+  await assert.rejects(checkinWallet(db, 'a'), { status: 409 })
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).lastCheckIn, null)
+  await db.userWallet.update({ where: { userId: 'a' }, data: { coins: 150 } })
+  await db.$executeRawUnsafe('CREATE TRIGGER reject_reward BEFORE INSERT ON WalletLedger BEGIN SELECT RAISE(ABORT, "ledger unavailable"); END')
+  await assert.rejects(checkinWallet(db, 'a'))
+  const wallet = await db.userWallet.findUnique({ where: { userId: 'a' } })
+  assert.equal(wallet.coins, 150); assert.equal(wallet.lastCheckIn, null)
+  assert.equal(await db.logEvent.count(), 0)
+}))
+test('clock rollback cannot turn a future claim into another reward', () => fixture(async db => {
+  await checkinWallet(db, 'a', utc('2026-10-21T00:00:00Z'))
+  assert.equal((await checkinWallet(db, 'a', utc('2026-10-20T00:00:00Z'))).alreadyCheckedIn, true)
+  assert.equal(await db.walletLedger.count(), 1)
 }))

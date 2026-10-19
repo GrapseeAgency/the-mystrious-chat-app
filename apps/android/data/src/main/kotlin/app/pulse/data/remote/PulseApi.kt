@@ -1664,7 +1664,13 @@ class PulseApi(
     /** POST /api/hub/wallet/checkin { userId } - 409 body carries { error, wallet }. */
     suspend fun checkinWallet(userId: String): PulseResult<CheckinWalletResultDto> =
         post("/api/hub/wallet/checkin", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(CheckinWalletResultDto.serializer(), it)
+            requireWalletAck(it, userId)
+            val result = PulseJson.decodeFromString(CheckinWalletResultDto.serializer(), it)
+            if (result.streak <= 0 || result.wallet.streak != result.streak || result.wallet.lastCheckIn.isNullOrBlank() ||
+                result.reward != 25L + minOf(result.streak - 1, 10) * 2L) {
+                throw kotlinx.serialization.SerializationException("Daily reward was not confirmed; refresh the wallet before retrying")
+            }
+            result
         }
 
     /** POST /api/hub/wallet/transfer { userId, toUsername, amount, note? } - handle lowercased/@-stripped client-side too. */

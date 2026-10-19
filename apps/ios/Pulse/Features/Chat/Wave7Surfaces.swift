@@ -201,31 +201,35 @@ final class Wave7RoomActions: ObservableObject {
 
     // MARK: kanban
 
-    func addCard(api: PulseAPIClient, conversationId: String, title: String, column: String, assigneeId: String?) {
+    private func roomMutation(success: String? = nil, operation: () async throws -> Void,
+                              onSuccess: () -> Void = {}) async -> Bool {
+        do {
+            try Task.checkCancellation()
+            try await operation()
+            try Task.checkCancellation()
+            onSuccess()
+            if let success { toast(success) }
+            return true
+        } catch is CancellationError { return false }
+        catch {
+            if !Task.isCancelled { toast(describe(error), isError: true) }
+            return false
+        }
+    }
+
+    func addCard(api: PulseAPIClient, conversationId: String, title: String, column: String, assigneeId: String?) async -> Bool {
         let messageId = kanbanSourceMessage?.id
-        Task { @MainActor in
-            do {
-                let card = try await api.createKanbanCard(conversationId: conversationId, title: title, column: column, assigneeId: assigneeId, messageId: messageId)
-                kanbanSourceMessage = nil
-                toast("Task \"\(card.title ?? title)\" added to the board")
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+        return await roomMutation(success: "Task added to the board", operation: {
+            _ = try await api.createKanbanCard(conversationId: conversationId, title: title, column: column, assigneeId: assigneeId, messageId: messageId)
+        }, onSuccess: {
+            if self.kanbanSourceMessage?.id == messageId { self.kanbanSourceMessage = nil }
+        })
     }
-
-    func moveCard(api: PulseAPIClient, cardId: String, column: String) {
-        Task { @MainActor in
-            do { _ = try await api.updateKanbanCard(cardId, title: nil, column: column, assigneeId: nil, clearAssignee: false, position: nil) }
-            catch { toast(describe(error), isError: true) }
-        }
+    func moveCard(api: PulseAPIClient, cardId: String, column: String) async -> Bool {
+        await roomMutation(operation: { _ = try await api.updateKanbanCard(cardId, title: nil, column: column, assigneeId: nil, clearAssignee: false, position: nil) })
     }
-
-    func deleteCard(api: PulseAPIClient, cardId: String) {
-        Task { @MainActor in
-            do { try await api.deleteKanbanCard(cardId) }
-            catch { toast(describe(error), isError: true) }
-        }
+    func deleteCard(api: PulseAPIClient, cardId: String) async -> Bool {
+        await roomMutation(operation: { try await api.deleteKanbanCard(cardId) })
     }
 
     // MARK: whiteboard
@@ -264,46 +268,24 @@ final class Wave7RoomActions: ObservableObject {
 
     // MARK: events
 
-    func createEvent(api: PulseAPIClient, conversationId: String, title: String, startsAtIso: String, description: String?, location: String?) {
-        Task { @MainActor in
-            do {
-                _ = try await api.createEvent(conversationId: conversationId, title: title, startsAtIso: startsAtIso, description: description, location: location)
-                eventsOpen = false
-                toast("Event scheduled - see you there")
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
-    }
-
-    func rsvp(api: PulseAPIClient, eventId: String, status: String) {
-        Task { @MainActor in
-            do { _ = try await api.rsvpEvent(eventId, status: status) }
-            catch { toast(describe(error), isError: true) }
-        }
-    }
-
-    func checkin(api: PulseAPIClient, eventId: String) {
-        Task { @MainActor in
-            do {
-                let result = try await api.checkinEvent(eventId)
-                if result.alreadyCheckedIn == true {
-                    toast("Already checked in.")
-                } else if result.xpAwarded == true {
-                    toast("Checked in - see you there · +15 XP")
-                } else {
-                    toast("Checked in - see you there")
-                }
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
-    }
-
-    func deleteEvent(api: PulseAPIClient, eventId: String) {
-        confirmedMutation(key: "event:\(eventId)", success: "Event deleted.", operation: {
-            try await api.deleteEvent(eventId)
+    func createEvent(api: PulseAPIClient, conversationId: String, title: String, startsAtIso: String, description: String?, location: String?) async -> Bool {
+        await roomMutation(success: "Event scheduled - see you there", operation: {
+            _ = try await api.createEvent(conversationId: conversationId, title: title, startsAtIso: startsAtIso, description: description, location: location)
         })
+    }
+    func rsvp(api: PulseAPIClient, eventId: String, status: String) async -> Bool {
+        await roomMutation(operation: { _ = try await api.rsvpEvent(eventId, status: status) })
+    }
+    func checkin(api: PulseAPIClient, eventId: String) async -> Bool {
+        var message = "Checked in - see you there"
+        return await roomMutation(operation: {
+            let result = try await api.checkinEvent(eventId)
+            if result.alreadyCheckedIn == true { message = "Already checked in." }
+            else if result.xpAwarded == true { message += " · +15 XP" }
+        }, onSuccess: { self.toast(message) })
+    }
+    func deleteEvent(api: PulseAPIClient, eventId: String) async -> Bool {
+        await roomMutation(success: "Event deleted.", operation: { try await api.deleteEvent(eventId) })
     }
 
     // MARK: reminders
@@ -354,7 +336,7 @@ final class Wave7RoomActions: ObservableObject {
         }, onSuccess: { self.finishReminder(api: api, id: id) })
     }
 
-    static func epochMs(from iso: String) -> Int64? {
+    nonisolated static func epochMs(from iso: String) -> Int64? {
         let formats = ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX", "yyyy-MM-dd'T'HH:mm:ssXXXXX"]
         for f in formats {
             let df = DateFormatter()
@@ -814,40 +796,58 @@ struct Wave7TournamentCreateSheet: View {
 
 // MARK: - Kanban (F-RO-04)
 
+@MainActor
 struct Wave7KanbanSheet: View {
     let conversationId: String
     let viewerId: String
     let isAdmin: Bool
     let prefillTitle: String?
     let loadBoard: () async -> WireKanbanPage?
-    let onAddCard: (String, String, String?) -> Void
-    let onMoveCard: (String, String) -> Void
-    let onDeleteCard: (String) -> Void
+    let onAddCard: (String, String, String?) async -> Bool
+    let onMoveCard: (String, String) async -> Bool
+    let onDeleteCard: (String) async -> Bool
     @Environment(\.dismiss) private var dismiss
 
+    @StateObject private var operations = PulseRoomOperations()
     @State private var cards: [WireKanbanCard] = []
     @State private var addColumn: String?
     @State private var addTitle = ""
     @State private var ticking = true
 
+    @State private var loaded = false
+    @State private var loadFailed = false
+    private func refresh() async {
+        guard let ticket = operations.beginRead() else { return }
+        let page = await loadBoard()
+        guard operations.accepts(ticket) else { return }
+        if let page { cards = page.cards; loaded = true; loadFailed = false }
+        else { loadFailed = true }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
+                if loadFailed {
+                    Section { Text(loaded ? "Could not refresh. Keeping the last confirmed data; retrying." : "Could not load this room. Retrying.").foregroundStyle(.secondary) }
+                } else if !loaded {
+                    Section { ProgressView("Loading…") }
+                }
                 ForEach(PulseWave7Logic.kanbanColumns, id: \.self) { col in
                     Section {
                         ForEach(cards.filter { $0.column == col }.sorted { ($0.position ?? 0) < ($1.position ?? 0) }, id: \.id) { card in
                             cardRow(card, col: col)
                         }
                         if addColumn == col {
-                            TextField("Task title", text: $addTitle)
+                            TextField("Task title", text: $addTitle).disabled(operations.pending.contains("create"))
                             Button("Add card") {
                                 let trimmed = addTitle.trimmingCharacters(in: .whitespaces)
                                 if !trimmed.isEmpty {
-                                    onAddCard(trimmed, col, nil)
-                                    addTitle = ""
-                                    addColumn = nil
+                                    operations.run(key: "create", operation: { await onAddCard(trimmed, col, nil) }, onSuccess: {
+                                        addTitle = ""; addColumn = nil
+                                    })
                                 }
                             }
+                            .disabled(operations.pending.contains("create"))
                         }
                     } header: {
                         HStack {
@@ -858,6 +858,7 @@ struct Wave7KanbanSheet: View {
                                 addTitle = prefillTitle ?? ""
                             }
                             .font(.caption)
+                            .disabled(operations.pending.contains("create"))
                         }
                     }
                 }
@@ -869,11 +870,15 @@ struct Wave7KanbanSheet: View {
                     Button(ticking ? "Pause" : "Live") { ticking.toggle() }
                 }
             }
+            .onDisappear { operations.stop() }
+            .task(id: operations.settledRevision) {
+                if operations.settledRevision > 0 { await refresh() }
+            }
             .task(id: ticking) {
                 // 1.5 s poll while open (web kanban-sheet.tsx:65), paused by the toggle.
                 while ticking && !Task.isCancelled {
-                    if let page = await loadBoard() { cards = page.cards }
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    await refresh()
+                    do { try await Task.sleep(nanoseconds: 1_500_000_000) } catch { return }
                 }
             }
         }
@@ -901,22 +906,23 @@ struct Wave7KanbanSheet: View {
             }
             Spacer()
             if col != "todo" {
-                Button { onMoveCard(card.id, "todo") } label: { Text("‹").font(.title3) }
+                Button { operations.run(key: card.id, operation: { await onMoveCard(card.id, "todo") }) } label: { Text("‹").font(.title3) }
                     .buttonStyle(.borderless)
             }
             if col != "doing" && col != "done" {
-                Button { onMoveCard(card.id, "doing") } label: { Text("›").font(.title3) }
+                Button { operations.run(key: card.id, operation: { await onMoveCard(card.id, "doing") }) } label: { Text("›").font(.title3) }
                     .buttonStyle(.borderless)
             }
             if col == "doing" {
-                Button { onMoveCard(card.id, "done") } label: { Text("›").font(.title3) }
+                Button { operations.run(key: card.id, operation: { await onMoveCard(card.id, "done") }) } label: { Text("›").font(.title3) }
                     .buttonStyle(.borderless)
             }
             if card.createdById == viewerId || isAdmin {
-                Button { onDeleteCard(card.id) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
+                Button { operations.run(key: card.id, operation: { await onDeleteCard(card.id) }) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
                     .buttonStyle(.borderless)
             }
         }
+        .disabled(operations.pending.contains(card.id))
     }
 }
 
@@ -1077,17 +1083,19 @@ extension Color {
 
 // MARK: - Events (F-RO-05)
 
+@MainActor
 struct Wave7EventsSheet: View {
     let conversationId: String
     let viewerId: String
     let isAdmin: Bool
     let loadEvents: () async -> [WireGroupEvent]?
-    let onCreate: (String, String, String?, String?) -> Void
-    let onRsvp: (String, String) -> Void
-    let onCheckin: (String) -> Void
-    let onDelete: (String) -> Void
+    let onCreate: (String, String, String?, String?) async -> Bool
+    let onRsvp: (String, String) async -> Bool
+    let onCheckin: (String) async -> Bool
+    let onDelete: (String) async -> Bool
     @Environment(\.dismiss) private var dismiss
 
+    @StateObject private var operations = PulseRoomOperations()
     @State private var events: [WireGroupEvent] = []
     @State private var creating = false
     @State private var title = ""
@@ -1095,15 +1103,31 @@ struct Wave7EventsSheet: View {
     @State private var location = ""
     @State private var error: String?
 
+    @State private var loaded = false
+    @State private var loadFailed = false
+    private func refresh() async {
+        guard let ticket = operations.beginRead() else { return }
+        let page = await loadEvents()
+        guard operations.accepts(ticket) else { return }
+        if let page { events = page; loaded = true; loadFailed = false }
+        else { loadFailed = true }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
+                if loadFailed {
+                    Section { Text(loaded ? "Could not refresh. Keeping the last confirmed data; retrying." : "Could not load this room. Retrying.").foregroundStyle(.secondary) }
+                } else if !loaded {
+                    Section { ProgressView("Loading…") }
+                }
                 Section {
                     Button(creating ? "Close" : "+ New event") { creating.toggle() }
+                        .disabled(operations.pending.contains("create"))
                     if creating {
-                        TextField("Event title", text: $title)
-                        TextField("Date (YYYY-MM-DD HH:mm)", text: $dateText)
-                        TextField("Location (optional)", text: $location)
+                        TextField("Event title", text: $title).disabled(operations.pending.contains("create"))
+                        TextField("Date (YYYY-MM-DD HH:mm)", text: $dateText).disabled(operations.pending.contains("create"))
+                        TextField("Location (optional)", text: $location).disabled(operations.pending.contains("create"))
                         if let error {
                             Text(error).font(.footnote).foregroundStyle(.red)
                         }
@@ -1118,12 +1142,15 @@ struct Wave7EventsSheet: View {
                                 return
                             }
                             error = nil
-                            onCreate(trimmed, iso, nil, location.isEmpty ? nil : location)
-                            title = ""; dateText = ""; location = ""; creating = false
+                            let sentLocation = location.isEmpty ? nil : location
+                            operations.run(key: "create", operation: { await onCreate(trimmed, iso, nil, sentLocation) }, onSuccess: {
+                                title = ""; dateText = ""; location = ""; creating = false
+                            })
                         }
+                        .disabled(operations.pending.contains("create"))
                     }
                 }
-                if events.isEmpty {
+                if loaded && events.isEmpty {
                     Section { Text("No events yet - schedule the first one.").foregroundStyle(.secondary) }
                 }
                 ForEach(events, id: \.id) { event in
@@ -1133,7 +1160,7 @@ struct Wave7EventsSheet: View {
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
                             if event.createdById == viewerId || isAdmin {
-                                Button { onDelete(event.id) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
+                                Button { operations.run(key: event.id, operation: { await onDelete(event.id) }) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
                                     .buttonStyle(.borderless)
                             }
                         }
@@ -1145,7 +1172,7 @@ struct Wave7EventsSheet: View {
                             ForEach(PulseWave7Logic.rsvpStatuses, id: \.self) { status in
                                 let selected = event.myStatus == status
                                 Button {
-                                    onRsvp(event.id, status)
+                                    operations.run(key: event.id, operation: { await onRsvp(event.id, status) })
                                 } label: {
                                     Text("\(Self.statusLabel(status)) \(Self.count(event, status))")
                                         .font(.caption)
@@ -1160,18 +1187,23 @@ struct Wave7EventsSheet: View {
                             }
                         }
                         if let my = event.myStatus, my != "no", inWindow(event) {
-                            Button("Check in · +15 XP") { onCheckin(event.id) }
+                            Button("Check in · +15 XP") { operations.run(key: event.id, operation: { await onCheckin(event.id) }) }
                                 .buttonStyle(.borderedProminent)
                         }
                     }
+                    .disabled(operations.pending.contains(event.id))
                 }
             }
             .navigationTitle("Events")
             .navigationBarTitleDisplayMode(.inline)
+            .onDisappear { operations.stop() }
+            .task(id: operations.settledRevision) {
+                if operations.settledRevision > 0 { await refresh() }
+            }
             .task {
                 while !Task.isCancelled {
-                    if let list = await loadEvents() { events = list }
-                    try? await Task.sleep(nanoseconds: 4_000_000_000)
+                    await refresh()
+                    do { try await Task.sleep(nanoseconds: 4_000_000_000) } catch { return }
                 }
             }
         }
@@ -1182,7 +1214,7 @@ struct Wave7EventsSheet: View {
         return PulseWave7Logic.checkinWindowOpen(startsAtEpochMs: ms, nowEpochMs: Int64(Date().timeIntervalSince1970) * 1000)
     }
 
-    static func statusLabel(_ s: String) -> String {
+    nonisolated static func statusLabel(_ s: String) -> String {
         switch s {
         case "going": return "Going"
         case "maybe": return "Maybe"
@@ -1190,7 +1222,7 @@ struct Wave7EventsSheet: View {
         }
     }
 
-    static func count(_ event: WireGroupEvent, _ status: String) -> Int {
+    nonisolated static func count(_ event: WireGroupEvent, _ status: String) -> Int {
         switch status {
         case "going": return event.counts?.going ?? 0
         case "maybe": return event.counts?.maybe ?? 0
@@ -1199,7 +1231,7 @@ struct Wave7EventsSheet: View {
     }
 
     /// "YYYY-MM-DD HH:mm" (local) or ISO → UTC ISO-8601 wire form.
-    static func parseDate(_ text: String) -> String? {
+    nonisolated static func parseDate(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
         if let d = ISO8601DateFormatter().date(from: trimmed) {
@@ -1218,7 +1250,7 @@ struct Wave7EventsSheet: View {
         return nil
     }
 
-    static func formatTime(_ iso: String?) -> String {
+    nonisolated static func formatTime(_ iso: String?) -> String {
         guard let iso, let ms = Wave7RoomActions.epochMs(from: iso) else { return "time TBD" }
         let d = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
         let f = DateFormatter()

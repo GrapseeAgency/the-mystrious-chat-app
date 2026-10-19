@@ -20,6 +20,8 @@ android {
 }
 
 dependencies {
+    testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
     implementation(project(":domain"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation(project(":protocol"))

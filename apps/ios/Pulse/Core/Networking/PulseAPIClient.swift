@@ -1160,7 +1160,14 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/hub/wallet/checkin { userId } - 409 body carries { error, wallet }.
     public func checkinWallet() async throws -> WireCheckinWalletResult {
         let data = try await postRaw("/api/hub/wallet/checkin", body: ["userId": userId])
-        return try envelope(WireCheckinWalletResult.self, from: data)
+        let result = try envelope(WireCheckinWalletResult.self, from: data)
+        try requireWalletAck(result.wallet)
+        guard let reward = result.reward, let streak = result.streak, streak > 0,
+              result.wallet?.streak == streak, result.wallet?.lastCheckIn != nil,
+              reward == 25 + min(streak - 1, 10) * 2 else {
+            throw Failure(kind: .server, message: "Daily reward was not confirmed; refresh the wallet before retrying.")
+        }
+        return result
     }
 
     /// POST /api/hub/wallet/transfer { userId, toUsername, amount, note? } → { wallet, to }.

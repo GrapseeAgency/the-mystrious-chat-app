@@ -115,3 +115,31 @@ export async function buyMarketListing(db: PrismaClient, buyerId: string, listin
     return tx.userWallet.findUniqueOrThrow({ where: { userId: buyerId } })
   })
 }
+
+/** The UTC day is the claim identity. Eligibility and reward writes must share
+ * the transaction; checking lastCheckIn before it permits duplicate payouts. */
+export async function checkinWallet(db: PrismaClient, userId: string, clock: () => Date = () => new Date()) {
+  return db.$transaction(async tx => {
+    const wallet = await tx.userWallet.upsert({ where: { userId }, create: { userId }, update: {} })
+    const now = clock()
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    if (wallet.lastCheckIn && wallet.lastCheckIn >= start) {
+      return { wallet, reward: 0, streak: wallet.streak, alreadyCheckedIn: true }
+    }
+    const yesterday = start.getTime() - 86_400_000
+    const consecutive = wallet.lastCheckIn != null && wallet.lastCheckIn.getTime() >= yesterday
+    const streak = consecutive ? Math.min(MAX_BALANCE, Math.max(0, wallet.streak) + 1) : 1
+    const bonus = Math.min((streak - 1) * 2, 20)
+    const reward = 25 + bonus
+    const claimed = await tx.userWallet.updateMany({ where: {
+      userId,
+      OR: [{ lastCheckIn: null }, { lastCheckIn: { lt: start } }],
+      coins: { gte: 0, lte: MAX_BALANCE - reward },
+    }, data: { coins: { increment: reward }, lastCheckIn: now, streak } })
+    if (!claimed.count) throw new WalletContractError(409, 'Daily reward is unavailable or the wallet balance limit was reached. Refresh before retrying.')
+    await tx.walletLedger.create({ data: { userId, kind: 'checkin', asset: 'PC', amount: reward,
+      note: streak > 1 ? `Daily check-in · ${streak}-day streak (+${bonus} bonus)` : 'Daily check-in' } })
+    await tx.logEvent.create({ data: { userId, kind: 'checkin', message: `checked in - day ${streak} streak, +${reward} PC` } })
+    return { wallet: await tx.userWallet.findUniqueOrThrow({ where: { userId } }), reward, streak, alreadyCheckedIn: false }
+  })
+}
