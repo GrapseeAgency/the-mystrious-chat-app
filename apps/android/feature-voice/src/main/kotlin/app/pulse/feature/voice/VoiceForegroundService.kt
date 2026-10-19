@@ -31,6 +31,7 @@ class VoiceForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.getBooleanExtra(EXTRA_STOP, false) == true) {
             if (intent.getStringExtra(EXTRA_OWNER) == rooms.serviceToken) rooms.leaveAll()
+            if (!rooms.hasAudioRoom) stopSelf()
             return START_NOT_STICKY
         }
         if (!rooms.hasAudioRoom) { stopSelf(); return START_NOT_STICKY }

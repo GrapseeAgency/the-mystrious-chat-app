@@ -15,14 +15,14 @@ import java.util.UUID
 /** Compatibility-safe route owner. Device focus/interruption acceptance is still required. */
 class CallAudioManager(context: Context) {
     private val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val token = UUID.randomUUID().toString()
+    private val token = UUID.randomUUID.randomUUID().toString()
     private var focusRequest: AudioFocusRequest? = null
     private var active = false
     private var savedMode = AudioManager.MODE_NORMAL
     private var savedSpeaker = false
     var onFocusLost: (() -> Unit)? = null
     private val main = Handler(Looper.getMainLooper())
-    private var focusEpoch = UUID()
+    private var focusEpoch = UUID.randomUUID()
     private var focusListener: AudioManager.OnAudioFocusChangeListener? = null
 
     /** No media should be created until BOTH ownership and OS focus are granted. */
@@ -30,7 +30,7 @@ class CallAudioManager(context: Context) {
     fun acquire(): Boolean {
         if (active) return true
         if (!AudioOwnership.shared.acquire(token)) return false
-        val ticket = UUID()
+        val ticket = UUID.randomUUID()
         focusEpoch = ticket
         val listener = AudioManager.OnAudioFocusChangeListener { change ->
             if (change == AudioManager.AUDIOFOCUS_LOSS ||
@@ -76,7 +76,7 @@ class CallAudioManager(context: Context) {
         }
         focusRequest = null
         focusListener = null
-        focusEpoch = UUID()
+        focusEpoch = UUID.randomUUID()
     }
 
     fun release() {
