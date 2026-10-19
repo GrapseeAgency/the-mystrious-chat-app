@@ -1,5 +1,7 @@
 package app.pulse.data.repository
 
+import kotlinx.coroutines.ensureActive
+
 import androidx.room.withTransaction
 import app.pulse.data.local.PulseDatabase
 import android.content.Context
@@ -2759,15 +2761,46 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
-    override suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto> =
-        when (val r = api.createGame(viewerId ?: "", conversationId, opponentId)) {
-            is PulseResult.Success -> {
-                r.value.message?.let { upsertMessage(it.toDomain()) }
-                scheduleConversationsRefresh()
-                Result.success(r.value)
+    override suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No room owner"))
+        val opponent = opponentId?.trim()?.takeIf { it.isNotEmpty() }
+        val intent = kotlinx.serialization.json.JsonArray(listOf(owner, "game", conversationId, opponent.orEmpty()).map { kotlinx.serialization.json.JsonPrimitive(it) }).toString()
+        return roomCreation(intent, send = { id -> api.createGame(owner, conversationId, opponent, id) }, carrier = { it.message })
+    }
+
+    /** Persist the retry identity before POST; cache its confirmed carrier before
+     * retiring it. Cancellation/storage failure leaves the same operation retryable. */
+    private suspend fun <T> roomCreation(intent: String, send: suspend (String) -> PulseResult<T>, carrier: (T) -> app.pulse.protocol.ChatMessageDto?): Result<T> {
+        return try {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val id = prefsLocalStore.beginRoomCreation(intent)
+            when (val result = send(id)) {
+                is PulseResult.Success -> {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    val message = requireNotNull(carrier(result.value)) { "Creation message is missing" }
+                    upsertMessage(message.toDomain())
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    prefsLocalStore.finishRoomCreation(intent, id)
+                    scheduleConversationsRefresh()
+                    Result.success(result.value)
+                }
+                is PulseResult.Failure -> {
+                    if (result.status == 410 && result.code == "creation_gone") {
+                        if (result.receiptClientId != id) return Result.failure(IllegalStateException("Unconfirmed removal receipt; the original creation is still pending."))
+                        // Proven delivered but removed: allow a later deliberate new creation.
+                        // Unknown 410s or mismatched receipts must keep the retry identity.
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        prefsLocalStore.finishRoomCreation(intent, id)
+                    }
+                    Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
+                }
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
         }
+    }
 
     override suspend fun games(conversationId: String): Result<GamesPageDto> =
         when (val r = api.games(conversationId)) {
@@ -2793,15 +2826,12 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun createTournament(conversationId: String, name: String): Result<TournamentCreateResultDto> =
-        when (val r = api.createTournament(viewerId ?: "", conversationId, name)) {
-            is PulseResult.Success -> {
-                r.value.message?.let { upsertMessage(it.toDomain()) }
-                scheduleConversationsRefresh()
-                Result.success(r.value)
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun createTournament(conversationId: String, name: String): Result<TournamentCreateResultDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No room owner"))
+        val normalizedName = name.trim()
+        val intent = kotlinx.serialization.json.JsonArray(listOf(owner, "tournament", conversationId, normalizedName).map { kotlinx.serialization.json.JsonPrimitive(it) }).toString()
+        return roomCreation(intent, send = { id -> api.createTournament(owner, conversationId, normalizedName, id) }, carrier = { it.message })
+    }
 
     override suspend fun tournaments(conversationId: String): Result<TournamentsPageDto> =
         when (val r = api.tournaments(conversationId, viewerId)) {

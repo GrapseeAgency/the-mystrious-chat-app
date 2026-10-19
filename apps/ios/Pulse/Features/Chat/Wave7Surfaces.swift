@@ -127,9 +127,14 @@ final class Wave7RoomActions: ObservableObject {
             try Task.checkCancellation()
             let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
             try Task.checkCancellation()
-            if let message = result.message { onCarrierMessage?(message) }
+            guard let message = result.message, let deliver = onCarrierMessage else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Room is no longer ready; retry the same instructions.")
+            }
+            deliver(message)
+            try await api.acknowledgeGameCreation(conversationId: conversationId, opponentId: opponentId, receipt: result)
+            try Task.checkCancellation()
             gameCreateOpen = false
-            toast("Tic-tac-toe challenge sent")
+            toast(result.replayed == true ? "Recovered the previous challenge" : "Tic-tac-toe challenge sent")
             return true
         } catch {
             if !Task.isCancelled { toast("\(describe(error)) Check the chat before retrying.", isError: true) }
@@ -167,8 +172,13 @@ final class Wave7RoomActions: ObservableObject {
             try Task.checkCancellation()
             let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
             try Task.checkCancellation()
-            if let message = result.message { onCarrierMessage?(message) }
-            toast("Rematch sent - new challenge in the chat.")
+            guard let message = result.message, let deliver = onCarrierMessage else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Room is no longer ready; retry the same instructions.")
+            }
+            deliver(message)
+            try await api.acknowledgeGameCreation(conversationId: conversationId, opponentId: opponentId, receipt: result)
+            try Task.checkCancellation()
+            toast(result.replayed == true ? "Recovered the previous rematch" : "Rematch sent - new challenge in the chat.")
             return true
         } catch {
             if !Task.isCancelled { toast("\(describe(error)) Check the chat before retrying.", isError: true) }
@@ -181,9 +191,14 @@ final class Wave7RoomActions: ObservableObject {
             try Task.checkCancellation()
             let result = try await api.createTournament(conversationId: conversationId, name: name)
             try Task.checkCancellation()
-            if let message = result.message { onCarrierMessage?(message) }
+            guard let message = result.message, let deliver = onCarrierMessage else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Room is no longer ready; retry the same instructions.")
+            }
+            deliver(message)
+            try await api.acknowledgeTournamentCreation(conversationId: conversationId, name: name, receipt: result)
+            try Task.checkCancellation()
             tournamentCreateOpen = false
-            toast("Tournament \"\(name)\" started")
+            toast(result.replayed == true ? "Recovered the previous tournament" : "Tournament \"\(name)\" started")
             return true
         } catch {
             if !Task.isCancelled { toast("\(describe(error)) Check the chat before retrying.", isError: true) }

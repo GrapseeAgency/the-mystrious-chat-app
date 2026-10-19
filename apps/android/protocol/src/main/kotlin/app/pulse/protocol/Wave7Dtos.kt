@@ -332,6 +332,8 @@ data class GameDetailDto(
 
 @Serializable
 data class GameMatchCreateResultDto(
+    val clientId: String? = null,
+    val replayed: Boolean = false,
     val match: GameMatchDto? = null,
     val message: ChatMessageDto? = null,
 )
@@ -382,6 +384,8 @@ data class TournamentsPageDto(val tournaments: List<TournamentSummaryDto> = empt
 
 @Serializable
 data class TournamentCreateResultDto(
+    val clientId: String? = null,
+    val replayed: Boolean = false,
     val tournament: TournamentSummaryDto? = null,
     val message: ChatMessageDto? = null,
 )

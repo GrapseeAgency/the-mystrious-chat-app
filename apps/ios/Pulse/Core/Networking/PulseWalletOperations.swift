@@ -5,6 +5,7 @@ import CryptoKit
 /// Scope includes gateway, owner and canonical instruction. No timed key eviction.
 actor PulseWalletOperations {
     static let shared = PulseWalletOperations(directory: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("WalletOperations", isDirectory: true))
+    static let roomCreations = PulseWalletOperations(directory: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("RoomCreations", isDirectory: true))
     private let directory: URL
     init(directory: URL) { self.directory = directory }
     nonisolated static func gatewayKey(_ url: URL) -> String {

@@ -82,6 +82,7 @@ public struct WireWalletPage: Codable, Sendable {
 /// N3-b - error body with the username-taken contract
 /// (409 { error, code: "username_taken", suggestion }).
 public struct WireErrorBody: Codable, Sendable {
+    public let clientId: String?
     public let error: String?
     public let code: String?
     public let suggestion: String?

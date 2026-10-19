@@ -251,6 +251,8 @@ public struct WireGameDetail: Codable, Sendable {
 }
 
 public struct WireGameMatchCreateResult: Codable, Sendable {
+    public let clientId: String?
+    public let replayed: Bool?
     public let match: WireGameMatch?
     public let message: WireChatMessage?
 }
@@ -301,6 +303,8 @@ public struct WireTournamentEnvelope: Codable, Sendable {
 }
 
 public struct WireTournamentCreateResult: Codable, Sendable {
+    public let clientId: String?
+    public let replayed: Bool?
     public let tournament: WireTournamentSummary?
     public let message: WireChatMessage?
 }

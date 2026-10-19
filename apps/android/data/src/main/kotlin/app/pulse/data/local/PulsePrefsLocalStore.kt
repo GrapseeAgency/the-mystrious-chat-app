@@ -55,6 +55,26 @@ class PulsePrefsLocalStore internal constructor(
         storage.edit { prefs -> if (prefs[key] == id) prefs.remove(key) }
     }
 
+    // This DataStore is already bound to gateway + owner by AccountRepositories.
+    // Keep creation keys separate from wallet instructions and retain uncertain sends.
+    private fun creationKey(intent: String) = stringPreferencesKey("room.creation." +
+        java.security.MessageDigest.getInstance("SHA-256").digest(intent.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) })
+
+    suspend fun beginRoomCreation(intent: String): String {
+        val key = creationKey(intent)
+        var id = ""
+        storage.edit { prefs ->
+            id = prefs[key] ?: java.util.UUID.randomUUID().toString().also { prefs[key] = it }
+            require(id.matches(Regex("[A-Za-z0-9_-]{16,128}"))) { "Unreadable pending creation; do not resend with a new key" }
+        }
+        return id
+    }
+    suspend fun finishRoomCreation(intent: String, id: String) {
+        val key = creationKey(intent)
+        storage.edit { prefs -> if (prefs[key] == id) prefs.remove(key) }
+    }
+
     private object Keys {
         val PREFS = stringPreferencesKey("wave8.prefs.json")
         /**

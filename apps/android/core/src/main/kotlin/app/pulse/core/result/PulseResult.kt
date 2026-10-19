@@ -22,6 +22,8 @@ sealed interface PulseResult<out T> {
          * parity, src/lib/pulse-utils.ts). null = not a 429 / header absent.
          */
         val retryAfter: Int? = null,
+        /** Echoed operation ID on a terminal receipt, never inferred from HTTP status alone. */
+        val receiptClientId: String? = null,
     ) : PulseResult<Nothing> {
         enum class Kind { NETWORK, AUTH, FORBIDDEN, RATE_LIMITED, NOT_FOUND, VALIDATION, SERVER, UNKNOWN }
     }

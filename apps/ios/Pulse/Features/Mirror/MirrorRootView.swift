@@ -236,6 +236,7 @@ struct MirrorRootView: View {
                 .ignoresSafeArea()
             if let row = openRow {
                 MirrorRoomView(row: row, session: session, onBack: { openRow = nil })
+                    .id("\(row.id):\(session.sessionGeneration)")
             } else {
                 VStack(spacing: 0) {
                     switch tab {
@@ -1362,10 +1363,14 @@ private enum MirrorBubbleText {
     }
 }
 
+@MainActor
 struct MirrorRoomView: View {
     let row: MirrorViewModel.MirrorRow
     @ObservedObject var session: PulseSession
     let onBack: () -> Void
+    @StateObject private var roomOperations = PulseRoomOperations()
+    @State private var refreshRevision = 0
+    @State private var loadError: String?
     @State private var messages: [WireChatMessage] = []
     @State private var memberNames: [String] = []
     @State private var memberRows: [WireConversationMember] = []
@@ -1422,6 +1427,13 @@ struct MirrorRoomView: View {
             }
             .background(Color(red: 0x0D/255.0, green: 0x09/255.0, blue: 0x06/255.0).opacity(0.7))
 
+            if let loadError {
+                Button("\(loadError) Tap to retry.") { refreshRevision &+= 1 }
+                    .font(.caption).foregroundStyle(MirrorArt.dim).padding(8)
+            }
+            if roomOperations.pending.contains("game-create") {
+                ProgressView("Confirming challenge…").font(.caption)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -1589,6 +1601,7 @@ struct MirrorRoomView: View {
             }
         }
         .sheet(item: $activeSheet) { sheet in
+            let generation = session.sessionGeneration
             MirrorRoomSheetView(
                 sheet: sheet,
                 row: row,
@@ -1600,8 +1613,12 @@ struct MirrorRoomView: View {
                     draft = text
                     composerFocused = true
                 },
-                onSent: { Task { await load() } }
+                onSent: { if generation == session.sessionGeneration { refreshRevision &+= 1 } },
+                onCreated: { message in
+                    if generation == session.sessionGeneration { acceptCarrier(message) }
+                }
             )
+            .id(generation)
         }
         // R102 - real tray surfaces: documents via the system picker, photos
         // via PhotosPicker, and the 1s recording ticker.
@@ -1617,18 +1634,44 @@ struct MirrorRoomView: View {
         .onChange(of: photoItem) { item in
             handlePhotoPick(item)
         }
-        .task {
-            await load()
-            try? await session.api.markRead(conversationId: row.id)
+        .onDisappear { roomOperations.stop() }
+        .task(id: refreshRevision) {
+            let api = session.api
+            if await load(), !Task.isCancelled {
+                try? await api.markRead(conversationId: row.id)
+            }
         }
     }
 
-    private func load() async {
-        messages = (try? await session.api.messages(conversationId: row.id).messages) ?? []
-        if let summary = try? await session.api.conversationDetail(id: row.id, userId: session.api.userId) {
+    private func acceptCarrier(_ message: WireChatMessage) {
+        guard message.conversationId == row.id, message.senderId == session.api.userId else { return }
+        roomOperations.invalidateReads()
+        if let index = messages.firstIndex(where: { $0.id == message.id }) { messages[index] = message }
+        else { messages.append(message) }
+    }
+
+    @discardableResult
+    private func load() async -> Bool {
+        guard let ticket = roomOperations.beginRead() else { return false }
+        let api = session.api
+        let generation = session.sessionGeneration
+        do {
+            let page = try await api.messages(conversationId: row.id)
+            guard roomOperations.accepts(ticket), generation == session.sessionGeneration else { return false }
+            messages = page.messages
+            loadError = nil
+        } catch {
+            if roomOperations.accepts(ticket), generation == session.sessionGeneration {
+                loadError = "Could not refresh messages. Previous messages are kept."
+            }
+            return false
+        }
+        if let summary = try? await api.conversationDetail(id: row.id, userId: api.userId),
+           roomOperations.accepts(ticket), generation == session.sessionGeneration {
             memberNames = summary.members.map { $0.name }
             memberRows = summary.members
         }
+        return roomOperations.accepts(ticket) && generation == session.sessionGeneration
     }
 
     // web 5580: the fab swaps to send when the draft holds text OR an
@@ -1876,16 +1919,32 @@ struct MirrorRoomView: View {
     }
 
     private func startGame() {
-        let opponent = row.isGroup ? nil : memberRows.first { $0.id != session.api.userId }?.id
-        Task {
-            do {
-                _ = try await session.api.createGame(conversationId: row.id, opponentId: opponent)
-                session.toasts.show("Tic-tac-toe challenge sent")
-                await load()
-            } catch {
-                session.toasts.show("Could not start the game")
-            }
+        let api = session.api
+        let generation = session.sessionGeneration
+        let opponent = row.isGroup ? nil : memberRows.first { $0.id != api.userId }?.id
+        guard row.isGroup || opponent != nil else {
+            session.toasts.show("Participant details are unavailable. Refreshing before a challenge can be sent.")
+            refreshRevision &+= 1
+            return
         }
+        roomOperations.run(key: "game-create", operation: {
+            do {
+                let result = try await api.createGame(conversationId: row.id, opponentId: opponent)
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration, let message = result.message else { return false }
+                acceptCarrier(message)
+                try await api.acknowledgeGameCreation(conversationId: row.id, opponentId: opponent, receipt: result)
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration else { return false }
+                session.toasts.show(result.replayed == true ? "Recovered the previous challenge" : "Tic-tac-toe challenge sent")
+                return true
+            } catch {
+                if !Task.isCancelled, generation == session.sessionGeneration {
+                    session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Challenge not confirmed. Retry the same opponent to recover it.")
+                }
+                return false
+            }
+        })
     }
 
     // R102 documents (web 3469-3486): security-scoped read, mime from the
@@ -2245,6 +2304,7 @@ struct MirrorRoomSheetView: View {
     var draftText: String = ""
     var onInsertDraft: (String) -> Void = { _ in }
     var onSent: () -> Void = {}
+    var onCreated: (WireChatMessage) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var pinned: [WireChatMessage]?
@@ -2333,7 +2393,7 @@ struct MirrorRoomSheetView: View {
             case .kanban:
                 MirrorKanbanBuilder(session: session, row: row, onSent: onSent)
             case .tournament:
-                MirrorTournamentBuilder(session: session, row: row, onSent: onSent)
+                MirrorTournamentBuilder(session: session, row: row, onSent: onSent, onCreated: onCreated)
             case .location:
                 MirrorLocationBuilder(session: session, row: row, onSent: onSent)
             }
@@ -2862,38 +2922,55 @@ private struct MirrorKanbanBuilder: View {
 
 /// Tournament surface - POST /api/tournaments (web group rule enforced at
 /// the tile: the tile itself is disabled outside groups).
+@MainActor
 private struct MirrorTournamentBuilder: View {
     @ObservedObject var session: PulseSession
     let row: MirrorViewModel.MirrorRow
     let onSent: () -> Void
+    let onCreated: (WireChatMessage) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    @State private var busy = false
+    @State private var error: String?
+    @StateObject private var operations = PulseRoomOperations()
 
     var body: some View {
         MirrorPanel(title: "New tournament") {
             VStack(alignment: .leading, spacing: 10) {
                 MirrorPanelHint("BRACKET NAME")
                 MirrorTrayField(placeholder: "Friday night tictactoe...", text: $name)
-                MirrorTrayAction(label: "Start tournament", disabled: name.trimmingCharacters(in: .whitespaces).isEmpty || busy) { send() }
+                    .disabled(!operations.pending.isEmpty)
+                if let error { Text(error).font(.caption).foregroundStyle(.red) }
+                MirrorTrayAction(label: operations.pending.isEmpty ? "Start tournament" : "Confirming…", disabled: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !operations.pending.isEmpty) { send() }
             }
         }
+        .onDisappear { operations.stop() }
+        .onChange(of: session.sessionGeneration) { _ in operations.stop() }
     }
 
     private func send() {
-        busy = true
-        let n = name.trimmingCharacters(in: .whitespaces)
-        Task {
-            defer { busy = false }
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty, n.utf16.count <= 40 else { error = "Use a name between 1 and 40 characters."; return }
+        let api = session.api
+        let generation = session.sessionGeneration
+        error = nil
+        operations.run(key: "create", operation: {
             do {
-                _ = try await session.api.createTournament(conversationId: row.id, name: n)
-                dismiss()
-                onSent()
-                session.toasts.show("Tournament bracket is live")
+                let result = try await api.createTournament(conversationId: row.id, name: n)
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration, let message = result.message else { return false }
+                onCreated(message)
+                try await api.acknowledgeTournamentCreation(conversationId: row.id, name: n, receipt: result)
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration else { return false }
+                session.toasts.show(result.replayed == true ? "Recovered the previous tournament" : "Tournament is live")
+                return true
             } catch {
-                session.toasts.show("Tournament failed - check the connection")
+                if !Task.isCancelled, generation == session.sessionGeneration {
+                    self.error = (error as? PulseAPIClient.Failure)?.message ?? "Season not confirmed. Retry the same name to recover it."
+                }
+                return false
             }
-        }
+        }, onSuccess: { onSent(); dismiss() })
     }
 }
 

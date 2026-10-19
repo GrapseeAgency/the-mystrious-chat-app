@@ -810,3 +810,60 @@ renderer. Both shared payload parsers now reject blank IDs, and the alternate
 Android cards show an unavailable-link state without starting a request. Mirror
 already had this payload guard. 05c881e server and web workflows have passed;
 its native workflows are not yet verified.
+
+### Durable game/season creation and alternate Swift room continuation
+
+Traced creation through composer/rematch → API → transaction → carrier → local
+acceptance. Previously, a committed creation with a lost response had no identity
+on retry and could create another match/season. Local busy flags did not solve it.
+
+- Native game/rematch and tournament creation now persist an instruction-scoped
+  UUID before networking. Android uses its existing gateway/account-bound DataStore
+  with a separate creation namespace; Swift uses a separate journal directory and
+  explicit gateway/owner/room/instruction keys. Unknown failures/cancellation keep
+  the ID. Old gateways are not silently retried through legacy creation endpoints.
+- Server creation uses `MessageSendOperation` receipts and one transaction for the
+  object, carrier, creator entry, read/archive updates and season log. A replay
+  returns the original object even after its board/standings change or the invited
+  opponent leaves. Changed instructions with the same key conflict. Replays do not
+  mark-read/unarchive/notify again. Both carrier kinds obey room TTL. A failed
+  realtime relay does not turn a committed creation into a failed creation response.
+- Android caches the confirmed carrier before consuming the journal entry. Swift
+  separates receiving an API response from accepting it into the owning screen;
+  create/rematch callers acknowledge only after cancellation checks and carrier
+  handoff. Receipt IDs and carrier→object references are validated. A stale ACK
+  cannot retire a later operation. Recovery copy distinguishes the old creation
+  from a newly created one.
+- Removed/expired carriers return an explicit `creation_gone` receipt bound to the
+  request ID. Only that verified terminal receipt releases the old local intent,
+  allowing a **subsequent deliberate submission** to start a new object. Generic
+  410s and mismatched IDs do not release it; server receipts remain as tombstones.
+- New `/games/create` and `/tournaments/create` paths require a stable operation ID
+  and bind the existing session credential to its owner. Legacy endpoints remain
+  compatible; this is not an authentication migration of the entire application.
+- Swift's alternate room had separate detached creation jobs that discarded the
+  response. They now have owned synchronous gates, captured clients, cancellation
+  checks, visible error state, carrier acceptance and correct journal retirement.
+  Its failed refresh no longer wipes messages, and older reads cannot erase a
+  newly accepted carrier. DM challenge shortcuts on both platforms refuse to
+  silently create an open challenge when peer details have not loaded.
+
+Deployment: requires the **existing** `20261019_message_send_operation.sql` receipt
+patch (or equivalent schema deployment), not a new table. Missing receipt storage
+fails before creation with an actionable 503. Neither schema nor main has been
+changed in production. Creation receipts do not recover keys lost by uninstalling
+or clearing local app data; notification relay still has no durable delivery queue.
+
+Verification: **77/77 server contracts pass**, including nine new creation cases
+(replay after board/season changes, concurrency, changed-intent conflicts, receipt
+failure rollback, tombstones and missing schema). Isolated transaction-helper
+TypeScript check and native syntax/diff checks pass. Nine native methods added
+(four Android journal/transport, five Swift retry/ordering), not represented as
+executed locally. Earlier a0ee538 iOS archive and tests passed; current native
+revision execution is pending. Android a0ee538 was still running at retrieval.
+
+Further source-confirmed work: the alternate Swift text/effect send path still
+clears its draft before a `try?` send and does not use the established durable
+outbox; its message list also lacks outbox reconciliation. The primary Swift
+standalone effect sender has a separate temporary-message/delete-on-error path.
+These are not fixed by creation receipts and remain next in the flow review.

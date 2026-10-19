@@ -994,11 +994,15 @@ internal fun MirrorRoom(
     fun startTicTacToe() {
         if (gameBusy) return
         val opponentId = if (!isGroup) members.firstOrNull { it.id != viewerId }?.id else null
+        if (!isGroup && opponentId == null) {
+            sendError = "Participant details are unavailable. Reopen the chat before challenging them."
+            return
+        }
         gameBusy = true
         gameJob = gameScope.launch {
             try {
                 roomRequest { repository.createGame(groupId, opponentId) }
-                    .onSuccess { sendError = "Tic-tac-toe challenge sent" }
+                    .onSuccess { sendError = if (it.replayed) "Recovered the previous challenge" else "Tic-tac-toe challenge sent" }
                     .onFailure { sendError = (it.message ?: "Challenge was not confirmed.") + " Check the chat before retrying." }
             } finally { gameBusy = false }
         }

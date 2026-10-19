@@ -20,14 +20,16 @@ public struct PulseAPIClient: Sendable {
         /// REM-B F-MS-20 - slow-mode 429s: seconds the server asked us to
         /// wait (body { error, retryAfter } or the Retry-After header).
         public var retryAfter: Int?
+        public var receiptClientId: String?
 
-        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil, retryAfter: Int? = nil) {
+        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil, retryAfter: Int? = nil, receiptClientId: String? = nil) {
             self.kind = kind
             self.message = message
             self.code = code
             self.suggestion = suggestion
             self.status = status
             self.retryAfter = retryAfter
+            self.receiptClientId = receiptClientId
         }
     }
 
@@ -41,12 +43,19 @@ public struct PulseAPIClient: Sendable {
     public let authToken: String?
     private let session: URLSession
     private let decoder = JSONDecoder()
+    private let creationOperations: PulseWalletOperations
 
     public init(baseURL: URL, userId: String, authToken: String? = nil, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.userId = userId
         self.authToken = authToken
         self.session = session
+        self.creationOperations = .roomCreations
+    }
+
+    init(baseURL: URL, userId: String, session: URLSession, creationOperations: PulseWalletOperations) {
+        self.baseURL = baseURL; self.userId = userId; self.authToken = nil
+        self.session = session; self.creationOperations = creationOperations
     }
 
     /// Identity-independent client (onboarding: no viewer yet - users routes
@@ -1091,18 +1100,49 @@ public struct PulseAPIClient: Sendable {
     // MARK: games
 
     /// POST /api/games { userId, conversationId, game, opponentId? } → { match, message }.
-    public func createGame(conversationId: String, opponentId: String?) async throws -> WireGameMatchCreateResult {
-        var body: [String: Any] = ["userId": userId, "conversationId": conversationId, "game": "tictactoe"]
-        if let opponentId { body["opponentId"] = opponentId }
-        let data = try await postRaw("/api/games", body: body)
-        let result = try envelope(WireGameMatchCreateResult.self, from: data)
-        guard let match = result.match, !match.id.isEmpty, match.conversationId == conversationId,
-              match.playerXId == userId, match.playerOId == opponentId,
-              let message = result.message, !message.id.isEmpty, message.conversationId == conversationId,
-              message.senderId == userId, message.kind == "game" else {
-            throw Failure(kind: .server, message: "Challenge was not confirmed; check the chat before retrying.")
+    private func postRoomCreation(_ path: String, body: [String: Any], intent: [String], id: String) async throws -> Data {
+        do { return try await postRaw(path, body: body) }
+        catch let failure as Failure {
+            if failure.status == 410, failure.code == "creation_gone" {
+                guard failure.receiptClientId == id else {
+                    throw Failure(kind: .server, message: "Unconfirmed removal receipt; the original creation is still pending.")
+                }
+                try await creationOperations.finish(intent, id: id)
+            }
+            throw failure
         }
-        return result
+    }
+
+    private func creationIntent(_ kind: String, room: String, argument: String) -> [String] {
+        [PulseWalletOperations.gatewayKey(baseURL), userId, kind, room, argument]
+    }
+
+    public func createGame(conversationId: String, opponentId: String?) async throws -> WireGameMatchCreateResult {
+        let opponent = opponentId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedOpponent = opponent?.isEmpty == false ? opponent : nil
+        let intent = creationIntent("game", room: conversationId, argument: normalizedOpponent ?? "")
+        let id = try await creationOperations.begin(intent)
+        var body: [String: Any] = ["userId": userId, "conversationId": conversationId, "game": "tictactoe", "clientId": id]
+        if let normalizedOpponent { body["opponentId"] = normalizedOpponent }
+        let data = try await postRoomCreation("/api/games/create", body: body, intent: intent, id: id)
+        let result = try envelope(WireGameMatchCreateResult.self, from: data)
+        guard result.clientId == id, let match = result.match, !match.id.isEmpty, match.conversationId == conversationId,
+              match.playerXId == userId,
+              (match.playerOId == normalizedOpponent || (result.replayed == true && normalizedOpponent == nil)),
+              let message = result.message, !message.id.isEmpty, message.conversationId == conversationId,
+              message.senderId == userId, message.kind == "game",
+              PulseWave7Logic.gamePayload(message.payload)?.matchId == match.id else {
+            throw Failure(kind: .server, message: "Challenge receipt was not confirmed; retry the same instructions.")
+        }
+        _ = try confirmedGame(WireGameDetail(match: match, playerX: nil, playerO: nil), id: match.id)
+        try Task.checkCancellation()
+        return result // caller must accept the carrier before retiring the intent
+    }
+
+    public func acknowledgeGameCreation(conversationId: String, opponentId: String?, receipt: WireGameMatchCreateResult) async throws {
+        guard let id = receipt.clientId else { throw Failure(kind: .server, message: "Missing creation receipt.") }
+        let intent = creationIntent("game", room: conversationId, argument: (opponentId ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
+        try await creationOperations.finish(intent, id: id)
     }
 
     /// GET /api/games/{id} → { match, playerX, playerO }.
@@ -1145,14 +1185,25 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/tournaments { userId, conversationId, name } → { tournament, message }.
     public func createTournament(conversationId: String, name: String) async throws -> WireTournamentCreateResult {
-        let data = try await postRaw("/api/tournaments", body: ["userId": userId, "conversationId": conversationId, "name": name, "game": "tictactoe"])
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let intent = creationIntent("tournament", room: conversationId, argument: name)
+        let id = try await creationOperations.begin(intent)
+        let data = try await postRoomCreation("/api/tournaments/create", body: ["userId": userId, "conversationId": conversationId, "name": name, "game": "tictactoe", "clientId": id], intent: intent, id: id)
         let result = try envelope(WireTournamentCreateResult.self, from: data)
-        guard let season = result.tournament, !season.id.isEmpty, season.name == name.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard result.clientId == id, let season = result.tournament, !season.id.isEmpty, season.name == name,
               let message = result.message, !message.id.isEmpty, message.kind == "tournament",
-              message.conversationId == conversationId, message.senderId == userId else {
-            throw Failure(kind: .server, message: "Season was not confirmed; check the chat before retrying.")
+              message.conversationId == conversationId, message.senderId == userId,
+              PulseWave7Logic.tournamentPayload(message.payload)?.tournamentId == season.id else {
+            throw Failure(kind: .server, message: "Season receipt was not confirmed; retry the same instructions.")
         }
+        try Task.checkCancellation()
         return result
+    }
+
+    public func acknowledgeTournamentCreation(conversationId: String, name: String, receipt: WireTournamentCreateResult) async throws {
+        guard let id = receipt.clientId else { throw Failure(kind: .server, message: "Missing creation receipt.") }
+        let intent = creationIntent("tournament", room: conversationId, argument: name.trimmingCharacters(in: .whitespacesAndNewlines))
+        try await creationOperations.finish(intent, id: id)
     }
 
     /// GET /api/tournaments/{id} → { tournament } standings (tolerant envelope OR bare).
@@ -1709,11 +1760,13 @@ public struct PulseAPIClient: Sendable {
             var code: String?
             var suggestion: String?
             var retryAfter: Int?
+            var receiptClientId: String?
             if let body = try? decoder.decode(WireErrorBody.self, from: data) {
                 if let error = body.error, !error.isEmpty { message = error }
                 code = body.code
                 suggestion = body.suggestion
                 retryAfter = body.retryAfter
+                receiptClientId = body.clientId
                 if body.code == "username_taken" { kind = .validation }
             }
             // F-MS-20 - the Retry-After header backs the body field (web
@@ -1722,7 +1775,7 @@ public struct PulseAPIClient: Sendable {
                let seconds = Int(raw), seconds > 0 {
                 retryAfter = seconds
             }
-            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode, retryAfter: retryAfter)
+            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode, retryAfter: retryAfter, receiptClientId: receiptClientId)
         }
         return data
     }

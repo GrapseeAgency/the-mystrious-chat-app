@@ -282,6 +282,52 @@ class Wave7ApiTest {
         assertEquals(true, (result as PulseResult.Success).value.tournaments.single().joined)
     }
 
+    @Test
+    fun `creation receipt acknowledges an open challenge already joined and never falls back to legacy POST`() = runTest {
+        configured()
+        val id = "creation-operation-01"
+        response = """{"clientId":"creation-operation-01","replayed":true,
+            "match":{"id":"m1","conversationId":"room","playerXId":"u1","playerOId":"u2","board":"X        ","turn":"O","status":"active","moveCount":1},
+            "message":{"id":"carrier","conversationId":"room","senderId":"u1","content":"Challenge","kind":"game","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"matchId\":\"m1\"}"}}"""
+        val reply = api().createGame("u1", "room", null, id)
+        assertTrue(reply is PulseResult.Success)
+        assertTrue((reply as PulseResult.Success).value.replayed)
+        assertTrue(lastUrl.endsWith("/api/games/create"))
+        assertTrue(lastBody.contains(id))
+        response = response.replace("creation-operation-01", "wrong-operation-id")
+        assertTrue(api().createGame("u1", "room", null, id) is PulseResult.Failure)
+        status = HttpStatusCode.NotFound
+        assertTrue(api().createGame("u1", "room", null, id) is PulseResult.Failure)
+        assertTrue(lastUrl.endsWith("/api/games/create"))
+    }
+
+    @Test
+    fun `season creation receipt must identify both the request and the carrier object`() = runTest {
+        configured()
+        val id = "creation-operation-02"
+        response = """{"clientId":"creation-operation-02","replayed":true,
+            "tournament":{"id":"t1","name":"Cup","status":"finished"},
+            "message":{"id":"carrier","conversationId":"room","senderId":"u1","content":"Cup","kind":"tournament","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"tournamentId\":\"t1\"}"}}"""
+        assertTrue(api().createTournament("u1", "room", "Cup", id) is PulseResult.Success)
+        assertTrue(lastUrl.endsWith("/api/tournaments/create"))
+        response = response.replace("creation-operation-02", "wrong-operation-id")
+        assertTrue(api().createTournament("u1", "room", "Cup", id) is PulseResult.Failure)
+    }
+
+    @Test
+    fun `terminal creation error carries an explicit receipt rather than inferring delivery from 410`() = runTest {
+        configured()
+        status = HttpStatusCode.Gone
+        response = """{"error":"Earlier invitation expired","code":"creation_gone","clientId":"creation-operation-01"}"""
+        val reply = api().createGame("u1", "room", null, "creation-operation-01") as PulseResult.Failure
+        assertEquals("creation_gone", reply.code)
+        assertEquals("creation-operation-01", reply.receiptClientId)
+        response = """{"error":"Gone"}"""
+        val unknown = api().createGame("u1", "room", null, "creation-operation-01") as PulseResult.Failure
+        assertNull(unknown.receiptClientId)
+        assertNull(unknown.code)
+    }
+
     // hub economy
 
     @Test

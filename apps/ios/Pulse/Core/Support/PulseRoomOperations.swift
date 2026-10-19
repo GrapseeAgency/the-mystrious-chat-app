@@ -40,6 +40,8 @@ final class PulseRoomOperations: ObservableObject {
         tasks[key] = task
         return task
     }
+    func invalidateReads() { revision &+= 1 }
+
     func stop() {
         epoch = UUID(); revision &+= 1
         tasks.values.forEach { $0.cancel() }

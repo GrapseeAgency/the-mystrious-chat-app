@@ -1381,7 +1381,7 @@ class ChatRoomViewModel @Inject constructor(
 
     suspend fun createGame(opponentId: String?): Boolean =
         gameRequest { repo.createGame(conversationId, opponentId).getOrThrow() }
-            .onSuccess { gameOpen = false; notify("Tic-tac-toe challenge sent") }
+            .onSuccess { gameOpen = false; notify(if (it.replayed) "Recovered the previous challenge" else "Tic-tac-toe challenge sent") }
             .onFailure { notify(it.message ?: "Could not start the game", isError = true) }.isSuccess
 
     // ── R7 item 3 - game rematch (web game-tictactoe-card.tsx:213-236) ──
@@ -1399,13 +1399,13 @@ class ChatRoomViewModel @Inject constructor(
         val opponentId = if (mySide == 'X') match.playerOId else match.playerXId
         if (opponentId.isNullOrBlank()) return false
         return gameRequest { repo.createGame(match.conversationId.ifBlank { conversationId }, opponentId).getOrThrow() }
-            .onSuccess { notify("Rematch sent - new challenge in the chat.") }
+            .onSuccess { notify(if (it.replayed) "Recovered the previous rematch" else "Rematch sent - new challenge in the chat.") }
             .onFailure { notify(it.message ?: "Rematch failed - try again.", isError = true) }.isSuccess
     }
 
     suspend fun createTournament(name: String): Boolean =
         gameRequest { repo.createTournament(conversationId, name.trim()).getOrThrow() }
-            .onSuccess { tournamentOpen = false; notify("Tournament \"$name\" started") }
+            .onSuccess { tournamentOpen = false; notify(if (it.replayed) "Recovered the previous tournament" else "Tournament \"$name\" started") }
             .onFailure { notify(it.message ?: "Could not start the tournament", isError = true) }.isSuccess
 
     fun createKanbanCard(title: String, column: String, assigneeId: String?) {

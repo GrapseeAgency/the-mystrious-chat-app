@@ -3,6 +3,13 @@ import XCTest
 
 @MainActor
 final class RoomOperationOrderingTests: XCTestCase {
+    func testCarrierAcceptedFromChildSheetInvalidatesEarlierRoomRead() {
+        let operations = PulseRoomOperations()
+        let stale = operations.beginRead()!
+        operations.invalidateReads()
+        XCTAssertFalse(operations.accepts(stale))
+        XCTAssertTrue(operations.accepts(operations.beginRead()!))
+    }
     func testFailedCreationKeepsDraftAndReleasesSynchronousGate() async {
         let operations = PulseRoomOperations()
         var draft = "Meeting at six"

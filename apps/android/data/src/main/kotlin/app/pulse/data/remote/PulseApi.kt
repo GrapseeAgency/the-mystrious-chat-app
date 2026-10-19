@@ -1,5 +1,8 @@
 package app.pulse.data.remote
 
+import app.pulse.protocol.GamePayloadDto
+import app.pulse.protocol.TournamentPayloadDto
+
 import kotlinx.coroutines.ensureActive
 import app.pulse.core.PulseEndpoints
 import app.pulse.core.result.PulseResult
@@ -264,6 +267,7 @@ class PulseApi(
         var code: String? = null
         var suggestion: String? = null
         var retryAfter: Int? = null
+        var receiptClientId: String? = null
         try {
             val json = PulseJson.parseToJsonElement(body)
             if (json is JsonObject) {
@@ -275,6 +279,9 @@ class PulseApi(
                 }
                 (json["suggestion"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
                     if (it.isString) suggestion = it.content
+                }
+                (json["clientId"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
+                    if (it.isString) receiptClientId = it.content
                 }
                 // R44 slow mode - the 429 body carries { error, retryAfter } and a
                 // Retry-After header (same value). The body wins (web parity).
@@ -290,7 +297,7 @@ class PulseApi(
         // the store layer clear the credential + raise the re-login flow.
         if (status == 401) onAuthInvalid(message)
         val base = PulseResult.fromHttp(status, message)
-        return base.copy(code = code, suggestion = suggestion, status = status, retryAfter = retryAfter)
+        return base.copy(code = code, suggestion = suggestion, status = status, retryAfter = retryAfter, receiptClientId = receiptClientId)
     }
 
     // conversations
@@ -1598,10 +1605,11 @@ class PulseApi(
         ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
 
     /** POST /api/games { userId, conversationId, game?='tictactoe', opponentId? } → { match, message }. */
-    suspend fun createGame(userId: String, conversationId: String, opponentId: String?): PulseResult<GameMatchCreateResultDto> =
+    suspend fun createGame(userId: String, conversationId: String, opponentId: String?, clientId: String? = null): PulseResult<GameMatchCreateResultDto> =
         post(
-            "/api/games",
+            if (clientId == null) "/api/games" else "/api/games/create",
             buildJsonObject {
+                if (clientId != null) put("clientId", clientId)
                 put("userId", userId)
                 put("conversationId", conversationId)
                 put("game", "tictactoe")
@@ -1611,9 +1619,13 @@ class PulseApi(
             val result = PulseJson.decodeFromString(GameMatchCreateResultDto.serializer(), it)
             val match = result.match ?: throw kotlinx.serialization.SerializationException("Challenge was not confirmed")
             matchOf(it, match.id)
-            if (match.id.isBlank() || match.conversationId != conversationId || match.playerXId != userId || match.playerOId != opponentId ||
+            if (match.id.isBlank() || match.conversationId != conversationId || match.playerXId != userId || (match.playerOId != opponentId && !(clientId != null && result.replayed && opponentId == null)) ||
                 result.message?.id.isNullOrBlank() || result.message?.conversationId != conversationId || result.message?.senderId != userId || result.message?.kind != "game") {
                 throw kotlinx.serialization.SerializationException("Challenge was not confirmed; check the chat before retrying")
+            }
+            if (clientId != null && result.clientId != clientId) throw kotlinx.serialization.SerializationException("Creation receipt was not confirmed; retry the same instructions")
+            if (clientId != null && PulseJson.decodeFromString(GamePayloadDto.serializer(), result.message?.payload.orEmpty()).matchId != match.id) {
+                throw kotlinx.serialization.SerializationException("Challenge carrier does not match its board")
             }
             result
         }
@@ -1646,12 +1658,16 @@ class PulseApi(
         }
 
     /** POST /api/tournaments { userId, conversationId, name ≤40 } → { tournament, message }. */
-    suspend fun createTournament(userId: String, conversationId: String, name: String): PulseResult<TournamentCreateResultDto> =
-        post("/api/tournaments", jsonOf("userId" to userId, "conversationId" to conversationId, "name" to name, "game" to "tictactoe")) {
+    suspend fun createTournament(userId: String, conversationId: String, name: String, clientId: String? = null): PulseResult<TournamentCreateResultDto> =
+        post(if (clientId == null) "/api/tournaments" else "/api/tournaments/create", jsonOf("clientId" to clientId, "userId" to userId, "conversationId" to conversationId, "name" to name, "game" to "tictactoe")) {
             val result = PulseJson.decodeFromString(TournamentCreateResultDto.serializer(), it)
             if (result.tournament?.id.isNullOrBlank() || result.tournament?.name != name.trim() || result.message?.id.isNullOrBlank() ||
                 result.message?.kind != "tournament" || result.message?.conversationId != conversationId || result.message?.senderId != userId) {
                 throw kotlinx.serialization.SerializationException("Season was not confirmed; check the chat before retrying")
+            }
+            if (clientId != null && result.clientId != clientId) throw kotlinx.serialization.SerializationException("Creation receipt was not confirmed; retry the same instructions")
+            if (clientId != null && PulseJson.decodeFromString(TournamentPayloadDto.serializer(), result.message?.payload.orEmpty()).tournamentId != result.tournament?.id) {
+                throw kotlinx.serialization.SerializationException("Season carrier does not match its tournament")
             }
             result
         }
