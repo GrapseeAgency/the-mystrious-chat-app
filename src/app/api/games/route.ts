@@ -29,7 +29,6 @@ export const dynamic = 'force-dynamic'
 
 const GAMES = ['tictactoe'] as const
 const MATCHES_LIST_LIMIT = 25
-const BOARD_SIZE = 9
 
 /** Wire shape of a match - winLine is parsed back into number[] | null. */
 interface SerializedMatch {
@@ -39,7 +38,7 @@ interface SerializedMatch {
   playerXId: string
   playerOId: string | null
   board: string
-  turn: 'X' | 'O'
+  turn: string
   status: string
   winnerId: string | null
   winLine: number[] | null
@@ -81,8 +80,8 @@ function serializeMatch(row: {
     game: row.game,
     playerXId: row.playerXId,
     playerOId: row.playerOId ?? null,
-    board: row.board.padEnd(BOARD_SIZE, ' ').slice(0, BOARD_SIZE),
-    turn: row.turn === 'O' ? 'O' : 'X',
+    board: row.board,
+    turn: row.turn,
     status: row.status,
     winnerId: row.winnerId ?? null,
     winLine,

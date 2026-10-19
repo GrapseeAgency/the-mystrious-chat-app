@@ -6,13 +6,15 @@
 //
 // PATCH { userId, status: 'finished' } → 200 { tournament }
 //   · only the season creator or a group admin may finish (403)
-//   · idempotent-ish: finishing a finished season is a no-op 200
+//   · idempotent: finishing a finished season is a no-op 200
 //   · sets endsAt = now (the real moment the season closed) and
 //     writes a LogEvent row
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
 import type { TournamentSummary } from '@/lib/types'
+
+import { finishTournament, GameOperationError } from '@/lib/game-contract'
 
 export const dynamic = 'force-dynamic'
 
@@ -137,38 +139,11 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     )
   }
 
-  const row = await db.tournament.findUnique({ where: { id } })
-  if (!row) {
-    return NextResponse.json({ error: 'Tournament not found.' }, { status: 404 })
+  try { await finishTournament(db, id, userId) }
+  catch (error) {
+    if (error instanceof GameOperationError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
-
-  // Guard: only the season creator or a group admin may finish it.
-  const membership = await db.conversationParticipant.findUnique({
-    where: { userId_conversationId: { userId, conversationId: row.conversationId } },
-    select: { role: true },
-  })
-  const isCreator = row.createdById !== null && row.createdById === userId
-  const isAdmin = membership?.role === 'admin'
-  if (!isCreator && !isAdmin) {
-    return NextResponse.json(
-      { error: 'Only the tournament creator or a group admin can finish the season.' },
-      { status: 403 },
-    )
-  }
-
-  const now = new Date()
-  await db.tournament.update({
-    where: { id },
-    data: { status: 'finished', endsAt: row.endsAt ?? now },
-  })
-  await db.logEvent.create({
-    data: {
-      userId,
-      kind: 'tournament',
-      message: `finished tournament "${row.name}"`,
-      meta: JSON.stringify({ tournamentId: id, conversationId: row.conversationId }),
-    },
-  })
 
   const fresh = await loadTournament(id)
   if (!fresh) {

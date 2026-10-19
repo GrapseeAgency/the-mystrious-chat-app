@@ -74,11 +74,9 @@ import app.pulse.protocol.GameDetailDto
 import app.pulse.protocol.RedPacketDetailDto
 import app.pulse.protocol.RedPacketPayloadDto
 import app.pulse.protocol.GamePayloadDto
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlin.math.floor
 
@@ -674,6 +672,22 @@ internal fun MirrorTicTacToeCard(
     repository: PulseRepository,
     onRematch: () -> Unit,
 ) {
+    androidx.compose.runtime.key(repository, matchId, viewerId, repository.reminderDeliveryOwner()) {
+        MirrorTicTacToeContent(matchId, viewerId, repository, onRematch)
+    }
+}
+
+@Composable
+private fun MirrorTicTacToeContent(
+    matchId: String,
+    viewerId: String,
+    repository: PulseRepository,
+    onRematch: () -> Unit,
+) {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    val refreshGate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    var observedActive by remember { mutableStateOf(false) }
     var data by remember(matchId) { mutableStateOf<GameDetailDto?>(null) }
     var failed by remember(matchId) { mutableStateOf(false) }
     var pendingCell by remember { mutableIntStateOf(-1) }
@@ -683,27 +697,28 @@ internal fun MirrorTicTacToeCard(
     var errorNote by remember { mutableStateOf<String?>(null) }
     val haptics = LocalHapticFeedback.current
 
-    // self-fetch + live sync: 1.5s poll ONLY while the match is active (web L129)
+    // Keep the last confirmed board during failures and retry the initial load.
     suspend fun load() {
-        runCatching { repository.game(matchId).getOrThrow() }
-            .onSuccess {
-                data = it
-                failed = false
-            }
-            .onFailure { failed = true }
+        val ticket = refreshGate.beginRead() ?: return
+        val result = roomRequest { repository.game(matchId) }
+        if (!refreshGate.accepts(ticket)) return
+        result.onSuccess { data = it; failed = false }.onFailure { failed = true }
     }
-    LaunchedEffect(matchId) {
-        load()
-        while (data?.match?.status == "active") {
-            delay(1_500L)
-            load()
+    LaunchedEffect(matchId, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                load()
+                if (!failed && data != null && data?.match?.status != "active") break
+                delay(1_500L)
+            }
         }
     }
     // confetti ONCE when an own win is observed (web L163)
     LaunchedEffect(data?.match?.status) {
         val match = data?.match ?: return@LaunchedEffect
         val won = (match.status == "x_won" || match.status == "o_won") && match.winnerId == viewerId
-        if (won && !celebrated) {
+        if (match.status == "active") observedActive = true
+        if (won && observedActive && !celebrated) {
             celebrated = true
             PulseFx.fire(PulseFx.BurstKind.CONFETTI, 120)
         }
@@ -738,7 +753,7 @@ internal fun MirrorTicTacToeCard(
                         .background(RP_EMERALD.copy(alpha = 0.12f))
                         .clickable {
                             failed = false
-                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { load() }
+                            scope.launch { load() }
                         }
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
@@ -770,7 +785,7 @@ internal fun MirrorTicTacToeCard(
         else -> null
     }
     val isPlayer = mySide != null
-    val isMyTurn = match.status == "active" && mySide != null && match.turn == mySide.toString()
+    val isMyTurn = !failed && match.status == "active" && match.playerOId != null && mySide != null && match.turn == mySide.toString()
     val isOpenChallenge = match.status == "active" && match.playerOId == null
     val canJoin = isOpenChallenge && viewerId != match.playerXId
     val finished = match.status != "active"
@@ -782,12 +797,14 @@ internal fun MirrorTicTacToeCard(
     val winSet = match.winLine?.toSet() ?: emptySet()
 
     // board cells - server truth overlaid with the optimistic pending move
-    val glyphs = match.board.padEnd(9, ' ').toCharArray()
+    val glyphs = match.board.take(9).padEnd(9, ' ').toCharArray()
     if (pendingCell >= 0 && glyphs[pendingCell] == ' ' && mySide != null) {
         glyphs[pendingCell] = mySide
     }
 
     val statusText = when {
+        pendingCell >= 0 -> "Confirming move…"
+        joining -> "Joining match…"
         finished && winnerName != null -> "$winnerName wins!"
         finished && match.status == "draw" -> "Draw - board is full."
         finished -> "Match abandoned."
@@ -886,16 +903,17 @@ internal fun MirrorTicTacToeCard(
                                     RoundedCornerShape(12.dp),
                                 )
                                 .clickable(enabled = canTap) {
-                                    // optimistic fill + real move (web playMove L169)
+                                    if (pendingCell >= 0 || joining || rematching || data?.match != match) return@clickable
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    pendingCell = i
-                                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                                        val outcome = runCatching { repository.gameMove(matchId, i).getOrThrow() }
-                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                            pendingCell = -1
-                                            outcome.onSuccess { data = it }
-                                                .onFailure { errorNote = "Move failed - try again." }
-                                        }
+                                    pendingCell = i; errorNote = null
+                                    refreshGate.beginWrite()
+                                    scope.launch {
+                                        try {
+                                            roomRequest { repository.gameMove(matchId, i) }
+                                                .onSuccess { data = it; failed = false }
+                                                .onFailure { errorNote = it.message ?: "Move was not confirmed. Refreshing the board." }
+                                        } finally { pendingCell = -1; refreshGate.endWrite() }
+                                        load()
                                     }
                                 }
                                 .alpha(if (dimmed) 0.45f else if (!canTap && !cellFilled) 0.7f else 1f),
@@ -918,6 +936,7 @@ internal fun MirrorTicTacToeCard(
         }
 
         // status strip / join / rematch (web L404-473)
+        if (failed) Text("Connection interrupted. Showing the last confirmed board.", color = MirrorArt.Faint, fontSize = 12.sp)
         val err = errorNote
         if (err != null) {
             Text(err, color = RP_ROSE, fontSize = 12.sp, fontWeight = FontWeight.Medium)
@@ -952,15 +971,17 @@ internal fun MirrorTicTacToeCard(
                         .clip(CircleShape)
                         .background(RP_EMERALD.copy(alpha = 0.85f))
                         .clickable(enabled = !joining) {
+                            if (joining || pendingCell >= 0 || rematching) return@clickable
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            joining = true
-                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                                val outcome = runCatching { repository.joinGame(matchId).getOrThrow() }
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                    joining = false
-                                    outcome.onSuccess { data = it }
-                                        .onFailure { errorNote = "Could not join this match." }
-                                }
+                            joining = true; errorNote = null
+                            refreshGate.beginWrite()
+                            scope.launch {
+                                try {
+                                    roomRequest { repository.joinGame(matchId) }
+                                        .onSuccess { data = it; failed = false }
+                                        .onFailure { errorNote = it.message ?: "Could not join this match." }
+                                } finally { joining = false; refreshGate.endWrite() }
+                                load()
                             }
                         },
                     contentAlignment = Alignment.Center,
@@ -997,18 +1018,16 @@ internal fun MirrorTicTacToeCard(
                     .background(RP_EMERALD.copy(alpha = 0.10f))
                     .border(1.dp, RP_EMERALD.copy(alpha = 0.30f), CircleShape)
                     .clickable(enabled = !rematching) {
+                        if (rematching || joining || pendingCell >= 0) return@clickable
+                        val opponentId = (if (mySide == 'X') match.playerOId else match.playerXId) ?: return@clickable
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        rematching = true
-                        val opponentId = if (mySide == 'X') match.playerOId else match.playerXId
-                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                            val outcome = opponentId?.let {
-                                runCatching { repository.createGame(match.conversationId, it).getOrThrow() }
-                            }
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                rematching = false
-                                outcome?.onSuccess { onRematch() }
-                                if (outcome == null) errorNote = "Rematch failed - try again."
-                            }
+                        rematching = true; errorNote = null
+                        scope.launch {
+                            try {
+                                roomRequest { repository.createGame(match.conversationId, opponentId) }
+                                    .onSuccess { onRematch() }
+                                    .onFailure { errorNote = (it.message ?: "Rematch was not confirmed.") + " Check the chat before retrying." }
+                            } finally { rematching = false }
                         }
                     },
                 contentAlignment = Alignment.Center,

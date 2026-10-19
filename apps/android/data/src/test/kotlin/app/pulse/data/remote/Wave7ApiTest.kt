@@ -233,11 +233,53 @@ class Wave7ApiTest {
         val v = (r as PulseResult.Success).value
         assertEquals("game", v.message?.kind)
 
-        response = """{"match":{"id":"m1","board":"X        ","turn":"O","status":"active","moveCount":1},"playerX":{"id":"u1","name":"A"},"playerO":null}"""
+        response = """{"match":{"id":"m1","playerXId":"u1","playerOId":"u2","board":"    X    ","turn":"O","status":"active","moveCount":1},"playerX":{"id":"u1","name":"A"},"playerO":null}"""
         val mv = api().gameMove("m1", "u1", cell = 4)
         assertTrue(mv is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/games/m1/move"))
         assertTrue(lastBody.contains("\"cell\":4"))
+    }
+
+    @Test
+    fun `winning move replay is accepted but a different square is not confirmed`() = runTest {
+        configured()
+        response = """{"match":{"id":"m","playerXId":"u1","playerOId":"u2","board":"XXXOO    ","turn":"X","status":"x_won","moveCount":5}}"""
+        assertTrue(api().gameMove("m", "u1", 2) is PulseResult.Success)
+        assertTrue(api().gameMove("m", "u1", 8) is PulseResult.Failure)
+        assertTrue(api().game("other-match") is PulseResult.Failure)
+    }
+
+    @Test
+    fun `malformed game replies cannot masquerade as empty boards or successful creation`() = runTest {
+        configured()
+        for (body in listOf("{}", """{"match":{"id":"m"}}""", """{"match":{"id":"m","playerXId":"u1","board":"short","turn":"X","status":"active","moveCount":0}}""")) {
+            response = body
+            assertTrue(api().game("m") is PulseResult.Failure)
+            assertTrue(api().createGame("u1", "room", null) is PulseResult.Failure)
+        }
+    }
+
+    @Test
+    fun `seat and season acknowledgements must belong to the requested user and action`() = runTest {
+        configured()
+        response = """{"match":{"id":"m","playerXId":"x","playerOId":"other","board":"         ","turn":"X","status":"active","moveCount":0}}"""
+        assertTrue(api().joinGame("m", "u1") is PulseResult.Failure)
+        response = """{"entry":{"id":"entry","tournamentId":"season","userId":"other"}}"""
+        assertTrue(api().joinTournament("season", "u1") is PulseResult.Failure)
+        response = """{"tournament":{"id":"season","status":"running"}}"""
+        assertTrue(api().finishTournament("season", "u1") is PulseResult.Failure)
+    }
+
+    @Test
+    fun `season list requests viewer membership and does not turn malformed responses into no seasons`() = runTest {
+        configured()
+        response = "{}"
+        assertTrue(api().tournaments("room", "u1") is PulseResult.Failure)
+        response = """{"tournaments":[{"id":"season","joined":true,"status":"running"}]}"""
+        val result = api().tournaments("room", "u1")
+        assertTrue(result is PulseResult.Success)
+        assertTrue(lastUrl.contains("userId=u1"))
+        assertEquals(true, (result as PulseResult.Success).value.tournaments.single().joined)
     }
 
     // hub economy

@@ -157,7 +157,7 @@ public enum PulseWave7Logic {
     }
 
     public static func isMyTurn(_ match: WireGameMatch, _ viewerId: String) -> Bool {
-        guard match.status == "active" else { return false }
+        guard match.status == "active", let opponent = match.playerOId, !opponent.isEmpty, opponent != match.playerXId, !viewerId.isEmpty else { return false }
         guard let side = sideOf(match, viewerId) else { return false }
         return match.turn == String(side)
     }

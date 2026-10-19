@@ -751,3 +751,55 @@ test. The test only needs immediate suspend invocation, so it now uses the
 existing core `runBlocking` API rather than adding a test scheduler dependency.
 This was a test compilation failure, not a successful native regression run;
 rerun verification is required.
+
+### Game verdicts and native game/tournament flow continuation
+
+This continuation fixes runtime behavior, not just expectations in tests:
+
+- The winning board used to commit before best-effort XP/standings/log writes.
+  `game-contract.ts` makes the board, bounded XP awards, both standings and audit
+  event one transaction. A score/log failure leaves the move uncommitted and
+  retryable. An immutable occupied square belonging to the same player is the
+  move receipt, including after an opponent response or game end; replay never
+  awards again. No new schema is required for these operations.
+- Moves reject coerced cells, malformed boards, impossible turn counts and play
+  before the O seat exists. Seat claims replay for the same member. Season
+  join/finish are transactional: an existing join remains recoverable after
+  closure, and repeated finish does not rewrite the timestamp or duplicate logs.
+  Database contention gets a recoverable conflict rather than a raw Prisma error.
+- Both Android presentations and Swift now retain confirmed boards on read failure,
+  fetch before polling, retry failed initial loads, accept actual mutation replies,
+  fence pre-mutation reads and gate actions synchronously. Polling pauses outside
+  the foreground; requests belong to the card/sheet rather than detached tasks.
+  The alternate Android game card previously **never loaded at all** when passed
+  its actual `initial = null` argument. Its supposedly suspending rematch callback
+  also returned immediately because the ViewModel launched another job inside it.
+- Tournament cards refresh standings and reconcile after join/finish rather than
+  displaying stale data. Unloaded is no longer labelled finished. Android list
+  responses optionally include viewer membership, so joining produces a persistent
+  Joined state, not another identical Join button. Failed refreshes retain prior
+  results rather than inventing an empty season list.
+- Game/season composers and rematch requests are owned and gated; failures retain
+  drafts, cancellation does not publish late success, and malformed successful HTTP
+  replies cannot clear a form or confirm someone else's seat/membership. Board
+  responses must identify the requested match and acknowledge the requested square.
+  Reopening an already-won mirror card no longer fires fresh win confetti.
+
+Verification: production transaction helper passes isolated TypeScript checking;
+**68/68 server contracts pass**, including rollback halfway through scoring,
+second-player overflow, winning-move replay/races, corrupt boards, seat replay and
+season lifecycle. Eleven native regression methods added (four transport checks
+per platform, three alternate-card cancellation checks), plus corrected both
+shared turn-gate expectations. Kotlin/Swift syntax and diff checks pass; native
+execution for this revision remains pending. Earlier 5749fde iOS workflow passed;
+its Android workflow was still running at retrieval. Counts are not device-flow
+acceptance or proof that the rest of this large application is healthy.
+
+Limits: creation/rematch still has no durable lost-ACK creation key. A request may
+commit before cancellation/network loss; users are told to inspect the chat before
+retrying, and no automatic create replay is attempted. Previously finished games
+with missing historical awards cannot be safely guessed/backfilled. The existing
+latest-running-season scoring policy is retained. Finishing permission UI still
+uses creator identity; complete admin-capability discovery is not added. Legacy
+identity/read authorization remains unchanged; this does not claim secure caller
+authentication. Other native feature trees and older room paths still need work.

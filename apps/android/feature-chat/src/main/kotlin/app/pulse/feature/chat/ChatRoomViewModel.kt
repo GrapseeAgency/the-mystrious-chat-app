@@ -1379,16 +1379,10 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    fun createGame(opponentId: String?) {
-        viewModelScope.launch {
-            repo.createGame(conversationId, opponentId)
-                .onSuccess {
-                    gameOpen = false
-                    notify("Tic-tac-toe challenge sent")
-                }
-                .onFailure { notify(it.message ?: "Could not start the game", isError = true) }
-        }
-    }
+    suspend fun createGame(opponentId: String?): Boolean =
+        gameRequest { repo.createGame(conversationId, opponentId).getOrThrow() }
+            .onSuccess { gameOpen = false; notify("Tic-tac-toe challenge sent") }
+            .onFailure { notify(it.message ?: "Could not start the game", isError = true) }.isSuccess
 
     // ── R7 item 3 - game rematch (web game-tictactoe-card.tsx:213-236) ──
     /**
@@ -1399,28 +1393,20 @@ class ChatRoomViewModel @Inject constructor(
      * analogue of web's GAME_EXTERNAL_MESSAGE_EVENT hand-off). Toast copy
      * verbatim; the card disables itself while the POST is in flight.
      */
-    fun rematch(match: app.pulse.protocol.GameMatchDto) {
-        if (match.status == "active") return
-        val mySide = app.pulse.protocol.PulseWave7Logic.sideOf(match, viewerId) ?: return
+    suspend fun rematch(match: app.pulse.protocol.GameMatchDto): Boolean {
+        if (match.status == "active") return false
+        val mySide = app.pulse.protocol.PulseWave7Logic.sideOf(match, viewerId) ?: return false
         val opponentId = if (mySide == 'X') match.playerOId else match.playerXId
-        if (opponentId.isNullOrBlank()) return
-        viewModelScope.launch {
-            repo.createGame(match.conversationId.ifBlank { conversationId }, opponentId)
-                .onSuccess { notify("Rematch sent - new challenge in the chat.") }
-                .onFailure { notify(it.message ?: "Rematch failed - try again.", isError = true) }
-        }
+        if (opponentId.isNullOrBlank()) return false
+        return gameRequest { repo.createGame(match.conversationId.ifBlank { conversationId }, opponentId).getOrThrow() }
+            .onSuccess { notify("Rematch sent - new challenge in the chat.") }
+            .onFailure { notify(it.message ?: "Rematch failed - try again.", isError = true) }.isSuccess
     }
 
-    fun createTournament(name: String) {
-        viewModelScope.launch {
-            repo.createTournament(conversationId, name.trim())
-                .onSuccess {
-                    tournamentOpen = false
-                    notify("Tournament \"$name\" started")
-                }
-                .onFailure { notify(it.message ?: "Could not start the tournament", isError = true) }
-        }
-    }
+    suspend fun createTournament(name: String): Boolean =
+        gameRequest { repo.createTournament(conversationId, name.trim()).getOrThrow() }
+            .onSuccess { tournamentOpen = false; notify("Tournament \"$name\" started") }
+            .onFailure { notify(it.message ?: "Could not start the tournament", isError = true) }.isSuccess
 
     fun createKanbanCard(title: String, column: String, assigneeId: String?) {
         viewModelScope.launch {
@@ -1469,21 +1455,15 @@ class ChatRoomViewModel @Inject constructor(
     // suspend fetchers used by the in-bubble cards (polling parity)
 
     suspend fun gameDetail(matchId: String): GameDetailDto? =
-        runCatching { repo.game(matchId).getOrNull() }.getOrNull()
+        gameRequest { repo.game(matchId).getOrThrow() }.getOrNull()
 
-    fun gameMove(matchId: String, cell: Int) {
-        viewModelScope.launch {
-            repo.gameMove(matchId, cell)
-                .onFailure { notify(it.message ?: "Move rejected", isError = true) }
-        }
-    }
+    suspend fun gameMove(matchId: String, cell: Int): GameDetailDto? =
+        gameRequest { repo.gameMove(matchId, cell).getOrThrow() }
+            .onFailure { notify(it.message ?: "Move rejected", isError = true) }.getOrNull()
 
-    fun joinGame(matchId: String) {
-        viewModelScope.launch {
-            repo.joinGame(matchId)
-                .onFailure { notify(it.message ?: "Could not join", isError = true) }
-        }
-    }
+    suspend fun joinGame(matchId: String): GameDetailDto? =
+        gameRequest { repo.joinGame(matchId).getOrThrow() }
+            .onFailure { notify(it.message ?: "Could not join", isError = true) }.getOrNull()
 
     suspend fun redPacketDetail(packetId: String): RedPacketDetailDto? =
         runCatching { repo.redPacket(packetId).getOrNull() }.getOrNull()
@@ -1498,23 +1478,17 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     suspend fun tournamentDetail(tournamentId: String): TournamentSummaryDto? =
-        runCatching { repo.tournament(tournamentId).getOrNull() }.getOrNull()
+        gameRequest { repo.tournament(tournamentId).getOrThrow() }.getOrNull()
 
-    fun joinTournament(tournamentId: String) {
-        viewModelScope.launch {
-            repo.joinTournament(tournamentId)
-                .onSuccess { notify("You are in - play tic-tac-toe matches to score points") }
-                .onFailure { notify(it.message ?: "Could not join the tournament", isError = true) }
-        }
-    }
+    suspend fun joinTournament(tournamentId: String): Boolean =
+        gameRequest { repo.joinTournament(tournamentId).getOrThrow() }
+            .onSuccess { notify("You are in - play tic-tac-toe matches to score points") }
+            .onFailure { notify(it.message ?: "Could not join the tournament", isError = true) }.isSuccess
 
-    fun finishTournament(tournamentId: String) {
-        viewModelScope.launch {
-            repo.finishTournament(tournamentId)
-                .onSuccess { notify("Tournament finished") }
-                .onFailure { notify(it.message ?: "Could not finish the tournament", isError = true) }
-        }
-    }
+    suspend fun finishTournament(tournamentId: String): Boolean =
+        gameRequest { repo.finishTournament(tournamentId).getOrThrow() }
+            .onSuccess { notify("Tournament finished") }
+            .onFailure { notify(it.message ?: "Could not finish the tournament", isError = true) }.isSuccess
 
     /** Reminder create via the sheet (absolute picker) - relative parse lives in PulseWave7Logic. */
     fun createReminder(note: String, remindAtIso: String, anchoredMessageId: String? = null) {

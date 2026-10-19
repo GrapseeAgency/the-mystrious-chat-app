@@ -38,15 +38,15 @@ final class Wave7RoomActions: ObservableObject {
     var cardGameLoad: (String) async -> WireGameDetail? = { _ in nil }
     var cardTournamentLoad: (String) async -> WireTournamentSummary? = { _ in nil }
     var cardGrab: (String) -> Void = { _ in }
-    var cardMove: (String, Int) -> Void = { _, _ in }
-    var cardJoinGame: (String) -> Void = { _ in }
-    var cardJoinTournament: (String) -> Void = { _ in }
-    var cardFinishTournament: (String) -> Void = { _ in }
+    var cardMove: (String, Int) async -> WireGameDetail? = { _, _ in nil }
+    var cardJoinGame: (String) async -> WireGameDetail? = { _ in nil }
+    var cardJoinTournament: (String) async -> Bool = { _ in false }
+    var cardFinishTournament: (String) async -> Bool = { _ in false }
     var cardOpenDetail: (String) -> Void = { _ in }
     // R7 - rematch (web game-tictactoe-card.tsx:213-236): the card hands the
     // opponent id; the room wires conversation.id + api. rematchInFlight
     // disables the card button while the POST /api/games round-trip runs.
-    var cardRematch: (String) -> Void = { _ in }
+    var cardRematch: (String) async -> Bool = { _ in false }
     @Published var rematchInFlight = false
 
     func toast(_ text: String, isError: Bool = false) {
@@ -122,85 +122,80 @@ final class Wave7RoomActions: ObservableObject {
 
     // MARK: games / tournaments
 
-    func createGame(api: PulseAPIClient, conversationId: String, opponentId: String?) {
-        Task { @MainActor in
-            do {
-                let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
-                if let message = result.message { onCarrierMessage?(message) }
-                gameCreateOpen = false
-                toast("Tic-tac-toe challenge sent")
-            } catch {
-                toast(describe(error), isError: true)
-            }
+    func createGame(api: PulseAPIClient, conversationId: String, opponentId: String?) async -> Bool {
+        do {
+            try Task.checkCancellation()
+            let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
+            try Task.checkCancellation()
+            if let message = result.message { onCarrierMessage?(message) }
+            gameCreateOpen = false
+            toast("Tic-tac-toe challenge sent")
+            return true
+        } catch {
+            if !Task.isCancelled { toast("\(describe(error)) Check the chat before retrying.", isError: true) }
+            return false
         }
     }
 
-    func moveGame(api: PulseAPIClient, matchId: String, cell: Int) {
-        Task { @MainActor in
-            do { _ = try await api.gameMove(matchId, cell: cell) }
-            catch { toast(describe(error), isError: true) }
+    func moveGame(api: PulseAPIClient, matchId: String, cell: Int) async -> WireGameDetail? {
+        do {
+            try Task.checkCancellation()
+            let result = try await api.gameMove(matchId, cell: cell)
+            try Task.checkCancellation()
+            return result
+        } catch {
+            if !Task.isCancelled { toast(describe(error), isError: true) }
+            return nil
         }
     }
-
-    func joinGame(api: PulseAPIClient, matchId: String) {
-        Task { @MainActor in
-            do { _ = try await api.joinGame(matchId) }
-            catch { toast(describe(error), isError: true) }
+    func joinGame(api: PulseAPIClient, matchId: String) async -> WireGameDetail? {
+        do {
+            try Task.checkCancellation()
+            let result = try await api.joinGame(matchId)
+            try Task.checkCancellation()
+            return result
+        } catch {
+            if !Task.isCancelled { toast(describe(error), isError: true) }
+            return nil
         }
     }
-
-    /// R7 - rematch (web game-tictactoe-card.tsx:213-236): POST /api/games
-    /// with the finished match's opponent; the fresh challenge message rides
-    /// the carrier-message sink exactly like createGame. Web copy verbatim:
-    /// "Rematch sent - new challenge in the chat."
-    func rematchGame(api: PulseAPIClient, conversationId: String, opponentId: String) {
-        guard !rematchInFlight else { return }
+    func rematchGame(api: PulseAPIClient, conversationId: String, opponentId: String) async -> Bool {
+        guard !rematchInFlight else { return false }
         rematchInFlight = true
-        Task { @MainActor in
-            defer { rematchInFlight = false }
-            do {
-                let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
-                if let message = result.message { onCarrierMessage?(message) }
-                toast("Rematch sent - new challenge in the chat.")
-            } catch {
-                toast(describe(error), isError: true)
-            }
+        defer { rematchInFlight = false }
+        do {
+            try Task.checkCancellation()
+            let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
+            try Task.checkCancellation()
+            if let message = result.message { onCarrierMessage?(message) }
+            toast("Rematch sent - new challenge in the chat.")
+            return true
+        } catch {
+            if !Task.isCancelled { toast("\(describe(error)) Check the chat before retrying.", isError: true) }
+            return false
         }
     }
 
-    func createTournament(api: PulseAPIClient, conversationId: String, name: String) {
-        Task { @MainActor in
-            do {
-                let result = try await api.createTournament(conversationId: conversationId, name: name)
-                if let message = result.message { onCarrierMessage?(message) }
-                tournamentCreateOpen = false
-                toast("Tournament \"\(name)\" started")
-            } catch {
-                toast(describe(error), isError: true)
-            }
+    func createTournament(api: PulseAPIClient, conversationId: String, name: String) async -> Bool {
+        do {
+            try Task.checkCancellation()
+            let result = try await api.createTournament(conversationId: conversationId, name: name)
+            try Task.checkCancellation()
+            if let message = result.message { onCarrierMessage?(message) }
+            tournamentCreateOpen = false
+            toast("Tournament \"\(name)\" started")
+            return true
+        } catch {
+            if !Task.isCancelled { toast("\(describe(error)) Check the chat before retrying.", isError: true) }
+            return false
         }
     }
 
-    func joinTournament(api: PulseAPIClient, tournamentId: String) {
-        Task { @MainActor in
-            do {
-                _ = try await api.joinTournament(tournamentId)
-                toast("You are in - play tic-tac-toe matches to score points")
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+    func joinTournament(api: PulseAPIClient, tournamentId: String) async -> Bool {
+        await roomMutation(success: "You are in - play tic-tac-toe matches to score points", operation: { _ = try await api.joinTournament(tournamentId) })
     }
-
-    func finishTournament(api: PulseAPIClient, tournamentId: String) {
-        Task { @MainActor in
-            do {
-                _ = try await api.finishTournament(tournamentId)
-                toast("Tournament finished")
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+    func finishTournament(api: PulseAPIClient, tournamentId: String) async -> Bool {
+        await roomMutation(success: "Tournament finished", operation: { _ = try await api.finishTournament(tournamentId) })
     }
 
     // MARK: kanban
@@ -522,22 +517,43 @@ struct Wave7RedPacketCreateSheet: View {
 
 // MARK: - Tic-tac-toe (F-RO-07)
 
+@MainActor
 struct Wave7TicTacToeCard: View {
     let matchId: String
     let viewerId: String
     let load: (String) async -> WireGameDetail?
-    let onMove: (Int) -> Void
-    let onJoin: () -> Void
+    let onMove: (Int) async -> WireGameDetail?
+    let onJoin: () async -> WireGameDetail?
     // R7 - rematch (web game-tictactoe-card.tsx:452-476): the hub carries the
     // in-flight spinner/toast and the cardRematch sink the room wires.
     var wave7: Wave7RoomActions? = nil
 
     @State private var detail: WireGameDetail?
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var loadFailed = false
+    @StateObject private var operations = PulseRoomOperations()
+
+    private func refresh() async {
+        guard scenePhase == .active else { return }
+        guard let ticket = operations.beginRead() else { return }
+        let response = await load(matchId)
+        guard operations.accepts(ticket) else { return }
+        if let response { detail = response; loadFailed = false }
+        else { loadFailed = true } // never replace a confirmed board with nil
+    }
+    private func mutate(_ operation: @escaping () async -> WireGameDetail?) {
+        var response: WireGameDetail?
+        operations.run(key: "match", operation: { response = await operation(); return response != nil }, onSuccess: {
+            detail = response; loadFailed = false
+        })
+    }
 
     var body: some View {
         VStack(spacing: 8) {
             Text(headline)
                 .font(.subheadline.weight(.semibold))
+            if loadFailed && detail != nil { Text("Connection interrupted. Last confirmed board shown.").font(.caption).foregroundStyle(.secondary) }
+            if !operations.pending.isEmpty && !finished { ProgressView("Confirming…").font(.caption) }
             board
             HStack {
                 Text("X \(detail?.playerX?.name ?? "Player")")
@@ -551,18 +567,19 @@ struct Wave7TicTacToeCard: View {
                     .foregroundStyle(Color.orange)
             }
             if openSeat {
-                Button("Take the O seat", action: onJoin)
+                Button("Take the O seat") { mutate { await onJoin() } }
                     .buttonStyle(.bordered)
+                    .disabled(!operations.pending.isEmpty || loadFailed)
             }
             // R7 - finished match with the viewer as a player → rematch offer
             // (web game-tictactoe-card.tsx:452-476). Disabled while the POST
             // round-trip runs; the new challenge arrives via the message stream.
             if finished, mySide != nil, let opponentId = rematchOpponentId {
                 Button {
-                    wave7?.cardRematch(opponentId)
+                    operations.run(key: "match", operation: { await wave7?.cardRematch(opponentId) ?? false })
                 } label: {
                     HStack(spacing: 6) {
-                        if wave7?.rematchInFlight == true {
+                        if !operations.pending.isEmpty {
                             ProgressView().controlSize(.small)
                         } else {
                             Image(systemName: "arrow.triangle.2.circlepath")
@@ -576,18 +593,21 @@ struct Wave7TicTacToeCard: View {
                     .overlay(Capsule().strokeBorder(PulseTheme.emerald.opacity(0.30)))
                 }
                 .buttonStyle(PulseButtonStyle())
-                .disabled(wave7?.rematchInFlight == true)
+                .disabled(!operations.pending.isEmpty)
             }
         }
         .padding(12)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 16))
-        .task(id: "\(matchId)-\(detail?.match?.status ?? "")") {
-            // 1.5 s poll while active - web game-tictactoe-card.tsx:33,134.
-            guard detail?.match?.status == "active" || detail == nil else { return }
-            detail = await load(matchId)
-            while detail?.match?.status == "active" && !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                detail = await load(matchId)
+        .onDisappear { operations.stop() }
+        .task(id: operations.settledRevision) {
+            if operations.settledRevision > 0 { await refresh() }
+        }
+        .task(id: "\(matchId):\(scenePhase)") {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await refresh()
+                if !loadFailed, let status = detail?.match?.status, status != "active" { return }
+                do { try await Task.sleep(nanoseconds: 1_500_000_000) } catch { return }
             }
         }
     }
@@ -601,7 +621,7 @@ struct Wave7TicTacToeCard: View {
     }
 
     private var mySide: Character? { PulseWave7Logic.sideOf(match, viewerId) }
-    private var myTurn: Bool { PulseWave7Logic.isMyTurn(match, viewerId) }
+    private var myTurn: Bool { !loadFailed && operations.pending.isEmpty && match.playerOId != nil && PulseWave7Logic.isMyTurn(match, viewerId) }
     private var openSeat: Bool {
         match.status == "active" && match.playerOId == nil && mySide == nil
     }
@@ -619,6 +639,7 @@ struct Wave7TicTacToeCard: View {
     }
 
     private var headline: String {
+        if detail == nil { return loadFailed ? "Game unavailable - retrying…" : "Loading game…" }
         switch match.status {
         case "x_won": return "X wins - \(detail?.playerX?.name ?? "X")"
         case "o_won": return "O wins - \(detail?.playerO?.name ?? "O")"
@@ -643,7 +664,7 @@ struct Wave7TicTacToeCard: View {
                             .frame(width: 56, height: 56)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                if myTurn && mark == " " && match.status == "active" { onMove(idx) }
+                                if myTurn && mark == " " && match.status == "active" { mutate { await onMove(idx) } }
                             }
                     }
                 }
@@ -670,16 +691,17 @@ struct Wave7TicTacToeCard: View {
     }
 }
 
+@MainActor
 struct Wave7GameCreateSheet: View {
     let members: [(id: String, name: String)]
-    let onCreate: (String?) -> Void
-    @Environment(\.dismiss) private var dismiss
+    let onCreate: (String?) async -> Bool
+    @StateObject private var operations = PulseRoomOperations()
 
     var body: some View {
         NavigationStack {
             List {
                 Button {
-                    onCreate(nil)
+                    operations.run(key: "create", operation: { await onCreate(nil) })
                 } label: {
                     Label("Open challenge", systemImage: "bolt")
                 }
@@ -687,7 +709,7 @@ struct Wave7GameCreateSheet: View {
                     Section("Or invite someone") {
                         ForEach(members, id: \.id) { member in
                             Button {
-                                onCreate(member.id)
+                                operations.run(key: "create", operation: { await onCreate(member.id) })
                             } label: {
                                 Text(member.name)
                             }
@@ -695,24 +717,39 @@ struct Wave7GameCreateSheet: View {
                     }
                 }
             }
+            .disabled(!operations.pending.isEmpty)
+            .overlay { if !operations.pending.isEmpty { ProgressView("Sending challenge…") } }
             .navigationTitle("Tic-tac-toe")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .onDisappear { operations.stop() }
     }
 }
 
 // MARK: - Tournament (F-RO-08)
 
+@MainActor
 struct Wave7TournamentCard: View {
     let tournamentId: String
     let name: String
     let viewerId: String
     let isAdmin: Bool
     let load: (String) async -> WireTournamentSummary?
-    let onJoin: () -> Void
-    let onFinish: () -> Void
+    let onJoin: () async -> Bool
+    let onFinish: () async -> Bool
 
     @State private var tournament: WireTournamentSummary?
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var loadFailed = false
+    @StateObject private var operations = PulseRoomOperations()
+    private func refresh() async {
+        guard scenePhase == .active else { return }
+        guard let ticket = operations.beginRead() else { return }
+        let result = await load(tournamentId)
+        guard operations.accepts(ticket) else { return }
+        if let result { tournament = result; loadFailed = false }
+        else { loadFailed = true }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -724,7 +761,7 @@ struct Wave7TournamentCard: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Spacer()
-                Text(running ? "\(tournament?.playerCount ?? tournament?.entries?.count ?? 0) players" : "finished")
+                Text(tournament == nil ? (loadFailed ? "unavailable" : "loading…") : (running ? "\(tournament?.playerCount ?? tournament?.entries?.count ?? 0) players" : "finished"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -742,21 +779,32 @@ struct Wave7TournamentCard: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            if loadFailed { Text("Could not refresh standings. Retrying…").font(.caption).foregroundStyle(.secondary) }
             HStack(spacing: 8) {
                 if running && !joined {
-                    Button("Join", action: onJoin)
+                    Button("Join") { operations.run(key: "season", operation: onJoin) }
                         .buttonStyle(.borderedProminent)
                 }
                 if running && isAdmin {
-                    Button("Finish season", action: onFinish)
+                    Button("Finish season") { operations.run(key: "season", operation: onFinish) }
                         .buttonStyle(.bordered)
                 }
             }
+            .disabled(!operations.pending.isEmpty || loadFailed)
         }
         .padding(12)
         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-        .task(id: tournamentId) {
-            tournament = await load(tournamentId)
+        .onDisappear { operations.stop() }
+        .task(id: operations.settledRevision) {
+            if operations.settledRevision > 0 { await refresh() }
+        }
+        .task(id: "\(tournamentId):\(scenePhase)") {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await refresh()
+                if !loadFailed && tournament?.status == "finished" { return }
+                do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+            }
         }
     }
 
@@ -766,9 +814,10 @@ struct Wave7TournamentCard: View {
     }
 }
 
+@MainActor
 struct Wave7TournamentCreateSheet: View {
-    let onCreate: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
+    let onCreate: (String) async -> Bool
+    @StateObject private var operations = PulseRoomOperations()
     @State private var name = ""
     @State private var error: String?
 
@@ -784,17 +833,21 @@ struct Wave7TournamentCreateSheet: View {
                     Text(error).font(.footnote).foregroundStyle(.red)
                 }
                 Button("Start season") {
-                    let trimmed = name.trimmingCharacters(in: .whitespaces)
-                    if trimmed.isEmpty {
+                    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty || trimmed.utf16.count > 40 {
                         error = "name must be between 1 and 40 characters."
                     } else {
-                        onCreate(trimmed)
+                        error = nil
+                        operations.run(key: "create", operation: { await onCreate(trimmed) })
                     }
                 }
             }
+            .disabled(!operations.pending.isEmpty)
+            .overlay { if !operations.pending.isEmpty { ProgressView("Starting season…") } }
             .navigationTitle("New tournament")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .onDisappear { operations.stop() }
     }
 }
 

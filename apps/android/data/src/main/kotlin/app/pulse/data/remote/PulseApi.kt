@@ -1302,8 +1302,18 @@ class PulseApi(
             PulseJson.parseToJsonElement(json).unwrapOrRoot("listing").toString(),
         )
 
-    private fun matchOf(json: String): GameDetailDto =
-        PulseJson.decodeFromString(GameDetailDto.serializer(), json)
+    private fun matchOf(json: String, id: String): GameDetailDto {
+        val fields = (PulseJson.parseToJsonElement(json) as? JsonObject)?.get("match") as? JsonObject
+        val result = PulseJson.decodeFromString(GameDetailDto.serializer(), json)
+        val match = result.match
+        if (fields == null || !fields.keys.containsAll(listOf("board", "turn", "status", "moveCount", "playerXId")) ||
+            match.id != id || match.playerXId.isBlank() || match.board.length != 9 || match.board.any { it !in "XO " } ||
+            match.moveCount != match.board.count { it != ' ' } || match.turn !in listOf("X", "O") ||
+            match.status !in listOf("active", "x_won", "o_won", "draw", "abandoned")) {
+            throw kotlinx.serialization.SerializationException("Invalid game state; refresh before playing")
+        }
+        return result
+    }
 
     private fun tournamentOf(json: String): TournamentSummaryDto =
         PulseJson.decodeFromString(
@@ -1597,7 +1607,16 @@ class PulseApi(
                 put("game", "tictactoe")
                 if (!opponentId.isNullOrBlank()) put("opponentId", opponentId)
             },
-        ) { PulseJson.decodeFromString(GameMatchCreateResultDto.serializer(), it) }
+        ) {
+            val result = PulseJson.decodeFromString(GameMatchCreateResultDto.serializer(), it)
+            val match = result.match ?: throw kotlinx.serialization.SerializationException("Challenge was not confirmed")
+            matchOf(it, match.id)
+            if (match.id.isBlank() || match.conversationId != conversationId || match.playerXId != userId || match.playerOId != opponentId ||
+                result.message?.id.isNullOrBlank() || result.message?.conversationId != conversationId || result.message?.senderId != userId || result.message?.kind != "game") {
+                throw kotlinx.serialization.SerializationException("Challenge was not confirmed; check the chat before retrying")
+            }
+            result
+        }
 
     /** GET /api/games?conversationId= → { matches } newest 25 (list page for the room games view). */
     suspend fun games(conversationId: String): PulseResult<GamesPageDto> =
@@ -1607,30 +1626,48 @@ class PulseApi(
 
     /** GET /api/games/{id} → { match, playerX, playerO }. */
     suspend fun game(matchId: String): PulseResult<GameDetailDto> =
-        get("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8")) { matchOf(it) }
+        get("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8")) { matchOf(it, matchId) }
 
     /** POST /api/games/{id}/move { userId, cell 0..8 } - 409s for turn/occupied/race surface verbatim. */
     suspend fun gameMove(matchId: String, userId: String, cell: Int): PulseResult<GameDetailDto> =
         post("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8") + "/move", jsonOf("userId" to userId, "cell" to cell)) {
-            matchOf(it)
+            val result = matchOf(it, matchId)
+            val side = if (result.match.playerXId == userId) 'X' else if (result.match.playerOId == userId) 'O' else null
+            if (cell !in 0..8 || side == null || result.match.board[cell] != side) throw kotlinx.serialization.SerializationException("Move was not confirmed; refresh the board")
+            result
         }
 
     /** POST /api/games/{id}/join { userId } - first-come O seat; 409 when taken. */
     suspend fun joinGame(matchId: String, userId: String): PulseResult<GameDetailDto> =
         post("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8") + "/join", jsonOf("userId" to userId)) {
-            matchOf(it)
+            val result = matchOf(it, matchId)
+            if (result.match.playerOId != userId) throw kotlinx.serialization.SerializationException("Seat was not confirmed; refresh the board")
+            result
         }
 
     /** POST /api/tournaments { userId, conversationId, name ≤40 } → { tournament, message }. */
     suspend fun createTournament(userId: String, conversationId: String, name: String): PulseResult<TournamentCreateResultDto> =
         post("/api/tournaments", jsonOf("userId" to userId, "conversationId" to conversationId, "name" to name, "game" to "tictactoe")) {
-            PulseJson.decodeFromString(TournamentCreateResultDto.serializer(), it)
+            val result = PulseJson.decodeFromString(TournamentCreateResultDto.serializer(), it)
+            if (result.tournament?.id.isNullOrBlank() || result.tournament?.name != name.trim() || result.message?.id.isNullOrBlank() ||
+                result.message?.kind != "tournament" || result.message?.conversationId != conversationId || result.message?.senderId != userId) {
+                throw kotlinx.serialization.SerializationException("Season was not confirmed; check the chat before retrying")
+            }
+            result
         }
 
     /** GET /api/tournaments?conversationId= → { tournaments } newest 5 with playerCount. */
-    suspend fun tournaments(conversationId: String): PulseResult<TournamentsPageDto> =
-        get("/api/tournaments?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8")) {
-            PulseJson.decodeFromString(TournamentsPageDto.serializer(), it)
+    suspend fun tournaments(conversationId: String, userId: String? = null): PulseResult<TournamentsPageDto> =
+        get("/api/tournaments?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
+            (userId?.let { "&userId=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")) {
+            if ((PulseJson.parseToJsonElement(it) as? JsonObject)?.get("tournaments") !is kotlinx.serialization.json.JsonArray) {
+                throw kotlinx.serialization.SerializationException("Tournament list was not returned")
+            }
+            val result = PulseJson.decodeFromString(TournamentsPageDto.serializer(), it)
+            if (result.tournaments.any { season -> season.id.isBlank() || season.status !in listOf("running", "finished") }) {
+                throw kotlinx.serialization.SerializationException("Invalid tournament list")
+            }
+            result
         }
 
     /** GET /api/tournaments/{id} → { tournament } standings (points → wins → joinedAt). */
@@ -1640,13 +1677,19 @@ class PulseApi(
     /** PATCH /api/tournaments/{id} { userId, status:'finished' } - creator/admin, idempotent. */
     suspend fun finishTournament(tournamentId: String, userId: String): PulseResult<TournamentSummaryDto> =
         patch("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8"), jsonOf("userId" to userId, "status" to "finished")) {
-            tournamentOf(it)
+            val result = tournamentOf(it)
+            if (result.id != tournamentId || result.status != "finished") throw kotlinx.serialization.SerializationException("Season closure was not confirmed")
+            result
         }
 
     /** POST /api/tournaments/{id}/join { userId } - idempotent upsert. */
     suspend fun joinTournament(tournamentId: String, userId: String): PulseResult<TournamentJoinResultDto> =
         post("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8") + "/join", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(TournamentJoinResultDto.serializer(), it)
+            val result = PulseJson.decodeFromString(TournamentJoinResultDto.serializer(), it)
+            if (result.entry?.id.isNullOrBlank() || result.entry?.tournamentId != tournamentId || result.entry?.userId != userId) {
+                throw kotlinx.serialization.SerializationException("Season membership was not confirmed")
+            }
+            result
         }
 
     /** GET /api/leaderboard?conversationId=&userId= (room) or bare (global top 50). */

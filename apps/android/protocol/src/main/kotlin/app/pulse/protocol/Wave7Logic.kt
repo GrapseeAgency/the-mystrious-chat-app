@@ -131,7 +131,7 @@ object PulseWave7Logic {
 
     /** True when the viewer can still act on this match (a seated player, active, their turn). */
     fun isMyTurn(match: GameMatchDto, viewerId: String): Boolean {
-        if (match.status != "active") return false
+        if (match.status != "active" || match.playerOId.isNullOrBlank() || match.playerXId == match.playerOId || viewerId.isBlank()) return false
         val side = sideOf(match, viewerId) ?: return false
         return match.turn == side.toString()
     }

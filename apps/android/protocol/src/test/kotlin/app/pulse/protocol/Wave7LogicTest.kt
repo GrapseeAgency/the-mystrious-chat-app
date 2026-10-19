@@ -137,7 +137,8 @@ class Wave7LogicTest {
         val match = GameMatchDto(id = "m", playerXId = "u1", playerOId = null, turn = "X", status = "active")
         assertEquals('X', PulseWave7Logic.sideOf(match, "u1"))
         assertNull(PulseWave7Logic.sideOf(match, "u2"))
-        assertTrue(PulseWave7Logic.isMyTurn(match, "u1"))
+        assertFalse(PulseWave7Logic.isMyTurn(match, "u1"))
+        assertTrue(PulseWave7Logic.isMyTurn(match.copy(playerOId = "u2"), "u1"))
         assertFalse(PulseWave7Logic.isMyTurn(match, "u2")) // spectating
         assertFalse(PulseWave7Logic.isMyTurn(match.copy(status = "x_won"), "u1"))
         assertFalse(PulseWave7Logic.isMyTurn(match.copy(turn = "O"), "u1"))

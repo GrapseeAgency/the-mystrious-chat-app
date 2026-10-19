@@ -3393,17 +3393,17 @@ private fun MessageRow(
     onOpenFile: () -> Unit,
     onOpenThread: () -> Unit,
     // ── Wave 7 rich-object hooks ──
-    onGameMove: (String, Int) -> Unit = { _, _ -> },
-    onGameJoin: (String) -> Unit = {},
+    onGameMove: suspend (String, Int) -> app.pulse.protocol.GameDetailDto? = { _, _ -> null },
+    onGameJoin: suspend (String) -> app.pulse.protocol.GameDetailDto? = { null },
     onGameLoad: suspend (String) -> app.pulse.protocol.GameDetailDto? = { null },
     // R7 item 3 - rematch on finished matches (web game-tictactoe-card.tsx).
-    onGameRematch: suspend (app.pulse.protocol.GameMatchDto) -> Unit = {},
+    onGameRematch: suspend (app.pulse.protocol.GameMatchDto) -> Boolean = { false },
     onRedPacketLoad: suspend (String) -> app.pulse.protocol.RedPacketDetailDto? = { null },
     onRedPacketGrab: (String) -> Unit = {},
     onRedPacketOpen: (String) -> Unit = {},
     onTournamentLoad: suspend (String) -> app.pulse.protocol.TournamentSummaryDto? = { null },
-    onTournamentJoin: (String) -> Unit = {},
-    onTournamentFinish: (String) -> Unit = {},
+    onTournamentJoin: suspend (String) -> Boolean = { false },
+    onTournamentFinish: suspend (String) -> Boolean = { false },
     // D27 - long-press a reaction chip → who-reacted sheet (null = inert).
     onWhoReacted: ((String) -> Unit)? = null,
     // R6 - M6 - double-tap the bubble fires the heart quick reaction (null = inert).

@@ -2804,7 +2804,7 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun tournaments(conversationId: String): Result<TournamentsPageDto> =
-        when (val r = api.tournaments(conversationId)) {
+        when (val r = api.tournaments(conversationId, viewerId)) {
             is PulseResult.Success -> Result.success(r.value)
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }

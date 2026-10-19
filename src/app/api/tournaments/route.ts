@@ -42,6 +42,7 @@ export interface TournamentListItem {
   game: string
   status: string
   playerCount: number
+  joined: boolean | null
   createdAt: string
 }
 
@@ -200,12 +201,17 @@ export async function GET(req: Request) {
     include: { _count: { select: { entries: true } } },
   })
 
+  const userId = strField(url.searchParams.get('userId'))
+  const joined = new Set(userId ? (await db.tournamentPlayer.findMany({
+    where: { userId, tournamentId: { in: rows.map(row => row.id) } }, select: { tournamentId: true },
+  })).map(entry => entry.tournamentId) : [])
   const tournaments: TournamentListItem[] = rows.map((row) => ({
     id: row.id,
     name: row.name,
     game: row.game,
     status: row.status,
     playerCount: row._count.entries,
+    joined: userId ? joined.has(row.id) : null,
     createdAt: row.createdAt.toISOString(),
   }))
 

@@ -11,13 +11,14 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
 
+import { joinGame, GameOperationError } from '@/lib/game-contract'
+
 export const dynamic = 'force-dynamic'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-const BOARD_SIZE = 9
 
 /** Wire shape of a match - winLine is parsed back into number[] | null. */
 interface SerializedMatch {
@@ -27,7 +28,7 @@ interface SerializedMatch {
   playerXId: string
   playerOId: string | null
   board: string
-  turn: 'X' | 'O'
+  turn: string
   status: string
   winnerId: string | null
   winLine: number[] | null
@@ -75,8 +76,8 @@ function serializeMatch(row: {
     game: row.game,
     playerXId: row.playerXId,
     playerOId: row.playerOId ?? null,
-    board: row.board.padEnd(BOARD_SIZE, ' ').slice(0, BOARD_SIZE),
-    turn: row.turn === 'O' ? 'O' : 'X',
+    board: row.board,
+    turn: row.turn,
     status: row.status,
     winnerId: row.winnerId ?? null,
     winLine,
@@ -119,49 +120,12 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  const match = await db.gameMatch.findUnique({ where: { id } })
-  if (!match) {
-    return NextResponse.json({ error: 'Game match not found.' }, { status: 404 })
+  try {
+    const fresh = await joinGame(db, id, userId)
+    const players = await playerSummaries(fresh.playerXId, fresh.playerOId)
+    return NextResponse.json({ match: serializeMatch(fresh), ...players })
+  } catch (error) {
+    if (error instanceof GameOperationError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
-  if (match.status !== 'active' || match.playerOId !== null) {
-    return NextResponse.json(
-      { error: 'This challenge is no longer open to join.' },
-      { status: 409 },
-    )
-  }
-  if (match.playerXId === userId) {
-    return NextResponse.json({ error: 'You already own this challenge.' }, { status: 409 })
-  }
-
-  // The joiner must be a participant of the room the match lives in.
-  const membership = await db.conversationParticipant.findUnique({
-    where: { userId_conversationId: { userId, conversationId: match.conversationId } },
-    select: { id: true },
-  })
-  if (!membership) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-
-  // Guarded write - playerOId must still be null at write time.
-  const updated = await db.gameMatch.updateMany({
-    where: { id, status: 'active', playerOId: null },
-    data: { playerOId: userId },
-  })
-  if (updated.count === 0) {
-    return NextResponse.json(
-      { error: 'Someone else already took the O seat.' },
-      { status: 409 },
-    )
-  }
-
-  const fresh = await db.gameMatch.findUnique({ where: { id } })
-  if (!fresh) {
-    return NextResponse.json({ error: 'Game match not found.' }, { status: 404 })
-  }
-  const players = await playerSummaries(fresh.playerXId, fresh.playerOId)
-
-  return NextResponse.json({ match: serializeMatch(fresh), ...players })
 }

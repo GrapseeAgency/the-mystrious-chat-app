@@ -356,6 +356,7 @@ data class TournamentSummaryDto(
     val game: String = "tictactoe",
     /** running | finished */
     val status: String = "running",
+    val joined: Boolean? = null,
     val playerCount: Int? = null,
     val createdAt: String? = null,
     val endsAt: String? = null,

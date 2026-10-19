@@ -1095,24 +1095,50 @@ public struct PulseAPIClient: Sendable {
         var body: [String: Any] = ["userId": userId, "conversationId": conversationId, "game": "tictactoe"]
         if let opponentId { body["opponentId"] = opponentId }
         let data = try await postRaw("/api/games", body: body)
-        return try envelope(WireGameMatchCreateResult.self, from: data)
+        let result = try envelope(WireGameMatchCreateResult.self, from: data)
+        guard let match = result.match, !match.id.isEmpty, match.conversationId == conversationId,
+              match.playerXId == userId, match.playerOId == opponentId,
+              let message = result.message, !message.id.isEmpty, message.conversationId == conversationId,
+              message.senderId == userId, message.kind == "game" else {
+            throw Failure(kind: .server, message: "Challenge was not confirmed; check the chat before retrying.")
+        }
+        return result
     }
 
     /// GET /api/games/{id} → { match, playerX, playerO }.
     public func gameDetail(_ matchId: String) async throws -> WireGameDetail {
-        try await get("/api/games/\(q(matchId))")
+        let result: WireGameDetail = try await get("/api/games/\(q(matchId))")
+        return try confirmedGame(result, id: matchId)
     }
 
     /// POST /api/games/{id}/move { userId, cell 0..8 } → { match, playerX, playerO }.
     public func gameMove(_ matchId: String, cell: Int) async throws -> WireGameDetail {
         let data = try await postRaw("/api/games/\(q(matchId))/move", body: ["userId": userId, "cell": cell])
-        return try envelope(WireGameDetail.self, from: data)
+        let result = try confirmedGame(envelope(WireGameDetail.self, from: data), id: matchId)
+        let side: Character? = result.match?.playerXId == userId ? "X" : result.match?.playerOId == userId ? "O" : nil
+        guard (0...8).contains(cell), let side, let board = result.match?.board, Array(board)[cell] == side else {
+            throw Failure(kind: .server, message: "Move was not confirmed; refresh the board.")
+        }
+        return result
     }
 
     /// POST /api/games/{id}/join { userId } - first-come O seat.
     public func joinGame(_ matchId: String) async throws -> WireGameDetail {
         let data = try await postRaw("/api/games/\(q(matchId))/join", body: ["userId": userId])
-        return try envelope(WireGameDetail.self, from: data)
+        let result = try confirmedGame(envelope(WireGameDetail.self, from: data), id: matchId)
+        guard result.match?.playerOId == userId else { throw Failure(kind: .server, message: "Seat was not confirmed; refresh the board.") }
+        return result
+    }
+
+    private func confirmedGame(_ result: WireGameDetail, id: String) throws -> WireGameDetail {
+        guard let match = result.match, match.id == id, let x = match.playerXId, !x.isEmpty,
+              let board = match.board, board.count == 9, board.allSatisfy({ "XO ".contains($0) }),
+              match.moveCount == board.filter({ $0 != " " }).count,
+              let turn = match.turn, ["X", "O"].contains(turn),
+              let status = match.status, ["active", "x_won", "o_won", "draw", "abandoned"].contains(status) else {
+            throw Failure(kind: .server, message: "Invalid game state; refresh before playing.")
+        }
+        return result
     }
 
     // MARK: tournaments
@@ -1120,7 +1146,13 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/tournaments { userId, conversationId, name } → { tournament, message }.
     public func createTournament(conversationId: String, name: String) async throws -> WireTournamentCreateResult {
         let data = try await postRaw("/api/tournaments", body: ["userId": userId, "conversationId": conversationId, "name": name, "game": "tictactoe"])
-        return try envelope(WireTournamentCreateResult.self, from: data)
+        let result = try envelope(WireTournamentCreateResult.self, from: data)
+        guard let season = result.tournament, !season.id.isEmpty, season.name == name.trimmingCharacters(in: .whitespacesAndNewlines),
+              let message = result.message, !message.id.isEmpty, message.kind == "tournament",
+              message.conversationId == conversationId, message.senderId == userId else {
+            throw Failure(kind: .server, message: "Season was not confirmed; check the chat before retrying.")
+        }
+        return result
     }
 
     /// GET /api/tournaments/{id} → { tournament } standings (tolerant envelope OR bare).
@@ -1128,21 +1160,33 @@ public struct PulseAPIClient: Sendable {
         var request = URLRequest(url: url("/api/tournaments/\(q(tournamentId))"))
         request.httpMethod = "GET"
         let data = try await send(request)
-        if let page = try? envelope(WireTournamentEnvelope.self, from: data), let t = page.tournament { return t }
-        return try envelope(WireTournamentSummary.self, from: data)
+        let nested = (try? envelope(WireTournamentEnvelope.self, from: data))?.tournament
+        let season = try nested ?? envelope(WireTournamentSummary.self, from: data)
+        guard season.id == tournamentId, let status = season.status, ["running", "finished"].contains(status) else {
+            throw Failure(kind: .server, message: "Invalid tournament state.")
+        }
+        return season
     }
 
     /// PATCH /api/tournaments/{id} { userId, status: 'finished' } - creator/admin, idempotent.
     public func finishTournament(_ tournamentId: String) async throws -> WireTournamentSummary {
         let data = try await patchRaw("/api/tournaments/\(q(tournamentId))", body: ["userId": userId, "status": "finished"])
-        if let page = try? envelope(WireTournamentEnvelope.self, from: data), let t = page.tournament { return t }
-        return try envelope(WireTournamentSummary.self, from: data)
+        let nested = (try? envelope(WireTournamentEnvelope.self, from: data))?.tournament
+        let season = try nested ?? envelope(WireTournamentSummary.self, from: data)
+        guard season.id == tournamentId, season.status == "finished" else {
+            throw Failure(kind: .server, message: "Season closure was not confirmed.")
+        }
+        return season
     }
 
     /// POST /api/tournaments/{id}/join { userId } - idempotent upsert.
     public func joinTournament(_ tournamentId: String) async throws -> WireTournamentJoinResult {
         let data = try await postRaw("/api/tournaments/\(q(tournamentId))/join", body: ["userId": userId])
-        return try envelope(WireTournamentJoinResult.self, from: data)
+        let result = try envelope(WireTournamentJoinResult.self, from: data)
+        guard let entry = result.entry, let id = entry.id, !id.isEmpty, entry.tournamentId == tournamentId, entry.userId == userId else {
+            throw Failure(kind: .server, message: "Season membership was not confirmed.")
+        }
+        return result
     }
 
     // MARK: leaderboard

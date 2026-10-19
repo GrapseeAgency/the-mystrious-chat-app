@@ -508,7 +508,11 @@ internal fun MirrorRoom(
     var pendingEffect by remember(groupId) { mutableStateOf<MirrorMessageEffect?>(null) }
     var anonNext by remember(groupId) { mutableStateOf(false) }
     var slashHelpOpen by remember { mutableStateOf(false) }
-    var gameBusy by remember { mutableStateOf(false) }
+    val gameOwner = repository.reminderDeliveryOwner()
+    var gameBusy by remember(repository, groupId, viewerId, gameOwner) { mutableStateOf(false) }
+    val gameScope = rememberCoroutineScope()
+    var gameJob by remember(repository, groupId, viewerId, gameOwner) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    DisposableEffect(repository, groupId, viewerId, gameOwner) { onDispose { gameJob?.cancel() } }
     // full-screen message effects (confetti/lasers/echo/sparkles) - one
     // canvas, queue capped at 3, nonce per run (web L1460-1512). All per-room
     // state keys on groupId so a room switch never replays the old history.
@@ -989,21 +993,14 @@ internal fun MirrorRoom(
     // can claim. The created invite message rides the normal refresh.
     fun startTicTacToe() {
         if (gameBusy) return
+        val opponentId = if (!isGroup) members.firstOrNull { it.id != viewerId }?.id else null
         gameBusy = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val opponentId = if (!isGroup) members.firstOrNull { it.id != viewerId }?.id else null
-            val outcome = runCatching {
-                repository.createGame(groupId, opponentId).getOrThrow()
-            }
-            CoroutineScope(Dispatchers.Main).launch {
-                gameBusy = false
-                outcome.onSuccess {
-                    sendError = "Tic-tac-toe challenge sent"
-                    runCatching { repository.refreshMessages(groupId, activeTopicId) }
-                }.onFailure {
-                    sendError = "Could not start the game"
-                }
-            }
+        gameJob = gameScope.launch {
+            try {
+                roomRequest { repository.createGame(groupId, opponentId) }
+                    .onSuccess { sendError = "Tic-tac-toe challenge sent" }
+                    .onFailure { sendError = (it.message ?: "Challenge was not confirmed.") + " Check the chat before retrying." }
+            } finally { gameBusy = false }
         }
     }
 

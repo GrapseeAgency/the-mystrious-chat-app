@@ -1078,19 +1078,23 @@ private struct RoomContent: View {
             }
         }
         .sheet(isPresented: $wave7.gameCreateOpen) {
+            let roomAPI = session.api
             Wave7GameCreateSheet(
                 members: conversation.members
                     .filter { $0.id != session.viewer?.id }
                     .map { (id: $0.id, name: $0.name) },
                 onCreate: { opponentId in
-                    wave7.createGame(api: session.api, conversationId: conversation.id, opponentId: opponentId)
+                    await wave7.createGame(api: roomAPI, conversationId: conversation.id, opponentId: opponentId)
                 },
             )
+            .id(session.sessionGeneration)
         }
         .sheet(isPresented: $wave7.tournamentCreateOpen) {
+            let roomAPI = session.api
             Wave7TournamentCreateSheet { name in
-                wave7.createTournament(api: session.api, conversationId: conversation.id, name: name)
+                await wave7.createTournament(api: roomAPI, conversationId: conversation.id, name: name)
             }
+            .id(session.sessionGeneration)
         }
     }
 
@@ -1210,22 +1214,23 @@ private struct RoomContent: View {
             }
         }
         .onAppear {
+            let cardAPI = session.api
             wave7.onCarrierMessage = { carrier in
                 viewModel.injectCarrier(carrier)
             }
-            wave7.cardRedPacketLoad = { id in try? await session.api.redPacketDetail(id) }
-            wave7.cardGameLoad = { id in try? await session.api.gameDetail(id) }
-            wave7.cardTournamentLoad = { id in try? await session.api.tournamentDetail(id) }
-            wave7.cardGrab = { id in wave7.grabRedPacket(api: session.api, packetId: id) }
-            wave7.cardMove = { matchId, cell in wave7.moveGame(api: session.api, matchId: matchId, cell: cell) }
-            wave7.cardJoinGame = { matchId in wave7.joinGame(api: session.api, matchId: matchId) }
+            wave7.cardRedPacketLoad = { id in try? await cardAPI.redPacketDetail(id) }
+            wave7.cardGameLoad = { id in try? await cardAPI.gameDetail(id) }
+            wave7.cardTournamentLoad = { id in try? await cardAPI.tournamentDetail(id) }
+            wave7.cardGrab = { id in wave7.grabRedPacket(api: cardAPI, packetId: id) }
+            wave7.cardMove = { matchId, cell in await wave7.moveGame(api: cardAPI, matchId: matchId, cell: cell) }
+            wave7.cardJoinGame = { matchId in await wave7.joinGame(api: cardAPI, matchId: matchId) }
             // R7 - rematch: card hands the opponent id, the room supplies
             // conversation.id + api (in-flight spinner + toast ride wave7).
             wave7.cardRematch = { opponentId in
-                wave7.rematchGame(api: session.api, conversationId: conversation.id, opponentId: opponentId)
+                await wave7.rematchGame(api: cardAPI, conversationId: conversation.id, opponentId: opponentId)
             }
-            wave7.cardJoinTournament = { tid in wave7.joinTournament(api: session.api, tournamentId: tid) }
-            wave7.cardFinishTournament = { tid in wave7.finishTournament(api: session.api, tournamentId: tid) }
+            wave7.cardJoinTournament = { tid in await wave7.joinTournament(api: cardAPI, tournamentId: tid) }
+            wave7.cardFinishTournament = { tid in await wave7.finishTournament(api: cardAPI, tournamentId: tid) }
             wave7.cardOpenDetail = { id in wave7.redPacketDetailId = id }
         }
     }
@@ -3076,12 +3081,13 @@ struct BubbleView: View {
                 matchId: gp.matchId,
                 viewerId: viewerId ?? "",
                 load: { id in await wave7.cardGameLoad(id) },
-                onMove: { cell in wave7.cardMove(gp.matchId, cell) },
-                onJoin: { wave7.cardJoinGame(gp.matchId) },
+                onMove: { cell in await wave7.cardMove(gp.matchId, cell) },
+                onJoin: { await wave7.cardJoinGame(gp.matchId) },
                 // R7 - rematch POSTs /api/games against the finished match's
                 // opponent; toast + carrier message ride the wave7 hub.
                 wave7: wave7,
             )
+            .id("\(viewerId ?? ""):game:\(gp.matchId)")
         } else {
             Text(message.content).font(.body)
         }
@@ -3095,9 +3101,10 @@ struct BubbleView: View {
                 viewerId: viewerId ?? "",
                 isAdmin: message.senderId == viewerId,
                 load: { id in await wave7.cardTournamentLoad(id) },
-                onJoin: { wave7.cardJoinTournament(tp.tournamentId) },
-                onFinish: { wave7.cardFinishTournament(tp.tournamentId) },
+                onJoin: { await wave7.cardJoinTournament(tp.tournamentId) },
+                onFinish: { await wave7.cardFinishTournament(tp.tournamentId) },
             )
+            .id("\(viewerId ?? ""):season:\(tp.tournamentId)")
         } else {
             Text(message.content).font(.body)
         }

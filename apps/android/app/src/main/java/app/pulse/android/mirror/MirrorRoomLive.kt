@@ -88,6 +88,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.hypot
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1951,11 +1952,27 @@ internal fun MirrorTournamentSheet(
     viewerId: String,
     onDismiss: () -> Unit,
 ) {
+    androidx.compose.runtime.key(repository, conversationId, viewerId, repository.reminderDeliveryOwner()) {
+        MirrorTournamentContent(repository, conversationId, viewerId, onDismiss)
+    }
+}
+
+@Composable
+private fun MirrorTournamentContent(
+    repository: PulseRepository,
+    conversationId: String,
+    viewerId: String,
+    onDismiss: () -> Unit,
+) {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val refreshGate = remember { app.pulse.domain.sync.RoomRefreshGate() }
     var seasons by remember { mutableStateOf<List<app.pulse.protocol.TournamentSummaryDto>?>(null) }
     var loadError by remember { mutableStateOf(false) }
     var composing by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf(false) }
+    var confirmedJoins by remember { mutableStateOf(setOf<String>()) }
     var joiningId by remember { mutableStateOf<String?>(null) }
     var actionError by remember { mutableStateOf("") }
     var meName by remember { mutableStateOf("") }
@@ -1963,67 +1980,45 @@ internal fun MirrorTournamentSheet(
     val trimmed = name.trim()
     val valid = trimmed.isNotEmpty() && trimmed.length <= 40
 
-    fun refresh() {
-        CoroutineScope(Dispatchers.IO).launch {
-            val outcome = runCatching { repository.tournaments(conversationId) }
-                .getOrElse { Result.failure(it) }
-            withContext(Dispatchers.Main) {
-                outcome.fold(
-                    onSuccess = { page ->
-                        seasons = page.tournaments
-                        loadError = false
-                    },
-                    onFailure = {
-                        if (seasons == null) seasons = emptyList()
-                        loadError = true
-                    },
-                )
-            }
+    suspend fun refresh() {
+        val ticket = refreshGate.beginRead() ?: return
+        val outcome = roomRequest { repository.tournaments(conversationId) }
+        if (!refreshGate.accepts(ticket)) return
+        outcome.onSuccess { seasons = it.tournaments; loadError = false }.onFailure { loadError = true }
+    }
+    LaunchedEffect(conversationId, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) { refresh(); delay(5_000L) }
         }
     }
-
-    // Fetch-on-open: seasons + the composer's "started by" name.
-    LaunchedEffect(conversationId) {
-        refresh()
-        meName = runCatching { repository.me()?.name }.getOrNull().orEmpty()
+    LaunchedEffect(viewerId) {
+        meName = roomRequest { Result.success(repository.me()?.name.orEmpty()) }.getOrNull().orEmpty()
     }
-
     fun submit() {
-        if (!valid || pending) return
-        pending = true
-        actionError = ""
-        CoroutineScope(Dispatchers.IO).launch {
-            val outcome = runCatching { repository.createTournament(conversationId, trimmed.take(40)) }
-                .getOrElse { Result.failure(it) }
-            withContext(Dispatchers.Main) {
-                pending = false
-                outcome.fold(
-                    onSuccess = {
-                        // web: close the composer + re-sync the seasons list
-                        composing = false
-                        name = ""
-                        refresh()
-                    },
-                    onFailure = { actionError = "Could not start the tournament." },
-                )
-            }
+        if (!valid || pending || joiningId != null) return
+        val sentName = trimmed.take(40)
+        pending = true; actionError = ""
+        refreshGate.beginWrite()
+        scope.launch {
+            try {
+                roomRequest { repository.createTournament(conversationId, sentName) }
+                    .onSuccess { composing = false; name = "" }
+                    .onFailure { actionError = (it.message ?: "Season was not confirmed.") + " Check the chat before retrying." }
+            } finally { pending = false; refreshGate.endWrite() }
+            refresh()
         }
     }
-
     fun join(seasonId: String) {
-        if (joiningId != null) return
-        joiningId = seasonId
-        actionError = ""
-        CoroutineScope(Dispatchers.IO).launch {
-            val outcome = runCatching { repository.joinTournament(seasonId) }
-                .getOrElse { Result.failure(it) }
-            withContext(Dispatchers.Main) {
-                joiningId = null
-                outcome.fold(
-                    onSuccess = { refresh() },
-                    onFailure = { actionError = "Could not join the tournament." },
-                )
-            }
+        if (joiningId != null || pending || seasonId in confirmedJoins) return
+        joiningId = seasonId; actionError = ""
+        refreshGate.beginWrite()
+        scope.launch {
+            try {
+                roomRequest { repository.joinTournament(seasonId) }
+                    .onSuccess { confirmedJoins = confirmedJoins + seasonId }
+                    .onFailure { actionError = it.message ?: "Could not join the tournament." }
+            } finally { joiningId = null; refreshGate.endWrite() }
+            refresh()
         }
     }
 
@@ -2035,7 +2030,7 @@ internal fun MirrorTournamentSheet(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable {
+                        .clickable(enabled = !pending) {
                             composing = false
                             actionError = ""
                         }
@@ -2086,6 +2081,7 @@ internal fun MirrorTournamentSheet(
                 }
                 Spacer(Modifier.height(6.dp))
                 BasicTextField(
+                    enabled = !pending,
                     value = name,
                     onValueChange = { next -> name = next.take(40) },
                     singleLine = true,
@@ -2205,7 +2201,7 @@ internal fun MirrorTournamentSheet(
                                 Brush.linearGradient(listOf(Color(0xFF3F3F46), Color(0xFF3F3F46)))
                             },
                         )
-                        .clickable(enabled = valid && !pending) { submit() },
+                        .clickable(enabled = valid && !pending && joiningId == null) { submit() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2255,21 +2251,11 @@ internal fun MirrorTournamentSheet(
                         .border(1.dp, LiveWhite5, RoundedCornerShape(16.dp))
                         .padding(6.dp),
                 ) {
+                    if (loadError) Text("Could not refresh tournaments. Retrying; previous results are kept.", color = MirrorArt.Faint, fontSize = 12.sp)
                     when {
                         list == null -> {
                             Text(
                                 "Loading season…",
-                                color = MirrorArt.Faint,
-                                fontSize = 12.sp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 14.dp),
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                        loadError -> {
-                            Text(
-                                "Could not load tournaments.",
                                 color = MirrorArt.Faint,
                                 fontSize = 12.sp,
                                 modifier = Modifier
@@ -2292,6 +2278,7 @@ internal fun MirrorTournamentSheet(
                         else -> {
                             for (season in list) {
                                 val running = season.status == "running"
+                                val joined = season.joined == true || season.id in confirmedJoins
                                 Column(Modifier.fillMaxWidth()) {
                                     Row(
                                         Modifier
@@ -2363,7 +2350,7 @@ internal fun MirrorTournamentSheet(
                                                 .height(40.dp)
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(Brush.linearGradient(listOf(LiveAmber500, LiveAmber600)))
-                                                .clickable(enabled = joiningId == null) { join(season.id) },
+                                                .clickable(enabled = joiningId == null && !pending && !joined) { join(season.id) },
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2372,7 +2359,7 @@ internal fun MirrorTournamentSheet(
                                                 } else {
                                                     MirrorLucideIcon("LGamepad2", tint = Color.White, modifier = Modifier.size(16.dp))
                                                 }
-                                                Text("Join season", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                                Text(if (joined) "Joined" else "Join season", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
@@ -2401,7 +2388,7 @@ internal fun MirrorTournamentSheet(
                         .clip(RoundedCornerShape(12.dp))
                         .background(LiveAmberTint10)
                         .border(1.dp, LiveAmberRing40, RoundedCornerShape(12.dp))
-                        .clickable {
+                        .clickable(enabled = joiningId == null && !pending) {
                             name = ""
                             actionError = ""
                             composing = true
