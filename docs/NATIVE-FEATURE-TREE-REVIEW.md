@@ -744,3 +744,10 @@ not guessed repairs. Refund is still lazy (triggered by detail reads); this is n
 an expiry scheduler. A pending refund error is surfaced rather than silently
 marking money refunded. Games/tournaments still have separate detached-action paths
 that are not represented as fixed by the packet/room changes.
+
+Verification follow-up: 2f1d607 Android JVM compilation exposed a missing
+`kotlinx-coroutines-test` dependency in the app module for the new cancellation
+test. The test only needs immediate suspend invocation, so it now uses the
+existing core `runBlocking` API rather than adding a test scheduler dependency.
+This was a test compilation failure, not a successful native regression run;
+rerun verification is required.
