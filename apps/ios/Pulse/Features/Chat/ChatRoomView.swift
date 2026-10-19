@@ -1137,13 +1137,14 @@ private struct RoomContent: View {
     private var chatBodyStyled10: some View {
         chatBodyStyled9
         .sheet(isPresented: $wave7.remindersOpen) {
+            let reminderAPI = session.api
             Wave7RemindersSheet(
-                loadReminders: { try? await session.api.reminders(dueOnly: false).items },
+                loadReminders: { try? await reminderAPI.reminders(dueOnly: false).items },
                 onCreate: { note, iso, anchored in
-                    wave7.createReminder(api: session.api, conversationId: conversation.id, note: note, remindAtIso: iso, anchored: anchored)
+                    await wave7.createReminder(api: reminderAPI, conversationId: conversation.id, note: note, remindAtIso: iso, anchored: anchored)
                 },
-                onResolve: { id in wave7.resolveReminder(api: session.api, id: id) },
-                onDelete: { id in wave7.deleteReminder(api: session.api, id: id) },
+                onResolve: { id in wave7.resolveReminder(api: reminderAPI, id: id) },
+                onDelete: { id in wave7.deleteReminder(api: reminderAPI, id: id) },
                 onJump: { item in
                     // R7 - web onReminderJump parity (chat-room.tsx:1093-1103):
                     // close the sheet first; a reminder anchored in THIS room

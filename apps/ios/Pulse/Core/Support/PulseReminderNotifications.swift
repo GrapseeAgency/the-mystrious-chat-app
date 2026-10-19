@@ -45,8 +45,7 @@ public enum PulseReminderNotifications {
             content.categoryIdentifier = PulseQuickReply.categoryId
         }
 
-        let fireDate = Date(timeIntervalSince1970: TimeInterval(remindAtEpochMs) / 1000)
-        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+        let components = Self.triggerComponents(remindAtEpochMs: remindAtEpochMs)
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
 
         let request = UNNotificationRequest(
@@ -61,12 +60,36 @@ public enum PulseReminderNotifications {
         }
     }
 
-    public static func cancel(reminderId: String) {
-        UNUserNotificationCenter.current()
-            .removePendingNotificationRequests(withIdentifiers: ["pulse-reminder-\(reminderId)"])
+    static func triggerComponents(remindAtEpochMs: Int64) -> DateComponents {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = Date(timeIntervalSince1970: TimeInterval(remindAtEpochMs) / 1000)
+        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        components.calendar = calendar
+        components.timeZone = calendar.timeZone
+        return components
     }
 
-    public static func showNow(reminderId: String, note: String, body: String, conversationId: String? = nil) {
+    public static func cancel(reminderId: String) {
+        let center = UNUserNotificationCenter.current()
+        let ids = ["pulse-reminder-\(reminderId)", "pulse-reminder-fired-\(reminderId)"]
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+
+    /// True means accepted by the OS (or already delivered), not proof the user saw it.
+    public static func showNow(reminderId: String, note: String, body: String, conversationId: String? = nil) async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        guard !Task.isCancelled else { return false }
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: break
+        default: return false
+        }
+        let identifier = "pulse-reminder-\(reminderId)"
+        let delivered = await center.deliveredNotifications()
+        guard !Task.isCancelled else { return false }
+        if delivered.contains(where: { $0.request.identifier == identifier || $0.request.identifier == "pulse-reminder-fired-\(reminderId)" }) { return true }
         let content = UNMutableNotificationContent()
         content.title = note.isEmpty ? "Reminder" : String(note.prefix(64))
         content.body = String(body.prefix(178))
@@ -77,11 +100,12 @@ public enum PulseReminderNotifications {
             content.categoryIdentifier = PulseQuickReply.categoryId
         }
         let request = UNNotificationRequest(
-            identifier: "pulse-reminder-fired-\(reminderId)",
+            identifier: identifier,
             content: content,
             trigger: nil,
         )
-        UNUserNotificationCenter.current().add(request)
+        do { try await center.add(request); return true }
+        catch { return false }
     }
 
     /// The reminder payload - reminderId + (R2-D) the conversationId the tap
@@ -181,5 +205,19 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
         guard let value = raw as? String else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+/// A failed server resolve is retried without replaying sound every 30 seconds.
+/// Record only accepted notifications; denied/failed enqueue remains retryable.
+@MainActor
+enum PulseReminderDelivery {
+    static func queueOnce(ownerId: String, reminderId: String, defaults: UserDefaults = .standard,
+                          enqueue: () async -> Bool) async -> Bool {
+        let key = "reminder.queued:\(ownerId):\(reminderId)"
+        if defaults.bool(forKey: key) { return true }
+        guard await enqueue() else { return false }
+        defaults.set(true, forKey: key)
+        return true
     }
 }

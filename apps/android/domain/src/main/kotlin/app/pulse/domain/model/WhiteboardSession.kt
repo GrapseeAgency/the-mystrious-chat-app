@@ -73,8 +73,9 @@ class WhiteboardSession(
             val ids = page.strokes.map { it.id }.toSet()
             persist { latest -> latest.filter { stroke ->
                 // Legacy unknown-epoch drafts are kept for explicit review, NOT replayed.
-                stroke.clientId == null || stroke.baseResetAt == null ||
-                    (stroke.baseResetAt >= nextEpoch && "wb:$viewerId:${stroke.clientId}" !in ids)
+                val base = stroke.baseResetAt
+                stroke.clientId == null || base == null ||
+                    (base >= nextEpoch && "wb:$viewerId:${stroke.clientId}" !in ids)
             } }
             epoch = nextEpoch
             mutable.value = mutable.value.copy(remote = page.strokes.distinctBy { it.id }, ready = true,

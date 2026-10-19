@@ -58,6 +58,29 @@ final class Wave7RoomActions: ObservableObject {
         }
     }
 
+    @Published private(set) var pendingMutations: Set<String> = []
+    var cancelReminderNotification: (String) -> Void = { PulseReminderNotifications.cancel(reminderId: $0) }
+
+    /// Take the per-resource gate synchronously, before spawning a task. Local
+    /// consequences and success copy follow the server verdict, never the tap.
+    @discardableResult
+    func confirmedMutation(key: String, success: String,
+                           operation: @escaping () async throws -> Void,
+                           onSuccess: @escaping () -> Void = {}) -> Task<Void, Never>? {
+        guard pendingMutations.insert(key).inserted else { return nil }
+        return Task { @MainActor in
+            defer { pendingMutations.remove(key) }
+            do {
+                try await operation()
+                try Task.checkCancellation()
+                onSuccess()
+                toast(success)
+            } catch is CancellationError {
+                // An uncertain outcome is not a success. Refresh reconciles it.
+            } catch { toast(describe(error), isError: true) }
+        }
+    }
+
     private func describe(_ error: Error) -> String {
         (error as? PulseAPIClient.Failure)?.message ?? error.localizedDescription
     }
@@ -273,17 +296,19 @@ final class Wave7RoomActions: ObservableObject {
     }
 
     func deleteEvent(api: PulseAPIClient, eventId: String) {
-        Task { @MainActor in
-            do { try await api.deleteEvent(eventId) }
-            catch { toast(describe(error), isError: true) }
-        }
-        toast("Event deleted.")
+        confirmedMutation(key: "event:\(eventId)", success: "Event deleted.", operation: {
+            try await api.deleteEvent(eventId)
+        })
     }
 
     // MARK: reminders
 
-    func createReminder(api: PulseAPIClient, conversationId: String, note: String, remindAtIso: String, anchored: WireChatMessage?) {
-        Task { @MainActor in
+    @Published private(set) var reminderCreating = false
+
+    func createReminder(api: PulseAPIClient, conversationId: String, note: String, remindAtIso: String, anchored: WireChatMessage?) async -> Bool {
+        guard !reminderCreating else { return false }
+        reminderCreating = true
+        defer { reminderCreating = false }
             do {
                 let item = try await api.createReminder(
                     conversationId: conversationId,
@@ -291,8 +316,6 @@ final class Wave7RoomActions: ObservableObject {
                     note: note,
                     remindAtIso: remindAtIso,
                 )
-                reminderAnchor = nil
-                remindersOpen = false
                 // Tier 1 - schedule the local fire (offline-capable); the
                 // conversationId rides the userInfo so the tap opens the room.
                 if let iso = item.remindAt {
@@ -303,26 +326,27 @@ final class Wave7RoomActions: ObservableObject {
                     }
                 }
                 toast("Reminder set")
+                return true
             } catch {
                 toast(describe(error), isError: true)
+                return false
             }
-        }
     }
 
     func resolveReminder(api: PulseAPIClient, id: String) {
-        Task { @MainActor in
-            do { _ = try await api.resolveReminder(id) }
-            catch { toast(describe(error), isError: true) }
-        }
+        confirmedMutation(key: "reminder:\(id)", success: "Reminder marked done", operation: {
+            let result = try await api.resolveReminder(id)
+            guard result.ok == true else { throw URLError(.badServerResponse) }
+        }, onSuccess: { self.cancelReminderNotification(id) })
     }
 
     func deleteReminder(api: PulseAPIClient, id: String) {
-        Task { @MainActor in
+        confirmedMutation(key: "reminder:\(id)", success: "Reminder canceled", operation: {
             do { try await api.deleteReminder(id) }
-            catch { toast(describe(error), isError: true) }
-        }
-        PulseReminderNotifications.cancel(reminderId: id)
-        toast("Reminder canceled")
+            catch let error as PulseAPIClient.Failure where error.kind == .notFound {
+                // A lost successful DELETE response is safe to reconcile as absent.
+            }
+        }, onSuccess: { self.cancelReminderNotification(id) })
     }
 
     static func epochMs(from iso: String) -> Int64? {
@@ -1202,7 +1226,7 @@ struct Wave7EventsSheet: View {
 
 struct Wave7RemindersSheet: View {
     let loadReminders: () async -> [WireReminderItem]?
-    let onCreate: (String, String, WireChatMessage?) -> Void
+    let onCreate: (String, String, WireChatMessage?) async -> Bool
     let onResolve: (String) -> Void
     let onDelete: (String) -> Void
     // R7 - web reminders-sheet.tsx:337-343 parity: rows anchored to a message
@@ -1215,6 +1239,9 @@ struct Wave7RemindersSheet: View {
     @State private var items: [WireReminderItem] = []
     @State private var note = ""
     @State private var whenText = ""
+    @State private var creating = false
+    @State private var loaded = false
+    @State private var loadFailed = false
     @State private var error: String?
 
     var body: some View {
@@ -1243,14 +1270,32 @@ struct Wave7RemindersSheet: View {
                             error = "Note can't be empty."
                         } else {
                             error = nil
-                            onCreate(finalNote, resolvedIso ?? "", anchored)
-                            note = ""; whenText = ""
+                            let submittedNote = note
+                            let submittedWhen = whenText
+                            let submittedAnchor = anchored
+                            let iso = resolvedIso ?? ""
+                            creating = true
+                            Task { @MainActor in
+                                defer { creating = false }
+                                if await onCreate(finalNote, iso, submittedAnchor) {
+                                    if note == submittedNote && whenText == submittedWhen {
+                                        note = ""; whenText = ""
+                                    }
+                                } else {
+                                    error = "Could not set the reminder. Your input has been kept."
+                                }
+                            }
                         }
                     }
+                    .disabled(creating)
                 } footer: {
-                    Text("Fires locally even offline; resolves to the server when online.")
+                    Text("Local alerts require notification permission. Server changes are confirmed when online.")
                 }
-                if items.isEmpty {
+                if loadFailed {
+                    Section { Text("Could not refresh reminders. Showing the last available list.").foregroundStyle(.red) }
+                } else if !loaded {
+                    Section { ProgressView("Loading reminders…") }
+                } else if items.isEmpty {
                     Section { Text("No reminders yet.").foregroundStyle(.secondary) }
                 }
                 ForEach(items, id: \.id) { item in
@@ -1286,8 +1331,11 @@ struct Wave7RemindersSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 while !Task.isCancelled {
-                    if let list = await loadReminders() { items = list }
-                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    let list = await loadReminders()
+                    guard !Task.isCancelled else { break }
+                    if let list { items = list; loaded = true; loadFailed = false }
+                    else { loadFailed = true }
+                    do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { break }
                 }
             }
         }

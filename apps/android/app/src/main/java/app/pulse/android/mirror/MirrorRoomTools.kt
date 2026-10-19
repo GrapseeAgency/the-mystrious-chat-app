@@ -23,6 +23,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -263,6 +268,9 @@ internal fun MirrorRemindersSheet(
     conversationId: String,
     onDismiss: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    val bound = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val context = LocalContext.current.applicationContext
     // null = first load pending; empty = loaded and really empty
     var items by remember { mutableStateOf<List<ReminderItemDto>?>(null) }
     var loadFailed by remember { mutableStateOf(false) }
@@ -271,7 +279,10 @@ internal fun MirrorRemindersSheet(
     var pendingOps by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var actionFailedOp by remember { mutableStateOf<String?>(null) }
     var historyOpen by remember { mutableStateOf(false) }
-    val now = remember { ZonedDateTime.now() }
+    var now by remember { mutableStateOf(ZonedDateTime.now()) }
+    LaunchedEffect(Unit) {
+        while (isActive) { now = ZonedDateTime.now(); delay(30_000) }
+    }
 
     // fetch on open (+ after every mutation settle, web onSettled invalidate)
     LaunchedEffect(reloadKey) {
@@ -279,11 +290,12 @@ internal fun MirrorRemindersSheet(
         actionFailedOp = null
         if (items == null) {
             // paint the last good snapshot instantly when one exists
-            val cached = runCatching { repository.cachedReminders() }.getOrNull()
+            val cached = runCatching { bound.cachedReminders() }.getOrNull()
             if (cached != null && items == null) items = cached.items
         }
-        runCatching { repository.reminders(false).getOrThrow() }
-            .fold(
+        val result = runCatching { bound.reminders(false).getOrThrow() }
+        currentCoroutineContext().ensureActive()
+        result.fold(
                 onSuccess = { page ->
                     items = page.items
                     loadFailed = false
@@ -300,18 +312,20 @@ internal fun MirrorRemindersSheet(
         if (pendingOps.containsKey(id)) return
         actionFailedOp = null
         pendingOps = pendingOps + (id to op)
-        CoroutineScope(Dispatchers.IO).launch {
+        scope.launch {
             val outcome = runCatching {
                 if (op == TOOL_OP_RESOLVE) {
-                    repository.resolveReminder(id).getOrThrow()
+                    check(bound.resolveReminder(id).getOrThrow().ok) { "Invalid reminder acknowledgement" }
                 } else {
-                    repository.deleteReminder(id).getOrThrow()
+                    bound.deleteReminder(id).getOrThrow()
                 }
             }
+            currentCoroutineContext().ensureActive()
             withContext(Dispatchers.Main) {
                 pendingOps = pendingOps - id
                 outcome.fold(
                     onSuccess = {
+                        app.pulse.android.notify.ReminderNotifier.cancel(context, id)
                         // web cancelReminder: optimistic removal, then refetch.
                         // resolve keeps the row; the refetch moves it to History.
                         if (op == TOOL_OP_DELETE) {

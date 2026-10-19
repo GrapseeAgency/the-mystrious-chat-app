@@ -297,6 +297,7 @@ public final class PulseSession: ObservableObject {
 
     private func startReminderDueLoop(viewer: PulseViewer) {
         reminderDueTask?.cancel()
+        let epoch = generation
         reminderDueTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { break }
@@ -306,14 +307,23 @@ public final class PulseSession: ObservableObject {
                 }
                 let api = self.api
                 if let due = try? await api.reminders(dueOnly: true).items, !due.isEmpty {
-                    guard !Task.isCancelled, self.viewer?.id == viewer.id else { return }
+                    guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == viewer.id else { return }
                     for item in due {
                         let note = (item.note?.isEmpty == false) ? item.note! : "Reminder"
                         let body = item.snippet ?? item.conversation?.name ?? ""
                         // R2-D - the conversationId rides the userInfo so the
                         // tap deep-links into the room (web reminder parity).
-                        PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body, conversationId: item.conversationId)
-                        _ = try? await api.resolveReminder(item.id)
+                        guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == viewer.id else { return }
+                        let queued = await PulseReminderDelivery.queueOnce(ownerId: viewer.id, reminderId: item.id) {
+                            let accepted = await PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body, conversationId: item.conversationId)
+                            guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == viewer.id else {
+                                if accepted { PulseReminderNotifications.cancel(reminderId: item.id) }
+                                return false
+                            }
+                            return accepted
+                        }
+                        guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == viewer.id else { return }
+                        if queued { _ = try? await api.resolveReminder(item.id) }
                     }
                 }
                 try? await Task.sleep(nanoseconds: 30_000_000_000)

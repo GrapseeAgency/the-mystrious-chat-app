@@ -132,7 +132,7 @@ final class PulseWhiteboardSession: ObservableObject {
         command = .clear; busy = true
     }
 
-    static func normalizedPoints(_ raw: [[Double]]) -> [[Double]] {
+    nonisolated static func normalizedPoints(_ raw: [[Double]]) -> [[Double]] {
         var points = raw.filter { $0.count >= 2 && $0[0].isFinite && $0[1].isFinite }
             .map { [min(max($0[0], 0), 1), min(max($0[1], 0), 1)] }
         if points.count == 1 { points.append(points[0]) } // stationary tap is a dot

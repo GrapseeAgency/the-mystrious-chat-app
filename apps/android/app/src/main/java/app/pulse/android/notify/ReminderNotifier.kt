@@ -161,6 +161,7 @@ object ReminderNotifier {
 
     fun cancel(context: Context, reminderId: String) {
         WorkManager.getInstance(context).cancelUniqueWork(workName(reminderId))
+        NotificationManagerCompat.from(context).cancel(BASE_NOTIFICATION_ID + reminderId.hashCode())
     }
 
     private const val KEY_ID = "reminderId"

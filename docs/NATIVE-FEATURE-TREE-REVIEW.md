@@ -426,3 +426,43 @@ JVM tests passed and emulator jobs advanced to release smoke. These results are 
 attributed to the new collaboration changes.
 
 Transaction reference consulted: https://www.prisma.io/docs/orm/v6/prisma-client/queries/transactions
+
+### Reminder/event consequences and notification delivery follow-up
+
+Additional traced path: native reminder action → HTTP verdict → local alarm state,
+and iOS foreground due polling → OS enqueue → server resolve.
+
+- Swift event deletion and reminder cancellation previously announced success before
+  HTTP completed. Reminder cancellation also removed the offline alarm on failure.
+  Per-resource single-flight confirmation now orders consequences after success;
+  Resolve and Delete share the same reminder gate. Failed/cancelled operations cannot
+  claim success. A repeated DELETE returning not-found confirms absence safely.
+- Swift reminder creation now returns its verdict to the form. A failure keeps input;
+  a late success only clears the submitted, unchanged fields, and does not dismiss a
+  newly reopened sheet. Loading failure is no longer rendered as an empty reminder list.
+- iOS calendar triggers previously dropped seconds and used a floating local timezone.
+  They now retain seconds and an explicit UTC calendar/timezone for the chosen instant.
+- iOS foreground polling previously marked reminders fired even when notification
+  permission was denied, and repeated sound after failed resolve every 30 seconds.
+  OS enqueue returns acceptance; only accepted/already-delivered notifications permit
+  resolve. A viewer-scoped receipt suppresses repeat enqueue while resolve retries.
+  Each item and late OS callback is fenced by session generation. Acceptance does not
+  prove the user saw a banner; OS scheduling/Focus still need device acceptance.
+- Active Android reminder actions are screen-owned/main-thread and use the captured
+  repository; successful Resolve/Delete cancels the queued worker and visible alert.
+  Countdown now advances while the sheet remains open. HTTP cancellation is not treated
+  as an ordinary refresh result.
+- Seven Swift regressions cover deferred/failed/cancelled consequences, resource gates,
+  exact schedule instant, notification failure/retry, and owner-scoped receipt reuse.
+  These tests are authored, not yet confirmed executed on this revision.
+
+Compiler checks on ecbc55d exposed two issues in the new board code: Kotlin cannot
+smart-cast a public nullable property across modules; Swift Canvas cannot call an
+actor-isolated pure static helper. Fixed by a captured local value and an explicitly
+nonisolated normalization function, respectively. Neither failed run is a pass.
+
+Still open: Android due-loop/worker delivery deduplication and permission-denied resolve
+semantics, system permission prompts and schedule recovery on real devices, iOS legacy
+unscoped drafts, large-board pagination, and other collaboration/Hub trees. Reminder
+creation itself has no server operation ID: an uncertain POST is not automatically
+retried, but a deliberate retry can still duplicate it. No whole-reminder certification.
