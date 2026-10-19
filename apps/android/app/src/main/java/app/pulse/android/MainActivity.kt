@@ -572,12 +572,39 @@ fun PulseRoot(
                 androidx.compose.runtime.key(viewerId, storedBase) {
                 val callVm: CallViewModel = hiltViewModel()
                 val groupCallVm: GroupCallViewModel = hiltViewModel()
+                val roomsVm: VoiceRoomsViewModel = hiltViewModel()
+                val noteVm: app.pulse.feature.chat.VoicePlaybackViewModel = hiltViewModel()
+                val noteContext = androidx.compose.ui.platform.LocalContext.current
+                val liveSurface by roomsVm.surface.collectAsStateWithLifecycle()
+                LaunchedEffect(roomsVm) {
+                    roomsVm.audioIssue.collect { issue ->
+                        if (issue != null) android.widget.Toast.makeText(noteContext, issue, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+                LaunchedEffect(noteVm) {
+                    noteVm.player.notices.collect { android.widget.Toast.makeText(noteContext, it, android.widget.Toast.LENGTH_SHORT).show() }
+                }
+                LaunchedEffect(viewerId, viewerName, storedBase) {
+                    roomsVm.setIdentity(viewerId, viewerName, null)
+                }
                 androidx.compose.runtime.DisposableEffect(viewerId, storedBase) {
-                    onDispose { callVm.hangup(); groupCallVm.leaveCall() }
+                    onDispose {
+                        // Rotation destroys composition, not the retained session/foreground service.
+                        if ((noteContext as? android.app.Activity)?.isChangingConfigurations != true) {
+                            noteVm.player.release(); roomsVm.leaveAll(); callVm.hangup(); groupCallVm.leaveCall()
+                        }
+                    }
                 }
                 app.pulse.android.mirror.MirrorRoot(
+                    onOpenLiveRoom = { cid, kind ->
+                        when (kind) {
+                            app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.VOICE -> roomsVm.openVoice(cid)
+                            app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE -> roomsVm.openStage(cid)
+                            app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE -> roomsVm.openSpace(cid)
+                        }
+                    },
                     session = session,
-                    readingEnabled = !appLock.locked.collectAsStateWithLifecycle().value,
+                    readingEnabled = !appLock.locked.collectAsStateWithLifecycle().value && liveSurface == null,
                     repository = repository,
                     onStartCall = { convo, video ->
                         val viewer = viewerName.orEmpty().ifBlank { "You" }
@@ -610,6 +637,7 @@ fun PulseRoot(
                     shortcutAction = pendingAction,
                     onConsumeShortcutAction = { pendingAction = null },
                 )
+                VoiceRoomsOverlay(roomsVm)
                 CallOverlay(callVm)
                 GroupCallOverlay(groupCallVm)
                 // R76 - the same native entry sheets the retired shells used,

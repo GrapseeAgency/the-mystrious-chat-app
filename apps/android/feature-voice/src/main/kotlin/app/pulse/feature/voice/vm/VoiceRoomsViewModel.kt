@@ -25,6 +25,13 @@ class VoiceRoomsViewModel @Inject constructor(
     val surface: StateFlow<VoiceRoomsEngine.OpenSurface?> = engine.surface
     val captions: StateFlow<List<VoiceRoomsEngine.VoiceCaption>> = engine.captionList
     val captionsEnabled: StateFlow<Boolean> = engine.captionsEnabled
+    val audioIssue = engine.audioIssue
+    val microphoneEnabled = engine.microphoneEnabled
+    fun leaveAll() = engine.leaveAll()
+    fun cancelMicrophoneRequest() = engine.cancelMicrophoneRequest()
+    fun cancelPtt() = engine.cancelPtt()
+    fun requestMicrophone(cid: String) = engine.requestMicrophone(cid)
+    fun resolveMicrophone(ticket: Long, granted: Boolean) = engine.resolveMicrophone(ticket, granted)
     val connected: StateFlow<Boolean> = engine.connected
 
     fun setIdentity(id: String?, name: String?, color: String?) = engine.setIdentity(id, name, color)

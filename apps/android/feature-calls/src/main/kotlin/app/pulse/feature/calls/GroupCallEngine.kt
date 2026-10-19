@@ -180,6 +180,12 @@ class GroupCallEngine @Inject constructor(
     fun start() {
         if (started) return
         started = true
+        audio.onFocusLost = {
+            scope.launch {
+                leaveCall()
+                _notices.tryEmit("Audio interrupted by another app. Rejoin when ready.")
+            }
+        }
         // gcall:* signal intake - the engine's event side.
         scope.launch {
             repo.events().collect { event ->

@@ -139,6 +139,7 @@ class CallEngine @Inject constructor(
     val snapshot: StateFlow<CallSnapshot> = machine.snapshot
 
     init {
+        audio.onFocusLost = { scope.launch { perform(machine.dispatch(CallEvent.PeerFailed)) } }
         // Relay call:* signals → the state machine (offer/answer/ice/…).
         scope.launch {
             repo.events().collect { event ->

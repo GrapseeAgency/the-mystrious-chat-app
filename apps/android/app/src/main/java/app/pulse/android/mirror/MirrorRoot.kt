@@ -98,6 +98,7 @@ internal fun MirrorRoot(
     repository: PulseRepository,
     readingEnabled: Boolean = true,
     onStartCall: ((Conversation, video: Boolean) -> Unit)? = null,
+    onOpenLiveRoom: (String, app.pulse.feature.voice.VoiceRoomsEngine.RoomKind) -> Unit,
     // R76 - external entry points (the retired shells owned them): launcher
     // tab shortcuts land here as tab requests; pulse://room deep links as
     // pending room ids. Both work cold and warm, both self-consume.
@@ -767,6 +768,7 @@ internal fun MirrorRoot(
                     onRoomInfo = { roomInfoFor = convo },
                     onManageGroup = { managerFor = convo },
                     onStartCall = onStartCall,
+                    onOpenLiveRoom = onOpenLiveRoom,
                     reducedMotion = reducedMotion,
                     jumpMessageId = pendingJumpId,
                     onJumpConsumed = { pendingJumpId = null },
@@ -1016,6 +1018,7 @@ private fun MirrorRoomScaffold(
     onRoomInfo: () -> Unit,
     onManageGroup: () -> Unit,
     onStartCall: ((Conversation, video: Boolean) -> Unit)?,
+    onOpenLiveRoom: (String, app.pulse.feature.voice.VoiceRoomsEngine.RoomKind) -> Unit,
     /** R74 - web prefs.reducedMotion gate for the full-screen effects layer. */
     reducedMotion: Boolean = false,
     /** R76 - web jumpToMessage: open anchored at one message. */
@@ -1044,6 +1047,7 @@ private fun MirrorRoomScaffold(
     }
 
     MirrorRoom(
+        onOpenLiveRoom = { kind -> onOpenLiveRoom(convo.id, kind) },
         readingEnabled = readingEnabled,
         title = convo.title,
         color = convo.accentColor ?: other?.color,

@@ -6,6 +6,8 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import app.pulse.core.audio.AudioOwnership
 import app.pulse.core.audio.communicationRouteType
 import java.util.UUID
@@ -18,27 +20,39 @@ class CallAudioManager(context: Context) {
     private var active = false
     private var savedMode = AudioManager.MODE_NORMAL
     private var savedSpeaker = false
-    private val focusListener = AudioManager.OnAudioFocusChangeListener {
-        // Call/room interruption state needs its own policy; do not auto-unmute here.
-    }
+    var onFocusLost: (() -> Unit)? = null
+    private val main = Handler(Looper.getMainLooper())
+    private var focusEpoch = UUID()
+    private var focusListener: AudioManager.OnAudioFocusChangeListener? = null
 
     /** No media should be created until BOTH ownership and OS focus are granted. */
     @Suppress("DEPRECATION")
     fun acquire(): Boolean {
         if (active) return true
         if (!AudioOwnership.shared.acquire(token)) return false
+        val ticket = UUID()
+        focusEpoch = ticket
+        val listener = AudioManager.OnAudioFocusChangeListener { change ->
+            if (change == AudioManager.AUDIOFOCUS_LOSS ||
+                change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
+                change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+                // Privacy-first policy: end, never silently resume a microphone.
+                main.post { if (active && focusEpoch == ticket) onFocusLost?.invoke() }
+            }
+        }
+        focusListener = listener
         val granted = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                     .setAudioAttributes(AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
-                    .setOnAudioFocusChangeListener(focusListener)
+                    .setOnAudioFocusChangeListener(listener)
                     .build()
                 focusRequest = request
                 am.requestAudioFocus(request)
             } else {
-                am.requestAudioFocus(focusListener, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
+                am.requestAudioFocus(listener, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
             }
         }.getOrDefault(AudioManager.AUDIOFOCUS_REQUEST_FAILED) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         if (!granted) {
@@ -58,9 +72,11 @@ class CallAudioManager(context: Context) {
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 focusRequest?.let { am.abandonAudioFocusRequest(it) }
-            } else { am.abandonAudioFocus(focusListener) }
+            } else { focusListener?.let { am.abandonAudioFocus(it) } }
         }
         focusRequest = null
+        focusListener = null
+        focusEpoch = UUID()
     }
 
     fun release() {

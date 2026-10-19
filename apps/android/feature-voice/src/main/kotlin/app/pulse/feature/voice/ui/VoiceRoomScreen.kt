@@ -67,11 +67,9 @@ fun VoiceRoomScreen(
     val captionsOn by vm.captionsEnabled.collectAsStateWithLifecycle()
     val relayConnected by vm.connected.collectAsStateWithLifecycle()
 
-    // RECORD_AUDIO gate - Join passes through the runtime permission (house
-    // pattern; denial keeps the honest error panel on the surface).
-    val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) vm.joinVoice(conversationId)
-    }
+    val micEnabled by vm.microphoneEnabled.collectAsStateWithLifecycle()
+    val stage by vm.stageState.collectAsStateWithLifecycle()
+    val maySpeak = !stage.joined || stage.canTransmit
 
     Column(
         Modifier
@@ -121,7 +119,7 @@ fun VoiceRoomScreen(
                         )
                         Spacer(Modifier.height(20.dp))
                         Button(
-                            onClick = { micLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
+                            onClick = { vm.joinVoice(conversationId) },
                             modifier = Modifier
                                 .height(48.dp)
                                 .semantics { contentDescription = "Join the voice room" },
@@ -160,13 +158,16 @@ fun VoiceRoomScreen(
                 }
 
                 Spacer(Modifier.height(16.dp))
+                MicrophonePermissionButton(vm, conversationId, maySpeak)
                 ControlsRow(
                     state = state,
+                    pttAllowed = micEnabled && maySpeak,
                     captionsOn = captionsOn,
                     onToggleMute = { vm.setMuted(!state.micMuted) },
                     onToggleCaptions = { vm.setCaptions(!captionsOn) },
                     onPttDown = vm::pttDown,
                     onPttUp = vm::pttUp,
+                    onPttCancel = vm::cancelPtt,
                 )
                 Spacer(Modifier.height(16.dp))
                 OutlinedButton(
@@ -291,10 +292,12 @@ private fun CaptionStrip(captions: List<VoiceRoomsEngine.VoiceCaption>) {
 private fun ControlsRow(
     state: VoiceRoomStateMachine.State,
     captionsOn: Boolean,
+    pttAllowed: Boolean,
     onToggleMute: () -> Unit,
     onToggleCaptions: () -> Unit,
     onPttDown: () -> Unit,
     onPttUp: (Long) -> Unit,
+    onPttCancel: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(
@@ -312,7 +315,7 @@ private fun ControlsRow(
             )
         }
         Spacer(Modifier.weight(1f))
-        PttButton(state = state, onDown = onPttDown, onUp = onPttUp)
+        PttButton(state = state, enabled = state.pttEnabled && pttAllowed, onDown = onPttDown, onUp = onPttUp, onCancel = onPttCancel)
         Spacer(Modifier.weight(1f))
         Surface(
             shape = RoundedCornerShape(999.dp),
@@ -341,10 +344,11 @@ private fun ControlsRow(
 @Composable
 private fun PttButton(
     state: VoiceRoomStateMachine.State,
+    enabled: Boolean,
     onDown: () -> Unit,
     onUp: (Long) -> Unit,
+    onCancel: () -> Unit,
 ) {
-    val enabled = state.pttEnabled
     val label = when {
         state.transmitting -> "Release to stop"
         !enabled -> "Push to talk unavailable"
@@ -355,7 +359,7 @@ private fun PttButton(
             .size(112.dp)
             .clip(CircleShape)
             .background(if (state.transmitting) PulsePalette.Rose else PulsePalette.EmeraldDeep)
-            .then(Modifier.pttHoldGesture(enabled, onDown, onUp))
+            .then(Modifier.pttHoldGesture(enabled, onDown, onUp, onCancel))
             .semantics {
                 contentDescription = "Push to talk"
                 stateDescription = if (state.transmitting) "Transmitting" else "Silent"
@@ -372,28 +376,6 @@ private fun PttButton(
             Spacer(Modifier.height(4.dp))
             Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
         }
-    }
-}
-
-/** Press/release detection feeding the engine's hold-vs-latch decision. */
-internal fun Modifier.pttHoldGesture(
-    enabled: Boolean,
-    onDown: () -> Unit,
-    onUp: (Long) -> Unit,
-): Modifier = if (!enabled) {
-    this
-} else {
-    pointerInput(enabled) {
-        detectTapGestures(
-            onPress = {
-                val started = System.currentTimeMillis()
-                onDown()
-                // A cancelled gesture still ends the push - never leave a
-                // latched transmitter behind on a system cancel.
-                tryAwaitRelease()
-                onUp(System.currentTimeMillis() - started)
-            },
-        )
     }
 }
 

@@ -490,6 +490,7 @@ final class VoiceRoomMachineTests: XCTestCase {
 
     func testServerRowWithoutPositionKeepsTheSeededTarget() {
         var space = SpaceModel(myId: "me")
+        space.beginJoin()
         space.seedInitialPosition(x: 0.8, y: 0.7)
         // Server state where OUR row carries no x/y (the server returned
         // nothing for us): the seeded target must survive the reconcile -

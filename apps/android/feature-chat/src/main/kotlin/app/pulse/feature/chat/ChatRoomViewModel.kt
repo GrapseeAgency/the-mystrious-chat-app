@@ -179,6 +179,7 @@ class ChatRoomViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ── Wave 2 voice recording (spec §1 row 1 + row 11) ─────────────────
+    private val recorderAudioToken = java.util.UUID.randomUUID().toString()
     private var recorder: MediaRecorder? = null
     private var recordFile: File? = null
     private var recordStartedAtMs: Long = 0
@@ -1095,8 +1096,16 @@ class ChatRoomViewModel @Inject constructor(
      */
     fun startRecording() {
         if (_recording.value || _sendingVoice.value) return
+        if (!app.pulse.core.audio.AudioOwnership.shared.acquire(recorderAudioToken)) {
+            notify("Leave your live room/call or pause playback before recording", isError = true)
+            return
+        }
         val file = File(context.cacheDir, "voice-${java.util.UUID.randomUUID()}.m4a")
-        val mr = MediaRecorder()
+        val mr = try { MediaRecorder() } catch (_: Exception) {
+            app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
+            notify("Microphone unavailable", isError = true)
+            return
+        }
         try {
             mr.setAudioSource(MediaRecorder.AudioSource.MIC)
             mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
@@ -1111,6 +1120,7 @@ class ChatRoomViewModel @Inject constructor(
             mr.start()
         } catch (t: Throwable) {
             runCatching { mr.release() }
+            app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
             file.delete()
             notify("Couldn't start recording - check microphone access", isError = true)
             return
@@ -1162,13 +1172,18 @@ class ChatRoomViewModel @Inject constructor(
      */
     fun stopAndSend() {
         if (!_recording.value) return
-        stopRecorderLocked()
         val elapsedMs = if (recordStartedAtMs > 0) SystemClock.elapsedRealtime() - recordStartedAtMs else _recordMs.value
+        val finalized = stopRecorderLocked()
         val file = recordFile
         recordFile = null
         _recording.value = false
         _recordMs.value = 0L
         _recordAmps.value = emptyList()
+        if (!finalized) {
+            file?.delete()
+            notify("Recording could not be finalized. Please record again.", isError = true)
+            return
+        }
         if (elapsedMs < app.pulse.core.media.PulseMedia.MIN_VOICE_MS || file == null) {
             file?.delete()
             notify("Too short - voice note discarded")
@@ -1203,14 +1218,16 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    private fun stopRecorderLocked() {
+    private fun stopRecorderLocked(): Boolean {
         recordTicker?.cancel()
         recordTicker = null
-        val mr = recorder ?: return
+        val mr = recorder ?: return true
         recorder = null
         recordStartedAtMs = 0
-        runCatching { mr.stop() }
+        val finalized = runCatching { mr.stop() }.isSuccess
         runCatching { mr.release() }
+        app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
+        return finalized
     }
 
     // ── Wave 2: transcription strip (spec §1 row 15) ───────────────────

@@ -14,7 +14,7 @@ saved items, navigation, or their interactions. Old comments saying “verified�
 - **Repaired in source:** a concrete transition changed; native compilation and acceptance may still be pending.
 - **Executed check:** the exact test layer and result are stated below. SQL checks and syntax parsing are not device tests.
 
-`NATIVE-SOURCE-INVENTORY.csv` enumerates **296 production files: 182 Kotlin and 114 Swift**.
+`NATIVE-SOURCE-INVENTORY.csv` enumerates **300 production files: 186 Kotlin and 114 Swift**.
 It covers all twelve Android modules' `src/main` Kotlin and all Swift beneath
 `apps/ios/Pulse`. This deliberately excludes native tests, generated sources,
 resources/manifests, build scripts, extensions outside Pulse, and the backend.
@@ -256,3 +256,74 @@ fixture in this continuation. These gaps remain open rather than hidden by build
 
 Reference used for focus acquisition/API compatibility (and the still-open loss policy):
 https://developer.android.com/media/optimize/audio-focus
+
+
+## Active Android live-audio ownership continuation (2026-10-19)
+
+Baseline: `0f9f27e`. This section supersedes the earlier Android integration/open
+raw-audio hazards where explicitly described below; it does not close the other
+feature-tree findings or replace physical-device acceptance.
+
+### Source changes
+
+- Actual `MainActivity → MirrorRoot → MirrorRoom` Voice/Stage/Space entry points
+  now open one session-owned `VoiceRoomsOverlay`. Legacy signaling-only composables
+  are compiler-deprecated at ERROR level to prevent accidentally reviving that path.
+  A closed-surface live pill and notification Leave action expose ongoing ownership.
+- Shared voice/stage membership has a pure `RoomSeatOwnership` policy. Every stage
+  participant has a real receive seat; stage-only PTT/captions have a conversation ID.
+  Leaving one owner preserves the other's seat. Demotion stops PTT even when the
+  voice surface is open; promotion does not silently re-enable a microphone.
+  Permission attempts are one-shot, invalidated on leave/role/surface changes.
+- One push-to-talk gesture implementation replaces conflicting overloads. Down
+  starts actual capture; a short completed tap latches, a held release stops, and
+  cancellation never becomes a request to latch. All durations are monotonic.
+- `RoomAudioRuntime` owns a separate room generation and a serialized mic run.
+  Stop can interrupt I/O, but ONLY the run's finally releases its device. Queued
+  cancelled work cannot construct a successor's device. Each peer gets a bounded,
+  ordered writer; peer removal cancels its preroll and releases after write exits.
+  Partial writes are completed, failed/empty reads are bounded, and I/O failures
+  surface errors rather than spinning or pretending audio is active. Jitter uses
+  arrival times rather than adding another delay after every blocking write.
+- Hardware adapter uses an API-21-compatible AudioTrack constructor. Foreground
+  listening uses mediaPlayback; microphone service type is enabled only after
+  explicit permission. Service startup/destruction failures tear down matching
+  ownership. Notification actions carry a per-room token, including distinct
+  PendingIntent identity, so an old notification cannot stop a new room.
+- Room and call focus-loss callbacks conservatively END interrupted sessions;
+  there is no automatic microphone restart on focus regain. Queued loss callbacks
+  are scoped to their originating focus acquisition.
+- Android visible note bubbles now use the same singleton player as feature-chat.
+  Player preparation is asynchronous on its owning looper; attempts have a generation
+  (not merely a message-ID check), account-bound downloads, completion/error handling,
+  and truthful start/resume state. Room exit/background stops its matching note.
+  Both native Android recorders and the shared player participate in the audio lease.
+  Switching note targets stops the old player. Calls/rooms/recording cannot silently
+  compete for configuration while a note owns it. Alternate recorder elapsed time
+  is captured before resetting its clock; failed finalization discards rather than uploads.
+- Shell cleanup distinguishes configuration destruction from real session teardown;
+  live overlay visibility disables underlying chat read eligibility.
+
+### Regression evidence / remaining gates
+
+- Added **17 Android regression methods**: 8 fake-device runtime tests, 6 shared-seat/
+  permission tests, 3 push-to-talk intent tests. These test the production runtime and
+  policies, not MediaRecorder/MediaPlayer codecs, foreground services or radio routes.
+- Changed-source Kotlin/Swift syntax checks and `git diff --check` passed. Existing
+  SQL regression checks passed 6/6. Native compiler/test execution is a separate gate.
+- Previous `0f9f27e` iOS archive succeeded. Its unit run exposed two test-contract
+  issues: a Space fixture never joined despite testing joined-state reconciliation,
+  and an outbox assertion compared JSON key order rather than decoded content.
+  Both fixtures/assertions are corrected here without removing their data assertions.
+- Device checks still required: API21/23/26/30/34+, permission denial/revocation,
+  rotation while capturing, notification exit, speaker/Bluetooth/headset switches,
+  incoming cellular calls, foreground-service limits, background capture and two-client
+  audible delivery. Full interruption *resumption* is intentionally not implemented;
+  this pass uses safe termination. Full Android note download/codec lifecycle lacks a
+  fake-player integration fixture. iOS interruptions and note-playback lease participation
+  remain open. Broader collaboration/Hub/storage/navigation findings remain open too.
+
+Platform contracts consulted: Android AudioRecord stop/read/release and AudioTrack
+write return values, API availability, and pause/flush for immediate stream stop:
+https://developer.android.com/reference/kotlin/android/media/AudioRecord
+https://developer.android.com/reference/android/media/AudioTrack

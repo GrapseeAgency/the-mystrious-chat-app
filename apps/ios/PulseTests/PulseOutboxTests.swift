@@ -366,7 +366,10 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(store.draft(conversationId: "c1"), "new unsent thought")
         let row = try XCTUnwrap(store.outboxAll().first)
         XCTAssertEqual(row.content, "old send")
-        XCTAssertEqual(row.payloadJson, PulseOutboxForward.encode(envelope))
+        let storedEnvelope = try XCTUnwrap(row.payloadJson).data(using: .utf8)!
+        let expectedEnvelope = try XCTUnwrap(PulseOutboxForward.encode(envelope)).data(using: .utf8)!
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: storedEnvelope) as? NSDictionary,
+                       try JSONSerialization.jsonObject(with: expectedEnvelope) as? NSDictionary)
         XCTAssertEqual(row.failureReason, "No longer a member")
         XCTAssertTrue(try store.outboxPending().isEmpty)
     }

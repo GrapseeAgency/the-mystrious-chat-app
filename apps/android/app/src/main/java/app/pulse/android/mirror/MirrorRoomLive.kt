@@ -283,6 +283,7 @@ private fun MirrorLiveButton(
  * empty until the relay answers), join/leave seats, PTT latch, live captions.
  */
 @Composable
+@Deprecated("Use the session-owned VoiceRoomsOverlay; this legacy surface has no audio owner", level = DeprecationLevel.ERROR)
 internal fun MirrorVoiceRoomSheet(
     repository: PulseRepository,
     conversationId: String,
@@ -776,6 +777,7 @@ internal fun MirrorVoiceRoomSheet(
  * mute speakers and end the stage (two-tap confirm), speakers+host get PTT.
  */
 @Composable
+@Deprecated("Use the session-owned VoiceRoomsOverlay; this legacy surface has no audio owner", level = DeprecationLevel.ERROR)
 internal fun MirrorStageSheet(
     repository: PulseRepository,
     conversationId: String,
@@ -1564,6 +1566,7 @@ internal fun MirrorStageSheet(
  * and optimistic target, nearby radius 0.18.
  */
 @Composable
+@Deprecated("Use the session-owned VoiceRoomsOverlay; this legacy surface has no audio owner", level = DeprecationLevel.ERROR)
 internal fun MirrorSpaceSheet(
     repository: PulseRepository,
     conversationId: String,

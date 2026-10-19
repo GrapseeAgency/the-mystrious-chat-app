@@ -381,6 +381,7 @@ internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
  */
 @Composable
 internal fun MirrorRoom(
+    onOpenLiveRoom: (app.pulse.feature.voice.VoiceRoomsEngine.RoomKind) -> Unit,
     readingEnabled: Boolean = false,
     title: String,
     color: String?,
@@ -497,9 +498,6 @@ internal fun MirrorRoom(
     var eventsOpen by remember { mutableStateOf(false) }
     var kanbanOpen by remember { mutableStateOf(false) }
     var whiteboardOpen by remember { mutableStateOf(false) }
-    var voiceOpen by remember { mutableStateOf(false) }
-    var stageOpen by remember { mutableStateOf(false) }
-    var spaceOpen by remember { mutableStateOf(false) }
     var tournamentOpen by remember { mutableStateOf(false) }
     var topicsVisible by remember { mutableStateOf(false) }
     var activeTopicId by remember(groupId) { mutableStateOf<String?>(null) }
@@ -556,8 +554,8 @@ internal fun MirrorRoom(
     val roomPanelOpen = menuOpen || trayOpen || roomSearchOpen || pinnedOpen ||
             muteStripOpen || ttlStripOpen || pollOpen || stickerOpen ||
             locationOpen || remindersOpen || scheduledOpen || recapOpen ||
-            eventsOpen || kanbanOpen || whiteboardOpen || voiceOpen ||
-            stageOpen || spaceOpen || tournamentOpen || redPacketOpen ||
+            eventsOpen || kanbanOpen || whiteboardOpen ||
+            tournamentOpen || redPacketOpen ||
             trayEffectsOpen || slashHelpOpen || safetyOpen || scheduleOpen ||
             phraseManagerOpen
     val readerLifecycle = LocalLifecycleOwner.current
@@ -584,9 +582,6 @@ internal fun MirrorRoom(
             safetyOpen -> safetyOpen = false
             redPacketOpen -> redPacketOpen = false
             tournamentOpen -> tournamentOpen = false
-            spaceOpen -> spaceOpen = false
-            stageOpen -> stageOpen = false
-            voiceOpen -> voiceOpen = false
             whiteboardOpen -> whiteboardOpen = false
             kanbanOpen -> kanbanOpen = false
             eventsOpen -> eventsOpen = false
@@ -1030,8 +1025,8 @@ internal fun MirrorRoom(
             cmd == "/redpacket" -> { draftValue = TextFieldValue(""); redPacketOpen = true }
             cmd == "/kanban" -> { draftValue = TextFieldValue(""); kanbanOpen = true }
             cmd == "/events" -> { draftValue = TextFieldValue(""); eventsOpen = true }
-            cmd == "/stage" -> { draftValue = TextFieldValue(""); stageOpen = true }
-            cmd == "/space" -> { draftValue = TextFieldValue(""); spaceOpen = true }
+            cmd == "/stage" -> { draftValue = TextFieldValue(""); onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE) }
+            cmd == "/space" -> { draftValue = TextFieldValue(""); onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE) }
             cmd == "/recap" -> { draftValue = TextFieldValue(""); recapOpen = true }
             cmd == "/help" -> { draftValue = TextFieldValue(""); slashHelpOpen = true }
             cmd == "/game" -> { draftValue = TextFieldValue(""); startTicTacToe() }
@@ -1099,6 +1094,7 @@ internal fun MirrorRoom(
     var voiceBusy by remember(groupId) { mutableStateOf(false) }
     var recordStartAt by remember(groupId) { mutableStateOf(0L) }
     var recordedDurationMs by remember(groupId) { mutableStateOf(0L) }
+    val recorderAudioToken = remember(groupId) { java.util.UUID.randomUUID().toString() }
     val recorderRef = remember(groupId) { mutableStateOf<MediaRecorder?>(null) }
     val recordFileRef = remember(groupId) { mutableStateOf<File?>(null) }
     var voiceTopic by remember(groupId) { mutableStateOf<String?>(null) }
@@ -1113,6 +1109,10 @@ internal fun MirrorRoom(
             }
             if (voiceBusy || recordFileRef.value != null) {
                 sendError = "Send or discard the current voice note first"
+                return@rememberLauncherForActivityResult
+            }
+            if (!app.pulse.core.audio.AudioOwnership.shared.acquire(recorderAudioToken)) {
+                sendError = "Leave your live room/call or pause playback before recording"
                 return@rememberLauncherForActivityResult
             }
             val context = context
@@ -1143,6 +1143,7 @@ internal fun MirrorRoom(
             }.onFailure {
                 runCatching { recorderRef.value?.release() }
                 recorderRef.value = null
+                app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
                 recordFileRef.value?.delete()
                 recordFileRef.value = null
                 sendError = "Microphone unavailable"
@@ -1161,6 +1162,7 @@ internal fun MirrorRoom(
         runCatching { recorderRef.value?.stop() }
         runCatching { recorderRef.value?.release() }
         recorderRef.value = null
+        app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
         recordFileRef.value?.delete()
         recordFileRef.value = null
         recording = false
@@ -1176,6 +1178,7 @@ internal fun MirrorRoom(
         val recorder = recorderRef.value
         val result = finalizeVoiceNote(file, { recorder?.stop() }, { recorder?.release() })
         recorderRef.value = null
+        app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
         recording = false
         if (result.isFailure) {
             recordFileRef.value = null
@@ -2160,11 +2163,11 @@ internal fun MirrorRoom(
                         },
                         MirrorTrayTileSpec("LPodcast", "Stage", "Live audio stage for the room", TrayToneOrange) {
                             trayOpen = false
-                            stageOpen = true
+                            onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE)
                         },
                         MirrorTrayTileSpec("LMap", "Space", "Hang out in a spatial room", TrayToneAmber) {
                             trayOpen = false
-                            spaceOpen = true
+                            onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE)
                         },
                         MirrorTrayTileSpec("LGamepad2", "Game", "Start tic-tac-toe here", TrayToneViolet) {
                             trayOpen = false
@@ -2352,7 +2355,7 @@ internal fun MirrorRoom(
                     pillStyle = "accentSoft",
                 ) {
                     menuOpen = false
-                    voiceOpen = true
+                    onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.VOICE)
                 }
                 // relocated header PiP - mini chat window
                 MirrorRoomMenuItem("LPictureInPicture2", if (pipActive) "Close mini chat window" else "Mini chat window") {
@@ -2458,11 +2461,11 @@ internal fun MirrorRoom(
                 }
                 MirrorRoomMenuItem("LPodcast", "Stage") {
                     menuOpen = false
-                    stageOpen = true
+                    onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE)
                 }
                 MirrorRoomMenuItem("LMap", "Space") {
                     menuOpen = false
-                    spaceOpen = true
+                    onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE)
                 }
                 MirrorRoomMenuItem(
                     "LTrophy",
@@ -2524,15 +2527,6 @@ internal fun MirrorRoom(
     }
     if (whiteboardOpen) {
         MirrorWhiteboardSheet(repository, groupId, viewerId) { whiteboardOpen = false }
-    }
-    if (voiceOpen) {
-        MirrorVoiceRoomSheet(repository, groupId, viewerId, viewerName, viewerColor) { voiceOpen = false }
-    }
-    if (stageOpen) {
-        MirrorStageSheet(repository, groupId, viewerId, viewerName, viewerColor) { stageOpen = false }
-    }
-    if (spaceOpen) {
-        MirrorSpaceSheet(repository, groupId, viewerId, viewerName, viewerColor) { spaceOpen = false }
     }
     if (tournamentOpen) {
         MirrorTournamentSheet(repository, groupId, viewerId) { tournamentOpen = false }
@@ -4695,14 +4689,18 @@ private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -
  */
 @Composable
 private fun MirrorVoiceNoteBubble(message: Message, mine: Boolean, filePath: String) {
-    val context = LocalContext.current
-    val player = remember(message.id) { MediaPlayer() }
-    var playing by remember { mutableStateOf(false) }
-    var positionMs by remember { mutableStateOf(0) }
-    androidx.compose.runtime.DisposableEffect(message.id) {
-        onDispose {
-            runCatching { player.release() }
+    val vm: app.pulse.feature.chat.VoicePlaybackViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    val state by vm.player.playback.collectAsStateWithLifecycle()
+    val active = state?.takeIf { it.messageId == message.id }
+    val playing = active?.playing == true
+    val positionMs = active?.positionMs?.toInt() ?: 0
+    val lifecycle = LocalLifecycleOwner.current
+    DisposableEffect(message.id, lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) vm.player.releaseIfActive(message.id)
         }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer); vm.player.releaseIfActive(message.id) }
     }
     // deterministic bars (web voiceBars hash LCG)
     val bars = remember(message.id) {
@@ -4711,12 +4709,6 @@ private fun MirrorVoiceNoteBubble(message: Message, mine: Boolean, filePath: Str
             h = java.lang.Long.remainderUnsigned(h * 1103515245L + 12345L, 2147483648L)
             val v = (h / 2147483648.0)
             0.28f + (v.toFloat() * 0.72f)
-        }
-    }
-    LaunchedEffect(playing) {
-        while (playing) {
-            positionMs = runCatching { player.currentPosition }.getOrDefault(0)
-            delay(200)
         }
     }
     Row(
@@ -4728,26 +4720,7 @@ private fun MirrorVoiceNoteBubble(message: Message, mine: Boolean, filePath: Str
                 .size(34.dp)
                 .clip(CircleShape)
                 .background(if (mine) Color(0x1A000000) else MirrorArt.White10)
-                .mirrorPressClick(onClick = {
-                    if (playing) {
-                        runCatching { player.pause() }
-                        playing = false
-                    } else {
-                        runCatching {
-                            player.reset()
-                            player.setDataSource(PulseEndpoints.http("/api/uploads/$filePath"))
-                            player.setAudioAttributes(
-                                android.media.AudioAttributes.Builder()
-                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                                    .build(),
-                            )
-                            player.prepare()
-                            player.start()
-                            playing = true
-                        }.onFailure { playing = false }
-                    }
-                }),
+                .mirrorPressClick(onClick = { vm.player.toggle(message) }),
             contentAlignment = Alignment.Center,
         ) {
             MirrorLucideIcon(
@@ -4773,7 +4746,8 @@ private fun MirrorVoiceNoteBubble(message: Message, mine: Boolean, filePath: Str
         }
         val totalSec = ((message.durationMs ?: 0L) / 1000L).toInt()
         Text(
-            if (playing) "%d:%02d".format(positionMs / 60000, (positionMs / 1000) % 60)
+            if (active?.loading == true) "Loading…"
+            else if (playing) "%d:%02d".format(positionMs / 60000, (positionMs / 1000) % 60)
             else "%d:%02d".format(totalSec / 60, totalSec % 60),
             color = if (mine) MirrorArt.InkSoft else MirrorArt.Dim,
             fontSize = 10.sp,
