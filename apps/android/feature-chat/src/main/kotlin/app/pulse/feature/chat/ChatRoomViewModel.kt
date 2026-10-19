@@ -1096,7 +1096,7 @@ class ChatRoomViewModel @Inject constructor(
      */
     fun startRecording() {
         if (_recording.value || _sendingVoice.value) return
-        if (!app.pulse.core.audio.AudioOwnership.shared.acquire(recorderAudioToken)) {
+        if (!app.pulse.core.audio.AudioOwnership.shared.acquireExclusive(recorderAudioToken)) {
             notify("Leave your live room/call or pause playback before recording", isError = true)
             return
         }

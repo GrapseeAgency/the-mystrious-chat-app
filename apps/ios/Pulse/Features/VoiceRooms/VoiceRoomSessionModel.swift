@@ -511,7 +511,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         guard stage.joined, let conversationId = stage.conversationId else { return }
         emitRoom(.stageLeave, VoiceRoomWire.stageLeave(conversationId: conversationId))
         let seatConversationId = conversationId
-        stopTransmitting(emitPttOff: voice.transmitting)
+        revokeStageMicrophone()
         stage.leave()
         // The voice seat existed only for the stage → release it too.
         if !voice.userJoinedVoice, voice.conversationId == seatConversationId {
@@ -576,11 +576,22 @@ public final class VoiceRoomSessionModel: ObservableObject {
     }
 
     /// stage:ended - full local teardown + surface close + toast (ST-5).
+    private func revokeStageMicrophone() {
+        cancelPendingMicrophoneRequest()
+        stopTransmitting(emitPttOff: voice.transmitting)
+        captionGeneration = UUID()
+        accumulator.clear()
+        if microphoneReady {
+            microphoneReady = false
+            audioIssue = engine.stopMicrophone()
+        }
+    }
+
     private func finishStageTeardown(toast: String) {
         let seatConversationId = stage.conversationId
-        stopTransmitting(emitPttOff: voice.transmitting)
+        revokeStageMicrophone()
         stage.applyEnded()
-        surface = nil
+        if surface == .stage { surface = nil; surfaceConversationId = nil }
         session.toasts.show(toast)
         if !voice.userJoinedVoice, voice.conversationId == seatConversationId {
             releaseVoiceSeat()

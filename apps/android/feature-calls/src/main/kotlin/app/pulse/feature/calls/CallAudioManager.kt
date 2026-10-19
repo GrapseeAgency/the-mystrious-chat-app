@@ -29,7 +29,7 @@ class CallAudioManager(context: Context) {
     @Suppress("DEPRECATION")
     fun acquire(): Boolean {
         if (active) return true
-        if (!AudioOwnership.shared.acquire(token)) return false
+        if (!AudioOwnership.shared.acquireExclusive(token)) return false
         val ticket = UUID.randomUUID()
         focusEpoch = ticket
         val listener = AudioManager.OnAudioFocusChangeListener { change ->

@@ -342,9 +342,32 @@ https://developer.android.com/reference/android/media/AudioTrack
   cannot initiate PTT through a late UI callback. Closing an initial joining attempt
   cancels that attempt rather than opening capture after its UI has gone away.
 - Switching Space rooms now leaves the old room first and resets old players/identity.
-- Added **5 Swift regression methods** (three PTT policy, one closed-surface delayed
-  permission, one Space switch). Together with the Android continuation this is
-  **22 new native regression methods**, not a declaration of their execution result.
+- Added **6 Swift regression methods** (three PTT policy, one closed-surface delayed
+  permission, one Space switch, one unrelated surface surviving stage end). With
+  the 17 Android runtime/seat/PTT tests and 3 passive-preemption tests this is
+  **26 new native regression methods**, not a declaration of their execution result.
 - Native compilation caught incorrect Java UUID construction in the new focus code;
   corrected to `UUID.randomUUID()` in both routers. No prior failed build is counted
   as a pass, and syntax parsing alone is not compilation proof.
+
+
+### Validation and final ownership edges in this continuation
+
+- At `14e8606`, the full Android JVM test step **passed**, including the 17 new
+  fake-device/seat/PTT tests and compilation of the active app route. iOS archive
+  at that revision also **passed**; its unit run was still in progress at this check.
+- The API34 instrumented run at that revision **failed** at its emulator test step.
+  Available annotations supplied only an exit code; signed blob logs could not be
+  retrieved from this environment. The cause is not classified as infrastructure or
+  application without evidence. Existing diagnostic extraction now also covers
+  instrumented XML/Gradle failures so subsequent runs expose actionable assertions.
+- Passive Android voice notes now cooperatively stop before an exclusive call,
+  room or recorder acquires audio; they do not make an incoming call fail just
+  because a note was playing. The gate rechecks ownership after the stop callback
+  and never invokes that callback under its lock. Live sessions/recording do not
+  implicitly preempt one another. Three tests cover yielding, exclusive exclusion,
+  and a competing acquisition during the callback.
+- A Swift stage end/exit invalidates pending microphone enablement and returns a
+  surviving independent voice seat to listening. Ending a stage no longer dismisses
+  an unrelated Space/Voice surface. The final changes after `14e8606` need their own
+  native results; the earlier pass is not attributed to an untested successor.

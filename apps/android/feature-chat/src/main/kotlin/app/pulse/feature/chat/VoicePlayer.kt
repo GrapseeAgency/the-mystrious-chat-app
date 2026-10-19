@@ -107,7 +107,7 @@ class VoicePlayer @Inject constructor(
     }
 
     private fun claimAudio(): Boolean {
-        if (AudioOwnership.shared.acquire(audioToken)) return true
+        if (AudioOwnership.shared.acquirePlayback(audioToken, ::release)) return true
         _notices.tryEmit("Leave your live room/call or stop recording before playing a voice note.")
         return false
     }

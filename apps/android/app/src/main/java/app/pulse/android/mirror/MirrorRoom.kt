@@ -1111,7 +1111,7 @@ internal fun MirrorRoom(
                 sendError = "Send or discard the current voice note first"
                 return@rememberLauncherForActivityResult
             }
-            if (!app.pulse.core.audio.AudioOwnership.shared.acquire(recorderAudioToken)) {
+            if (!app.pulse.core.audio.AudioOwnership.shared.acquireExclusive(recorderAudioToken)) {
                 sendError = "Leave your live room/call or pause playback before recording"
                 return@rememberLauncherForActivityResult
             }

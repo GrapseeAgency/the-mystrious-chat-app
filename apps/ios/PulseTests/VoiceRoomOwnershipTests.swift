@@ -219,4 +219,18 @@ final class VoiceRoomOwnershipTests: XCTestCase {
         model.leaveSpace()
     }
 
+    func testStageEndCannotDismissAnUnrelatedSpaceSurface() {
+        let session = PulseSession(), audio = Audio()
+        let model = VoiceRoomSessionModel(session: session, defaults: isolatedDefaults(), engine: audio)
+        model.joinStage(conversationId: "stage")
+        model.joinSpace(conversationId: "space")
+        model.handle(.stageEnded(conversationId: "stage"))
+        XCTAssertEqual(model.surface, .space)
+        XCTAssertEqual(model.surfaceConversationId, "space")
+        XCTAssertTrue(model.space.joined)
+        XCTAssertFalse(model.stage.joined)
+        XCTAssertEqual(model.voice.status, .idle)
+        model.closeSurface()
+    }
+
 }
