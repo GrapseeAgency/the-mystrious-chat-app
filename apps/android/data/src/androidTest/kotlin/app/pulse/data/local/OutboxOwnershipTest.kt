@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.OutboxEntry
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,6 +36,16 @@ class OutboxOwnershipTest {
             assertEquals(listOf("mine"), db.outboxDao().allForOwner("b").map { it.clientId })
             assertEquals(50, db.outboxDao().allForOwner("a").size)
             assertEquals(57, db.outboxDao().count())
+            db.outboxDao().markFailed("mine", "forbidden")
+            assertEquals(emptyList<String>(), db.outboxDao().allForOwner("b").map { it.clientId })
+            assertEquals(listOf("mine"), db.outboxDao().allOwned("b").map { it.clientId })
+            assertEquals(listOf("mine"), db.outboxDao().observeOwned("b").first().map { it.clientId })
+            assertEquals(0, db.outboxDao().retryFailed("mine", "a"))
+            assertEquals(0, db.outboxDao().retryFailed("unknown", "b"))
+            assertEquals(1, db.outboxDao().retryFailed("mine", "b"))
+            assertEquals(0, db.outboxDao().retryFailed("mine", "b"))
+            assertEquals("mine", db.outboxDao().allForOwner("b").single().content)
+            assertEquals(55, db.outboxDao().allOwned("a").size)
         } finally { db.close() }
     }
 }

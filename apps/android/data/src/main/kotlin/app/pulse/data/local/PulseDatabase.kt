@@ -675,6 +675,18 @@ interface OutboxDao {
     @Query("UPDATE outbox SET failureReason = :reason WHERE clientId = :clientId AND failureReason IS NULL")
     suspend fun markFailed(clientId: String, reason: String): Int
 
+    @Query("UPDATE outbox SET failureReason = NULL, attempts = 0 WHERE clientId = :clientId AND failureReason IS NOT NULL " +
+        "AND EXISTS (SELECT 1 FROM messages m WHERE m.id = 'local_' || outbox.clientId AND m.authorId = :owner AND m.conversationId = outbox.conversationId)")
+    suspend fun retryFailed(clientId: String, owner: String): Int
+
+    @Query("SELECT o.* FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
+        "WHERE m.authorId = :owner AND m.conversationId = o.conversationId ORDER BY o.id ASC")
+    fun observeOwned(owner: String): Flow<List<OutboxEntity>>
+
+    @Query("SELECT o.* FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
+        "WHERE m.authorId = :owner AND m.conversationId = o.conversationId ORDER BY o.id ASC")
+    suspend fun allOwned(owner: String): List<OutboxEntity>
+
     /** Insert/replace by autoGenerate id - clientId uniqueness is enforced by the index. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: OutboxEntity): Long

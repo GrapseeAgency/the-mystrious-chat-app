@@ -334,7 +334,9 @@ class SettingsViewModel @Inject constructor(
                     clientId = entry.clientId,
                     conversationId = entry.conversationId,
                     title = titles[entry.conversationId] ?: "Chat",
-                    content = entry.content,
+                    content = entry.content.ifBlank { when (entry.kind) {
+                        "image" -> "Photo"; "audio" -> "Voice note"; "file" -> "Document"; else -> "Saved message"
+                    } },
                     attempts = entry.attempts,
                     failureReason = entry.failureReason,
                 )
@@ -347,6 +349,21 @@ class SettingsViewModel @Inject constructor(
 
     fun clearDrafts() {
         viewModelScope.launch { repo.clearAllDrafts() }
+    }
+
+    private val _outboxNotice = MutableStateFlow<String?>(null)
+    val outboxNotice: StateFlow<String?> = _outboxNotice.asStateFlow()
+
+    private val retryingOutbox = mutableSetOf<String>()
+    fun retryOutboxEntry(clientId: String) {
+        if (!retryingOutbox.add(clientId)) return
+        viewModelScope.launch {
+            try {
+                repo.retryOutboxEntry(clientId)
+                    .onSuccess { _outboxNotice.value = "Original message queued for retry" }
+                    .onFailure { _outboxNotice.value = it.message ?: "The saved message could not be retried" }
+            } finally { retryingOutbox.remove(clientId) }
+        }
     }
 
     fun deleteOutboxEntry(clientId: String) {

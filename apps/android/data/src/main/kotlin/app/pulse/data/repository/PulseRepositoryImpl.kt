@@ -343,17 +343,36 @@ class PulseRepositoryImpl constructor(
 
     /** Data & Storage - user-initiated drop of one held outbox row (no verdict event). */
     override suspend fun discardOutboxEntry(clientId: String) {
+        val owner = viewerId ?: return
         database.withTransaction {
+            val temp = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId) ?: return@withTransaction
+            if (temp.authorId != owner) return@withTransaction
             outboxDao.deleteByClientId(clientId)
-            messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+            messageDao.deleteById(temp.id)
         }
     }
 
-    /** Data & Storage - drop every held outbox row + its optimistic temp bubble. */
+    override suspend fun retryOutboxEntry(clientId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in to the original account"))
+        return try {
+            if (outboxDao.retryFailed(clientId, owner) == 0) {
+                Result.failure(IllegalStateException("This saved message is no longer available for retry"))
+            } else {
+                scope.launch {
+                    try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Retried message remains queued", error); scheduleSelfHeal() }
+                }
+                Result.success(Unit)
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+    }
+
     override suspend fun clearOutbox() {
+        val owner = viewerId ?: return
         database.withTransaction {
-            outboxDao.clearAll()
-            messageDao.deleteAllTempMessages()
+            outboxDao.allOwned(owner).forEach { row ->
+                outboxDao.deleteByClientId(row.clientId)
+                messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + row.clientId)
+            }
         }
     }
 
@@ -1626,8 +1645,10 @@ class PulseRepositoryImpl constructor(
         Result.failure(e)
     }
 
-    override fun observeOutbox(): Flow<List<OutboxEntry>> =
-        outboxDao.observeAll().map { rows -> rows.map { it.toEntry() } }
+    override fun observeOutbox(): Flow<List<OutboxEntry>> {
+        val owner = viewerId ?: return kotlinx.coroutines.flow.flowOf(emptyList())
+        return outboxDao.observeOwned(owner).map { rows -> rows.map { it.toEntry() } }
+    }
 
     override suspend fun outboxPending(): List<OutboxEntry> {
         val owner = viewerId ?: return emptyList()

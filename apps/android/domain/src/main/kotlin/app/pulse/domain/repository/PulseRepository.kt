@@ -294,7 +294,11 @@ interface PulseRepository {
     /** Data & Storage manager - drop ONE held outbox row (+ its temp bubble). */
     suspend fun discardOutboxEntry(clientId: String)
 
-    /** Data & Storage manager - drop EVERY held outbox row. */
+    /** Explicit retry of this owner's rejected intent; preserves its original ID/envelope. */
+    suspend fun retryOutboxEntry(clientId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Outbox retry is unavailable"))
+
+    /** Data & Storage manager - drop this owner's held outbox rows. */
     suspend fun clearOutbox()
 
     /** Data & Storage manager - drop every composer draft at once. */

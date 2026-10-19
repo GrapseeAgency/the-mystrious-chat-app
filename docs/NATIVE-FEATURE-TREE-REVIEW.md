@@ -980,3 +980,22 @@ For the previous 1602d34 revision, iOS archive and tests passed; Android JVM tes
 and both API 30/34 instrumented jobs' debug tests passed, with release assembly /
 release smoke still running at retrieval. Those results do not validate this new
 attachment implementation. Inventory now covers 308 production source files.
+
+### Android rejected-attachment recovery and outbox manager ownership
+
+Continued the attachment flow through Settings recovery. Rejected media already
+retained its local metadata but had no explicit retry action. Added an owner-bound
+retry that resets only a rejected row, preserves the original operation ID/media
+paths, and reuses the single drainer. Repeated taps are gated; retry status and
+attachment labels are visible. The manager previously observed all outbox rows
+and its clear-all deleted all temporary messages; listing/discard/clear now operate
+only on rows whose retained message proves current ownership. Unknown-owner rows
+remain quarantined, not adopted by the active account. No sign-in/recovery flow or
+credential changes were made.
+
+Extended the existing on-device OutboxOwnershipTest with failed-row visibility,
+wrong-owner rejection, unknown-owner rejection and same-ID retry assertions. Ran
+the actual new DAO SQL extracted from source against SQLite: ownership filtering,
+compare-state retry and unchanged content passed. Kotlin syntax/diff checks pass;
+Room/native compilation remains pending. This is outbox-specific: it does not
+assert that every other local cache or draft manager has been similarly scoped.
