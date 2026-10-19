@@ -85,6 +85,7 @@ data class RedPacketGrabResultDto(
     val amount: Long = 0,
     val grabbed: Int = 0,
     val count: Int = 0,
+    val alreadyGrabbed: Boolean = false,
 )
 
 /** Parses a `kind=="redpacket"` message payload string: {packetId,total,count,note}. */

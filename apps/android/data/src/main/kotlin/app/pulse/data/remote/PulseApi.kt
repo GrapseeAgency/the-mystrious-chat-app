@@ -1339,7 +1339,11 @@ class PulseApi(
     /** POST /api/redpackets/{id}/grab { userId } - atomic; 409 copy verbatim from the server. */
     suspend fun grabRedPacket(packetId: String, userId: String): PulseResult<RedPacketGrabResultDto> =
         post("/api/redpackets/" + java.net.URLEncoder.encode(packetId, "UTF-8") + "/grab", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(RedPacketGrabResultDto.serializer(), it)
+            val result = PulseJson.decodeFromString(RedPacketGrabResultDto.serializer(), it)
+            if (result.amount !in 1L..2_147_483_647L || result.count <= 0 || result.grabbed !in 1..result.count) {
+                throw kotlinx.serialization.SerializationException("Red packet payout was not confirmed. Refresh before retrying")
+            }
+            result
         }
 
     /** GET /api/conversations/{id}/whiteboard?requesterId=&since= (since = epoch ms | null = full). */

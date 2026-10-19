@@ -106,13 +106,17 @@ final class Wave7RoomActions: ObservableObject {
     }
 
     func grabRedPacket(api: PulseAPIClient, packetId: String) {
+        let key = "packet:\(packetId)"
+        guard pendingMutations.insert(key).inserted else { return }
         Task { @MainActor in
+            defer { pendingMutations.remove(key) }
             do {
+                try Task.checkCancellation()
                 let result = try await api.grabRedPacket(packetId)
-                toast("You grabbed \(result.amount) PC")
-            } catch {
-                toast(describe(error), isError: true)
-            }
+                try Task.checkCancellation()
+                toast(result.alreadyGrabbed == true ? "Already received \(result.amount) PC" : "You grabbed \(result.amount) PC")
+            } catch is CancellationError { }
+            catch { toast(describe(error), isError: true) }
         }
     }
 

@@ -1492,7 +1492,7 @@ class ChatRoomViewModel @Inject constructor(
     fun grabRedPacket(packetId: String) {
         viewModelScope.launch {
             repo.grabRedPacket(packetId)
-                .onSuccess { notify("You grabbed ${it.amount} PC") }
+                .onSuccess { notify(if (it.alreadyGrabbed) "Already received ${it.amount} PC" else "You grabbed ${it.amount} PC") }
                 .onFailure { notify(it.message ?: "Could not grab the red packet", isError = true) }
         }
     }

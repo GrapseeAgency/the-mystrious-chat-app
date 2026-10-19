@@ -49,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -108,6 +109,19 @@ internal fun MirrorRedPacketSheet(
     onDismiss: () -> Unit,
     onSent: () -> Unit,
 ) {
+    androidx.compose.runtime.key(repository, conversationId, repository.viewerId, repository.reminderDeliveryOwner()) {
+        MirrorRedPacketSheetContent(conversationId, repository, onDismiss, onSent)
+    }
+}
+
+@Composable
+private fun MirrorRedPacketSheetContent(
+    conversationId: String,
+    repository: PulseRepository,
+    onDismiss: () -> Unit,
+    onSent: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
     var amountRaw by remember { mutableStateOf("") }
     var count by remember { mutableIntStateOf(1) }
     var note by remember { mutableStateOf("") }
@@ -118,7 +132,7 @@ internal fun MirrorRedPacketSheet(
 
     // fresh compose every open + real balance for the affordability hint
     LaunchedEffect(Unit) {
-        runCatching { repository.wallet().getOrThrow() }
+        roomRequest { repository.wallet() }
             .onSuccess { balance = it.wallet.coins }
     }
 
@@ -168,6 +182,7 @@ internal fun MirrorRedPacketSheet(
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                 ) {
                     BasicTextField(
+                        enabled = !pending,
                         value = amountRaw,
                         onValueChange = { amountRaw = it.take(6).filter { ch -> ch.isDigit() } },
                         singleLine = true,
@@ -208,7 +223,7 @@ internal fun MirrorRedPacketSheet(
                             .clip(RoundedCornerShape(14.dp))
                             .background(MirrorArt.White7)
                             .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
-                            .clickable(enabled = count > RP_COUNT_MIN) {
+                            .clickable(enabled = !pending && count > RP_COUNT_MIN) {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 count = (count - 1).coerceAtLeast(RP_COUNT_MIN)
                             },
@@ -234,7 +249,7 @@ internal fun MirrorRedPacketSheet(
                             .clip(RoundedCornerShape(14.dp))
                             .background(MirrorArt.White7)
                             .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(14.dp))
-                            .clickable(enabled = count < RP_COUNT_MAX) {
+                            .clickable(enabled = !pending && count < RP_COUNT_MAX) {
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 count = (count + 1).coerceAtMost(RP_COUNT_MAX)
                             },
@@ -261,6 +276,7 @@ internal fun MirrorRedPacketSheet(
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                 ) {
                     BasicTextField(
+                        enabled = !pending,
                         value = note,
                         onValueChange = { note = it.take(RP_NOTE_MAX) },
                         singleLine = true,
@@ -331,25 +347,18 @@ internal fun MirrorRedPacketSheet(
                         },
                     )
                     .clickable(enabled = valid && !pending) {
+                        val sentTotal = total ?: return@clickable
+                        val sentCount = count
+                        val sentNote = note.trim().take(RP_NOTE_MAX).ifBlank { null }
                         pending = true
                         errorNote = null
-                        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                            val outcome = runCatching {
-                                repository.createRedPacket(
-                                    conversationId = conversationId,
-                                    total = total!!,
-                                    count = count,
-                                    note = note.trim().take(RP_NOTE_MAX).ifBlank { null },
-                                ).getOrThrow()
-                            }
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                pending = false
-                                outcome.onSuccess {
-                                    onSent()
-                                }.onFailure { failure ->
+                        scope.launch {
+                            try {
+                                val outcome = roomRequest { repository.createRedPacket(conversationId, sentTotal, sentCount, sentNote) }
+                                outcome.onSuccess { onSent() }.onFailure { failure ->
                                     errorNote = failure.message ?: "Could not send the red packet."
                                 }
-                            }
+                            } finally { pending = false }
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -389,6 +398,21 @@ internal fun MirrorRedPacketBubble(
     senderName: String,
     repository: PulseRepository,
 ) {
+    androidx.compose.runtime.key(repository, packetId, viewerId, repository.reminderDeliveryOwner()) {
+        MirrorRedPacketBubbleContent(packetId, viewerId, mine, senderName, repository)
+    }
+}
+
+@Composable
+private fun MirrorRedPacketBubbleContent(
+    packetId: String,
+    viewerId: String,
+    mine: Boolean,
+    senderName: String,
+    repository: PulseRepository,
+) {
+    val scope = rememberCoroutineScope()
+    val refreshGate = remember { app.pulse.domain.sync.RoomRefreshGate() }
     var detail by remember(packetId) { mutableStateOf<RedPacketDetailDto?>(null) }
     var failed by remember(packetId) { mutableStateOf(false) }
     var grabbing by remember { mutableStateOf(false) }
@@ -399,18 +423,20 @@ internal fun MirrorRedPacketBubble(
     // reveal flip - spring rotationY from 90 to 0 once a grab lands (web L180-191)
     val flip = remember { Animatable(if (myGrabLive != null) 0f else -90f) }
 
-    // self-fetch + 20s refresh while the packet is still open (web refetchInterval)
+    suspend fun refreshPacket() {
+        val ticket = refreshGate.beginRead() ?: return
+        val result = roomRequest { repository.redPacket(packetId) }
+        if (!refreshGate.accepts(ticket)) return
+        result.onSuccess {
+            detail = it; failed = false
+            if (myGrabLive == null) myGrabLive = it.myGrab
+            grabbedLive = maxOf(grabbedLive ?: 0, it.packet?.grabbed ?: 0)
+        }.onFailure { failed = true }
+    }
     LaunchedEffect(packetId) {
         while (true) {
-            runCatching { repository.redPacket(packetId).getOrThrow() }
-                .onSuccess {
-                    detail = it
-                    failed = false
-                    if (myGrabLive == null) myGrabLive = it.myGrab
-                }
-                .onFailure { failed = true }
-            val stillOpen = detail?.packet?.status == "open"
-            if (!stillOpen) break
+            refreshPacket()
+            if (detail?.packet?.status != "open" && !failed) break
             delay(20_000L)
         }
     }
@@ -470,20 +496,18 @@ internal fun MirrorRedPacketBubble(
                         openable && !grabbing -> {
                             grabbing = true
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                                val outcome = runCatching { repository.grabRedPacket(packetId).getOrThrow() }
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                    grabbing = false
+                            refreshGate.beginWrite()
+                            scope.launch {
+                                try {
+                                    val outcome = roomRequest { repository.grabRedPacket(packetId) }
                                     outcome.onSuccess { res ->
-                                        myGrabLive = res.amount
-                                        grabbedLive = res.grabbed
+                                        grabbedLive = maxOf(grabbedLive ?: 0, res.grabbed)
                                         flip.snapTo(90f)
-                                        // web fireParticles({kind:'burst',count:90}) + haptic 30
-                                        PulseFx.fire(PulseFx.BurstKind.BURST, 90)
-                                    }.onFailure { failure ->
-                                        expanded = true
-                                    }
-                                }
+                                        myGrabLive = res.amount
+                                        if (!res.alreadyGrabbed) PulseFx.fire(PulseFx.BurstKind.BURST, 90)
+                                    }.onFailure { expanded = true }
+                                } finally { grabbing = false; refreshGate.endWrite() }
+                                refreshPacket()
                             }
                         }
                         else -> {

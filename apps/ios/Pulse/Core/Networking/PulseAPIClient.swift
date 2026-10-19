@@ -932,7 +932,12 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/redpackets/{id}/grab { userId } - atomic (409s surface verbatim).
     public func grabRedPacket(_ packetId: String) async throws -> WireRedPacketGrabResult {
         let data = try await postRaw("/api/redpackets/\(q(packetId))/grab", body: ["userId": userId])
-        return try envelope(WireRedPacketGrabResult.self, from: data)
+        let result = try envelope(WireRedPacketGrabResult.self, from: data)
+        guard (1...2_147_483_647).contains(result.amount), let grabbed = result.grabbed, let count = result.count,
+              count > 0, grabbed > 0, grabbed <= count else {
+            throw Failure(kind: .server, message: "Red packet payout was not confirmed. Refresh before retrying.")
+        }
+        return result
     }
 
     // MARK: whiteboard

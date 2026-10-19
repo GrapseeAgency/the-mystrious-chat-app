@@ -59,7 +59,7 @@ private final class InvalidWalletProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "wallet.test" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        let body = #"{"wallet":{},"to":{"id":"other"},"note":"Swap complete"}"#
+        let body = #"{"wallet":{},"to":{"id":"other"},"note":"Swap complete","amount":0,"grabbed":0,"count":0}"#
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
@@ -72,6 +72,16 @@ final class WalletAcknowledgementTests: XCTestCase {
         config.protocolClasses = [InvalidWalletProtocol.self]
         let session = URLSession(configuration: config)
         return (PulseAPIClient(baseURL: URL(string: "https://wallet.test")!, userId: "me", session: session), session)
+    }
+    func testRedPacketReplayFlagIsPreservedForHonestConfirmationCopy() throws {
+        let result = try JSONDecoder().decode(WireRedPacketGrabResult.self, from: Data(#"{"amount":3,"grabbed":2,"count":2,"alreadyGrabbed":true}"#.utf8))
+        XCTAssertEqual(result.alreadyGrabbed, true)
+        XCTAssertEqual(result.amount, 3)
+    }
+    func testInvalidRedPacketPayoutCannotBeCelebrated() async {
+        let (api, session) = client(); defer { session.invalidateAndCancel() }
+        do { _ = try await api.grabRedPacket("packet"); XCTFail("Unconfirmed payout") }
+        catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
     }
     func testMalformed200CannotCelebrateDailyReward() async {
         let (api, session) = client(); defer { session.invalidateAndCancel() }

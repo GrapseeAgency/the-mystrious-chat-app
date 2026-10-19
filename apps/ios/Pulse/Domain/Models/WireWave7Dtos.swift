@@ -42,6 +42,7 @@ public struct WireRedPacketDetail: Codable, Hashable, Sendable {
 }
 
 public struct WireRedPacketGrabResult: Codable, Hashable, Sendable {
+    public var alreadyGrabbed: Bool? = nil
     public let amount: Int
     public let grabbed: Int?
     public let count: Int?

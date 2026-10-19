@@ -2660,10 +2660,8 @@ internal fun MirrorRoom(
             onDismiss = { redPacketOpen = false },
             onSent = {
                 redPacketOpen = false
-                // the server-created packet message rides the next refresh
-                CoroutineScope(Dispatchers.IO).launch {
-                    runCatching { repository.refreshMessages(groupId, activeTopicId) }
-                }
+                // createRedPacket already caches the confirmed carrier message and
+                // schedules its account-owned conversation refresh. No detached job.
             },
         )
     }

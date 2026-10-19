@@ -703,3 +703,44 @@ The new gates address local request ordering, not cross-device edit versioning o
 OS-level foreground/background timing. Legacy authorization migration remains
 separate, and prior wallet/whiteboard deployment patches remain unapplied to
 production. No all-features or device acceptance claim is made.
+
+### Red-packet claim, refund and bubble continuation
+
+The payout parser silently **filtered** corrupt entries, shifting recipient
+indices. The detail endpoint's refund parser converted corrupt JSON to an empty
+array and still closed the packet, permanently consuming its settlement cursor
+without returning the unclaimed money. These were separate from transfer/swap.
+
+- Claim/refund contracts now validate the complete positive-integer slice array,
+  count and original total, plus the existing payout count/sum against the claimed
+  prefix. Inconsistent escrow fails closed for reconciliation; no shifted payouts
+  and no silent zero-refund settlement.
+- Existing per-user grab rows are replay receipts, checked before expiry/fullness.
+  The same recipient can recover a lost acknowledgement after expiry/refund without
+  being credited again. Membership checks still apply. New claims reject at the
+  exact expiry boundary. Refund uses a conditional cursor claim and bounded credit;
+  overflow rolls back and leaves settlement retryable.
+- Both native transports reject impossible payout ACKs. Replay copy distinguishes
+  an old receipt from a new award; the mirror does not fire new payout particles on
+  a replay. Swift grab intent is synchronously gated per packet.
+- Android packet composer/bubble now use room/account-keyed, composition-owned
+  scopes rather than detached IO tasks. Composer fields are frozen while sending,
+  and the actual count/note/amount are captured at the tap. Bubble fetches respect
+  mutation ordering, retry an initial failure, and advance the displayed claimed
+  count after later participants collect (the old local override froze it forever).
+  Removed the redundant detached post-send refresh: repository confirmation already
+  caches the carrier message and schedules its owned conversation refresh.
+
+Evidence: **59/59 server contracts passed**, including **11 new packet cases**:
+corruption, replay after expiry/exhaustion, overflow rollback, authorization,
+concurrency, refund conservation and claim/refund races. **17 native regressions
+were authored in this continuation** (13 reward/room, 4 packet transport/DTO).
+Native syntax/diff checks passed. The preceding 2f1d607 iOS archive passed; latest
+native test/build execution is still pending and is not inferred from that archive.
+
+Limits: packet **creation** still lacks durable lost-ACK replay; no automatic
+create retry was added. Corrupt historic payouts require explicit reconciliation,
+not guessed repairs. Refund is still lazy (triggered by detail reads); this is not
+an expiry scheduler. A pending refund error is surfaced rather than silently
+marking money refunded. Games/tournaments still have separate detached-action paths
+that are not represented as fixed by the packet/room changes.

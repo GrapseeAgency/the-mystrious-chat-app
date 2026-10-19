@@ -11,6 +11,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WalletAcknowledgementTest {
+    @Test fun `red packet replay acknowledgement is distinguished from a new payout`() = runTest {
+        val http = HttpClient(MockEngine { respond("""{"amount":3,"grabbed":2,"count":2,"alreadyGrabbed":true}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+        try {
+            val result = PulseApi(http, gateway = { "https://wallet.test" }).grabRedPacket("packet", "me")
+            assertTrue(result is PulseResult.Success)
+            assertTrue((result as PulseResult.Success).value.alreadyGrabbed)
+        } finally { http.close() }
+    }
+    @Test fun `red packet cannot acknowledge zero or an impossible payout cursor`() = runTest {
+        for (body in listOf("{}", """{"amount":3,"grabbed":2,"count":1}""")) {
+            val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+            try { assertTrue(PulseApi(http, gateway = { "https://wallet.test" }).grabRedPacket("packet", "me") is PulseResult.Failure) }
+            finally { http.close() }
+        }
+    }
     @Test fun `daily reward cannot be celebrated from missing or inconsistent acknowledgement`() = runTest {
         for (body in listOf("{}", """{"wallet":{"userId":"me","coins":50,"gems":0,"streak":2,"lastCheckIn":"2026-10-20T00:00:00Z"},"reward":25,"streak":2}""")) {
             val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
