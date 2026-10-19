@@ -78,7 +78,7 @@ class AccountRepositories @Inject constructor(
         })
         val socket = PulseSocketClient(
             if (owner == null || token.isNullOrBlank()) "" else PulseEndpoints.socketUrl,
-            tokenProvider = { token }, onAuthInvalid = invalid,
+            tokenProvider = { token }, onAuthInvalid = invalid, allowEndpointFallback = false,
         )
         val repo = PulseRepositoryImpl(api, db, db.conversationDao(), db.messageDao(), db.outboxDao(),
             db.draftDao(), db.topicDao(), db.savedDao(), db.callLogDao(), db.storyDao(), db.wave7Dao(),

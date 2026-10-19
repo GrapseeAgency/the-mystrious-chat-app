@@ -1029,7 +1029,6 @@ private fun MirrorRoomScaffold(
     var ttlSeconds by remember { mutableStateOf(0) }
 
     LaunchedEffect(convo.id) {
-        runCatching { repository.refreshMessages(convo.id) }
         phrases = repository.phrases().getOrDefault(emptyList())
         // live room truth for the kebab controls (mute + disappearing TTL)
         runCatching { repository.conversationDetail(convo.id) }

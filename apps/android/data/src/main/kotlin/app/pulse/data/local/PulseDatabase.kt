@@ -606,6 +606,15 @@ interface MessageDao {
     )
     suspend fun latestServerCreatedAt(conversationId: String): String?
 
+    @Query("SELECT createdAt FROM messages WHERE conversationId = :conversationId " +
+        "AND substr(id, 1, 6) != 'local_' ORDER BY createdAt ASC, id ASC LIMIT 1")
+    suspend fun earliestServerCreatedAt(conversationId: String): String?
+
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND createdAt = :at " +
+        "AND substr(id, 1, 6) != 'local_' ORDER BY id ASC LIMIT 1")
+    suspend fun firstAtTimestamp(conversationId: String, at: String): MessageEntity?
+
+
     @Query("SELECT * FROM messages WHERE id = :id")
     suspend fun byId(id: String): MessageEntity?
 

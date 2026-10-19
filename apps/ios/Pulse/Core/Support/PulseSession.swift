@@ -104,6 +104,18 @@ public final class PulseSession: ObservableObject {
     @Published public private(set) var ready = false
     @Published public private(set) var startupError: String?
     @Published public private(set) var isForeground = false
+    public private(set) var messageRevision: UInt64 = 0
+    private var messageRevisions: [String: UInt64] = [:]
+
+    public func acceptsSyncMessage(_ id: String, startedAt revision: UInt64) -> Bool {
+        (messageRevisions[id] ?? 0) <= revision
+    }
+
+    private func noteMessageRevision(_ id: String) {
+        messageRevision &+= 1
+        messageRevisions[id] = messageRevision
+    }
+
     private var generation = UUID()
     public var sessionGeneration: UUID { generation }
     private var startupTask: Task<Void, Never>?
@@ -217,6 +229,7 @@ public final class PulseSession: ObservableObject {
         startupError = nil
         viewer = nil
         store = nil
+        messageRevisions.removeAll()
         pendingOpenRoom = nil
         pendingJumpMessageId = nil
         pendingLinkedRoomId = nil
@@ -453,6 +466,7 @@ public final class PulseSession: ObservableObject {
     private func routeOutboxEvent(_ event: PulseOutboxEngine.Event) {
         switch event {
         case .delivered(let message, let conversationId, let clientId):
+            noteMessageRevision(message.id)
             realtimeRefreshTick += 1
             outboxEvents.send(.delivered(message: message, conversationId: conversationId, clientId: clientId))
         case .dropped(let clientId, let conversationId, let reason):
@@ -625,6 +639,7 @@ public final class PulseSession: ObservableObject {
     /// cache so relaunch reads it back even when the surface is closed.
     private func cacheMessage(from raw: [String: Any]) {
         guard let store, let message = Self.decodeMessage(from: raw) else { return }
+        noteMessageRevision(message.id)
         try? store.upsert(messages: [message])
     }
 

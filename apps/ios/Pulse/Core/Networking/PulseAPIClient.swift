@@ -74,7 +74,10 @@ public struct PulseAPIClient: Sendable {
         before: String? = nil,
         query: String? = nil,
         topicId: String? = nil,
-        since: String? = nil
+        since: String? = nil,
+        syncFrom: String? = nil,
+        syncCursor: String? = nil,
+        beforeId: String? = nil
     ) async throws -> WireMessagesPage {
         try await get(Self.messagesPath(
             conversationId: conversationId,
@@ -82,7 +85,7 @@ public struct PulseAPIClient: Sendable {
             before: before,
             query: query,
             topicId: topicId,
-            since: since
+            since: since, syncFrom: syncFrom, syncCursor: syncCursor, beforeId: beforeId
         ))
     }
 
@@ -98,10 +101,13 @@ public struct PulseAPIClient: Sendable {
         before: String?,
         query: String?,
         topicId: String? = nil,
-        since: String? = nil
+        since: String? = nil,
+        syncFrom: String? = nil,
+        syncCursor: String? = nil,
+        beforeId: String? = nil
     ) -> String {
         var path = "/api/conversations/\(conversationId)/messages?limit=\(limit)"
-        if let before { path += "&before=\(before)" }
+        if let before { path += "&before=\(queryEncoded(before))" }
         if let query {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { path += "&q=\(queryEncoded(trimmed))" }
@@ -114,6 +120,9 @@ public struct PulseAPIClient: Sendable {
             let trimmed = since.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { path += "&since=\(queryEncoded(trimmed))" }
         }
+        if let syncFrom { path += "&syncFrom=\(queryEncoded(syncFrom))" }
+        if let syncCursor { path += "&syncCursor=\(queryEncoded(syncCursor))" }
+        if let beforeId { path += "&beforeId=\(queryEncoded(beforeId))" }
         return path
     }
 
@@ -706,15 +715,18 @@ public struct PulseAPIClient: Sendable {
     public func fullHistory(conversationId: String) async -> [WireChatMessage]? {
         var pages: [[WireChatMessage]] = []
         var before: String?
+        var beforeId: String?
         for _ in 0..<24 {
             var path = "/api/conversations/\(conversationId)/messages?limit=500"
             if let before { path += "&before=\(before)" }
+            if let beforeId { path += "&beforeId=\(Self.queryEncoded(beforeId))" }
             guard let page: WireMessagesPage = try? await get(path, as: WireMessagesPage.self),
                   !page.messages.isEmpty else { break }
             pages.append(page.messages)
             if !page.hasMore { break }
             guard let cursor = page.messages.first?.createdAt else { break }
-            before = cursor.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+            before = Self.queryEncoded(cursor)
+            beforeId = page.messages.first?.id
         }
         guard !pages.isEmpty else { return nil }
         return pages.reversed().flatMap { $0 }

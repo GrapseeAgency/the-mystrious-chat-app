@@ -139,6 +139,8 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -618,8 +620,16 @@ internal fun MirrorRoom(
     LaunchedEffect(topicsVisible) {
         if (topicsVisible) runCatching { repository.refreshTopics(groupId) }
     }
-    LaunchedEffect(activeTopicId) {
-        runCatching { repository.refreshMessages(groupId, activeTopicId) }
+    LaunchedEffect(groupId, activeTopicId, readerLifecycle) {
+        readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            var firstAttempt = true
+            repository.observeConnected().distinctUntilChanged().collectLatest { connected ->
+                if (connected || firstAttempt) {
+                    firstAttempt = false
+                    repository.refreshMessages(groupId, activeTopicId)
+                }
+            }
+        }
     }
     val listState = rememberLazyListState()
     val context = LocalContext.current

@@ -52,9 +52,19 @@ test('failed transaction commits neither message nor receipt', () => fixture(asy
   assert.equal((await db.$queryRaw`SELECT * FROM MessageSendOperation`).length, 0)
 }))
 test('concurrent retries commit at most one row and converge on retry', () => fixture(async ({ db, find, create }) => {
-  await Promise.allSettled(Array.from({ length: 5 }, () => commitMessageOperation(db, op(), create, find)))
+  const attempts = await Promise.allSettled(Array.from({ length: 5 }, () => commitMessageOperation(db, op(), create, find)))
+  for (const attempt of attempts) {
+    if (attempt.status === 'rejected') assert.match(String(attempt.reason), /transaction|timed out|locked|timeout/i)
+  }
+  // SQLite may roll back every contending transaction; the first uncontended
+  // retry can therefore be the original commit, not a replay.
+  const settled = await commitMessageOperation(db, op(), create, find)
   const replay = await commitMessageOperation(db, op(), create, find)
   assert.equal(replay.replayed, true)
+  assert.equal(replay.message.id, settled.message.id)
+  for (const attempt of attempts) {
+    if (attempt.status === 'fulfilled') assert.equal(attempt.value.message.id, replay.message.id)
+  }
   assert.equal((await db.$queryRaw`SELECT * FROM TestMessage`).length, 1)
   assert.equal((await db.$queryRaw`SELECT * FROM MessageSendOperation`).length, 1)
 }))

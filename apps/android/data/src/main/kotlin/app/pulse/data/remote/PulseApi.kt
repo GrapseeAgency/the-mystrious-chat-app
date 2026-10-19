@@ -311,11 +311,18 @@ class PulseApi(
          * unchanged full-window fetch.
          */
         since: String? = null,
+        syncFrom: String? = null,
+        syncCursor: String? = null,
+        beforeId: String? = null,
     ): PulseResult<MessagesPageDto> {
-        val cursor = before?.let { "&before=$it" } ?: ""
+        val cursor = before?.let { "&before=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
         val topic = topicId?.let { "&topicId=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
         val delta = since?.let { "&since=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
-        return get("/api/conversations/$conversationId/messages?limit=$limit$cursor$topic$delta") {
+        val sync = listOf("syncFrom" to syncFrom, "syncCursor" to syncCursor, "beforeId" to beforeId)
+            .filter { it.second != null }.joinToString("") { (key, value) ->
+                "&$key=" + java.net.URLEncoder.encode(value, "UTF-8")
+            }
+        return get("/api/conversations/$conversationId/messages?limit=$limit$cursor$topic$delta$sync") {
             PulseJson.decodeFromString(MessagesPageDto.serializer(), it)
         }
     }

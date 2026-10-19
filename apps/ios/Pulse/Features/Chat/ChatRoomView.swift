@@ -49,6 +49,7 @@ struct ChatRoomView: View {
             session.roomVisible = true
             // Wave 8 - the incoming-attention gate treats THIS room as read.
             session.activeRoomId = conversation.id
+            viewModel?.requestRefresh(session: session)
             // 3-d - the group-call engine tracks the OPEN room: this drives
             // the 20s ongoing-call probe + the 'Ongoing group call' banner
             // (web useGroupCallSession options.conversationId parity). Groups
@@ -3891,13 +3892,15 @@ final class RoomViewModel: ObservableObject {
         loadScheduled(session: session)
         // R30-b - upcoming reminders for the header badge (one quiet GET).
         loadUpcomingReminderCount(session: session)
-        Task { await refresh(session: session) }
+        requestRefresh(session: session)
     }
 
     /// Wave 2 - a recording/playback must never outlive the room. Called
     /// from ChatRoomView.onDisappear (roomVisible off); a conversation
     /// change builds a NEW view model, so its deinit covers that path.
     func handleRoomDisappeared() {
+        refreshTask?.cancel()
+        refreshGeneration = UUID()
         cancelVoiceRecording()
         playback.stop()
     }
@@ -3987,6 +3990,19 @@ final class RoomViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        session.$connected.combineLatest(session.$isForeground)
+            .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, foreground in
+                guard let self else { return }
+                if foreground && session.activeRoomId == self.conversationId {
+                    self.requestRefresh(session: session)
+                } else {
+                    self.refreshTask?.cancel()
+                }
+            }
+            .store(in: &cancellables)
+
         // Wave 2 - realtimeRefreshTick bumps on every background mutation
         // (viewed/poll/link envelopes, outbox deliveries). Recompute the
         // active topic view so incoming topic-tagged rows land instantly
@@ -4022,70 +4038,72 @@ final class RoomViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration = UUID()
+
+    func requestRefresh(session: PulseSession) {
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            guard let self else { return }
+            await self.refresh(session: session)
+        }
+    }
+
     func refresh(session: PulseSession) async {
-        // Cache seed first - the room renders instantly (offline too), then
-        // the network refresh replaces it.
-        if messages.isEmpty, let store = session.store {
-            let cached = (try? store.messages(conversationId: conversationId)) ?? []
-            if !cached.isEmpty {
-                messages = riverRows(from: cached)
-                phase = .loaded
-            }
+        guard session.ready, session.isForeground else { return }
+        let epoch = session.sessionGeneration
+        let ticket = UUID()
+        refreshGeneration = ticket
+        let client = session.api
+        let store = session.store
+        if messages.isEmpty, let store {
+            messages = riverRows(from: (try? store.messages(conversationId: conversationId)) ?? [])
             seedReplyCounts(store: store)
         }
+        let real = messages.filter { !$0.id.hasPrefix("local_") }
+        let from = real.min {
+            (PulseFormat.date($0.createdAt) ?? .distantPast) < (PulseFormat.date($1.createdAt) ?? .distantPast)
+        }?.createdAt
         phase = messages.isEmpty ? .loading : phase
+        var cursor: String?
+        var seenCursors = Set<String>()
         do {
-            // D47 delta sync - the route accepts `since=<ISO>` and answers
-            // with only the rows STRICTLY NEWER than the cursor (same shape).
-            // First load (no window on screen yet) keeps the full newest
-            // window; every later refresh fetches just the tail.
-            let deltaCursor = deltaSyncCursor
-            let page = try await session.api.messages(conversationId: conversationId, since: deltaCursor)
-            if deltaCursor != nil {
-                mergeDelta(page.messages)
-            } else {
-                messages = riverRows(from: page.messages)
-                hasMore = page.hasMore
-            }
+            repeat {
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch, refreshGeneration == ticket,
+                      session.isForeground else { return }
+                // Revisit the cached range to heal edits/deletions as well as
+                // drain arbitrarily many new pages after a disconnection.
+                let watermark = session.messageRevision
+                let page = try await client.messages(conversationId: conversationId,
+                    syncFrom: cursor == nil ? from : nil, syncCursor: cursor)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch, refreshGeneration == ticket else { return }
+                if from != nil && page.syncVersion != 1 {
+                    throw PulseAPIClient.Failure(kind: .server, message: "Gateway needs the paged message-sync update")
+                }
+                let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+                try store?.upsert(messages: fresh)
+                messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: activeTopicId)
+                noteRiverChanged()
+                if from == nil { hasMore = page.hasMore; break }
+                if !page.hasMore { break }
+                guard let next = page.nextSyncCursor, seenCursors.insert(next).inserted else {
+                    throw PulseAPIClient.Failure(kind: .server, message: "Message sync returned a missing or repeated cursor")
+                }
+                cursor = next
+            } while true
             phase = .loaded
             errorText = nil
-            try? session.store?.upsert(messages: page.messages)
             await session.markReadIfVisible(conversationId: conversationId)
             resolveInitialJump()
+        } catch is CancellationError {
+            // Navigation/background cancellation is not a failed room.
         } catch {
+            guard session.sessionGeneration == epoch, refreshGeneration == ticket else { return }
             phase = .failed(RoomViewModel.describe(error))
-            if messages.isEmpty { errorText = RoomViewModel.describe(error) }
+            errorText = RoomViewModel.describe(error)
         }
-    }
-
-    /// D47 - the delta-sync cursor: the newest REAL (non-optimistic) row's
-    /// wire createdAt ISO, exactly what the route's `since` expects. Local
-    /// `local_` rows are excluded - their client-side stamps must never gate
-    /// what the server considers "newer". Nil = no real rows → full load.
-    private var deltaSyncCursor: String? {
-        let real = messages.filter { !$0.id.hasPrefix("local_") }
-        guard let newest = real.max(by: {
-            let lhs = PulseFormat.date($0.createdAt) ?? .distantPast
-            let rhs = PulseFormat.date($1.createdAt) ?? .distantPast
-            return lhs < rhs
-        }) else { return nil }
-        return newest.createdAt
-    }
-
-    /// D47 - merges a delta page into the river: server rows the window
-    /// doesn't know yet are appended id-dedupe + re-sorted ascending (the
-    /// same rhythm loadOlder uses). Edits/deletes keep flowing through the
-    /// socket signals - this path only ever ADDS missing rows.
-    private func mergeDelta(_ fresh: [WireChatMessage]) {
-        let rows = riverRows(from: fresh)
-        guard !rows.isEmpty else { return }
-        let known = Set(messages.map(\.id))
-        let additions = rows.filter { !known.contains($0.id) }
-        guard !additions.isEmpty else { return }
-        for row in additions {
-            upsert(row)
-        }
-        noteRiverChanged()
     }
 
     /// The main river EXCLUDES thread replies (web parity) - they live in
@@ -4140,6 +4158,7 @@ final class RoomViewModel: ObservableObject {
                     before: oldest.createdAt,
                     query: nil,
                     topicId: self.activeTopicId,
+                    beforeId: oldest.id,
                 )
                 try? session.store?.upsert(messages: page.messages)
                 let known = Set(self.messages.map(\.id))
@@ -4190,7 +4209,7 @@ final class RoomViewModel: ObservableObject {
         loadingOlder = true
         defer { loadingOlder = false }
         do {
-            let page = try await session.api.messages(conversationId: conversationId, limit: 40, before: oldest.createdAt, query: nil, topicId: activeTopicId)
+            let page = try await session.api.messages(conversationId: conversationId, limit: 40, before: oldest.createdAt, query: nil, topicId: activeTopicId, beforeId: oldest.id)
             try? session.store?.upsert(messages: page.messages)
             let known = Set(messages.map(\.id))
             let fresh = page.messages.filter { row in
@@ -4397,19 +4416,7 @@ final class RoomViewModel: ObservableObject {
     }
 
     func upsert(_ message: WireChatMessage) {
-        // Main river only - thread replies render in ThreadView.
-        if message.parentId != nil { return }
-        // REM-B F-MS-19 - expired rows never surface.
-        guard PulseRemediationLogic.isAlive(message.expiresAt) else { return }
-        // Wave 2 topics - an active topic view must not surface rows filed
-        // elsewhere (the store keeps them; switching back refetches).
-        if let active = activeTopicId, message.topicId != active { return }
-        guard let index = messages.firstIndex(where: { $0.id == message.id }) else {
-            messages.append(message)
-            messages.sort { PulseFormat.date($0.createdAt) ?? .distantPast < PulseFormat.date($1.createdAt) ?? .distantPast }
-            return
-        }
-        messages[index] = message
+        messages = PulseTimelineMerge.merge(messages, incoming: [message], topicId: activeTopicId)
     }
 
     func draftChanged(session: PulseSession) {

@@ -551,15 +551,23 @@ class PulseRepositoryImpl constructor(
      * Every message:* envelope carries the authoritative row - upsert it and
      * fan the event out. message:deleted keeps its tombstone semantics.
      */
+    private val messageCacheMutex = Mutex()
+    private val messageEventClock = java.util.concurrent.atomic.AtomicLong()
+    private val messageEventRevisions = mutableMapOf<String, Long>()
+
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
         val dto = signal.dto ?: return
         val message = dto.toDomain()
+        messageCacheMutex.withLock {
+            messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
+            // Persist tombstones too; an event-only deletion resurrects after restart.
+            messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+        }
         if (signal.event == app.pulse.protocol.SocketEvents.MESSAGE_DELETED) {
             eventsBus.tryEmit(
                 PulseEvent.MessageDeleted(signal.conversationId, message.id),
             )
         } else {
-            messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
             eventsBus.tryEmit(PulseEvent.MessageReceived(signal.conversationId, message))
         }
         scheduleConversationsRefresh()
@@ -616,34 +624,43 @@ class PulseRepositoryImpl constructor(
     override suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit> =
         refreshMessagesWindow(conversationId, topicId = topicId)
 
+    private val messageRefreshLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+
     private suspend fun refreshMessagesWindow(
         conversationId: String,
         limit: Int = 200,
-        before: String? = null,
         topicId: String? = null,
-    ): Result<Unit> {
-        // R2-C item 2 (D47 delta sync) - a REFRESH (no `before` page cursor,
-        // unfiltered) rides `since=` when the Room cache already holds server
-        // rows for this conversation: only the strictly-newer tail crosses
-        // the wire and merges by upsert. The FIRST load (empty cache) and
-        // paged/topic fetches keep the unchanged full-window behavior.
-        val since = if (before == null && topicId == null) {
-            messageDao.latestServerCreatedAt(conversationId)
-        } else {
-            null
-        }
-        return when (val r = api.messages(conversationId, limit, before, topicId, since)) {
-            is PulseResult.Success -> {
-                messageDao.upsertAll(
-                    r.value.messages.map { dto ->
-                        val domain = dto.toDomain()
-                        MessageEntity.from(domain, reactionsJsonOf(domain))
-                    },
-                )
-                Result.success(Unit)
+    ): Result<Unit> = messageRefreshLocks.getOrPut(conversationId) { Mutex() }.withLock {
+        // Revisit the cached range, not just its newest timestamp: missed edits
+        // and tombstones matter as much as new messages. Never replace pending rows.
+        val from = messageDao.earliestServerCreatedAt(conversationId)
+        var cursor: String? = null
+        val seenCursors = mutableSetOf<String>()
+        do {
+            val watermark = messageEventClock.get()
+            val result = api.messages(conversationId, limit = limit,
+                topicId = if (from == null) topicId else null,
+                syncFrom = if (cursor == null) from else null, syncCursor = cursor)
+            val page = when (result) {
+                is PulseResult.Success -> result.value
+                is PulseResult.Failure -> return@withLock Result.failure(apiExceptionOf(result))
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+            if (from != null && page.syncVersion != 1) {
+                return@withLock Result.failure(IllegalStateException("Gateway needs the paged message-sync update"))
+            }
+            messageCacheMutex.withLock {
+                messageDao.upsertAll(page.messages.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }.map { dto ->
+                    val message = dto.toDomain()
+                    MessageEntity.from(message, reactionsJsonOf(message))
+                })
+            }
+            if (from == null || !page.hasMore) break
+            cursor = page.nextSyncCursor
+            if (cursor == null || !seenCursors.add(cursor)) {
+                return@withLock Result.failure(IllegalStateException("Message sync returned a missing/repeated cursor"))
+            }
+        } while (true)
+        Result.success(Unit)
     }
 
     // users / identity
@@ -1195,7 +1212,9 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun messagesPage(conversationId: String, before: String?, limit: Int): Pair<List<Message>, Boolean> {
-        val page = when (val r = api.messages(conversationId, limit, before)) {
+        val anchor = before?.let { messageDao.byId(it)?.takeIf { row -> row.conversationId == conversationId }
+            ?: messageDao.firstAtTimestamp(conversationId, it) }
+        val page = when (val r = api.messages(conversationId, limit, anchor?.createdAt ?: before, beforeId = anchor?.id)) {
             is PulseResult.Success -> r.value
             is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
         }

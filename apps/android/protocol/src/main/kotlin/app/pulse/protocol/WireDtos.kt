@@ -77,6 +77,8 @@ data class MessagesPageDto(
     val messages: List<ChatMessageDto>,
     val hasMore: Boolean = false,
     val total: Int = 0,
+    val syncVersion: Int? = null,
+    val nextSyncCursor: String? = null,
 )
 
 /** GET /api/messages/{id}/thread?userId= → { parent, replies } (replies ascending). */

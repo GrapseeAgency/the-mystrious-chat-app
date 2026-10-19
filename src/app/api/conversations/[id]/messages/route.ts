@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { db } from '@/lib/db'
+import { decodeMessageSyncCursor, encodeMessageSyncCursor, messageSyncWhere, messagesBefore, MESSAGE_ORDER_ASC, MESSAGE_ORDER_DESC, type MessageSyncCursor } from '@/lib/message-sync'
 import { messageOperation, replayMessageOperation, commitMessageOperation, MessageOperationError } from '@/lib/message-operation'
 import {
   dayKey,
@@ -148,6 +149,41 @@ export async function GET(req: Request, { params }: RouteCtx) {
     ? { topicId: topicFilterRaw, deletedAt: null as null }
     : null
 
+  const syncFrom = url.searchParams.get('syncFrom')
+  const syncCursor = url.searchParams.get('syncCursor')
+  if (syncFrom !== null || syncCursor !== null) {
+    if (before || newerThan || url.searchParams.get('q')) {
+      return NextResponse.json({ error: 'Sync cannot be combined with search or legacy cursors.' }, { status: 400 })
+    }
+    let cursor: MessageSyncCursor
+    if (syncCursor) {
+      try { cursor = decodeMessageSyncCursor(syncCursor, id, topicFilterRaw || null) }
+      catch { return NextResponse.json({ error: 'Invalid or mismatched sync cursor.' }, { status: 400 }) }
+    } else {
+      const from = syncFrom && parseIsoDate(syncFrom)
+      if (!from) return NextResponse.json({ error: 'Invalid syncFrom.' }, { status: 400 })
+      // Storage failures must remain server failures, not malformed-request errors.
+      const upper = await db.message.findFirst({
+        where: { conversationId: id, createdAt: { gte: from }, ...(topicFilterRaw ? { topicId: topicFilterRaw } : {}) },
+        orderBy: [...MESSAGE_ORDER_DESC], select: { id: true, createdAt: true },
+      })
+      if (!upper) return NextResponse.json({ messages: [], hasMore: false, total: 0, syncVersion: 1, nextSyncCursor: null })
+      cursor = { v: 1, room: id, topic: topicFilterRaw || null, from: from.toISOString(),
+        upper: { at: upper.createdAt.toISOString(), id: upper.id } }
+    }
+    // Includes soft-deleted rows, including in topic views. The client must
+    // receive the tombstone instead of keeping its cached live version.
+    const rows = await db.message.findMany({ where: messageSyncWhere(cursor),
+      orderBy: [...MESSAGE_ORDER_ASC], take: limit + 1, include: MESSAGE_FULL_INCLUDE })
+    const hasMore = rows.length > limit
+    const page = rows.slice(0, limit)
+    const last = page.at(-1)
+    const nextSyncCursor = hasMore && last ? encodeMessageSyncCursor({ ...cursor,
+      after: { at: last.createdAt.toISOString(), id: last.id } }) : null
+    return NextResponse.json({ messages: page.map(m => mapMessage(m)), hasMore,
+      total: page.length, syncVersion: 1, nextSyncCursor })
+  }
+
   // Search mode - case-insensitive substring scan (SQLite has no ICU collation,
   // so matching happens in Node over the conversation's rows). R41: a kind
   // 'file' message also matches when its document fileName contains the query
@@ -158,7 +194,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     const needle = q.toLowerCase()
     const rows = await db.message.findMany({
       where: { conversationId: id, deletedAt: null },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [...MESSAGE_ORDER_DESC],
       include: MESSAGE_FULL_INCLUDE,
     })
     const matched = rows.filter(
@@ -178,10 +214,10 @@ export async function GET(req: Request, { params }: RouteCtx) {
       db.message.findMany({
         where: {
           conversationId: id,
-          createdAt: { lt: before },
+          ...messagesBefore(before, strField(url.searchParams.get('beforeId')) || undefined),
           ...(topicFilter ?? {}),
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [...MESSAGE_ORDER_DESC],
         take: limit,
         include: MESSAGE_FULL_INCLUDE,
       }),
@@ -200,7 +236,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
         ...(newerThan ? { createdAt: { gt: newerThan } } : {}),
         ...(topicFilter ?? {}),
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [...MESSAGE_ORDER_DESC],
       take: limit,
       include: MESSAGE_FULL_INCLUDE,
     }),
@@ -506,7 +542,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (conv.slowModeSeconds > 0 && participant.role !== 'admin') {
     const lastOwn = await db.message.findFirst({
       where: { conversationId: id, senderId: senderId, viaAutomation: false },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [...MESSAGE_ORDER_DESC],
       select: { createdAt: true },
     })
     if (lastOwn) {

@@ -81,6 +81,7 @@ class PulseSocketClient(
     private val tokenProvider: () -> String? = { null },
     /** Wave 8 - join:error hook (token invalid/rotated): clear + surface re-login. */
     private val onAuthInvalid: (String?) -> Unit = {},
+    private val allowEndpointFallback: Boolean = true,
 ) {
     sealed interface Signal {
         /** Realtime transport state - true on connect, false on disconnect/error. */
@@ -183,7 +184,7 @@ class PulseSocketClient(
      * manifest override (PulseEndpoints.socketUrl retargeted at runtime) is
      * picked up on every connect without recreating the singleton.
      */
-    private fun effectiveBase(): String = socketUrl.ifBlank { PulseEndpoints.socketUrl }
+    private fun effectiveBase(): String = socketUrl.ifBlank { if (allowEndpointFallback) PulseEndpoints.socketUrl else "" }
 
     fun connect(userId: String) {
         val sameViewer = joinedUserId == userId

@@ -246,6 +246,8 @@ public struct WireMessagesPage: Codable, Sendable {
     public let messages: [WireChatMessage]
     public let hasMore: Bool
     public let total: Int
+    public let syncVersion: Int?
+    public let nextSyncCursor: String?
 }
 
 
