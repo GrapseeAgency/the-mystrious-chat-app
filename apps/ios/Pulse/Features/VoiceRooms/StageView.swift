@@ -296,7 +296,20 @@ struct StageView: View {
 
     private var controls: some View {
         VStack(spacing: 12) {
+            if !model.stage.canSpeak, let issue = model.audioIssue {
+                Text(issue).font(.footnote).foregroundStyle(.red)
+                Button("Retry audio") { model.retryPlayback() }
+            }
             if model.stage.canSpeak {
+                if let issue = model.audioIssue {
+                    Text(issue).font(.footnote).foregroundStyle(.red)
+                    Button("Retry audio") { model.retryPlayback() }
+                }
+                if !model.microphoneReady && model.mayUseMicrophone {
+                    Button("Enable microphone") { Task { await model.retryMicAccess() } }
+                        .disabled(model.requestingMicrophone)
+                }
+                if let issue = model.micIssue { Text(issue).font(.footnote).foregroundStyle(.red) }
                 PTTButton(model: model)
             } else {
                 Button {

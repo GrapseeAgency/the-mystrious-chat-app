@@ -79,7 +79,12 @@ public struct VoicePcmChunker: Sendable {
         return chunk
     }
 
-    /// Teardown (VR-9): the next burst starts from seq 1 again.
+    /// Role revocation drops buffered microphone data but preserves the room's
+    /// sequence. Restarting at one while peers still hold this seat mutes us
+    /// behind their duplicate/stale-sequence filter.
+    public mutating func discardPartial() { buffer.removeAll() }
+
+    /// Teardown (VR-9): the next room starts from seq 1 again.
     public mutating func reset() {
         buffer.removeAll()
         nextSeq = 1

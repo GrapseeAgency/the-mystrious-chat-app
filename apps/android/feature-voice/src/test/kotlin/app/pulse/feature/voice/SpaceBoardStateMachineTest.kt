@@ -49,13 +49,13 @@ class SpaceBoardStateMachineTest {
     }
 
     @Test
-    fun `80ms throttle drops in-between moves - client matches the server budget`() {
+    fun `80ms throttle retains optimistic final position without exceeding the wire budget`() {
         connect()
         now += 200
         assertTrue(machine.dispatch(SpaceBoardStateMachine.Event.LocalMove(0.1, 0.1)).isNotEmpty())
-        now += 50 // inside the 80ms window → swallowed, no emit, target untouched
+        now += 50 // update target immediately; only the network emission is throttled
         assertTrue(machine.dispatch(SpaceBoardStateMachine.Event.LocalMove(0.9, 0.9)).isEmpty())
-        assertEquals(0.1, state.myTarget!!.x, 0.0)
+        assertEquals(0.9, state.myTarget!!.x, 0.0)
         now += 81 // outside the window → flows
         assertTrue(machine.dispatch(SpaceBoardStateMachine.Event.LocalMove(0.9, 0.9)).isNotEmpty())
         assertEquals(0.9, state.myTarget!!.x, 0.0)
@@ -167,4 +167,31 @@ class SpaceBoardStateMachineTest {
         assertTrue(machine.dispatch(SpaceBoardStateMachine.Event.LocalMove(0.5, 0.5)).isEmpty())
         assertNull(state.myTarget)
     }
+    @Test fun `final drag flush sends the latest position exactly once`() {
+        connect()
+        machine.dispatch(SpaceBoardStateMachine.Event.LocalMove(0.1, 0.1))
+        now += 50
+        machine.dispatch(SpaceBoardStateMachine.Event.LocalMove(0.9, 0.8))
+        assertTrue(machine.dispatch(SpaceBoardStateMachine.Event.FlushMove).isEmpty())
+        now += 30
+        assertEquals(listOf(SpaceBoardStateMachine.Effect.EmitMove(0.9, 0.8)),
+            machine.dispatch(SpaceBoardStateMachine.Event.FlushMove))
+        assertTrue(machine.dispatch(SpaceBoardStateMachine.Event.FlushMove).isEmpty())
+        now += 10
+        machine.dispatch(SpaceBoardStateMachine.Event.LocalMove(0.2, 0.2))
+        machine.dispatch(SpaceBoardStateMachine.Event.Left)
+        now += 100
+        assertTrue(machine.dispatch(SpaceBoardStateMachine.Event.FlushMove).isEmpty())
+    }
+
+    @Test fun `wrong room and post leave connection callbacks cannot resurrect membership`() {
+        machine.dispatch(SpaceBoardStateMachine.Event.JoinRequested("room", "me"))
+        assertTrue(machine.dispatch(SpaceBoardStateMachine.Event.Connected("other")).isEmpty())
+        assertEquals(SpaceBoardStateMachine.Status.JOINING, state.status)
+        machine.dispatch(SpaceBoardStateMachine.Event.Left)
+        assertTrue(machine.dispatch(SpaceBoardStateMachine.Event.Connected("room")).isEmpty())
+        machine.dispatch(SpaceBoardStateMachine.Event.Disconnected)
+        assertEquals(SpaceBoardStateMachine.Status.IDLE, state.status)
+    }
+
 }

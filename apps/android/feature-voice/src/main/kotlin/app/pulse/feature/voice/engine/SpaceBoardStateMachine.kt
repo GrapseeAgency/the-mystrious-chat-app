@@ -46,6 +46,7 @@ class SpaceBoardStateMachine(
         val error: String? = null,
         val lastLocalMoveMs: Long = 0,
         val lastEmitMs: Long = 0,
+        val pendingMove: Boolean = false,
     ) {
         val count: Int get() = players.size
         /** "N in room" pill - me plus every listed player (self is server-listed). */
@@ -63,6 +64,7 @@ class SpaceBoardStateMachine(
         data class BoardArrived(val conversationId: String, val players: List<Player>) : Event
 
         /** Reconnect bookkeeping - honest ERROR after the budget (SP-5, FIX #5). */
+        data object FlushMove : Event
         data object ReconnectAttempt : Event
         data object Disconnected : Event
         data object Left : Event
@@ -92,8 +94,12 @@ class SpaceBoardStateMachine(
         )
 
         is Event.Connected -> {
-            effects += Effect.EmitJoin
-            current.copy(status = Status.CONNECTED, reconnectAttempts = 0, error = null)
+            if (event.conversationId != current.conversationId ||
+                current.status == Status.IDLE || current.status == Status.ERROR) current
+            else {
+                effects += Effect.EmitJoin
+                current.copy(status = Status.CONNECTED, reconnectAttempts = 0, error = null)
+            }
         }
 
         is Event.LocalMove -> {
@@ -103,7 +109,9 @@ class SpaceBoardStateMachine(
                 val now = clock()
                 // 80ms client throttle == server budget (WEB DEFECT FIX #3).
                 if (now - current.lastEmitMs < MOVE_THROTTLE_MS) {
-                    current
+                    val target = Point(event.x.coerceIn(0.0, 1.0), event.y.coerceIn(0.0, 1.0))
+                    current.copy(myTarget = target, lastLocalMoveMs = now, pendingMove = true,
+                        nearbyIds = nearbyOf(current, target))
                 } else {
                     val clamped = Point(
                         event.x.coerceIn(0.0, 1.0),
@@ -114,14 +122,25 @@ class SpaceBoardStateMachine(
                         myTarget = clamped,
                         lastLocalMoveMs = now,
                         lastEmitMs = now,
+                        pendingMove = false,
                         nearbyIds = nearbyOf(current, clamped),
                     )
                 }
             }
         }
 
+        is Event.FlushMove -> {
+            val target = current.myTarget
+            if (current.status != Status.CONNECTED || !current.pendingMove || target == null ||
+                clock() - current.lastEmitMs < MOVE_THROTTLE_MS) current
+            else {
+                effects += Effect.EmitMove(target.x, target.y)
+                current.copy(lastEmitMs = clock(), pendingMove = false)
+            }
+        }
+
         is Event.BoardArrived -> {
-            if (event.conversationId != current.conversationId) {
+            if (event.conversationId != current.conversationId || current.status == Status.IDLE || current.status == Status.ERROR) {
                 current
             } else {
                 val players = event.players.associateBy { it.id }
@@ -130,7 +149,7 @@ class SpaceBoardStateMachine(
                 // only after the finger has been idle for 300ms - an in-flight
                 // gesture never fights the user.
                 val reconciled = serverSelf?.takeIf {
-                    current.myTarget == null || clock() - current.lastLocalMoveMs >= RECONCILE_IDLE_MS
+                    !current.pendingMove && (current.myTarget == null || clock() - current.lastLocalMoveMs >= RECONCILE_IDLE_MS)
                 } ?: current.myTarget
                 current.copy(
                     status = Status.CONNECTED,
@@ -144,7 +163,8 @@ class SpaceBoardStateMachine(
 
         is Event.Disconnected -> {
             val attempts = current.reconnectAttempts + 1
-            if (attempts >= MAX_RECONNECT_ATTEMPTS) {
+            if (current.status == Status.IDLE || current.status == Status.ERROR) current
+            else if (attempts >= MAX_RECONNECT_ATTEMPTS) {
                 // Honest terminal state (WEB DEFECT FIX #5) - never spin forever.
                 current.copy(
                     status = Status.ERROR,

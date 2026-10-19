@@ -88,6 +88,17 @@ enum VoiceRecorderError: LocalizedError {
 final class VoiceRecorder {
     private(set) var fileURL: URL?
     private var recorder: AVAudioRecorder?
+    private let ownershipToken = UUID()
+    private var savedSession: (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)?
+
+    private func releaseSession() {
+        guard let saved = savedSession else { return }
+        let audio = AVAudioSession.sharedInstance()
+        try? audio.setCategory(saved.0, mode: saved.1, options: saved.2)
+        try? audio.setActive(false, options: [.notifyOthersOnDeactivation])
+        savedSession = nil
+        PulseAudioOwnership.shared.release(ownershipToken)
+    }
 
     /// Mic permission - TCC prompt on first use (NSMicrophoneUsageDescription
     /// already ships in project.yml). `requestRecordPermission` is soft-
@@ -105,7 +116,14 @@ final class VoiceRecorder {
     /// builds the AAC recorder and starts metering. Throws on TCC/session
     /// failure - the caller toasts honestly.
     func start() throws {
+        guard recorder == nil else { return }
+        guard PulseAudioOwnership.shared.acquire(ownershipToken) else {
+            throw NSError(domain: "PulseAudio", code: 1, userInfo: [NSLocalizedDescriptionKey: "Leave your call or live room before recording."])
+        }
         let audio = AVAudioSession.sharedInstance()
+        savedSession = (audio.category, audio.mode, audio.categoryOptions)
+        var started = false
+        defer { if !started { releaseSession() } }
         try audio.setCategory(.playAndRecord, mode: .default)
         try audio.setActive(true)
         let url = FileManager.default.temporaryDirectory
@@ -124,6 +142,7 @@ final class VoiceRecorder {
         }
         self.recorder = recorder
         fileURL = url
+        started = true
     }
 
     /// D31 - current input level in dB (−160…0) for the live waveform.
@@ -138,12 +157,14 @@ final class VoiceRecorder {
     func stop() {
         recorder?.stop()
         recorder = nil
+        releaseSession()
     }
 
     /// Stops metering and DELETES the file (cancel / too-short paths).
     func cancel() {
         recorder?.stop()
         recorder = nil
+        releaseSession()
         if let fileURL {
             try? FileManager.default.removeItem(at: fileURL)
         }
@@ -152,6 +173,7 @@ final class VoiceRecorder {
 
     deinit {
         recorder?.stop()
+        releaseSession()
     }
 }
 

@@ -41,6 +41,9 @@ public final class VoiceRoomSessionModel: ObservableObject {
     /// VR-10 - honest mic issue banner (denied / busy / absent); the
     /// room still joins and listens.
     @Published public private(set) var micIssue: String?
+    @Published public private(set) var microphoneReady = false
+    @Published public private(set) var audioIssue: String?
+    @Published public private(set) var requestingMicrophone = false
 
     public static let captionTtlMs: Double = 7000
     public static let captionKeep = 3
@@ -51,6 +54,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private let engine: any VoiceRoomAudioDriving
     private var audioGeneration = UUID()
+    private var captionGeneration = UUID()
     private(set) var audioJoinTask: Task<Void, Never>?
     private var accumulator = CaptionWindowAccumulator()
     private var lastTranscriptEmitMs: Double = 0
@@ -110,6 +114,8 @@ public final class VoiceRoomSessionModel: ObservableObject {
 
     private func invalidateAudioAttempt() {
         audioGeneration = UUID()
+        requestingMicrophone = false
+        accumulator.clear()
         audioJoinTask?.cancel()
         audioJoinTask = nil
     }
@@ -122,7 +128,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
     private var viewerColor: String? { session.viewer?.color }
 
     private func nowMs() -> Double {
-        Date().timeIntervalSince1970 * 1000
+        ProcessInfo.processInfo.systemUptime * 1000
     }
 
     // signal routing
@@ -145,13 +151,29 @@ public final class VoiceRoomSessionModel: ObservableObject {
         case .stageState(let conversationId, let raw):
             guard conversationId == stage.conversationId else { return }
             if let state = Self.decode(WireStageState.self, from: raw) {
+                let previouslyAllowed = stage.canSpeak
                 stage.apply(state: state)
+                if previouslyAllowed && !stage.canSpeak {
+                    invalidateAudioAttempt()
+                    requestingMicrophone = false
+                    accumulator.clear()
+                    installAudioCallbacks()
+                }
+                if !stage.canSpeak {
+                    if voice.transmitting { stopTransmitting(emitPttOff: true) }
+                    if microphoneReady {
+                        microphoneReady = false
+                        audioIssue = engine.stopMicrophone()
+                        voice.playback = [:]
+                    }
+                }
+                if stage.consumeVoiceSeatRequest() { emitVoiceJoin(conversationId: conversationId) }
             }
         case .stageEnded(let conversationId):
             guard conversationId == stage.conversationId else { return }
             finishStageTeardown(toast: "The stage ended")
         case .spaceState(let conversationId, let raw):
-            guard conversationId == spaceConversationId else { return }
+            guard space.joined, conversationId == spaceConversationId else { return }
             if let state = Self.decode(WireSpaceState.self, from: raw) {
                 let verdict = space.apply(state: state, nowMs: nowMs())
                 // R1-W2G D46 - an adopted SERVER position is the last known
@@ -176,6 +198,11 @@ public final class VoiceRoomSessionModel: ObservableObject {
     // voice room (VR-1…VR-11)
 
     public func joinVoice(conversationId: String) {
+        if voice.status == .joined, voice.conversationId == conversationId {
+            voice.userJoinedVoice = true
+            open(.voice)
+            return
+        }
         guard voice.status == .idle || voice.status == .error else { return }
         voice.beginJoin(conversationId: conversationId)
         open(.voice)
@@ -195,11 +222,9 @@ public final class VoiceRoomSessionModel: ObservableObject {
     /// Permission → session → engine → optimistic join + emit.
     private func activateAudioAndJoin(granted: Bool) {
         installAudioCallbacks()
-        if let failure = engine.startCapture(micGranted: granted) {
-            micIssue = failure
-        } else {
-            micIssue = nil
-        }
+        micIssue = engine.startCapture(micGranted: granted)
+        microphoneReady = micIssue == nil
+        audioIssue = microphoneReady ? nil : engine.startPlayback()
         engine.resetChunker()
         voice.markJoined()
         emitVoiceJoin()
@@ -208,17 +233,37 @@ public final class VoiceRoomSessionModel: ObservableObject {
     public func leaveVoice() {
         invalidateAudioAttempt()
         guard voice.status != .idle else { return }
+        // A shared stage seat keeps listening, but relinquishes microphone consent.
+        if stage.joined, stage.conversationId == voice.conversationId {
+            stopTransmitting(emitPttOff: voice.transmitting)
+            voice.userJoinedVoice = false
+            microphoneReady = false
+            audioIssue = engine.stopMicrophone()
+            installAudioCallbacks()
+            return
+        }
         stopTransmitting(emitPttOff: voice.transmitting)
         emitVoiceLeave()
         voice.leave()
         engine.stopCapture()
+        microphoneReady = false
+        audioIssue = nil
         micIssue = nil
+        captions = []
+        accumulator.clear()
     }
 
     /// VR-3 - PTT hold/latch share this gate: disabled when muted,
     /// not joined, disconnected or mic-denied (honest, never fake).
+    public var mayUseMicrophone: Bool {
+        guard voice.status == .joined else { return false }
+        if stage.joined, stage.conversationId == voice.conversationId { return stage.canSpeak }
+        return voice.userJoinedVoice
+    }
+
     public var canTransmit: Bool {
-        voice.status == .joined
+        mayUseMicrophone && microphoneReady && audioIssue == nil
+            && voice.status == .joined
             && !voice.micMuted
             && voice.connected
             && micIssue == nil
@@ -273,6 +318,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
     }
 
     public func setCaptions(_ enabled: Bool) {
+        if enabled != captionsEnabled { captionGeneration = UUID() }
         captionsEnabled = enabled
         defaults.set(enabled, forKey: PulsePrefs.voiceCaptionsKey)
         if !enabled {
@@ -283,18 +329,18 @@ public final class VoiceRoomSessionModel: ObservableObject {
     /// VR-10 - the mic banner's "Try again": re-run permission + engine
     /// start; the room stays joined and listening throughout.
     public func retryMicAccess() async {
-        guard voice.status == .joined, let conversationId = voice.conversationId else { return }
+        guard mayUseMicrophone, !requestingMicrophone, let conversationId = voice.conversationId else { return }
+        requestingMicrophone = true
         let ticket = audioGeneration
+        defer { if audioGeneration == ticket { requestingMicrophone = false } }
         let epoch = session.sessionGeneration
         let granted = await engine.requestMicPermission()
         guard !Task.isCancelled, audioGeneration == ticket,
               session.sessionGeneration == epoch,
-              voice.status == .joined, voice.conversationId == conversationId else { return }
-        if let failure = engine.startCapture(micGranted: granted) {
-            micIssue = failure
-        } else {
-            micIssue = nil
-        }
+              mayUseMicrophone, voice.conversationId == conversationId else { return }
+        micIssue = engine.startCapture(micGranted: granted)
+        microphoneReady = micIssue == nil
+        audioIssue = microphoneReady ? nil : engine.startPlayback()
     }
 
     private func handleVoiceRoster(conversationId: String, rawPeers: [[String: Any]]) {
@@ -334,7 +380,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
     }
 
     private func handleLocalChunk(_ chunk: VoicePcmChunkOut) {
-        guard let conversationId = voice.conversationId else { return }
+        guard voice.connected, mayUseMicrophone, microphoneReady, let conversationId = voice.conversationId else { return }
         emitRoom(.voiceChunk, VoiceRoomWire.voiceChunk(
             conversationId: conversationId,
             userId: viewerId,
@@ -359,15 +405,23 @@ public final class VoiceRoomSessionModel: ObservableObject {
         }
         let wav = WavEncoder.base64Wav(samples: window)
         let requesterId = viewerId
+        let captionTicket = captionGeneration
+        let ticket = audioGeneration
+        let epoch = session.sessionGeneration
+        let api = session.api
         Task { [weak self] in
             guard let self else { return }
-            defer { self.accumulator.endFlush() } // single-flight opens again
+            defer { if self.audioGeneration == ticket && self.captionGeneration == captionTicket { self.accumulator.endFlush() } }
+            guard self.audioGeneration == ticket, self.captionGeneration == captionTicket, self.captionsEnabled else { return }
             do {
-                let result = try await self.session.api.transcribeVoice(
+                let result = try await api.transcribeVoice(
                     conversationId: conversationId,
                     requesterId: requesterId,
                     audioBase64: wav,
                 )
+                guard self.audioGeneration == ticket, self.captionGeneration == captionTicket, self.session.sessionGeneration == epoch,
+                      self.voice.conversationId == conversationId, self.voice.connected,
+                      self.captionsEnabled else { return }
                 let text = String(result.transcript.prefix(280))
                 guard !text.isEmpty else { return } // honest silence
                 let now = self.nowMs()
@@ -397,10 +451,44 @@ public final class VoiceRoomSessionModel: ObservableObject {
         captions.removeAll { $0.at < cutoff }
     }
 
+    public func retryPlayback() {
+        guard voice.status == .joined else { return }
+        audioIssue = engine.startPlayback()
+    }
+
     // stage (ST-1…ST-8)
 
     public func joinStage(conversationId: String) {
         guard !stage.joined else { return }
+        guard voice.conversationId == nil || voice.conversationId == conversationId else {
+            session.toasts.show("Leave your other voice room before joining this stage.")
+            return
+        }
+        // A stage listener owns a real playback seat without microphone permission.
+        if voice.status == .idle || voice.status == .error {
+            invalidateAudioAttempt()
+            voice.beginJoin(conversationId: conversationId, userInitiated: false)
+            microphoneReady = false
+            micIssue = nil
+            installAudioCallbacks()
+            audioIssue = engine.startPlayback()
+            voice.markJoined()
+        }
+        if voice.status == .joining {
+            invalidateAudioAttempt()
+            installAudioCallbacks()
+            voice.markJoined()
+            audioIssue = engine.startPlayback()
+        }
+        invalidateAudioAttempt()
+        requestingMicrophone = false
+        accumulator.clear()
+        installAudioCallbacks()
+        if voice.transmitting { stopTransmitting(emitPttOff: true) }
+        if microphoneReady {
+            microphoneReady = false
+            audioIssue = engine.stopMicrophone()
+        }
         stage.beginJoin(conversationId: conversationId, asHost: false)
         open(.stage)
         emitStageJoin(asHost: false) // ST-1 - ALWAYS as listener
@@ -414,6 +502,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         guard stage.joined, let conversationId = stage.conversationId else { return }
         emitRoom(.stageLeave, VoiceRoomWire.stageLeave(conversationId: conversationId))
         let seatConversationId = conversationId
+        stopTransmitting(emitPttOff: voice.transmitting)
         stage.leave()
         // The voice seat existed only for the stage → release it too.
         if !voice.userJoinedVoice, voice.conversationId == seatConversationId {
@@ -480,6 +569,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
     /// stage:ended - full local teardown + surface close + toast (ST-5).
     private func finishStageTeardown(toast: String) {
         let seatConversationId = stage.conversationId
+        stopTransmitting(emitPttOff: voice.transmitting)
         stage.applyEnded()
         surface = nil
         session.toasts.show(toast)
@@ -492,6 +582,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
 
     public func joinSpace(conversationId: String) {
         guard !space.joined else { return }
+        spaceGeneration = UUID()
         space.beginJoin()
         // R1-W2G D46 - the durable last-position cache seeds the initial
         // target on rejoin (web falls back to 0.5/0.5); the server still
@@ -499,10 +590,8 @@ public final class VoiceRoomSessionModel: ObservableObject {
         if let cached = loadLastPosition(roomId: conversationId) {
             space.seedInitialPosition(x: cached.x, y: cached.y)
         }
-        open(.space)
-        // Remember which conversation the space seat belongs to (SpaceModel
-        // is pure - no wire ids). The re-join path uses it too.
         spaceConversationId = conversationId
+        open(.space)
         emitRoom(.spaceJoin, VoiceRoomWire.spaceJoin(
             conversationId: conversationId,
             userId: viewerId,
@@ -513,6 +602,9 @@ public final class VoiceRoomSessionModel: ObservableObject {
     }
 
     public func leaveSpace() {
+        spaceGeneration = UUID()
+        spaceMoveTask?.cancel()
+        spaceMoveTask = nil
         guard space.joined else { return }
         if let conversationId = spaceConversationId {
             // R1-W2G D46 - leave-time flush of the optimistic target (drag
@@ -521,18 +613,31 @@ public final class VoiceRoomSessionModel: ObservableObject {
             emitRoom(.spaceLeave, VoiceRoomWire.spaceLeave(conversationId: conversationId))
         }
         space.leave()
+        spaceConversationId = nil
     }
 
     /// SP-3 - tap-to-move AND drag share this: clamp + optimistic target
     /// + 80 ms throttle; the emit fires only when the throttle allows.
     public func moveSpace(x: Double, y: Double) {
         guard space.joined, let conversationId = spaceConversationId else { return }
-        guard case .emit(let clampedX, let clampedY) = space.localMove(x: x, y: y, nowMs: nowMs()) else { return }
-        // R1-W2G D46 - write-through on every position change that EMITS:
-        // the 80 ms throttle gate doubles as the write debounce, and the
-        // direct defaults write is the house prefs pattern (voiceCaptions).
-        storeLastPosition(roomId: conversationId, x: clampedX, y: clampedY)
-        emitRoom(.spaceMove, VoiceRoomWire.spaceMove(conversationId: conversationId, x: clampedX, y: clampedY))
+        if case .emit(let cx, let cy) = space.localMove(x: x, y: y, nowMs: nowMs()) {
+            emitSpaceMove(conversationId, x: cx, y: cy)
+        }
+        spaceMoveTask?.cancel()
+        let ticket = spaceGeneration
+        spaceMoveTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 80_000_000) } catch { return }
+            guard let self, self.spaceGeneration == ticket, self.space.joined,
+                  self.spaceConversationId == conversationId else { return }
+            if case .emit(let cx, let cy) = self.space.flushMove(nowMs: self.nowMs()) {
+                self.emitSpaceMove(conversationId, x: cx, y: cy)
+            }
+        }
+    }
+
+    private func emitSpaceMove(_ conversationId: String, x: Double, y: Double) {
+        storeLastPosition(roomId: conversationId, x: x, y: y)
+        emitRoom(.spaceMove, VoiceRoomWire.spaceMove(conversationId: conversationId, x: x, y: y))
     }
 
     // R1-W2G D46 - durable last-position cache ("space:lastpos:<roomId>",
@@ -553,6 +658,8 @@ public final class VoiceRoomSessionModel: ObservableObject {
     /// The space conversation id - SpaceModel is pure (no wire ids), so
     /// the session carries it alongside.
     private var spaceConversationId: String?
+    private var spaceGeneration = UUID()
+    private var spaceMoveTask: Task<Void, Never>?
 
     // surface lifecycle
 
@@ -589,13 +696,10 @@ public final class VoiceRoomSessionModel: ObservableObject {
     /// Surface close: voice membership SURVIVES (VR-1); stage close emits
     /// stage:leave (ST-7); space close emits space:leave (SP-1).
     public func closeSurface() {
+        let closing = surface
         surface = nil
-        if stage.joined {
-            leaveStage()
-        }
-        if space.joined {
-            leaveSpace()
-        }
+        if closing == .stage { leaveStage() }
+        if closing == .space { leaveSpace() }
     }
 
     // connection transitions (VR-8 / ST-8 / SP-5)
@@ -670,6 +774,10 @@ public final class VoiceRoomSessionModel: ObservableObject {
         }
         voice.leave()
         engine.stopCapture()
+        microphoneReady = false
+        audioIssue = nil
         micIssue = nil
+        captions = []
+        accumulator.clear()
     }
 }

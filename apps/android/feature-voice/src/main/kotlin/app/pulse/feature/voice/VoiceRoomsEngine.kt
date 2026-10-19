@@ -18,6 +18,7 @@ import app.pulse.protocol.parseStageRoomState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -84,6 +85,9 @@ class VoiceRoomsEngine @Inject constructor(
     /** PTT press bookkeeping (hold ≥260ms vs tap-latch - web parity, VR-3). */
     private var pttPressAtMs = 0L
     private var lastVoiceResyncMs = 0L
+    private var spaceMoveJob: Job? = null
+    private var audioGeneration = 0L
+    private var captionGeneration = 0L
 
     init {
         // Persisted captions toggle (web parity pref pulse-voice-captions →
@@ -100,10 +104,14 @@ class VoiceRoomsEngine @Inject constructor(
                 when (event) {
                     is PulseEvent.VoiceRoster -> onVoiceRoster(event.payload)
                     is PulseEvent.VoicePtt -> onVoicePtt(event.payload)
-                    is PulseEvent.VoiceChunk ->
-                        audio.onPeerChunk(event.payload.userId, event.payload.seq, event.payload.data)
-                    is PulseEvent.VoiceTranscript ->
-                        addCaption(event.payload.userId, event.payload.text)
+                    is PulseEvent.VoiceChunk -> {
+                        if (acceptsRoomAudio(activeAudioRoom(), event.payload.conversationId, identity.id, event.payload.userId)) {
+                            audio.onPeerChunk(event.payload.userId, event.payload.seq, event.payload.data)
+                        }
+                    }
+                    is PulseEvent.VoiceTranscript -> {
+                        if (activeAudioRoom() == event.payload.conversationId) addCaption(event.payload.userId, event.payload.text)
+                    }
                     is PulseEvent.StageState -> onStageState(event.payload)
                     is PulseEvent.StageEnded -> onStageEnded(event.payload)
                     is PulseEvent.SpaceState -> onSpaceState(event.payload)
@@ -123,20 +131,40 @@ class VoiceRoomsEngine @Inject constructor(
             }
         }
 
-        // Audio callbacks - capture → chunker → voice:chunk, caption sink.
+    }
+
+    /** Capture the room lease before audio threads enqueue work on the main owner. */
+    private fun configureAudioCallbacks(conversationId: String) {
+        val ticket = audioGeneration
+        val userId = identity.id
+        fun ownsSession() = ticket == audioGeneration && activeAudioRoom() == conversationId && identity.id == userId
         audio.onChunk = { seq, base64 ->
-            val cid = voiceMachine.state.value.conversationId
-            if (cid.isNotBlank()) scope.launch { repo.emitVoiceChunk(cid, identity.id, seq, base64) }
+            scope.launch {
+                if (ownsSession() && _connected.value) runCatching {
+                    repo.emitVoiceChunk(conversationId, userId, seq, base64)
+                }
+            }
         }
-        audio.captionSink = { samples -> onCaptionSamples(samples) }
+        audio.captionSink = { samples ->
+            scope.launch { if (ownsSession()) onCaptionSamples(samples) }
+        }
         audio.onTransmitEnd = {
-            when (val offer = captions.onTransmitEnd(_captionsEnabled.value)) {
-                is CaptionWindowAccumulator.Offer.Window -> transcribeWindow(offer.samples)
-                else -> Unit
+            scope.launch {
+                if (ownsSession()) {
+                    when (val offer = captions.onTransmitEnd(_captionsEnabled.value)) {
+                        is CaptionWindowAccumulator.Offer.Window -> transcribeWindow(offer.samples)
+                        else -> Unit
+                    }
+                }
             }
         }
         audio.onCaptureError = { message ->
-            voiceMachine.dispatch(VoiceRoomStateMachine.Event.Failed(message))
+            scope.launch {
+                if (ownsSession()) {
+                    stopTransmit(emit = true)
+                    voiceMachine.dispatch(VoiceRoomStateMachine.Event.Failed(message))
+                }
+            }
         }
     }
 
@@ -147,7 +175,11 @@ class VoiceRoomsEngine @Inject constructor(
         val changed = cleanId != identity.id
         identity = PulseVoiceUser(id = cleanId, name = name.orEmpty(), username = null, color = color.orEmpty())
         stageMachine.setSelfId(cleanId)
-        if (changed) lastVoiceResyncMs = 0
+        if (changed) {
+            audioGeneration++
+            captions.clear()
+            lastVoiceResyncMs = 0
+        }
     }
 
     // surface control (the overlay host)
@@ -167,6 +199,7 @@ class VoiceRoomsEngine @Inject constructor(
 
     /** Opening the space joins on connect (SP-1) - the machine gates the emit. */
     fun openSpace(conversationId: String) {
+        spaceMoveJob?.cancel()
         _surface.value = OpenSurface(conversationId, RoomKind.SPACE)
         spaceMachine.dispatch(SpaceBoardStateMachine.Event.JoinRequested(conversationId, identity.id))
         if (_connected.value) dispatchSpaceConnected(conversationId)
@@ -183,17 +216,30 @@ class VoiceRoomsEngine @Inject constructor(
         _surface.value = null
     }
 
+    private fun activeAudioRoom(): String? =
+        voiceMachine.state.value.takeIf { it.joined }?.conversationId
+            ?: stageMachine.state.value.takeIf { it.joined }?.conversationId
+
     // voice room actions
 
     fun joinVoice(conversationId: String) {
+        if (activeAudioRoom() != null && activeAudioRoom() != conversationId) return
+        if (voiceMachine.state.value.joined) return
+        if (!audio.start()) {
+            voiceMachine.dispatch(VoiceRoomStateMachine.Event.Failed("Audio is unavailable or in use by another session."))
+            return
+        }
+        audioGeneration++
+        captions.clear()
+        configureAudioCallbacks(conversationId)
         voiceMachine.dispatch(VoiceRoomStateMachine.Event.JoinRequested(conversationId))
         emitVoiceJoin(conversationId)
-        audio.start()
         VoiceForegroundService.ensureChannel(context)
         VoiceForegroundService.start(context, "Live voice room active")
     }
 
     fun leaveVoice() {
+        audioGeneration++
         val cid = voiceMachine.state.value.conversationId
         stopTransmit(emit = cid.isNotBlank())
         if (cid.isNotBlank()) scope.launch { runCatching { repo.emitVoiceLeave(cid) } }
@@ -214,6 +260,7 @@ class VoiceRoomsEngine @Inject constructor(
     }
 
     fun setCaptions(enabled: Boolean) {
+        if (enabled != _captionsEnabled.value) captionGeneration++
         scope.launch { runCatching { prefs.setVoiceCaptions(enabled) } }
         _captionsEnabled.value = enabled
         if (!enabled) captions.clear()
@@ -288,6 +335,12 @@ class VoiceRoomsEngine @Inject constructor(
     // stage actions
 
     fun joinStage(conversationId: String) {
+        if (activeAudioRoom() != null && activeAudioRoom() != conversationId) return
+        if (!audio.start()) return
+        stopTransmit(emit = true)
+        audioGeneration++
+        captions.clear()
+        configureAudioCallbacks(conversationId)
         stageMachine.dispatchJoinRequested(conversationId)
         scope.launch {
             runCatching { repo.emitStageJoin(conversationId, identity, asHost = false) }
@@ -295,7 +348,6 @@ class VoiceRoomsEngine @Inject constructor(
             // alongside the stage seat so the audience receives audio.
             runCatching { repo.emitVoiceJoin(conversationId, identity) }
         }
-        audio.start()
     }
 
     /** ST-7: the host seat is empty and I am joined - claim it via asHost:true. */
@@ -345,6 +397,7 @@ class VoiceRoomsEngine @Inject constructor(
     fun disarmEndConfirm() = stageMachine.disarmEndConfirm()
 
     fun leaveStage(conversationId: String) {
+        audioGeneration++
         val wasJoined = stageMachine.state.value.joined
         if (!wasJoined) return
         scope.launch {
@@ -366,7 +419,19 @@ class VoiceRoomsEngine @Inject constructor(
     }
 
     fun moveSpace(x: Double, y: Double) {
-        for (effect in spaceMachine.dispatch(SpaceBoardStateMachine.Event.LocalMove(x, y))) {
+        emitSpaceMoves(spaceMachine.dispatch(SpaceBoardStateMachine.Event.LocalMove(x, y)))
+        spaceMoveJob?.cancel()
+        val cid = spaceMachine.state.value.conversationId
+        spaceMoveJob = scope.launch {
+            delay(SpaceBoardStateMachine.MOVE_THROTTLE_MS)
+            if (spaceMachine.state.value.conversationId == cid) {
+                emitSpaceMoves(spaceMachine.dispatch(SpaceBoardStateMachine.Event.FlushMove))
+            }
+        }
+    }
+
+    private fun emitSpaceMoves(effects: List<SpaceBoardStateMachine.Effect>) {
+        for (effect in effects) {
             if (effect is SpaceBoardStateMachine.Effect.EmitMove) {
                 val cid = spaceMachine.state.value.conversationId
                 scope.launch { runCatching { repo.emitSpaceMove(cid, effect.x, effect.y) } }
@@ -382,6 +447,7 @@ class VoiceRoomsEngine @Inject constructor(
     }
 
     fun leaveSpace(conversationId: String) {
+        spaceMoveJob?.cancel()
         val joined = spaceMachine.state.value.status != SpaceBoardStateMachine.Status.IDLE
         if (joined) scope.launch { runCatching { repo.emitSpaceLeave(conversationId) } }
         spaceMachine.reset()
@@ -439,6 +505,7 @@ class VoiceRoomsEngine @Inject constructor(
     private fun onStageEnded(payload: app.pulse.protocol.StageEndedPayload) {
         val stage = stageMachine.state.value
         if (stage.conversationId != payload.conversationId) return
+        audioGeneration++
         // Full local teardown for every member (ST-5): transmission, audio and
         // the stage machine land in ENDED (the UI closes the surface + toasts).
         stopTransmit(emit = false)
@@ -535,17 +602,21 @@ class VoiceRoomsEngine @Inject constructor(
      * Failures are honest silence - the window is never retried.
      */
     private fun transcribeWindow(samples: ShortArray) {
+        val captionTicket = captionGeneration
+        val ticket = audioGeneration
+        val cid = activeAudioRoom()
+        val userId = identity.id
         scope.launch {
-            val cid = voiceMachine.state.value.conversationId
             try {
-                if (cid.isBlank() || identity.id.isBlank()) return@launch
+                if (cid.isNullOrBlank() || userId.isBlank() || ticket != audioGeneration || captionTicket != captionGeneration) return@launch
                 val audioBase64 = WavEncoder.toBase64(samples)
                 val transcript = runCatching {
-                    repo.transcribeVoice(cid, identity.id, audioBase64)
+                    repo.transcribeVoice(cid, userId, audioBase64)
                 }.getOrNull()?.getOrNull()?.transcript?.takeIf { it.isNotBlank() } ?: return@launch
-                runCatching { repo.emitVoiceTranscript(cid, identity.id, transcript.take(280)) }
+                if (ticket != audioGeneration || captionTicket != captionGeneration || cid != activeAudioRoom() || userId != identity.id || !_captionsEnabled.value) return@launch
+                runCatching { repo.emitVoiceTranscript(cid, userId, transcript.take(280)) }
             } finally {
-                captions.endFlush()
+                if (ticket == audioGeneration && captionTicket == captionGeneration) captions.endFlush()
             }
         }
     }

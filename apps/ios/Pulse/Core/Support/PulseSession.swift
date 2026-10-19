@@ -215,8 +215,8 @@ public final class PulseSession: ObservableObject {
         // the stored token cleared synchronously - sign-out never blocks.
         callEngine?.endCall()
         groupCallEngine?.leaveCall()
-        voiceRooms?.leaveVoice()
         voiceRooms?.leaveStage()
+        voiceRooms?.leaveVoice()
         voiceRooms?.leaveSpace()
         PulsePushNotifications.deactivate()
         generation = UUID()

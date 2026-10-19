@@ -65,9 +65,7 @@ class VoiceRoomAudioEngine(context: Context) {
     private var captureJob: Job? = null
 
     /** Room session start - focus + communication mode. */
-    fun start() {
-        router.acquire()
-    }
+    fun start(): Boolean = router.acquire()
 
     // capture (transmit) leg
 
@@ -78,18 +76,24 @@ class VoiceRoomAudioEngine(context: Context) {
     fun startTransmit(muted: Boolean) {
         if (muted) return
         if (!transmitting.compareAndSet(false, true)) return
+        // Freeze callbacks for this read loop: replacing the room callbacks must
+        // never label an old PCM tail with the next room's identity.
+        val chunkCallback = onChunk
+        val samplesCallback = captionSink
+        val endedCallback = onTransmitEnd
+        val errorCallback = onCaptureError
         captureJob = scope.launch {
             captureMutex.withLock {
                 val rec = ensureRecord()
                 if (rec == null) {
                     transmitting.set(false)
-                    onCaptureError?.invoke("Microphone unavailable - check permission or close other apps using it.")
+                    errorCallback?.invoke("Microphone unavailable - check permission or close other apps using it.")
                     return@withLock
                 }
                 runCatching { rec.startRecording() }
                     .onFailure {
                         transmitting.set(false)
-                        onCaptureError?.invoke("Microphone failed to start: ${it.message ?: "unknown error"}")
+                        errorCallback?.invoke("Microphone failed to start: ${it.message ?: "unknown error"}")
                         return@withLock
                     }
                 val block = ShortArray(VoicePcm.READ_SAMPLES)
@@ -100,17 +104,17 @@ class VoiceRoomAudioEngine(context: Context) {
                         val samples = block.copyOf(n)
                         // Chunker re-blocks 100ms reads into 250ms wire blocks.
                         for (chunk in chunker.consume(samples)) {
-                            onChunk?.invoke(chunk.seq, VoicePcm.encodeBase64(chunk.samples))
+                            chunkCallback?.invoke(chunk.seq, VoicePcm.encodeBase64(chunk.samples))
                         }
-                        captionSink?.invoke(samples)
+                        samplesCallback?.invoke(samples)
                     }
                 } finally {
                     // Proportional partial flush on release (FIX #1 proof path).
                     chunker.flush()?.let { tail ->
-                        onChunk?.invoke(tail.seq, VoicePcm.encodeBase64(tail.samples))
+                        chunkCallback?.invoke(tail.seq, VoicePcm.encodeBase64(tail.samples))
                     }
                     runCatching { rec.stop() }
-                    onTransmitEnd?.invoke()
+                    endedCallback?.invoke()
                 }
             }
         }

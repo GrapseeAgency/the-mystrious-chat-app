@@ -14,7 +14,7 @@ saved items, navigation, or their interactions. Old comments saying “verified�
 - **Repaired in source:** a concrete transition changed; native compilation and acceptance may still be pending.
 - **Executed check:** the exact test layer and result are stated below. SQL checks and syntax parsing are not device tests.
 
-`NATIVE-SOURCE-INVENTORY.csv` enumerates **293 production files: 180 Kotlin and 113 Swift**.
+`NATIVE-SOURCE-INVENTORY.csv` enumerates **296 production files: 182 Kotlin and 114 Swift**.
 It covers all twelve Android modules' `src/main` Kotlin and all Swift beneath
 `apps/ios/Pulse`. This deliberately excludes native tests, generated sources,
 resources/manifests, build scripts, extensions outside Pulse, and the backend.
@@ -182,3 +182,71 @@ or physical-device certification is claimed.
   [5](https://developer.apple.com/forums/thread/51935).
 - Earlier official Android lifecycle and foreground-service references remain in
   `NATIVE-BEHAVIOR-AUDIT-2026-10-19.md` and the session's prior remediation docs.
+
+
+## Live audio / spatial-presence continuation (2026-10-19)
+
+Baseline for this continuation: `0f952d3`. This is a targeted transition review,
+not full coverage of every native tree. No authentication/recovery work was added.
+
+### Source repairs and behavioral boundaries
+
+- **iOS stage listener:** starts output-only audio without requesting microphone
+  permission. Promotion offers explicit microphone enablement; demotion closes
+  PTT, removes capture, invalidates pending permission, and returns to listening.
+  Independent voice membership survives stage exit. Voice exit preserves an
+  active stage listener seat. Demotion discards PCM tails without restarting the
+  room sequence (otherwise peers discard resumed speech as stale packets).
+- **Audio configuration ownership:** token exclusion between iOS room audio,
+  calls and voice-note recorder; between Android internal room and call routers.
+  Failed acquisition is checked before call media construction. Recorder restores
+  the prior session on failure/stop/cancel. This is NOT universal media arbitration:
+  Android recorder and note players are not covered, nor is OS interruption policy.
+- **Android routes/focus acquisition:** minSdk is 21. Use legacy focus below 26,
+  require a granted initial request, and choose the receiver rather than speaker
+  for speaker-off on API 31+. The current focus-loss callback is still empty;
+  transient/permanent focus loss, Bluetooth restoration, and device switching
+  remain open acceptance/implementation work.
+- **Permission and callback ownership:** Swift group-call preparation now has an
+  attempt generation, preventing an old camera/mic result from joining a different
+  attempt. CallKit late activation checks live coordinator/engine state. Room
+  caption responses are fenced by audio lease, identity/session, room and caption
+  toggle generation; an old completion cannot clear a successor's busy flag.
+  Android raw capture freezes its callbacks before the read coroutine starts,
+  and caption accumulation is dispatched to the main owner. Incoming Android PCM
+  must match an owned room and cannot be a self echo.
+- **Space:** Swift assigns the conversation identity before opening and clears it
+  on exit; late state is ignored. Both implementations retain the final throttled
+  drag target and schedule a cancellable trailing emission. Android rejects wrong
+  room/post-leave connection callbacks. Local timing uses monotonic clocks where
+  changed; this does not prove offline synchronization or server ordering.
+
+### Checks for this continuation
+
+- Added **13 regression methods**: Swift listener/mic-role/seat ownership, late
+  Space state, token exclusion, group permission rejoin, trailing movement and
+  sequence preservation; Android token/routing, event filtering and Space trailing
+  movement/late connection tests. Existing audio test fake implements the extended
+  playback/demotion protocol. Native execution results are recorded separately.
+- Changed/untracked Kotlin and Swift parsed with tree-sitter; no syntax errors.
+  This does NOT check types, platform availability, actor isolation or hardware.
+- Local saved-library/outbox SQL contracts: **6/6 passed**. These are unrelated
+  regression checks, not evidence that audio works. `git diff --check` passed.
+- Physical-device capture/playback, route changes, permission prompts, interruptions,
+  foreground/background and multi-client hearing/speaking remain **not verified**.
+
+### Confirmed remaining hazards — do not mount the Android engine yet
+
+The active Android Mirror Voice/Stage sheets still bypass the internal engine.
+Inside that engine, stage-only outgoing PTT/caption state, role demotion, independent
+voice-seat preservation on stage exit, delayed playback recreation and AudioRecord
+release/read races still need repair. Stage focus refusal still needs visible error
+presentation. Fixing filters/router code does not deliver audio to the active UI.
+Swift note playback still reports success without checking all player return values,
+and full interruption recovery is not implemented. The shared call-session token
+still relies on direct/group mutual exclusion, not independent per-call leases.
+Caption response fences were inspected but have no delayed HTTP-response regression
+fixture in this continuation. These gaps remain open rather than hidden by build success.
+
+Reference used for focus acquisition/API compatibility (and the still-open loss policy):
+https://developer.android.com/media/optimize/audio-focus

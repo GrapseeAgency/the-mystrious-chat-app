@@ -39,22 +39,26 @@ final class VoiceRoomAudioSession {
     }
 
     private var saved: Saved?
+    private let ownershipToken = UUID()
+    private var recordingMode = false
     private(set) var isActive = false
 
     /// Snapshot + apply the rooms configuration. Returns false when the
     /// hardware refuses (honest degradation - the room still joins).
-    func activate() -> Bool {
-        guard !isActive else { return true }
+    func activate(recording: Bool = true) -> Bool {
+        guard PulseAudioOwnership.shared.acquire(ownershipToken) else { return false }
+        if isActive && recordingMode == recording { return true }
         let session = AVAudioSession.sharedInstance()
-        saved = Saved(category: session.category, options: session.categoryOptions, mode: session.mode)
+        if saved == nil { saved = Saved(category: session.category, options: session.categoryOptions, mode: session.mode) }
         do {
             try session.setCategory(
-                .playAndRecord,
-                mode: .voiceChat,
-                options: [.allowBluetooth, .defaultToSpeaker],
+                recording ? .playAndRecord : .playback,
+                mode: recording ? .voiceChat : .default,
+                options: recording ? [.allowBluetooth, .defaultToSpeaker] : [],
             )
             try session.setActive(true)
             isActive = true
+            recordingMode = recording
             return true
         } catch {
             deactivate() // roll back a category change even if setActive failed
@@ -74,6 +78,7 @@ final class VoiceRoomAudioSession {
         try? session.setActive(false, options: [.notifyOthersOnDeactivation])
         saved = nil
         isActive = false
+        PulseAudioOwnership.shared.release(ownershipToken)
     }
 
     /// Mic permission - the SAME AVAudioSession.requestRecordPermission
@@ -108,6 +113,8 @@ protocol VoiceRoomAudioDriving: AnyObject {
     var onError: ((String) -> Void)? { get set }
     func requestMicPermission() async -> Bool
     func startCapture(micGranted: Bool) -> String?
+    func startPlayback() -> String?
+    func stopMicrophone() -> String?
     func stopCapture()
     func resetChunker()
     func setGate(transmitting: Bool, muted: Bool)
@@ -175,6 +182,8 @@ final class VoiceRoomAudioEngine: VoiceRoomAudioDriving {
         // 3. Graph - input tap → converter → chunker; playback nodes hang
         //    off the main mixer.
         do {
+            engine.stop()
+            resetAllPeers()
             try configureGraphIfNeeded()
             engine.prepare()
             try engine.start()
@@ -183,6 +192,35 @@ final class VoiceRoomAudioEngine: VoiceRoomAudioDriving {
             stopCapture()
             return "Microphone is busy or unavailable."
         }
+    }
+
+    /// Listening never installs an input tap and never asks for microphone permission.
+    func startPlayback() -> String? {
+        if engine.isRunning { return nil }
+        guard audioSession.activate(recording: false) else { return "Audio is in use by another session." }
+        do {
+            _ = engine.mainMixerNode
+            engine.prepare()
+            try engine.start()
+            return nil
+        } catch {
+            stopCapture()
+            return "Could not start room playback."
+        }
+    }
+
+    /// Demotion releases the physical input, not just the PTT indicator.
+    func stopMicrophone() -> String? {
+        setGate(transmitting: false, muted: false)
+        engine.stop()
+        if captureConfigured { engine.inputNode.removeTap(onBus: 0) }
+        captureConfigured = false
+        converter = nil
+        lock.lock()
+        chunker.discardPartial()
+        lock.unlock()
+        resetAllPeers()
+        return startPlayback()
     }
 
     func stopCapture() {
@@ -224,7 +262,7 @@ final class VoiceRoomAudioEngine: VoiceRoomAudioDriving {
     }
 
     var captureRunning: Bool {
-        engine.isRunning
+        captureConfigured && engine.isRunning
     }
 
     // capture internals
@@ -311,7 +349,7 @@ final class VoiceRoomAudioEngine: VoiceRoomAudioDriving {
     /// silent prime + start; future playheads schedule at the exact host
     /// time; the rest chain immediately behind the node's queue.
     func play(userId: String, base64: String, atMs: Double, nowMs: Double) {
-        guard let wireFormat else { return }
+        guard engine.isRunning, let wireFormat else { return }
         guard let samples = Self.decode(base64: base64), !samples.isEmpty else { return } // corrupt → drop silently
         guard let buffer = Self.buffer(samples: samples, format: wireFormat) else { return }
 

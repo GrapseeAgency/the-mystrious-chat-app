@@ -162,6 +162,15 @@ struct VoiceRoomView: View {
         VStack(spacing: 14) {
             switch model.voice.status {
             case .joined:
+                if let issue = model.audioIssue {
+                    Text(issue).font(.footnote).foregroundStyle(.red)
+                    Button("Retry audio") { model.retryPlayback() }
+                }
+                if !model.microphoneReady && model.mayUseMicrophone {
+                    Button("Enable microphone") { Task { await model.retryMicAccess() } }
+                        .disabled(model.requestingMicrophone)
+                }
+                if let issue = model.micIssue { Text(issue).font(.footnote).foregroundStyle(.red) }
                 PTTButton(model: model)
                 Button {
                     PulseHaptics.warning()

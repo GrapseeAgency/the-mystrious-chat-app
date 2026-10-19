@@ -172,7 +172,11 @@ public final class PulseCallEngine: ObservableObject {
             errorText = Self.micDeniedMessage
             return
         }
-        PulseCallAudioSession.shared.activateForCall()
+        guard PulseCallAudioSession.shared.activateForCall() else {
+            errorText = "Audio is unavailable or in use. Leave your room or stop recording first."
+            apply(.abortLocal, now: Date())
+            return
+        }
         let bridge = PeerBridge(engine: self, callId: callId)
         peerBridge = bridge
         guard let connection = media.makePeerConnection(delegate: bridge) else {
@@ -235,7 +239,12 @@ public final class PulseCallEngine: ObservableObject {
             apply(.abortLocal, now: Date())
             return
         }
-        PulseCallAudioSession.shared.activateForCall()
+        guard PulseCallAudioSession.shared.activateForCall() else {
+            sendReject(for: call)
+            errorText = "Audio is unavailable or in use. Leave your room or stop recording first."
+            apply(.abortLocal, now: Date())
+            return
+        }
         let bridge = PeerBridge(engine: self, callId: call.callId)
         peerBridge = bridge
         guard let connection = media.makePeerConnection(delegate: bridge) else {

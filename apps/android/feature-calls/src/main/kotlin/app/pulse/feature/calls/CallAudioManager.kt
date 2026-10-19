@@ -2,77 +2,103 @@ package app.pulse.feature.calls
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import app.pulse.core.audio.AudioOwnership
+import app.pulse.core.audio.communicationRouteType
+import java.util.UUID
 
-/**
- * Wave 3 - native audio routing for 1:1 calls (the AUDIO-SESSION half of the
- * call stack). Hardware verification (real mic capture, speaker/Bluetooth
- * routes, focus arbitration with other apps) is a PHYSICAL-DEVICE gate:
- * emulator surfaces exist but are not proof.
- *
- * Responsibilities:
- *  • audio focus (AUDIOFOCUS_GAIN) for the whole call, released on end;
- *  • MODE_IN_COMMUNICATION while a call is live (echo-cancelled voice path);
- *  • speaker on/off (API 31+ setCommunicationDevice, legacy setSpeakerphoneOn).
- */
+/** Compatibility-safe route owner. Device focus/interruption acceptance is still required. */
 class CallAudioManager(context: Context) {
-
     private val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val token = UUID.randomUUID().toString()
     private var focusRequest: AudioFocusRequest? = null
-
-    /** true while MODE_IN_COMMUNICATION is applied (call live). */
     private var active = false
-
-    /** Acquire focus + communication mode. Idempotent per call. */
-    fun acquire() {
-        if (active) return
-        active = true
-        am.mode = AudioManager.MODE_IN_COMMUNICATION
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
-            .setOnAudioFocusChangeListener { /* transient losses are tolerated; the call UI shows real state */ }
-            .build()
-        focusRequest = request
-        runCatching { am.requestAudioFocus(request) }
+    private var savedMode = AudioManager.MODE_NORMAL
+    private var savedSpeaker = false
+    private val focusListener = AudioManager.OnAudioFocusChangeListener {
+        // Call/room interruption state needs its own policy; do not auto-unmute here.
     }
 
-    /** Release focus, restore the normal mode, and park the route on the earpiece default. */
+    /** No media should be created until BOTH ownership and OS focus are granted. */
+    @Suppress("DEPRECATION")
+    fun acquire(): Boolean {
+        if (active) return true
+        if (!AudioOwnership.shared.acquire(token)) return false
+        val granted = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                    .setOnAudioFocusChangeListener(focusListener)
+                    .build()
+                focusRequest = request
+                am.requestAudioFocus(request)
+            } else {
+                am.requestAudioFocus(focusListener, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN)
+            }
+        }.getOrDefault(AudioManager.AUDIOFOCUS_REQUEST_FAILED) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        if (!granted) {
+            abandonFocus()
+            AudioOwnership.shared.release(token)
+            return false
+        }
+        savedMode = am.mode
+        savedSpeaker = isSpeakerOn()
+        active = true
+        return runCatching { am.mode = AudioManager.MODE_IN_COMMUNICATION; true }
+            .getOrElse { release(); false }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun abandonFocus() {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                focusRequest?.let { am.abandonAudioFocusRequest(it) }
+            } else { am.abandonAudioFocus(focusListener) }
+        }
+        focusRequest = null
+    }
+
     fun release() {
         if (!active) return
-        active = false
+        // Restore only while this instance owns the route; never deactivate a successor.
         runCatching {
-            focusRequest?.let { am.abandonAudioFocusRequest(it) }
-            focusRequest = null
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) am.clearCommunicationDevice()
+            else { @Suppress("DEPRECATION")
+                am.isSpeakerphoneOn = savedSpeaker
+            }
+            am.mode = savedMode
         }
-        setSpeakerOn(false)
-        runCatching { am.mode = AudioManager.MODE_NORMAL }
+        abandonFocus()
+        active = false
+        AudioOwnership.shared.release(token)
     }
 
-    /** Loud-speaker toggle - true once applied. */
-    fun setSpeakerOn(on: Boolean): Boolean = runCatching {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val target = am.availableCommunicationDevices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-            if (target != null) am.setCommunicationDevice(target) else false
-        } else {
-            @Suppress("DEPRECATION")
-            am.isSpeakerphoneOn = on
-            true
-        }
-    }.getOrDefault(false)
+    fun setSpeakerOn(on: Boolean): Boolean {
+        if (!active) return false
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val type = communicationRouteType(on, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)
+                val target = am.availableCommunicationDevices.firstOrNull { it.type == type }
+                if (target != null) am.setCommunicationDevice(target)
+                else if (!on) { am.clearCommunicationDevice(); !isSpeakerOn() }
+                else false
+            } else {
+                @Suppress("DEPRECATION")
+                am.isSpeakerphoneOn = on
+                true
+            }
+        }.getOrDefault(false)
+    }
 
-    /** Current loud-speaker state (UI toggle mirror). */
     fun isSpeakerOn(): Boolean = runCatching {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            am.communicationDevice?.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-        } else {
-            @Suppress("DEPRECATION")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            am.communicationDevice?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        else { @Suppress("DEPRECATION")
             am.isSpeakerphoneOn
         }
     }.getOrDefault(false)
