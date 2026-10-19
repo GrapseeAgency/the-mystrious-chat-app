@@ -40,20 +40,25 @@ internal class AccountRepositoryRouter(
             "start" -> synchronized(transitionLock) { active.value = startAccount(args!![0] as String); null }
             "stop" -> synchronized(transitionLock) { active.value = stopAccount(); null }
             else -> if (method.returnType == Flow::class.java) {
-                active.flatMapLatest { target ->
-                    flow {
-                        // Clear previously rendered state BEFORE the next DB query.
-                        when (method.name) {
-                            "events" -> Unit
-                            "observeConnected" -> emit(false)
-                            "observePresence" -> emit(emptySet<String>())
-                            "observeDraft" -> emit(null)
-                            "observeDrafts", "getConvThemes" -> emit(emptyMap<String, Any>())
-                            "getPulsePrefs" -> emit(PulseWave8Logic.mergePrefs(null))
-                            else -> emit(emptyList<Any>())
+                flow {
+                    var initial = true
+                    emitAll(active.flatMapLatest { target ->
+                        flow<Any?> {
+                            // Initial first() consumers must see actual storage,
+                            // not a synthetic null that would erase restored drafts.
+                            if (!initial) when (method.name) {
+                                "events" -> Unit
+                                "observeConnected" -> emit(false)
+                                "observePresence" -> emit(emptySet<String>())
+                                "observeDraft" -> emit(null)
+                                "observeDrafts", "getConvThemes" -> emit(emptyMap<String, Any>())
+                                "getPulsePrefs" -> emit(PulseWave8Logic.mergePrefs(null))
+                                else -> emit(emptyList<Any>())
+                            }
+                            initial = false
+                            emitAll(invoke(target, method, args) as Flow<Any?>)
                         }
-                        emitAll(invoke(target, method, args) as Flow<Any?>)
-                    }
+                    })
                 }
             } else {
                 val target = active.value

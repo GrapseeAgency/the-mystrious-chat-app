@@ -4586,6 +4586,7 @@ final class RoomViewModel: ObservableObject {
                     if let failure = error as? PulseAPIClient.Failure,
                        failure.status == 429, let wait = failure.retryAfter, wait > 0 {
                         self.armSlowModeLock(seconds: wait)
+                        session.outbox?.holdRetries(seconds: wait)
                     }
                     session.toasts.show("Message saved in the outbox; delivery will retry")
                 }

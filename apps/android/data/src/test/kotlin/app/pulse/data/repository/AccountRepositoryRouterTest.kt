@@ -9,6 +9,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -55,6 +56,12 @@ class AccountRepositoryRouterTest {
         a.draft.value = "late private response"; runCurrent()
         assertFalse(seen.contains("late private response"))
         assertTrue(seen.contains(null))
+    }
+
+    @Test fun initialSnapshotReadsStoredValueRatherThanSyntheticNull() = runTest {
+        val a = Account("a")
+        val router = AccountRepositoryRouter(a.repo, { a.repo }, { a.repo })
+        assertEquals("draft-a", router.repository.observeDraft("room").first())
     }
 
     @Test fun suspendedInvocationNeverChangesItsAccountReceiver() = runTest {

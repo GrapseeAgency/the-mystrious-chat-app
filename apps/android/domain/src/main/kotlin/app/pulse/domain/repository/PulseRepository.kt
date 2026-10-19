@@ -245,6 +245,9 @@ interface PulseRepository {
     /** End the current account transport and cancel account-owned work. */
     fun stop() {}
 
+    /** Capture the account receiver before launching feature-owned asynchronous work. */
+    fun boundToCurrentAccount(): PulseRepository = this
+
     val viewerId: String?
 
     fun observeConversations(query: String = ""): Flow<List<Conversation>>
@@ -416,7 +419,9 @@ interface PulseRepository {
     /** Full drain with the standard policy - every flush trigger funnels here. */
     suspend fun flushOutbox(): FlushReport
 
-    /** Persist the composer draft (≤2000 chars; blank clears). */
+    /** Journal locally without waiting for a server debounce or a composable lifetime. */
+    fun stageDraft(conversationId: String, text: String) {}
+    /** Persist the composer draft (≤2000 chars; blank clears) and mirror remotely. */
     suspend fun saveDraft(conversationId: String, text: String)
 
     /** Drop the local composer draft (send delivered / composer cleared). */

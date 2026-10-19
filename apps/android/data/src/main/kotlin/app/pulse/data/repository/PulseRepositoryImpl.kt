@@ -1647,6 +1647,8 @@ class PulseRepositoryImpl constructor(
         if (selfHealJob?.isActive == true) return
         selfHealJob = scope.launch {
             delay(SELF_HEAL_MS)
+            // Release the scheduling slot before flush requests its next retry.
+            selfHealJob = null
             runCatching { flushOutbox() }
                 .onFailure { Log.w(TAG, "self-heal flush failed", it) }
         }
@@ -1654,30 +1656,37 @@ class PulseRepositoryImpl constructor(
 
     // drafts (Wave 0 - web pulse-drafts parity)
 
-    override suspend fun saveDraft(conversationId: String, text: String) {
-        val trimmed = text.take(MAX_DRAFT)
-        if (trimmed.isBlank()) {
-            draftDao.delete(conversationId)
-        } else {
-            draftDao.upsert(
-                DraftEntity(
-                    conversationId = conversationId,
-                    text = trimmed,
-                    updatedAt = java.time.OffsetDateTime.now()
-                        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                ),
-            )
-        }
-        // Server mirror (web R45 parity): every local mutation also rides the
-        // PATCH /draft route ('' clears) so other devices restore it. Local
-        // still wins; the mirror is fire-and-forget.
-        setServerDraft(conversationId, trimmed)
+    private val draftVersions = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong>()
+    private val draftMutex = Mutex()
+    // Finite local journal writes outlive UI/transport teardown; no network work
+    // runs in this scope. Every write remains bound to this account's database.
+    private val draftWriteScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private fun nextDraftVersion(id: String): Long = draftVersions
+        .getOrPut(id) { java.util.concurrent.atomic.AtomicLong() }.incrementAndGet()
+
+    private suspend fun writeLocalDraft(id: String, text: String, version: Long) = draftMutex.withLock {
+        if (draftVersions[id]?.get() != version) return@withLock
+        val value = text.take(MAX_DRAFT)
+        if (value.isBlank()) draftDao.delete(id)
+        else draftDao.upsert(DraftEntity(id, value, java.time.OffsetDateTime.now().toString()))
     }
 
-    override suspend fun clearDraft(conversationId: String) {
-        draftDao.delete(conversationId)
-        setServerDraft(conversationId, "") // web parity: clear paths sync too
+    override fun stageDraft(conversationId: String, text: String) {
+        val version = nextDraftVersion(conversationId)
+        draftWriteScope.launch {
+            try { writeLocalDraft(conversationId, text, version) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { Log.w(TAG, "Local draft could not be saved", error) }
+        }
     }
+
+    override suspend fun saveDraft(conversationId: String, text: String) {
+        writeLocalDraft(conversationId, text, nextDraftVersion(conversationId))
+        setServerDraft(conversationId, text.take(MAX_DRAFT))
+    }
+
+    override suspend fun clearDraft(conversationId: String) = saveDraft(conversationId, "")
 
     override fun observeDraft(conversationId: String): Flow<String?> =
         draftDao.observe(conversationId).map { it?.text }

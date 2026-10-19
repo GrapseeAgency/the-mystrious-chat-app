@@ -32,7 +32,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: JVM tests (pure Kotlin — domain + live-protocol + socket round-trip + W4 stories + W5 voice rooms)
-        run: ./gradlew :domain:test :protocol:test :core:build :data:testDebugUnitTest :feature-stories:testDebugUnitTest :feature-voice:testDebugUnitTest :app:testDebugUnitTest :feature-chat:testDebugUnitTest :feature-calls:testDebugUnitTest :feature-hub:testDebugUnitTest :feature-settings:testDebugUnitTest
+        run: |
+          set -o pipefail
+          ./gradlew :domain:test :protocol:test :core:build :data:testDebugUnitTest :feature-stories:testDebugUnitTest :feature-voice:testDebugUnitTest :app:testDebugUnitTest :feature-chat:testDebugUnitTest :feature-calls:testDebugUnitTest :feature-hub:testDebugUnitTest :feature-settings:testDebugUnitTest 2>&1 | tee /tmp/pulse-native-jvm.log
+
+      - name: Native test failure diagnostics
+        if: failure()
+        run: python3 ../../scripts/ci/native-test-diagnostics.py
 
       - name: Assemble signed release APK (committed LiveUpdate keystore)
         # R12 — the repo gradle.properties caps the daemon at 1536m, but this

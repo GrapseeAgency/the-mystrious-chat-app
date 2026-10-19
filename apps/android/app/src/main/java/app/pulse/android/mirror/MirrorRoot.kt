@@ -755,7 +755,7 @@ internal fun MirrorRoot(
                     readingEnabled = readingEnabled && openRoom != null && viewingStory == null &&
                         roomInfoFor == null && managerFor == null && userPageFor == null &&
                         !settingsOpen && !callsOpen && !spotlightOpen,
-                    repository = repository,
+                    accountRouter = repository,
                     viewerId = viewerId.orEmpty(),
                     presence = presence,
                     typers = roomTypers,
@@ -1006,7 +1006,7 @@ internal fun DrawScope.sceneGlow(
 private fun MirrorRoomScaffold(
     convo: Conversation,
     readingEnabled: Boolean,
-    repository: PulseRepository,
+    accountRouter: PulseRepository,
     viewerId: String,
     presence: Set<String>,
     typers: List<String>,
@@ -1022,6 +1022,7 @@ private fun MirrorRoomScaffold(
     jumpMessageId: String? = null,
     onJumpConsumed: () -> Unit = {},
 ) {
+    val repository = remember(viewerId, convo.id) { accountRouter.boundToCurrentAccount() }
     val messages by repository.observeMessages(convo.id).collectAsStateWithLifecycle(initialValue = emptyList<Message>())
     var phrases by remember { mutableStateOf<List<QuickPhrase>>(emptyList()) }
     var muted by remember { mutableStateOf(convo.isMuted) }

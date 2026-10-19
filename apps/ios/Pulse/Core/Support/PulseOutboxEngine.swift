@@ -128,6 +128,7 @@ public final class PulseOutboxEngine: ObservableObject {
     private let store: PulseStore
     private let senderProvider: () -> (any PulseOutboxSending)?
     private var healTask: Task<Void, Never>?
+    private var healGeneration = UUID()
     private var working = false
     private var stopped = false
     private var retryNotBefore = Date.distantPast
@@ -139,14 +140,14 @@ public final class PulseOutboxEngine: ObservableObject {
     private var pathMonitorStarted = false
     private var lastPathSatisfied = false
 
-    public init(store: PulseStore, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
+    public init(store: PulseStore, monitorNetwork: Bool = true, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
         self.store = store
         self.senderProvider = senderProvider
         pendingCount = store.countOutbox()
         if pendingCount > 0 {
             startHealTimer()
         }
-        startPathMonitor()
+        if monitorNetwork { startPathMonitor() }
     }
 
     // The heal task holds `weak self`; after deallocation the loop exits on
@@ -192,6 +193,10 @@ public final class PulseOutboxEngine: ObservableObject {
     }
 
     /// Total held messages across conversations.
+    public func holdRetries(seconds: Int) {
+        retryNotBefore = max(retryNotBefore, Date().addingTimeInterval(TimeInterval(max(1, seconds))))
+    }
+
     public func reloadPending() {
         pendingCount = store.countOutbox()
         if pendingCount > 0 && !stopped { startHealTimer() }
@@ -267,7 +272,7 @@ public final class PulseOutboxEngine: ObservableObject {
                 if Task.isCancelled || stopped { return false }
                 if let failure = error as? PulseAPIClient.Failure,
                    failure.status == 429 || failure.kind == .rateLimited {
-                    retryNotBefore = Date().addingTimeInterval(TimeInterval(max(1, failure.retryAfter ?? 60)))
+                    holdRetries(seconds: failure.retryAfter ?? 60)
                 }
                 if Self.isDroppable(error) {
                     try? store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))
@@ -292,7 +297,10 @@ public final class PulseOutboxEngine: ObservableObject {
     private func startHealTimer() {
         guard !stopped else { return }
         guard healTask == nil else { return }
+        let generation = UUID()
+        healGeneration = generation
         healTask = Task { [weak self] in
+            defer { if self?.healGeneration == generation { self?.healTask = nil } }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.healIntervalNanos)
                 guard !Task.isCancelled, let self else { return }
@@ -303,6 +311,7 @@ public final class PulseOutboxEngine: ObservableObject {
     }
 
     private func stopHealTimer() {
+        healGeneration = UUID()
         healTask?.cancel()
         healTask = nil
     }

@@ -7,7 +7,6 @@ import app.pulse.core.PulseEndpoints
 import app.pulse.data.repository.AccountRepositories
 import io.ktor.client.HttpClient
 import java.util.UUID
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -39,14 +38,20 @@ class AccountDatabaseIsolationTest {
             withTimeout(15_000) {
                 repo.start("account-a-$suffix")
                 repo.saveDraft("same-room-id", "private draft A")
-                assertEquals("private draft A", repo.observeDraft("same-room-id").drop(1).first())
+                assertEquals("private draft A", repo.observeDraft("same-room-id").first())
                 repo.start("account-b-$suffix")
-                assertNull(repo.observeDraft("same-room-id").drop(1).first())
+                assertNull(repo.observeDraft("same-room-id").first())
                 repo.saveDraft("same-room-id", "private draft B")
                 repo.start("account-a-$suffix")
-                assertEquals("private draft A", repo.observeDraft("same-room-id").drop(1).first())
+                assertEquals("private draft A", repo.observeDraft("same-room-id").first())
+                val accountA = repo.boundToCurrentAccount()
                 repo.stop()
-                assertNull(repo.observeDraft("same-room-id").drop(1).first())
+                accountA.stageDraft("same-room-id", "typed immediately before disposal")
+                assertNull(repo.observeDraft("same-room-id").first())
+                assertEquals("typed immediately before disposal", accountA.observeDraft("same-room-id")
+                    .first { it == "typed immediately before disposal" })
+                repo.start("account-b-$suffix")
+                assertEquals("private draft B", repo.observeDraft("same-room-id").first())
             }
         } finally {
             repo.stop()

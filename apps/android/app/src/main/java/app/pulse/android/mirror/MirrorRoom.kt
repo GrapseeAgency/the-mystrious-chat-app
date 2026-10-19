@@ -464,8 +464,14 @@ internal fun MirrorRoom(
     }
     LaunchedEffect(draftValue.text, draftRestored) {
         if (!draftRestored) return@LaunchedEffect
+        repository.stageDraft(groupId, draftValue.text)
         if (draftValue.text.isNotBlank()) delay(600)
         runCatching { repository.saveDraft(groupId, draftValue.text) }
+    }
+    val latestDraft by androidx.compose.runtime.rememberUpdatedState(draftValue.text)
+    val restoredDraft by androidx.compose.runtime.rememberUpdatedState(draftRestored)
+    DisposableEffect(repository, groupId) {
+        onDispose { if (restoredDraft) repository.stageDraft(groupId, latestDraft) }
     }
     // R69 - the web Conversation menu full set (chat-room.tsx L4096-4454):
     // every row opens the same real surface the web opens.

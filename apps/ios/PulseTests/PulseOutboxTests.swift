@@ -92,7 +92,7 @@ final class PulseOutboxTests: XCTestCase {
     // engine helper
 
     private func makeEngine(_ store: PulseStore, _ sender: StubSender?) -> PulseOutboxEngine {
-        PulseOutboxEngine(store: store) { sender }
+        PulseOutboxEngine(store: store, monitorNetwork: false) { sender }
     }
 
     // queue shape
@@ -324,6 +324,16 @@ final class PulseOutboxTests: XCTestCase {
         // Replay the same acknowledgement: still no effect on operation B.
         try store.resolveDelivery(clientId: "operation-a", message: OutboxFixtures.makeMessage(id: "real-a", conversationId: "c1", content: "same"))
         XCTAssertEqual(store.countOutbox(), 1)
+    }
+
+    func testConflictingLocalKeyIsReportedNotPretendedQueued() throws {
+        let store = try PulseStore()
+        let engine = makeEngine(store, nil)
+        XCTAssertTrue(engine.append(conversationId: "c1", clientId: "same-key", content: "first"))
+        XCTAssertTrue(engine.append(conversationId: "c1", clientId: "same-key", content: "first"))
+        XCTAssertFalse(engine.append(conversationId: "c1", clientId: "same-key", content: "changed"))
+        XCTAssertEqual(try store.outboxAll().map(\.content), ["first"])
+        engine.stop()
     }
 
     func testMalformedEnvelopeIsRetainedRatherThanSendingAlteredContent() async throws {
