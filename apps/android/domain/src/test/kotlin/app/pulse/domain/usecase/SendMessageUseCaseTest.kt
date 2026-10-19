@@ -176,6 +176,7 @@ class SendMessageUseCaseTest {
             kind: String?,
             viewOnce: Boolean?,
             topicId: String?,
+            clientId: String?,
         ): Result<Message> {
             val m = Message(
                 id = "m-media", conversationId = conversationId, authorId = "a", authorName = "n",

@@ -3782,6 +3782,7 @@ final class RoomViewModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var typingStopTask: Task<Void, Never>?
     private var draftSaveTask: Task<Void, Never>?
+    private let draftJournal: PulseDraftJournal?
     private var flashClearTask: Task<Void, Never>?
     private var initialJumpMessageId: String?
     /// Member read watermarks (id → lastReadAt) - group-aware "Seen".
@@ -3866,6 +3867,7 @@ final class RoomViewModel: ObservableObject {
 
     init(conversation: WireConversationSummary, session: PulseSession, initialJumpMessageId: String? = nil) {
         self.conversationId = conversation.id
+        self.draftJournal = session.store.map { PulseDraftJournal(store: $0, conversationId: conversation.id) }
         self.session = session
         self.isGroupRoom = conversation.isGroup
         self.initialJumpMessageId = initialJumpMessageId
@@ -3899,6 +3901,9 @@ final class RoomViewModel: ObservableObject {
     /// from ChatRoomView.onDisappear (roomVisible off); a conversation
     /// change builds a NEW view model, so its deinit covers that path.
     func handleRoomDisappeared() {
+        journalDraft(draft)
+        draftSaveTask?.cancel()
+        typingStopTask?.cancel()
         refreshTask?.cancel()
         refreshGeneration = UUID()
         cancelVoiceRecording()
@@ -3920,7 +3925,7 @@ final class RoomViewModel: ObservableObject {
                 messages = cached
                 phase = .loaded
             }
-            draft = store.draft(conversationId: conversationId) ?? (conversation.myDraft ?? "")
+            draft = store.draftSnapshot(conversationId: conversationId) ?? (conversation.myDraft ?? "")
         } else {
             draft = conversation.myDraft ?? ""
         }
@@ -4438,42 +4443,32 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
+    private func journalDraft(_ text: String) {
+        guard let draftJournal else { return }
+        let revision = DispatchTime.now().uptimeNanoseconds
+        // This finite write intentionally survives view disposal. The actor owns
+        // the original store and never dereferences a replacement session.
+        Task { [weak self] in
+            do { try await draftJournal.save(text, revision: revision) }
+            catch { self?.errorText = "Draft could not be saved: check device storage" }
+        }
+    }
+
     private func scheduleDraftSave(session: PulseSession) {
         let text = draft
+        journalDraft(text) // local durability is not delayed by the server debounce
         draftSaveTask?.cancel()
-        draftSaveTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled, let self else { return }
-            self.persistDraft(text, session: session)
+        let client = session.api
+        let epoch = session.sessionGeneration
+        let room = conversationId
+        guard let viewer = session.viewer else { return }
+        draftSaveTask = Task {
+            do { try await Task.sleep(nanoseconds: 600_000_000) }
+            catch { return }
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            try? await client.setDraft(conversationId: room, userId: viewer.id,
+                draft: text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : text)
         }
-    }
-
-    private func persistDraft(_ text: String, session: PulseSession) {
-        guard let store = session.store else { return }
-        if text.trimmingCharacters(in: .whitespaces).isEmpty {
-            try? store.deleteDraft(conversationId: conversationId)
-        } else {
-            try? store.saveDraft(conversationId: conversationId, text: text)
-        }
-        // Wave 1 server mirror (web pulse-drafts parity) - fire-and-forget,
-        // silent-fail; the local draft stays authoritative for this device.
-        if let viewer = session.viewer {
-            Task {
-                try? await session.api.setDraft(
-                    conversationId: conversationId,
-                    userId: viewer.id,
-                    draft: text.trimmingCharacters(in: .whitespaces).isEmpty ? "" : text,
-                )
-            }
-        }
-    }
-
-    /// Called on the successful-send path - the composer is clean, so the
-    /// local draft must go (server myDraft takes over on the next read).
-    func clearDraft(session: PulseSession) {
-        draftSaveTask?.cancel()
-        draftSaveTask = nil
-        try? session.store?.deleteDraft(conversationId: conversationId)
     }
 
     func send(session: PulseSession) {
@@ -4523,6 +4518,7 @@ final class RoomViewModel: ObservableObject {
             errorText = "Message was not queued: local storage is unavailable. Your draft is kept."
             return
         }
+        scheduleDraftSave(session: session) // clear only after durable local enqueue, never on a late ACK
         upsert(temp)
         session.outbox?.reloadPending()
         Task { [weak self] in
@@ -4542,7 +4538,6 @@ final class RoomViewModel: ObservableObject {
                 session.outbox?.reloadPending()
                 self.messages.removeAll { $0.id == temp.id }
                 self.upsert(result.message)
-                self.clearDraft(session: session)
                 // R5-A Item 5 - streak nudge (web chat-room.tsx:1736-1751):
                 // fires ONLY when THIS send GREW the streak (second-or-later
                 // consecutive day). Same-day re-sends carry no streak sibling

@@ -211,6 +211,7 @@ class FlushOutboxUseCaseTest {
             kind: String?,
             viewOnce: Boolean?,
             topicId: String?,
+            clientId: String?,
         ) = Result.failure<Message>(UnsupportedOperationException())
         override suspend fun downloadMedia(filePath: String) =
             Result.failure<String>(UnsupportedOperationException())

@@ -486,6 +486,7 @@ interface PulseRepository {
         kind: String? = null,
         viewOnce: Boolean? = null,
         topicId: String? = null,
+        clientId: String? = null,
     ): Result<Message>
 
     /** GET /api/uploads/{file} → bytes saved under cacheDir/downloads - returns the absolute path. */

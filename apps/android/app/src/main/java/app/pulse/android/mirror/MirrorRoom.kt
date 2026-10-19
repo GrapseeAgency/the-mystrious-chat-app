@@ -1005,6 +1005,10 @@ internal fun MirrorRoom(
 
     // R73 - voice notes (web startRecording chat-room.tsx:3550-3620): real
     // MediaRecorder AAC capture, live timer, discard below 600ms on cancel.
+    val voiceScope = rememberCoroutineScope()
+    var voiceSendJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var voiceOperationId by remember { mutableStateOf(java.util.UUID.randomUUID().toString()) }
+    var uploadedVoicePath by remember { mutableStateOf<String?>(null) }
     var recording by remember { mutableStateOf(false) }
     var recordSeconds by remember { mutableStateOf(0) }
     var voiceBusy by remember { mutableStateOf(false) }
@@ -1014,6 +1018,10 @@ internal fun MirrorRoom(
     val recordFileRef = remember { mutableStateOf<File?>(null) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
+            if (!readerLifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                sendError = "Return to this room to record a voice note"
+                return@rememberLauncherForActivityResult
+            }
             if (voiceBusy || recordFileRef.value != null) {
                 sendError = "Send or discard the current voice note first"
                 return@rememberLauncherForActivityResult
@@ -1038,7 +1046,9 @@ internal fun MirrorRoom(
                 recordFileRef.value = file
                 recording = true
                 recordedDurationMs = 0L
-                recordStartAt = System.currentTimeMillis()
+                voiceOperationId = java.util.UUID.randomUUID().toString()
+                uploadedVoicePath = null
+                recordStartAt = android.os.SystemClock.elapsedRealtime()
                 recordSeconds = 0
             }.onFailure {
                 runCatching { recorderRef.value?.release() }
@@ -1054,78 +1064,75 @@ internal fun MirrorRoom(
     LaunchedEffect(recording) {
         while (recording) {
             delay(200)
-            recordSeconds = ((System.currentTimeMillis() - recordStartAt) / 1000L).toInt()
+            recordSeconds = ((android.os.SystemClock.elapsedRealtime() - recordStartAt) / 1000L).toInt()
         }
     }
     fun cancelRecording() {
-        runCatching {
-            recorderRef.value?.stop()
-        }
+        runCatching { recorderRef.value?.stop() }
         runCatching { recorderRef.value?.release() }
         recorderRef.value = null
         recordFileRef.value?.delete()
         recordFileRef.value = null
         recording = false
         recordSeconds = 0
+        recordedDurationMs = 0L
+        uploadedVoicePath = null
     }
-    fun sendRecording() {
-        val file = recordFileRef.value
-        if (file == null) {
-            recording = false
-            return
-        }
-        val durationMs = recordedDurationMs.takeIf { it > 0L }
-            ?: (System.currentTimeMillis() - recordStartAt).coerceAtLeast(0L)
-        if (durationMs < 600) {
-            // web MIN_VOICE_MS=600 - too-short recordings are discarded
-            cancelRecording()
-            return
-        }
-        // UI state is not recorder state. Finalize the M4A before reading it.
+    fun finishRecording(): File? {
+        val file = recordFileRef.value ?: return null
+        val duration = recordedDurationMs.takeIf { it > 0L }
+            ?: (android.os.SystemClock.elapsedRealtime() - recordStartAt).coerceAtLeast(0L)
+        if (duration < 600L) { cancelRecording(); return null }
         val recorder = recorderRef.value
-        val finalized = runCatching {
-            if (recorder != null) recorder.stop()
-            check(file.isFile && file.length() > 0L) { "Recording is no longer available" }
-        }
-        runCatching { recorder?.release() }
+        val result = finalizeVoiceNote(file, { recorder?.stop() }, { recorder?.release() })
         recorderRef.value = null
         recording = false
-        if (finalized.isFailure) {
-            file.delete()
+        if (result.isFailure) {
             recordFileRef.value = null
             sendError = "Recording could not be finalized. Please record again."
-            return
+            return null
         }
-        recordedDurationMs = durationMs
+        recordedDurationMs = duration
+        return file
+    }
+    fun sendRecording() {
+        if (voiceBusy) return
+        val file = finishRecording() ?: return
+        val operationId = voiceOperationId
+        val duration = recordedDurationMs
         voiceBusy = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val outcome = runCatching {
-                val dataUrl = "data:audio/mp4;base64," + Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
-                val uploaded = repository.uploadMedia(dataUrl).getOrThrow()
-                repository.sendMediaMessage(
-                    conversationId = groupId,
-                    body = "",
-                    audioPath = uploaded,
-                    durationMs = durationMs,
-                ).getOrThrow()
-            }
-            CoroutineScope(Dispatchers.Main).launch {
-                voiceBusy = false
-                outcome.onSuccess {
-                    sendError = null
-                    runCatching { recorderRef.value?.release() }
-                    recorderRef.value = null
-                    recordFileRef.value?.delete()
-                    recordFileRef.value = null
-                    recordSeconds = 0
-                }.onFailure { sendError = "Voice note failed to send" }
-            }
+        voiceSendJob = voiceScope.launch {
+            try {
+                val uploaded = uploadedVoicePath ?: run {
+                    val dataUrl = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                        "data:audio/mp4;base64," + Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                    }
+                    repository.uploadMedia(dataUrl).getOrThrow().also { uploadedVoicePath = it }
+                }
+                repository.sendMediaMessage(conversationId = groupId, body = "",
+                    audioPath = uploaded, durationMs = duration, clientId = operationId).getOrThrow()
+                cancelRecording()
+                sendError = null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                sendError = "Voice note not confirmed. Send again to retry, or discard."
+            } finally { voiceBusy = false }
         }
     }
-    DisposableEffect(Unit) {
+    DisposableEffect(readerLifecycle, groupId) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && recording) {
+                if (finishRecording() != null) {
+                    sendError = "Recording stopped in the background. Send or discard it."
+                }
+            }
+        }
+        readerLifecycle.lifecycle.addObserver(observer)
         onDispose {
-            runCatching { recorderRef.value?.release() }
-            recorderRef.value = null
+            readerLifecycle.lifecycle.removeObserver(observer)
+            voiceSendJob?.cancel()
+            cancelRecording() // scoped upload is canceled; recording belongs to this room
         }
     }
 
@@ -1641,7 +1648,7 @@ internal fun MirrorRoom(
                 }
                 if (!voiceBusy && !recording && recordFileRef.value != null && recordedDurationMs > 0L) {
                     Row {
-                        androidx.compose.material3.TextButton(onClick = { sendRecording() }) { Text("Retry voice note") }
+                        androidx.compose.material3.TextButton(onClick = { sendRecording() }) { Text("Send voice note") }
                         androidx.compose.material3.TextButton(onClick = { cancelRecording(); sendError = null }) { Text("Discard voice note") }
                     }
                 }

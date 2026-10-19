@@ -2767,7 +2767,7 @@ final class ChatsViewModel: ObservableObject {
 
     /// Web `local ?? conv.myDraft` parity - the local draft wins when present.
     static func draftPreview(local: String?, server: String?) -> String? {
-        if let local, !local.isEmpty { return local }
+        if let local { return local.isEmpty ? nil : local }
         if let server, !server.isEmpty { return server }
         return nil
     }
@@ -2849,7 +2849,7 @@ final class ChatsViewModel: ObservableObject {
 
     private func reloadDrafts(session: PulseSession) {
         guard let store = session.store else { return }
-        localDrafts = store.allDrafts()
+        localDrafts = store.allDrafts(includingClears: true)
     }
 
     private func observe(session: PulseSession) {

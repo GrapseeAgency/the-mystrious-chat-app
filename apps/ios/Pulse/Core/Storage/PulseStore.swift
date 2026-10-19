@@ -46,14 +46,17 @@ public final class PulseStore: Sendable {
     }
 
     private let dbQueue: DatabaseQueue
+    let storageIdentity: String
 
     public init(path: String) throws {
+        storageIdentity = URL(fileURLWithPath: path).standardizedFileURL.path
         dbQueue = try DatabaseQueue(path: path)
         try migrator.migrate(dbQueue)
     }
 
     /// In-memory store (previews/tests).
     public init() throws {
+        storageIdentity = "memory:" + UUID().uuidString
         dbQueue = try DatabaseQueue()
         try migrator.migrate(dbQueue)
     }
@@ -749,6 +752,12 @@ public final class PulseStore: Sendable {
             try deleteDraft(conversationId: conversationId)
             return
         }
+        try saveDraftSnapshot(conversationId: conversationId, text: text)
+    }
+
+    /// Unlike legacy saveDraft, an empty snapshot is an explicit local clear.
+    /// It prevents a stale server myDraft from resurrecting sent/discarded text.
+    func saveDraftSnapshot(conversationId: String, text: String) throws {
         try dbQueue.write { db in
             try db.execute(
                 sql: """
@@ -761,27 +770,28 @@ public final class PulseStore: Sendable {
         }
     }
 
-    /// Local draft for a conversation; nil when absent/blank.
+    /// Local draft for a conversation; nil when absent/blank (legacy consumers).
     public func draft(conversationId: String) -> String? {
-        let text: String? = try? dbQueue.read { db in
-            try String.fetchOne(
-                db,
-                sql: "SELECT text FROM draft WHERE conversationId = :cid",
-                arguments: ["cid": conversationId],
-            )
-        }
-        guard let text, !text.isEmpty else { return nil }
+        guard let text = draftSnapshot(conversationId: conversationId), !text.isEmpty else { return nil }
         return text
     }
 
+    /// nil means never edited locally; an empty string means explicitly cleared.
+    func draftSnapshot(conversationId: String) -> String? {
+        try? dbQueue.read { db in
+            try String.fetchOne(db, sql: "SELECT text FROM draft WHERE conversationId = :cid",
+                arguments: ["cid": conversationId])
+        }
+    }
+
     /// Every local draft (chats-list preview rehydration).
-    public func allDrafts() -> [String: String] {
+    public func allDrafts(includingClears: Bool = false) -> [String: String] {
         let rows: [(String, String)]? = try? dbQueue.read { db in
             let pairs = try Row.fetchAll(db, sql: "SELECT conversationId, text FROM draft")
             return pairs.compactMap { row in
                 guard let cid: String = row["conversationId"],
                       let text: String = row["text"],
-                      !text.isEmpty else { return nil }
+                      (includingClears || !text.isEmpty) else { return nil }
                 return (cid, text)
             }
         }

@@ -1106,12 +1106,14 @@ class PulseRepositoryImpl constructor(
         kind: String?,
         viewOnce: Boolean?,
         topicId: String?,
+        clientId: String?,
     ): Result<Message> =
         when (
             val r = api.sendMessage(
                 conversationId = conversationId,
                 senderId = viewerId ?: "",
                 content = body,
+                clientId = clientId ?: java.util.UUID.randomUUID().toString(),
                 imagePath = imagePath,
                 audioPath = audioPath,
                 durationMs = durationMs,
