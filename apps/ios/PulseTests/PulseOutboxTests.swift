@@ -15,6 +15,14 @@ final class PulseOutboxTests: XCTestCase {
             case networkError
         }
 
+        var uploadCount = 0
+        var beforeUploadReturn: (() throws -> Void)?
+        func uploadMedia(dataUrl: String) async throws -> String {
+            uploadCount += 1
+            try beforeUploadReturn?()
+            return "uploaded-file.pdf"
+        }
+
         private let lock = NSLock()
         private var behaviors: [String: Behavior]
         private var attempted: [String] = []
@@ -446,6 +454,70 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(reopened.countPendingOutbox(), 0)
     }
 
+
+    func testUploadReceiptSurvivesLostMessageAckWithoutSecondUpload() async throws {
+        let store = try PulseStore()
+        let message = try PulseAttachmentDelivery.enqueue(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            conversationId: "c1", content: "attachment", dataUrl: "data:application/pdf;base64,JVBERg==",
+            envelope: PulseOutboxForward(kind: "file", fileName: "notes.pdf", topicId: "topic", anon: true))
+        let before = try XCTUnwrap(store.outboxPending().first)
+        let lost = StubSender(behaviors: ["attachment": .networkError])
+        let first = makeEngine(store, lost)
+        await first.flush(); first.stop()
+        let saved = try XCTUnwrap(PulseOutboxForward.decode(store.outboxPending().first?.payloadJson))
+        XCTAssertNil(saved.uploadDataUrl)
+        XCTAssertEqual(saved.filePath, "uploaded-file.pdf")
+        XCTAssertEqual(lost.uploadCount, 1)
+        XCTAssertNotNil(try store.message(id: message.id))
+        let retry = StubSender(behaviors: [:])
+        let reopened = makeEngine(store, retry)
+        defer { reopened.stop() }
+        await reopened.flush()
+        XCTAssertEqual(retry.uploadCount, 0)
+        XCTAssertEqual(lost.operationIds, [before.clientId])
+        XCTAssertEqual(retry.operationIds, [before.clientId])
+        XCTAssertEqual(retry.metadata, ["nil|topic|true"])
+        XCTAssertEqual(retry.recordedBody(at: 0), "file|nil|nil|nil|uploaded-file.pdf|notes.pdf|4")
+        XCTAssertNil(try store.message(id: message.id))
+        XCTAssertEqual(store.countOutbox(), 0)
+    }
+
+    func testUnknownUploadKeepsBytesAndDiscardDuringUploadDoesNotSend() async throws {
+        let store = try PulseStore()
+        _ = try PulseAttachmentDelivery.enqueue(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            conversationId: "c1", content: "held", dataUrl: "data:image/jpeg;base64,aGVsbG8=",
+            envelope: PulseOutboxForward(kind: "image", viewOnce: true))
+        let entry = try XCTUnwrap(store.outboxPending().first)
+        let offline = StubSender(behaviors: [:])
+        offline.beforeUploadReturn = { throw URLError(.networkConnectionLost) }
+        let first = makeEngine(store, offline)
+        await first.flush(); first.stop()
+        XCTAssertNotNil(PulseOutboxForward.decode(try store.outboxPending().first?.payloadJson)?.uploadDataUrl)
+        XCTAssertTrue(offline.operationIds.isEmpty)
+        let discarded = StubSender(behaviors: [:])
+        discarded.beforeUploadReturn = { try store.deleteOutbox(clientId: entry.clientId) }
+        let second = makeEngine(store, discarded)
+        defer { second.stop() }
+        await second.flush()
+        XCTAssertTrue(discarded.operationIds.isEmpty)
+        XCTAssertEqual(store.countOutbox(), 0)
+    }
+
+    func testRejectedAttachmentIsManuallyRetryableWithOriginalBytesAndIdentity() throws {
+        let store = try PulseStore()
+        let message = try PulseAttachmentDelivery.enqueue(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            conversationId: "c1", content: "", dataUrl: "data:audio/mp4;base64,aGVsbG8=",
+            envelope: PulseOutboxForward(kind: "audio", durationMs: 1800))
+        let entry = try XCTUnwrap(store.outboxPending().first)
+        XCTAssertTrue(try store.rejectOutbox(clientId: entry.clientId, reason: "forbidden"))
+        XCTAssertTrue(try store.outboxPending().isEmpty)
+        XCTAssertTrue(try store.retryOutbox(clientId: entry.clientId, message: message))
+        XCTAssertEqual(try store.outboxPending().first?.payloadJson, entry.payloadJson)
+        XCTAssertEqual(try store.outboxPending().first?.clientId, entry.clientId)
+        try store.deleteOutbox(clientId: entry.clientId)
+        XCTAssertFalse(try store.retryOutbox(clientId: entry.clientId, message: message))
+        XCTAssertNil(try store.message(id: message.id))
+    }
 
 }
 

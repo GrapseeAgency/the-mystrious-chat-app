@@ -46,6 +46,7 @@ struct DraftsOutboxManagerView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .onAppear { reload() }
+        .onReceive(session.outboxEvents) { _ in reload() }
     }
 
     // drafts
@@ -161,6 +162,14 @@ struct DraftsOutboxManagerView: View {
             }
             if let reason = row.failureReason {
                 Text("Not sent: " + reason).font(.system(size: 12)).foregroundStyle(.red)
+                Button("Retry original message") { session.retryOutbox(clientId: row.clientId); reload() }
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            if let envelope = PulseOutboxForward.decode(row.payloadJson), ["image", "file", "audio"].contains(envelope.kind ?? "") {
+                Label(envelope.fileName ?? (envelope.kind == "audio" ? "Voice note" : "Photo"), systemImage: "paperclip")
+                    .font(.caption)
+                Text(envelope.uploadDataUrl == nil ? "Upload kept; message awaits delivery." : "Attachment bytes kept on this device.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
             Button("Copy text") { UIPasteboard.general.string = row.content }
                 .font(.system(size: 12, weight: .semibold))

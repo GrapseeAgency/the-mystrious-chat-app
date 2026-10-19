@@ -82,8 +82,12 @@ data class StagedMedia(
     val error: String? = null,
     /** Wave 2 view-once (IMAGE kind only - wire requires imagePath when true). */
     val viewOnce: Boolean = false,
+    val selectionId: String = java.util.UUID.randomUUID().toString(),
+    val sending: Boolean = false,
+    val durationMs: Long? = null,
+    val intendedTopicId: String? = null,
 ) {
-    enum class Kind { IMAGE, FILE }
+    enum class Kind { IMAGE, FILE, AUDIO }
 }
 
 /** A downloaded file the UI must hand to the system (open or share). */
@@ -919,139 +923,107 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    // ── staged media (spec row 9 - never queued, honest errors) ──
+    // Attachment preparation belongs to one immutable selection. A late upload
+    // must never install A's path into B's preview or resurrect a removed card.
+    private var attachmentTask: Job? = null
 
-    fun onImagePicked(uri: Uri) {
-        _state.value = _state.value.copy(
-            staged = StagedMedia(kind = StagedMedia.Kind.IMAGE, localUri = uri.toString(), fileName = null, fileSize = null, uploading = true, error = null),
-        )
-        viewModelScope.launch {
-            MediaSupport.imageToDataUrl(context, uri)
-                .onSuccess { dataUrl -> uploadStaged(dataUrl, null) }
-                .onFailure { stageFailed(it.message ?: "Couldn't prepare the photo") }
-        }
-    }
+    fun onImagePicked(uri: Uri) = selectAttachment(uri, StagedMedia.Kind.IMAGE)
+    fun onDocumentPicked(uri: Uri) = selectAttachment(uri, StagedMedia.Kind.FILE)
 
-    fun onDocumentPicked(uri: Uri) {
-        viewModelScope.launch {
-            val prepared = MediaSupport.documentToDataUrl(context, uri)
-            prepared
-                .onSuccess { doc ->
-                    _state.value = _state.value.copy(
-                        staged = StagedMedia(
-                            kind = StagedMedia.Kind.FILE,
-                            localUri = uri.toString(),
-                            fileName = doc.fileName,
-                            fileSize = doc.sizeBytes,
-                            mime = doc.mime,
-                            uploading = true,
-                            error = null,
-                        ),
-                    )
-                    uploadStaged(doc.dataUrl, doc.fileName)
-                }
-                .onFailure { failure ->
-                    notify(failure.message ?: "Couldn't attach the document", isError = true)
-                }
-        }
-    }
-
-    /** Upload (or re-upload) the staged attachment - one route, both kinds. */
-    private fun uploadStaged(dataUrl: String, fileName: String?) {
-        val staged = _state.value.staged ?: return
-        _state.value = _state.value.copy(staged = staged.copy(uploading = true, error = null))
-        viewModelScope.launch {
-            repo.uploadMedia(dataUrl)
-                .onSuccess { path ->
-                    val current = _state.value.staged ?: return@launch
-                    _state.value = _state.value.copy(
-                        staged = current.copy(uploading = false, uploadedPath = path),
-                    )
-                }
-                .onFailure { stageFailed(it.message ?: "Upload failed") }
-        }
-    }
-
-    private fun stageFailed(message: String) {
-        val current = _state.value.staged ?: return
-        _state.value = _state.value.copy(staged = current.copy(uploading = false, error = message))
-    }
-
-    /** Retry re-runs the upload; an already-uploaded staged card skips it. */
-    fun retryStaged() {
-        val staged = _state.value.staged ?: return
-        if (staged.uploadedPath != null) {
-            _state.value = _state.value.copy(staged = staged.copy(error = null))
+    private fun selectAttachment(uri: Uri, kind: StagedMedia.Kind) {
+        if (_recording.value || _state.value.staged?.kind == StagedMedia.Kind.AUDIO || _state.value.staged?.sending == true) {
+            notify("Finish or discard the current recording first", isError = true)
             return
         }
-        viewModelScope.launch {
-            when (staged.kind) {
-                StagedMedia.Kind.IMAGE -> MediaSupport.imageToDataUrl(context, Uri.parse(staged.localUri))
-                    .onSuccess { dataUrl -> uploadStaged(dataUrl, staged.fileName) }
-                    .onFailure { stageFailed(it.message ?: "Upload failed") }
-                StagedMedia.Kind.FILE -> MediaSupport.documentToDataUrl(context, Uri.parse(staged.localUri))
-                    .onSuccess { doc ->
-                        _state.value = _state.value.copy(
-                            staged = (_state.value.staged ?: staged).copy(
-                                fileName = doc.fileName,
-                                fileSize = doc.sizeBytes,
-                                mime = doc.mime,
-                            ),
-                        )
-                        uploadStaged(doc.dataUrl, doc.fileName)
+        attachmentTask?.cancel()
+        val selected = StagedMedia(kind = kind, localUri = uri.toString(), fileName = null,
+            fileSize = null, uploading = true)
+        _state.value = _state.value.copy(staged = selected)
+        prepareAndUpload(selected)
+    }
+
+    private fun prepareAndUpload(selected: StagedMedia, autoSend: Boolean = false) {
+        val id = selected.selectionId
+        attachmentTask = viewModelScope.launch {
+            try {
+                val dataUrl = when (selected.kind) {
+                    StagedMedia.Kind.AUDIO -> MediaSupport.audioToDataUrl(context, File(selected.localUri)).getOrThrow()
+                    StagedMedia.Kind.IMAGE -> MediaSupport.imageToDataUrl(context, Uri.parse(selected.localUri)).getOrThrow()
+                    StagedMedia.Kind.FILE -> {
+                        val doc = MediaSupport.documentToDataUrl(context, Uri.parse(selected.localUri)).getOrThrow()
+                        if (!isActive || _state.value.staged?.selectionId != id) return@launch
+                        _state.value = _state.value.copy(staged = _state.value.staged?.copy(
+                            fileName = doc.fileName, fileSize = doc.sizeBytes, mime = doc.mime))
+                        doc.dataUrl
                     }
-                    .onFailure { stageFailed(it.message ?: "Upload failed") }
+                }
+                if (!isActive || _state.value.staged?.selectionId != id) return@launch
+                val path = repo.uploadMedia(dataUrl).getOrThrow()
+                if (!isActive || _state.value.staged?.selectionId != id) return@launch
+                _state.value = _state.value.copy(staged = _state.value.staged?.copy(uploading = false, uploadedPath = path, error = null))
+                if (autoSend) sendStaged("")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (isActive) stageFailed(id, error.message ?: "Couldn't prepare or upload this attachment")
             }
         }
+    }
+
+    private fun stageFailed(selectionId: String, message: String) {
+        val current = _state.value.staged?.takeIf { it.selectionId == selectionId } ?: return
+        _state.value = _state.value.copy(staged = current.copy(uploading = false, sending = false, error = message))
+    }
+
+    fun retryStaged() {
+        val current = _state.value.staged ?: return
+        if (current.uploading || current.sending) return
+        if (current.uploadedPath != null) {
+            _state.value = _state.value.copy(staged = current.copy(error = null))
+            return
+        }
+        attachmentTask?.cancel()
+        _state.value = _state.value.copy(staged = current.copy(uploading = true, error = null))
+        prepareAndUpload(current)
     }
 
     fun cancelStaged() {
+        if (_state.value.staged?.sending == true) return // SQLite enqueue is settling.
+        attachmentTask?.cancel(); attachmentTask = null
+        _state.value.staged?.takeIf { it.kind == StagedMedia.Kind.AUDIO }?.let { File(it.localUri).delete() }
         _state.value = _state.value.copy(staged = null)
     }
 
-    /** Send the staged attachment with its caption (≤500 - UI enforces). */
     fun sendStaged(caption: String) {
         val staged = _state.value.staged ?: return
+        if (staged.sending) return
         val path = staged.uploadedPath
         if (path == null) {
-            stageFailed("Still uploading - hold on a second")
+            notify("Wait for the attachment to finish uploading", isError = true)
             return
         }
+        val topicId = if (staged.kind == StagedMedia.Kind.AUDIO) staged.intendedTopicId else _activeTopicId.value
+        _state.value = _state.value.copy(staged = staged.copy(sending = true, error = null))
         viewModelScope.launch {
-            val topicId = _activeTopicId.value
-            val result = when (staged.kind) {
-                StagedMedia.Kind.IMAGE -> repo.sendMediaMessage(
-                    conversationId = conversationId,
-                    body = caption.trim(),
-                    imagePath = path,
-                    // Wire contract: viewOnce===true REQUIRES imagePath - image kind only.
-                    viewOnce = if (staged.viewOnce) true else null,
-                    topicId = topicId,
-                )
-                StagedMedia.Kind.FILE -> repo.sendMediaMessage(
-                    conversationId = conversationId,
-                    body = caption.trim(),
-                    filePath = path,
-                    fileName = staged.fileName ?: path.substringAfterLast('/'),
-                    fileSize = staged.fileSize,
-                    kind = "file",
-                    topicId = topicId,
-                )
-            }
-            result
-                .onSuccess {
-                    _state.value = _state.value.copy(staged = null)
-                    app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
-                    afterOwnSend(it)
+            try {
+                val result = when (staged.kind) {
+                    StagedMedia.Kind.AUDIO -> repo.sendMediaMessage(conversationId = conversationId,
+                        body = caption.trim(), audioPath = path, durationMs = staged.durationMs, kind = "audio", topicId = topicId)
+                    StagedMedia.Kind.IMAGE -> repo.sendMediaMessage(conversationId = conversationId,
+                        body = caption.trim(), imagePath = path, viewOnce = staged.viewOnce.takeIf { it }, topicId = topicId)
+                    StagedMedia.Kind.FILE -> repo.sendMediaMessage(conversationId = conversationId,
+                        body = caption.trim(), filePath = path, fileName = staged.fileName ?: path.substringAfterLast('/'),
+                        fileSize = staged.fileSize, kind = "file", topicId = topicId)
                 }
-                .onFailure { stageFailed(it.message ?: "Couldn't send - you appear to be offline") }
+                val sent = result.getOrThrow()
+                if (staged.kind == StagedMedia.Kind.AUDIO) File(staged.localUri).delete()
+                if (_state.value.staged?.selectionId == staged.selectionId) _state.value = _state.value.copy(staged = null)
+                afterOwnSend(sent)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { stageFailed(staged.selectionId, error.message ?: "Attachment could not be queued") }
         }
     }
 
-    /** The staged photo's view-once switch (image only, Wave 2 §1 row 5). */
     fun setStagedViewOnce(value: Boolean) {
         val staged = _state.value.staged ?: return
-        _state.value = _state.value.copy(staged = staged.copy(viewOnce = value))
+        if (!staged.sending) _state.value = _state.value.copy(staged = staged.copy(viewOnce = value))
     }
 
     // ── file download + open/share (FileProvider hand-off) ─────
@@ -1095,7 +1067,7 @@ class ChatRoomViewModel @Inject constructor(
      * [PulseMedia.MAX_VOICE_MS] ceiling is reached mid-hold.
      */
     fun startRecording() {
-        if (_recording.value || _sendingVoice.value) return
+        if (_recording.value || _sendingVoice.value || _state.value.staged != null) return
         if (!app.pulse.core.audio.AudioOwnership.shared.acquireExclusive(recorderAudioToken)) {
             notify("Leave your live room/call or pause playback before recording", isError = true)
             return
@@ -1190,32 +1162,13 @@ class ChatRoomViewModel @Inject constructor(
             return
         }
         val durationMs = app.pulse.core.media.PulseMedia.voiceDurationMs(elapsedMs)
-        _sendingVoice.value = true
-        viewModelScope.launch {
-            MediaSupport.audioToDataUrl(context, file, mime = "audio/mp4")
-                .onSuccess { dataUrl ->
-                    repo.uploadMedia(dataUrl)
-                        .onSuccess { path ->
-                            repo.sendMediaMessage(
-                                conversationId = conversationId,
-                                body = "",
-                                audioPath = path,
-                                durationMs = durationMs,
-                                kind = "audio",
-                                topicId = _activeTopicId.value,
-                            )
-                                .onSuccess { sent ->
-                                    app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
-                                    afterOwnSend(sent)
-                                }
-                                .onFailure { notify(it.message ?: "Couldn't send the voice note", isError = true) }
-                        }
-                        .onFailure { notify("Couldn't upload the voice note", isError = true) }
-                }
-                .onFailure { notify("Couldn't prepare the voice note", isError = true) }
-            _sendingVoice.value = false
-            file.delete()
-        }
+        // Keep the source while an upload is uncertain; expose the same staged
+        // retry/discard controls as a file. Delete only after durable enqueue.
+        val selected = StagedMedia(kind = StagedMedia.Kind.AUDIO, localUri = file.absolutePath,
+            fileName = "Voice note.m4a", fileSize = file.length(), mime = "audio/mp4",
+            uploading = true, durationMs = durationMs, intendedTopicId = _activeTopicId.value)
+        _state.value = _state.value.copy(staged = selected)
+        prepareAndUpload(selected, autoSend = true)
     }
 
     private fun stopRecorderLocked(): Boolean {

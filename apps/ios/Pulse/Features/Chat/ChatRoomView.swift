@@ -1285,11 +1285,7 @@ private struct RoomContent: View {
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             photoItem = nil
-            Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    viewModel.stageImage(data)
-                }
-            }
+            viewModel.importPhoto(item, session: session)
         }
     }
 
@@ -2528,15 +2524,15 @@ private struct RoomContent: View {
                 }
                 switch staged.kind {
                 case .image:
-                    AsyncImage(url: staged.previewURL) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                    Group {
+                        if let data = staged.previewData, let image = UIImage(data: data) {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        } else { RoundedRectangle(cornerRadius: 8).fill(.quaternary) }
                     }
                     .frame(width: 44, height: 44)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                case .file:
-                    Image(systemName: "paperclip.circle.fill")
+                case .file, .audio:
+                    Image(systemName: staged.kind == .audio ? "waveform.circle.fill" : "paperclip.circle.fill")
                         .font(.system(size: 30))
                         .foregroundStyle(PulseTheme.emberGlowTop)
                 }
@@ -2962,7 +2958,10 @@ struct BubbleView: View {
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.50))
             } else {
-                content
+                if let label = PulseAttachmentDelivery.pendingLabel(message) {
+                    Label(label, systemImage: "arrow.up.doc").font(.subheadline)
+                    if !message.content.isEmpty { Text(message.content) }
+                } else { content }
                 // Wave 2 link preview - under the text, suppressed on poll
                 // rows; nothing renders until the unfurl envelope lands.
                 if message.poll == nil, let preview = message.linkPreview {
@@ -3658,7 +3657,7 @@ final class RoomViewModel: ObservableObject {
 
     /// Wave 1 attach flow - a staged photo/document awaiting upload + send.
     struct StagedMedia: Equatable {
-        enum Kind { case image, file }
+        enum Kind { case image, file, audio }
         let kind: Kind
         let dataUrl: String
         let fileName: String?
@@ -3667,6 +3666,8 @@ final class RoomViewModel: ObservableObject {
         let previewURL: URL?
         /// Wave 2 view-once - image sends only (server: viewOnce needs imagePath).
         let viewOnce: Bool
+        var durationMs: Double? = nil
+        var previewData: Data? = nil
     }
 
     @Published private(set) var messages: [WireChatMessage] = []
@@ -3804,6 +3805,8 @@ final class RoomViewModel: ObservableObject {
     private var memberWatermarks: [String: Date] = [:]
     // Wave 2 voice plumbing - recorder + single active player + timers.
     private var voiceRecorder: VoiceRecorder?
+    private var voicePermissionTask: Task<Void, Never>?
+    private var voicePermissionGeneration = UUID()
     private var recordingStartedAt: Date?
     private var recordingTicker: AnyCancellable?
     /// D31 - the session that armed the hold; the auto-send-at-cap tick needs
@@ -3918,6 +3921,7 @@ final class RoomViewModel: ObservableObject {
     /// from ChatRoomView.onDisappear (roomVisible off); a conversation
     /// change builds a NEW view model, so its deinit covers that path.
     func handleRoomDisappeared() {
+        cancelPhotoImport()
         journalDraft(draftBeforeEdit ?? draft)
         draftSaveTask?.cancel()
         typingStopTask?.cancel()
@@ -3933,6 +3937,8 @@ final class RoomViewModel: ObservableObject {
     deinit {
         // Plain-class teardown only (no actor-isolated state touched).
         voiceRecorder?.cancel()
+        voicePermissionTask?.cancel()
+        photoImportTask?.cancel()
         voicePlaybackTask?.cancel()
     }
 
@@ -5088,7 +5094,41 @@ final class RoomViewModel: ObservableObject {
 
     // ── Wave 1 media staging + upload (spec §1.1) ────────
 
+    private var photoImportTask: Task<Void, Never>?
+    private var photoImportGeneration = UUID()
+
+    private func cancelPhotoImport() {
+        photoImportGeneration = UUID()
+        photoImportTask?.cancel(); photoImportTask = nil
+        uploading = false
+    }
+
+    func importPhoto(_ item: PhotosPickerItem, session: PulseSession) {
+        cancelPhotoImport()
+        guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
+        let ticket = photoImportGeneration
+        let epoch = session.sessionGeneration
+        uploading = true
+        photoImportTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if photoImportGeneration == ticket { uploading = false; photoImportTask = nil }
+            }
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else { throw CocoaError(.fileReadCorruptFile) }
+                guard !Task.isCancelled, photoImportGeneration == ticket, session.sessionGeneration == epoch else { return }
+                stageImage(data)
+            } catch {
+                if !Task.isCancelled, photoImportGeneration == ticket, session.sessionGeneration == epoch {
+                    errorText = "Couldn't read the selected photo. Any previous attachment is kept."
+                }
+            }
+        }
+    }
+
     func stageImage(_ data: Data) {
+        cancelPhotoImport()
+        guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
         guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: data) else {
             errorText = "Couldn't read that image"
             return
@@ -5098,16 +5138,19 @@ final class RoomViewModel: ObservableObject {
             dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg),
             fileName: nil,
             fileSize: jpeg.count,
-            previewURL: URL(dataRepresentation: jpeg, relativeTo: nil),
+            previewURL: nil,
             viewOnce: false,
+            previewData: jpeg,
         )
         caption = ""
     }
 
     func stageDocument(url: URL) {
+        cancelPhotoImport()
+        guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
         let secured = url.startAccessingSecurityScopedResource()
         defer { if secured { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url) else {
+        guard let data = try? PulseMediaSupport.readDocument(url: url) else {
             errorText = "Couldn't read that document"
             return
         }
@@ -5133,7 +5176,7 @@ final class RoomViewModel: ObservableObject {
 
     /// Wave 2 view-once - flips the staged card's burn flag (image sends).
     func setStagedViewOnce(_ on: Bool) {
-        guard let current = staged else { return }
+        guard let current = staged, current.kind == .image else { return }
         staged = StagedMedia(
             kind: current.kind,
             dataUrl: current.dataUrl,
@@ -5141,62 +5184,40 @@ final class RoomViewModel: ObservableObject {
             fileSize: current.fileSize,
             previewURL: current.previewURL,
             viewOnce: on,
+            durationMs: current.durationMs,
+            previewData: current.previewData,
         )
     }
 
     func cancelStaged() {
+        cancelPhotoImport()
         staged = nil
         caption = ""
         uploading = false
     }
 
-    /// Upload → send. Media NEVER queues offline (spec §1.2) - failures
-    /// surface an honest inline error and keep the staged card for retry.
+    /// Commit bytes + immutable send metadata before clearing the staged card.
+    /// The account outbox owns upload/retry, even after this screen disappears.
     func sendStaged(session: PulseSession) {
         guard let media = staged, !uploading else { return }
-        guard session.viewer != nil else {
-            errorText = "The gateway is unreachable."
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            errorText = "The account store is not ready. Your attachment is kept."
             return
         }
-        uploading = true
-        let body = caption.trimmingCharacters(in: .whitespaces)
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let filePath = try await session.api.uploadMedia(dataUrl: media.dataUrl)
-                let message: WireChatMessage
-                switch media.kind {
-                case .image:
-                    message = try await session.api.sendMessage(
-                        conversationId: conversationId,
-                        content: body,
-                        imagePath: filePath,
-                        viewOnce: media.viewOnce ? true : nil,
-                        topicId: activeTopicId,
-                    )
-                case .file:
-                    message = try await session.api.sendMessage(
-                        conversationId: conversationId,
-                        content: body,
-                        filePath: filePath,
-                        fileName: media.fileName,
-                        fileSize: media.fileSize,
-                        kind: "file",
-                        topicId: activeTopicId
-                    )
-                }
-                self.uploading = false
-                self.staged = nil
-                self.caption = ""
-                self.upsert(message)
-                try? session.store?.upsert(messages: [message])
-                session.particles.fire(kind: .burst, count: 22)
-                self.loadTopics(session: session)
-            } catch {
-                self.uploading = false
-                self.errorText = Self.describe(error)
-            }
-        }
+        do {
+            let kind: String
+            switch media.kind { case .image: kind = "image"; case .file: kind = "file"; case .audio: kind = "audio" }
+            let message = try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer, conversationId: conversationId,
+                content: caption.trimmingCharacters(in: .whitespacesAndNewlines), dataUrl: media.dataUrl,
+                envelope: PulseOutboxForward(kind: kind, durationMs: media.durationMs,
+                    fileName: media.fileName, fileSize: media.fileSize, topicId: activeTopicId,
+                    anon: isGroupRoom && anonOn, viewOnce: media.viewOnce), replyTo: replyTarget)
+            upsert(message)
+            staged = nil; caption = ""; replyTarget = nil
+            if isGroupRoom { anonOn = false }
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch { errorText = Self.describe(error) }
     }
 
     // ── Wave 2 voice notes (spec §1 rows 1/11/12/15) ─────
@@ -5205,31 +5226,29 @@ final class RoomViewModel: ObservableObject {
     /// Mic TCC first; if the prompt swallows the finger lift the recording
     /// simply continues with the explicit bar (cancel X + slot tap to send).
     func startVoiceRecording(session: PulseSession) {
-        guard !isRecording, voiceRecorder == nil else { return }
+        guard !isRecording, !uploading, voiceRecorder == nil, voicePermissionTask == nil, staged == nil else { return }
         voiceSession = session
-        Task { [weak self] in
+        let generation = UUID(); voicePermissionGeneration = generation
+        let account = session.sessionGeneration
+        voicePermissionTask = Task { [weak self] in
             guard let self else { return }
+            defer { if voicePermissionGeneration == generation { voicePermissionTask = nil } }
             let granted = await VoiceRecorder.requestPermission()
+            guard !Task.isCancelled, generation == voicePermissionGeneration,
+                  account == session.sessionGeneration else { return }
             guard granted else {
-                self.voiceSession = nil
+                voiceSession = nil
                 session.toasts.show("Microphone access is off - enable it in Settings to record voice notes")
                 return
             }
-            guard !self.isRecording, self.voiceRecorder == nil else { return }
+            guard !isRecording, voiceRecorder == nil, staged == nil else { return }
             let recorder = VoiceRecorder()
-            do {
-                try recorder.start()
-            } catch {
-                self.voiceSession = nil
-                session.toasts.show("Couldn't start recording")
-                return
-            }
-            self.voiceRecorder = recorder
-            self.recordingStartedAt = Date()
-            self.recordingElapsedMs = 0
-            self.recordingAmplitudes = []
-            self.isRecording = true
-            self.startRecordingTicker()
+            do { try recorder.start() }
+            catch { voiceSession = nil; session.toasts.show("Couldn't start recording"); return }
+            voiceRecorder = recorder
+            recordingStartedAt = Date(); recordingElapsedMs = 0; recordingAmplitudes = []
+            isRecording = true
+            startRecordingTicker()
         }
     }
 
@@ -5243,18 +5262,20 @@ final class RoomViewModel: ObservableObject {
     }
 
     func cancelVoiceRecording() {
+        voicePermissionGeneration = UUID()
+        voicePermissionTask?.cancel(); voicePermissionTask = nil
+        voiceSession = nil
         guard isRecording else { return }
         voiceRecorder?.cancel()
         teardownRecording()
     }
 
-    /// Send path - stop, round the duration (spec: max(1, round(ms/100)*100)),
-    /// discard <600 ms with the honest toast, else upload + send kind "audio"
-    /// (never queued - media never queues, spec §1.2).
+    /// Stop and stage the recording, then durably enqueue its bytes and metadata.
+    /// A failed upload must not delete the only copy of the user's recording.
     func finishAndSendVoice(session: PulseSession) {
         guard isRecording, !sendingVoice, let startedAt = recordingStartedAt else { return }
         let elapsedMs = Date().timeIntervalSince(startedAt) * 1000
-        let durationMs = VoiceMath.roundedDurationMs(fromElapsedMs: elapsedMs)
+        let durationMs = min(VoiceMath.maximumSendMs, VoiceMath.roundedDurationMs(fromElapsedMs: elapsedMs))
         voiceRecorder?.stop()
         let fileURL = voiceRecorder?.fileURL
         teardownRecording()
@@ -5263,39 +5284,16 @@ final class RoomViewModel: ObservableObject {
             session.toasts.show("Too short - voice note discarded")
             return
         }
-        guard let viewer = session.viewer else {
+        do {
+            let data = try Data(contentsOf: fileURL)
+            staged = StagedMedia(kind: .audio, dataUrl: PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data),
+                fileName: "Voice note.m4a", fileSize: data.count, previewURL: nil, viewOnce: false, durationMs: durationMs)
+            caption = ""
+            // Only the temporary recorder file is removed; the staged bytes remain
+            // on storage failure, or move atomically into the durable outbox.
             try? FileManager.default.removeItem(at: fileURL)
-            errorText = "The gateway is unreachable."
-            return
-        }
-        sendingVoice = true
-        Task { [weak self] in
-            defer {
-                self?.sendingVoice = false
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-            guard let self else { return }
-            do {
-                let data = try Data(contentsOf: fileURL)
-                let dataUrl = PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data)
-                let filePath = try await session.api.uploadMedia(dataUrl: dataUrl)
-                let message = try await session.api.sendMessage(
-                    conversationId: conversationId,
-                    content: "",
-                    audioPath: filePath,
-                    durationMs: durationMs,
-                    kind: "audio",
-                    topicId: activeTopicId,
-                )
-                self.upsert(message)
-                try? session.store?.upsert(messages: [message])
-                session.particles.fire(kind: .burst, count: 22)
-                self.loadTopics(session: session)
-            } catch {
-                // Media NEVER queues (web parity) - honest toast instead.
-                session.toasts.show(Self.describe(error))
-            }
-        }
+            sendStaged(session: session)
+        } catch { errorText = "Could not read the recording. The source file was not deleted." }
     }
 
     private func teardownRecording() {

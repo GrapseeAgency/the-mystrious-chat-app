@@ -1390,7 +1390,7 @@ struct MirrorRoomView: View {
     @State private var armedEffect: String?
     @State private var anonNext = false
     @State private var docPickerOpen = false
-    @State private var sendingDoc = false
+    @State private var pendingAttachment: (dataUrl: String, envelope: PulseOutboxForward)?
     @State private var photoItem: PhotosPickerItem?
     @State private var recording = false
     @State private var voiceRecorder: VoiceRecorder?
@@ -1402,6 +1402,14 @@ struct MirrorRoomView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let pending = pendingAttachment {
+                HStack {
+                    Text(pending.envelope.fileName ?? "Attachment kept — not queued").font(.caption).lineLimit(1)
+                    Spacer()
+                    Button("Retry") { sendPendingAttachment() }
+                    Button("Discard", role: .destructive) { pendingAttachment = nil }
+                }.padding(10)
+            }
             // header: bg #0d0906/70, hairline bottom, back / 40 avatar / title+subtitle / 3 icons
             VStack(spacing: 0) {
                 HStack(spacing: 2) {
@@ -1458,6 +1466,7 @@ struct MirrorRoomView: View {
                                     memberNames: memberNames,
                                     viewerId: session.viewer?.id ?? "",
                                     bubbleMax: bubbleMax,
+                                    mediaBaseURL: session.api.baseURL,
                                     onToggleReaction: { emoji in react(message.id, emoji) }
                                 )
                                 .padding(.top, head ? 10 : 2)
@@ -1626,7 +1635,7 @@ struct MirrorRoomView: View {
         // via PhotosPicker, and the 1s recording ticker.
         .fileImporter(
             isPresented: $docPickerOpen,
-            allowedContentTypes: [.data],
+            allowedContentTypes: PulseMediaSupport.documentTypes,
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
@@ -1670,6 +1679,7 @@ struct MirrorRoomView: View {
         .onChange(of: session.connected) { connected in if connected { refreshRevision &+= 1 } }
         .onAppear { session.activeRoomId = row.id }
         .onDisappear {
+            cancelVoiceRecording()
             roomOperations.stop()
             if session.activeRoomId == row.id { session.activeRoomId = nil }
         }
@@ -1682,7 +1692,11 @@ struct MirrorRoomView: View {
             if roomOperations.settledRevision > 0 && scenePhase == .active { await load() }
         }
         .task(id: "\(refreshRevision):\(scenePhase)") {
-            guard scenePhase == .active else { return }
+            guard scenePhase == .active else {
+                cancelVoiceRecording()
+                roomOperations.stop()
+                return
+            }
             if messages.isEmpty, let store = session.store {
                 do {
                     messages = PulseTextDelivery.timeline(try store.messages(conversationId: row.id),
@@ -1731,10 +1745,11 @@ struct MirrorRoomView: View {
     // Keep the send affordance while an effect is armed, but require text:
     // the server rejects empty text even when an effect payload is present.
     private var hasSendPayload: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || armedEffect != nil
+        pendingAttachment != nil || !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || armedEffect != nil
     }
 
     private func send() {
+        if pendingAttachment != nil { sendPendingAttachment(); return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             session.toasts.show("Type a message first; the armed effect is kept.")
@@ -2020,99 +2035,104 @@ struct MirrorRoomView: View {
         })
     }
 
-    // R102 documents (web 3469-3486): security-scoped read, mime from the
-    // extension, POST /api/uploads, kind:"file" send with name + size.
-    private func sendDocument(from url: URL) {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard !sendingDoc, let data = try? Data(contentsOf: url) else {
-            session.toasts.show("Couldn't read that file")
+    private func prepareAttachment(dataUrl: String, envelope: PulseOutboxForward) {
+        guard pendingAttachment == nil else {
+            session.toasts.show("Retry or discard the previous attachment first.")
             return
         }
-        sendingDoc = true
-        let name = url.lastPathComponent
-        let mime = PulseMediaSupport.mime(forExtension: url.pathExtension) ?? "application/octet-stream"
-        let size = data.count
-        Task {
-            defer { sendingDoc = false }
-            do {
-                let path = try await session.api.uploadMedia(dataUrl: PulseMediaSupport.dataUrl(mime: mime, data: data))
-                _ = try await session.api.sendMessage(
-                    conversationId: row.id,
-                    content: "",
-                    filePath: path,
-                    fileName: name,
-                    fileSize: size,
-                    kind: "file"
-                )
-                await load()
-            } catch {
-                session.toasts.show("Document failed to upload - check the connection")
-            }
+        pendingAttachment = (dataUrl, envelope)
+        sendPendingAttachment()
+    }
+
+    private func sendPendingAttachment() {
+        guard let pending = pendingAttachment, let viewer = session.viewer,
+              let store = session.store, session.ready else {
+            session.toasts.show("The account store is not ready. Your attachment is kept.")
+            return
+        }
+        do {
+            let message = try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer, conversationId: row.id,
+                content: "", dataUrl: pending.dataUrl, envelope: pending.envelope)
+            acceptCarrier(message)
+            pendingAttachment = nil
+            if pending.envelope.anon == true { anonNext = false }
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch {
+            session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Attachment could not be saved. Retry or discard it below.")
         }
     }
 
-    // R102 photos: the camera button is real - PhotosPicker data,
-    // downscale to JPEG, POST /api/uploads, imagePath send.
+    private func sendDocument(from url: URL) {
+        guard pendingAttachment == nil, !recording else {
+            session.toasts.show("Finish the current recording or attachment first.")
+            return
+        }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            guard let mime = PulseMediaSupport.mime(forExtension: url.pathExtension) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Choose a PDF, ZIP, TXT or CSV document.")
+            }
+            let data = try PulseMediaSupport.readDocument(url: url)
+            prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: mime, data: data),
+                envelope: PulseOutboxForward(kind: "file", fileName: url.lastPathComponent, fileSize: data.count, anon: row.isGroup && anonNext))
+        } catch { session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Couldn't read that document.") }
+    }
+
     private func handlePhotoPick(_ item: PhotosPickerItem?) {
         guard let item else { return }
         photoItem = nil
-        Task {
-            do {
-                guard let raw = try await item.loadTransferable(type: Data.self) else {
-                    session.toasts.show("Couldn't read that photo")
-                    return
-                }
-                guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: raw) else {
-                    session.toasts.show("Couldn't read that photo")
-                    return
-                }
-                let path = try await session.api.uploadMedia(dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg))
-                _ = try await session.api.sendMessage(
-                    conversationId: row.id,
-                    content: "",
-                    imagePath: path
-                )
-                await load()
-            } catch {
-                session.toasts.show("Photo failed to upload - check the connection")
-            }
+        guard pendingAttachment == nil, !recording, !roomOperations.pending.contains("photo-import") else {
+            session.toasts.show("Finish the current attachment first.")
+            return
         }
+        let generation = session.sessionGeneration
+        let anonymous = row.isGroup && anonNext
+        roomOperations.run(key: "photo-import", operation: {
+            do {
+                guard let raw = try await item.loadTransferable(type: Data.self) else { throw CocoaError(.fileReadCorruptFile) }
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration else { return false }
+                guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: raw) else { throw CocoaError(.fileReadCorruptFile) }
+                prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg),
+                    envelope: PulseOutboxForward(kind: "image", anon: anonymous))
+                return true
+            } catch {
+                if !Task.isCancelled && generation == session.sessionGeneration { session.toasts.show("Couldn't read that photo.") }
+                return false
+            }
+        })
     }
 
-    // R102 voice notes - the VoiceRecorder infra the full room already
-    // ships (VoiceNotes.swift) reused 1:1: TCC permission, AAC record,
-    // 100ms rounding, <600ms discard, upload + kind:"audio" send.
     private func startVoiceRecording() {
-        guard !recording, voiceRecorder == nil else { return }
-        Task {
+        guard !recording, voiceRecorder == nil, pendingAttachment == nil, !roomOperations.pending.contains("photo-import") else { return }
+        let generation = session.sessionGeneration
+        roomOperations.run(key: "voice-permission", operation: {
             let granted = await VoiceRecorder.requestPermission()
+            guard !Task.isCancelled, generation == session.sessionGeneration, scenePhase == .active else { return false }
             guard granted else {
                 session.toasts.show("Microphone access is off - enable it in Settings to record voice notes")
-                return
+                return false
             }
-            guard !recording, voiceRecorder == nil else { return }
+            guard !recording, voiceRecorder == nil, pendingAttachment == nil else { return false }
             let recorder = VoiceRecorder()
-            do {
-                try recorder.start()
-            } catch {
-                session.toasts.show("Couldn't start recording")
-                return
-            }
+            do { try recorder.start() }
+            catch { session.toasts.show("Couldn't start recording"); return false }
             voiceRecorder = recorder
-            recordingStartedAt = Date()
-            recordSeconds = 0
-            recording = true
+            recordingStartedAt = Date(); recordSeconds = 0; recording = true
             recordTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
                 recordSeconds += 1
+                if recordSeconds >= 600 { finishAndSendVoice() }
             }
-        }
+            return true
+        })
     }
 
     private func finishAndSendVoice() {
         guard recording, let startedAt = recordingStartedAt else { return }
         let elapsedMs = Date().timeIntervalSince(startedAt) * 1000
-        let durationMs = VoiceMath.roundedDurationMs(fromElapsedMs: elapsedMs)
+        let durationMs = min(VoiceMath.maximumSendMs, VoiceMath.roundedDurationMs(fromElapsedMs: elapsedMs))
         voiceRecorder?.stop()
         let fileURL = voiceRecorder?.fileURL
         teardownRecording()
@@ -2121,24 +2141,13 @@ struct MirrorRoomView: View {
             session.toasts.show("Too short - voice note discarded")
             return
         }
-        Task {
-            defer { try? FileManager.default.removeItem(at: fileURL) }
-            do {
-                let data = try Data(contentsOf: fileURL)
-                let dataUrl = PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data)
-                let path = try await session.api.uploadMedia(dataUrl: dataUrl)
-                _ = try await session.api.sendMessage(
-                    conversationId: row.id,
-                    content: "",
-                    audioPath: path,
-                    durationMs: durationMs,
-                    kind: "audio"
-                )
-                await load()
-            } catch {
-                session.toasts.show("Voice note failed to upload - check the connection")
-            }
-        }
+        do {
+            let data = try Data(contentsOf: fileURL)
+            prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data),
+                envelope: PulseOutboxForward(kind: "audio", durationMs: durationMs, anon: row.isGroup && anonNext))
+            // Either SQLite or the visible retry card now owns these bytes.
+            if pendingAttachment != nil || session.store != nil { try? FileManager.default.removeItem(at: fileURL) }
+        } catch { session.toasts.show("Couldn't read the recording. Its source file was not deleted.") }
     }
 
     private func cancelVoiceRecording() {
@@ -2171,7 +2180,14 @@ struct MirrorBubble: View {
     let memberNames: [String]
     let viewerId: String
     let bubbleMax: CGFloat
+    let mediaBaseURL: URL
     let onToggleReaction: (String) -> Void
+
+    private func attachmentURL(_ path: String) -> URL {
+        mediaBaseURL.appendingPathComponent("api/uploads", isDirectory: true)
+            .appendingPathComponent(String(path.split(separator: "/").last ?? ""))
+    }
+
 
     private var chips: [MirrorReactionChip] {
         (message.reactions ?? []).map { g in
@@ -2227,8 +2243,14 @@ struct MirrorBubble: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .padding(.bottom, 4)
                         }
-                        if message.kind == "image", let imagePath = message.imagePath {
-                            AsyncImage(url: URL(string: PulseEndpoints.gatewayURL.absoluteString + "/api/uploads/" + imagePath)) { image in
+                        if message.deletedAt != nil {
+                            Label("Message deleted", systemImage: "trash")
+                        } else if message.viewOnce == true && !mine {
+                            Label("View-once photo — use standard chat to open", systemImage: "lock.fill")
+                        } else if let label = PulseAttachmentDelivery.pendingLabel(message) {
+                            Label(label, systemImage: "arrow.up.doc")
+                        } else if message.kind == "image", let imagePath = message.imagePath {
+                            AsyncImage(url: attachmentURL(imagePath)) { image in
                                 image.resizable().aspectRatio(contentMode: .fill)
                             } placeholder: {
                                 Rectangle().fill(MirrorArt.chip)
@@ -2239,6 +2261,14 @@ struct MirrorBubble: View {
                                 Text(MirrorBubbleText.make(message.content, mine: mine, memberNames: memberNames))
                                     .padding(2)
                             }
+                        } else if let path = message.filePath {
+                            Link(destination: attachmentURL(path)) {
+                                Label(message.fileName ?? "Open document", systemImage: "doc")
+                            }
+                            if !message.content.isEmpty { Text(message.content) }
+                        } else if let path = message.audioPath {
+                            Link(destination: attachmentURL(path)) { Label("Open voice note", systemImage: "waveform") }
+                            if !message.content.isEmpty { Text(message.content) }
                         } else {
                             Text(MirrorBubbleText.make(message.content, mine: mine, memberNames: memberNames))
                         }

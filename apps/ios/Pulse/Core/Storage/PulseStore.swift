@@ -776,6 +776,30 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Retain the upload receipt before the message POST. Never resurrect a discarded send.
+    public func recordOutboxUpload(clientId: String, envelope: PulseOutboxForward) throws -> Bool {
+        guard envelope.uploadDataUrl == nil, let payload = PulseOutboxForward.encode(envelope) else {
+            throw CocoaError(.coderInvalidValue)
+        }
+        return try dbQueue.write { db in
+            try db.execute(sql: "UPDATE outbox SET payloadJson = ? WHERE clientId = ? AND failureReason IS NULL",
+                           arguments: [payload, clientId])
+            return db.changesCount > 0
+        }
+    }
+
+    /// Explicit retry keeps the original identity and metadata, including upload receipt.
+    public func retryOutbox(clientId: String, message: WireChatMessage) throws -> Bool {
+        guard message.id == "local_" + clientId else { throw CocoaError(.coderInvalidValue) }
+        return try dbQueue.write { db in
+            try db.execute(sql: "UPDATE outbox SET failureReason = NULL, attempts = 0 WHERE clientId = ? AND conversationId = ? AND failureReason IS NOT NULL",
+                           arguments: [clientId, message.conversationId])
+            guard db.changesCount > 0 else { return false }
+            try Self.writeMessage(message, db: db)
+            return true
+        }
+    }
+
     public func isPendingOutbox(clientId: String) throws -> Bool {
         try dbQueue.read { db in
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox WHERE clientId = ? AND failureReason IS NULL",

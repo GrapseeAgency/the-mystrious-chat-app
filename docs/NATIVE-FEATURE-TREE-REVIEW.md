@@ -920,3 +920,63 @@ This does not fix every send path: alternate-room attachments, stickers/location
 TTL idle-screen timers and full thread/history navigation still need deeper work.
 Already-discarded historical drafts or carrier fields cannot be reconstructed from
 local storage. No production SQL deployment or main-branch update has been made.
+
+### Attachment ownership, durable delivery and safe preview opening
+
+Traced picker/recorder → preparation → upload → message send → receipt → cache.
+The previous send paths generated a fresh operation on retry; some also deleted
+recordings after failed upload. Both native main composers had asynchronous work
+that could overwrite a later selection or clear a later caption.
+
+- Android staging now uses immutable selection IDs and owned preparation jobs.
+  Late completion cannot attach file A's remote path to file B's preview, revive a
+  discarded card, or clear a newer selection. Enqueue has a synchronous busy gate;
+  caption/view-once edits are blocked during that transaction, and captions clear
+  only when their selection actually clears. Voice upload failures retain a visible
+  retry/discard card and the source file; voice topic metadata is captured before
+  upload, not read from whichever topic happens to be open afterward.
+- Android's shared media repository now commits the uploaded path and all send
+  metadata into its existing account outbox, then returns the pending message.
+  The single account drainer, rather than a screen-owned POST, delivers it with
+  one stable ID. This covers media callers beyond the primary composer. No Room
+  migration: the existing optimistic message + outbox envelope holds these fields.
+- Swift's main and alternate composers now commit bounded attachment bytes and
+  metadata into the existing SQLite outbox *before upload*. The engine records a
+  successful upload path before attempting the message POST. Lost message ACKs
+  reuse that path and operation ID, rather than uploading/sending another copy.
+  Discard while upload is in flight cannot resurrect or send the operation. Upload
+  or network uncertainty retains the bytes across restart. Failed intent has an
+  explicit Settings → Drafts & outbox retry action using the original identity.
+  This deliberately supersedes old comments/specs that said media never queues.
+- Swift photo import and microphone permission requests now have lifecycle and
+  account fences. Leaving a room cannot start a recorder from a late permission
+  result. The alternate recorder is stopped on background/exit. Pending uploads
+  show identifiable placeholders rather than empty bubbles. Invalid documents are
+  rejected before upload; document reads are bounded, not unbounded file loads.
+  Main photo previews now use JPEG data, not an invalid URL built from JPEG bytes.
+- Swift preview downloads now require successful HTTP status and a nonempty,
+  bounded file. Each download gets a separate generated directory. Remote display
+  names cannot select `.`/`..`, escape a preview directory or replace an existing
+  open document. The previous helper could delete a shared target based solely on
+  the sender's name and open an HTTP error body as if it were the attachment.
+- Alternate Swift bubbles now expose document/audio links rather than blank text,
+  use the current client's gateway, hide deleted attachments, and do not bypass
+  view-once consumption by loading the raw image. View-once opening is explicitly
+  deferred to standard chat; this is not a newly implemented alternate-view burn UI.
+
+Limits: Android's *pre-upload* staged bytes/selection are not yet journaled across
+process death; successful uploads become durable when Send enqueues the message.
+A lost upload response can leave an unreferenced server file (uploads do not yet
+have receipts); the known-path/message phase is replay-safe. Swift queued bytes
+use bounded base64 in the account SQLite database, not a new background uploader.
+Queueing does not guarantee OS background execution. Picker RAW-image memory
+limits, alternate-view native audio controls, idle expiry and the remaining rich
+send paths still need review. No production schema migration/deployment occurred.
+
+Verification: added three outbox upload/retry/discard tests, three attachment
+storage/validation/preview-name tests and two Android selection/voice-metadata
+methods. Syntax and diff checks pass; native execution of this tranche is pending.
+For the previous 1602d34 revision, iOS archive and tests passed; Android JVM tests
+and both API 30/34 instrumented jobs' debug tests passed, with release assembly /
+release smoke still running at retrieval. Those results do not validate this new
+attachment implementation. Inventory now covers 308 production source files.

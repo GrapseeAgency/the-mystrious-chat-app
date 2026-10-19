@@ -7,11 +7,10 @@ import Network
 /// W1-DATA-B - the requirement mirrors PulseAPIClient.sendMessage's FULL
 /// parameter list (Swift witness matching ignores default arguments, so a
 /// defaulted-param method would no longer witness a shorter requirement).
-/// The engine only ever fills the text fields - media/thread sends are
-/// online-only and never queued (spec §1.2). R1-W2B D28 relaxes exactly one
-/// case: FORWARDS (F-MS-10 "queued if offline") queue with their stored
-/// kind + media paths via PulseOutboxForward.
+/// Upload bytes and the eventual message share one durable operation. A known
+/// uploaded path is persisted before sending so a lost message ACK never reuploads.
 public protocol PulseOutboxSending: Sendable {
+    func uploadMedia(dataUrl: String) async throws -> String
     func sendMessage(
         conversationId: String,
         clientId: String,
@@ -53,11 +52,12 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
     public var payload: String?
     public var anon: Bool?
     public var viewOnce: Bool?
+    public var uploadDataUrl: String?
 
     public init(kind: String? = nil, imagePath: String? = nil, audioPath: String? = nil, durationMs: Double? = nil,
                 filePath: String? = nil, fileName: String? = nil, fileSize: Int? = nil,
                 replyToId: String? = nil, parentId: String? = nil, topicId: String? = nil,
-                payload: String? = nil, anon: Bool? = nil, viewOnce: Bool? = nil) {
+                payload: String? = nil, anon: Bool? = nil, viewOnce: Bool? = nil, uploadDataUrl: String? = nil) {
         self.kind = kind
         self.imagePath = imagePath
         self.audioPath = audioPath
@@ -71,10 +71,11 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
         self.payload = payload
         self.anon = anon
         self.viewOnce = viewOnce
+        self.uploadDataUrl = uploadDataUrl
     }
 
-    /// Serialized for the outbox row (nil-safe: a failed encode → nil payload
-    /// → the flush degrades to a plain text send with the forward's content).
+    /// Serialized for the outbox row. Enqueue must reject encoding failure;
+    /// it must never downgrade an attachment to a text-only message.
     public static func encode(_ forward: PulseOutboxForward) -> String? {
         guard let data = try? JSONEncoder().encode(forward) else { return nil }
         return String(data: data, encoding: .utf8)
@@ -239,8 +240,25 @@ public final class PulseOutboxEngine: ObservableObject {
                 // R1-W2B D28 - a forward entry re-POSTs its stored kind +
                 // media paths (web ForwardPayload parity); plain sends keep
                 // the text-only body.
-                let forward = PulseOutboxForward.decode(entry.payloadJson)
+                var forward = PulseOutboxForward.decode(entry.payloadJson)
                 if entry.payloadJson != nil && forward == nil { throw CocoaError(.coderReadCorrupt) }
+                if let dataUrl = forward?.uploadDataUrl {
+                    guard var uploaded = forward, ["image", "file", "audio"].contains(uploaded.kind ?? "") else {
+                        throw CocoaError(.coderReadCorrupt)
+                    }
+                    let path = try await sender.uploadMedia(dataUrl: dataUrl)
+                    guard !stopped, !Task.isCancelled else { return false }
+                    guard !path.isEmpty else { throw CocoaError(.coderReadCorrupt) }
+                    switch uploaded.kind {
+                    case "image": uploaded.imagePath = path
+                    case "audio": uploaded.audioPath = path
+                    default: uploaded.filePath = path
+                    }
+                    uploaded.uploadDataUrl = nil
+                    // A user may discard this operation while its upload is in flight.
+                    guard try store.recordOutboxUpload(clientId: entry.clientId, envelope: uploaded) else { continue }
+                    forward = uploaded
+                }
                 let real = try await sender.sendMessage(
                     conversationId: entry.conversationId,
                     clientId: entry.clientId,

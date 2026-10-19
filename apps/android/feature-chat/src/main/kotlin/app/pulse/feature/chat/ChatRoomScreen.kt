@@ -255,7 +255,7 @@ fun ChatRoomScreen(
     val composerFocus = remember { FocusRequester() }
 
     var draft by remember { mutableStateOf("") }
-    var caption by remember { mutableStateOf("") }
+    var caption by remember(state.staged?.selectionId) { mutableStateOf("") }
     var actionTarget by remember { mutableStateOf<Message?>(null) }
     var forwardTarget by remember { mutableStateOf<Message?>(null) }
     var infoTarget by remember { mutableStateOf<Message?>(null) }
@@ -1139,12 +1139,10 @@ fun ChatRoomScreen(
                     onViewOnceChange = viewModel::setStagedViewOnce,
                     onSend = {
                         viewModel.sendStaged(caption)
-                        caption = ""
                     },
                     onRetry = viewModel::retryStaged,
                     onRemove = {
                         viewModel.cancelStaged()
-                        caption = ""
                     },
                 )
             }
@@ -2866,7 +2864,7 @@ private fun StagedMediaCard(
                             .size(52.dp)
                             .clip(RoundedCornerShape(10.dp)),
                     )
-                    StagedMedia.Kind.FILE -> Box(
+                    StagedMedia.Kind.FILE, StagedMedia.Kind.AUDIO -> Box(
                         Modifier
                             .size(52.dp)
                             .clip(RoundedCornerShape(10.dp))
@@ -2880,7 +2878,7 @@ private fun StagedMediaCard(
                     Text(
                         when (staged.kind) {
                             StagedMedia.Kind.IMAGE -> "Photo"
-                            StagedMedia.Kind.FILE -> staged.fileName ?: "Document"
+                            StagedMedia.Kind.FILE, StagedMedia.Kind.AUDIO -> staged.fileName ?: "Attachment"
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -2909,7 +2907,7 @@ private fun StagedMediaCard(
                                     .padding(horizontal = 6.dp, vertical = 2.dp),
                             )
                         }
-                        staged.uploading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        staged.uploading || staged.sending -> Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.6.dp, color = EmberPalette.Amber)
                             Spacer(Modifier.width(6.dp))
                             Text(
@@ -2928,7 +2926,7 @@ private fun StagedMediaCard(
                         }
                     }
                 }
-                IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
+                IconButton(onClick = onRemove, enabled = !staged.sending, modifier = Modifier.size(28.dp)) {
                     Icon(PulseIcons.X, contentDescription = "Remove attachment", modifier = Modifier.size(15.dp), tint = Color.White.copy(alpha = 0.55f))
                 }
             }
@@ -2952,7 +2950,7 @@ private fun StagedMediaCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Switch(checked = staged.viewOnce, onCheckedChange = onViewOnceChange)
+                    Switch(checked = staged.viewOnce, onCheckedChange = onViewOnceChange, enabled = !staged.sending)
                 }
             }
             Row(
@@ -2966,6 +2964,7 @@ private fun StagedMediaCard(
                 BasicTextField(
                     value = caption,
                     onValueChange = onCaptionChange,
+                    enabled = !staged.sending && !(staged.kind == StagedMedia.Kind.AUDIO && staged.uploading),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
                     cursorBrush = SolidColor(EmberPalette.Amber),
                     modifier = Modifier.weight(1f),

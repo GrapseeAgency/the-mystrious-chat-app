@@ -1125,34 +1125,45 @@ class PulseRepositoryImpl constructor(
         viewOnce: Boolean?,
         topicId: String?,
         clientId: String?,
-    ): Result<Message> =
-        when (
-            val r = api.sendMessage(
-                conversationId = conversationId,
-                senderId = viewerId ?: "",
-                content = body,
-                clientId = clientId ?: java.util.UUID.randomUUID().toString(),
-                imagePath = imagePath,
-                audioPath = audioPath,
-                durationMs = durationMs,
-                filePath = filePath,
-                fileName = fileName,
-                fileSize = fileSize,
-                kind = kind,
-                viewOnce = viewOnce,
-                topicId = topicId,
-            )
-        ) {
-            is PulseResult.Success -> {
-                // R5-B - media sends ride the same envelope; the streak bump is
-                // not surfaced here (web only toasts on the room-composer path).
-                val message = r.value.messageOrThrow()
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-                scheduleConversationsRefresh()
-                Result.success(message)
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    ): Result<Message> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
+        val operationId = clientId ?: java.util.UUID.randomUUID().toString()
+        val wireKind = kind ?: when {
+            imagePath != null -> "image"
+            audioPath != null -> "audio"
+            filePath != null -> "file"
+            else -> return Result.failure(IllegalArgumentException("Attachment path is missing"))
         }
+        if (wireKind !in setOf("image", "audio", "file") ||
+            (wireKind == "image" && imagePath.isNullOrBlank()) ||
+            (wireKind == "audio" && (audioPath.isNullOrBlank() || (durationMs != null && durationMs !in 1L..600_000L))) ||
+            (wireKind == "file" && (filePath.isNullOrBlank() || fileName.isNullOrBlank() || fileName.length > 120)) ||
+            (viewOnce == true && wireKind != "image")) {
+            return Result.failure(IllegalArgumentException("Attachment metadata is incomplete or invalid"))
+        }
+        val temp = Message(
+            id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + operationId,
+            conversationId = conversationId, authorId = owner, authorName = owner,
+            kind = kindOf(wireKind), body = body, createdAt = java.time.Instant.now().toString(),
+            imagePath = imagePath, audioPath = audioPath, durationMs = durationMs,
+            filePath = filePath, fileName = fileName, fileSize = fileSize,
+            viewOnce = viewOnce == true, topicId = topicId,
+        )
+        try {
+            database.withTransaction {
+                messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+                outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = operationId,
+                    content = body, kind = wireKind, createdAt = temp.createdAt))
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(error) }
+        // One account-owned drainer, not an independent screen POST. Its existing
+        // retry envelope reads the exact media metadata from the optimistic row.
+        eventsBus.tryEmit(PulseEvent.OutboxQueued(operationId, conversationId))
+        scope.launch {
+            try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Attachment remains queued", error); scheduleSelfHeal() }
+        }
+        return Result.success(temp)
+    }
 
     /** GET /api/uploads/{file} → bytes written under cacheDir/downloads. */
     override suspend fun downloadMedia(filePath: String): Result<String> = withContext(Dispatchers.IO) {

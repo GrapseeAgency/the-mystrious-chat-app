@@ -493,6 +493,25 @@ public final class PulseSession: ObservableObject {
         Task { await outbox.flush() }
     }
 
+    public func retryOutbox(clientId: String) {
+        guard ready, let viewer, let store else { return }
+        do {
+            guard let row = try store.outboxAll().first(where: { $0.clientId == clientId && $0.failureReason != nil }) else { return }
+            let envelope = PulseOutboxForward.decode(row.payloadJson)
+            if row.payloadJson != nil && envelope == nil { throw CocoaError(.coderReadCorrupt) }
+            let anonymous = envelope?.anon == true
+            var message = TempMessages.make(conversationId: row.conversationId, viewer: viewer, clientId: row.clientId,
+                content: row.content, parentId: envelope?.parentId, anon: anonymous,
+                anonAlias: anonymous ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: row.conversationId) : nil,
+                topicId: envelope?.topicId, attachment: envelope)
+            message.payload = envelope?.payload
+            if try store.retryOutbox(clientId: clientId, message: message) {
+                outbox?.reloadPending()
+                flushOutbox()
+            }
+        } catch { toasts.show("The saved message could not be retried. It has not been discarded.") }
+    }
+
     public func discardOutbox(clientId: String, conversationId: String) {
         guard let store else { return }
         do {

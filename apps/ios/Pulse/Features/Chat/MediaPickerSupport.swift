@@ -45,6 +45,23 @@ enum PulseMediaSupport {
         [.pdf, .zip, .plainText, .commaSeparatedText, UTType(filenameExtension: "csv")].compactMap { $0 }
     }
 
+    static func readDocument(url: URL) throws -> Data {
+        guard let stream = InputStream(url: url) else { throw CocoaError(.fileReadUnknown) }
+        stream.open(); defer { stream.close() }
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count < 0 { throw stream.streamError ?? CocoaError(.fileReadUnknown) }
+            if count == 0 { break }
+            guard result.count + count <= maxDocumentBytes else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Documents are limited to 10 MB.")
+            }
+            result.append(contentsOf: buffer.prefix(count))
+        }
+        return result
+    }
+
     /// Extension → mime, the exact map the gateway's /api/uploads accepts
     /// for documents (unknown extensions are rejected before upload).
     static func mime(forExtension ext: String) -> String? {
@@ -89,15 +106,40 @@ enum PulseMediaOpener {
     /// Throws on network/write failure - callers surface the error honestly.
     static func downloadForPreview(url: URL, fileName: String?) async throws -> URL {
         var request = URLRequest(url: url)
-        request.timeoutInterval = 15
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let safeName = (fileName ?? url.lastPathComponent)
-            .replacingOccurrences(of: "/", with: "-")
-        guard !safeName.isEmpty else { return url }
-        let target = FileManager.default.temporaryDirectory.appendingPathComponent(safeName)
-        try? FileManager.default.removeItem(at: target)
-        try data.write(to: target)
-        return target
+        request.timeoutInterval = 30
+        let (download, response) = try await URLSession.shared.download(for: request)
+        defer { try? FileManager.default.removeItem(at: download) }
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw PulseAPIClient.Failure(kind: .server, message: "The attachment could not be downloaded.", status: (response as? HTTPURLResponse)?.statusCode)
+        }
+        let size = try download.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size > 0, size <= PulseMediaSupport.maxDocumentBytes else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "The attachment is empty or exceeds the download limit.")
+        }
+        // A remote name is display metadata, never a shared filesystem address.
+        // Unique folders prevent same-name downloads from replacing an open preview.
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pulse-preview-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let target = directory.appendingPathComponent(safePreviewName(fileName ?? url.lastPathComponent))
+        do {
+            try FileManager.default.copyItem(at: download, to: target)
+            try Task.checkCancellation()
+            return target
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    static func safePreviewName(_ name: String) -> String {
+        let clean = name.components(separatedBy: .controlCharacters).joined()
+            .replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: "\\", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, clean != ".", clean != ".." else { return "attachment" }
+        var bounded = String(clean.prefix(120))
+        while bounded.utf8.count > 200 { bounded.removeLast() }
+        return bounded.isEmpty ? "attachment" : bounded
     }
 
     /// Resolves a message's media URL: images win, then stored documents.
