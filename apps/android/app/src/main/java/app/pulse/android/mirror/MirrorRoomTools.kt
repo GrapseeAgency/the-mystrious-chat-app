@@ -270,7 +270,6 @@ internal fun MirrorRemindersSheet(
 ) {
     val scope = rememberCoroutineScope()
     val bound = remember(repository, viewerId) { repository.boundToCurrentAccount() }
-    val context = LocalContext.current.applicationContext
     // null = first load pending; empty = loaded and really empty
     var items by remember { mutableStateOf<List<ReminderItemDto>?>(null) }
     var loadFailed by remember { mutableStateOf(false) }
@@ -325,7 +324,6 @@ internal fun MirrorRemindersSheet(
                 pendingOps = pendingOps - id
                 outcome.fold(
                     onSuccess = {
-                        app.pulse.android.notify.ReminderNotifier.cancel(context, id)
                         // web cancelReminder: optimistic removal, then refetch.
                         // resolve keeps the row; the refetch moves it to History.
                         if (op == TOOL_OP_DELETE) {

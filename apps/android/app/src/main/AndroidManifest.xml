@@ -151,20 +151,8 @@
             </intent-filter>
         </service>
 
-        <!-- R1-W2H D45: after reboot the reminder WorkManager one-shots have no
-             guarantee of being re-armed in time - BootReceiver re-schedules
-             still-future reminders via ReminderNotifier.schedule and fires the
-             notify path for ones that came due while the device was off.
-             exported=false: the system delivers BOOT_COMPLETED to it regardless. -->
-        <receiver
-            android:name="app.pulse.android.notify.BootReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-            </intent-filter>
-        </receiver>
+        <!-- WorkManager's merged receiver restores persistent reminder jobs at boot.
+             Do not replay cached reminders through an independent receiver. -->
 
         <!-- R10-a - notification quick-reply hand-off. The system (not any
              other app) delivers the RemoteInput result here; exported=false. -->

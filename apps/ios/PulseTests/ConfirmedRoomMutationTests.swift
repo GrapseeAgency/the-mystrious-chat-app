@@ -88,4 +88,55 @@ final class ConfirmedRoomMutationTests: XCTestCase {
         _ = await PulseReminderDelivery.queueOnce(ownerId: "b", reminderId: "r", defaults: defaults) { calls += 1; return true }
         XCTAssertEqual(calls, 2)
     }
+    func testOverlappingDeliveryAttemptsShareOneFlight() async {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let owner = UUID().uuidString
+        let started = expectation(description: "enqueue started")
+        var continuation: CheckedContinuation<Bool, Never>?
+        var posts = 0
+        let first = Task { await PulseReminderDelivery.queueOnce(ownerId: owner, reminderId: "r", defaults: defaults) {
+            posts += 1; started.fulfill()
+            return await withCheckedContinuation { continuation = $0 }
+        } }
+        await fulfillment(of: [started], timeout: 2)
+        let overlapping = await PulseReminderDelivery.queueOnce(ownerId: owner, reminderId: "r", defaults: defaults) { posts += 1; return true }
+        XCTAssertFalse(overlapping)
+        continuation?.resume(returning: true)
+        let accepted = await first.value
+        XCTAssertTrue(accepted); XCTAssertEqual(posts, 1)
+    }
+
+    func testCancellationDuringEnqueueRetractsLateNotificationAndBlocksStalePoll() async {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let owner = UUID().uuidString
+        let started = expectation(description: "enqueue started")
+        var continuation: CheckedContinuation<Bool, Never>?
+        var visible = false
+        var retractions = 0
+        let first = Task { await PulseReminderDelivery.queueOnce(ownerId: owner, reminderId: "r", defaults: defaults,
+            retract: { visible = false; retractions += 1 }) {
+                started.fulfill()
+                let accepted = await withCheckedContinuation { continuation = $0 }
+                visible = accepted
+                return accepted
+            }
+        }
+        await fulfillment(of: [started], timeout: 2)
+        PulseReminderDelivery.finish(ownerId: owner, reminderId: "r", defaults: defaults) { visible = false }
+        continuation?.resume(returning: true)
+        let accepted = await first.value
+        XCTAssertFalse(accepted); XCTAssertFalse(visible); XCTAssertEqual(retractions, 1)
+        let stale = await PulseReminderDelivery.queueOnce(ownerId: owner, reminderId: "r", defaults: defaults) { XCTFail("cancelled"); return true }
+        XCTAssertFalse(stale)
+    }
+
+    func testNotificationAndReceiptIdentityIncludesGateway() {
+        let a = PulseAPIClient(baseURL: URL(string: "https://one.test")!, userId: "same")
+        let b = PulseAPIClient(baseURL: URL(string: "https://two.test")!, userId: "same")
+        let first = PulseReminderDelivery.ownerKey(a), second = PulseReminderDelivery.ownerKey(b)
+        XCTAssertNotEqual(first, second)
+        XCTAssertNotEqual(PulseReminderNotifications.notificationID(reminderId: "r", ownerId: first),
+                          PulseReminderNotifications.notificationID(reminderId: "r", ownerId: second))
+    }
+
 }

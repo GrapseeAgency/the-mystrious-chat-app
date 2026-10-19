@@ -1,5 +1,6 @@
 package app.pulse.data.remote
 
+import kotlinx.coroutines.ensureActive
 import app.pulse.core.PulseEndpoints
 import app.pulse.core.result.PulseResult
 import app.pulse.protocol.BlockedPageDto
@@ -1496,10 +1497,27 @@ class PulseApi(
         }
 
     /** GET /api/reminders?userId=[&due=1] - due = remindAt ≤ now && firedAt null. */
-    suspend fun reminders(userId: String, dueOnly: Boolean): PulseResult<RemindersPageDto> =
-        get("/api/reminders?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + if (dueOnly) "&due=1" else "") {
-            PulseJson.decodeFromString(RemindersPageDto.serializer(), it)
-        }
+    suspend fun reminders(userId: String, dueOnly: Boolean): PulseResult<RemindersPageDto> {
+        val base = "/api/reminders?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + if (dueOnly) "&due=1" else ""
+        var cursor: String? = null
+        val seen = mutableSetOf<String>()
+        val items = linkedMapOf<String, ReminderItemDto>()
+        do {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val suffix = cursor?.let { "&cursor=" + java.net.URLEncoder.encode(it, "UTF-8") }.orEmpty()
+            when (val page = get(base + suffix) { PulseJson.decodeFromString(RemindersPageDto.serializer(), it) }) {
+                is PulseResult.Failure -> return page // never adopt a partial list as complete
+                is PulseResult.Success -> {
+                    page.value.items.forEach { items[it.id] = it }
+                    cursor = page.value.nextCursor
+                    if (cursor != null && (!seen.add(cursor!!) || seen.size > 1000)) {
+                        return PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "Invalid reminder pagination")
+                    }
+                }
+            }
+        } while (cursor != null)
+        return PulseResult.Success(RemindersPageDto(items.values.toList()))
+    }
 
     /** POST /api/reminders { userId, conversationId, messageId?, note?, remindAt } → { item }. */
     suspend fun createReminder(

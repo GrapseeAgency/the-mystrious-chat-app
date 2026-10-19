@@ -1046,7 +1046,20 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/reminders?userId=[&due=1] - due = remindAt ≤ now && firedAt null.
     public func reminders(dueOnly: Bool) async throws -> WireRemindersPage {
-        try await get("/api/reminders?userId=\(q(userId))" + (dueOnly ? "&due=1" : ""))
+        let base = "/api/reminders?userId=\(q(userId))" + (dueOnly ? "&due=1" : "")
+        var cursor: String?
+        var seen = Set<String>()
+        var ids = Set<String>()
+        var items: [WireReminderItem] = []
+        repeat {
+            try Task.checkCancellation()
+            let page: WireRemindersPage = try await get(base + (cursor.map { "&cursor=\(q($0))" } ?? ""))
+            try Task.checkCancellation()
+            items.append(contentsOf: page.items.filter { ids.insert($0.id).inserted })
+            cursor = page.nextCursor
+            if let cursor, !seen.insert(cursor).inserted || seen.count > 1000 { throw URLError(.badServerResponse) }
+        } while cursor != nil
+        return WireRemindersPage(items: items)
     }
 
     /// POST /api/reminders { userId, conversationId, messageId?, note?, remindAt } → { item }.

@@ -59,7 +59,12 @@ final class Wave7RoomActions: ObservableObject {
     }
 
     @Published private(set) var pendingMutations: Set<String> = []
-    var cancelReminderNotification: (String) -> Void = { PulseReminderNotifications.cancel(reminderId: $0) }
+    private func finishReminder(api: PulseAPIClient, id: String) {
+        let owner = PulseReminderDelivery.ownerKey(api)
+        PulseReminderDelivery.finish(ownerId: owner, reminderId: id) {
+            PulseReminderNotifications.cancel(reminderId: id, ownerId: owner)
+        }
+    }
 
     /// Take the per-resource gate synchronously, before spawning a task. Local
     /// consequences and success copy follow the server verdict, never the tap.
@@ -322,7 +327,7 @@ final class Wave7RoomActions: ObservableObject {
                     let ms = Self.epochMs(from: iso)
                     if let ms {
                         PulseReminderNotifications.requestAuthorization()
-                        PulseReminderNotifications.schedule(reminderId: item.id, note: item.note ?? note, remindAtEpochMs: ms, conversationId: conversationId)
+                        PulseReminderNotifications.schedule(reminderId: item.id, note: item.note ?? note, remindAtEpochMs: ms, conversationId: conversationId, ownerId: PulseReminderDelivery.ownerKey(api))
                     }
                 }
                 toast("Reminder set")
@@ -337,7 +342,7 @@ final class Wave7RoomActions: ObservableObject {
         confirmedMutation(key: "reminder:\(id)", success: "Reminder marked done", operation: {
             let result = try await api.resolveReminder(id)
             guard result.ok == true else { throw URLError(.badServerResponse) }
-        }, onSuccess: { self.cancelReminderNotification(id) })
+        }, onSuccess: { self.finishReminder(api: api, id: id) })
     }
 
     func deleteReminder(api: PulseAPIClient, id: String) {
@@ -346,7 +351,7 @@ final class Wave7RoomActions: ObservableObject {
             catch let error as PulseAPIClient.Failure where error.kind == .notFound {
                 // A lost successful DELETE response is safe to reconcile as absent.
             }
-        }, onSuccess: { self.cancelReminderNotification(id) })
+        }, onSuccess: { self.finishReminder(api: api, id: id) })
     }
 
     static func epochMs(from iso: String) -> Int64? {

@@ -218,6 +218,8 @@ class PulseRepositoryImpl constructor(
     private val prefsLocalStore: PulsePrefsLocalStore,
     private val sessionTokenStore: SessionTokenStore,
     @ApplicationContext private val context: Context,
+    private val reminderEffects: app.pulse.domain.notify.ReminderEffects = app.pulse.domain.notify.ReminderEffects.None,
+    private val reminderOwner: app.pulse.domain.notify.ReminderOwner? = null,
 ) : PulseRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -2680,6 +2682,9 @@ class PulseRepositoryImpl constructor(
                 if (!dueOnly) runCatching {
                     cachePut("reminders:${viewerId ?: "anon"}", PulseJson.encodeToString(RemindersPageDto.serializer(), r.value))
                 }
+                reminderOwner?.let { owner ->
+                    for (item in r.value.items) reminderEffects.schedule(owner, item)
+                }
                 Result.success(r.value)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -2687,21 +2692,42 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun createReminder(conversationId: String, messageId: String?, note: String?, remindAtIso: String): Result<ReminderItemDto> =
         when (val r = api.createReminder(viewerId ?: "", conversationId, messageId, note, remindAtIso)) {
-            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Success -> {
+                reminderOwner?.let { reminderEffects.schedule(it, r.value) }
+                Result.success(r.value)
+            }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
     override suspend fun resolveReminder(reminderId: String): Result<ReminderResolveDto> =
         when (val r = api.resolveReminder(reminderId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Success -> {
+                if (!r.value.ok) Result.failure(IllegalStateException("Invalid reminder acknowledgement"))
+                else {
+                    reminderOwner?.let { reminderEffects.finish(it, reminderId) }
+                    Result.success(r.value)
+                }
+            }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
     override suspend fun deleteReminder(reminderId: String): Result<Unit> =
         when (val r = api.deleteReminder(reminderId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Success -> {
+                reminderOwner?.let { reminderEffects.finish(it, reminderId) }
+                Result.success(Unit)
+            }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+
+    override suspend fun acknowledgeReminderDelivery(reminderId: String): Result<ReminderResolveDto> =
+        when (val r = api.resolveReminder(reminderId, viewerId ?: "")) {
+            is PulseResult.Success -> if (r.value.ok) Result.success(r.value)
+                else Result.failure(IllegalStateException("Invalid reminder acknowledgement"))
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override fun reminderDeliveryOwner(): app.pulse.domain.notify.ReminderOwner? = reminderOwner
 
     // R1-W2A - quick phrases (F-MS-29)
 

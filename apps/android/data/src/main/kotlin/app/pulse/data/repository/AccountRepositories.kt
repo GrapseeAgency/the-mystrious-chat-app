@@ -25,6 +25,7 @@ class AccountRepositories @Inject constructor(
     @ApplicationContext private val context: Context,
     private val http: HttpClient,
     private val tokens: SessionTokenStore,
+    private val reminders: app.pulse.domain.notify.ReminderEffects = app.pulse.domain.notify.ReminderEffects.None,
 ) {
     // Keep handles alive for captured continuations; never close a DB underneath
     // an in-flight transaction. Room/Datastore handles are reused on return.
@@ -82,7 +83,8 @@ class AccountRepositories @Inject constructor(
         )
         val repo = PulseRepositoryImpl(api, db, db.conversationDao(), db.messageDao(), db.outboxDao(),
             db.draftDao(), db.topicDao(), db.savedDao(), db.callLogDao(), db.storyDao(), db.wave7Dao(),
-            socket, prefs, tokens, context)
+            socket, prefs, tokens, context, reminders,
+            owner?.let { app.pulse.domain.notify.ReminderOwner(it, origin) })
         return Binding(key, token, alive, repo)
     }
 

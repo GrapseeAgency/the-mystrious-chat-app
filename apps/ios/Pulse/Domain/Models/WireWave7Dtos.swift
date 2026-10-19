@@ -206,6 +206,7 @@ public struct WireReminderItem: Codable, Hashable, Sendable {
 
 public struct WireRemindersPage: Codable, Sendable {
     public let items: [WireReminderItem]
+    public var nextCursor: String? = nil
 }
 
 public struct WireReminderEnvelope: Codable, Sendable {

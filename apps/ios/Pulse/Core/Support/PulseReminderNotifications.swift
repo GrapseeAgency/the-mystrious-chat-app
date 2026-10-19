@@ -31,7 +31,7 @@ public enum PulseReminderNotifications {
     /// Schedule the offline-capable one-shot; replaces any pending copy.
     /// R2-D - `conversationId` rides the userInfo so the tap routes to the
     /// room (web reminder-tap parity); nil keeps the notification tapless.
-    public static func schedule(reminderId: String, note: String, remindAtEpochMs: Int64, conversationId: String? = nil) {
+    public static func schedule(reminderId: String, note: String, remindAtEpochMs: Int64, conversationId: String? = nil, ownerId: String? = nil) {
         let content = UNMutableNotificationContent()
         content.title = note.isEmpty ? "Reminder" : String(note.prefix(64))
         content.body = "Reminder"
@@ -49,7 +49,7 @@ public enum PulseReminderNotifications {
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
 
         let request = UNNotificationRequest(
-            identifier: "pulse-reminder-\(reminderId)",
+            identifier: notificationID(reminderId: reminderId, ownerId: ownerId),
             content: content,
             trigger: trigger,
         )
@@ -58,6 +58,11 @@ public enum PulseReminderNotifications {
                 NSLog("Pulse reminders: schedule failed %@", error.localizedDescription)
             }
         }
+    }
+
+    static func notificationID(reminderId: String, ownerId: String?) -> String {
+        guard let ownerId else { return "pulse-reminder-\(reminderId)" }
+        return "pulse-reminder:\(ownerId.utf8.count):\(ownerId):\(reminderId)"
     }
 
     static func triggerComponents(remindAtEpochMs: Int64) -> DateComponents {
@@ -70,15 +75,15 @@ public enum PulseReminderNotifications {
         return components
     }
 
-    public static func cancel(reminderId: String) {
+    public static func cancel(reminderId: String, ownerId: String? = nil) {
         let center = UNUserNotificationCenter.current()
-        let ids = ["pulse-reminder-\(reminderId)", "pulse-reminder-fired-\(reminderId)"]
+        let ids = [notificationID(reminderId: reminderId, ownerId: ownerId), "pulse-reminder-\(reminderId)", "pulse-reminder-fired-\(reminderId)"]
         center.removePendingNotificationRequests(withIdentifiers: ids)
         center.removeDeliveredNotifications(withIdentifiers: ids)
     }
 
     /// True means accepted by the OS (or already delivered), not proof the user saw it.
-    public static func showNow(reminderId: String, note: String, body: String, conversationId: String? = nil) async -> Bool {
+    public static func showNow(reminderId: String, note: String, body: String, conversationId: String? = nil, ownerId: String? = nil) async -> Bool {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
         guard !Task.isCancelled else { return false }
@@ -86,10 +91,10 @@ public enum PulseReminderNotifications {
         case .authorized, .provisional, .ephemeral: break
         default: return false
         }
-        let identifier = "pulse-reminder-\(reminderId)"
+        let identifier = notificationID(reminderId: reminderId, ownerId: ownerId)
         let delivered = await center.deliveredNotifications()
         guard !Task.isCancelled else { return false }
-        if delivered.contains(where: { $0.request.identifier == identifier || $0.request.identifier == "pulse-reminder-fired-\(reminderId)" }) { return true }
+        if delivered.contains(where: { $0.request.identifier == identifier }) { return true }
         let content = UNMutableNotificationContent()
         content.title = note.isEmpty ? "Reminder" : String(note.prefix(64))
         content.body = String(body.prefix(178))
@@ -212,12 +217,37 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
 /// Record only accepted notifications; denied/failed enqueue remains retryable.
 @MainActor
 enum PulseReminderDelivery {
+    private static var flights: [String: UUID] = [:]
+    static func ownerKey(_ api: PulseAPIClient) -> String {
+        let origin = api.baseURL.absoluteString
+        return "\(origin.utf8.count):\(origin):\(api.userId)"
+    }
+    private static func key(_ owner: String, _ id: String) -> String {
+        "reminder.queued:\(owner.utf8.count):\(owner):\(id)"
+    }
     static func queueOnce(ownerId: String, reminderId: String, defaults: UserDefaults = .standard,
-                          enqueue: () async -> Bool) async -> Bool {
-        let key = "reminder.queued:\(ownerId):\(reminderId)"
+                          retract: () -> Void = {}, enqueue: () async -> Bool) async -> Bool {
+        let key = key(ownerId, reminderId)
+        if defaults.string(forKey: key) == "finished" { return false }
         if defaults.bool(forKey: key) { return true }
+        guard flights[key] == nil else { return false }
+        let token = UUID()
+        flights[key] = token
+        defer { if flights[key] == token { flights[key] = nil } }
         guard await enqueue() else { return false }
+        // Cancellation may happen while the OS add() is suspended. Retract a
+        // late acceptance as well as blocking all future stale due responses.
+        guard flights[key] == token, defaults.string(forKey: key) != "finished" else {
+            retract()
+            return false
+        }
         defaults.set(true, forKey: key)
         return true
+    }
+    static func finish(ownerId: String, reminderId: String, defaults: UserDefaults = .standard, cancel: () -> Void) {
+        let key = key(ownerId, reminderId)
+        defaults.set("finished", forKey: key)
+        flights[key] = nil
+        cancel()
     }
 }

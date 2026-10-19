@@ -269,7 +269,7 @@ data class ReminderItemDto(
 )
 
 @Serializable
-data class RemindersPageDto(val items: List<ReminderItemDto> = emptyList())
+data class RemindersPageDto(val items: List<ReminderItemDto> = emptyList(), val nextCursor: String? = null)
 
 // Quick phrases (F-MS-29) - GET/POST/DELETE /api/users/{id}/phrases
 

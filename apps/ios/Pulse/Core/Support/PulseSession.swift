@@ -314,10 +314,12 @@ public final class PulseSession: ObservableObject {
                         // R2-D - the conversationId rides the userInfo so the
                         // tap deep-links into the room (web reminder parity).
                         guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == viewer.id else { return }
-                        let queued = await PulseReminderDelivery.queueOnce(ownerId: viewer.id, reminderId: item.id) {
-                            let accepted = await PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body, conversationId: item.conversationId)
+                        let deliveryOwner = PulseReminderDelivery.ownerKey(api)
+                        let queued = await PulseReminderDelivery.queueOnce(ownerId: deliveryOwner, reminderId: item.id,
+                            retract: { PulseReminderNotifications.cancel(reminderId: item.id, ownerId: deliveryOwner) }) {
+                            let accepted = await PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body, conversationId: item.conversationId, ownerId: deliveryOwner)
                             guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == viewer.id else {
-                                if accepted { PulseReminderNotifications.cancel(reminderId: item.id) }
+                                if accepted { PulseReminderNotifications.cancel(reminderId: item.id, ownerId: deliveryOwner) }
                                 return false
                             }
                             return accepted

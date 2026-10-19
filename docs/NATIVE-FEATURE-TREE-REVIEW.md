@@ -479,3 +479,64 @@ Swift async fixtures now wait for published ready/error state rather than assumi
 that an HTTP callback expectation also means the coordinator has adopted its result.
 Native results for successor commits remain pending. At 370e41e, server contracts
 and web checks passed; native build/test jobs were still in progress.
+
+## Reminder delivery/storage/transport continuation — 2026-10-20
+
+Previous `f725d44` is now natively verified: Android JVM, API30/API34 instrumented
+jobs (including release smoke), iOS unit tests and archive all passed. Those passes
+apply to the previous revision, not the following source changes.
+
+### Root causes repaired in source
+
+1. Worker, foreground poll and custom boot receiver independently notified/ACKed.
+   They could ring twice, resolve a denied notification, and resurrect cancelled
+   cached rows after boot. A process-wide `ReminderDeliveryGate` now arbitrates
+   worker/foreground delivery and confirmed cancellation using durable ARMED,
+   ACCEPTED and FINISHED records. A cancellation tombstone precedes OS cancellation;
+   stale workers and snapshots cannot re-arm it. Accepted receipts survive restart
+   and let server acknowledgement retry without repeating sound.
+2. Android notification acceptance checks runtime permission, app-wide notification
+   enablement and the selected channel. Blocked delivery is retryable, not fired.
+   Full string notification tags and scoped PendingIntent data prevent hash-collision
+   replacement. Work carries its captured account/gateway, not a guessed current user.
+3. Repository-level reminder consequences cover all UI entry points, including slash
+   creation. Future rows are scheduled at create/refresh; manual Resolve/Delete finishes
+   local ownership only after acknowledgement. Background ACK is separate so it cannot
+   cancel the notification it just posted. The custom boot-cache replay was removed:
+   WorkManager already persists work through reboot. KEEP avoids cancelling an active
+   worker during a refresh. Unowned legacy work is not attributed to a new account;
+   the next online foreground refresh schedules scoped replacements.
+4. SharedPreferences mutates memory even if commit fails. The adapter exposes only
+   confirmed writes to the delivery policy and forces subsequent persistence attempts.
+   A failed receipt write after OS acceptance does not replay sound in the same process.
+5. Swift's previous boolean receipt did not guard overlapping async enqueues or a
+   cancelled reminder arriving in an already-in-flight due response. Single-flight
+   tokens and terminal receipts now fence those races, retract late OS acceptance,
+   and scope both receipts and notification identifiers by gateway plus viewer.
+6. The reminders endpoint silently truncated at 100 rows. Timestamp+ID keyset paging
+   now traverses tied timestamps and deleted boundaries, and binds cursors to owner
+   and due/full filter. Both native transports collect all pages, reject looping cursors
+   and fail rather than treating a later-page failure as a complete list.
+7. Server Resolve was a read-then-write race and repeated DELETE could fail after a
+   lost ACK. Transactional Resolve preserves the original firedAt; owner-checked
+   Delete safely acknowledges an already-absent row.
+
+### Evidence and boundaries
+
+- Executed locally: **26/26 server tests**, including **7 new reminder contracts**;
+  existing SQL contracts **6/6**. Syntax parsing/diff checks passed.
+- Authored **17 native regressions**: Kotlin gate 8, Kotlin HTTP pagination 3,
+  Swift URLSession pagination 3, Swift async delivery/cancellation/gateway scope 3.
+  Native execution for these changes is pending, not inferred from f725d44.
+- OS enqueue acceptance does not prove a person saw the reminder. OS notification
+  posting and durable storage cannot be committed atomically: process death in that
+  small gap can still repeat an alert. WorkManager is persistent, not an exact alarm;
+  Doze, permission changes and OEM scheduling require hardware acceptance.
+- Remote deletion on another device while this device is offline cannot revoke an
+  already-scheduled local job without receiving that deletion. Global deletion sync,
+  iOS logout-time cleanup of already-scheduled alerts, and receipt retention limits
+  remain open. No whole-app or whole-reminder completion claim.
+
+References: Android persistent-work documentation and notification channel importance:
+https://developer.android.com/develop/background-work/background-tasks/persistent
+https://developer.android.com/develop/ui/compose/notifications/channels

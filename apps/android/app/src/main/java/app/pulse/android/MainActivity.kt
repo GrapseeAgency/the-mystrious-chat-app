@@ -161,6 +161,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -249,6 +250,8 @@ class ShellViewModel @Inject constructor(
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
+    @Inject lateinit var reminderDelivery: app.pulse.android.notify.ReminderDeliveryManager
+
     @Inject lateinit var repository: app.pulse.domain.repository.PulseRepository
 
     /** R10-a - biometric App lock: state holder + prompt presenter. */
@@ -295,20 +298,19 @@ class MainActivity : FragmentActivity() {
                 repeatOnLifecycle(Lifecycle.State.STARTED) {
                     while (true) {
                         runCatching {
-                            val due = repository.reminders(dueOnly = true).getOrNull()?.items.orEmpty()
-                            for (item in due) {
-                                app.pulse.android.notify.ReminderNotifier.show(
-                                    this@MainActivity,
-                                    item.id,
-                                    item.note.ifBlank { "Reminder" },
-                                    item.snippet ?: item.conversation.name,
-                                    // R2-C item 6 - the tap deep-links into the chat.
-                                    // R7 item 4 - the anchored message rides along so
-                                    // the room auto-jumps + flashes on open.
-                                    item.conversationId.ifBlank { null },
-                                    item.messageId,
-                                )
-                                runCatching { repository.resolveReminder(item.id) }
+                            val bound = repository.boundToCurrentAccount()
+                            val owner = bound.reminderDeliveryOwner()
+                            if (owner != null) {
+                                // Full refresh also arms future rows created on another device.
+                                val items = bound.reminders(dueOnly = false).getOrThrow().items
+                                for (item in items) {
+                                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                    val at = app.pulse.core.time.PulseTime.epochMs(item.remindAt)
+                                    if (item.firedAt != null || at <= 0 || at > System.currentTimeMillis()) continue
+                                    if (reminderDelivery.deliver(owner, item) == app.pulse.domain.notify.ReminderDeliveryGate.Verdict.ACCEPTED) {
+                                        bound.acknowledgeReminderDelivery(item.id)
+                                    }
+                                }
                             }
                         }
                         delay(30_000)

@@ -875,6 +875,9 @@ interface PulseRepository {
     suspend fun createReminder(conversationId: String, messageId: String?, note: String?, remindAtIso: String): Result<ReminderItemDto>
 
     /** PATCH reminder - owner-only resolve (due loop calls after the nudge). */
+    fun reminderDeliveryOwner(): app.pulse.domain.notify.ReminderOwner? = null
+    /** Background delivery acknowledgement must not remove the just-posted alert. */
+    suspend fun acknowledgeReminderDelivery(reminderId: String): Result<ReminderResolveDto> = resolveReminder(reminderId)
     suspend fun resolveReminder(reminderId: String): Result<ReminderResolveDto>
 
     /** DELETE reminder - owner-only cancel (also unschedules the local notification). */
