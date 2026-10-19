@@ -1,5 +1,7 @@
 package app.pulse.data.repository
 
+import androidx.room.withTransaction
+import app.pulse.data.local.PulseDatabase
 import android.content.Context
 import android.util.Log
 import app.pulse.core.result.PulseResult
@@ -203,6 +205,7 @@ private const val STORY_TTL_MS: Long = 24L * 60 * 60 * 1000
 @Singleton
 class PulseRepositoryImpl @Inject constructor(
     private val api: PulseApi,
+    private val database: PulseDatabase,
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val outboxDao: OutboxDao,
@@ -558,26 +561,9 @@ class PulseRepositoryImpl @Inject constructor(
             )
         } else {
             messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-            dedupeTempEchoes(message)
             eventsBus.tryEmit(PulseEvent.MessageReceived(signal.conversationId, message))
         }
         scheduleConversationsRefresh()
-    }
-
-    /**
-     * Optimistic dedupe (spec §1.2): when a REAL row lands, every still-queued
-     * `local_` echo of the same sender+body that predates it is retired - the
-     * flush engine's own clientId swap stays the primary reconcile path.
-     */
-    private suspend fun dedupeTempEchoes(real: Message) {
-        if (real.body.isBlank() || real.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) return
-        val realAt = PulseTime.epochMs(real.createdAt)
-        if (realAt <= 0L) return
-        val echoes = runCatching {
-            messageDao.tempEchoes(real.conversationId, real.authorId, real.body, real.id)
-        }.getOrDefault(emptyList())
-        val stale = echoes.filter { PulseTime.epochMs(it.createdAt) <= realAt }.map { it.id }
-        if (stale.isNotEmpty()) messageDao.deleteByIds(stale)
     }
 
     private var refreshScheduled = false
@@ -906,28 +892,34 @@ class PulseRepositoryImpl @Inject constructor(
         // keystroke-to-send beat, not after the round-trip. The same clientId
         // then either reconciles with the real row, rides the outbox, or is
         // retracted on a definitive failure.
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
             .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         val temp = Message(
             id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
             conversationId = conversationId,
-            authorId = viewerId ?: "",
+            authorId = owner,
             authorName = viewerId ?: "",
             kind = Message.Kind.TEXT,
             body = body,
             createdAt = nowIso,
             replyToId = replyToId,
             threadRootId = parentId,
-            topicId = topicId,
+            topicId = if (parentId == null) topicId else null,
         )
-        if (!viewerId.isNullOrBlank()) {
+        val durable = true
+        database.withTransaction {
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+            if (durable) outboxDao.insert(OutboxEntity(
+                conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
+            ))
         }
         return when (val r = api.sendMessage(
             conversationId = conversationId,
-            senderId = viewerId ?: "",
+            senderId = owner,
             content = body,
+            clientId = clientId,
             replyToId = replyToId,
             // THREAD REPLY rides `parentId` - NEVER conflated with replyToId (spec §1.1).
             parentId = parentId,
@@ -937,31 +929,29 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Success -> {
                 val receipt = r.value.toReceipt()
                 val message = receipt.message
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-                dedupeTempEchoes(message)
+                database.withTransaction {
+                    messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                    messageDao.deleteById(temp.id)
+                    outboxDao.deleteByClientId(clientId)
+                }
                 scheduleConversationsRefresh()
                 Result.success(receipt)
             }
-            is PulseResult.Failure ->
-                // Network-class failure → the optimistic offline core: the temp
-                // bubble STAYS + an outbox row waits for the flush engine.
-                // 4xx verdicts and non-queueable sends (threads/quotes, spec
-                // §1.2) retract the echo and surface the honest error.
-                if (r.kind == PulseResult.Failure.Kind.NETWORK && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
-                    outboxDao.insert(
-                        OutboxEntity(
-                            conversationId = conversationId,
-                            clientId = clientId,
-                            content = body,
-                            createdAt = nowIso,
-                        ),
-                    )
-                                eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
+            is PulseResult.Failure -> {
+                if (durable && r.kind !in setOf(PulseResult.Failure.Kind.VALIDATION,
+                        PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND)) {
+                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
                     Result.success(SendReceipt(message = temp, streak = null))
                 } else {
-                    messageDao.deleteById(temp.id)
+                    database.withTransaction {
+                        // Definitive refusal stays recoverable as a draft.
+                        draftDao.upsert(DraftEntity(conversationId, body, nowIso))
+                        outboxDao.deleteByClientId(clientId)
+                        messageDao.deleteById(temp.id)
+                    }
                     Result.failure(apiExceptionOf(r))
                 }
+            }
         }
     }
 
@@ -986,33 +976,39 @@ class PulseRepositoryImpl @Inject constructor(
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
             return demoSend(conversationId, body, replyToId, parentId, topicId)
         }
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
             .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         val temp = Message(
             id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
             conversationId = conversationId,
-            authorId = viewerId ?: "",
+            authorId = owner,
             authorName = viewerId ?: "",
             kind = Message.Kind.TEXT,
             body = body,
             createdAt = nowIso,
             replyToId = replyToId,
             threadRootId = parentId,
-            topicId = topicId,
+            topicId = if (parentId == null) topicId else null,
             anon = anon,
             // R3-B item 4 - the optimistic row wears the deterministic alias
             // the server will store (web optimistic-mask parity).
             anonAlias = anonAliasPreview.takeIf { anon },
         )
-        if (!viewerId.isNullOrBlank()) {
-            messageDao.upsertAll(listOf(MessageEntity.from(temp).copy(kind = (kind ?: "text").uppercase(java.util.Locale.ROOT), payloadJson = payload)))
+        val durable = !anon
+        database.withTransaction {
+            messageDao.upsertAll(listOf(MessageEntity.from(temp).copy(kind = kind.uppercase(java.util.Locale.ROOT), payloadJson = payload)))
+            if (durable) outboxDao.insert(OutboxEntity(
+                conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
+            ))
         }
         return when (
             val r = api.sendMessage(
                 conversationId = conversationId,
-                senderId = viewerId ?: "",
+                senderId = owner,
                 content = body,
+                clientId = clientId,
                 replyToId = replyToId,
                 parentId = parentId,
                 kind = kind,
@@ -1026,30 +1022,29 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Success -> {
                 val receipt = r.value.toReceipt()
                 val message = receipt.message
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-                dedupeTempEchoes(message)
+                database.withTransaction {
+                    messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                    messageDao.deleteById(temp.id)
+                    outboxDao.deleteByClientId(clientId)
+                }
                 scheduleConversationsRefresh()
                 Result.success(receipt)
             }
-            is PulseResult.Failure ->
-                // R3-B item 4 - an INCOGNITO send never queues offline: the
-                // outbox row carries no anon flag, so a flush would post the
-                // message UN-masked. Honest retract instead of a privacy lie.
-                if (r.kind == PulseResult.Failure.Kind.NETWORK && !anon && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
-                    outboxDao.insert(
-                        OutboxEntity(
-                            conversationId = conversationId,
-                            clientId = clientId,
-                            content = body,
-                            createdAt = nowIso,
-                        ),
-                    )
-                                eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
+            is PulseResult.Failure -> {
+                if (durable && r.kind !in setOf(PulseResult.Failure.Kind.VALIDATION,
+                        PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND)) {
+                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
                     Result.success(SendReceipt(message = temp, streak = null))
                 } else {
-                    messageDao.deleteById(temp.id)
+                    database.withTransaction {
+                        // Definitive refusal stays recoverable as a draft.
+                        draftDao.upsert(DraftEntity(conversationId, body, nowIso))
+                        outboxDao.deleteByClientId(clientId)
+                        messageDao.deleteById(temp.id)
+                    }
                     Result.failure(apiExceptionOf(r))
                 }
+            }
         }
     }
 
@@ -1244,6 +1239,7 @@ class PulseRepositoryImpl @Inject constructor(
      * media stays online-only per spec §1.2.
      */
     override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> {
+        val clientId = java.util.UUID.randomUUID().toString()
         val textOnly = source.kind == Message.Kind.TEXT &&
             source.imagePath == null && source.audioPath == null && source.filePath == null
         return when (
@@ -1251,6 +1247,7 @@ class PulseRepositoryImpl @Inject constructor(
                 conversationId = targetConversationId,
                 senderId = viewerId ?: "",
                 content = source.body,
+                clientId = clientId,
                 imagePath = source.imagePath,
                 audioPath = source.audioPath,
                 durationMs = source.durationMs,
@@ -1274,7 +1271,6 @@ class PulseRepositoryImpl @Inject constructor(
             }
             is PulseResult.Failure -> {
                 if (r.kind == PulseResult.Failure.Kind.NETWORK && textOnly && !viewerId.isNullOrBlank()) {
-                    val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
                     val nowIso = java.time.OffsetDateTime.now()
                         .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
                     val temp = Message(
@@ -1286,7 +1282,7 @@ class PulseRepositoryImpl @Inject constructor(
                         body = source.body,
                         createdAt = nowIso,
                     )
-                    messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+                    messageDao.upsertAll(listOf(MessageEntity.from(temp).copy(payloadJson = source.payload)))
                     outboxDao.insert(
                         OutboxEntity(
                             conversationId = targetConversationId,
@@ -1594,7 +1590,7 @@ class PulseRepositoryImpl @Inject constructor(
             temp == null || temp.authorId != owner || temp.conversationId != entry.conversationId
         ) return Result.failure(OutboxDeliveryException(OutboxFailureClass.RETRY, "Sign in to the message's original account to send it"))
         return when (val r = api.sendMessage(
-            entry.conversationId, owner, entry.content,
+            entry.conversationId, owner, entry.content, clientId = entry.clientId,
             replyToId = temp.replyToId, parentId = temp.threadRootId,
             topicId = temp.topicId, kind = temp.kind.lowercase(java.util.Locale.ROOT),
             payload = temp.payloadJson?.let { PulseJson.parseToJsonElement(it) as? kotlinx.serialization.json.JsonObject },
@@ -1614,10 +1610,11 @@ class PulseRepositoryImpl @Inject constructor(
     }
 
     override suspend fun resolveOutboxDelivery(entry: OutboxEntry, real: Message) {
-        messageDao.upsertAll(listOf(MessageEntity.from(real, reactionsJsonOf(real))))
-        messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
-        dedupeTempEchoes(real)
-        outboxDao.deleteByClientId(entry.clientId)
+        database.withTransaction {
+            messageDao.upsertAll(listOf(MessageEntity.from(real, reactionsJsonOf(real))))
+            messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+            outboxDao.deleteByClientId(entry.clientId)
+        }
         scheduleConversationsRefresh()
         eventsBus.tryEmit(PulseEvent.OutboxFlushed(entry.clientId, real))
     }

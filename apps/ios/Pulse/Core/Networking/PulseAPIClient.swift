@@ -202,6 +202,7 @@ public struct PulseAPIClient: Sendable {
     /// server whitelist is text|image|audio|sticker|location|file).
     public func sendMessage(
         conversationId: String,
+        clientId: String = UUID().uuidString,
         content: String,
         replyToId: String? = nil,
         parentId: String? = nil,
@@ -219,6 +220,7 @@ public struct PulseAPIClient: Sendable {
     ) async throws -> WireChatMessage {
         try await sendMessageWithStreak(
             conversationId: conversationId,
+            clientId: clientId,
             content: content,
             replyToId: replyToId,
             parentId: parentId,
@@ -244,6 +246,7 @@ public struct PulseAPIClient: Sendable {
     /// sendMessage wrapper above.
     public func sendMessageWithStreak(
         conversationId: String,
+        clientId: String = UUID().uuidString,
         content: String,
         replyToId: String? = nil,
         parentId: String? = nil,
@@ -259,7 +262,7 @@ public struct PulseAPIClient: Sendable {
         payload: [String: Any]? = nil,
         anon: Bool? = nil
     ) async throws -> PulseSendResult {
-        var body: [String: Any] = ["senderId": userId, "content": content, "kind": kind ?? "text"]
+        var body: [String: Any] = ["senderId": userId, "clientId": clientId, "content": content, "kind": kind ?? "text"]
         if let replyToId { body["replyToId"] = replyToId }
         if let parentId { body["parentId"] = parentId }
         if let imagePath { body["imagePath"] = imagePath }

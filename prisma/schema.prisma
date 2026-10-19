@@ -797,3 +797,14 @@ model PushToken {
 
   @@index([userId])
 }
+
+// Durable delivery receipt, intentionally retained after the message is deleted.
+model MessageSendOperation {
+  senderId       String
+  clientId       String
+  conversationId String
+  requestHash    String
+  messageId      String @unique
+
+  @@id([senderId, clientId])
+}

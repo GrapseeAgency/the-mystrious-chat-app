@@ -113,11 +113,12 @@ public final class PulseQuickReplyCoordinator {
             openRoom(conversationId)
             return
         }
+        let clientId = UUID().uuidString
         Task { [weak self] in
             do {
                 // The SAME send path ChatRoomView uses (identical POST
                 // /api/conversations/{id}/messages route).
-                _ = try await session.api.sendMessage(conversationId: conversationId, content: body)
+                _ = try await session.api.sendMessage(conversationId: conversationId, clientId: clientId, content: body)
                 NSLog("Pulse quick reply: delivered to %@", conversationId)
             } catch {
                 if PulseOutboxEngine.isDroppable(error) {
@@ -131,7 +132,7 @@ public final class PulseQuickReplyCoordinator {
                     // Network-class failure - the room's own semantics:
                     // ride the real offline queue (flushes on
                     // foreground/reconnect).
-                    session.enqueueOutbox(conversationId: conversationId, clientId: UUID().uuidString, content: body)
+                    session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
                     session.toasts.show("Message queued - sends when you're back online")
                 }
             }

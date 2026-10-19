@@ -169,10 +169,12 @@ struct PipPaneHostView: View {
         guard !body.isEmpty else { return }
         paneDraft = ""
         PulseHaptics.tap()
+        let clientId = UUID().uuidString
         Task {
             do {
                 _ = try await session.api.sendMessage(
                     conversationId: conversationId,
+                    clientId: clientId,
                     content: body,
                     replyToId: nil,
                     topicId: nil,
@@ -185,7 +187,7 @@ struct PipPaneHostView: View {
                     session.toasts.show("Couldn't send from the mini chat - kept as draft")
                     paneDraft = body
                 } else {
-                    session.enqueueOutbox(conversationId: conversationId, clientId: UUID().uuidString, content: body)
+                    session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
                     session.toasts.show("Message queued - sends when you're back online")
                 }
             }

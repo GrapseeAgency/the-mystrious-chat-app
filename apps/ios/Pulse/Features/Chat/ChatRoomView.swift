@@ -4481,10 +4481,14 @@ final class RoomViewModel: ObservableObject {
         // Wave 1 optimistic send - the temp bubble paints immediately and
         // swaps for the server row (web onMutate parity). Network-class
         // failure keeps the temp + queues the outbox (Wave 0 semantics).
-        guard let viewer = session.viewer else {
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            draft = body
             errorText = "The gateway is unreachable."
             return
         }
+        let epoch = session.sessionGeneration
+        let client = session.api
+        let sendTopicId = activeTopicId
         let clientId = UUID().uuidString
         // REM-B F-MS-17 - groups only: armed mask + the server's deterministic
         // FNV-1a alias (the optimistic bubble shows the exact stored alias).
@@ -4503,19 +4507,34 @@ final class RoomViewModel: ObservableObject {
             anon: anonAlias != nil,
             anonAlias: anonAlias,
         )
+        do {
+            try store.enqueueMessage(temp, clientId: clientId, envelope: PulseOutboxForward(
+                replyToId: replyId, topicId: sendTopicId, anon: anonAlias != nil))
+        } catch {
+            draft = body
+            replyTarget = replySource
+            errorText = "Message was not queued: local storage is unavailable. Your draft is kept."
+            return
+        }
         upsert(temp)
-        try? session.store?.upsert(messages: [temp])
+        session.outbox?.reloadPending()
         Task { [weak self] in
-            guard let self else { return }
+            guard let self, session.sessionGeneration == epoch else { return }
             do {
-                let result = try await session.api.sendMessageWithStreak(
+                let result = try await client.sendMessageWithStreak(
                     conversationId: conversationId,
+                    clientId: clientId,
                     content: body,
                     replyToId: replyId,
-                    topicId: activeTopicId,
+                    topicId: sendTopicId,
                     anon: anonAlias != nil,
                 )
-                self.swapTemp(temp.id, for: result.message, session: session)
+                // Commit to the captured account, even if logout happened in flight.
+                try store.resolveDelivery(clientId: clientId, message: result.message)
+                guard session.sessionGeneration == epoch else { return }
+                session.outbox?.reloadPending()
+                self.messages.removeAll { $0.id == temp.id }
+                self.upsert(result.message)
                 self.clearDraft(session: session)
                 // R5-A Item 5 - streak nudge (web chat-room.tsx:1736-1751):
                 // fires ONLY when THIS send GREW the streak (second-or-later
@@ -4548,43 +4567,29 @@ final class RoomViewModel: ObservableObject {
                     self.triggerUnfurl(for: result.message, viewerId: viewer.id, session: session)
                 }
             } catch {
-                // REM-B F-MS-20 - slow mode: 429 + retryAfter arms the
-                // composer countdown lock (web backoff parity).
-                if let failure = error as? PulseAPIClient.Failure,
-                   failure.status == 429, let wait = failure.retryAfter, wait > 0 {
+                guard session.sessionGeneration == epoch else { return }
+                if PulseOutboxEngine.isDroppable(error) {
+                    // Preserve rejected content; never silently discard the composer.
+                    do {
+                        try store.saveDraft(conversationId: conversationId, text: body)
+                        try store.deleteOutbox(clientId: clientId)
+                        try store.deleteMessage(id: temp.id)
+                    } catch {
+                        self.errorText = "Could not update local storage; pending data was retained."
+                        return
+                    }
                     self.messages.removeAll { $0.id == temp.id }
-                    try? session.store?.deleteMessage(id: temp.id)
                     self.draft = body
-                    self.armSlowModeLock(seconds: wait)
-                    self.errorText = Self.describe(error)
-                } else if PulseOutboxEngine.isDroppable(error) {
-                    self.messages.removeAll { $0.id == temp.id }
-                    try? session.store?.deleteMessage(id: temp.id)
+                    self.replyTarget = replySource
                     self.errorText = Self.describe(error)
                 } else {
-                    // R4-A privacy repair (orchestrator) - an incognito send
-                    // NEVER rides the outbox: the queue payload is
-                    // content-only, so a later flush would post the text
-                    // UN-masked (identity leak). Android parity (R3-B
-                    // PulseRepositoryImpl :812-818): retract the optimistic
-                    // bubble, keep the draft, keep the mask armed - privacy
-                    // over delivery.
-                    if wasAnonArmed {
-                        self.messages.removeAll { $0.id == temp.id }
-                        try? session.store?.deleteMessage(id: temp.id)
-                        self.draft = body
-                        session.toasts.show("Incognito needs a live connection - message kept in the composer")
-                    } else {
-                        // Temp row stays (queued clock) - outbox flush reconciles.
-                        // R4-A item 2 - a QUEUED send is not a server-accepted
-                        // send: the mask stays armed (PulseRoomParityLogic
-                        // .anonDisarmAfterSend false branch - Android
-                        // :560-564 parity; the manual disarm path above the
-                        // composer still works).
-                        session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
-                        session.toasts.show("Message queued - sends when you're back online")
+                    if let failure = error as? PulseAPIClient.Failure,
+                       failure.status == 429, let wait = failure.retryAfter, wait > 0 {
+                        self.armSlowModeLock(seconds: wait)
                     }
+                    session.toasts.show("Message saved in the outbox; delivery will retry")
                 }
+                session.outbox?.reloadPending()
             }
         }
     }
@@ -4851,31 +4856,21 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    /// Temp → real reconciliation: swap by id AND dedupe any optimistic row
-    /// with the same sender + content (web sendMessage.onSuccess parity).
+    /// Only the acknowledged operation is retired. Identical sends are distinct.
     private func swapTemp(_ tempId: String, for message: WireChatMessage, session: PulseSession) {
-        messages.removeAll {
-            $0.id == tempId
-                || ($0.id.hasPrefix("local_") && $0.content == message.content && $0.senderId == message.senderId)
-        }
+        messages.removeAll { $0.id == tempId }
         upsert(message)
-        try? session.store?.upsert(messages: [message])
-        try? session.store?.deleteMessage(id: tempId)
+        let clientId = String(tempId.dropFirst("local_".count))
+        do { try session.store?.resolveDelivery(clientId: clientId, message: message) }
+        catch { self.errorText = "Delivered, but local storage could not be updated. Pending data was retained." }
     }
 
-    /// Wave 0 outbox reconciliation - the engine swapped/removed a queued
-    /// placeholder (text sends only; spec §1.2).
     private func handleOutboxEvent(_ event: PulseOutboxEvent) {
         switch event {
-        case .delivered(let message, let conversationId):
+        case .delivered(let message, let conversationId, let clientId):
             guard conversationId == self.conversationId else { return }
             upsert(message)
-            // Generic temp dedupe (web parity): same content + sender.
-            messages.removeAll {
-                $0.id.hasPrefix("local_")
-                    && $0.content == message.content
-                    && $0.senderId == message.senderId
-            }
+            messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
         case .dropped(let clientId, let conversationId):
             guard conversationId == self.conversationId else { return }
             messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }

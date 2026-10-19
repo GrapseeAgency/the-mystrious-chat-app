@@ -371,6 +371,26 @@ public final class PulseStore: Sendable {
         )
     }
 
+    /// Persist operation and optimistic bubble before any network I/O.
+    public func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward) throws {
+        guard let payload = PulseOutboxForward.encode(envelope) else { throw CocoaError(.coderInvalidValue) }
+        try dbQueue.write { db in
+            try Self.writeMessage(message, db: db)
+            try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
+                content: message.content, kind: envelope.kind ?? "text", createdAt: PulseOutboxClock.now(),
+                attempts: 0, payloadJson: payload).insert(db)
+        }
+    }
+
+    /// The acknowledgement is one SQLite transaction, never three independent writes.
+    public func resolveDelivery(clientId: String, message: WireChatMessage) throws {
+        try dbQueue.write { db in
+            try Self.writeMessage(message, db: db)
+            try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
+            try db.execute(sql: "DELETE FROM outbox WHERE clientId = ?", arguments: [clientId])
+        }
+    }
+
     public func deleteMessage(id: String) throws {
         _ = try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM message WHERE id = :id", arguments: ["id": id])

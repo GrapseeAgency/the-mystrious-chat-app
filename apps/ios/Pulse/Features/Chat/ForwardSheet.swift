@@ -228,9 +228,11 @@ struct ForwardSheet: View {
             var delivered = 0
             var queued = 0
             for target in targets {
+                let clientId = UUID().uuidString
                 do {
                     _ = try await session.api.sendMessage(
                         conversationId: target.id,
+                        clientId: clientId,
                         content: source.content,
                         imagePath: source.imagePath,
                         audioPath: source.audioPath,
@@ -251,7 +253,7 @@ struct ForwardSheet: View {
                     // engine flushes it on reconnect/foreground/heal.
                     session.enqueueOutbox(
                         conversationId: target.id,
-                        clientId: UUID().uuidString,
+                        clientId: clientId,
                         content: source.content,
                         kind: forward.kind ?? "text",
                         payloadJson: PulseOutboxForward.encode(forward),

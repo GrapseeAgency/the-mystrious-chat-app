@@ -332,6 +332,7 @@ class PulseApi(
         conversationId: String,
         senderId: String,
         content: String,
+        clientId: String = java.util.UUID.randomUUID().toString(),
         replyToId: String? = null,
         parentId: String? = null,
         imagePath: String? = null,
@@ -352,6 +353,7 @@ class PulseApi(
             "/api/conversations/$conversationId/messages",
             buildJsonObject {
                 put("senderId", senderId)
+                put("clientId", clientId)
                 put("content", content)
                 put("kind", kind ?: "text")
                 if (replyToId != null) put("replyToId", replyToId)

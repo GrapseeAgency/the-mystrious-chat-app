@@ -18,6 +18,8 @@ final class PulseOutboxTests: XCTestCase {
         private let lock = NSLock()
         private var behaviors: [String: Behavior]
         private var attempted: [String] = []
+        private(set) var operationIds: [String] = []
+        private(set) var metadata: [String] = []
         /// R1-W2B D28 - every sendMessage's forward-relevant body, recorded
         /// as "kind|imagePath|audioPath|durationMs|filePath|fileName|fileSize"
         /// so the flush pass-through is pinned in tests.
@@ -52,6 +54,7 @@ final class PulseOutboxTests: XCTestCase {
         // every media/thread field - queued sends stay text-only).
         func sendMessage(
             conversationId: String,
+            clientId: String,
             content: String,
             replyToId: String?,
             parentId: String?,
@@ -69,6 +72,8 @@ final class PulseOutboxTests: XCTestCase {
         ) async throws -> WireChatMessage {
             lock.lock()
             attempted.append(content)
+            operationIds.append(clientId)
+            metadata.append("\(replyToId ?? "nil")|\(topicId ?? "nil")|\(anon == true)")
             attemptedBodies.append(
                 "\(kind ?? "nil")|\(imagePath ?? "nil")|\(audioPath ?? "nil")|\(durationMs.map { String($0) } ?? "nil")|\(filePath ?? "nil")|\(fileName ?? "nil")|\(fileSize.map { String($0) } ?? "nil")",
             )
@@ -290,9 +295,48 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(store.countOutbox(), 0)
         XCTAssertEqual(
             sender.recordedBody(at: 0),
-            "nil|nil|nil|nil|nil|nil|nil",
+            "text|nil|nil|nil|nil|nil|nil",
         )
     }
+    func testRetriesKeepTheOperationIdAndQuotedTopicMetadata() async throws {
+        let store = try PulseStore()
+        let sender = StubSender(behaviors: ["pending": .networkError])
+        let envelope = PulseOutboxForward(replyToId: "quote", topicId: "topic", anon: true)
+        try store.appendOutbox(conversationId: "c1", clientId: "operation-stable-id", content: "pending",
+                               payloadJson: PulseOutboxForward.encode(envelope))
+        let engine = makeEngine(store, sender)
+        await engine.flush()
+        await engine.flush()
+        XCTAssertEqual(sender.operationIds, ["operation-stable-id", "operation-stable-id"])
+        XCTAssertEqual(sender.metadata, ["quote|topic|true", "quote|topic|true"])
+        XCTAssertEqual(store.countOutbox(), 1)
+        engine.stop()
+    }
+
+    func testExactAcknowledgementRetainsAnotherIdenticalPendingSend() throws {
+        let store = try PulseStore()
+        let a = OutboxFixtures.makeMessage(id: "local_operation-a", conversationId: "c1", content: "same")
+        let b = OutboxFixtures.makeMessage(id: "local_operation-b", conversationId: "c1", content: "same")
+        try store.enqueueMessage(a, clientId: "operation-a", envelope: PulseOutboxForward())
+        try store.enqueueMessage(b, clientId: "operation-b", envelope: PulseOutboxForward())
+        try store.resolveDelivery(clientId: "operation-a", message: OutboxFixtures.makeMessage(id: "real-a", conversationId: "c1", content: "same"))
+        XCTAssertEqual(try store.outboxAll().map(\.clientId), ["operation-b"])
+        // Replay the same acknowledgement: still no effect on operation B.
+        try store.resolveDelivery(clientId: "operation-a", message: OutboxFixtures.makeMessage(id: "real-a", conversationId: "c1", content: "same"))
+        XCTAssertEqual(store.countOutbox(), 1)
+    }
+
+    func testMalformedEnvelopeIsRetainedRatherThanSendingAlteredContent() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "operation-corrupt", content: "private", payloadJson: "not-json")
+        let sender = StubSender(behaviors: [:])
+        let engine = makeEngine(store, sender)
+        await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "private"), 0)
+        XCTAssertEqual(store.countOutbox(), 1)
+        engine.stop()
+    }
+
 }
 
 /// Shared fixture builder - WireChatMessage's memberwise init is internal,

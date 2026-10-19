@@ -14,6 +14,7 @@ import Network
 public protocol PulseOutboxSending: Sendable {
     func sendMessage(
         conversationId: String,
+        clientId: String,
         content: String,
         replyToId: String?,
         parentId: String?,
@@ -46,9 +47,17 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
     public var filePath: String?
     public var fileName: String?
     public var fileSize: Int?
+    public var replyToId: String?
+    public var parentId: String?
+    public var topicId: String?
+    public var payload: String?
+    public var anon: Bool?
+    public var viewOnce: Bool?
 
-    public init(kind: String?, imagePath: String?, audioPath: String?, durationMs: Double?,
-                filePath: String?, fileName: String?, fileSize: Int?) {
+    public init(kind: String? = nil, imagePath: String? = nil, audioPath: String? = nil, durationMs: Double? = nil,
+                filePath: String? = nil, fileName: String? = nil, fileSize: Int? = nil,
+                replyToId: String? = nil, parentId: String? = nil, topicId: String? = nil,
+                payload: String? = nil, anon: Bool? = nil, viewOnce: Bool? = nil) {
         self.kind = kind
         self.imagePath = imagePath
         self.audioPath = audioPath
@@ -56,6 +65,12 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
         self.filePath = filePath
         self.fileName = fileName
         self.fileSize = fileSize
+        self.replyToId = replyToId
+        self.parentId = parentId
+        self.topicId = topicId
+        self.payload = payload
+        self.anon = anon
+        self.viewOnce = viewOnce
     }
 
     /// Serialized for the outbox row (nil-safe: a failed encode → nil payload
@@ -178,6 +193,11 @@ public final class PulseOutboxEngine: ObservableObject {
     }
 
     /// Total held messages across conversations.
+    public func reloadPending() {
+        pendingCount = store.countOutbox()
+        if pendingCount > 0 && !stopped { startHealTimer() }
+    }
+
     public func count() -> Int {
         pendingCount
     }
@@ -215,27 +235,33 @@ public final class PulseOutboxEngine: ObservableObject {
                 // media paths (web ForwardPayload parity); plain sends keep
                 // the text-only body.
                 let forward = PulseOutboxForward.decode(entry.payloadJson)
+                if entry.payloadJson != nil && forward == nil { throw CocoaError(.coderReadCorrupt) }
                 let real = try await sender.sendMessage(
                     conversationId: entry.conversationId,
+                    clientId: entry.clientId,
                     content: entry.content,
-                    replyToId: nil,
-                    parentId: nil,
+                    replyToId: forward?.replyToId,
+                    parentId: forward?.parentId,
                     imagePath: forward?.imagePath,
                     audioPath: forward?.audioPath,
                     durationMs: forward?.durationMs,
                     filePath: forward?.filePath,
                     fileName: forward?.fileName,
                     fileSize: forward?.fileSize,
-                    kind: forward?.kind,
-                    viewOnce: nil,
-                    topicId: nil,
-                    payload: nil,
-                    anon: nil
+                    kind: forward?.kind ?? entry.kind,
+                    viewOnce: forward?.viewOnce,
+                    topicId: forward?.topicId,
+                    payload: try forward?.payload.map { raw in
+                        guard let data = raw.data(using: .utf8),
+                              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                            throw CocoaError(.coderReadCorrupt)
+                        }
+                        return object
+                    },
+                    anon: forward?.anon
                 )
                 guard !stopped, !Task.isCancelled else { return false }
-                try store.upsert(messages: [real])
-                try store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))
-                if let id = entry.id { try store.deleteOutbox(id: id) }
+                try store.resolveDelivery(clientId: entry.clientId, message: real)
                 pendingCount = store.countOutbox()
                 onEvent?(.delivered(message: real, conversationId: entry.conversationId, clientId: entry.clientId))
             } catch {
@@ -265,6 +291,7 @@ public final class PulseOutboxEngine: ObservableObject {
     /// 60s sweep while entries exist - recovers from triggers the app missed
     /// (killed mid-flush, missed reconnect, …).
     private func startHealTimer() {
+        guard !stopped else { return }
         guard healTask == nil else { return }
         healTask = Task { [weak self] in
             while !Task.isCancelled {

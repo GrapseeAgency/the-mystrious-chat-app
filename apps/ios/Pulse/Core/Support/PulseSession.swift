@@ -4,7 +4,7 @@ import Combine
 /// Outbox events relayed to feature view models (the open room swaps its
 /// queued placeholder for the real row; drops remove it honestly).
 public enum PulseOutboxEvent: Sendable {
-    case delivered(message: WireChatMessage, conversationId: String)
+    case delivered(message: WireChatMessage, conversationId: String, clientId: String)
     case dropped(clientId: String, conversationId: String)
 }
 
@@ -105,6 +105,7 @@ public final class PulseSession: ObservableObject {
     @Published public private(set) var startupError: String?
     @Published public private(set) var isForeground = false
     private var generation = UUID()
+    public var sessionGeneration: UUID { generation }
     private var startupTask: Task<Void, Never>?
 
     public func setForeground(_ active: Bool) {
@@ -451,9 +452,9 @@ public final class PulseSession: ObservableObject {
 
     private func routeOutboxEvent(_ event: PulseOutboxEngine.Event) {
         switch event {
-        case .delivered(let message, let conversationId, _):
+        case .delivered(let message, let conversationId, let clientId):
             realtimeRefreshTick += 1
-            outboxEvents.send(.delivered(message: message, conversationId: conversationId))
+            outboxEvents.send(.delivered(message: message, conversationId: conversationId, clientId: clientId))
         case .dropped(let clientId, let conversationId, let reason):
             outboxEvents.send(.dropped(clientId: clientId, conversationId: conversationId))
             toasts.show(reason.isEmpty ? "A queued message could not be delivered" : "Message not sent - \(reason)")

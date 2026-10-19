@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { db } from '@/lib/db'
+import { messageOperation, replayMessageOperation, commitMessageOperation, MessageOperationError } from '@/lib/message-operation'
 import {
   dayKey,
   mapMessage,
@@ -225,6 +226,34 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!senderId) {
     return NextResponse.json({ error: 'senderId is required.' }, { status: 400 })
   }
+  // Existence + membership checks up-front → clean 404 / 403 semantics.
+  const [conv, participant] = await Promise.all([
+    db.conversation.findUnique({ where: { id } }),
+    db.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId: senderId, conversationId: id } },
+      select: { id: true, role: true },
+    }),
+  ])
+  if (!conv) {
+    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  }
+  if (!participant) {
+    return NextResponse.json(
+      { error: 'You are not a participant of this conversation.' },
+      { status: 403 },
+    )
+  }
+
+  const findDelivered = (messageId: string) => db.message.findUnique({ where: { id: messageId }, include: MESSAGE_FULL_INCLUDE })
+  let operation: ReturnType<typeof messageOperation>
+  try {
+    operation = messageOperation(senderId, id, body)
+    const replay = await replayMessageOperation(db, operation, findDelivered)
+    if (replay) return NextResponse.json({ message: mapMessage(replay, senderId), replayed: true, xpAwarded: 0 })
+  } catch (error) {
+    if (error instanceof MessageOperationError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
+  }
   const content = strField(body.content)
   if (content.length > MESSAGE_MAX) {
     return NextResponse.json(
@@ -433,24 +462,6 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
   }
 
-  // Existence + membership checks up-front → clean 404 / 403 semantics.
-  const [conv, participant] = await Promise.all([
-    db.conversation.findUnique({ where: { id } }),
-    db.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId: senderId, conversationId: id } },
-      select: { id: true, role: true },
-    }),
-  ])
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-  }
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-
   // Broadcast mode (Discord stage / Telegram channel): admins only post.
   if (conv.isGroup && conv.broadcastMode && participant.role !== 'admin') {
     return NextResponse.json(
@@ -567,7 +578,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   // Anonymous flag only applies inside groups; DM sends stay named.
   const anon = anonRequested && conv.isGroup
   const anonAlias = anon ? anonAliasFor(senderId, id) : null
-  const message = await db.$transaction(async (tx) => {
+  const committed = await commitMessageOperation(db, operation, async (tx) => {
     const created = await tx.message.create({
       data: {
         conversationId: id,
@@ -615,7 +626,13 @@ export async function POST(req: Request, { params }: RouteCtx) {
       data: { archivedAt: null },
     })
     return created
+  }, findDelivered).catch(error => {
+    if (error instanceof MessageOperationError) return error
+    throw error
   })
+  if (committed instanceof MessageOperationError) return NextResponse.json({ error: committed.message }, { status: committed.status })
+  const { message, replayed } = committed
+  if (replayed) return NextResponse.json({ message: mapMessage(message, senderId), replayed: true, xpAwarded: 0 })
 
   // Realtime relay to every OTHER member (sender handles self via response).
   // The `native` block is the parse-free device contract: native clients
