@@ -1070,3 +1070,11 @@ Document import now recognizes supported filenames when a provider reports gener
 Previously valid PDFs/ZIPs could be rejected solely because of the provider's MIME
 label. Added a JVM case for generic/parameterized MIME and unsupported binary data.
 Syntax/diff checks pass; native verification is pending.
+
+Attachment Send validation now reads/hashes/decodes bytes on IO before opening
+Room's write transaction, then compares the immutable file reference and metadata
+inside the transaction. A large document must not hold the database writer lock
+while reading storage. Delivery also rechecks pending intent after upload-file
+cleanup, which can suspend while a user discards the row. This prevents starting a
+POST for an observed removed row; it cannot recall a request already in flight or
+already accepted remotely. Removed obsolete comments describing media as online-only.

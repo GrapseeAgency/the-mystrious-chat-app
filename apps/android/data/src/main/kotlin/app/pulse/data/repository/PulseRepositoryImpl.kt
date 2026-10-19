@@ -1135,9 +1135,8 @@ class PulseRepositoryImpl constructor(
     // Wave 1 messaging surface (spec §1.1 - every route exists today)
 
     /**
-     * MEDIA send - the online-only leg (spec §1.2: media is NEVER queued).
-     * No optimistic echo: the staged card in the composer is the progress UI;
-     * failures surface on it with a retry, never an outbox row.
+     * Media is saved before upload. Drafts restore without sending; explicit
+     * Send transfers their immutable file reference into the existing outbox.
      */
     private fun attachmentFiles(): app.pulse.data.local.AttachmentFiles {
         val owner = checkNotNull(reminderOwner) { "A verified account is required for attachment storage" }
@@ -1189,6 +1188,13 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun queueAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, topicId: String?, sessionKey: String): Result<Message> = try {
         val owner = requireAttachmentSession(sessionKey)
+        val snapshot = database.attachmentDraftDao().get(conversationId)
+        val prepared = snapshot?.takeIf { it.selectionId == selectionId }?.let { record ->
+            withContext(Dispatchers.IO) {
+                app.pulse.data.local.AttachmentValidation.validated(
+                    record.toDomain(attachmentFiles().read(record.fileKey)).copy(caption = caption, viewOnce = viewOnce))
+            }
+        }
         val message = database.withTransaction {
             requireAttachmentSession(sessionKey)
             val saved = database.attachmentDraftDao().get(conversationId)
@@ -1199,7 +1205,10 @@ class PulseRepositoryImpl constructor(
                 return@withTransaction checkNotNull(echo).toDomain()
             }
             val record = checkNotNull(saved)
-            val draft = app.pulse.data.local.AttachmentValidation.validated(record.toDomain(attachmentFiles().read(record.fileKey)).copy(caption = caption, viewOnce = viewOnce))
+            // Hashing/decoding multi-MB files must not hold Room's writer lock.
+            // The immutable reference and metadata must still match that read.
+            check(record.fileKey == snapshot?.fileKey && record.metadataJson == snapshot?.metadataJson) { "Attachment changed while preparing Send" }
+            val draft = checkNotNull(prepared) { "Attachment is no longer ready" }
             val temp = Message(id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + selectionId,
                 conversationId = conversationId, authorId = owner, authorName = owner, kind = kindOf(draft.kind),
                 body = caption, createdAt = java.time.Instant.now().toString(), durationMs = draft.durationMs,
@@ -1790,6 +1799,11 @@ class PulseRepositoryImpl constructor(
             }
         } catch (_: Exception) {
             return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Saved message payload is damaged"))
+        }
+        // Receipt cleanup suspends; a user may discard the row during it.
+        // Do not start a POST for an intent observed to have been removed.
+        if (outboxDao.pendingByClientId(entry.clientId) == null) {
+            return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Message was discarded before sending"))
         }
         return when (val r = api.sendMessage(
             entry.conversationId, owner, entry.content, clientId = entry.clientId,

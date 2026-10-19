@@ -994,7 +994,7 @@ class ChatRoomViewModel @Inject constructor(
                 persistedAttachmentId = id
                 _state.value = _state.value.copy(staged = _state.value.staged?.copy(uploading = false, saved = true, error = null))
                 _state.value.staged?.let { persistAttachmentEdits(it) }
-                if (selected.kind == StagedMedia.Kind.AUDIO) File(selected.localUri).delete() // SQLite owns the bytes now.
+                if (selected.kind == StagedMedia.Kind.AUDIO) File(selected.localUri).delete() // The account-private journal owns the bytes now.
                 if (autoSend) sendStaged(_state.value.staged?.caption.orEmpty())
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
                 if (isActive) stageFailed(id, error.message ?: "Couldn't save this attachment")
