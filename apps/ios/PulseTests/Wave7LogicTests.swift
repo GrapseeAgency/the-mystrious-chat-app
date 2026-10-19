@@ -95,6 +95,8 @@ final class Wave7LogicTests: XCTestCase {
     func testGameAndTournamentPayloadDecode() {
         XCTAssertEqual(PulseWave7Logic.gamePayload(#"{"matchId":"m1","game":"tictactoe"}"#)?.matchId, "m1")
         XCTAssertNil(PulseWave7Logic.gamePayload(nil))
+        XCTAssertNil(PulseWave7Logic.gamePayload(#"{"matchId":" "}"#))
+        XCTAssertNil(PulseWave7Logic.tournamentPayload(#"{"tournamentId":""}"#))
         XCTAssertEqual(PulseWave7Logic.tournamentPayload(#"{"tournamentId":"t1","name":"Friday","game":"tictactoe"}"#)?.tournamentId, "t1")
     }
 

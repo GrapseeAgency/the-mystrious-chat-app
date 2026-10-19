@@ -115,12 +115,16 @@ public enum PulseWave7Logic {
 
     public static func gamePayload(_ payload: String?) -> WireGamePayload? {
         guard let payload, !payload.isEmpty else { return nil }
-        return try? JSONDecoder().decode(WireGamePayload.self, from: Data(payload.utf8))
+        guard let result = try? JSONDecoder().decode(WireGamePayload.self, from: Data(payload.utf8)),
+              !result.matchId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return result
     }
 
     public static func tournamentPayload(_ payload: String?) -> WireTournamentPayload? {
         guard let payload, !payload.isEmpty else { return nil }
-        return try? JSONDecoder().decode(WireTournamentPayload.self, from: Data(payload.utf8))
+        guard let result = try? JSONDecoder().decode(WireTournamentPayload.self, from: Data(payload.utf8)),
+              !result.tournamentId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return result
     }
 
     // MARK: tic-tac-toe board

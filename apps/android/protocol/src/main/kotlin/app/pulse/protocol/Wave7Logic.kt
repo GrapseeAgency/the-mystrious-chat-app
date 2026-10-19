@@ -80,13 +80,13 @@ object PulseWave7Logic {
     /** Tolerant decode of a game message payload (raw JSON string). */
     fun gamePayload(payload: String?): GamePayloadDto? {
         if (payload.isNullOrBlank()) return null
-        return runCatching { PulseJson.decodeFromString(GamePayloadDto.serializer(), payload) }.getOrNull()
+        return runCatching { PulseJson.decodeFromString(GamePayloadDto.serializer(), payload) }.getOrNull()?.takeIf { it.matchId.isNotBlank() }
     }
 
     /** Tolerant decode of a tournament message payload (raw JSON string). */
     fun tournamentPayload(payload: String?): TournamentPayloadDto? {
         if (payload.isNullOrBlank()) return null
-        return runCatching { PulseJson.decodeFromString(TournamentPayloadDto.serializer(), payload) }.getOrNull()
+        return runCatching { PulseJson.decodeFromString(TournamentPayloadDto.serializer(), payload) }.getOrNull()?.takeIf { it.tournamentId.isNotBlank() }
     }
 
     /** R1-W2A - tolerant decode of a sticker message payload ({emoji,pack}). */

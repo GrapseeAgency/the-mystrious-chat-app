@@ -232,6 +232,7 @@ fun TicTacToeCard(
     // message arrives via the normal message stream.
     onRematch: suspend (GameMatchDto) -> Boolean = { false },
 ) {
+    if (matchId.isBlank()) { Text("Game link unavailable"); return }
     androidx.compose.runtime.key(matchId, viewerId) {
         TicTacToeContent(matchId, viewerId, initial, load, onMove, onJoin, onRematch)
     }
@@ -454,6 +455,7 @@ fun TournamentCard(
     onJoin: suspend () -> Boolean,
     onFinish: suspend () -> Boolean,
 ) {
+    if (tournamentId.isBlank()) { Text("Tournament link unavailable"); return }
     androidx.compose.runtime.key(tournamentId, viewerId) {
         TournamentContent(tournamentId, name, viewerId, isAdmin, load, onJoin, onFinish)
     }

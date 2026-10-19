@@ -101,6 +101,9 @@ class Wave7LogicTest {
         val p = PulseWave7Logic.gamePayload("""{"matchId":"m1","game":"tictactoe"}""")!!
         assertEquals("m1", p.matchId)
         assertNull(PulseWave7Logic.gamePayload(null))
+        assertNull(PulseWave7Logic.gamePayload("{}"))
+        assertNull(PulseWave7Logic.gamePayload("""{"matchId":" "}"""))
+        assertNull(PulseWave7Logic.tournamentPayload("""{"tournamentId":""}"""))
     }
 
     @Test

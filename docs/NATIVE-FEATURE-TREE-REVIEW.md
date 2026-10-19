@@ -803,3 +803,10 @@ latest-running-season scoring policy is retained. Finishing permission UI still
 uses creator identity; complete admin-capability discovery is not added. Legacy
 identity/read authorization remains unchanged; this does not claim secure caller
 authentication. Other native feature trees and older room paths still need work.
+
+Follow-up inspection: blank/missing game or tournament IDs in old/malformed
+message payloads could still start endless invalid-URL polling in the alternate
+renderer. Both shared payload parsers now reject blank IDs, and the alternate
+Android cards show an unavailable-link state without starting a request. Mirror
+already had this payload guard. 05c881e server and web workflows have passed;
+its native workflows are not yet verified.
