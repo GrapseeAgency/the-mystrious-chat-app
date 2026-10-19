@@ -39,6 +39,8 @@ final class PulseDraftJournal {
         Self.snapshots[key] = Snapshot(owner: owner, revision: 0, text: pending)
     }
 
+    var isCurrentOwner: Bool { Self.snapshots[key]?.owner == owner }
+
     var snapshot: String? {
         Self.snapshots[key]?.text ?? store.draftSnapshot(conversationId: room)
     }

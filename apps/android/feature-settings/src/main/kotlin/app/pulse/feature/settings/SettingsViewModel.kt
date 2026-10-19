@@ -315,6 +315,7 @@ class SettingsViewModel @Inject constructor(
         val title: String,
         val content: String,
         val attempts: Int,
+        val failureReason: String? = null,
     )
 
     val drafts: StateFlow<List<DraftRow>> =
@@ -335,6 +336,7 @@ class SettingsViewModel @Inject constructor(
                     title = titles[entry.conversationId] ?: "Chat",
                     content = entry.content,
                     attempts = entry.attempts,
+                    failureReason = entry.failureReason,
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

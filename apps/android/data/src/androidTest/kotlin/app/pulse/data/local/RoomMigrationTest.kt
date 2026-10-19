@@ -276,7 +276,7 @@ class RoomMigrationTest {
             // Wave 1: the compiled schema is now v5, so the REAL open path is
             // 3 → 4 → 5 - both migrations must be present (v5 columns are
             // additive; every assertion below still holds on the v5 state).
-            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10)
+            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11)
             .allowMainThreadQueries()
             .build()
 
@@ -351,7 +351,7 @@ class RoomMigrationTest {
     fun migration4To5PreservesRowsAndAddsMediaAndMembers() = runBlocking {
         createV4DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10)
+            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11)
             .allowMainThreadQueries()
             .build()
 
@@ -446,7 +446,7 @@ class RoomMigrationTest {
     fun migration5To6PreservesRowsAndAddsDepthColumnsAndTables() = runBlocking {
         createV5DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10)
+            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11)
             .allowMainThreadQueries()
             .build()
 
@@ -636,6 +636,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
+                PulseDatabase.MIGRATION_10_11,
             )
             .allowMainThreadQueries()
             .build()
@@ -651,6 +652,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
+                PulseDatabase.MIGRATION_10_11,
             )
             .allowMainThreadQueries()
             .build()
@@ -713,6 +715,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
+                PulseDatabase.MIGRATION_10_11,
             )
             .allowMainThreadQueries()
             .build()
@@ -748,6 +751,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
+                PulseDatabase.MIGRATION_10_11,
             )
             .allowMainThreadQueries()
             .build()
@@ -788,4 +792,30 @@ class RoomMigrationTest {
                 assertEquals("{\"kind\":\"redpacket\"}", cursor.getString(0))
             }
     }
+    @Test
+    fun rejectedIntentIsRetainedHiddenAndDoesNotOverwriteDraft() = runBlocking {
+        createV5DatabaseWithSeedRows()
+        db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
+            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7,
+                PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9,
+                PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11)
+            .build()
+        val message = Message(id = "local_failed", conversationId = "recovery-room",
+            authorId = "owner", authorName = "Owner", kind = Message.Kind.TEXT,
+            body = "rejected body", createdAt = "2026-10-19T10:00:00Z", anon = true)
+        db.messageDao().upsertAll(listOf(MessageEntity.from(message)))
+        db.outboxDao().insert(OutboxEntity(conversationId = "recovery-room", clientId = "failed",
+            content = message.body, createdAt = message.createdAt, wirePayload = "{}"))
+        db.draftDao().upsert(DraftEntity("recovery-room", "next thought", "now"))
+        assertEquals(1, db.outboxDao().markFailed("failed", "forbidden"))
+        assertEquals(0, db.outboxDao().markFailed("failed", "late second refusal"))
+        assertTrue(db.outboxDao().allForOwner("owner").isEmpty())
+        assertTrue(db.messageDao().observeFor("recovery-room").first().isEmpty())
+        val retained = db.outboxDao().all().first { it.clientId == "failed" }
+        assertEquals("forbidden", retained.failureReason)
+        assertEquals("{}", retained.wirePayload)
+        assertEquals("next thought", db.draftDao().get("recovery-room")?.text)
+        assertTrue(db.messageDao().byId("local_failed")!!.toDomain().anon)
+    }
+
 }

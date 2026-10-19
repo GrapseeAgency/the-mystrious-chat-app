@@ -775,7 +775,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(row.title, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                        Text("${row.content} · attempt ${row.attempts}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), maxLines = 1)
+                        Text("${row.content} · ${row.failureReason ?: "attempt ${row.attempts}"}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), maxLines = 1)
                     }
                     IconButton(onClick = { viewModel.deleteOutboxEntry(row.clientId) }) {
                         Icon(PulseIcons.Trash, contentDescription = "Discard queued message", tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))

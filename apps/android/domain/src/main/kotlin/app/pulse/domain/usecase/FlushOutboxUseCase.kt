@@ -14,8 +14,8 @@ import app.pulse.domain.repository.PulseRepository
  * Per delivery:
  *  - success   → the repository swaps the optimistic `local_<clientId>` row
  *                for the real message row and deletes the outbox row;
- *  - 4xx-class → the entry is dropped permanently (row + temp bubble removed,
- *                PulseEvent.OutboxDropped emitted) and the drain stops;
+ *  - 4xx-class → intent is retained as failed (excluded from future automatic
+ *                drains), pending echo hidden, event emitted and drain stops;
  *  - network   → attempts++ (entry kept) and the drain stops - the next
  *                trigger (reconnect/foreground/worker/self-heal) retries.
  */

@@ -49,4 +49,17 @@ final class TimelineRecoveryTests: XCTestCase {
         XCTAssertNil(page.syncVersion)
         XCTAssertNil(page.nextSyncCursor)
     }
+    func testRawHistoryCursorAdvancesAcrossHiddenReplies() throws {
+        let original = try row("a")
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        object["parentId"] = "thread-root"
+        let reply = try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertTrue(PulseTimelineMerge.merge([], incoming: [reply], topicId: nil).isEmpty)
+        let cursor = try XCTUnwrap(PulseHistoryCursor.oldest([reply]))
+        XCTAssertEqual(cursor.id, "a")
+        XCTAssertTrue(cursor.precedes(PulseHistoryCursor(createdAt: reply.createdAt, id: "b")))
+        XCTAssertFalse(cursor.precedes(cursor))
+        XCTAssertNil(PulseHistoryCursor.oldest([try row("local_pending")]))
+    }
+
 }

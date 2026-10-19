@@ -19,6 +19,10 @@ data class OutboxEntry(
     val createdAt: String,
     /** failed POST count (diagnostics; incremented on retryable failures). */
     val attempts: Int = 0,
+    /** Rejected intent is retained for recovery, not automatic retry. */
+    val failureReason: String? = null,
+    /** Exact rich payload, including an intentional empty JSON object. */
+    val wirePayload: String? = null,
 )
 
 /** Optimistic queued-bubble id convention: `local_<clientId>` (web `temp-` parity). */

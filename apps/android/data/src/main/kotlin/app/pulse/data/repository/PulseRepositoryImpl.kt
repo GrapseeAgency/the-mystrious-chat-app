@@ -338,14 +338,18 @@ class PulseRepositoryImpl constructor(
 
     /** Data & Storage - user-initiated drop of one held outbox row (no verdict event). */
     override suspend fun discardOutboxEntry(clientId: String) {
-        outboxDao.deleteByClientId(clientId)
-        messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+        database.withTransaction {
+            outboxDao.deleteByClientId(clientId)
+            messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+        }
     }
 
     /** Data & Storage - drop every held outbox row + its optimistic temp bubble. */
     override suspend fun clearOutbox() {
-        outboxDao.clearAll()
-        messageDao.deleteAllTempMessages()
+        database.withTransaction {
+            outboxDao.clearAll()
+            messageDao.deleteAllTempMessages()
+        }
     }
 
     /** Data & Storage - drop every composer draft at once. */
@@ -970,12 +974,8 @@ class PulseRepositoryImpl constructor(
                     eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
                     Result.success(SendReceipt(message = temp, streak = null))
                 } else {
-                    database.withTransaction {
-                        // Definitive refusal stays recoverable as a draft.
-                        draftDao.upsert(DraftEntity(conversationId, body, nowIso))
-                        outboxDao.deleteByClientId(clientId)
-                        messageDao.deleteById(temp.id)
-                    }
+                    // Keep rejected intent separately; never overwrite a newer composer draft.
+                    dropOutboxEntry(clientId, r.message ?: "Message rejected")
                     Result.failure(apiExceptionOf(r))
                 }
             }
@@ -1003,6 +1003,13 @@ class PulseRepositoryImpl constructor(
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
             return demoSend(conversationId, body, replyToId, parentId, topicId)
         }
+        if (kind !in setOf("text", "image", "audio", "file", "sticker", "location")) {
+            return Result.failure(IllegalArgumentException("Unsupported message kind"))
+        }
+        val richPayload = payload?.let {
+            runCatching { PulseJson.parseToJsonElement(it) as? kotlinx.serialization.json.JsonObject }.getOrNull()
+                ?: return Result.failure(IllegalArgumentException("Message payload must be a JSON object"))
+        }
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
@@ -1023,11 +1030,12 @@ class PulseRepositoryImpl constructor(
             // the server will store (web optimistic-mask parity).
             anonAlias = anonAliasPreview.takeIf { anon },
         )
-        val durable = !anon
+        val durable = true
         database.withTransaction {
-            messageDao.upsertAll(listOf(MessageEntity.from(temp).copy(kind = kind.uppercase(java.util.Locale.ROOT), payloadJson = payload)))
+            messageDao.upsertAll(listOf(MessageEntity.from(temp.copy(payload = payload)).copy(kind = if (kind == "audio") "VOICE" else kind.uppercase(java.util.Locale.ROOT))))
             if (durable) outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
+                kind = kind, wirePayload = payload,
             ))
         }
         return when (
@@ -1041,9 +1049,7 @@ class PulseRepositoryImpl constructor(
                 kind = kind,
                 topicId = if (parentId == null) topicId else null,
                 anon = anon.takeIf { it },
-                payload = payload?.let { raw ->
-                    runCatching { PulseJson.parseToJsonElement(raw) }.getOrNull() as? kotlinx.serialization.json.JsonObject
-                },
+                payload = richPayload,
             )
         ) {
             is PulseResult.Success -> {
@@ -1063,12 +1069,8 @@ class PulseRepositoryImpl constructor(
                     eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
                     Result.success(SendReceipt(message = temp, streak = null))
                 } else {
-                    database.withTransaction {
-                        // Definitive refusal stays recoverable as a draft.
-                        draftDao.upsert(DraftEntity(conversationId, body, nowIso))
-                        outboxDao.deleteByClientId(clientId)
-                        messageDao.deleteById(temp.id)
-                    }
+                    // Keep rejected intent separately; never overwrite a newer composer draft.
+                    dropOutboxEntry(clientId, r.message ?: "Message rejected")
                     Result.failure(apiExceptionOf(r))
                 }
             }
@@ -1618,16 +1620,31 @@ class PulseRepositoryImpl constructor(
 
     /** ONE POST attempt - classification rides on OutboxDeliveryException. */
     override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> {
+        if (outboxDao.pendingByClientId(entry.clientId) == null) {
+            return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Operation is no longer pending"))
+        }
         val owner = viewerId
         val temp = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
         if (owner.isNullOrBlank() || sessionTokenStore.cached.isNullOrBlank() ||
             temp == null || temp.authorId != owner || temp.conversationId != entry.conversationId
         ) return Result.failure(OutboxDeliveryException(OutboxFailureClass.RETRY, "Sign in to the message's original account to send it"))
+        val queued = temp.toDomain()
+        val payload = try {
+            (entry.wirePayload ?: queued.payload)?.let {
+                PulseJson.parseToJsonElement(it) as? kotlinx.serialization.json.JsonObject
+                    ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Saved message payload is invalid"))
+            }
+        } catch (_: Exception) {
+            return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Saved message payload is damaged"))
+        }
         return when (val r = api.sendMessage(
             entry.conversationId, owner, entry.content, clientId = entry.clientId,
             replyToId = temp.replyToId, parentId = temp.threadRootId,
-            topicId = temp.topicId, kind = temp.kind.lowercase(java.util.Locale.ROOT),
-            payload = temp.payloadJson?.let { PulseJson.parseToJsonElement(it) as? kotlinx.serialization.json.JsonObject },
+            topicId = temp.topicId, kind = entry.kind,
+            anon = queued.anon.takeIf { it }, payload = payload,
+            imagePath = queued.imagePath, audioPath = queued.audioPath, durationMs = queued.durationMs,
+            filePath = queued.filePath, fileName = queued.fileName, fileSize = queued.fileSize,
+            viewOnce = queued.viewOnce.takeIf { it },
         )) {
             is PulseResult.Success -> Result.success(r.value.messageOrThrow())
             is PulseResult.Failure -> {
@@ -1654,9 +1671,11 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun dropOutboxEntry(clientId: String, reason: String) {
-        outboxDao.deleteByClientId(clientId)
-        messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
-        eventsBus.tryEmit(PulseEvent.OutboxDropped(clientId, reason))
+        // Retain the echo as the full retry/recovery envelope, hidden by the DAO
+        // timeline query. A later canonical delivery can still resolve this row.
+        if (outboxDao.markFailed(clientId, reason) > 0) {
+            eventsBus.tryEmit(PulseEvent.OutboxDropped(clientId, "Saved in Drafts & outbox: $reason"))
+        }
     }
 
     override suspend fun bumpOutboxAttempts(clientId: String) {

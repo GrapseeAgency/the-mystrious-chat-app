@@ -1387,7 +1387,7 @@ struct SettingsView: View {
         guard !rows.isEmpty else { return }
         PulseHaptics.warning()
         for row in rows {
-            try? store.deleteOutbox(clientId: row.clientId)
+            session.discardOutbox(clientId: row.clientId, conversationId: row.conversationId)
         }
         refreshLocalCounts()
     }

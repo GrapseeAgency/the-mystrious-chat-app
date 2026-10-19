@@ -122,7 +122,7 @@ class SessionViewModel @Inject constructor(
         // an in-flight delivery on each queue emission.
         viewModelScope.launch {
             repo.observeOutbox().collect { entries ->
-                if (entries.isNotEmpty()) OutboxWorker.enqueue(appContext)
+                if (entries.any { it.failureReason == null }) OutboxWorker.enqueue(appContext)
             }
         }
     }

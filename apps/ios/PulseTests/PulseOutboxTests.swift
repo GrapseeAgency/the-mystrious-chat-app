@@ -18,6 +18,7 @@ final class PulseOutboxTests: XCTestCase {
         private let lock = NSLock()
         private var behaviors: [String: Behavior]
         private var attempted: [String] = []
+        var beforeSend: ((String) throws -> Void)?
         private(set) var operationIds: [String] = []
         private(set) var metadata: [String] = []
         /// R1-W2B D28 - every sendMessage's forward-relevant body, recorded
@@ -78,6 +79,7 @@ final class PulseOutboxTests: XCTestCase {
                 "\(kind ?? "nil")|\(imagePath ?? "nil")|\(audioPath ?? "nil")|\(durationMs.map { String($0) } ?? "nil")|\(filePath ?? "nil")|\(fileName ?? "nil")|\(fileSize.map { String($0) } ?? "nil")",
             )
             lock.unlock()
+            try beforeSend?(content)
             switch behavior(for: content) {
             case .success:
                 return OutboxFixtures.makeMessage(id: "srv-\(content)", conversationId: conversationId, content: content)
@@ -179,7 +181,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(rows.last?.attempts, 0)
     }
 
-    func testHTTP4xxDropsEntryDeletesTempRowAndContinues() async throws {
+    func testHTTP4xxRetainsFailedIntentRetractsEchoAndContinues() async throws {
         let store = try PulseStore()
         try store.upsert(messages: [OutboxFixtures.makeMessage(
             id: PulseOutboxEngine.tempMessageId(clientId: "cid-bad"),
@@ -200,11 +202,16 @@ final class PulseOutboxTests: XCTestCase {
 
         await engine.flush()
 
-        // The 4xx entry was dropped (temp row deleted) and the drain
+        // The rejected intent is retained (temp row retracted) and the drain
         // CONTINUED - the next entry was still delivered.
         XCTAssertEqual(sender.attempts(of: "bad"), 1)
         XCTAssertEqual(sender.attempts(of: "good"), 1)
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertEqual(try store.outboxAll().first?.content, "bad")
+        XCTAssertNotNil(try store.outboxAll().first?.failureReason)
+        await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "bad"), 1) // retained is not auto-retried
         XCTAssertEqual(drops, 1)
         let messages = try store.messages(conversationId: "c1")
         XCTAssertTrue(messages.contains { $0.id == "srv-good" })
@@ -344,6 +351,8 @@ final class PulseOutboxTests: XCTestCase {
         await engine.flush()
         XCTAssertEqual(sender.attempts(of: "private"), 0)
         XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertNotNil(try store.outboxAll().first?.failureReason)
         engine.stop()
     }
 
@@ -386,4 +395,91 @@ enum OutboxFixtures {
             poll: nil,
         )
     }
+    func testRejectionPreservesEnvelopeWithoutOverwritingNewComposer() throws {
+        let store = try PulseStore()
+        let message = OutboxFixtures.makeMessage(id: "local_failed", conversationId: "c1", content: "old send")
+        let envelope = PulseOutboxForward(replyToId: "quote", topicId: "topic", anon: true)
+        try store.enqueueMessage(message, clientId: "failed", envelope: envelope)
+        try store.saveDraft(conversationId: "c1", text: "new unsent thought")
+        XCTAssertTrue(try store.rejectOutbox(clientId: "failed", reason: "No longer a member"))
+        XCTAssertEqual(store.draft(conversationId: "c1"), "new unsent thought")
+        let row = try XCTUnwrap(store.outboxAll().first)
+        XCTAssertEqual(row.content, "old send")
+        XCTAssertEqual(row.payloadJson, PulseOutboxForward.encode(envelope))
+        XCTAssertEqual(row.failureReason, "No longer a member")
+        XCTAssertTrue(try store.outboxPending().isEmpty)
+    }
+
+    func testLateRefusalCannotUndoAnAlreadyResolvedDelivery() throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "operation", content: "sent")
+        try store.resolveDelivery(clientId: "operation",
+            message: OutboxFixtures.makeMessage(id: "server", conversationId: "c1", content: "sent"))
+        XCTAssertFalse(try store.rejectOutbox(clientId: "operation", reason: "late competing request"))
+        XCTAssertTrue(try store.outboxAll().isEmpty)
+        XCTAssertTrue(try store.messages(conversationId: "c1").contains { $0.id == "server" })
+    }
+
+    func testFailedRowsDoNotStarvePendingBatch() async throws {
+        let store = try PulseStore()
+        for index in 0..<55 {
+            let id = "failed-\(index)"
+            try store.appendOutbox(conversationId: "c1", clientId: id, content: "bad")
+            try store.rejectOutbox(clientId: id, reason: "refused")
+        }
+        try store.appendOutbox(conversationId: "c1", clientId: "good", content: "good")
+        let sender = StubSender(behaviors: [:])
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "bad"), 0)
+        XCTAssertEqual(sender.attempts(of: "good"), 1)
+        XCTAssertEqual(store.countOutbox(), 55)
+        XCTAssertEqual(store.countPendingOutbox(), 0)
+    }
+
+    func testDiscardRemovesPendingEchoAndIntentTogether() throws {
+        let store = try PulseStore()
+        try store.enqueueMessage(OutboxFixtures.makeMessage(id: "local_discard", conversationId: "c1", content: "unsent"),
+            clientId: "discard", envelope: PulseOutboxForward())
+        XCTAssertTrue(try store.isPendingOutbox(clientId: "discard"))
+        try store.deleteOutbox(clientId: "discard")
+        XCTAssertFalse(try store.isPendingOutbox(clientId: "discard"))
+        XCTAssertTrue(try store.messages(conversationId: "c1").isEmpty)
+        XCTAssertTrue(try store.outboxAll().isEmpty)
+    }
+
+    func testDiscardDuringDrainSkipsLaterSnapshotEntry() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "first", content: "first")
+        try store.appendOutbox(conversationId: "c1", clientId: "second", content: "second")
+        let sender = StubSender(behaviors: [:])
+        sender.beforeSend = { content in
+            if content == "first" { try store.deleteOutbox(clientId: "second") }
+        }
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "first"), 1)
+        XCTAssertEqual(sender.attempts(of: "second"), 0)
+    }
+
+    func testFailedIntentSurvivesDatabaseReopen() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("recovery.sqlite").path
+        do {
+            let store = try PulseStore(path: path)
+            try store.appendOutbox(conversationId: "c1", clientId: "held", content: "keep me", payloadJson: "{\"anon\":true}")
+            try store.rejectOutbox(clientId: "held", reason: "forbidden")
+        }
+        let reopened = try PulseStore(path: path)
+        let row = try XCTUnwrap(reopened.outboxAll().first)
+        XCTAssertEqual(row.content, "keep me")
+        XCTAssertEqual(row.payloadJson, "{\"anon\":true}")
+        XCTAssertEqual(row.failureReason, "forbidden")
+        XCTAssertEqual(reopened.countPendingOutbox(), 0)
+    }
+
 }

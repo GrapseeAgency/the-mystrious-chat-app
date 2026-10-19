@@ -226,6 +226,9 @@ public final class PulseStore: Sendable {
                 t.add(column: "translationsJson", .text)
             }
         }
+        m.registerMigration("v9") { db in
+            try db.alter(table: "outbox") { t in t.add(column: "failureReason", .text) }
+        }
         return m
     }
 
@@ -718,15 +721,54 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Failed intent remains recoverable, but is never automatically re-posted.
+    public func outboxPending() throws -> [OutboxRow] {
+        try dbQueue.read { db in
+            try OutboxRow.fetchAll(db, sql: "SELECT * FROM outbox WHERE failureReason IS NULL ORDER BY id ASC")
+        }
+    }
+
+    public func countPendingOutbox() -> Int {
+        (try? dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox WHERE failureReason IS NULL")
+        }) ?? 0
+    }
+
+    /// Do not touch the composer. Keep content + full envelope and retract only
+    /// the pending echo, atomically. A racing delivery that already won stays won.
+    @discardableResult
+    public func rejectOutbox(clientId: String, reason: String) throws -> Bool {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE outbox SET failureReason = ? WHERE clientId = ? AND failureReason IS NULL",
+                arguments: [reason, clientId])
+            let changed = db.changesCount > 0
+            if changed {
+                try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
+            }
+            return changed
+        }
+    }
+
+    public func isPendingOutbox(clientId: String) throws -> Bool {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox WHERE clientId = ? AND failureReason IS NULL",
+                arguments: [clientId]) == 1
+        }
+    }
+
     public func deleteOutbox(id: Int64) throws {
-        _ = try dbQueue.write { db in
-            try db.execute(sql: "DELETE FROM outbox WHERE id = :id", arguments: ["id": id])
+        try dbQueue.write { db in
+            if let clientId = try String.fetchOne(db, sql: "SELECT clientId FROM outbox WHERE id = ?", arguments: [id]) {
+                try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
+                try db.execute(sql: "DELETE FROM outbox WHERE id = ?", arguments: [id])
+            }
         }
     }
 
     public func deleteOutbox(clientId: String) throws {
-        _ = try dbQueue.write { db in
-            try db.execute(sql: "DELETE FROM outbox WHERE clientId = :cid", arguments: ["cid": clientId])
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
+            try db.execute(sql: "DELETE FROM outbox WHERE clientId = ?", arguments: [clientId])
         }
     }
 
@@ -987,9 +1029,10 @@ public struct OutboxRow: Codable, FetchableRecord, PersistableRecord, Equatable,
     /// PulseOutboxForward); nil for plain text sends. Optional decodes as
     /// nil on rows written before the v8 column existed.
     public var payloadJson: String?
+    public var failureReason: String?
 
     public init(id: Int64?, conversationId: String, clientId: String, content: String,
-                kind: String, createdAt: String, attempts: Int, payloadJson: String? = nil) {
+                kind: String, createdAt: String, attempts: Int, payloadJson: String? = nil, failureReason: String? = nil) {
         self.id = id
         self.conversationId = conversationId
         self.clientId = clientId
@@ -998,6 +1041,7 @@ public struct OutboxRow: Codable, FetchableRecord, PersistableRecord, Equatable,
         self.createdAt = createdAt
         self.attempts = attempts
         self.payloadJson = payloadJson
+        self.failureReason = failureReason
     }
 }
 

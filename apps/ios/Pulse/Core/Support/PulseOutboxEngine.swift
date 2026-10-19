@@ -92,8 +92,8 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
 ///     (temporal order - later sends must never overtake earlier ones)
 ///   • success → real row upserted, `local_<clientId>` temp row deleted,
 ///     outbox entry deleted, UI notified
-///   • Permanent 4xx (validation/forbidden/404) → entry dropped + temp row deleted +
-///     honest toast (retrying could never succeed)
+///   • Permanent 4xx → failed intent + envelope retained, pending echo retracted;
+///     no automatic retry and no overwrite of the user's current draft
 ///   • network failure → attempts++, retried on the next trigger
 /// Triggers: session start with pending entries, socket (re)connect, app
 /// foreground, BGAppRefreshTask, a 60s self-heal timer while entries exist
@@ -143,7 +143,7 @@ public final class PulseOutboxEngine: ObservableObject {
     public init(store: PulseStore, monitorNetwork: Bool = true, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
         self.store = store
         self.senderProvider = senderProvider
-        pendingCount = store.countOutbox()
+        pendingCount = store.countPendingOutbox()
         if pendingCount > 0 {
             startHealTimer()
         }
@@ -198,7 +198,7 @@ public final class PulseOutboxEngine: ObservableObject {
     }
 
     public func reloadPending() {
-        pendingCount = store.countOutbox()
+        pendingCount = store.countPendingOutbox()
         if pendingCount > 0 && !stopped { startHealTimer() }
     }
 
@@ -215,7 +215,7 @@ public final class PulseOutboxEngine: ObservableObject {
         guard !stopped, !working, !Task.isCancelled, Date() >= retryNotBefore else { return false }
         guard let sender = senderProvider() else { return false }
         let entries: [OutboxRow]
-        do { entries = Array(try store.outboxAll().prefix(Self.maxEntries)) }
+        do { entries = Array(try store.outboxPending().prefix(Self.maxEntries)) }
         catch { return false }
         guard !entries.isEmpty else {
             pendingCount = 0
@@ -228,13 +228,14 @@ public final class PulseOutboxEngine: ObservableObject {
         defer {
             working = false
             flushing = false
-            pendingCount = store.countOutbox()
+            pendingCount = store.countPendingOutbox()
             if pendingCount == 0 { stopHealTimer() }
         }
 
         for entry in entries {
             if Task.isCancelled || stopped { break }
             do {
+                guard try store.isPendingOutbox(clientId: entry.clientId) else { continue }
                 // R1-W2B D28 - a forward entry re-POSTs its stored kind +
                 // media paths (web ForwardPayload parity); plain sends keep
                 // the text-only body.
@@ -266,7 +267,7 @@ public final class PulseOutboxEngine: ObservableObject {
                 )
                 guard !stopped, !Task.isCancelled else { return false }
                 try store.resolveDelivery(clientId: entry.clientId, message: real)
-                pendingCount = store.countOutbox()
+                pendingCount = store.countPendingOutbox()
                 onEvent?(.delivered(message: real, conversationId: entry.conversationId, clientId: entry.clientId))
             } catch {
                 if Task.isCancelled || stopped { return false }
@@ -274,11 +275,16 @@ public final class PulseOutboxEngine: ObservableObject {
                    failure.status == 429 || failure.kind == .rateLimited {
                     holdRetries(seconds: failure.retryAfter ?? 60)
                 }
-                if Self.isDroppable(error) {
-                    try? store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))
-                    if let id = entry.id { try? store.deleteOutbox(id: id) }
-                    pendingCount = store.countOutbox()
-                    onEvent?(.dropped(clientId: entry.clientId, conversationId: entry.conversationId, reason: Self.describe(error)))
+                let damagedEnvelope = (error as? CocoaError)?.code == .coderReadCorrupt
+                if Self.isDroppable(error) || damagedEnvelope {
+                    let reason = damagedEnvelope ? "Saved message metadata is damaged" : Self.describe(error)
+                    do {
+                        if try store.rejectOutbox(clientId: entry.clientId, reason: reason) {
+                            onEvent?(.dropped(clientId: entry.clientId, conversationId: entry.conversationId,
+                                reason: "Saved in Drafts & outbox: " + reason))
+                        }
+                    } catch { return false } // keep intent if the local state transition failed
+                    pendingCount = store.countPendingOutbox()
                     continue
                 }
                 // Network-class failure - keep the entry, stop the drain so
@@ -287,7 +293,7 @@ public final class PulseOutboxEngine: ObservableObject {
                 break
             }
         }
-        return !Task.isCancelled && !stopped && store.countOutbox() == 0
+        return !Task.isCancelled && !stopped && store.countPendingOutbox() == 0
     }
 
     // self-heal timer

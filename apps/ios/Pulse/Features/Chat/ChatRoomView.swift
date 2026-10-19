@@ -1499,6 +1499,11 @@ private struct RoomContent: View {
                 // Wave 8 - prefs density: cozy keeps the Wave-0 rhythm,
                 // compact tightens the river (web chat-room density parity).
                 LazyVStack(spacing: prefs.density.rowSpacing) {
+                    if viewModel.hasMore {
+                        Button(viewModel.loadingOlder ? "Loading earlier messages…" : "Load earlier messages") {
+                            viewModel.loadOlder(session: session)
+                        }.disabled(viewModel.loadingOlder)
+                    }
                     if viewModel.messages.isEmpty && viewModel.phase == .loading {
                         ProgressView("Loading messages…")
                             .padding(.top, 40)
@@ -3667,7 +3672,15 @@ final class RoomViewModel: ObservableObject {
     @Published private(set) var errorText: String?
     @Published private(set) var typers: [Typer] = []
     @Published private(set) var partnerLastReadAt: Date?
-    @Published var draft = ""
+    @Published var draft = "" {
+        didSet { if oldValue != draft { draftEditRevision &+= 1 } }
+    }
+    private var draftEditRevision: UInt64 = 0
+    private var draftBeforeEdit: String?
+    private var replyBeforeEdit: WireChatMessage?
+    private var editSaveTask: Task<Void, Never>?
+    private var editGeneration = UUID()
+    private var savingEdit = false
     @Published var replyTarget: WireChatMessage?
 
     // Wave 1 - pagination, threads, actions, search, jump, media.
@@ -3901,7 +3914,7 @@ final class RoomViewModel: ObservableObject {
     /// from ChatRoomView.onDisappear (roomVisible off); a conversation
     /// change builds a NEW view model, so its deinit covers that path.
     func handleRoomDisappeared() {
-        journalDraft(draft)
+        journalDraft(draftBeforeEdit ?? draft)
         draftSaveTask?.cancel()
         typingStopTask?.cancel()
         refreshTask?.cancel()
@@ -3924,7 +3937,9 @@ final class RoomViewModel: ObservableObject {
         if let store = session.store {
             let cached = (try? store.messages(conversationId: conversationId)) ?? []
             if !cached.isEmpty {
-                messages = cached
+                messages = riverRows(from: cached)
+                historyCursor = PulseHistoryCursor.oldest(cached)
+                hasMore = historyCursor != nil // cached data alone cannot prove history is exhausted
                 phase = .loaded
             }
             draft = draftJournal?.snapshot ?? store.draftSnapshot(conversationId: conversationId) ?? (conversation.myDraft ?? "")
@@ -4050,6 +4065,7 @@ final class RoomViewModel: ObservableObject {
     private var historyTask: Task<Void, Never>?
     private var riverReloadTask: Task<Void, Never>?
     private var historyGeneration = UUID()
+    private var historyCursor: PulseHistoryCursor?
 
     private func cancelHistory() {
         historyGeneration = UUID()
@@ -4077,7 +4093,8 @@ final class RoomViewModel: ObservableObject {
             messages = riverRows(from: (try? store.messages(conversationId: conversationId)) ?? [])
             seedReplyCounts(store: store)
         }
-        let real = messages.filter { !$0.id.hasPrefix("local_") }
+        let cachedRows = (try? store?.messages(conversationId: conversationId)) ?? messages
+        let real = cachedRows.filter { !$0.id.hasPrefix("local_") }
         let from = real.min {
             (PulseFormat.date($0.createdAt) ?? .distantPast) < (PulseFormat.date($1.createdAt) ?? .distantPast)
         }?.createdAt
@@ -4103,7 +4120,11 @@ final class RoomViewModel: ObservableObject {
                 try store?.upsert(messages: fresh)
                 messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: activeTopicId)
                 noteRiverChanged()
-                if from == nil { hasMore = page.hasMore; break }
+                if from == nil {
+                    historyCursor = PulseHistoryCursor.oldest(page.messages)
+                    hasMore = page.hasMore
+                    break
+                }
                 if !page.hasMore { break }
                 guard let next = page.nextSyncCursor, seenCursors.insert(next).inserted else {
                     throw PulseAPIClient.Failure(kind: .server, message: "Message sync returned a missing or repeated cursor")
@@ -4164,28 +4185,48 @@ final class RoomViewModel: ObservableObject {
     /// merged id-dedupe ascending. The view triggers from the oldest row.
     func loadOlder(session: PulseSession) {
         guard session.ready, hasMore, !loadingOlder,
-              let oldest = messages.first(where: { !$0.id.hasPrefix("local_") }) else { return }
+              let initial = historyCursor ?? PulseHistoryCursor.oldest(messages) else { return }
         let epoch = session.sessionGeneration, ticket = historyGeneration
         let client = session.api, store = session.store
         let topic = activeTopicId
-        let watermark = session.messageRevision
         loadingOlder = true
         historyTask = Task { [weak self] in
             guard let self else { return }
             defer { if self.historyGeneration == ticket { self.loadingOlder = false } }
+            var cursor = initial
             do {
-                try Task.checkCancellation()
-                let page = try await client.messages(conversationId: self.conversationId,
-                    limit: 40, before: oldest.createdAt, query: nil, topicId: topic, beforeId: oldest.id)
-                try Task.checkCancellation()
-                guard session.sessionGeneration == epoch, self.historyGeneration == ticket,
-                      self.activeTopicId == topic else { return }
-                let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-                try store?.upsert(messages: fresh)
-                self.messages = PulseTimelineMerge.merge(self.messages, incoming: fresh, topicId: topic)
-                self.hasMore = page.hasMore && !page.messages.isEmpty
+                // Skip pages containing only hidden replies. A manual header
+                // remains available if a long sparse range needs another batch.
+                for _ in 0..<5 {
+                    try Task.checkCancellation()
+                    let watermark = session.messageRevision
+                    let page = try await client.messages(conversationId: self.conversationId,
+                        limit: 40, before: cursor.createdAt, query: nil, topicId: topic, beforeId: cursor.id)
+                    try Task.checkCancellation()
+                    guard session.sessionGeneration == epoch, self.historyGeneration == ticket,
+                          self.activeTopicId == topic else { return }
+                    guard let next = PulseHistoryCursor.oldest(page.messages) else {
+                        self.hasMore = false
+                        return
+                    }
+                    guard next.precedes(cursor) else {
+                        self.errorText = "History returned a repeated page. Try loading earlier messages again."
+                        return
+                    }
+                    let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+                    try store?.upsert(messages: fresh)
+                    let previousIDs = Set(self.messages.map(\.id))
+                    self.messages = PulseTimelineMerge.merge(self.messages, incoming: fresh, topicId: topic)
+                    self.historyCursor = next
+                    cursor = next
+                    self.hasMore = page.hasMore
+                    if !page.hasMore || self.messages.contains(where: { !previousIDs.contains($0.id) }) { return }
+                }
+            } catch is CancellationError {
+                // Cancellation is not a history error.
             } catch {
-                // Older history is best-effort; cancellation leaves the current window intact.
+                guard self.historyGeneration == ticket, session.sessionGeneration == epoch else { return }
+                self.errorText = "Couldn't load earlier messages. Your current history is kept."
             }
         }
     }
@@ -4223,7 +4264,7 @@ final class RoomViewModel: ObservableObject {
             session.toasts.show("Couldn't reach that message in this chat's history")
             return
         }
-        guard hasMore, let oldest = messages.first(where: { !$0.id.hasPrefix("local_") }) else {
+        guard hasMore, let oldest = historyCursor ?? PulseHistoryCursor.oldest(messages) else {
             session.toasts.show("Couldn't reach that message in this chat's history")
             return
         }
@@ -4235,6 +4276,13 @@ final class RoomViewModel: ObservableObject {
             try Task.checkCancellation()
             guard session.sessionGeneration == epoch, historyGeneration == ticket,
                   activeTopicId == topic else { return }
+            if let next = PulseHistoryCursor.oldest(page.messages) {
+                guard next.precedes(oldest) else {
+                    session.toasts.show("History returned a repeated page")
+                    return
+                }
+                historyCursor = next
+            }
             let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
             try store?.upsert(messages: fresh)
             messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: topic)
@@ -4442,6 +4490,7 @@ final class RoomViewModel: ObservableObject {
     }
 
     func draftChanged(session: PulseSession) {
+        guard editingTarget == nil else { return }
         // Wave 0 - 600ms debounced draft persistence (web pulse-drafts parity).
         scheduleDraftSave(session: session)
 
@@ -4589,19 +4638,14 @@ final class RoomViewModel: ObservableObject {
             } catch {
                 guard session.sessionGeneration == epoch else { return }
                 if PulseOutboxEngine.isDroppable(error) {
-                    // Preserve rejected content; never silently discard the composer.
                     do {
-                        try store.saveDraft(conversationId: conversationId, text: body)
-                        try store.deleteOutbox(clientId: clientId)
-                        try store.deleteMessage(id: temp.id)
+                        try store.rejectOutbox(clientId: clientId, reason: Self.describe(error))
                     } catch {
                         self.errorText = "Could not update local storage; pending data was retained."
                         return
                     }
                     self.messages.removeAll { $0.id == temp.id }
-                    self.draft = body
-                    self.replyTarget = replySource
-                    self.errorText = Self.describe(error)
+                    self.errorText = "Not sent. Original message kept in Settings → Drafts & outbox. " + Self.describe(error)
                 } else {
                     if let failure = error as? PulseAPIClient.Failure,
                        failure.status == 429, let wait = failure.retryAfter, wait > 0 {
@@ -4847,18 +4891,25 @@ final class RoomViewModel: ObservableObject {
             return
         }
         let iso = ScheduleSheet.isoFormatter.string(from: date)
+        let revision = draftEditRevision
+        let client = session.api
+        let epoch = session.sessionGeneration
         Task { [weak self] in
             guard let self else { return }
             do {
                 // R5-A Item 6 - the returned row joins the cached list (no
                 // refetch) so the chip count + next-dispatch stamp update.
-                let item = try await session.api.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
-                self.draft = ""
+                let item = try await client.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
+                guard session.sessionGeneration == epoch else { return }
+                if self.draftEditRevision == revision && self.draftJournal?.isCurrentOwner == true {
+                    self.draft = ""
+                    self.scheduleDraftSave(session: session)
+                }
                 self.scheduledItems.append(item)
-                try? session.store?.deleteDraft(conversationId: conversationId)
                 PulseHaptics.success()
                 session.toasts.show("Scheduled - \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")
             } catch {
+                guard session.sessionGeneration == epoch else { return }
                 session.toasts.show(Self.describe(error))
             }
         }
@@ -4943,30 +4994,57 @@ final class RoomViewModel: ObservableObject {
     }
 
     func beginEdit(_ message: WireChatMessage) {
+        editSaveTask?.cancel()
+        editGeneration = UUID()
+        savingEdit = false
+        if editingTarget == nil {
+            draftBeforeEdit = draft
+            replyBeforeEdit = replyTarget
+        }
+        editingTarget = message
         replyTarget = nil
         draft = message.content
-        editingTarget = message
     }
 
     func cancelEdit() {
+        editSaveTask?.cancel()
+        editGeneration = UUID()
+        savingEdit = false
         editingTarget = nil
-        draft = ""
+        draft = draftBeforeEdit ?? ""
+        replyTarget = replyBeforeEdit
+        draftBeforeEdit = nil
+        replyBeforeEdit = nil
     }
 
     func saveEdit(session: PulseSession) {
-        guard let target = editingTarget else { return }
+        guard let target = editingTarget, let viewer = session.viewer, !savingEdit else { return }
         let body = draft.trimmingCharacters(in: .whitespaces)
         guard !body.isEmpty else { return }
-        editingTarget = nil
-        draft = ""
-        // Edits never queue (spec §1.2) - an honest error covers offline.
-        Task { [weak self] in
-            guard let self, let viewer = session.viewer else { return }
+        let revision = draftEditRevision, ticket = editGeneration
+        let epoch = session.sessionGeneration
+        let client = session.api, store = session.store
+        let watermark = session.messageRevision
+        savingEdit = true
+        editSaveTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.editGeneration == ticket { self.savingEdit = false } }
             do {
-                let fresh = try await session.api.editMessage(id: target.id, userId: viewer.id, content: body)
-                self.upsert(fresh)
-                try? session.store?.upsert(messages: [fresh])
+                let fresh = try await client.editMessage(id: target.id, userId: viewer.id, content: body)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch, self.editGeneration == ticket else { return }
+                if session.acceptsSyncMessage(fresh.id, startedAt: watermark) {
+                    try store?.upsert(messages: [fresh])
+                    self.upsert(fresh)
+                }
+                if self.draftEditRevision == revision && self.draftJournal?.isCurrentOwner == true {
+                    self.cancelEdit() // restore the unsent composer, not an empty string
+                    self.scheduleDraftSave(session: session)
+                }
+            } catch is CancellationError {
             } catch {
+                guard self.editGeneration == ticket, session.sessionGeneration == epoch else { return }
+                // Keep the edited text and target available for retry.
                 self.errorText = Self.describe(error)
             }
         }
@@ -5459,6 +5537,7 @@ final class RoomViewModel: ObservableObject {
     func setActiveTopic(_ id: String?, session: PulseSession) {
         guard activeTopicId != id else { return }
         cancelHistory()
+        historyCursor = nil
         activeTopicId = id
         PulseHaptics.tap()
         riverReloadTask?.cancel()
@@ -5482,6 +5561,7 @@ final class RoomViewModel: ObservableObject {
             try store?.upsert(messages: fresh)
             let cached = (try? store?.messages(conversationId: conversationId)) ?? messages
             messages = PulseTimelineMerge.merge(cached, incoming: fresh, topicId: topic)
+            historyCursor = PulseHistoryCursor.oldest(page.messages)
             hasMore = page.hasMore
             phase = .loaded
         } catch {

@@ -285,7 +285,9 @@ data class MessageEntity(
                 }.getOrNull()
             } ?: kotlinx.serialization.json.JsonObject(emptyMap())
             val withKeys = kotlinx.serialization.json.buildJsonObject {
-                base.forEach { (k, v) -> put(k, v) }
+                base.forEach { (k, v) ->
+                    if (k !in setOf(KEY_ANON, KEY_ALIAS, KEY_EXPIRES)) put(k, v)
+                }
                 if (m.anon) put(KEY_ANON, kotlinx.serialization.json.JsonPrimitive(true))
                 if (!m.anonAlias.isNullOrBlank()) put(KEY_ALIAS, kotlinx.serialization.json.JsonPrimitive(m.anonAlias))
                 m.expiresAtEpochMs?.takeIf { it > 0L }?.let {
@@ -534,6 +536,8 @@ data class OutboxEntity(
     val kind: String = "text",
     val createdAt: String,
     val attempts: Int = 0,
+    val failureReason: String? = null,
+    val wirePayload: String? = null,
 ) {
     fun toEntry() = app.pulse.domain.model.OutboxEntry(
         id = id,
@@ -543,6 +547,8 @@ data class OutboxEntity(
         kind = kind,
         createdAt = createdAt,
         attempts = attempts,
+        failureReason = failureReason,
+        wirePayload = wirePayload,
     )
 
     companion object {
@@ -554,6 +560,8 @@ data class OutboxEntity(
             kind = entry.kind,
             createdAt = entry.createdAt,
             attempts = entry.attempts,
+            failureReason = entry.failureReason,
+            wirePayload = entry.wirePayload,
         )
     }
 }
@@ -583,14 +591,14 @@ interface ConversationDao {
 
 @Dao
 interface MessageDao {
-    @Query("SELECT * FROM messages WHERE conversationId = :conversationId ORDER BY createdAt ASC")
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 
     /** Thread screen rehydration - replies asc from the Room cache. */
-    @Query("SELECT * FROM messages WHERE threadRootId = :rootId ORDER BY createdAt ASC")
+    @Query("SELECT * FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeThread(rootId: String): Flow<List<MessageEntity>>
 
-    @Query("SELECT COUNT(*) FROM messages WHERE threadRootId = :rootId")
+    @Query("SELECT COUNT(*) FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)")
     suspend fun countByThread(rootId: String): Int
 
     /**
@@ -637,7 +645,7 @@ interface MessageDao {
      */
     @Query(
         "SELECT threadRootId AS rootId, COUNT(*) AS cnt FROM messages " +
-            "WHERE threadRootId IN (:rootIds) GROUP BY threadRootId",
+            "WHERE threadRootId IN (:rootIds) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) GROUP BY threadRootId",
     )
     suspend fun countsByThread(rootIds: List<String>): List<ThreadCountRow>
 
@@ -661,19 +669,25 @@ data class ThreadCountRow(val rootId: String, val cnt: Int)
 
 @Dao
 interface OutboxDao {
+    @Query("SELECT * FROM outbox WHERE clientId = :clientId AND failureReason IS NULL")
+    suspend fun pendingByClientId(clientId: String): OutboxEntity?
+
+    @Query("UPDATE outbox SET failureReason = :reason WHERE clientId = :clientId AND failureReason IS NULL")
+    suspend fun markFailed(clientId: String, reason: String): Int
+
     /** Insert/replace by autoGenerate id - clientId uniqueness is enforced by the index. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: OutboxEntity): Long
 
-    @Query("SELECT * FROM outbox ORDER BY id ASC LIMIT 50")
+    @Query("SELECT * FROM outbox ORDER BY id ASC")
     fun observeAll(): Flow<List<OutboxEntity>>
 
-    @Query("SELECT * FROM outbox ORDER BY id ASC LIMIT 50")
+    @Query("SELECT * FROM outbox ORDER BY id ASC")
     suspend fun all(): List<OutboxEntity>
 
     /** Unknown/foreign ownership is quarantined, never attributed to the current viewer. */
     @Query("SELECT o.* FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
-        "WHERE m.authorId = :owner AND m.conversationId = o.conversationId ORDER BY o.id ASC LIMIT 50")
+        "WHERE m.authorId = :owner AND m.conversationId = o.conversationId AND o.failureReason IS NULL ORDER BY o.id ASC LIMIT 50")
     suspend fun allForOwner(owner: String): List<OutboxEntity>
 
     @Query("DELETE FROM outbox WHERE id = :id")
@@ -685,7 +699,7 @@ interface OutboxDao {
     @Query("UPDATE outbox SET attempts = attempts + 1 WHERE clientId = :clientId")
     suspend fun incrementAttempts(clientId: String)
 
-    @Query("SELECT COUNT(*) FROM outbox")
+    @Query("SELECT COUNT(*) FROM outbox WHERE failureReason IS NULL")
     suspend fun count(): Int
 
     /** Wave 8 - Data & Storage "Clear outbox": drop every held row. */
@@ -887,7 +901,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1026,6 +1040,18 @@ abstract class PulseDatabase : RoomDatabase() {
                 // Wave 7 rich-object carriers (red packet / game / tournament) -
                 // the raw payload JSON must survive offline restarts.
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
+            }
+        }
+
+        /** v10 → v11: recoverable refusals and exact rich payloads; no row deletion. */
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE outbox ADD COLUMN failureReason TEXT")
+                db.execSQL("ALTER TABLE outbox ADD COLUMN wirePayload TEXT")
+                // Older rich entries defaulted kind to text despite the echo
+                // carrying the real kind. Repair that retry envelope on upgrade.
+                db.execSQL("UPDATE outbox SET kind = (SELECT LOWER(m.kind) FROM messages m WHERE m.id = 'local_' || outbox.clientId) " +
+                    "WHERE kind = 'text' AND EXISTS (SELECT 1 FROM messages m WHERE m.id = 'local_' || outbox.clientId AND m.kind IN ('STICKER', 'LOCATION'))")
             }
         }
 

@@ -481,6 +481,17 @@ public final class PulseSession: ObservableObject {
         Task { await outbox.flush() }
     }
 
+    public func discardOutbox(clientId: String, conversationId: String) {
+        guard let store else { return }
+        do {
+            try store.deleteOutbox(clientId: clientId)
+            outbox?.reloadPending()
+            outboxEvents.send(.dropped(clientId: clientId, conversationId: conversationId))
+        } catch {
+            toasts.show("Could not discard this message: local storage is unavailable")
+        }
+    }
+
     private func flushOutboxNow() async {
         guard let outbox else { return }
         await outbox.flush()
