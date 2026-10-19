@@ -209,10 +209,11 @@ not full coverage of every native tree. No authentication/recovery work was adde
   remain open acceptance/implementation work.
 - **Permission and callback ownership:** Swift group-call preparation now has an
   attempt generation, preventing an old camera/mic result from joining a different
-  attempt. CallKit late activation checks live coordinator/engine state. Room
+  attempt. CallKit activation no longer acquires audio from an unversioned late callback. Room
   caption responses are fenced by audio lease, identity/session, room and caption
   toggle generation; an old completion cannot clear a successor's busy flag.
-  Android raw capture freezes its callbacks before the read coroutine starts,
+  Swift tap callbacks retain their converter and owner generation, rechecking
+  the gate after conversion. Android raw capture freezes its callbacks before the read coroutine starts,
   and caption accumulation is dispatched to the main owner. Incoming Android PCM
   must match an owned room and cannot be a self echo.
 - **Space:** Swift assigns the conversation identity before opening and clears it
@@ -223,9 +224,10 @@ not full coverage of every native tree. No authentication/recovery work was adde
 
 ### Checks for this continuation
 
-- Added **13 regression methods**: Swift listener/mic-role/seat ownership, late
+- Added **17 regression methods**: Swift listener/mic-role/seat ownership, late
   Space state, token exclusion, group permission rejoin, trailing movement and
-  sequence preservation; Android token/routing, event filtering and Space trailing
+  sequence preservation, plus four voice-note player refusal/switch tests;
+  Android token/routing, event filtering and Space trailing
   movement/late connection tests. Existing audio test fake implements the extended
   playback/demotion protocol. Native execution results are recorded separately.
 - Changed/untracked Kotlin and Swift parsed with tree-sitter; no syntax errors.
@@ -242,8 +244,12 @@ Inside that engine, stage-only outgoing PTT/caption state, role demotion, indepe
 voice-seat preservation on stage exit, delayed playback recreation and AudioRecord
 release/read races still need repair. Stage focus refusal still needs visible error
 presentation. Fixing filters/router code does not deliver audio to the active UI.
-Swift note playback still reports success without checking all player return values,
-and full interruption recovery is not implemented. The shared call-session token
+Swift note playback now checks preparation/play/resume/replay results, stops an
+old player before constructing its successor, and halts inactive tickers. Chat note
+downloads are cancelled/fenced on replacement or room exit, including stale error
+toasts and session changes. The four fake-player tests do not exercise the async
+download path or actual media decoding. Note players are not covered by the audio
+configuration ownership gate, and full interruption recovery is not implemented. The shared call-session token
 still relies on direct/group mutual exclusion, not independent per-call leases.
 Caption response fences were inspected but have no delayed HTTP-response regression
 fixture in this continuation. These gaps remain open rather than hidden by build success.

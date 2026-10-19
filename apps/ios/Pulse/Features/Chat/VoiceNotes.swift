@@ -128,6 +128,7 @@ final class VoiceRecorder {
         try audio.setActive(true)
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("voice-\(UUID().uuidString).m4a")
+        defer { if !started { try? FileManager.default.removeItem(at: url) } }
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 44100,
@@ -177,6 +178,21 @@ final class VoiceRecorder {
     }
 }
 
+/// Minimal player seam so refusal/resume/replay behavior is testable without audio hardware.
+protocol VoiceNotePlaying: AnyObject {
+    var enableRate: Bool { get set }
+    var rate: Float { get set }
+    var currentTime: TimeInterval { get set }
+    var duration: TimeInterval { get }
+    var isPlaying: Bool { get }
+    func prepareToPlay() -> Bool
+    func play() -> Bool
+    func pause()
+    func stop()
+}
+
+extension AVAudioPlayer: VoiceNotePlaying {}
+
 /// RoomViewModel-owned playback - exactly one voice note sounds at a time;
 /// starting another message stops the previous one. `state` drives the
 /// waveform recolor + play/pause glyph; the rate chip persists globally
@@ -196,7 +212,12 @@ final class VoicePlaybackManager: ObservableObject {
 
     @Published private(set) var state: PlaybackState?
 
-    private var player: AVAudioPlayer?
+    private var player: (any VoiceNotePlaying)?
+    private let makePlayer: (URL) throws -> any VoiceNotePlaying
+
+    init(makePlayer: @escaping (URL) throws -> any VoiceNotePlaying = { try AVAudioPlayer(contentsOf: $0) }) {
+        self.makePlayer = makePlayer
+    }
     private var activeId: String?
     private var ticker: Timer?
 
@@ -213,40 +234,37 @@ final class VoicePlaybackManager: ObservableObject {
 
     /// Starts (or restarts from zero) playback of a downloaded local file.
     /// enableRate must be set BEFORE prepareToPlay for the rate chip to work.
-    func start(messageId: String, localURL: URL, rate: Float) {
-        stopTicker()
-        let player: AVAudioPlayer
-        do {
-            player = try AVAudioPlayer(contentsOf: localURL)
-        } catch {
-            self.player = nil
-            activeId = nil
-            state = nil
-            return
-        }
+    @discardableResult
+    func start(messageId: String, localURL: URL, rate: Float) -> Bool {
+        stop()
+        let player: any VoiceNotePlaying
+        do { player = try makePlayer(localURL) }
+        catch { return false }
         player.enableRate = true
         player.rate = rate
-        player.prepareToPlay()
-        player.play()
+        guard player.prepareToPlay(), player.play() else { player.stop(); return false }
         self.player = player
         activeId = messageId
         state = PlaybackState(messageId: messageId, progress: 0, playing: true, rate: rate)
         startTicker()
+        return true
     }
 
     func pause() {
+        stopTicker()
         player?.pause()
         if let state {
             self.state = PlaybackState(messageId: state.messageId, progress: state.progress, playing: false, rate: state.rate)
         }
     }
 
-    func resume() {
-        player?.play()
-        if let state {
-            self.state = PlaybackState(messageId: state.messageId, progress: state.progress, playing: true, rate: state.rate)
-        }
-        startTicker()
+    @discardableResult
+    func resume() -> Bool {
+        guard let player, let state else { return false }
+        let started = player.play()
+        self.state = PlaybackState(messageId: state.messageId, progress: state.progress, playing: started, rate: state.rate)
+        if started { startTicker() } else { stopTicker() }
+        return started
     }
 
     /// Mid-clip rate change (chip tap) - takes effect immediately on AVAudioPlayer.
@@ -258,12 +276,14 @@ final class VoicePlaybackManager: ObservableObject {
     }
 
     /// Finished clip → replay from the top without re-downloading.
-    func replay() {
-        guard let player, let activeId else { return }
+    @discardableResult
+    func replay() -> Bool {
+        guard let player, let activeId else { return false }
         player.currentTime = 0
-        player.play()
-        state = PlaybackState(messageId: activeId, progress: 0, playing: true, rate: state?.rate ?? Self.defaultRate)
-        startTicker()
+        let started = player.play()
+        state = PlaybackState(messageId: activeId, progress: 0, playing: started, rate: state?.rate ?? Self.defaultRate)
+        if started { startTicker() } else { stopTicker() }
+        return started
     }
 
     /// Halts everything and clears the active state (message switch, room exit).
@@ -304,6 +324,7 @@ final class VoicePlaybackManager: ObservableObject {
             stopTicker()
         } else {
             state = PlaybackState(messageId: activeId, progress: progress, playing: playing, rate: state?.rate ?? Self.defaultRate)
+            if !playing { stopTicker() }
         }
     }
 

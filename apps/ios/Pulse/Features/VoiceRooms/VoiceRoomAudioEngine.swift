@@ -161,6 +161,7 @@ final class VoiceRoomAudioEngine: VoiceRoomAudioDriving {
     private var gateMuted = false
     private var chunker = VoicePcmChunker()
     private var captureConfigured = false
+    private var tapGeneration = UUID()
 
     private let playbackLock = NSLock()
     private var peerNodes: [String: AVAudioPlayerNode] = [:]
@@ -175,6 +176,9 @@ final class VoiceRoomAudioEngine: VoiceRoomAudioDriving {
         guard micGranted else {
             return "Microphone access is off - enable it for Pulse in Settings."
         }
+        // Stop before reconfiguring category/input format; restart via the
+        // playback fallback if activation fails.
+        engine.stop()
         // 2. Session category (saved/restored by the rooms wrapper).
         if !audioSession.activate() {
             return "Audio hardware refused the room session."
@@ -282,34 +286,42 @@ final class VoiceRoomAudioEngine: VoiceRoomAudioDriving {
         }
         self.converter = converter
 
+        let ticket = UUID()
+        lock.lock()
+        tapGeneration = ticket
+        lock.unlock()
+        let chunkCallback = onChunk
+        let samplesCallback = onSamples
         input.installTap(onBus: 0, bufferSize: Self.tapFrames, format: inputFormat) { [weak self] buffer, _ in
-            self?.handleTap(buffer: buffer)
+            self?.handleTap(buffer: buffer, converter: converter, ticket: ticket,
+                chunkCallback: chunkCallback, samplesCallback: samplesCallback)
         }
         captureConfigured = true
     }
 
     /// Runs on the AVAudioEngine tap thread.
-    private func handleTap(buffer: AVAudioPCMBuffer) {
+    private func handleTap(buffer: AVAudioPCMBuffer, converter: AVAudioConverter, ticket: UUID,
+                           chunkCallback: ((VoicePcmChunkOut) -> Void)?, samplesCallback: (([Int16]) -> Void)?) {
         lock.lock()
-        let gateOn = gateTransmitting && !gateMuted
+        let gateOn = gateTransmitting && !gateMuted && tapGeneration == ticket
         lock.unlock()
+        guard gateOn, let samples = convertTo16kMono(buffer, converter: converter), !samples.isEmpty else { return }
 
-        guard gateOn, let samples = convertTo16kMono(buffer), !samples.isEmpty else { return }
-
-        onSamples?(samples)
-
+        // Conversion can overlap a stop/demotion/new graph. Check again before
+        // feeding the sequence buffer, and deliver only to this tap's owner.
         lock.lock()
+        guard gateTransmitting && !gateMuted && tapGeneration == ticket else { lock.unlock(); return }
         let chunks = chunker.feed(samples)
         lock.unlock()
-        chunks.forEach { onChunk?($0) }
+        samplesCallback?(samples)
+        chunks.forEach { chunkCallback?($0) }
     }
 
     /// AVAudioConverter → 16 kHz mono Int16 samples (linear resample
     /// handled by the converter). The input block is passed per
     /// `convert(to:error:withInputFrom:)` call - AVAudioConverter has no
     /// settable inputBlock property.
-    private func convertTo16kMono(_ input: AVAudioPCMBuffer) -> [Int16]? {
-        guard let converter else { return nil }
+    private func convertTo16kMono(_ input: AVAudioPCMBuffer, converter: AVAudioConverter) -> [Int16]? {
         guard input.frameLength > 0 else { return nil }
 
         var collected: [Int16] = []

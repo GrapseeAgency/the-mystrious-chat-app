@@ -95,7 +95,7 @@ class SpaceBoardStateMachine(
 
         is Event.Connected -> {
             if (event.conversationId != current.conversationId ||
-                current.status == Status.IDLE || current.status == Status.ERROR) current
+                current.status == Status.IDLE) current
             else {
                 effects += Effect.EmitJoin
                 current.copy(status = Status.CONNECTED, reconnectAttempts = 0, error = null)

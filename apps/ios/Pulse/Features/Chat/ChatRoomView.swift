@@ -3809,6 +3809,8 @@ final class RoomViewModel: ObservableObject {
     private weak var voiceSession: PulseSession?
     private var topicTicker: AnyCancellable?
     private var voiceLocalFiles: [String: URL] = [:]
+    private var voicePlaybackTask: Task<Void, Never>?
+    private var voicePlaybackGeneration = UUID()
     /// One active voice-note player for the whole room (messageId-keyed).
     private(set) var playback = VoicePlaybackManager()
 
@@ -3922,12 +3924,14 @@ final class RoomViewModel: ObservableObject {
         cancelHistory()
         riverReloadTask?.cancel()
         cancelVoiceRecording()
+        cancelPendingVoicePlayback()
         playback.stop()
     }
 
     deinit {
         // Plain-class teardown only (no actor-isolated state touched).
         voiceRecorder?.cancel()
+        voicePlaybackTask?.cancel()
     }
 
     /// Wave 0 offline rehydration - runs BEFORE the network fetch:
@@ -5350,14 +5354,21 @@ final class RoomViewModel: ObservableObject {
 
     // ── Wave 2 voice playback (spec §1 rows 12/13) ───────
 
+    private func cancelPendingVoicePlayback() {
+        voicePlaybackGeneration = UUID()
+        voicePlaybackTask?.cancel()
+        voicePlaybackTask = nil
+    }
+
     func toggleVoicePlayback(_ message: WireChatMessage, session: PulseSession) {
+        cancelPendingVoicePlayback()
         if let state = playback.state, state.messageId == message.id {
             if state.playing {
                 playback.pause()
             } else if state.progress < 0.999 {
-                playback.resume()
+                if !playback.resume() { session.toasts.show("Voice note could not play") }
             } else {
-                playback.replay()
+                if !playback.replay() { session.toasts.show("Voice note could not play") }
             }
             return
         }
@@ -5371,21 +5382,32 @@ final class RoomViewModel: ObservableObject {
             session.toasts.show("Voice note unavailable")
             return
         }
-        Task { [weak self] in
-            guard let self else { return }
+        let ticket = voicePlaybackGeneration
+        let epoch = session.sessionGeneration
+        voicePlaybackTask = Task { [weak self] in
+            guard !Task.isCancelled, let self, voicePlaybackGeneration == ticket,
+                  session.sessionGeneration == epoch else { return }
             let local: URL
-            if let cached = self.voiceLocalFiles[message.id] {
+            if let cached = voiceLocalFiles[message.id] {
                 local = cached
             } else {
                 do {
                     local = try await PulseMediaOpener.downloadForPreview(url: remote, fileName: "voice-\(message.id).m4a")
-                    self.voiceLocalFiles[message.id] = local
+                    guard !Task.isCancelled, voicePlaybackGeneration == ticket,
+                          session.sessionGeneration == epoch else { return }
+                    voiceLocalFiles[message.id] = local
                 } catch {
+                    guard !Task.isCancelled, voicePlaybackGeneration == ticket,
+                          session.sessionGeneration == epoch else { return }
                     session.toasts.show("Couldn't download the voice note")
                     return
                 }
             }
-            self.playback.start(messageId: message.id, localURL: local, rate: self.voiceRate)
+            guard !Task.isCancelled, voicePlaybackGeneration == ticket,
+                  session.sessionGeneration == epoch else { return }
+            if !playback.start(messageId: message.id, localURL: local, rate: voiceRate) {
+                session.toasts.show("Voice note could not play")
+            }
         }
     }
 
