@@ -32,12 +32,13 @@ import kotlinx.coroutines.flow.update
  * concrete inputs - referenced as StoryViewerInput.Tick etc.).
  */
 sealed interface StoryViewerInput {
-    /** Playback frame - carries wall time; elapsed accrues only while unpaused. */
+    /** Playback frame - monotonic time; expiry uses wall time in GroupsUpdated. */
     data class Tick(val nowMs: Long) : StoryViewerInput
     data object TapNext : StoryViewerInput
     data object TapPrev : StoryViewerInput
     data class HoldStart(val nowMs: Long) : StoryViewerInput
     data class HoldEnd(val nowMs: Long) : StoryViewerInput
+    data class PlaybackBlocked(val blocked: Boolean, val nowMs: Long) : StoryViewerInput
     data object DragDismiss : StoryViewerInput
     data class GroupsUpdated(val groups: List<StoryGroup>, val nowMs: Long) : StoryViewerInput
     data class ViewMarkOk(val storyId: String, val viewCount: Int) : StoryViewerInput
@@ -95,6 +96,8 @@ class StoryViewerStateMachine(
 
     /** Timestamp of the last Tick while unpaused - null = clock not armed yet. */
     private var lastTickAt: Long? = null
+    private var held = false
+    private var blocked = false
 
     fun on(input: StoryViewerInput) = _state.update { prev -> reduce(prev, input) }
 
@@ -104,8 +107,18 @@ class StoryViewerStateMachine(
             is StoryViewerInput.Tick -> onTick(base, input.nowMs)
             is StoryViewerInput.TapNext -> goTo(base, base.index + 1)
             is StoryViewerInput.TapPrev -> if (base.index > 0) goTo(base, base.index - 1) else base
-            is StoryViewerInput.HoldStart -> base.copy(paused = true).also { lastTickAt = input.nowMs }
-            is StoryViewerInput.HoldEnd -> base.copy(paused = false).also { lastTickAt = input.nowMs }
+            is StoryViewerInput.HoldStart -> {
+                held = true
+                base.copy(paused = true).also { lastTickAt = input.nowMs }
+            }
+            is StoryViewerInput.HoldEnd -> {
+                held = false
+                base.copy(paused = blocked).also { lastTickAt = input.nowMs }
+            }
+            is StoryViewerInput.PlaybackBlocked -> {
+                blocked = input.blocked
+                base.copy(paused = held || blocked).also { lastTickAt = input.nowMs }
+            }
             is StoryViewerInput.DragDismiss -> base.copy(dismissed = true)
             is StoryViewerInput.GroupsUpdated -> onGroupsUpdated(base, input.groups, input.nowMs)
             is StoryViewerInput.ViewMarkOk -> onViewMarkOk(base, input.storyId, input.viewCount)

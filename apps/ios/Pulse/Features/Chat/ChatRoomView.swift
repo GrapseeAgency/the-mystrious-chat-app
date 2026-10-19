@@ -1125,7 +1125,7 @@ private struct RoomContent: View {
                     await wave7.postStrokes(api: session.api, conversationId: conversation.id, strokes: strokes)
                 },
                 onUndo: { wave7.undoStroke(api: session.api, conversationId: conversation.id) },
-                onClear: { wave7.clearBoard(api: session.api, conversationId: conversation.id) },
+                onClear: { await wave7.clearBoard(api: session.api, conversationId: conversation.id) },
             )
         }
         .sheet(isPresented: $wave7.eventsOpen) {

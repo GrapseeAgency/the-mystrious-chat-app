@@ -6,6 +6,18 @@ Delivery: [draft PR #1](https://github.com/GrapseeAgency/the-mystrious-chat-app/
 
 **Not release-ready. This is a partial implementation, not closure of all 20 findings.** The original audit describes its pinned baseline and remains unchanged. “Implemented, verification pending” below is not a passing acceptance test. In particular, a compiled application does not prove authorization, delivery semantics, or device behavior.
 
+## Whole-product review (2026-10-19, follow-up to 511a22e)
+
+See [feature-tree review](NATIVE-FEATURE-TREE-REVIEW.md) and the reproducible
+[source inventory](NATIVE-SOURCE-INVENTORY.csv). All 293 production Kotlin/Swift
+files in the stated scope are **indexed**, not all behaviorally inspected.
+Targeted repairs now also cover stories, call/voice ownership, whiteboard ACKs,
+wallet/Hub, saved-library hydration, contacts navigation, profile covers and
+settings confirmation. Native regression additions remain unexecuted locally.
+**Active Android Voice/Stage audio wiring, iOS Stage-only audio, and cross-feature
+audio arbitration are newly documented open blockers.** Earlier fixes and old
+source comments must not be read as whole-app correctness.
+
 ## Finding-by-finding status
 
 | Finding | Status | Implemented / remaining |

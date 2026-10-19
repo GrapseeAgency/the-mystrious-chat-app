@@ -65,6 +65,8 @@ struct SettingsView: View {
             ?? PulseEndpoints.gatewayURL.absoluteString
     }
 
+    @State private var appLockConfirmation = UUID()
+
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
@@ -122,6 +124,7 @@ struct SettingsView: View {
             refreshLocalCounts()
             Task { await loadFootprintStats() }
         }
+        .onDisappear { appLockConfirmation = UUID() }
         .onChange(of: draftsOutboxOpen) { _, open in
             if !open { refreshLocalCounts() }
         }
@@ -265,6 +268,9 @@ struct SettingsView: View {
     /// surfaces the honest reason through the toast and keeps the stored
     /// value off (the toggle visually reverts by itself).
     private func confirmAppLock(_ enable: Bool) async {
+        let ticket = UUID()
+        appLockConfirmation = ticket
+        let epoch = session.sessionGeneration
         guard enable else {
             prefs.setAppLockEnabled(false)
             PulseAppLock.shared.needsLock = false
@@ -274,7 +280,9 @@ struct SettingsView: View {
             session.toasts.show(problem)
             return
         }
-        if await PulseAppLock.shared.runEnableConfirmation() {
+        let confirmed = await PulseAppLock.shared.runEnableConfirmation()
+        guard !Task.isCancelled, appLockConfirmation == ticket, session.sessionGeneration == epoch else { return }
+        if confirmed {
             prefs.setAppLockEnabled(true)
             session.toasts.show("App lock is on - Pulse locks when backgrounded.")
         } else {

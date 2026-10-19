@@ -36,6 +36,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
+import android.os.SystemClock
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import app.pulse.feature.stories.StoryViewerInput
+import app.pulse.feature.stories.StoryViewerStateMachine
+import kotlinx.coroutines.isActive
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -457,30 +465,51 @@ internal fun MirrorStoryViewer(
     group: StoryGroup,
     repository: PulseRepository,
     onDismiss: () -> Unit,
+    playbackEnabled: Boolean = true,
 ) {
-    var index by remember { mutableStateOf(0) }
-    val stories = group.stories
-    // R73 - the web story viewer (stories-sheet.tsx:150-183) drives a
-    // CONTINUOUS rAF progress bar per segment; the mirror now runs the same
-    // 6s sweep with Animatable instead of the old binary bars.
-    val progress = remember { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(group.user?.id, index) {
-        val story = stories.getOrNull(index) ?: return@LaunchedEffect
-        if (!story.viewedByMe) {
-            runCatching { repository.markStoryViewed(story.id) }
-        }
-        if (stories.isNotEmpty()) {
-            progress.snapTo(0f)
-            val done = progress.animateTo(
-                1f,
-                androidx.compose.animation.core.tween(6_000, easing = androidx.compose.animation.core.LinearEasing),
-            )
-            // a tap that switches segments cancels this effect, so reaching
-            // this line means the full sweep completed
-            if (index < stories.size - 1) index += 1 else onDismiss()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val machine = remember(group.user?.id) { StoryViewerStateMachine(group.user?.id) }
+    val state by machine.state.collectAsStateWithLifecycle()
+    val index = state.index
+    val stories = state.flat.map { it.story }
+    val story = state.current?.story
+
+    LaunchedEffect(machine, group) {
+        machine.on(StoryViewerInput.GroupsUpdated(listOf(group), System.currentTimeMillis()))
+    }
+    LaunchedEffect(machine, lifecycle, playbackEnabled, group) {
+        machine.on(StoryViewerInput.PlaybackBlocked(true, SystemClock.elapsedRealtime()))
+        if (!playbackEnabled) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            machine.on(StoryViewerInput.PlaybackBlocked(false, SystemClock.elapsedRealtime()))
+            try {
+                var lastExpiryCheck = 0L
+                while (isActive) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastExpiryCheck >= 1_000) {
+                        machine.on(StoryViewerInput.GroupsUpdated(listOf(group), System.currentTimeMillis()))
+                        lastExpiryCheck = now
+                    }
+                    machine.on(StoryViewerInput.Tick(now))
+                    delay(16)
+                }
+            } finally {
+                machine.on(StoryViewerInput.PlaybackBlocked(true, SystemClock.elapsedRealtime()))
+            }
         }
     }
-    val story = stories.getOrNull(index)
+    // A slow/failed view receipt must not freeze playback. Only mark while actually visible.
+    LaunchedEffect(machine, state.pendingMark, playbackEnabled, lifecycle) {
+        val mark = state.pendingMark ?: return@LaunchedEffect
+        if (!playbackEnabled) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            repository.markStoryViewed(mark.storyId).fold(
+                onSuccess = { machine.on(StoryViewerInput.ViewMarkOk(mark.storyId, it)) },
+                onFailure = { machine.on(StoryViewerInput.ViewMarkFailed(mark.storyId)) },
+            )
+        }
+    }
+    LaunchedEffect(state.dismissed) { if (state.dismissed) onDismiss() }
     Box(
         Modifier
             .fillMaxSize()
@@ -490,19 +519,27 @@ internal fun MirrorStoryViewer(
             )
             .clickable(onClick = onDismiss),
     ) {
+        if (story?.imagePath != null) {
+            coil.compose.AsyncImage(
+                model = mirrorUploadHttp(story.imagePath!!),
+                contentDescription = story.caption.ifBlank { "Story photo" },
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         // full-screen tap zones first: everything declared later sits on top
         Row(Modifier.fillMaxSize()) {
             Box(
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .clickable { if (index > 0) index -= 1 else onDismiss() },
+                    .clickable { machine.on(StoryViewerInput.TapPrev) },
             )
             Box(
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .clickable { if (index < stories.size - 1) index += 1 else onDismiss() },
+                    .clickable { machine.on(StoryViewerInput.TapNext) },
             )
         }
         // progress bars - one segment per story, the ACTIVE one fills with
@@ -526,7 +563,7 @@ internal fun MirrorStoryViewer(
                     } else if (i == index) {
                         Box(
                             Modifier
-                                .fillMaxWidth(progress.value)
+                                .fillMaxWidth(state.progress)
                                 .height(2.5.dp)
                                 .background(MirrorArt.Text.copy(alpha = 0.9f)),
                         )

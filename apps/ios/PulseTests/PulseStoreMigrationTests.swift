@@ -499,6 +499,23 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(try store.topics(conversationId: "c-missing").count, 0)
     }
 
+    func testSavedLibraryRehydratesBodiesOfflineAndRespectsUnsave() throws {
+        let store = try PulseStore()
+        let item = WireSavedItem(
+            savedAt: "2026-10-19T10:00:00Z",
+            conversation: WireSavedConversation(id: "saved-room", isGroup: true, name: "Room"),
+            message: makeMessage(id: "saved-message", conversationId: "saved-room", content: "offline body")
+        )
+        try store.upsert(savedItems: [item])
+        let cached = try store.cachedSavedItems()
+        XCTAssertEqual(cached.count, 1)
+        XCTAssertEqual(cached.first?.message.content, "offline body")
+        XCTAssertEqual(cached.first?.conversation.id, "saved-room")
+        try store.deleteSaved(messageId: "saved-message")
+        XCTAssertTrue(try store.cachedSavedItems().isEmpty)
+        XCTAssertNotNil(try store.message(id: "saved-message"))
+    }
+
     func testSavedLibraryUpsertReplaceAndDelete() throws {
         let store = try PulseStore()
         let first = WireSavedItem(

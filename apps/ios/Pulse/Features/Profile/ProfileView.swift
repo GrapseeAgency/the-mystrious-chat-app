@@ -241,23 +241,29 @@ struct ProfileView: View {
     /// PATCH coverImage -> viewer mirror refresh (web coverMutation parity).
     private func setCover(_ item: PhotosPickerItem) async {
         guard !coverBusy, let viewer = prefs.viewer else { return }
+        coverBusy = true
+        defer { coverBusy = false }
+        let epoch = session.sessionGeneration
+        let api = session.api
         guard let raw = try? await item.loadTransferable(type: Data.self),
               let jpeg = PulseCoverImage.jpegData(from: raw) else {
             session.toasts.show("Couldn't read that image - try another one")
             return
         }
-        coverBusy = true
-        defer { coverBusy = false }
+        guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
         do {
-            let path = try await session.api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
-            let user = try await session.api.updateProfile(
+            let path = try await api.uploadMedia(dataUrl: PulseAvatarImage.dataUrl(jpeg))
+            guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
+            let user = try await api.updateProfile(
                 userId: viewer.id,
                 body: ["coverImage": "/api/uploads/\(path)"],
             )
+            guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
             prefs.setViewer(PulseViewer(from: user))
             PulseHaptics.success()
             session.toasts.show("Cover picture updated")
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
             PulseHaptics.warning()
             session.toasts.show(ChatsViewModel.describe(error))
         }
@@ -268,12 +274,16 @@ struct ProfileView: View {
         guard !coverBusy, let viewer = prefs.viewer else { return }
         coverBusy = true
         defer { coverBusy = false }
+        let epoch = session.sessionGeneration
+        let api = session.api
         do {
-            let user = try await session.api.updateProfile(userId: viewer.id, body: ["coverImage": ""])
+            let user = try await api.updateProfile(userId: viewer.id, body: ["coverImage": ""])
+            guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
             prefs.setViewer(PulseViewer(from: user))
             PulseHaptics.success()
             session.toasts.show("Cover picture removed")
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, prefs.viewer?.id == viewer.id else { return }
             PulseHaptics.warning()
             session.toasts.show(ChatsViewModel.describe(error))
         }

@@ -146,6 +146,31 @@ final class StoryViewerMachineTests: XCTestCase {
         m.tick(nowMs: base + byMs)
     }
 
+    func testBackgroundAndModalPauseSurviveHoldReleaseWithoutElapsedJump() {
+        let m = makeMachine([group(userId: "alice", [story(id: "a0"), story(id: "a1")])])
+        advance(m, byMs: 1000, from: 100)
+        m.setPlaybackBlocked(true, nowMs: 1100)
+        m.holdStart(nowMs: 1200)
+        m.holdEnd(nowMs: 1500)
+        m.tick(nowMs: 61100)
+        XCTAssertTrue(m.state.paused)
+        XCTAssertEqual(m.state.elapsedMs, 1000)
+        m.setPlaybackBlocked(false, nowMs: 61100)
+        m.tick(nowMs: 62100)
+        XCTAssertEqual(m.state.elapsedMs, 2000)
+        XCTAssertEqual(m.state.current?.id, "a0")
+    }
+
+    func testResumeCannotReleaseAnActiveHold() {
+        let m = makeMachine([group(userId: "alice", [story(id: "a0")])])
+        m.holdStart(nowMs: 10)
+        m.setPlaybackBlocked(true, nowMs: 20)
+        m.setPlaybackBlocked(false, nowMs: 30)
+        XCTAssertTrue(m.state.paused)
+        m.holdEnd(nowMs: 40)
+        XCTAssertFalse(m.state.paused)
+    }
+
     func testStartsAtRequestedAuthorAndMarksPendingView() {
         let m = makeMachine([
             group(userId: "me", mine: true, [story(id: "s0", mine: true)]),

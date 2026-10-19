@@ -662,6 +662,33 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Offline read path for the saved library. Missing conversation metadata
+    /// remains unknown; the saved message body is still usable without a feed fetch.
+    public func cachedSavedItems() throws -> [WireSavedItem] {
+        try dbQueue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName,
+                       c.kind AS savedConversationKind
+                FROM savedMessages s JOIN message m ON m.id = s.messageId
+                LEFT JOIN conversation c ON c.id = s.conversationId
+                ORDER BY s.savedAt DESC, s.messageId DESC
+                """).compactMap { row in
+                    guard let message = Self.messageRow(from: row),
+                          let savedAt: String = row["savedStamp"] else { return nil }
+                    let kind: String? = row["savedConversationKind"]
+                    return WireSavedItem(
+                        savedAt: savedAt,
+                        conversation: WireSavedConversation(
+                            id: message.conversationId,
+                            isGroup: kind.map { $0 != "DM" },
+                            name: row["savedConversationName"]
+                        ),
+                        message: message
+                    )
+                }
+        }
+    }
+
     /// Every currently-saved message id (row-check + dock badge source).
     public func savedIds() throws -> Set<String> {
         try dbQueue.read { db in

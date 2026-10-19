@@ -204,14 +204,18 @@ class StoriesViewModel @Inject constructor(
     private val _viewers = MutableStateFlow<List<StoryViewer>>(emptyList())
     val viewers: StateFlow<List<StoryViewer>> = _viewers.asStateFlow()
 
+    private var viewersGeneration = 0L
     private val _viewersLoading = MutableStateFlow(false)
     val viewersLoading: StateFlow<Boolean> = _viewersLoading.asStateFlow()
 
     /** One fetch - the sheet re-issues it every 5s while open (D7 poll loop). */
     fun loadViewers(storyId: String) {
+        val ticket = ++viewersGeneration
         viewModelScope.launch {
             _viewersLoading.value = true
-            repo.storyViewers(storyId).fold(
+            val result = repo.storyViewers(storyId)
+            if (ticket != viewersGeneration) return@launch
+            result.fold(
                 onSuccess = { _viewers.value = it },
                 onFailure = { /* sheet keeps the last list; count badge stays honest */ },
             )
@@ -220,6 +224,8 @@ class StoriesViewModel @Inject constructor(
     }
 
     fun resetViewers() {
+        viewersGeneration++
+        _viewersLoading.value = false
         _viewers.value = emptyList()
     }
 }

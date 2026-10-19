@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 
 /**
  * Wave 5 - ongoing voice-room foreground service (manifest type `microphone`).
@@ -25,12 +26,13 @@ class VoiceForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val stop = intent?.getBooleanExtra(EXTRA_STOP, false) ?: false
         if (stop) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
         val label = intent?.getStringExtra(EXTRA_ROOM_LABEL) ?: "Live voice room active"
-        startForeground(
+        ServiceCompat.startForeground(
+            this,
             NOTIFICATION_ID,
             buildNotification(label),
             if (Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0,
@@ -74,8 +76,8 @@ class VoiceForegroundService : Service() {
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, VoiceForegroundService::class.java).putExtra(EXTRA_STOP, true)
-            runCatching { context.startService(intent) }
+            // Stopping must never start a new service (forbidden from background on modern Android).
+            context.stopService(Intent(context, VoiceForegroundService::class.java))
         }
 
         fun ensureChannel(context: Context) {

@@ -43,6 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseRepository
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -67,6 +70,9 @@ internal fun MirrorContacts(
     onNewGroup: () -> Unit,
     onAdd: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var openingUser by remember { mutableStateOf<String?>(null) }
     var people by remember { mutableStateOf<List<User>>(emptyList()) }
     var viewerName by remember { mutableStateOf("") }
     var viewerAbout by remember { mutableStateOf("") }
@@ -296,9 +302,23 @@ internal fun MirrorContacts(
                                         if (existing != null) {
                                             onOpenConversation(existing)
                                         } else {
-                                            CoroutineScope(Dispatchers.IO).launch {
-                                                val convo = repository.createDm(person.id).getOrNull()
-                                                if (convo != null) onOpenConversation(convo.id)
+                                            if (openingUser == null) {
+                                                openingUser = person.id
+                                                scope.launch {
+                                                    try {
+                                                        val result = repository.createDm(person.id)
+                                                        coroutineContext.ensureActive()
+                                                        result.fold(
+                                                            onSuccess = { onOpenConversation(it.id) },
+                                                            onFailure = {
+                                                                android.widget.Toast.makeText(
+                                                                    context, it.message ?: "Could not open this chat. Try again.",
+                                                                    android.widget.Toast.LENGTH_SHORT,
+                                                                ).show()
+                                                            },
+                                                        )
+                                                    } finally { openingUser = null }
+                                                }
                                             }
                                         }
                                     },

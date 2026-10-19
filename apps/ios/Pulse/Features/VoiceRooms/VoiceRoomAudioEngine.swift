@@ -57,13 +57,15 @@ final class VoiceRoomAudioSession {
             isActive = true
             return true
         } catch {
-            isActive = false
+            deactivate() // roll back a category change even if setActive failed
             return false
         }
     }
 
     /// Restore the pre-room category and let other audio resume.
     func deactivate() {
+        // Never deactivate another audio owner's session if this wrapper never acquired it.
+        guard saved != nil || isActive else { return }
         let session = AVAudioSession.sharedInstance()
         try? session.overrideOutputAudioPort(.none)
         if let saved {
@@ -100,7 +102,21 @@ final class VoiceRoomAudioSession {
 /// session model but deliberately NOT @MainActor: the tap runs on a
 /// realtime audio thread, so the gate is lock-guarded and callbacks
 /// fire on that thread (the session model hops to main).
-final class VoiceRoomAudioEngine {
+protocol VoiceRoomAudioDriving: AnyObject {
+    var onChunk: ((VoicePcmChunkOut) -> Void)? { get set }
+    var onSamples: (([Int16]) -> Void)? { get set }
+    var onError: ((String) -> Void)? { get set }
+    func requestMicPermission() async -> Bool
+    func startCapture(micGranted: Bool) -> String?
+    func stopCapture()
+    func resetChunker()
+    func setGate(transmitting: Bool, muted: Bool)
+    func flushPartial()
+    func resetPeer(_ userId: String)
+    func play(userId: String, base64: String, atMs: Double, nowMs: Double)
+}
+
+final class VoiceRoomAudioEngine: VoiceRoomAudioDriving {
     /// Emitted on the audio tap queue - one VoicePcmChunkOut per 250 ms
     /// block (+ the proportional partial flush on release).
     var onChunk: ((VoicePcmChunkOut) -> Void)?
@@ -164,21 +180,21 @@ final class VoiceRoomAudioEngine {
             try engine.start()
             return nil
         } catch {
+            stopCapture()
             return "Microphone is busy or unavailable."
         }
     }
 
     func stopCapture() {
-        engine.stop()
         setGate(transmitting: false, muted: false)
+        engine.stop()
+        if captureConfigured { engine.inputNode.removeTap(onBus: 0) }
+        captureConfigured = false
+        converter = nil
         lock.lock()
         chunker.reset()
-        captureConfigured = false
         lock.unlock()
-        playbackLock.lock()
-        peerNodes.values.forEach { $0.stop() }
-        peerNodes.removeAll()
-        playbackLock.unlock()
+        resetAllPeers()
         audioSession.deactivate()
     }
 
@@ -325,7 +341,7 @@ final class VoiceRoomAudioEngine {
         // in the future; otherwise chain right behind the pending buffers.
         let delayMs = atMs - nowMs
         if delayMs > 30 {
-            let hostTime = AVAudioTime.hostTime(forSeconds: delayMs / 1000.0)
+            let hostTime = mach_absolute_time() + AVAudioTime.hostTime(forSeconds: delayMs / 1000.0)
             let time = AVAudioTime(hostTime: hostTime, sampleTime: 0, atRate: 0)
             node.scheduleBuffer(buffer, at: time, options: [])
         } else {

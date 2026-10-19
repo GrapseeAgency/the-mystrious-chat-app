@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -164,14 +165,14 @@ internal fun MirrorHub(
                 ) {
                     MirrorLucideIcon("LCoins", tint = SubPageInk.Amber400, modifier = Modifier.size(14.dp))
                     Text(
-                        (walletCoins ?: 0).toString() + " PC",
+                        (walletCoins?.toString() ?: "—") + " PC",
                         color = SubPageInk.Amber400,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                     )
                     MirrorLucideIcon("LGem", tint = SubPageInk.Violet400, modifier = Modifier.size(12.dp))
                     Text(
-                        (walletGems ?: 0).toString(),
+                        (walletGems?.toString() ?: "—"),
                         color = SubPageInk.Violet400,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -343,6 +344,8 @@ private fun HubPrimaryButton(label: String, enabled: Boolean, onClick: () -> Uni
 
 @Composable
 private fun HubWalletPanel(repository: PulseRepository, onCoinsChanged: (Pair<Long, Long>) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var draftRevision by remember { mutableStateOf(0L) }
     var coins by remember { mutableStateOf<Long?>(null) }
     var gems by remember { mutableStateOf<Long?>(null) }
     var streak by remember { mutableStateOf(0) }
@@ -362,7 +365,7 @@ private fun HubWalletPanel(repository: PulseRepository, onCoinsChanged: (Pair<Lo
             checkedIn = page.wallet.checkedInToday
             ledger = page.ledger
             onCoinsChanged(page.wallet.coins to page.wallet.gems)
-        }
+        }.onFailure { notice = it.message ?: "Balance unavailable — retry when connected." }
     }
     LaunchedEffect(Unit) { load() }
 
@@ -395,7 +398,7 @@ private fun HubWalletPanel(repository: PulseRepository, onCoinsChanged: (Pair<Lo
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.Bottom) {
                     Column {
-                        Text((coins ?: 0).toString(), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold, lineHeight = 30.sp)
+                        Text((coins?.toString() ?: "—"), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold, lineHeight = 30.sp)
                         Text("PC · Pulse Coins", color = Color(0xCCFFFFFF), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     }
                     Spacer(Modifier.width(16.dp))
@@ -409,7 +412,7 @@ private fun HubWalletPanel(repository: PulseRepository, onCoinsChanged: (Pair<Lo
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             MirrorLucideIcon("LGem", tint = Color.White, modifier = Modifier.size(16.dp))
-                            Text((gems ?: 0).toString(), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, lineHeight = 20.sp)
+                            Text((gems?.toString() ?: "—"), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, lineHeight = 20.sp)
                         }
                         Text("Gems", color = Color(0xCCFFFFFF), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     }
@@ -424,7 +427,7 @@ private fun HubWalletPanel(repository: PulseRepository, onCoinsChanged: (Pair<Lo
                         .background(Color.White)
                         .clickable(enabled = !busy && checkedIn != true) {
                             busy = true
-                            CoroutineScope(Dispatchers.IO).launch {
+                            scope.launch {
                                 repository.checkinWallet().fold(
                                     onSuccess = { r ->
                                         notice = "Checked in - +${r.reward} PC · ${r.streak}-day streak"
@@ -478,23 +481,32 @@ private fun HubWalletPanel(repository: PulseRepository, onCoinsChanged: (Pair<Lo
                 MirrorLucideIcon("LSend", tint = SubPageInk.Amber400, modifier = Modifier.size(16.dp))
                 Text("Send coins by @handle", color = SubPageInk.Zinc50, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
-            HubField(toHandle, { toHandle = it.removePrefix("@").lowercase() }, "@handle")
+            HubField(toHandle, { draftRevision++; toHandle = it.removePrefix("@").lowercase() }, "@handle")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HubField(amount, { amount = it }, "Amount (PC)", modifier = Modifier.weight(1f), numeric = true)
-                HubField(note, { note = it }, "Note (optional)", modifier = Modifier.weight(1f))
+                HubField(amount, { draftRevision++; amount = it }, "Amount (PC)", modifier = Modifier.weight(1f), numeric = true)
+                HubField(note, { draftRevision++; note = it }, "Note (optional)", modifier = Modifier.weight(1f))
             }
             HubPrimaryButton(
                 label = if (busy) "Sending…" else "Transfer",
-                enabled = !busy && toHandle.isNotBlank() && amount.isNotBlank(),
+                enabled = !busy && toHandle.isNotBlank() && (amount.toLongOrNull() ?: 0L) in 1L..100_000L,
                 onClick = {
+                    if (busy) return@HubPrimaryButton
+                    val sentTo = toHandle.trim()
+                    val sentAmount = amount.toLongOrNull() ?: return@HubPrimaryButton
+                    if (sentAmount !in 1L..100_000L) return@HubPrimaryButton
+                    val sentNote = note.takeIf { it.isNotBlank() }
+                    val revision = draftRevision
                     busy = true
-                    CoroutineScope(Dispatchers.IO).launch {
-                        repository.transferCoins(toHandle, amount.toLongOrNull() ?: 0, note.takeIf { it.isNotBlank() }).fold(
+                    scope.launch {
+                        repository.transferCoins(sentTo, sentAmount, sentNote).fold(
                             onSuccess = {
-                                notice = "Sent $amount PC to @$toHandle"
-                                toHandle = ""
-                                amount = ""
-                                note = ""
+                                notice = "Sent $sentAmount PC to @$sentTo"
+                                if (draftRevision == revision) {
+                                    toHandle = ""
+                                    amount = ""
+                                    note = ""
+                                    draftRevision++
+                                }
                             },
                             onFailure = { notice = it.message },
                         )
@@ -871,6 +883,7 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
 
 @Composable
 private fun HubSwapPanel(repository: PulseRepository, onCoinsChanged: () -> Unit) {
+    val scope = rememberCoroutineScope()
     var rates by remember { mutableStateOf<app.pulse.protocol.SwapRatesDto?>(null) }
     var stats by remember { mutableStateOf<app.pulse.protocol.SwapStatsDto?>(null) }
     var direction by remember { mutableStateOf("pc2gem") }
@@ -1014,9 +1027,13 @@ private fun HubSwapPanel(repository: PulseRepository, onCoinsChanged: () -> Unit
                 label = if (busy) "Exchanging…" else "Exchange",
                 enabled = !busy && (amount.toLongOrNull() ?: 0L) > 0L,
                 onClick = {
+                    if (busy) return@HubPrimaryButton
+                    val requestedDirection = direction
+                    val requestedAmount = amount.toLongOrNull() ?: return@HubPrimaryButton
+                    if (requestedAmount <= 0L) return@HubPrimaryButton
                     busy = true
-                    CoroutineScope(Dispatchers.IO).launch {
-                        repository.swap(direction, amount.toLongOrNull() ?: 0).fold(
+                    scope.launch {
+                        repository.swap(requestedDirection, requestedAmount).fold(
                             onSuccess = { notice = it.note ?: "Exchange complete" },
                             onFailure = { notice = it.message },
                         )

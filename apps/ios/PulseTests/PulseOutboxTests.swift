@@ -3,7 +3,7 @@ import XCTest
 
 /// Wave 0 - outbox engine semantics, mirroring src/lib/pulse-outbox.ts:
 /// FIFO ≤50, stop-at-first-network-failure, temp→real swap on success,
-/// 4xx drop + continue. The APIClient boundary is the ONLY mock seam.
+/// Permanent rejection retained as failed + continue. The APIClient boundary is the ONLY mock seam.
 @MainActor
 final class PulseOutboxTests: XCTestCase {
     // stubbed sender (test-only)
@@ -356,45 +356,6 @@ final class PulseOutboxTests: XCTestCase {
         engine.stop()
     }
 
-}
-
-/// Shared fixture builder - WireChatMessage's memberwise init is internal,
-/// which @testable exposes to both test classes here.
-enum OutboxFixtures {
-    static func makeMessage(id: String, conversationId: String, content: String) -> WireChatMessage {
-        WireChatMessage(
-            id: id,
-            conversationId: conversationId,
-            senderId: "viewer-1",
-            content: content,
-            kind: "text",
-            createdAt: PulseOutboxClock.now(),
-            editedAt: nil,
-            deletedAt: nil,
-            sender: WireSender(id: "viewer-1", name: "Viewer", username: nil, color: nil, avatar: nil),
-            reactions: nil,
-            replyTo: nil,
-            parentId: nil,
-            imagePath: nil,
-            audioPath: nil,
-            durationMs: nil,
-            filePath: nil,
-            fileName: nil,
-            fileSize: nil,
-            pinnedAt: nil,
-            viewOnce: nil,
-            anon: nil,
-            anonAlias: nil,
-            viewedAt: nil,
-            viewedBy: nil,
-            transcript: nil,
-            transcribedAt: nil,
-            topicId: nil,
-            linkUrl: nil,
-            linkPreview: nil,
-            poll: nil,
-        )
-    }
     func testRejectionPreservesEnvelopeWithoutOverwritingNewComposer() throws {
         let store = try PulseStore()
         let message = OutboxFixtures.makeMessage(id: "local_failed", conversationId: "c1", content: "old send")
@@ -482,4 +443,44 @@ enum OutboxFixtures {
         XCTAssertEqual(reopened.countPendingOutbox(), 0)
     }
 
+
+}
+
+/// Shared fixture builder - WireChatMessage's memberwise init is internal,
+/// which @testable exposes to both test classes here.
+enum OutboxFixtures {
+    static func makeMessage(id: String, conversationId: String, content: String) -> WireChatMessage {
+        WireChatMessage(
+            id: id,
+            conversationId: conversationId,
+            senderId: "viewer-1",
+            content: content,
+            kind: "text",
+            createdAt: PulseOutboxClock.now(),
+            editedAt: nil,
+            deletedAt: nil,
+            sender: WireSender(id: "viewer-1", name: "Viewer", username: nil, color: nil, avatar: nil),
+            reactions: nil,
+            replyTo: nil,
+            parentId: nil,
+            imagePath: nil,
+            audioPath: nil,
+            durationMs: nil,
+            filePath: nil,
+            fileName: nil,
+            fileSize: nil,
+            pinnedAt: nil,
+            viewOnce: nil,
+            anon: nil,
+            anonAlias: nil,
+            viewedAt: nil,
+            viewedBy: nil,
+            transcript: nil,
+            transcribedAt: nil,
+            topicId: nil,
+            linkUrl: nil,
+            linkPreview: nil,
+            poll: nil,
+        )
+    }
 }

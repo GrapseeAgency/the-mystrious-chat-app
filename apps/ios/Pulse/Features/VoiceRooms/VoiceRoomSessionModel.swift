@@ -49,14 +49,21 @@ public final class VoiceRoomSessionModel: ObservableObject {
 
     private unowned let session: PulseSession
     private var cancellables: Set<AnyCancellable> = []
-    private let engine = VoiceRoomAudioEngine()
+    private let engine: any VoiceRoomAudioDriving
+    private var audioGeneration = UUID()
+    private(set) var audioJoinTask: Task<Void, Never>?
     private var accumulator = CaptionWindowAccumulator()
     private var lastTranscriptEmitMs: Double = 0
     /// The caption toggle store (the ONLY persisted artefact of the
     /// rooms feature - spec §1.4). Key shared with PulsePrefs.
     private let defaults: UserDefaults
 
-    public init(session: PulseSession, defaults: UserDefaults = .standard) {
+    public convenience init(session: PulseSession, defaults: UserDefaults = .standard) {
+        self.init(session: session, defaults: defaults, engine: VoiceRoomAudioEngine())
+    }
+
+    init(session: PulseSession, defaults: UserDefaults, engine: any VoiceRoomAudioDriving) {
+        self.engine = engine
         self.session = session
         self.defaults = defaults
         let myId = session.viewer?.id ?? ""
@@ -64,23 +71,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
         space = SpaceModel(myId: myId)
         captionsEnabled = defaults.bool(forKey: PulsePrefs.voiceCaptionsKey)
 
-        // Engine callbacks fire on the audio tap thread - hop to the main
-        // queue (strict FIFO keeps chunk ORDER intact; Task would not).
-        engine.onChunk = { [weak self] chunk in
-            DispatchQueue.main.async {
-                self?.handleLocalChunk(chunk)
-            }
-        }
-        engine.onSamples = { [weak self] samples in
-            DispatchQueue.main.async {
-                self?.handleCapturedSamples(samples)
-            }
-        }
-        engine.onError = { [weak self] text in
-            DispatchQueue.main.async {
-                self?.micIssue = text
-            }
-        }
+        installAudioCallbacks()
 
         // 1 s caption TTL sweep (VR-7; PulseSession pruneTypers pattern).
         Timer.publish(every: 1, on: .main, in: .common)
@@ -90,6 +81,37 @@ public final class VoiceRoomSessionModel: ObservableObject {
             .store(in: &cancellables)
         // Rooms signals are NOT self-subscribed: PulseSession.handle routes
         // the 7 rooms events + connectionState here (single delivery).
+    }
+
+    private func installAudioCallbacks() {
+        let generation = audioGeneration
+        // Engine callbacks fire on the audio tap thread - hop to the main
+        // queue (strict FIFO keeps chunk ORDER intact; Task would not).
+        engine.onChunk = { [weak self] chunk in
+            DispatchQueue.main.async {
+                guard let self, self.audioGeneration == generation else { return }
+                self.handleLocalChunk(chunk)
+            }
+        }
+        engine.onSamples = { [weak self] samples in
+            DispatchQueue.main.async {
+                guard let self, self.audioGeneration == generation else { return }
+                self.handleCapturedSamples(samples)
+            }
+        }
+        engine.onError = { [weak self] text in
+            DispatchQueue.main.async {
+                guard let self, self.audioGeneration == generation else { return }
+                self.micIssue = text
+            }
+        }
+
+    }
+
+    private func invalidateAudioAttempt() {
+        audioGeneration = UUID()
+        audioJoinTask?.cancel()
+        audioJoinTask = nil
     }
 
     // viewer helpers
@@ -157,14 +179,22 @@ public final class VoiceRoomSessionModel: ObservableObject {
         guard voice.status == .idle || voice.status == .error else { return }
         voice.beginJoin(conversationId: conversationId)
         open(.voice)
-        Task {
-            await activateAudioAndJoin()
+        invalidateAudioAttempt()
+        let ticket = audioGeneration
+        let epoch = session.sessionGeneration
+        audioJoinTask = Task { [weak self] in
+            guard !Task.isCancelled, let self else { return }
+            let granted = await engine.requestMicPermission()
+            guard !Task.isCancelled, audioGeneration == ticket,
+                  session.sessionGeneration == epoch,
+                  voice.conversationId == conversationId, voice.status == .joining else { return }
+            activateAudioAndJoin(granted: granted)
         }
     }
 
     /// Permission → session → engine → optimistic join + emit.
-    private func activateAudioAndJoin() async {
-        let granted = await engine.requestMicPermission()
+    private func activateAudioAndJoin(granted: Bool) {
+        installAudioCallbacks()
         if let failure = engine.startCapture(micGranted: granted) {
             micIssue = failure
         } else {
@@ -176,6 +206,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
     }
 
     public func leaveVoice() {
+        invalidateAudioAttempt()
         guard voice.status != .idle else { return }
         stopTransmitting(emitPttOff: voice.transmitting)
         emitVoiceLeave()
@@ -252,7 +283,13 @@ public final class VoiceRoomSessionModel: ObservableObject {
     /// VR-10 - the mic banner's "Try again": re-run permission + engine
     /// start; the room stays joined and listening throughout.
     public func retryMicAccess() async {
+        guard voice.status == .joined, let conversationId = voice.conversationId else { return }
+        let ticket = audioGeneration
+        let epoch = session.sessionGeneration
         let granted = await engine.requestMicPermission()
+        guard !Task.isCancelled, audioGeneration == ticket,
+              session.sessionGeneration == epoch,
+              voice.status == .joined, voice.conversationId == conversationId else { return }
         if let failure = engine.startCapture(micGranted: granted) {
             micIssue = failure
         } else {
@@ -263,7 +300,9 @@ public final class VoiceRoomSessionModel: ObservableObject {
     private func handleVoiceRoster(conversationId: String, rawPeers: [[String: Any]]) {
         guard conversationId == voice.conversationId else { return }
         guard let roster = WireVoiceRoster.decode(conversationId: conversationId, rawPeers: rawPeers) else { return }
-        voice.applyRoster(roster) // FIX #2: wholesale replace + playback reset for vanished peers
+        let liveIds = Set((roster.peers ?? []).map(\.id))
+        for peer in voice.roster where !liveIds.contains(peer.id) { engine.resetPeer(peer.id) }
+        voice.applyRoster(roster)
 
         let containsMe = (roster.peers ?? []).contains { $0.id == viewerId }
         guard !containsMe else { return }
@@ -625,6 +664,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
     /// The seat existed only for a stage/space context - release without
     /// touching the user's voice-room intent.
     private func releaseVoiceSeat() {
+        invalidateAudioAttempt()
         if let conversation = voice.conversationId {
             emitRoom(.voiceLeave, VoiceRoomWire.voiceLeave(conversationId: conversation))
         }

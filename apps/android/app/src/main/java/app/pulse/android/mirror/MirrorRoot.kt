@@ -372,7 +372,7 @@ internal fun MirrorRoot(
         when {
             viewingStory != null -> {
                 viewingStory?.let { group ->
-                    MirrorStoryViewer(group = group, repository = repository, onDismiss = { viewingStory = null })
+                    MirrorStoryViewer(group = group, repository = repository, playbackEnabled = readingEnabled, onDismiss = { viewingStory = null })
                 }
             }
             else -> {

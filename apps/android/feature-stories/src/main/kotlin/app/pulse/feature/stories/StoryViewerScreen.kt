@@ -1,5 +1,9 @@
 package app.pulse.feature.stories
 
+import android.os.SystemClock
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -63,7 +67,7 @@ private val BarTrack = Color.White.copy(alpha = 0.32f)
 
 /** {gateway}/api/uploads/{path} - the image-story source (spec §wire). Shared with the composer. */
 internal fun storyImageUrl(imagePath: String): String =
-    PulseEndpoints.http("/api/uploads/" + imagePath.removePrefix("/"))
+    PulseEndpoints.http(if (imagePath.startsWith("/api/uploads/")) imagePath else "/api/uploads/" + imagePath.removePrefix("/"))
 
 /**
  * Full-screen story viewer (Wave 4). A thin renderer over the pure
@@ -83,7 +87,8 @@ fun StoryViewerScreen(
 ) {
     val groups by storiesVm.groups.collectAsStateWithLifecycle()
     val flags by storiesVm.flags.collectAsStateWithLifecycle()
-    val machine = remember { StoryViewerStateMachine(startUserId) }
+    val machine = remember(startUserId) { StoryViewerStateMachine(startUserId) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val state by machine.state.collectAsStateWithLifecycle()
     val viewers by storiesVm.viewers.collectAsStateWithLifecycle()
     val viewersLoading by storiesVm.viewersLoading.collectAsStateWithLifecycle()
@@ -91,6 +96,11 @@ fun StoryViewerScreen(
 
     var viewersOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var deleteTarget by remember { mutableStateOf<String?>(null) }
+    var viewersTarget by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.current?.story?.id) {
+        if (deleteTarget != state.current?.story?.id) { confirmDelete = false; deleteTarget = null }
+    }
 
     // Feed → machine: start-position pick, expiry re-filter (D2) and
     // vanish reconciliation (D3) all flow through this one door.
@@ -102,14 +112,26 @@ fun StoryViewerScreen(
         }
     }
 
-    // Playback loop - 5000ms per story. The MACHINE no-ops ticks while
-    // paused/dismissed, so this loop never needs to stop-and-restart
-    // (a paused→resumed hold would otherwise leave a dead key'd effect:
-    // resume must continue from elapsed, never restart).
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            delay(16)
-            machine.on(StoryViewerInput.Tick(System.currentTimeMillis()))
+    // Foreground + modal gate is independent of the hold gesture gate.
+    LaunchedEffect(machine, lifecycle, viewersOpen, confirmDelete, groups) {
+        machine.on(StoryViewerInput.PlaybackBlocked(true, SystemClock.elapsedRealtime()))
+        if (viewersOpen || confirmDelete) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            machine.on(StoryViewerInput.PlaybackBlocked(false, SystemClock.elapsedRealtime()))
+            try {
+                var expiryCheck = 0L
+                while (isActive) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - expiryCheck >= 1000 && (flags.loadedOnce || groups.isNotEmpty())) {
+                        machine.on(StoryViewerInput.GroupsUpdated(groups, System.currentTimeMillis()))
+                        expiryCheck = now
+                    }
+                    machine.on(StoryViewerInput.Tick(now))
+                    delay(16)
+                }
+            } finally {
+                machine.on(StoryViewerInput.PlaybackBlocked(true, SystemClock.elapsedRealtime()))
+            }
         }
     }
 
@@ -152,15 +174,16 @@ fun StoryViewerScreen(
                         val holdJob = scope.launch {
                             delay(StoryViewerStateMachine.State.HOLD_THRESHOLD_MS)
                             holding = true
-                            machine.on(StoryViewerInput.HoldStart(System.currentTimeMillis()))
+                            machine.on(StoryViewerInput.HoldStart(SystemClock.elapsedRealtime()))
                         }
+                        var released = false
                         try {
-                            awaitRelease()
+                            released = tryAwaitRelease()
                         } finally {
                             holdJob.cancel()
                             if (holding) {
-                                machine.on(StoryViewerInput.HoldEnd(System.currentTimeMillis()))
-                            } else if (dragY.value > 0.5f) {
+                                machine.on(StoryViewerInput.HoldEnd(SystemClock.elapsedRealtime()))
+                            } else if (!released || viewersOpen || confirmDelete || dragY.value > 0.5f) {
                                 // drag release - never a zone tap
                             } else if (offset.x < size.width * 0.32f) {
                                 machine.on(StoryViewerInput.TapPrev)
@@ -173,7 +196,7 @@ fun StoryViewerScreen(
             }
             .pointerInput(current?.story?.id) {
                 detectVerticalDragGestures(
-                    onDragStart = { machine.on(StoryViewerInput.HoldStart(System.currentTimeMillis())) },
+                    onDragStart = { machine.on(StoryViewerInput.HoldStart(SystemClock.elapsedRealtime())) },
                     onVerticalDrag = { change, amount ->
                         velocityTracker.addPosition(change.uptimeMillis, change.position)
                         scope.launch { dragY.snapTo((dragY.value + amount).coerceAtLeast(0f)) }
@@ -181,7 +204,7 @@ fun StoryViewerScreen(
                     onDragEnd = {
                         val velocityY = velocityTracker.calculateVelocity().y
                         velocityTracker.resetTracking()
-                        machine.on(StoryViewerInput.HoldEnd(System.currentTimeMillis()))
+                        machine.on(StoryViewerInput.HoldEnd(SystemClock.elapsedRealtime()))
                         val shouldDismiss = dragY.value > StoryViewerStateMachine.State.DISMISS_DISTANCE_PX ||
                             velocityY > StoryViewerStateMachine.State.DISMISS_VELOCITY_PXPS
                         if (shouldDismiss) {
@@ -192,7 +215,7 @@ fun StoryViewerScreen(
                     },
                     onDragCancel = {
                         velocityTracker.resetTracking()
-                        machine.on(StoryViewerInput.HoldEnd(System.currentTimeMillis()))
+                        machine.on(StoryViewerInput.HoldEnd(SystemClock.elapsedRealtime()))
                         scope.launch { dragY.animateTo(0f, spring(stiffness = 380f)) }
                     },
                 )
@@ -259,15 +282,18 @@ fun StoryViewerScreen(
                     confirmDelete = confirmDelete,
                     onOpenViewers = {
                         confirmDelete = false
+                        viewersTarget = current.story.id
+                        storiesVm.resetViewers()
                         viewersOpen = true
                     },
-                    onAskDelete = { confirmDelete = true },
+                    onAskDelete = { deleteTarget = current.story.id; confirmDelete = true },
                     onCancelDelete = { confirmDelete = false },
                     onConfirmDelete = {
                         confirmDelete = false
                         // Optimistic removal; the machine auto-advances (D3)
                         // when GroupsUpdated reports the story gone.
-                        storiesVm.deleteStory(current.story.id) {}
+                        deleteTarget?.let { storiesVm.deleteStory(it) {} }
+                        deleteTarget = null
                     },
                     onClose = onClose,
                 )
@@ -289,13 +315,16 @@ fun StoryViewerScreen(
         }
     }
 
-    if (viewersOpen && current != null) {
+    if (viewersOpen && viewersTarget != null) {
         // D7: the sheet polls every ≤5s while open and the count badge
         // (header eye) reflects the fresh list size on close.
-        LaunchedEffect(viewersOpen, current.story.id) {
-            while (isActive) {
-                storiesVm.loadViewers(current.story.id)
-                delay(5_000)
+        LaunchedEffect(viewersTarget, lifecycle) {
+            val target = viewersTarget ?: return@LaunchedEffect
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                while (isActive) {
+                    storiesVm.loadViewers(target)
+                    delay(5_000)
+                }
             }
         }
         ModalBottomSheet(

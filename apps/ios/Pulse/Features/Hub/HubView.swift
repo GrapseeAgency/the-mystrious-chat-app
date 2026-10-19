@@ -33,6 +33,11 @@ final class HubViewModel: ObservableObject {
     }
 
     @Published var wallet = WalletUi()
+    @Published private(set) var checkinBusy = false
+    private var walletRequest = UUID()
+    private var marketRequest = UUID()
+    private var logsRequest = UUID()
+    private var appsRequest = UUID()
     @Published var tasks: [WireHubTask] = []
     @Published var listings: [WireMarketListing] = []
     @Published var logs: [WireHubLog] = []
@@ -76,6 +81,9 @@ final class HubViewModel: ObservableObject {
     // MARK: wallet + checkin
 
     func loadWallet() {
+        let ticket = UUID()
+        walletRequest = ticket
+        let epoch = session.sessionGeneration
         Task { @MainActor in
             wallet.loading = true
             wallet.error = nil
@@ -86,8 +94,10 @@ final class HubViewModel: ObservableObject {
             }
             do {
                 let page = try await api.walletPage()
+                guard walletRequest == ticket, session.sessionGeneration == epoch else { return }
                 wallet = WalletUi(loading: false, page: page, stale: false, error: nil)
             } catch {
+                guard walletRequest == ticket, session.sessionGeneration == epoch else { return }
                 wallet.stale = wallet.page != nil
                 wallet.loading = false
                 if wallet.page == nil { wallet.error = describe(error) }
@@ -96,7 +106,10 @@ final class HubViewModel: ObservableObject {
     }
 
     func checkin() {
+        guard !checkinBusy else { return }
+        checkinBusy = true
         Task { @MainActor in
+            defer { checkinBusy = false }
             guard let api = api else { return }
             do {
                 let result = try await api.checkinWallet()
@@ -238,9 +251,19 @@ final class HubViewModel: ObservableObject {
     // MARK: market
 
     func loadMarket() {
+        let ticket = UUID()
+        marketRequest = ticket
+        let epoch = session.sessionGeneration
         Task { @MainActor in
             guard let api = api else { return }
-            listings = (try? await api.market().listings) ?? []
+            do {
+                let fresh = try await api.market().listings
+                guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
+                listings = fresh
+            } catch {
+                guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
+                toast(describe(error), isError: true) // keep the last real list
+            }
         }
     }
 
@@ -274,9 +297,19 @@ final class HubViewModel: ObservableObject {
     // MARK: logs
 
     func loadLogs() {
+        let ticket = UUID()
+        logsRequest = ticket
+        let epoch = session.sessionGeneration
         Task { @MainActor in
             guard let api = api else { return }
-            logs = (try? await api.hubLogs(limit: 80, kind: nil).logs) ?? []
+            do {
+                let fresh = try await api.hubLogs(limit: 80, kind: nil).logs
+                guard logsRequest == ticket, session.sessionGeneration == epoch else { return }
+                logs = fresh
+            } catch {
+                guard logsRequest == ticket, session.sessionGeneration == epoch else { return }
+                toast(describe(error), isError: true) // keep the last real list
+            }
         }
     }
 
@@ -345,11 +378,16 @@ final class HubViewModel: ObservableObject {
 
     /// F-HB-10 - My apps fan-out (web hub-data.tsx:61,107 parity).
     func loadMyApps(_ catalog: HubCatalog) {
+        let ticket = UUID()
+        appsRequest = ticket
+        let epoch = session.sessionGeneration
         Task { @MainActor in
             guard let api = api else { return }
-            for app in catalog.apps.prefix(24) {
+            for app in catalog.apps {
+                guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
                 let appId = String(app.n)
                 if let state = try? await api.appInstallState(appId: appId) {
+                    guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
                     installs[appId] = state
                 }
             }
@@ -477,7 +515,7 @@ struct HubView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(checkedIn || vm.wallet.loading)
+            .disabled(checkedIn || vm.wallet.loading || vm.checkinBusy)
             if let w = vm.wallet.page?.wallet, !checkedIn, let streak = w.streak, streak > 0 {
                 Text("Next check-in continues your \(streak)-day streak (+\(min(streak * 2, 20)) bonus)")
                     .font(.caption2)
