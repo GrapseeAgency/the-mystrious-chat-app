@@ -109,6 +109,20 @@ final class WalletOperationJournalTests: XCTestCase {
         let otherOwner = try await reopened.begin(["https://one.test", "other", "swap", "100"])
         XCTAssertNotEqual(next, otherOwner)
     }
+    @MainActor
+    func testCancelledAcknowledgementRetainsThePendingOperation() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let journal = PulseWalletOperations(directory: dir)
+        let intent = ["gateway", "owner", "swap", "100"]
+        let id = try await journal.begin(intent)
+        let task = Task { @MainActor in try await journal.finish(intent, id: id) }
+        task.cancel()
+        do { try await task.value; XCTFail("Cancelled receipt must stay pending") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let retry = try await journal.begin(intent)
+        XCTAssertEqual(id, retry)
+    }
     func testGatewayAliasesUseTheSameNamespace() {
         XCTAssertEqual(PulseWalletOperations.gatewayKey(URL(string: "https://EXAMPLE.test:443/")!), PulseWalletOperations.gatewayKey(URL(string: "https://example.test")!))
         XCTAssertNotEqual(PulseWalletOperations.gatewayKey(URL(string: "https://example.test/a")!), PulseWalletOperations.gatewayKey(URL(string: "https://example.test/b")!))
@@ -124,7 +138,7 @@ private final class WalletReceiptProtocol: URLProtocol {
             stream.open(); defer { stream.close() }
             var buffer = [UInt8](repeating: 0, count: 1024)
             while true {
-                let count = stream.read(&buffer, maxLength: buffer.count)
+                let count = stream.read(&buffer, maxLength: 1024)
                 if count <= 0 { break }
                 data.append(contentsOf: buffer.prefix(count))
             }

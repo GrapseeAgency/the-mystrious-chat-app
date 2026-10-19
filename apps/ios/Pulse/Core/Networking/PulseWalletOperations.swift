@@ -21,6 +21,7 @@ actor PulseWalletOperations {
         return directory.appendingPathComponent(digest + ".operation")
     }
     func begin(_ intent: [String]) throws -> String {
+        try Task.checkCancellation()
         let path = try file(intent)
         if FileManager.default.fileExists(atPath: path.path) {
             let id = try String(contentsOf: path, encoding: .utf8)
@@ -33,6 +34,7 @@ actor PulseWalletOperations {
         return id
     }
     func finish(_ intent: [String], id: String) throws {
+        try Task.checkCancellation()
         let path = try file(intent)
         guard FileManager.default.fileExists(atPath: path.path) else { return }
         guard try String(contentsOf: path, encoding: .utf8) == id else { return }

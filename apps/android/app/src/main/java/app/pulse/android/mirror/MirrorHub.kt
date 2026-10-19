@@ -481,7 +481,7 @@ private fun HubWalletPanel(repository: PulseRepository, onCoinsChanged: (Pair<Lo
                 MirrorLucideIcon("LSend", tint = SubPageInk.Amber400, modifier = Modifier.size(16.dp))
                 Text("Send coins by @handle", color = SubPageInk.Zinc50, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
-            HubField(toHandle, { draftRevision++; toHandle = it.removePrefix("@").lowercase() }, "@handle")
+            HubField(toHandle, { draftRevision++; toHandle = it.removePrefix("@").lowercase(java.util.Locale.ROOT) }, "@handle")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 HubField(amount, { draftRevision++; amount = it }, "Amount (PC)", modifier = Modifier.weight(1f), numeric = true)
                 HubField(note, { draftRevision++; note = it }, "Note (optional)", modifier = Modifier.weight(1f))

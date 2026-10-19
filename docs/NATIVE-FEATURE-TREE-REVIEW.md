@@ -648,3 +648,10 @@ Swift unit tests; its iOS archive also passed. That is not execution evidence fo
 newer receipt/marketplace changes. Legacy header-less authorization migration and
 check-in semantics remain outside this repair; marketplace transaction safety is
 not a claim that the full economic or authorization system is complete.
+
+Final monetary guard pass: Swift journal begin/retire now checks task cancellation
+on entry to the serialized file operation, preserving the pending ID if cancellation
+won the actor hop. Android transfer-field and transport normalization now use
+`Locale.ROOT`; a Turkish device locale must not rewrite `@INCI` to a different
+recipient handle. Added one regression for each (**34 authored native regressions
+since f725**). These are targeted safeguards, not broad cancellation/locale claims.

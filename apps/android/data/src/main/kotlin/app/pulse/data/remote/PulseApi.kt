@@ -1674,7 +1674,7 @@ class PulseApi(
             buildJsonObject {
                 if (clientId != null) put("clientId", clientId)
                 put("userId", userId)
-                put("toUsername", toUsername.trim().removePrefix("@").lowercase())
+                put("toUsername", toUsername.trim().removePrefix("@").lowercase(java.util.Locale.ROOT))
                 put("amount", amount)
                 if (!note.isNullOrBlank()) put("note", note)
             },

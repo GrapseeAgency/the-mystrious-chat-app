@@ -11,6 +11,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WalletAcknowledgementTest {
+    @Test fun `recipient normalization cannot change with device locale`() = runTest {
+        val previous = java.util.Locale.getDefault()
+        val http = HttpClient(MockEngine { request ->
+            val body = (request.body as io.ktor.http.content.OutgoingContent.ByteArrayContent).bytes().decodeToString()
+            assertTrue(body.contains("\"toUsername\":\"inci\""))
+            respond("""{"wallet":{"userId":"me","coins":10,"gems":0},"to":{"id":"other"}}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+        })
+        try {
+            java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"))
+            assertTrue(PulseApi(http, gateway = { "https://wallet.test" }).transferCoins("me", "@INCI", 1, null) is PulseResult.Success)
+        } finally { java.util.Locale.setDefault(previous); http.close() }
+    }
     @Test fun `purchase requires both affirmative confirmation and a valid wallet`() = runTest {
         for (body in listOf("""{"ok":false,"wallet":{"userId":"me","coins":50,"gems":0}}""", """{"ok":true,"wallet":{}}""")) {
             val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
