@@ -976,7 +976,8 @@ struct Wave7WhiteboardSheet: View {
                                 WireWhiteboardStrokePost(color: color, width: width, points: pts),
                                 conversationId: conversationId,
                             )
-                            flushPending()
+                            // A new drawing is not consent to retry an uncertain old POST.
+                            if !syncFailed { flushPending() }
                         }
                     },
                 )
