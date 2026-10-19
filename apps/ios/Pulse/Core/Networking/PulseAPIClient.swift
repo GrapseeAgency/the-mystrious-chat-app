@@ -947,7 +947,10 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/conversations/{id}/whiteboard { requesterId, strokes[] } → { ids, created, serverTime }.
     public func postWhiteboardStrokes(conversationId: String, strokes: [WireWhiteboardStrokePost]) async throws -> WireWhiteboardPostResult {
         let strokeArrays: [[String: Any]] = strokes.map { s in
-            ["color": s.color, "width": s.width, "points": s.points]
+            var row: [String: Any] = ["color": s.color, "width": s.width, "points": s.points]
+            if let id = s.clientId { row["clientId"] = id }
+            if let epoch = s.baseResetAt { row["baseResetAt"] = epoch }
+            return row
         }
         let data = try await postRaw("/api/conversations/\(q(conversationId))/whiteboard", body: ["requesterId": userId, "strokes": strokeArrays])
         return try envelope(WireWhiteboardPostResult.self, from: data)

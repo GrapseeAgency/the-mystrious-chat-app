@@ -1361,6 +1361,8 @@ class PulseApi(
                 put("requesterId", requesterId)
                 put("strokes", kotlinx.serialization.json.JsonArray(strokes.map { s ->
                     buildJsonObject {
+                        s.clientId?.let { put("clientId", it) }
+                        s.baseResetAt?.let { put("baseResetAt", it) }
                         put("color", s.color)
                         put("width", s.width)
                         put("points", kotlinx.serialization.json.JsonArray(s.points.map { pt ->

@@ -1729,9 +1729,7 @@ class PulseRepositoryImpl constructor(
     override fun stageDraft(conversationId: String, text: String) {
         val version = nextDraftVersion(conversationId)
         draftWriteScope.launch {
-            try { writeLocalDraft(conversationId, text, version) }
-            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (error: Exception) { Log.w(TAG, "Local draft could not be saved", error) }
+            try { writeLocalDraft(conversationId, text, version) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Local draft could not be saved", error) }
         }
     }
 
@@ -2591,6 +2589,12 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Success -> Result.success(r.value)
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+
+    override suspend fun loadWhiteboardDraft(conversationId: String, ownerId: String): List<WhiteboardStrokePostDto> =
+        prefsLocalStore.whiteboardDraft("account:$ownerId:room:$conversationId")
+
+    override suspend fun updateWhiteboardDraft(conversationId: String, ownerId: String, transform: (List<WhiteboardStrokePostDto>) -> List<WhiteboardStrokePostDto>) =
+        prefsLocalStore.updateWhiteboardDraft("account:$ownerId:room:$conversationId", transform)
 
     override suspend fun whiteboard(conversationId: String, since: Long?): Result<WhiteboardPageDto> =
         when (val r = api.whiteboard(conversationId, viewerId ?: "", since)) {

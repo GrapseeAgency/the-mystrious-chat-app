@@ -827,6 +827,9 @@ interface PulseRepository {
     suspend fun grabRedPacket(packetId: String): Result<RedPacketGrabResultDto>
 
     /** GET /api/conversations/{id}/whiteboard?since= - since=null → full snapshot. */
+    /** Account-bound durable queue for the active board surface. */
+    suspend fun loadWhiteboardDraft(conversationId: String, ownerId: String): List<WhiteboardStrokePostDto> = error("Draft store unavailable")
+    suspend fun updateWhiteboardDraft(conversationId: String, ownerId: String, transform: (List<WhiteboardStrokePostDto>) -> List<WhiteboardStrokePostDto>): List<WhiteboardStrokePostDto> = error("Draft store unavailable")
     suspend fun whiteboard(conversationId: String, since: Long?): Result<WhiteboardPageDto>
 
     /** POST strokes (≤40/call, 2..500 pts, 0..1 coords). */

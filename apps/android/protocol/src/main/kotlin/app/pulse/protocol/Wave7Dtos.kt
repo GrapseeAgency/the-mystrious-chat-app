@@ -125,6 +125,8 @@ data class WhiteboardStrokeDto(
 
 @Serializable
 data class WhiteboardPageDto(
+    val operationsVersion: Int = 0,
+    val complete: Boolean = true,
     val strokes: List<WhiteboardStrokeDto> = emptyList(),
     val serverTime: Long? = null,
     val resetAt: Long? = null,
@@ -132,6 +134,8 @@ data class WhiteboardPageDto(
 
 @Serializable
 data class WhiteboardStrokePostDto(
+    val clientId: String? = null,
+    val baseResetAt: Long? = null,
     val color: String = "#000000",
     val width: Double = 3.0,
     val points: List<List<Double>> = emptyList(),

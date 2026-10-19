@@ -143,6 +143,19 @@ class PulsePrefsLocalStore internal constructor(
         return PulseWhiteboardDraftLogic.decode(raw)
     }
 
+    /** Atomic read/modify/write across overlapping screen instances. */
+    suspend fun updateWhiteboardDraft(
+        conversationId: String,
+        transform: (List<app.pulse.protocol.WhiteboardStrokePostDto>) -> List<app.pulse.protocol.WhiteboardStrokePostDto>,
+    ): List<app.pulse.protocol.WhiteboardStrokePostDto> {
+        var result = emptyList<app.pulse.protocol.WhiteboardStrokePostDto>()
+        storage.edit { p ->
+            result = transform(PulseWhiteboardDraftLogic.decode(p[whiteboardDraftKey(conversationId)]))
+            p[whiteboardDraftKey(conversationId)] = PulseWhiteboardDraftLogic.encode(result)
+        }
+        return result
+    }
+
     /** Draw-time write-through - persists the stroke BEFORE any sync attempt. */
     suspend fun appendWhiteboardDraft(conversationId: String, stroke: app.pulse.protocol.WhiteboardStrokePostDto) {
         if (!CONV_ID_OK.matches(conversationId)) return

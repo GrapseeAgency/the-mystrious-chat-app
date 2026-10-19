@@ -68,6 +68,8 @@ public struct WireWhiteboardStroke: Codable, Hashable, Sendable {
 }
 
 public struct WireWhiteboardPage: Codable, Sendable {
+    public var operationsVersion: Int? = nil
+    public var complete: Bool? = nil
     public let strokes: [WireWhiteboardStroke]?
     public let serverTime: Int64?
     public let resetAt: Int64?
@@ -77,6 +79,8 @@ public struct WireWhiteboardStrokePost: Codable, Equatable, Sendable {
     public let color: String
     public let width: Double
     public let points: [[Double]]
+    public var clientId: String? = nil
+    public var baseResetAt: Int64? = nil
 }
 
 public struct WireWhiteboardPostResult: Codable, Sendable {

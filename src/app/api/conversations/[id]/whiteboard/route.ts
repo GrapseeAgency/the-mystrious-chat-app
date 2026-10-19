@@ -27,6 +27,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
+import { boardResetAt, commitBoardStrokes, clearBoard, WhiteboardConflict, type BoardStrokeInput } from '@/lib/whiteboard-operation'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,23 +79,13 @@ function parseSince(raw: string | null): { ok: Date | null } | { error: string }
   return { ok: new Date(parsed) }
 }
 
-/** Latest whiteboard-clear marker (epoch ms) for this conversation, or null. */
-async function latestResetAt(conversationId: string): Promise<number | null> {
-  const marker = await db.logEvent.findFirst({
-    where: { kind: 'whiteboard-clear', message: conversationId },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    select: { createdAt: true },
-  })
-  return marker ? marker.createdAt.getTime() : null
-}
-
 /**
  * Validate + normalize one incoming stroke payload. Returns the ready-to-insert
  * row or an error string. Points are clamped into normalized 0..1 coords.
  */
 function normalizeStroke(
   raw: unknown,
-): { ok: { color: string; width: number; points: string } } | { error: string } {
+): { ok: BoardStrokeInput } | { error: string } {
   if (typeof raw !== 'object' || raw === null) return { error: 'each stroke must be an object.' }
   const s = raw as Record<string, unknown>
 
@@ -122,7 +113,11 @@ function normalizeStroke(
       Math.min(Math.max(y, 0), 1),
     ])
   }
-  return { ok: { color, width, points: JSON.stringify(pts) } }
+  if (s.clientId !== undefined && (typeof s.clientId !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(s.clientId) || !Number.isSafeInteger(s.baseResetAt) || Number(s.baseResetAt) < 0)) {
+    return { error: 'A stroke operation needs a valid clientId and baseResetAt.' }
+  }
+  return { ok: { color, width, points: JSON.stringify(pts),
+    ...(s.clientId !== undefined ? { clientId: s.clientId as string, baseResetAt: s.baseResetAt as number } : {}) } }
 }
 
 /** Shape a DB stroke row for the wire (points parsed back into number[][]). */
@@ -177,22 +172,24 @@ export async function GET(req: Request, { params }: RouteCtx) {
   }
   const sinceDate = since.ok
 
-  const [rows, resetAt] = await Promise.all([
-    db.whiteboardStroke.findMany({
+  const [rows, resetAt] = await db.$transaction(async tx => [
+    await tx.whiteboardStroke.findMany({
       where: {
         conversationId: id,
         ...(sinceDate ? { createdAt: { gt: sinceDate } } : {}),
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      take: 4000,
+      take: 4001,
       select: { id: true, userId: true, color: true, width: true, points: true, createdAt: true },
     }),
-    latestResetAt(id),
-  ])
+    await boardResetAt(tx, id),
+  ] as const)
 
   return NextResponse.json(
     {
-      strokes: rows.map(serializeStroke),
+      strokes: rows.slice(0, 4000).map(serializeStroke),
+      complete: rows.length <= 4000,
+      operationsVersion: 1,
       serverTime: Date.now(),
       resetAt,
     },
@@ -219,17 +216,20 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
   // undo mode: remove only the caller's latest stroke 
   if (body.action === 'undo') {
-    const latest = await db.whiteboardStroke.findFirst({
+    const removedId = await db.$transaction(async tx => {
+    const latest = await tx.whiteboardStroke.findFirst({
       where: { conversationId: id, userId: requesterId },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { id: true },
     })
     if (latest) {
-      await db.whiteboardStroke.delete({ where: { id: latest.id } })
+      await tx.whiteboardStroke.delete({ where: { id: latest.id } })
     }
+    return latest?.id ?? null
+    })
     return NextResponse.json({
       success: true,
-      removedId: latest?.id ?? null,
+      removedId,
       serverTime: Date.now(),
     })
   }
@@ -244,7 +244,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
       { status: 400 },
     )
   }
-  const normalized: Array<{ color: string; width: number; points: string }> = []
+  const normalized: BoardStrokeInput[] = []
   for (const raw of body.strokes) {
     const result = normalizeStroke(raw)
     if ('error' in result) {
@@ -253,25 +253,13 @@ export async function POST(req: Request, { params }: RouteCtx) {
     normalized.push(result.ok)
   }
 
-  // create() per stroke inside a transaction so the response can
-  // hand back the real ids in input order (createMany returns none)
-  const created = await db.$transaction(
-    normalized.map((stroke) =>
-      db.whiteboardStroke.create({
-        data: { conversationId: id, userId: requesterId, ...stroke },
-        select: { id: true },
-      }),
-    ),
-  )
-
-  return NextResponse.json(
-    {
-      ids: created.map((c) => c.id),
-      created: created.length,
-      serverTime: Date.now(),
-    },
-    { status: 201 },
-  )
+  try {
+    const result = await commitBoardStrokes(db, id, requesterId, normalized)
+    return NextResponse.json({ ...result, serverTime: Date.now() }, { status: 201 })
+  } catch (error) {
+    if (error instanceof WhiteboardConflict) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
+  }
 }
 
 /**
@@ -290,25 +278,6 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
   const guard = await participantGuard(id, requesterId)
   if (guard) return guard
 
-  const at = new Date()
-  const results = await db.$transaction([
-    db.whiteboardStroke.deleteMany({ where: { conversationId: id } }),
-    db.logEvent.create({
-      data: {
-        userId: requesterId,
-        kind: 'whiteboard-clear',
-        message: id,
-        meta: JSON.stringify({ at: at.toISOString() }),
-      },
-      select: { id: true },
-    }),
-  ])
-
-  return NextResponse.json({
-    success: true,
-    reset: true,
-    at: at.getTime(),
-    cleared: results[0].count,
-    serverTime: Date.now(),
-  })
+  const result = await clearBoard(db, id, requesterId)
+  return NextResponse.json({ success: true, reset: true, ...result, serverTime: Date.now() })
 }

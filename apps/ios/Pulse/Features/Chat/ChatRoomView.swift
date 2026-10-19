@@ -1115,18 +1115,8 @@ private struct RoomContent: View {
             )
         }
         .sheet(isPresented: $wave7.whiteboardOpen) {
-            Wave7WhiteboardSheet(
-                conversationId: conversation.id,
-                viewerId: session.viewer?.id ?? "",
-                load: { since in try? await session.api.whiteboard(conversationId: conversation.id, since: since) },
-                onStrokes: { strokes in
-                    // R1-W2G D44 - the sheet awaits the sync verdict: the
-                    // draft store clears a stroke only on server confirmation.
-                    await wave7.postStrokes(api: session.api, conversationId: conversation.id, strokes: strokes)
-                },
-                onUndo: { wave7.undoStroke(api: session.api, conversationId: conversation.id) },
-                onClear: { await wave7.clearBoard(api: session.api, conversationId: conversation.id) },
-            )
+            Wave7WhiteboardSheet(conversationId: conversation.id,
+                viewerId: session.viewer?.id ?? "", api: session.api)
         }
         .sheet(isPresented: $wave7.eventsOpen) {
             Wave7EventsSheet(

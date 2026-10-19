@@ -808,3 +808,13 @@ model MessageSendOperation {
 
   @@id([senderId, clientId])
 }
+
+// Tombstone-capable drawing receipt, retained after Undo/Clear.
+model WhiteboardStrokeOperation {
+  senderId    String
+  clientId    String
+  requestHash String
+  strokeId    String @unique
+
+  @@id([senderId, clientId])
+}

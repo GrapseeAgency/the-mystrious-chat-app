@@ -371,3 +371,58 @@ https://developer.android.com/reference/android/media/AudioTrack
   surviving independent voice seat to listening. Ending a stage no longer dismisses
   an unrelated Space/Voice surface. The final changes after `14e8606` need their own
   native results; the earlier pass is not attributed to an untested successor.
+
+## End-to-end collaboration repair (2026-10-19, after d5263ab)
+
+This is a deeper trace of **one** additional tree, not a whole-product sign-off:
+`MirrorRoom → MirrorWhiteboardSheet → bound repository → DataStore/API → SQLite`
+and `ChatRoomView → Wave7WhiteboardSheet → PulseWhiteboardSession → draft store/API`.
+
+Confirmed defects: the active Android canvas never called the existing draft store;
+failed/uncertain POSTs deleted visible ink; geometry-based dedupe could mistake another
+person's drawing for delivery; Swift delta append could not observe Undo; server writes
+had no replay identity or reset precondition; Clear returned a timestamp different from
+its stored marker. Brush closures and cancelled Android gestures could commit stale ink.
+
+Source repairs:
+- Operation UUID + observed reset epoch travel from draw-time persistence through POST.
+  Transactional receipts survive Undo/Clear; an unseen old-epoch operation conflicts.
+  Replaying a delivered-then-deleted operation acknowledges it without resurrection.
+- Clear allocates a strictly increasing epoch inside the same transaction as deletion.
+  Snapshot rows and epoch are read together. Undo selection/deletion is transactional.
+- Both active native surfaces use screen-owned coordinators, authoritative snapshots,
+  exact-ID reconciliation, ACK validation and explicit error states. Drawing persistence
+  does not wait for an in-flight HTTP request. Cancelled/closed-screen ACKs cannot clear
+  successor drafts. Android DataStore updates merge atomically across screen instances;
+  Swift rereads the MainActor-owned draft store before append/ACK reconciliation.
+- Storage is scoped by captured viewer + conversation, rather than a mutable later
+  account identity. Old unscoped drafts are left untouched, not attributed to a new user.
+  Unknown-epoch legacy entries in the scoped store remain retained, not silently replayed.
+- New clients require `operationsVersion: 1` before upload: otherwise an old backend
+  ignoring operation IDs could multiply drawings on automatic retry. Responses exceeding
+  the existing 4,000-stroke cap explicitly report `complete: false`; native clients refuse
+  to adopt the partial board. Pagination/large-board editing remains open.
+- Swift long strokes are normalized/downsampled to at most 500 points, preserving both
+  endpoints; malformed coordinates are excluded. Stationary taps produce dots. Android
+  brush/surface transitions recreate the gesture handler, and cancellation discards it.
+
+Deployment order: back up SQLite, apply
+`prisma/patches/20261019_whiteboard_operations.sql`, deploy the endpoint/helper, then
+ship native clients. This patch has NOT been applied to a production server here.
+Legacy clients remain accepted but do not gain replay/reset guarantees. This change
+also does not make destructive Undo/Clear requests themselves idempotent.
+
+Evidence: **19/19 server transaction tests passed locally**, including 9 new whiteboard
+cases (lost ACK, intentional identical strokes, sender isolation, conflicting key reuse,
+Undo/Clear tombstones, reset fencing, rollback, concurrency, monotonic markers and
+legacy compatibility). **10 Android coordinator tests and 6 Swift tests authored**;
+native execution for this change is pending. Syntax checks are not compilation.
+NSUserDefaults power-loss durability, gesture ordering, multi-window UI and real
+network/device acceptance remain unverified. Full snapshots trade delta efficiency for
+correct deletion reconciliation until a versioned paginated/tombstone stream exists.
+
+Earlier audio follow-up d5263ab: iOS unit tests and archive subsequently passed; Android
+JVM tests passed and emulator jobs advanced to release smoke. These results are NOT
+attributed to the new collaboration changes.
+
+Transaction reference consulted: https://www.prisma.io/docs/orm/v6/prisma-client/queries/transactions

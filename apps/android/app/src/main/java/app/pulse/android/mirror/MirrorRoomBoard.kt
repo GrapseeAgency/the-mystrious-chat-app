@@ -33,6 +33,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -1410,87 +1412,37 @@ internal fun MirrorWhiteboardSheet(
     viewerId: String,
     onDismiss: () -> Unit,
 ) {
-    var strokes by remember { mutableStateOf<List<BoardStroke>>(emptyList()) }
-    var since by remember { mutableStateOf<Long?>(null) }
-    var resetAtSeen by remember { mutableStateOf<Long?>(null) }
-    var haveResetMark by remember { mutableStateOf(false) }
-    var synced by remember { mutableStateOf(false) }
-    var offline by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val bound = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val board = remember(bound, conversationId, viewerId) {
+        app.pulse.domain.model.WhiteboardSession(scope, viewerId,
+            loadDraft = { bound.loadWhiteboardDraft(conversationId, viewerId) },
+            updateDraft = { bound.updateWhiteboardDraft(conversationId, viewerId, it) },
+            load = { bound.whiteboard(conversationId, null).getOrThrow() },
+            post = { bound.postWhiteboardStrokes(conversationId, it).getOrThrow() },
+            undo = { bound.undoWhiteboardStroke(conversationId).getOrThrow() },
+            clear = { bound.clearWhiteboard(conversationId).getOrThrow() },
+        )
+    }
+    val state by board.state.collectAsState()
+    val strokes = state.remote.map { BoardStroke(it.id, it.userId, it.color, it.width, it.points, false) } +
+        state.pending.mapIndexed { i, it -> BoardStroke(it.clientId ?: "legacy:$i", viewerId, it.color, it.width, it.points, true) }
+    val synced = state.ready
+    val offline = state.error != null
+    val undoBusy = state.busy
+    val clearBusy = state.busy
+    val notice = state.error
+    val noticeIsError = true
     var color by remember { mutableStateOf(STROKE_COLORS[0]) }
     var width by remember { mutableStateOf(STROKE_WIDTHS[1]) }
-    var undoBusy by remember { mutableStateOf(false) }
-    var clearBusy by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
-    var notice by remember { mutableStateOf<String?>(null) }
-    var noticeIsError by remember { mutableStateOf(false) }
-    var localSeq by remember { mutableStateOf(0) }
     var livePoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
-
-    fun say(text: String, error: Boolean) {
-        notice = text
-        noticeIsError = error
+    LaunchedEffect(board) {
+        val job = board.start()
+        try { job.join() } finally { job.cancel() }
     }
-
-    // two-tap clear confirm disarms after 2.6s (web parity).
     LaunchedEffect(confirmClear) {
-        if (confirmClear) {
-            delay(DELETE_CONFIRM_MS)
-            confirmClear = false
-        }
-    }
-
-    // delta poll: full snapshot first (since = null), then ?since= watermark
-    // with the web's 1500ms overlap window; a changed resetAt wipes the board.
-    LaunchedEffect(conversationId) {
-        while (isActive) {
-            val page = runCatching { repository.whiteboard(conversationId, since) }
-                .getOrNull()
-                ?.getOrNull()
-            if (page == null) {
-                offline = true
-            } else {
-                offline = false
-                if (haveResetMark && page.resetAt != resetAtSeen) {
-                    strokes = emptyList()
-                }
-                haveResetMark = true
-                resetAtSeen = page.resetAt
-                val serverTime = page.serverTime ?: System.currentTimeMillis()
-                val baseline = serverTime - WHITEBOARD_SYNC_OVERLAP_MS
-                val current = since
-                since = if (current == null) baseline else maxOf(current, baseline)
-                for (serverStroke in page.strokes) {
-                    val flat = serverStroke.points
-                        .filter { it.size >= 2 }
-                        .map { listOf(it[0].coerceIn(0.0, 1.0), it[1].coerceIn(0.0, 1.0)) }
-                    if (flat.isEmpty()) continue
-                    if (strokes.any { it.id == serverStroke.id }) continue
-                    // adopt my own pending copy when the poll echoes it before the POST response
-                    val pendingIndex = strokes.indexOfFirst {
-                        it.pending && it.userId == serverStroke.userId &&
-                            it.color == serverStroke.color &&
-                            abs(it.width - serverStroke.width) < 0.001 &&
-                            samePoints(it.points, flat)
-                    }
-                    strokes = if (pendingIndex >= 0) {
-                        val mine = strokes[pendingIndex]
-                        strokes.toMutableList()
-                            .also { it[pendingIndex] = mine.copy(id = serverStroke.id, pending = false) }
-                    } else {
-                        strokes + BoardStroke(
-                            id = serverStroke.id,
-                            userId = serverStroke.userId,
-                            color = serverStroke.color,
-                            width = serverStroke.width,
-                            points = flat,
-                            pending = false,
-                        )
-                    }
-                }
-                synced = true
-            }
-            delay(WHITEBOARD_POLL_MS)
-        }
+        if (confirmClear) { delay(DELETE_CONFIRM_MS); confirmClear = false }
     }
 
     fun commitStroke(rawPoints: List<Offset>, canvasWidthPx: Float, canvasHeightPx: Float) {
@@ -1519,104 +1471,21 @@ internal fun MirrorWhiteboardSheet(
             if (down[down.size - 1] != lastPoint) down.add(lastPoint)
             pairs = down
         }
-        val stroke = BoardStroke("pending:$localSeq", viewerId, color, width, pairs, true)
-        localSeq += 1
-        strokes = strokes + stroke
-        CoroutineScope(Dispatchers.IO).launch {
-            val posted = runCatching {
-                repository.postWhiteboardStrokes(
-                    conversationId,
-                    listOf(
-                        WhiteboardStrokePostDto(
-                            color = stroke.color,
-                            width = stroke.width,
-                            points = stroke.points,
-                        ),
-                    ),
-                )
-            }.getOrNull()?.getOrNull()
-            if (posted != null) {
-                offline = false
-                val serverId = posted.ids.firstOrNull()
-                strokes = strokes.map { current ->
-                    if (current.id == stroke.id) {
-                        if (serverId != null) current.copy(id = serverId, pending = false)
-                        else current.copy(pending = false)
-                    } else {
-                        current
-                    }
-                }
-            } else {
-                // never reached the server - remove the local ghost honestly (web parity)
-                strokes = strokes.filterNot { current -> current.id == stroke.id }
-                offline = true
-                say("Stroke did not sync - check your connection.", true)
-            }
-        }
+        board.draw(color, width, pairs)
     }
 
-    fun undoMine() {
-        if (undoBusy) return
-        if (strokes.any { it.pending }) {
-            say("Hold on - still syncing your last stroke.", false)
-            return
-        }
-        if (!strokes.any { it.userId == viewerId }) {
-            say("Nothing of yours to undo yet.", false)
-            return
-        }
-        undoBusy = true
-        notice = null
-        CoroutineScope(Dispatchers.IO).launch {
-            val undone = runCatching { repository.undoWhiteboardStroke(conversationId) }
-                .getOrNull()
-                ?.getOrNull()
-            if (undone != null) {
-                offline = false
-                val removed = undone.removedId
-                if (removed != null) {
-                    strokes = strokes.filterNot { current -> current.id == removed }
-                } else {
-                    say("Nothing of yours to undo yet.", false)
-                }
-            } else {
-                offline = true
-                say("Undo failed - check your connection.", true)
-            }
-            undoBusy = false
-        }
-    }
+    fun undoMine() { board.undoMine() }
 
     fun clearBoard() {
-        // two-tap confirm - a wipe is destructive for the whole room (web parity)
-        if (!confirmClear) {
-            confirmClear = true
-            return
-        }
+        if (!confirmClear) { confirmClear = true; return }
         confirmClear = false
-        if (clearBusy) return
-        clearBusy = true
-        notice = null
-        CoroutineScope(Dispatchers.IO).launch {
-            val cleared = runCatching { repository.clearWhiteboard(conversationId) }
-                .getOrNull()
-                ?.getOrNull()
-            if (cleared != null) {
-                strokes = emptyList()
-                offline = false
-                say("Board cleared for everyone.", false)
-            } else {
-                offline = true
-                say("Could not clear the board - check your connection.", true)
-            }
-            clearBusy = false
-        }
+        board.clearBoard()
     }
 
     val statusLine = when {
         offline -> "Reconnecting…"
         !synced -> "Syncing…"
-        else -> "${strokes.size} ${if (strokes.size == 1) "stroke" else "strokes"} · live"
+        else -> "${state.remote.size} synced · ${state.pending.size} saved locally"
     }
 
     MirrorSheet(title = "Whiteboard", onDismiss = onDismiss) {
@@ -1637,7 +1506,7 @@ internal fun MirrorWhiteboardSheet(
             Canvas(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(Unit) {
+                    .pointerInput(board, color, width, synced, clearBusy) {
                         fun norm(o: Offset): Offset = Offset(
                             (o.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f),
                             (o.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f),
@@ -1667,17 +1536,13 @@ internal fun MirrorWhiteboardSheet(
                                 val list = active
                                 active = null
                                 livePoints = emptyList()
-                                if (list != null) {
+                                if (list != null && synced && !clearBusy) {
                                     commitStroke(list.toList(), size.width.toFloat(), size.height.toFloat())
                                 }
                             },
                             onDragCancel = {
-                                val list = active
                                 active = null
                                 livePoints = emptyList()
-                                if (list != null && list.size > 3) {
-                                    commitStroke(list.toList(), size.width.toFloat(), size.height.toFloat())
-                                }
                             },
                         )
                     },
@@ -1839,7 +1704,7 @@ internal fun MirrorWhiteboardSheet(
                         .clip(RoundedCornerShape(16.dp))
                         .background(MirrorArt.White7)
                         .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(16.dp))
-                        .clickable(enabled = !undoBusy) { undoMine() },
+                        .clickable(enabled = synced && !undoBusy && state.pending.isEmpty()) { undoMine() },
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1858,7 +1723,7 @@ internal fun MirrorWhiteboardSheet(
                             if (confirmClear) Color.Transparent else MirrorArt.Hairline,
                             RoundedCornerShape(16.dp),
                         )
-                        .clickable(enabled = !clearBusy) { clearBoard() },
+                        .clickable(enabled = synced && !clearBusy) { clearBoard() },
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

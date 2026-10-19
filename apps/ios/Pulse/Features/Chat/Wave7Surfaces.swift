@@ -894,31 +894,22 @@ struct Wave7KanbanSheet: View {
 // MARK: - Whiteboard (F-RO-03)
 
 struct Wave7WhiteboardSheet: View {
-    let conversationId: String
-    let viewerId: String
-    let load: (Int64?) async -> WireWhiteboardPage?
-    /// R1-W2G D44 - async WITH a verdict: the draft store clears a stroke
-    /// only when its server sync confirms (see Wave7RoomActions.postStrokes).
-    let onStrokes: ([WireWhiteboardStrokePost]) async -> Bool
-    let onUndo: () -> Void
-    let onClear: () async -> Bool
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var remoteStrokes: [WireWhiteboardStroke] = []
-    @State private var lastServerTime: Int64 = 0
-    @State private var resetAt: Int64 = 0
-    @State private var localStrokes: [(String, Double, [[Double]])] = []
-    /// R1-W2G D44 - single-flight flush: while a batch POST is in flight,
-    /// fresh strokes (already draft-persisted at draw time) ride the NEXT
-    /// pass instead of racing the in-flight verdict.
-    @State private var flushing = false
-    @State private var syncFailed = false
-    @State private var clearing = false
+    @StateObject private var board: PulseWhiteboardSession
     @State private var color = "#22c55e"
     @State private var width: Double = 3
     @State private var confirmClear = false
-
     private let colors = ["#22c55e", "#0ea5e9", "#f59e0b", "#ef4444", "#a855f7", "#e2e8f0"]
+
+    init(conversationId: String, viewerId: String, api: PulseAPIClient) {
+        _board = StateObject(wrappedValue: PulseWhiteboardSession(conversationId: conversationId, viewerId: viewerId,
+            load: { try await api.whiteboard(conversationId: conversationId, since: nil) },
+            post: { try await api.postWhiteboardStrokes(conversationId: conversationId, strokes: $0) },
+            undo: {
+                let result = try await api.undoWhiteboardStroke(conversationId: conversationId)
+                guard result.success == true else { throw URLError(.badServerResponse) }
+            },
+            clear: { try await api.clearWhiteboard(conversationId: conversationId) }))
+    }
 
     var body: some View {
         NavigationStack {
@@ -926,130 +917,46 @@ struct Wave7WhiteboardSheet: View {
                 HStack {
                     Text("Whiteboard").font(.headline)
                     Spacer()
-                    Button("Undo", action: onUndo)
-                        .disabled(flushing || clearing || !localStrokes.isEmpty)
+                    Button("Undo") { board.undoMine() }
+                        .disabled(!board.ready || board.busy || !board.pending.isEmpty)
                     Button(confirmClear ? "Tap again to clear" : "Clear") {
                         guard confirmClear else { confirmClear = true; return }
                         confirmClear = false
-                        clearing = true
-                        Task { @MainActor in
-                            defer { clearing = false }
-                            if await onClear() {
-                                PulseWhiteboardDraft.clear(conversationId: conversationId)
-                                localStrokes = []
-                                remoteStrokes = []
-                                syncFailed = false
-                            }
-                        }
+                        board.clearBoard()
                     }
                     .foregroundStyle(confirmClear ? Color.red : Color.accentColor)
-                    .disabled(flushing || clearing)
+                    .disabled(!board.ready || board.busy)
                 }
                 .padding(.horizontal, 14)
-
                 HStack(spacing: 8) {
                     ForEach(colors, id: \.self) { c in
-                        Circle()
-                            .fill(Color(hex: c))
-                            .frame(width: 26, height: 26)
+                        Circle().fill(Color(hex: c)).frame(width: 26, height: 26)
                             .overlay(Circle().stroke(Color.primary, lineWidth: color == c ? 3 : 1))
                             .onTapGesture { color = c }
                     }
                     Slider(value: $width, in: 0.5...40)
                 }
                 .padding(.horizontal, 14)
-
-                Wave7WhiteboardCanvas(
-                    remote: remoteStrokes,
-                    local: localStrokes,
-                    color: color,
-                    width: width,
-                    onFinish: { pts in
-                        if pts.count >= 2 && !clearing {
-                            localStrokes.append((color, width, pts))
-                            // R1-W2G D44 - persist the pending stroke BEFORE
-                            // any sync attempt so a crash/kill mid-draw
-                            // never loses it (web :527-529 draws the pending
-                            // stroke instantly; the native adds the durable
-                            // store the web does not have).
-                            PulseWhiteboardDraft.append(
-                                WireWhiteboardStrokePost(color: color, width: width, points: pts),
-                                conversationId: conversationId,
-                            )
-                            // A new drawing is not consent to retry an uncertain old POST.
-                            if !syncFailed { flushPending() }
-                        }
-                    },
-                )
-                .aspectRatio(1, contentMode: .fit)
-                .padding(.horizontal, 14)
-
-                if syncFailed {
-                    Button("Strokes saved on this device — retry sync") { flushPending() }
-                        .disabled(flushing || clearing)
+                Wave7WhiteboardCanvas(remote: board.remote,
+                    local: board.pending.map { ($0.color, $0.width, $0.points) }, color: color, width: width,
+                    onFinish: { board.draw(color: color, width: width, points: $0) })
+                    .id("\(board.ready)-\(board.busy)-\(color)-\(width)")
+                    .allowsHitTesting(board.ready && !board.busy)
+                    .aspectRatio(1, contentMode: .fit).padding(.horizontal, 14)
+                if let error = board.error {
+                    Text(error).font(.caption).foregroundStyle(.red).padding(.horizontal, 14)
                 }
-                Text("Strokes sync live (~1 s). Coordinates are normalized 0..1 on the server.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                if !board.ready { ProgressView("Loading board…") }
+                Text("\(board.pending.count) saved locally, awaiting sync. Clear removes drawings for everyone.")
+                    .font(.caption2).foregroundStyle(.secondary)
                 Spacer()
             }
-            .task {
-                // R1-W2G D44 - restore the unsynced draft FIRST (a crash/kill
-                // mid-draw must not lose strokes), then the full snapshot
-                // drops restored copies the server already has (their first
-                // POST landed before the crash - exact color+width+points).
-                localStrokes = PulseWhiteboardDraft.strokes(conversationId: conversationId)
-                    .map { stroke in (stroke.color, stroke.width, stroke.points) }
-                // Full snapshot, then since-delta poll at 900 ms (web whiteboard-sheet.tsx:66).
-                if let page = await load(nil) {
-                    remoteStrokes = page.strokes ?? []
-                    lastServerTime = page.serverTime ?? 0
-                    resetAt = page.resetAt ?? 0
-                    let kept = PulseWhiteboardDraft.droppingSynced(
-                        PulseWhiteboardDraft.strokes(conversationId: conversationId),
-                        snapshot: remoteStrokes,
-                    )
-                    PulseWhiteboardDraft.replaceAll(conversationId: conversationId, strokes: kept)
-                    localStrokes = kept.map { stroke in (stroke.color, stroke.width, stroke.points) }
-                }
-                flushPending()
-                while !Task.isCancelled {
-                    do { try await Task.sleep(nanoseconds: 900_000_000) } catch { break }
-                    guard !Task.isCancelled else { break }
-                    if let page = await load(lastServerTime) {
-                        let st = page.serverTime ?? 0
-                        if st > lastServerTime { lastServerTime = st }
-                        if let r = page.resetAt, r > resetAt {
-                            resetAt = r
-                            remoteStrokes = []
-                            localStrokes = []
-                            // R1-W2G D44 - the board was reset server-side;
-                            // the pending draft is gone with it.
-                            PulseWhiteboardDraft.clear(conversationId: conversationId)
-                        }
-                        remoteStrokes.append(contentsOf: page.strokes ?? [])
-                    }
-                }
-            }
-        }
-    }
-
-    /// Retain a rejected/uncertain batch for explicit retry. An ACK removes only
-    /// that generation's prefix; a reset or another sheet supersedes the batch.
-    private func flushPending() {
-        guard !flushing, !clearing else { return }
-        flushing = true
-        syncFailed = false
-        Task { @MainActor in
-            defer { flushing = false }
-            while true {
-                let batch = PulseWhiteboardDraft.batch(conversationId: conversationId)
-                guard !batch.strokes.isEmpty else { break }
-                let synced = await onStrokes(batch.strokes)
-                guard synced else { syncFailed = true; break }
-                guard PulseWhiteboardDraft.acknowledge(batch, conversationId: conversationId) else { break }
-                localStrokes = PulseWhiteboardDraft.strokes(conversationId: conversationId)
-                    .map { stroke in (stroke.color, stroke.width, stroke.points) }
+            .task { await board.run() }
+            .onDisappear { board.stop() }
+            .task(id: confirmClear) {
+                guard confirmClear else { return }
+                do { try await Task.sleep(nanoseconds: 2_600_000_000) } catch { return }
+                confirmClear = false
             }
         }
     }
@@ -1082,6 +989,11 @@ private struct Wave7WhiteboardCanvas: View {
                 .stroke(Color(hex: color), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
             }
             .contentShape(Rectangle())
+            .onChange(of: drag == nil) { ended in
+                if ended {
+                    DispatchQueue.main.async { if drag == nil { current = [] } }
+                }
+            }
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .updating($drag) { value, state, _ in state = value }
@@ -1089,7 +1001,8 @@ private struct Wave7WhiteboardCanvas: View {
                         let x = Double(value.location.x / geo.size.width)
                         let y = Double(value.location.y / geo.size.height)
                         let clamped = [min(max(x, 0), 1), min(max(y, 0), 1)]
-                        if current.isEmpty { current = [clamped] } else { current.append(clamped) }
+                        if current.count >= 1000 { current = PulseWhiteboardSession.normalizedPoints(current) }
+                        current.append(clamped)
                     }
                     .onEnded { _ in
                         onFinish(current)
@@ -1102,6 +1015,7 @@ private struct Wave7WhiteboardCanvas: View {
     private func canvas(size: CGSize) -> some View {
         Canvas { context, _ in
             func draw(_ pts: [[Double]], _ c: String, _ w: Double) {
+                let pts = PulseWhiteboardSession.normalizedPoints(pts)
                 guard pts.count >= 2 else { return }
                 var path = Path()
                 path.move(to: CGPoint(x: pts[0][0] * size.width, y: pts[0][1] * size.height))
