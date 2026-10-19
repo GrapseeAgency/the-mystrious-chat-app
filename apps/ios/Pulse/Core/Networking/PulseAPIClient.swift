@@ -1168,13 +1168,18 @@ public struct PulseAPIClient: Sendable {
         let trimmed = toUsername.trimmingCharacters(in: .whitespacesAndNewlines)
         let handle = (trimmed.hasPrefix("@") ? String(trimmed.dropFirst()) : trimmed).lowercased()
         var body: [String: Any] = ["userId": userId, "toUsername": handle, "amount": amount]
-        if let note, !note.isEmpty { body["note"] = note }
-        let data = try await postRaw("/api/hub/wallet/transfer", body: body)
+        let normalizedNote = String((note ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(140))
+        body["note"] = normalizedNote
+        let intent = [PulseWalletOperations.gatewayKey(baseURL), userId, "transfer", handle, String(amount), normalizedNote]
+        let id = try await PulseWalletOperations.shared.begin(intent)
+        body["clientId"] = id
+        let data = try await postRaw("/api/hub/wallet/operations/transfer", body: body)
         let result = try envelope(WireTransferResult.self, from: data)
         try requireWalletAck(result.wallet)
-        guard let recipient = result.to?.id, !recipient.isEmpty, recipient != userId else {
+        guard result.clientId == id, let recipient = result.to?.id, !recipient.isEmpty, recipient != userId else {
             throw Failure(kind: .server, message: "Unconfirmed transfer recipient; refresh the ledger before retrying.")
         }
+        try await PulseWalletOperations.shared.finish(intent, id: id)
         return result
     }
 
@@ -1185,9 +1190,13 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/hub/swap { userId, direction, amount } → { wallet, note }.
     public func swap(direction: String, amount: Int) async throws -> WireSwapResult {
-        let data = try await postRaw("/api/hub/swap", body: ["userId": userId, "direction": direction, "amount": amount])
+        let intent = [PulseWalletOperations.gatewayKey(baseURL), userId, "swap", direction, String(amount)]
+        let id = try await PulseWalletOperations.shared.begin(intent)
+        let data = try await postRaw("/api/hub/wallet/operations/swap", body: ["userId": userId, "direction": direction, "amount": amount, "clientId": id])
         let result = try envelope(WireSwapResult.self, from: data)
         try requireWalletAck(result.wallet)
+        guard result.clientId == id else { throw Failure(kind: .server, message: "Unconfirmed swap operation; retry the same instructions.") }
+        try await PulseWalletOperations.shared.finish(intent, id: id)
         return result
     }
 

@@ -356,6 +356,7 @@ public struct WireTransferTo: Codable, Hashable, Sendable {
 }
 
 public struct WireTransferResult: Codable, Sendable {
+    public var clientId: String? = nil
     public let wallet: WireWallet?
     public let to: WireTransferTo?
 }
@@ -379,6 +380,7 @@ public struct WireSwapPage: Codable, Sendable {
 }
 
 public struct WireSwapResult: Codable, Sendable {
+    public var clientId: String? = nil
     public let wallet: WireWallet?
     public let note: String?
 }

@@ -460,6 +460,7 @@ data class TransferToDto(
 data class TransferResultDto(
     val wallet: WalletDto = WalletDto(),
     val to: TransferToDto = TransferToDto(),
+    val clientId: String? = null,
 )
 
 @Serializable
@@ -487,6 +488,7 @@ data class SwapPageDto(
 data class SwapResultDto(
     val wallet: WalletDto = WalletDto(),
     val note: String? = null,
+    val clientId: String? = null,
 )
 
 @Serializable

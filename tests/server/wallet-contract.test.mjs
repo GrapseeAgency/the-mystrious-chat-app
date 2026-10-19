@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -13,6 +13,7 @@ async function fixture(run) {
     await db.$executeRawUnsafe('CREATE TABLE UserWallet(userId TEXT PRIMARY KEY, coins INTEGER NOT NULL DEFAULT 0, gems INTEGER NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0, lastCheckIn DATETIME)')
     await db.$executeRawUnsafe('CREATE TABLE WalletLedger(id TEXT PRIMARY KEY, userId TEXT NOT NULL, kind TEXT NOT NULL, asset TEXT NOT NULL, amount INTEGER NOT NULL, note TEXT NOT NULL DEFAULT "", counterpartyId TEXT, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)')
     await db.$executeRawUnsafe('CREATE TABLE LogEvent(id TEXT PRIMARY KEY, userId TEXT, kind TEXT NOT NULL, message TEXT NOT NULL, meta TEXT, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)')
+    await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261020_wallet_operations.sql', import.meta.url), 'utf8'))
     await db.userWallet.createMany({ data: [{ userId: 'a', coins: 150, gems: 2 }, { userId: 'b', coins: 10 }] })
     await run(db)
   } finally { await db.$disconnect(); await rm(dir, { recursive: true, force: true }) }
@@ -74,3 +75,46 @@ test('concurrent spends cannot overdraw or leave partial ledger legs', () => fix
 test('unexpected storage errors are not converted to success or insufficient balance', () => {
   assert.throws(() => walletErrorResponse(new Error('disk failure')), /disk failure/)
 })
+
+test('lost transfer ACK replays the receipt without a second debit', () => fixture(async db => {
+  await db.userWallet.update({ where: { userId: 'a' }, data: { lastCheckIn: new Date('2026-10-20T00:00:00Z') } })
+  const id = 'transfer-00000001'
+  const first = await transferWallet(db, 'a', 'b', 100, '', 'alice', 'bob', id)
+  await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261020_wallet_operations.sql', import.meta.url), 'utf8'))
+  const replay = await transferWallet(db, 'a', 'b', 100, '', 'alice', 'bob', id)
+  assert.deepEqual(replay, first)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'b' } })).coins, 110)
+  assert.equal(await db.walletLedger.count(), 2)
+  assert.equal(await db.logEvent.count(), 1)
+}))
+test('lost swap ACK is replayable even when the original spend exhausted funds', () => fixture(async db => {
+  const id = 'swap-00000000001'
+  await swapWallet(db, 'a', 'pc2gem', 100, id)
+  await swapWallet(db, 'a', 'pc2gem', 100, id)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 50)
+  assert.equal(await db.walletLedger.count(), 2)
+}))
+test('operation IDs bind instruction and owner, and conflicting reuse cannot spend', () => fixture(async db => {
+  const id = 'transfer-00000002'
+  await transferWallet(db, 'a', 'b', 100, '', 'alice', 'bob', id)
+  await assert.rejects(transferWallet(db, 'a', 'b', 20, '', 'alice', 'bob', id), { status: 409 })
+  await transferWallet(db, 'b', 'a', 10, '', 'bob', 'alice', id)
+  assert.equal(await db.walletLedger.count(), 4)
+}))
+test('receipt storage failure rolls back balance, ledger and log, not just the receipt', () => fixture(async db => {
+  await db.$executeRawUnsafe('CREATE TRIGGER reject_receipt BEFORE INSERT ON WalletOperation BEGIN SELECT RAISE(ABORT, "simulated receipt failure"); END')
+  await assert.rejects(transferWallet(db, 'a', 'b', 100, '', 'alice', 'bob', 'transfer-00000003'))
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 150)
+  assert.equal(await db.walletLedger.count(), 0)
+  assert.equal(await db.logEvent.count(), 0)
+}))
+
+test('concurrent same-ID requests and a later retry produce only one transfer', () => fixture(async db => {
+  const send = () => transferWallet(db, 'a', 'b', 100, '', 'alice', 'bob', 'transfer-00000004')
+  // SQLite can reject contention with BUSY; it must never accept a second spend.
+  await Promise.allSettled([send(), send()])
+  await send()
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 50)
+  assert.equal(await db.walletLedger.count(), 2)
+  assert.equal(await db.logEvent.count(), 1)
+}))

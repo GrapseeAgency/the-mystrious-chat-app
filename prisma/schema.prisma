@@ -818,3 +818,13 @@ model WhiteboardStrokeOperation {
 
   @@id([senderId, clientId])
 }
+
+// Durable monetary operation verdict; retained independently of user/ledger cleanup.
+model WalletOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  result      String
+
+  @@id([userId, clientId])
+}

@@ -11,6 +11,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WalletAcknowledgementTest {
+    @Test fun `identified mutations use only the receipt endpoint and require matching echo`() = runTest {
+        val id = "operation-00000001"
+        var echo = "wrong-operation"
+        val http = HttpClient(MockEngine { request ->
+            assertEquals("/api/hub/wallet/operations/swap", request.url.encodedPath)
+            val body = (request.body as io.ktor.http.content.OutgoingContent.ByteArrayContent).bytes().decodeToString()
+            assertTrue(body.contains(id))
+            respond("""{"clientId":"$echo","wallet":{"userId":"me","coins":0,"gems":1}}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+        })
+        try {
+            val api = PulseApi(http, gateway = { "https://wallet.test" })
+            assertTrue(api.swap("me", "pc2gem", 100, id) is PulseResult.Failure)
+            echo = id
+            assertTrue(api.swap("me", "pc2gem", 100, id) is PulseResult.Success)
+        } finally { http.close() }
+    }
     @Test fun `HTTP 200 with missing or wrong owner wallet cannot acknowledge transfer`() = runTest {
         for (body in listOf("""{"wallet":{},"to":{"id":"other"}}""",
             """{"wallet":{"userId":"wrong","coins":10,"gems":0},"to":{"id":"other"}}""",

@@ -35,6 +35,26 @@ class PulsePrefsLocalStore internal constructor(
 ) {
     @Inject constructor(@ApplicationContext context: Context) : this(context.pulsePrefs)
 
+    private fun walletKey(intent: String) = stringPreferencesKey("wallet.operation." +
+        java.security.MessageDigest.getInstance("SHA-256").digest(intent.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) })
+
+    /** Account-scoped DataStore commit completes BEFORE any monetary request. */
+    suspend fun beginWalletOperation(intent: String): String {
+        val key = walletKey(intent)
+        var id = ""
+        storage.edit { prefs ->
+            id = prefs[key] ?: java.util.UUID.randomUUID().toString().also { prefs[key] = it }
+            require(id.matches(Regex("[A-Za-z0-9_-]{16,128}"))) { "Unreadable pending wallet operation; review ledger before resetting storage" }
+        }
+        return id
+    }
+
+    suspend fun finishWalletOperation(intent: String, id: String) {
+        val key = walletKey(intent)
+        storage.edit { prefs -> if (prefs[key] == id) prefs.remove(key) }
+    }
+
     private object Keys {
         val PREFS = stringPreferencesKey("wave8.prefs.json")
         /**

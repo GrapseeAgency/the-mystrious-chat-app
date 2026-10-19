@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const wallet = await transferWallet(db, userId, recipient.id, amount, note, sender.username ?? sender.name, toUsername)
-    return NextResponse.json({ wallet, to: { id: recipient.id, name: recipient.name, username: recipient.username } })
+    const wallet = await transferWallet(db, userId, recipient.id, amount, note, sender.username ?? sender.name, toUsername, typeof body.clientId === 'string' ? body.clientId : undefined)
+    return NextResponse.json({ wallet, clientId: body.clientId, to: { id: recipient.id, name: recipient.name, username: recipient.username } })
   } catch (error) { return walletErrorResponse(error) }
 }

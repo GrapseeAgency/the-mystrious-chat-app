@@ -2850,11 +2850,29 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun transferCoins(toUsername: String, amount: Long, note: String?): Result<TransferResultDto> =
-        when (val r = api.transferCoins(viewerId ?: "", toUsername, amount, note)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun transferCoins(toUsername: String, amount: Long, note: String?): Result<TransferResultDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No wallet owner"))
+        val handle = toUsername.trim().removePrefix("@").lowercase(java.util.Locale.ROOT)
+        val normalizedNote = note.orEmpty().trim().take(140)
+        val intent = kotlinx.serialization.json.JsonArray(listOf(owner, "transfer", handle, amount.toString(), normalizedNote).map { kotlinx.serialization.json.JsonPrimitive(it) }).toString()
+        return walletMutation(intent) { id -> api.transferCoins(owner, handle, amount, normalizedNote, id) }
+    }
+
+    private suspend fun <T> walletMutation(intent: String, send: suspend (String) -> PulseResult<T>): Result<T> {
+        return try {
+            val id = prefsLocalStore.beginWalletOperation(intent)
+            when (val result = send(id)) {
+                is PulseResult.Success -> {
+                    prefsLocalStore.finishWalletOperation(intent, id)
+                    Result.success(result.value)
+                }
+                is PulseResult.Failure -> Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
+            }
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            Result.failure(error)
         }
+    }
 
     override suspend fun swapRates(): Result<SwapPageDto> =
         when (val r = api.swapRates()) {
@@ -2862,11 +2880,11 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun swap(direction: String, amount: Long): Result<SwapResultDto> =
-        when (val r = api.swap(viewerId ?: "", direction, amount)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun swap(direction: String, amount: Long): Result<SwapResultDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No wallet owner"))
+        val intent = "swap:$owner:$direction:$amount"
+        return walletMutation(intent) { id -> api.swap(owner, direction, amount, id) }
+    }
 
     override suspend fun hubTasks(): Result<HubTasksPageDto> =
         when (val r = api.hubTasks(viewerId ?: "")) {

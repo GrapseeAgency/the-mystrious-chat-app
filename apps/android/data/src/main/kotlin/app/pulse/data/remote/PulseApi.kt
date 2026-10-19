@@ -1668,10 +1668,11 @@ class PulseApi(
         }
 
     /** POST /api/hub/wallet/transfer { userId, toUsername, amount, note? } - handle lowercased/@-stripped client-side too. */
-    suspend fun transferCoins(userId: String, toUsername: String, amount: Long, note: String?): PulseResult<TransferResultDto> =
+    suspend fun transferCoins(userId: String, toUsername: String, amount: Long, note: String?, clientId: String? = null): PulseResult<TransferResultDto> =
         post(
-            "/api/hub/wallet/transfer",
+            if (clientId == null) "/api/hub/wallet/transfer" else "/api/hub/wallet/operations/transfer",
             buildJsonObject {
+                if (clientId != null) put("clientId", clientId)
                 put("userId", userId)
                 put("toUsername", toUsername.trim().removePrefix("@").lowercase())
                 put("amount", amount)
@@ -1680,6 +1681,7 @@ class PulseApi(
         ) {
             requireWalletAck(it, userId)
             val result = PulseJson.decodeFromString(TransferResultDto.serializer(), it)
+            if (clientId != null && result.clientId != clientId) throw kotlinx.serialization.SerializationException("Unconfirmed wallet operation; retry the same instructions")
             if (result.to.id.isBlank() || result.to.id == userId) throw kotlinx.serialization.SerializationException("Unconfirmed transfer recipient; refresh the ledger before retrying")
             result
         }
@@ -1689,10 +1691,12 @@ class PulseApi(
         get("/api/hub/swap") { PulseJson.decodeFromString(SwapPageDto.serializer(), it) }
 
     /** POST /api/hub/swap { userId, direction: pc2gem|gem2pc, amount }. */
-    suspend fun swap(userId: String, direction: String, amount: Long): PulseResult<SwapResultDto> =
-        post("/api/hub/swap", jsonOf("userId" to userId, "direction" to direction, "amount" to amount)) {
+    suspend fun swap(userId: String, direction: String, amount: Long, clientId: String? = null): PulseResult<SwapResultDto> =
+        post(if (clientId == null) "/api/hub/swap" else "/api/hub/wallet/operations/swap", jsonOf("userId" to userId, "direction" to direction, "amount" to amount, "clientId" to clientId)) {
             requireWalletAck(it, userId)
-            PulseJson.decodeFromString(SwapResultDto.serializer(), it)
+            val result = PulseJson.decodeFromString(SwapResultDto.serializer(), it)
+            if (clientId != null && result.clientId != clientId) throw kotlinx.serialization.SerializationException("Unconfirmed wallet operation; retry the same instructions")
+            result
         }
 
     private fun requireWalletAck(raw: String, userId: String) {

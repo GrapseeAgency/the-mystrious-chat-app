@@ -62,6 +62,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
   }
 
-  try { return NextResponse.json(await swapWallet(db, userId, direction, amount)) }
+  try { return NextResponse.json({ ...(await swapWallet(db, userId, direction, amount, typeof body.clientId === 'string' ? body.clientId : undefined)), clientId: body.clientId }) }
   catch (error) { return walletErrorResponse(error) }
 }

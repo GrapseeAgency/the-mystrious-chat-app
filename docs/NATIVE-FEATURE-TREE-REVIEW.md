@@ -571,8 +571,54 @@ could adopt the empty object and display success after a rolled-back transaction
   **25 native tests** plus **15 executed server tests**. Latest native execution is
   still pending; c31adda's iOS archive passed and its server/web checks passed.
 
-Important remaining wallet contract: there is still no durable client operation
-ID for transfer/swap. A manual retry after an ambiguous lost ACK can duplicate a
+Gap identified at the first wallet checkpoint (addressed in the continuation below): there was no durable client operation
+ID for transfer/swap. A manual retry after an ambiguous lost ACK could duplicate a
 completed operation. No automatic financial retry was added, and a tap gate is
 not represented as a solution to that separate delivery problem. Real concurrency,
 UI cancellation and ledger review still require native/device acceptance.
+
+### Wallet lost-ACK continuation (supersedes the gap immediately above)
+
+The tap gate was not treated as a substitute for monetary delivery correctness.
+Both production native paths now persist an operation ID **before** sending and
+reuse it for the same unresolved canonical instructions. A confirmed matching
+receipt retires the pending ID; a later deliberate payment gets a fresh ID.
+
+- Android uses the already account/gateway-scoped DataStore, atomic edit and
+  compare-ID retirement. iOS uses an actor-serialized, atomic-file journal with
+  canonical gateway + owner + instruction keys. Storage failures stop the send;
+  corrupt IDs fail closed. Failures/cancellation retain unresolved operations.
+- Native requests use **new `/wallet/operations/{transfer,swap}` paths** and
+  require the matching ID in the reply. There is no fallback to unsafe legacy
+  routes on 404. These new endpoints require the existing native credential to
+  match the debit owner, not merely any valid user token.
+- A server receipt, both balance changes, both ledger entries and the log commit
+  in the same SQLite transaction. Replay returns the committed result; changed
+  instructions under the same ID produce 409. Receipt insertion failure rolls
+  back the entire spend. There is no receipt expiry/cascade that frees old IDs.
+- **39/39 server contracts passed**, including 13 wallet cases. New receipt
+  regressions cover lost transfer/swap replies, instruction conflict and owner
+  scope, receipt-write rollback, repeated additive migration and concurrent
+  same-ID retry. **6/6 existing SQL contracts** also passed.
+- Additional native tests: Android DataStore reopen/compare-retire and operation
+  endpoint/ACK validation; Swift journal reopen/ownership, gateway normalization,
+  and real URLSession request-ID reuse after a simulated lost response. Combined
+  with the earlier gate/ACK tests: **13 new wallet native tests**; **30** with the
+  reminder tests. Native execution of this newest revision is pending.
+
+**Deployment gate:** apply the additive, rerunnable
+`prisma/patches/20261020_wallet_operations.sql` to the gateway database before
+shipping these native money paths; it is also represented in `schema.prisma`.
+The patch was exercised in isolated SQLite fixtures, **not applied to production**.
+Missing table/old gateway fails closed, not as a legacy non-idempotent transfer.
+
+**Limits:** journal protection requires preserved app storage and the same
+instructions; a different recipient/amount/note is a new explicit intent. Replays
+use the original result; native screens fetch current balances separately. A
+renamed/deleted recipient can prevent confirmation and require ledger review,
+but cannot rebind the same key to a different debit. Journal/receipt retention
+is intentionally unbounded pending an explicit reconciliation policy. This does
+not retrofit legacy/web monetary requests, market purchases or daily check-in
+with the new receipt protocol, nor resolve the deliberately deferred legacy
+header-less authorization migration. No global economy/security certification
+or whole-app completion is implied.
