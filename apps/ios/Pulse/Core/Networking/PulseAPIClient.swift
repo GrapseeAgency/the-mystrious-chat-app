@@ -1253,7 +1253,10 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/hub/market/{id}/buy { userId } → { ok, wallet }.
     public func buyListing(_ listingId: String) async throws -> WireMarketBuyResult {
         let data = try await postRaw("/api/hub/market/\(q(listingId))/buy", body: ["userId": userId])
-        return try envelope(WireMarketBuyResult.self, from: data)
+        let result = try envelope(WireMarketBuyResult.self, from: data)
+        guard result.ok == true else { throw Failure(kind: .server, message: "Purchase was not confirmed; refresh the market before retrying.") }
+        try requireWalletAck(result.wallet)
+        return result
     }
 
     /// GET /api/hub/logs?limit=&kind= → { logs } desc.

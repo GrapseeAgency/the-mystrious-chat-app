@@ -1761,7 +1761,10 @@ class PulseApi(
     /** POST /api/hub/market/{id}/buy { userId } → { ok, wallet } (atomic escrow-less debit/credit). */
     suspend fun buyListing(listingId: String, userId: String): PulseResult<MarketBuyResultDto> =
         post("/api/hub/market/" + java.net.URLEncoder.encode(listingId, "UTF-8") + "/buy", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(MarketBuyResultDto.serializer(), it)
+            requireWalletAck(it, userId)
+            val result = PulseJson.decodeFromString(MarketBuyResultDto.serializer(), it)
+            if (!result.ok) throw kotlinx.serialization.SerializationException("Purchase was not confirmed; refresh the market before retrying")
+            result
         }
 
     /** GET /api/hub/logs?limit=&kind= → { logs } desc; `meta` stays a raw JSON string. */

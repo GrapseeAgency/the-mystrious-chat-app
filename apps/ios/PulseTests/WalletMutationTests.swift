@@ -78,6 +78,11 @@ final class WalletAcknowledgementTests: XCTestCase {
         do { _ = try await api.transferCoins(toUsername: "other", amount: 1, note: nil); XCTFail("Unconfirmed transfer") }
         catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
     }
+    func testMalformed200CannotReportPurchaseSuccess() async {
+        let (api, session) = client(); defer { session.invalidateAndCancel() }
+        do { _ = try await api.buyListing("item"); XCTFail("Unconfirmed purchase") }
+        catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
+    }
     func testMalformed200CannotReportSwapSuccess() async {
         let (api, session) = client(); defer { session.invalidateAndCancel() }
         do { _ = try await api.swap(direction: "pc2gem", amount: 100); XCTFail("Unconfirmed swap") }

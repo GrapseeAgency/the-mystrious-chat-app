@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
-import { transferWallet, swapWallet, walletErrorResponse } from '../../src/lib/wallet-contract.ts'
+import { transferWallet, swapWallet, walletErrorResponse, buyMarketListing } from '../../src/lib/wallet-contract.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 async function fixture(run) {
   const dir = await mkdtemp(join(tmpdir(), 'pulse-wallet-'))
@@ -14,6 +14,8 @@ async function fixture(run) {
     await db.$executeRawUnsafe('CREATE TABLE WalletLedger(id TEXT PRIMARY KEY, userId TEXT NOT NULL, kind TEXT NOT NULL, asset TEXT NOT NULL, amount INTEGER NOT NULL, note TEXT NOT NULL DEFAULT "", counterpartyId TEXT, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)')
     await db.$executeRawUnsafe('CREATE TABLE LogEvent(id TEXT PRIMARY KEY, userId TEXT, kind TEXT NOT NULL, message TEXT NOT NULL, meta TEXT, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)')
     await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261020_wallet_operations.sql', import.meta.url), 'utf8'))
+    await db.$executeRawUnsafe('CREATE TABLE MarketListing(id TEXT PRIMARY KEY, sellerId TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT "", price INTEGER NOT NULL, asset TEXT NOT NULL DEFAULT "PC", status TEXT NOT NULL DEFAULT "open", buyerId TEXT, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)')
+    await db.marketListing.create({ data: { id: 'item', sellerId: 'b', title: 'Thing', price: 100 } })
     await db.userWallet.createMany({ data: [{ userId: 'a', coins: 150, gems: 2 }, { userId: 'b', coins: 10 }] })
     await run(db)
   } finally { await db.$disconnect(); await rm(dir, { recursive: true, force: true }) }
@@ -117,4 +119,39 @@ test('concurrent same-ID requests and a later retry produce only one transfer', 
   assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 50)
   assert.equal(await db.walletLedger.count(), 2)
   assert.equal(await db.logEvent.count(), 1)
+}))
+
+test('purchase retry by its winning buyer never charges again', () => fixture(async db => {
+  await buyMarketListing(db, 'a', 'item')
+  await buyMarketListing(db, 'a', 'item')
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 50)
+  assert.equal(await db.walletLedger.count(), 2)
+  await assert.rejects(buyMarketListing(db, 'other', 'item'), { status: 409 })
+}))
+test('failed purchase releases its claim and rolls back money and logs', () => fixture(async db => {
+  await db.marketListing.update({ where: { id: 'item' }, data: { price: 200 } })
+  await assert.rejects(buyMarketListing(db, 'a', 'item'), { status: 402 })
+  const listing = await db.marketListing.findUnique({ where: { id: 'item' } })
+  assert.equal(listing.status, 'open'); assert.equal(listing.buyerId, null)
+  assert.equal(await db.walletLedger.count(), 0); assert.equal(await db.logEvent.count(), 0)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 150)
+}))
+test('seller overflow cannot consume the listing or buyer funds', () => fixture(async db => {
+  await db.userWallet.update({ where: { userId: 'b' }, data: { coins: 2147483640 } })
+  await assert.rejects(buyMarketListing(db, 'a', 'item'), { status: 422 })
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 150)
+  assert.equal((await db.marketListing.findUnique({ where: { id: 'item' } })).status, 'open')
+}))
+test('competing buyers cannot pay for the same listing', () => fixture(async db => {
+  await db.userWallet.create({ data: { userId: 'c', coins: 150 } })
+  await Promise.allSettled([buyMarketListing(db, 'a', 'item'), buyMarketListing(db, 'c', 'item')])
+  // Resolve an unclaimed listing if SQLite rejected both contenders with BUSY.
+  let listing = await db.marketListing.findUnique({ where: { id: 'item' } })
+  if (listing.status === 'open') await buyMarketListing(db, 'a', 'item')
+  listing = await db.marketListing.findUnique({ where: { id: 'item' } })
+  assert.ok(['a', 'c'].includes(listing.buyerId))
+  await buyMarketListing(db, listing.buyerId, 'item')
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'b' } })).coins, 110)
+  assert.equal(await db.walletLedger.count(), 2)
+  assert.equal((await db.userWallet.aggregate({ _sum: { coins: true } }))._sum.coins, 310)
 }))

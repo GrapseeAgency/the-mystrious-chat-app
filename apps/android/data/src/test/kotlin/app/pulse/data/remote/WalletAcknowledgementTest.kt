@@ -11,6 +11,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WalletAcknowledgementTest {
+    @Test fun `purchase requires both affirmative confirmation and a valid wallet`() = runTest {
+        for (body in listOf("""{"ok":false,"wallet":{"userId":"me","coins":50,"gems":0}}""", """{"ok":true,"wallet":{}}""")) {
+            val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+            try { assertTrue(PulseApi(http, gateway = { "https://wallet.test" }).buyListing("item", "me") is PulseResult.Failure) }
+            finally { http.close() }
+        }
+    }
     @Test fun `identified mutations use only the receipt endpoint and require matching echo`() = runTest {
         val id = "operation-00000001"
         var echo = "wrong-operation"

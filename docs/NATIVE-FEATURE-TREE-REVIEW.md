@@ -622,3 +622,29 @@ not retrofit legacy/web monetary requests, market purchases or daily check-in
 with the new receipt protocol, nor resolve the deliberately deferred legacy
 header-less authorization migration. No global economy/security certification
 or whole-app completion is implied.
+
+### Marketplace double-charge continuation
+
+Tracing the other debit path found an independent race: listing availability was
+read **outside** its transaction and the subsequent `sold` update was unconditional.
+Two buyers could pass the same stale `open` check and both pay the seller.
+
+- Moved the listing read and conditional `open → sold` claim into the transaction
+  with buyer debit, bounded seller credit, both ledger legs and log. Insufficient
+  funds or overflow rolls the listing claim back too.
+- A sold listing's winning buyer can replay a purchase confirmation without a
+  second charge; another buyer receives 409. This uses the immutable single-sale
+  listing identity, not a new expiring retry key or another schema migration.
+- Swift purchase now shares the synchronous monetary gate and session fence;
+  both native clients require `ok: true` **and** a valid owner-bound wallet instead
+  of displaying success for any decodable HTTP-200 body.
+- Four SQLite purchase cases passed (same-buyer retry, failed debit rollback,
+  seller overflow and competing buyers). Full server suite: **43/43 passed**.
+  Two more native malformed-purchase-ACK tests authored; **32** native regressions
+  since f725 (17 reminder, 15 monetary), newest execution pending.
+
+The initial monetary revision **3dcb913** has now passed its Android JVM tests and
+Swift unit tests; its iOS archive also passed. That is not execution evidence for
+newer receipt/marketplace changes. Legacy header-less authorization migration and
+check-in semantics remain outside this repair; marketplace transaction safety is
+not a claim that the full economic or authorization system is complete.

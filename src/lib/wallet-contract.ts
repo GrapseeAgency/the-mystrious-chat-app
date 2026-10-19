@@ -85,3 +85,33 @@ export async function walletOperation<T>(db: PrismaClient, userId: string, clien
     return result
   })
 }
+
+/** A listing is a single-use purchase identity. Claim + money + ledger are one
+ * transaction; the winning buyer can retry after losing the HTTP response. */
+export async function buyMarketListing(db: PrismaClient, buyerId: string, listingId: string) {
+  return db.$transaction(async tx => {
+    const listing = await tx.marketListing.findUnique({ where: { id: listingId } })
+    if (!listing) throw new WalletContractError(404, 'Listing not found.')
+    if (listing.sellerId === buyerId) throw new WalletContractError(400, 'You cannot buy your own listing.')
+    if (listing.status === 'sold' && listing.buyerId === buyerId) {
+      return tx.userWallet.findUniqueOrThrow({ where: { userId: buyerId } })
+    }
+    if (listing.status !== 'open') throw new WalletContractError(409, 'This listing is already sold.')
+    amountInRange(listing.price)
+    if (listing.asset !== 'PC') throw new WalletContractError(400, 'Unsupported listing asset.')
+    const claimed = await tx.marketListing.updateMany({ where: { id: listingId, status: 'open', buyerId: null }, data: { status: 'sold', buyerId } })
+    if (!claimed.count) throw new WalletContractError(409, 'This listing is no longer available.')
+    await tx.userWallet.upsert({ where: { userId: buyerId }, create: { userId: buyerId }, update: {} })
+    await tx.userWallet.upsert({ where: { userId: listing.sellerId }, create: { userId: listing.sellerId }, update: {} })
+    const debited = await tx.userWallet.updateMany({ where: { userId: buyerId, coins: { gte: listing.price } }, data: { coins: { decrement: listing.price } } })
+    if (!debited.count) throw new WalletContractError(402, `Insufficient PC - this costs ${listing.price}.`)
+    const credited = await tx.userWallet.updateMany({ where: { userId: listing.sellerId, coins: { gte: 0, lte: MAX_BALANCE - listing.price } }, data: { coins: { increment: listing.price } } })
+    if (!credited.count) throw new WalletContractError(422, 'Seller balance limit would be exceeded.')
+    await tx.walletLedger.createMany({ data: [
+      { userId: buyerId, kind: 'market_buy', asset: 'PC', amount: -listing.price, note: `Bought "${listing.title}"`, counterpartyId: listing.sellerId },
+      { userId: listing.sellerId, kind: 'market_sell', asset: 'PC', amount: listing.price, note: `Sold "${listing.title}"`, counterpartyId: buyerId },
+    ] })
+    await tx.logEvent.create({ data: { userId: buyerId, kind: 'market', message: `bought "${listing.title}" for ${listing.price} PC`, meta: JSON.stringify({ listingId, sellerId: listing.sellerId }) } })
+    return tx.userWallet.findUniqueOrThrow({ where: { userId: buyerId } })
+  })
+}

@@ -300,17 +300,16 @@ final class HubViewModel: ObservableObject {
     }
 
     func buy(_ listing: WireMarketListing) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                _ = try await api.buyListing(listing.id)
-                toast("Bought \"\(listing.title ?? "")\"")
-                loadWallet()
-                loadMarket()
-            } catch {
-                toast(describe(error), isError: true)
+        guard let api else { return }
+        performWalletMutation(operation: {
+            _ = try await api.buyListing(listing.id)
+            return "Bought \"\(listing.title ?? "")\""
+        }, completion: { result in
+            switch result {
+            case .success(let message): self.toast(message); self.loadWallet(); self.loadMarket()
+            case .failure(let error): self.toast(self.describe(error), isError: true)
             }
-        }
+        })
     }
 
     // MARK: logs
@@ -854,10 +853,12 @@ private struct HubMarketSheet: View {
                         } else if confirmBuy == listing.id {
                             Button("No") { confirmBuy = nil }.buttonStyle(.borderless)
                             Button("Buy") { vm.buy(listing); confirmBuy = nil }
+                                .disabled(vm.walletMutationBusy)
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
                         } else {
                             Button("Buy") { confirmBuy = listing.id }
+                                .disabled(vm.walletMutationBusy)
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
                         }
