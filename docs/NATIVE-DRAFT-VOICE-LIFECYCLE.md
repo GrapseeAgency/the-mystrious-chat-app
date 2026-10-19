@@ -2,7 +2,7 @@
 
 ## iOS composer
 
-- Each room captures its original store in a finite asynchronous journal. Local writes start on every observed draft change; only the best-effort server mirror waits 600 ms.
+- Each room captures its original store in a finite asynchronous journal. A synchronous main-actor front buffer lets a rapid reopen recover text even before SQLite commits. Local writes start on every observed draft change; only the best-effort server mirror waits 600 ms.
 - A shared writer orders writes by storage path, room, journal-owner birth and monotonic revision. An old room's delayed write cannot overwrite a newer room's submitted snapshot. A clear cannot be resurrected by an older queued save.
 - Empty local snapshots are explicit clears, distinct from never having a local draft. Room hydration and chat-list previews therefore suppress stale server text after a local clear. Empty snapshots do not appear in the drafts manager.
 - Disappearance flushes the current local value and cancels the server debounce. The captured network client/viewer and session generation prevent a delayed debounce from switching owners.
@@ -22,7 +22,8 @@ Boundaries: the file/operation/upload-path tuple is not a durable media outbox. 
 
 ## Tests added (CI execution required)
 
-- `DraftJournalTests.swift`: stale-write rejection after clear, explicit clear vs server fallback, captured-store isolation, ordering, and older room ownership (four test methods).
+- `DraftJournalTests.swift`: stale-write rejection after clear, explicit clear vs server fallback, captured-store isolation, ordering, and older room ownership and rapid reopen before SQLite completion (five test methods).
+- `MediaOperationApiTest.kt`: two retry requests retain the same operation ID, uploaded path and duration in their wire payload; this is not an end-to-end lost-ack test.
 - `VoiceNoteFinalizerTest.kt`: stop/release/file-read ordering, release after stop failure, empty-file rejection and retry without another recorder (four tests).
 
 These tests exercise storage/control contracts; they do not simulate OS microphone interruption, process death or physical-device audio quality.

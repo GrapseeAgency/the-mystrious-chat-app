@@ -27,3 +27,10 @@ The concurrency send test was corrected: SQLite may roll back **all** simultaneo
 This is cached-range reconciliation, not a durable server change log or a cross-request transactional snapshot. It does not infer hard deletions from absent rows, import unvisited older history, or reconcile conversation membership removal. Mutations to already-traversed rows during the scan converge on a subsequent refresh. Export's existing bounded history sweep also needs separate completeness handling. Paired-device and network/process-death acceptance scenarios remain unrun.
 
 Account sign-in/recovery work is deferred at the user's direction; none of these changes claims to resolve server authentication.
+
+
+## Additional fetched-page ownership guards
+
+- Android history, search, pinned-message and thread fetches now merge under the same live-event mutex. If a socket edit/delete occurred after the GET began, callers receive the newer cached row rather than the stale response as well as avoiding a cache overwrite.
+- Swift older-history and bounded jump expansion capture client/store/topic/session generation, use cancellable room tasks, and reject stale responses after navigation/topic changes. Topic reload preserves cached/pending rows and applies the same live-event revision check.
+- These guards do not cover every ancillary fetch/mutation. They are not a cross-request server snapshot or a durable changelog. Sparse history consisting only of hidden thread replies still needs independent raw-page cursor handling; the rendered oldest-row anchor can otherwise repeat a page.

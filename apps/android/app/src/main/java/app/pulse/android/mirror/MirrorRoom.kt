@@ -138,6 +138,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -1109,8 +1110,10 @@ internal fun MirrorRoom(
                     }
                     repository.uploadMedia(dataUrl).getOrThrow().also { uploadedVoicePath = it }
                 }
+                ensureActive()
                 repository.sendMediaMessage(conversationId = groupId, body = "",
                     audioPath = uploaded, durationMs = duration, clientId = operationId).getOrThrow()
+                ensureActive()
                 cancelRecording()
                 sendError = null
             } catch (cancelled: kotlinx.coroutines.CancellationException) {

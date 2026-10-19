@@ -1,6 +1,7 @@
 import XCTest
 @testable import Pulse
 
+@MainActor
 final class DraftJournalTests: XCTestCase {
     func testLateOlderWriteCannotResurrectClearedDraft() async throws {
         let store = try PulseStore()
@@ -39,6 +40,20 @@ final class DraftJournalTests: XCTestCase {
         try await reopened.save("new edit", revision: 20)
         try await old.save("late old edit", revision: 30)
         XCTAssertEqual(store.draft(conversationId: "room"), "new edit")
+    }
+
+    func testRapidReopenSeesPendingSnapshotBeforeAwaitingSQLite() async throws {
+        let store = try PulseStore()
+        let old = PulseDraftJournal(store: store, conversationId: "room")
+        let pending = old.submit("last keystroke", revision: 1)
+        let reopened = PulseDraftJournal(store: store, conversationId: "room")
+        XCTAssertEqual(reopened.snapshot, "last keystroke")
+        let newer = reopened.submit("new room edit", revision: 2)
+        let lateDisposal = old.submit("stale room text", revision: 99)
+        try await pending.value
+        try await newer.value
+        try await lateDisposal.value
+        XCTAssertEqual(store.draft(conversationId: "room"), "new room edit")
     }
 
 }

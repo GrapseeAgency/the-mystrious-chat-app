@@ -573,6 +573,17 @@ class PulseRepositoryImpl constructor(
         scheduleConversationsRefresh()
     }
 
+    /** A late GET must not undo a socket edit/delete, including in its return value. */
+    private suspend fun cacheFetchedMessages(rows: List<Message>, watermark: Long): List<Message> =
+        messageCacheMutex.withLock {
+            val fresh = rows.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
+            messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
+            rows.mapNotNull { row ->
+                if ((messageEventRevisions[row.id] ?: 0L) > watermark) messageDao.byId(row.id)?.toDomain()
+                else row
+            }
+        }
+
     private var refreshScheduled = false
 
     /** Debounced inbox refetch - keeps previews/unreads honest after live hits. */
@@ -1190,17 +1201,18 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun pinnedMessages(conversationId: String): List<Message> {
+        val watermark = messageEventClock.get()
         val page = when (val r = api.pinnedMessages(conversationId, viewerId ?: "")) {
             is PulseResult.Success -> r.value
             is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
         }
         val rows = page.messages.map { it.toDomain() }
         // Upsert keeps the Room cache (pin glyphs, banners) authoritative.
-        messageDao.upsertAll(rows.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        return rows
+        return cacheFetchedMessages(rows, watermark)
     }
 
     override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
+        val watermark = messageEventClock.get()
         val page = when (val r = api.thread(rootId, viewerId ?: "")) {
             is PulseResult.Success -> r.value
             is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
@@ -1209,11 +1221,14 @@ class PulseRepositoryImpl constructor(
         val replies = page.replies.map { it.toDomain() } // wire order: createdAt asc
         // Upsert both so observeThread(rootId) rehydrates the sheet offline
         // and realtime reply appends merge with this window.
-        messageDao.upsertAll((listOf(parent) + replies).map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        return parent to replies
+        val merged = cacheFetchedMessages(listOf(parent) + replies, watermark)
+        val currentParent = merged.firstOrNull { it.id == parent.id }
+            ?: throw IllegalStateException("Thread parent is no longer available")
+        return currentParent to merged.filter { it.id != parent.id }
     }
 
     override suspend fun messagesPage(conversationId: String, before: String?, limit: Int): Pair<List<Message>, Boolean> {
+        val watermark = messageEventClock.get()
         val anchor = before?.let { messageDao.byId(it)?.takeIf { row -> row.conversationId == conversationId }
             ?: messageDao.firstAtTimestamp(conversationId, it) }
         val page = when (val r = api.messages(conversationId, limit, anchor?.createdAt ?: before, beforeId = anchor?.id)) {
@@ -1222,19 +1237,18 @@ class PulseRepositoryImpl constructor(
         }
         val rows = page.messages.map { it.toDomain() } // wire order: asc
         // Pagination merge = plain upserts; loaded window grows in Room.
-        messageDao.upsertAll(rows.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        return rows to page.hasMore
+        return cacheFetchedMessages(rows, watermark) to page.hasMore
     }
 
     override suspend fun searchInConversation(conversationId: String, query: String): List<Message> {
+        val watermark = messageEventClock.get()
         if (query.isBlank()) return emptyList()
         val page = when (val r = api.searchInConversation(conversationId, query)) {
             is PulseResult.Success -> r.value
             is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
         }
         val rows = page.messages.map { it.toDomain() }
-        messageDao.upsertAll(rows.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        return rows
+        return cacheFetchedMessages(rows, watermark)
     }
 
     override suspend fun uploadMedia(dataUrl: String): Result<String> =
