@@ -599,6 +599,20 @@ fun JsonElement?.decodeLinkPreviewDto(): LinkPreviewDto? = runCatching {
     PulseJson.decodeFromJsonElement(LinkPreviewDto.serializer(), el)
 }.getOrNull()
 
+/** Carriers arrive as either an object or a JSON-encoded string. Never serialize
+ * a JsonPrimitive string again: that quotes the entire object and the Room cache
+ * subsequently drops every field. Non-object payloads cannot identify cards. */
+fun JsonElement?.objectPayloadText(): String? {
+    val objectValue = when (this) {
+        is JsonObject -> this
+        is kotlinx.serialization.json.JsonPrimitive -> if (isString) {
+            runCatching { PulseJson.parseToJsonElement(content) as? JsonObject }.getOrNull()
+        } else null
+        else -> null
+    }
+    return objectValue?.takeIf { it.isNotEmpty() }?.toString()
+}
+
 /** One shared decoder for every Pulse client surface. */
 val PulseJson: Json = Json {
     ignoreUnknownKeys = true

@@ -867,3 +867,18 @@ clears its draft before a `try?` send and does not use the established durable
 outbox; its message list also lacks outbox reconciliation. The primary Swift
 standalone effect sender has a separate temporary-message/delete-on-error path.
 These are not fixed by creation receipts and remain next in the flow review.
+
+### Android rich-payload preservation correction
+
+Native compilation of 4f7d918 exposed a wrong `String` assumption in the new
+receipt validator (`ChatMessageDto.payload` is actually `JsonElement?`). Tracing
+that type revealed an older runtime defect in `ChatMessageDto.toDomain`: calling
+`toString()` on a JSON-string payload double-encoded it; the local cache then
+expected an object and discarded the carrier's fields. Added one object/string
+normalizer for receipt validation and the wire→domain boundary. Game/season/packet
+references and effect/sticker payloads now survive the subsequent cache mapping;
+non-object values stay unusable. This does **not** reconstruct fields already
+lost in old cached records: those require a successful server refresh. Added two
+wire→domain→cache regression methods. 4f7d918's iOS device archive passed; Android
+compilation failed on the above two expressions; corrected native execution is
+pending rather than assumed successful.

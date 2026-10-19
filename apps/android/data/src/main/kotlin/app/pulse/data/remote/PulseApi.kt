@@ -1,5 +1,6 @@
 package app.pulse.data.remote
 
+import app.pulse.protocol.objectPayloadText
 import app.pulse.protocol.GamePayloadDto
 import app.pulse.protocol.TournamentPayloadDto
 
@@ -1624,7 +1625,7 @@ class PulseApi(
                 throw kotlinx.serialization.SerializationException("Challenge was not confirmed; check the chat before retrying")
             }
             if (clientId != null && result.clientId != clientId) throw kotlinx.serialization.SerializationException("Creation receipt was not confirmed; retry the same instructions")
-            if (clientId != null && PulseJson.decodeFromString(GamePayloadDto.serializer(), result.message?.payload.orEmpty()).matchId != match.id) {
+            if (clientId != null && PulseJson.decodeFromString(GamePayloadDto.serializer(), result.message?.payload.objectPayloadText().orEmpty()).matchId != match.id) {
                 throw kotlinx.serialization.SerializationException("Challenge carrier does not match its board")
             }
             result
@@ -1666,7 +1667,7 @@ class PulseApi(
                 throw kotlinx.serialization.SerializationException("Season was not confirmed; check the chat before retrying")
             }
             if (clientId != null && result.clientId != clientId) throw kotlinx.serialization.SerializationException("Creation receipt was not confirmed; retry the same instructions")
-            if (clientId != null && PulseJson.decodeFromString(TournamentPayloadDto.serializer(), result.message?.payload.orEmpty()).tournamentId != result.tournament?.id) {
+            if (clientId != null && PulseJson.decodeFromString(TournamentPayloadDto.serializer(), result.message?.payload.objectPayloadText().orEmpty()).tournamentId != result.tournament?.id) {
                 throw kotlinx.serialization.SerializationException("Season carrier does not match its tournament")
             }
             result

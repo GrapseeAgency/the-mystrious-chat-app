@@ -1,5 +1,6 @@
 package app.pulse.data.repository
 
+import app.pulse.protocol.objectPayloadText
 import kotlinx.coroutines.ensureActive
 
 import androidx.room.withTransaction
@@ -3448,7 +3449,7 @@ fun ChatMessageDto.toDomain(): Message = Message(
     topicId = topicId,
     // Wave 7 rich objects ride payload as a RAW JSON STRING (red packet / game /
     // tournament carriers) - cards parse tolerantly via PulseWave7Logic.
-    payload = payload?.toString()?.takeIf { it != "null" && it != "{}" },
+    payload = payload.objectPayloadText(),
     // REM-A - incognito + disappearing (F-MS-17/19): wire carries the anon flag,
     // the deterministic alias, and the purge deadline (ISO → epoch ms).
     anon = anon == true,
