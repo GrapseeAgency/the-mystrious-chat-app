@@ -52,7 +52,7 @@ internal class AccountRepositoryRouter(
                                 "observePresence" -> emit(emptySet<String>())
                                 "observeDraft" -> emit(null)
                                 "observeDrafts", "getConvThemes" -> emit(emptyMap<String, Any>())
-                                "getPulsePrefs" -> emit(PulseWave8Logic.mergePrefs(null))
+                                "getPulsePrefs" -> emit(PulseWave8Logic.mergePrefs(null as String?))
                                 else -> emit(emptyList<Any>())
                             }
                             initial = false
