@@ -202,8 +202,7 @@ private const val STORY_TTL_MS: Long = 24L * 60 * 60 * 1000
  * and cache the returned row. The socket pump turns relay signals into
  * Room upserts + [PulseEvent]s so every screen is live without polling.
  */
-@Singleton
-class PulseRepositoryImpl @Inject constructor(
+class PulseRepositoryImpl constructor(
     private val api: PulseApi,
     private val database: PulseDatabase,
     private val conversationDao: ConversationDao,

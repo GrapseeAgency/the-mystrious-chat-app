@@ -10,7 +10,7 @@ permissions:
   contents: read
 jobs:
   delivery:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -18,4 +18,16 @@ jobs:
         with:
           node-version: '22.22.3'
       - name: SQLite transaction and replay contracts
-        run: node --experimental-transform-types --test tests/server/*.test.mjs
+        run: |
+          set -o pipefail
+          node --experimental-transform-types --test tests/server/*.test.mjs 2>&1 | tee /tmp/native-contract-tests.log
+      - name: Expose sanitized synthetic-test failure through Checks API
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/native-contract-tests.log')
+          if p.exists():
+              text = p.read_text()[-12000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error title=Native delivery contract::' + text)
+          PY

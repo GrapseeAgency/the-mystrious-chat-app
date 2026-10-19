@@ -159,8 +159,19 @@ class SessionViewModel @Inject constructor(
 
     /** Point REST + realtime at a user-provided origin (null = go offline). */
     fun setServerBase(value: String?) {
+        if (value.orEmpty().trimEnd('/') == PulseEndpoints.gatewayHttpUrl.trimEnd('/')) return
+        _bootstrapped.value = false
+        repo.stop()
+        OutboxWorker.cancel(appContext)
         PulseEndpoints.applyBase(value)
-        viewModelScope.launch { prefs.setServerBase(value) }
+        viewModelScope.launch {
+            prefs.setServerBase(value)
+            // A new server must never inherit the previous server's token.
+            sessionTokenStore.clear()
+            prefs.setViewer(null, null)
+            secureSessionStore.delete()
+            retryHydration()
+        }
     }
 
     /** Header theme toggle - cycles system → light → dark (web ThemeToggleButton). */

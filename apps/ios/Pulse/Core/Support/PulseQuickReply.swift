@@ -132,8 +132,13 @@ public final class PulseQuickReplyCoordinator {
                     // Network-class failure - the room's own semantics:
                     // ride the real offline queue (flushes on
                     // foreground/reconnect).
-                    session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
-                    session.toasts.show("Message queued - sends when you're back online")
+                    if session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body) {
+                        session.toasts.show("Message queued - sends when you're back online")
+                    } else {
+                        try? session.store?.saveDraft(conversationId: conversationId, text: body)
+                        session.toasts.show("Reply was not queued: check device storage")
+                        self?.openRoom(conversationId)
+                    }
                 }
             }
         }

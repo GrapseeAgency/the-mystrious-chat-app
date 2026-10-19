@@ -153,7 +153,9 @@ class PulseApi(
     private val bearerToken: () -> String? = { null },
     /** Fired on any 401 so the token store can clear + surface re-login. */
     private val onAuthInvalid: (String?) -> Unit = {},
+    private val gateway: () -> String = { PulseEndpoints.gatewayHttpUrl },
 ) {
+    private fun url(path: String): String = gateway().trimEnd('/') + if (path.startsWith("/")) path else "/$path"
 
     /**
      * Honest offline-first gate. With NO configured gateway, `PulseEndpoints.http`
@@ -170,9 +172,9 @@ class PulseApi(
         PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, OFFLINE_COPY)
 
     private suspend fun <T> get(path: String, parse: (String) -> T): PulseResult<T> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
-            val res = http.get(PulseEndpoints.http(path)) { authHeader() }
+            val res = http.get(url(path)) { authHeader() }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) PulseResult.Success(parse(text))
             else failureOf(res.status.value, text)
@@ -191,9 +193,9 @@ class PulseApi(
         timeoutMillis: Long? = null,
         parse: ((String) -> T)? = null,
     ): PulseResult<T> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
-            val res = http.post(PulseEndpoints.http(path)) {
+            val res = http.post(url(path)) {
                 contentType(ContentType.Application.Json)
                 if (body != null) setBody(body.toString())
                 if (timeoutMillis != null) timeout { requestTimeoutMillis = timeoutMillis }
@@ -219,9 +221,9 @@ class PulseApi(
      * PATCH on the wire; POST was the N3-era wrong verb (spec §14 transport fixes).
      */
     private suspend fun <T> patch(path: String, body: JsonObject?, parse: ((String) -> T)? = null): PulseResult<T> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
-            val res = http.patch(PulseEndpoints.http(path)) {
+            val res = http.patch(url(path)) {
                 contentType(ContentType.Application.Json)
                 if (body != null) setBody(body.toString())
                 authHeader()
@@ -548,9 +550,9 @@ class PulseApi(
      * (file bubbles save to cacheDir/downloads and open through FileProvider).
      */
     suspend fun downloadMedia(filePath: String): PulseResult<ByteArray> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
-            val res = http.get(PulseEndpoints.http("/api/uploads/$filePath")) { authHeader() }
+            val res = http.get(url("/api/uploads/$filePath")) { authHeader() }
             if (res.status.isSuccess()) {
                 PulseResult.Success(res.readBytes())
             } else {
@@ -647,10 +649,10 @@ class PulseApi(
 
     /** DELETE /api/stories/{id}?requesterId= → { ok: true } (owner-only 403, unknown 404). */
     suspend fun deleteStory(storyId: String, requesterId: String): PulseResult<OkDto> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
             val res = http.delete(
-                PulseEndpoints.http("/api/stories/$storyId?requesterId=" +
+                url("/api/stories/$storyId?requesterId=" +
                     java.net.URLEncoder.encode(requesterId, "UTF-8")),
             )
             val text = res.bodyAsText()
@@ -688,9 +690,9 @@ class PulseApi(
      * can never re-arrive through a since= delta refetch).
      */
     suspend fun deleteMessage(messageId: String, requesterId: String): PulseResult<ChatMessageDto> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
-            val res = http.delete(PulseEndpoints.http("/api/messages/$messageId")) {
+            val res = http.delete(url("/api/messages/$messageId")) {
                 contentType(ContentType.Application.Json)
                 setBody(jsonOf("requesterId" to requesterId).toString())
             }
@@ -771,9 +773,9 @@ class PulseApi(
      * runner (the shared `post` helper cannot carry a null parse result).
      */
     suspend fun unfurl(messageId: String, userId: String): PulseResult<ChatMessageDto?> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
-            val res = http.post(PulseEndpoints.http("/api/messages/$messageId/unfurl")) {
+            val res = http.post(url("/api/messages/$messageId/unfurl")) {
                 contentType(ContentType.Application.Json)
                 setBody(jsonOf("userId" to userId).toString())
             }
@@ -829,10 +831,10 @@ class PulseApi(
 
     /** DELETE /api/topics/{id}?userId= → { ok: true } (creator/admin only - query-param identity). */
     suspend fun deleteTopic(topicId: String, userId: String): PulseResult<OkDto> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
             val res = http.delete(
-                PulseEndpoints.http("/api/topics/$topicId?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")),
+                url("/api/topics/$topicId?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")),
             )
             val text = res.bodyAsText()
             if (res.status.isSuccess()) {
@@ -958,9 +960,9 @@ class PulseApi(
 
     /** PUT helper - the folder membership full-replace is the one PUT on the wire. */
     private suspend fun <T> put(path: String, body: JsonObject, parse: ((String) -> T)? = null): PulseResult<T> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
-            val res = http.put(PulseEndpoints.http(path)) {
+            val res = http.put(url(path)) {
                 contentType(ContentType.Application.Json)
                 setBody(body.toString())
                 authHeader()
@@ -982,10 +984,10 @@ class PulseApi(
 
     /** DELETE helper with a `userId` query param (safety unverify / unblock). */
     private suspend fun <T> deleteWithQuery(path: String, userId: String, parse: ((String) -> T)? = null): PulseResult<T> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
             val res = http.delete(
-                PulseEndpoints.http("$path?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")),
+                url("$path?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")),
             ) { authHeader() }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) {
@@ -1004,9 +1006,9 @@ class PulseApi(
 
     /** DELETE helper with the FULL path (query already embedded - webhook delete's requesterId). */
     private suspend fun <T> deleteAt(path: String, parse: ((String) -> T)? = null): PulseResult<T> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
-            val res = http.delete(PulseEndpoints.http(path)) { authHeader() }
+            val res = http.delete(url(path)) { authHeader() }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) {
                 @Suppress("UNCHECKED_CAST")
@@ -1024,9 +1026,9 @@ class PulseApi(
 
     /** DELETE helper with a JSON body { userId } (channel unsubscribe). */
     private suspend fun <T> deleteWithBody(path: String, userId: String, parse: ((String) -> T)? = null): PulseResult<T> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
-            val res = http.delete(PulseEndpoints.http(path)) {
+            val res = http.delete(url(path)) {
                 contentType(ContentType.Application.Json)
                 setBody(jsonOf("userId" to userId).toString())
                 authHeader()
@@ -1048,9 +1050,9 @@ class PulseApi(
 
     /** DELETE helper with a caller-shaped JSON body (group kick/leave + scheduled cancel - { requesterId }). */
     private suspend fun <T> deleteWithJson(path: String, body: JsonObject, parse: ((String) -> T)? = null): PulseResult<T> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
-            val res = http.delete(PulseEndpoints.http(path)) {
+            val res = http.delete(url(path)) {
                 contentType(ContentType.Application.Json)
                 setBody(body.toString())
                 authHeader()
@@ -1370,10 +1372,10 @@ class PulseApi(
 
     /** DELETE /api/conversations/{id}/whiteboard?requesterId= - clear all + resetAt watermark. */
     suspend fun clearWhiteboard(conversationId: String, requesterId: String): PulseResult<WhiteboardClearResultDto> {
-        if (!PulseEndpoints.isConfigured) return offlineFailure
+        if (gateway().isBlank()) return offlineFailure
         return try {
             val res = http.delete(
-                PulseEndpoints.http("/api/conversations/$conversationId/whiteboard?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")),
+                url("/api/conversations/$conversationId/whiteboard?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8")),
             )
             val text = res.bodyAsText()
             if (res.status.isSuccess()) PulseResult.Success(PulseJson.decodeFromString(WhiteboardClearResultDto.serializer(), text))

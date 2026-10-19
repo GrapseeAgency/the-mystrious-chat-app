@@ -156,32 +156,31 @@ public final class PulseOutboxEngine: ObservableObject {
     // queue management
 
     /// Enqueues one outgoing message (clientId dedupes via UNIQUE).
-    public func append(conversationId: String, clientId: String, content: String, kind: String = "text") {
+    @discardableResult
+    public func append(conversationId: String, clientId: String, content: String, kind: String = "text") -> Bool {
         do {
             try store.appendOutbox(conversationId: conversationId, clientId: clientId, content: content, kind: kind)
-        } catch {
-            // Duplicate clientId (double-tap) - already queued, nothing to do.
-        }
-        pendingCount = store.countOutbox()
-        startHealTimer()
+        } catch { return false }
+        reloadPending()
+        return true
     }
 
     /// R1-W2B D28 - enqueues one queued FORWARD. `forward` carries the
     /// stored kind + media paths; the flush re-POSTs the exact body.
-    public func appendForward(conversationId: String, clientId: String, content: String, forward: PulseOutboxForward) {
+    @discardableResult
+    public func appendForward(conversationId: String, clientId: String, content: String, forward: PulseOutboxForward) -> Bool {
+        guard let encoded = PulseOutboxForward.encode(forward) else { return false }
         do {
             try store.appendOutbox(
                 conversationId: conversationId,
                 clientId: clientId,
                 content: content,
                 kind: forward.kind ?? "text",
-                payloadJson: PulseOutboxForward.encode(forward),
+                payloadJson: encoded,
             )
-        } catch {
-            // Duplicate clientId - already queued.
-        }
-        pendingCount = store.countOutbox()
-        startHealTimer()
+        } catch { return false }
+        reloadPending()
+        return true
     }
 
     /// Stop the account-owned engine before replacing its transport or store.

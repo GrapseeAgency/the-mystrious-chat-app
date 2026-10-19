@@ -699,6 +699,11 @@ public final class PulseStore: Sendable {
             payloadJson: payloadJson,
         )
         try dbQueue.write { db in
+            if let existing = try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE clientId = ?", arguments: [clientId]) {
+                guard existing.conversationId == conversationId, existing.content == content,
+                      existing.kind == kind, existing.payloadJson == payloadJson else { throw CocoaError(.coderInvalidValue) }
+                return
+            }
             try row.insert(db)
         }
     }

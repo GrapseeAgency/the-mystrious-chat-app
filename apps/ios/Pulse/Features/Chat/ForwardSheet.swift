@@ -251,14 +251,13 @@ struct ForwardSheet: View {
                     }
                     // Network-class - queue the exact forward body; the
                     // engine flushes it on reconnect/foreground/heal.
-                    session.enqueueOutbox(
+                    if session.enqueueOutbox(
                         conversationId: target.id,
                         clientId: clientId,
                         content: source.content,
                         kind: forward.kind ?? "text",
                         payloadJson: PulseOutboxForward.encode(forward),
-                    )
-                    queued += 1
+                    ) { queued += 1 }
                 }
             }
             if delivered > 0 || queued > 0 {

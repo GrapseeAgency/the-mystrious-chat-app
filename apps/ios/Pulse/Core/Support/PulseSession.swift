@@ -498,17 +498,25 @@ public final class PulseSession: ObservableObject {
     /// the store row still lands and the engine picks it up on start.
     /// R1-W2B D28 - `payloadJson` carries the queued forward envelope
     /// (PulseOutboxForward); plain sends leave it nil.
-    public func enqueueOutbox(conversationId: String, clientId: String, content: String, kind: String = "text", payloadJson: String? = nil) {
+    @discardableResult
+    public func enqueueOutbox(conversationId: String, clientId: String, content: String, kind: String = "text", payloadJson: String? = nil) -> Bool {
+        let saved: Bool
         if let outbox {
-            if let forward = PulseOutboxForward.decode(payloadJson) {
-                outbox.appendForward(conversationId: conversationId, clientId: clientId, content: content, forward: forward)
+            if let payloadJson {
+                guard let forward = PulseOutboxForward.decode(payloadJson) else { return false }
+                saved = outbox.appendForward(conversationId: conversationId, clientId: clientId, content: content, forward: forward)
             } else {
-                outbox.append(conversationId: conversationId, clientId: clientId, content: content, kind: kind)
+                saved = outbox.append(conversationId: conversationId, clientId: clientId, content: content, kind: kind)
             }
         } else {
-            try? store?.appendOutbox(conversationId: conversationId, clientId: clientId, content: content, kind: kind, payloadJson: payloadJson)
+            guard let store else { return false }
+            do {
+                try store.appendOutbox(conversationId: conversationId, clientId: clientId, content: content, kind: kind, payloadJson: payloadJson)
+                saved = true
+            } catch { return false }
         }
-        flushOutbox()
+        if saved { flushOutbox() }
+        return saved
     }
 
     /// Dock "More → Search" - the Chats tab listens for this tick and opens

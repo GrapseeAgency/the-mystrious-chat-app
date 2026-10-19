@@ -187,8 +187,12 @@ struct PipPaneHostView: View {
                     session.toasts.show("Couldn't send from the mini chat - kept as draft")
                     paneDraft = body
                 } else {
-                    session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
-                    session.toasts.show("Message queued - sends when you're back online")
+                    if session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body) {
+                        session.toasts.show("Message queued - sends when you're back online")
+                    } else {
+                        paneDraft = body
+                        session.toasts.show("Message was not queued: your draft is kept")
+                    }
                 }
             }
         }

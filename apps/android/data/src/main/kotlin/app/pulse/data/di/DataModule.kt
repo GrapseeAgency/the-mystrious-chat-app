@@ -70,55 +70,11 @@ object DataModule {
     )
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): PulseDatabase =
-        Room.databaseBuilder(context, PulseDatabase::class.java, PulseDatabase.NAME)
-            // Destructive migration is GONE - v3→v4 (outbox + draft),
-            // v4→v5 (message media + membersJson), v5→v6 (Wave 2 depth
-            // columns + topics + savedMessages), v6→v7 (Wave 3 call
-            // history cache + call-log offline queue) and v7→v8 (Wave 4
-            // stories snapshot cache) are additive ALTER/CREATEs; every
-            // deployed row must survive.
-            .addMigrations(
-                PulseDatabase.MIGRATION_3_4,
-                PulseDatabase.MIGRATION_4_5,
-                PulseDatabase.MIGRATION_5_6,
-                PulseDatabase.MIGRATION_6_7,
-                PulseDatabase.MIGRATION_7_8,
-                PulseDatabase.MIGRATION_8_9,
-                PulseDatabase.MIGRATION_9_10,
-            )
-            .build()
+    fun provideRepository(accounts: app.pulse.data.repository.AccountRepositories): PulseRepository = accounts.repository
 
     @Provides
     @Singleton
     fun providePrefsStore(impl: app.pulse.data.local.PulsePrefsStoreImpl): app.pulse.domain.repository.PulsePrefsStore = impl
-
-    @Provides
-    fun provideWave7Dao(db: PulseDatabase): Wave7Dao = db.wave7Dao()
-
-    @Provides
-    fun provideConversationDao(db: PulseDatabase): ConversationDao = db.conversationDao()
-
-    @Provides
-    fun provideMessageDao(db: PulseDatabase): MessageDao = db.messageDao()
-
-    @Provides
-    fun provideOutboxDao(db: PulseDatabase): OutboxDao = db.outboxDao()
-
-    @Provides
-    fun provideDraftDao(db: PulseDatabase): DraftDao = db.draftDao()
-
-    @Provides
-    fun provideTopicDao(db: PulseDatabase): TopicDao = db.topicDao()
-
-    @Provides
-    fun provideSavedDao(db: PulseDatabase): SavedDao = db.savedDao()
-
-    @Provides
-    fun provideCallLogDao(db: PulseDatabase): CallLogDao = db.callLogDao()
-
-    @Provides
-    fun provideStoryDao(db: PulseDatabase): StoryDao = db.storyDao()
 
     /** Domain stays pure Kotlin (no javax.inject) - the graph provides use cases here. */
     @Provides
@@ -133,9 +89,6 @@ object DataModule {
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class RepositoryModule {
-    @Binds
-    abstract fun bindPulseRepository(impl: PulseRepositoryImpl): PulseRepository
-
     /** Wave 8 - session-token plumbing: DataStore persistence + Keystore cipher. */
     @Binds
     abstract fun bindSessionTokenPersistence(

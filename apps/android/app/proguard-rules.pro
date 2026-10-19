@@ -35,3 +35,7 @@
 # WebView/JS fallbacks not used, but keep Parcelable/Serializable AAs intact
 -keepclassmembers class * implements android.os.Parcelable { public static final android.os.Parcelable$Creator CREATOR; }
 -keepclassmembers class * implements java.io.Serializable { static final long serialVersionUID; }
+
+# AccountRepositoryRouter dispatches by this interface's ABI names. Preserve
+# every method (including newly added operations) through release R8 builds.
+-keep interface app.pulse.domain.repository.PulseRepository { *; }

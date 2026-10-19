@@ -30,9 +30,11 @@ import kotlinx.serialization.json.buildJsonObject
  *    follows - a failed PATCH keeps the local change (honest offline parity).
  */
 @Singleton
-class PulsePrefsLocalStore @Inject constructor(
-    @ApplicationContext private val context: Context,
+class PulsePrefsLocalStore internal constructor(
+    private val storage: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
 ) {
+    @Inject constructor(@ApplicationContext context: Context) : this(context.pulsePrefs)
+
     private object Keys {
         val PREFS = stringPreferencesKey("wave8.prefs.json")
         /**
@@ -52,7 +54,7 @@ class PulsePrefsLocalStore @Inject constructor(
     }
 
     /** Resolved prefs - defaults guaranteed on every emission. */
-    val prefs: Flow<WirePulsePrefs> = context.pulsePrefs.data.map { p ->
+    val prefs: Flow<WirePulsePrefs> = storage.data.map { p ->
         PulseWave8Logic.mergePrefs(p[Keys.PREFS])
     }
 
@@ -62,13 +64,13 @@ class PulsePrefsLocalStore @Inject constructor(
      * Live design-language id - one of [UI_THEME_IDS] (the web value
      * strings verbatim); anything unreadable falls back to "glass".
      */
-    val uiTheme: Flow<String> = context.pulsePrefs.data.map { p ->
+    val uiTheme: Flow<String> = storage.data.map { p ->
         (p[Keys.UI_THEME])?.takeIf { it in UI_THEME_IDS } ?: UI_THEME_GLASS
     }
 
     suspend fun setUiTheme(id: String) {
         if (id !in UI_THEME_IDS) return
-        context.pulsePrefs.edit { it[Keys.UI_THEME] = id }
+        storage.edit { it[Keys.UI_THEME] = id }
     }
 
     // R4-B item 3 - navigation style (pulse.navStyle.v2)
@@ -79,12 +81,12 @@ class PulsePrefsLocalStore @Inject constructor(
      * capsule default (the same resolve the web's getNavStyleMeta fallback
      * performs).
      */
-    val navStyle: Flow<app.pulse.protocol.PulseNavStyle> = context.pulsePrefs.data.map { p ->
+    val navStyle: Flow<app.pulse.protocol.PulseNavStyle> = storage.data.map { p ->
         app.pulse.protocol.PulseNavStyle.fromPersisted(p[Keys.NAV_STYLE])
     }
 
     suspend fun setNavStyle(style: app.pulse.protocol.PulseNavStyle) {
-        context.pulsePrefs.edit { it[Keys.NAV_STYLE] = style.id }
+        storage.edit { it[Keys.NAV_STYLE] = style.id }
     }
 
     // R2-C item 7 - spotlight recent searches
@@ -93,14 +95,14 @@ class PulsePrefsLocalStore @Inject constructor(
      * Last 5 non-blank queries, deduped case-insensitively, newest first
      * (web spotlight.tsx readRecents/pushRecent parity).
      */
-    val spotlightRecents: Flow<List<String>> = context.pulsePrefs.data.map { p ->
+    val spotlightRecents: Flow<List<String>> = storage.data.map { p ->
         decodeSpotlightRecents(p[Keys.SPOTLIGHT_RECENTS])
     }
 
     suspend fun pushSpotlightRecent(query: String) {
         val q = query.trim()
         if (q.isEmpty()) return
-        context.pulsePrefs.edit { p ->
+        storage.edit { p ->
             val current = decodeSpotlightRecents(p[Keys.SPOTLIGHT_RECENTS])
                 .filter { it.lowercase() != q.lowercase() }
             val next = (listOf(q) + current).take(SPOTLIGHT_RECENTS_MAX)
@@ -109,7 +111,7 @@ class PulsePrefsLocalStore @Inject constructor(
     }
 
     suspend fun clearSpotlightRecents() {
-        context.pulsePrefs.edit { it.remove(Keys.SPOTLIGHT_RECENTS) }
+        storage.edit { it.remove(Keys.SPOTLIGHT_RECENTS) }
     }
 
     private fun decodeSpotlightRecents(raw: String?): List<String> {
@@ -137,14 +139,14 @@ class PulsePrefsLocalStore @Inject constructor(
     /** The pending strokes for a conversation, oldest first (tolerant). */
     suspend fun whiteboardDraft(conversationId: String): List<app.pulse.protocol.WhiteboardStrokePostDto> {
         if (!CONV_ID_OK.matches(conversationId)) return emptyList()
-        val raw = context.pulsePrefs.data.firstOrNull()?.get(whiteboardDraftKey(conversationId))
+        val raw = storage.data.firstOrNull()?.get(whiteboardDraftKey(conversationId))
         return PulseWhiteboardDraftLogic.decode(raw)
     }
 
     /** Draw-time write-through - persists the stroke BEFORE any sync attempt. */
     suspend fun appendWhiteboardDraft(conversationId: String, stroke: app.pulse.protocol.WhiteboardStrokePostDto) {
         if (!CONV_ID_OK.matches(conversationId)) return
-        context.pulsePrefs.edit { p ->
+        storage.edit { p ->
             val pending = PulseWhiteboardDraftLogic.decode(p[whiteboardDraftKey(conversationId)])
             p[whiteboardDraftKey(conversationId)] =
                 PulseWhiteboardDraftLogic.encode(pending + stroke)
@@ -154,7 +156,7 @@ class PulsePrefsLocalStore @Inject constructor(
     /** Flush-verdict purge - the acknowledged batch leaves the queue front. */
     suspend fun dropFirstWhiteboardDraft(conversationId: String, count: Int) {
         if (!CONV_ID_OK.matches(conversationId)) return
-        context.pulsePrefs.edit { p ->
+        storage.edit { p ->
             val pending = PulseWhiteboardDraftLogic.decode(p[whiteboardDraftKey(conversationId)])
             p[whiteboardDraftKey(conversationId)] =
                 PulseWhiteboardDraftLogic.encode(PulseWhiteboardDraftLogic.droppingFirst(pending, count))
@@ -164,7 +166,7 @@ class PulsePrefsLocalStore @Inject constructor(
     /** Undo purge - the newest pending stroke leaves the queue tail. */
     suspend fun dropLastWhiteboardDraft(conversationId: String) {
         if (!CONV_ID_OK.matches(conversationId)) return
-        context.pulsePrefs.edit { p ->
+        storage.edit { p ->
             val pending = PulseWhiteboardDraftLogic.decode(p[whiteboardDraftKey(conversationId)])
             p[whiteboardDraftKey(conversationId)] =
                 PulseWhiteboardDraftLogic.encode(PulseWhiteboardDraftLogic.droppingLast(pending))
@@ -174,7 +176,7 @@ class PulsePrefsLocalStore @Inject constructor(
     /** Restore-time swap - rewrites the whole draft (the dedupe pass). */
     suspend fun replaceAllWhiteboardDraft(conversationId: String, strokes: List<app.pulse.protocol.WhiteboardStrokePostDto>) {
         if (!CONV_ID_OK.matches(conversationId)) return
-        context.pulsePrefs.edit { p ->
+        storage.edit { p ->
             p[whiteboardDraftKey(conversationId)] = PulseWhiteboardDraftLogic.encode(strokes)
         }
     }
@@ -182,7 +184,7 @@ class PulsePrefsLocalStore @Inject constructor(
     /** Server-side board reset - the pending queue is gone with the board. */
     suspend fun clearWhiteboardDraft(conversationId: String) {
         if (!CONV_ID_OK.matches(conversationId)) return
-        context.pulsePrefs.edit { it.remove(whiteboardDraftKey(conversationId)) }
+        storage.edit { it.remove(whiteboardDraftKey(conversationId)) }
     }
 
     // R1-W2F - per-conversation themes (F-FX-05)
@@ -193,7 +195,7 @@ class PulsePrefsLocalStore @Inject constructor(
      * dropped, the [ConvTheme.MAX_MAP_ENTRIES] budget caps the payload.
      * JSON object key order IS the LRU order (touched entry last).
      */
-    val convThemes: Flow<Map<String, ConvTheme>> = context.pulsePrefs.data.map { p ->
+    val convThemes: Flow<Map<String, ConvTheme>> = storage.data.map { p ->
         sanitizeConvThemes(p[Keys.CONV_THEMES])
     }
 
@@ -205,7 +207,7 @@ class PulsePrefsLocalStore @Inject constructor(
      * bytes so the DataStore write stays trivial.
      */
     suspend fun setConvTheme(conversationId: String, theme: ConvTheme?) {
-        context.pulsePrefs.edit { p ->
+        storage.edit { p ->
             val current = LinkedHashMap(sanitizeConvThemes(p[Keys.CONV_THEMES]))
             current.remove(conversationId)
             if (theme != null && theme.wallpaper in ConvTheme.WALLPAPERS) {
@@ -259,14 +261,14 @@ class PulsePrefsLocalStore @Inject constructor(
     /** Server fetch → full replace (server value wins), re-resolved for tolerance. */
     suspend fun replaceFromServer(server: WirePulsePrefs) {
         val resolved = PulseWave8Logic.mergePatch(PulseWave8Logic.DEFAULTS, server)
-        context.pulsePrefs.edit {
+        storage.edit {
             it[Keys.PREFS] = PulseJson.encodeToString(WirePulsePrefs.serializer(), resolved)
         }
     }
 
     /** Local optimistic toggle - shallow merge over the CURRENT blob. */
     suspend fun applyLocal(patch: WirePulsePrefs) {
-        context.pulsePrefs.edit { p ->
+        storage.edit { p ->
             val current = PulseWave8Logic.mergePrefs(p[Keys.PREFS])
             p[Keys.PREFS] = PulseJson.encodeToString(
                 WirePulsePrefs.serializer(),

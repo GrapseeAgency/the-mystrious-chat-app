@@ -569,8 +569,12 @@ fun PulseRoot(
                 // is lifted 1:1 from the web source, every tap is wired to a
                 // real gateway action, and the room header video/phone icons
                 // dial real 1:1/group calls through the same call engines.
+                androidx.compose.runtime.key(viewerId, storedBase) {
                 val callVm: CallViewModel = hiltViewModel()
                 val groupCallVm: GroupCallViewModel = hiltViewModel()
+                androidx.compose.runtime.DisposableEffect(viewerId, storedBase) {
+                    onDispose { callVm.hangup(); groupCallVm.leaveCall() }
+                }
                 app.pulse.android.mirror.MirrorRoot(
                     session = session,
                     readingEnabled = !appLock.locked.collectAsStateWithLifecycle().value,
@@ -629,6 +633,7 @@ fun PulseRoot(
                             pendingRoomId = id
                         },
                     )
+                }
                 }
             }
 
