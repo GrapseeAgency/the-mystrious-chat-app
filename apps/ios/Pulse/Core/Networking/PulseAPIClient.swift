@@ -1165,10 +1165,17 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/hub/wallet/transfer { userId, toUsername, amount, note? } → { wallet, to }.
     public func transferCoins(toUsername: String, amount: Int, note: String?) async throws -> WireTransferResult {
-        var body: [String: Any] = ["userId": userId, "toUsername": toUsername.trimmingCharacters(in: .whitespaces).hasPrefix("@") ? String(toUsername.dropFirst()).lowercased() : toUsername.lowercased(), "amount": amount]
+        let trimmed = toUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        let handle = (trimmed.hasPrefix("@") ? String(trimmed.dropFirst()) : trimmed).lowercased()
+        var body: [String: Any] = ["userId": userId, "toUsername": handle, "amount": amount]
         if let note, !note.isEmpty { body["note"] = note }
         let data = try await postRaw("/api/hub/wallet/transfer", body: body)
-        return try envelope(WireTransferResult.self, from: data)
+        let result = try envelope(WireTransferResult.self, from: data)
+        try requireWalletAck(result.wallet)
+        guard let recipient = result.to?.id, !recipient.isEmpty, recipient != userId else {
+            throw Failure(kind: .server, message: "Unconfirmed transfer recipient; refresh the ledger before retrying.")
+        }
+        return result
     }
 
     /// GET /api/hub/swap → { rates, stats }.
@@ -1179,7 +1186,16 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/hub/swap { userId, direction, amount } → { wallet, note }.
     public func swap(direction: String, amount: Int) async throws -> WireSwapResult {
         let data = try await postRaw("/api/hub/swap", body: ["userId": userId, "direction": direction, "amount": amount])
-        return try envelope(WireSwapResult.self, from: data)
+        let result = try envelope(WireSwapResult.self, from: data)
+        try requireWalletAck(result.wallet)
+        return result
+    }
+
+    private func requireWalletAck(_ wallet: WireWallet?) throws {
+        guard let wallet, wallet.userId == userId, let coins = wallet.coins, let gems = wallet.gems,
+              (0...2_147_483_647).contains(coins), (0...2_147_483_647).contains(gems) else {
+            throw Failure(kind: .server, message: "Unconfirmed wallet outcome; refresh the ledger before retrying.")
+        }
     }
 
     /// GET /api/hub/tasks?userId= → { tasks } ordered doing → todo → done.

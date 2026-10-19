@@ -254,7 +254,7 @@ class Wave7ApiTest {
     @Test
     fun `transfer normalizes handle client-side`() = runTest {
         configured()
-        response = """{"wallet":{"userId":"u1","coins":0},"to":{"id":"u2","name":"B","username":"bob"}}"""
+        response = """{"wallet":{"userId":"u1","coins":0,"gems":0},"to":{"id":"u2","name":"B","username":"bob"}}"""
         val r = api().transferCoins("u1", "@Bob", amount = 25, note = null)
         assertTrue(r is PulseResult.Success)
         assertTrue(lastBody.contains("\"toUsername\":\"bob\""))

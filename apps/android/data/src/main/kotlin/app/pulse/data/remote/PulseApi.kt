@@ -1677,7 +1677,12 @@ class PulseApi(
                 put("amount", amount)
                 if (!note.isNullOrBlank()) put("note", note)
             },
-        ) { PulseJson.decodeFromString(TransferResultDto.serializer(), it) }
+        ) {
+            requireWalletAck(it, userId)
+            val result = PulseJson.decodeFromString(TransferResultDto.serializer(), it)
+            if (result.to.id.isBlank() || result.to.id == userId) throw kotlinx.serialization.SerializationException("Unconfirmed transfer recipient; refresh the ledger before retrying")
+            result
+        }
 
     /** GET /api/hub/swap → { rates, stats }. */
     suspend fun swapRates(): PulseResult<SwapPageDto> =
@@ -1686,8 +1691,21 @@ class PulseApi(
     /** POST /api/hub/swap { userId, direction: pc2gem|gem2pc, amount }. */
     suspend fun swap(userId: String, direction: String, amount: Long): PulseResult<SwapResultDto> =
         post("/api/hub/swap", jsonOf("userId" to userId, "direction" to direction, "amount" to amount)) {
+            requireWalletAck(it, userId)
             PulseJson.decodeFromString(SwapResultDto.serializer(), it)
         }
+
+    private fun requireWalletAck(raw: String, userId: String) {
+        val root = PulseJson.parseToJsonElement(raw) as? JsonObject
+        val wallet = root?.get("wallet") as? JsonObject
+        if (wallet == null || !wallet.keys.containsAll(listOf("userId", "coins", "gems"))) {
+            throw kotlinx.serialization.SerializationException("Unconfirmed wallet outcome; refresh the ledger before retrying")
+        }
+        val parsed = PulseJson.decodeFromString(app.pulse.protocol.WalletDto.serializer(), wallet.toString())
+        if (parsed.userId != userId || parsed.coins !in 0L..2_147_483_647L || parsed.gems !in 0L..2_147_483_647L) {
+            throw kotlinx.serialization.SerializationException("Invalid wallet acknowledgement; refresh the ledger before retrying")
+        }
+    }
 
     /** GET /api/hub/tasks?userId= → { tasks } ordered doing → todo → done. */
     suspend fun hubTasks(userId: String): PulseResult<HubTasksPageDto> =

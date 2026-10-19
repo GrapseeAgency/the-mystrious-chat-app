@@ -540,3 +540,39 @@ apply to the previous revision, not the following source changes.
 References: Android persistent-work documentation and notification channel importance:
 https://developer.android.com/develop/background-work/background-tasks/persistent
 https://developer.android.com/develop/ui/compose/notifications/channels
+
+### Wallet rejection and repeated-tap continuation
+
+A separate, source-confirmed failure crossed the server/native boundary: transfer
+and swap transaction catch blocks returned an HTTP 402 Response **as the wallet
+value**, then the outer handler JSON-wrapped it with HTTP 200. Tolerant native DTOs
+could adopt the empty object and display success after a rolled-back transaction.
+
+- Extracted transactional wallet contracts; errors are now returned at the HTTP
+  boundary, never serialized as a wallet. Conditional debits prevent overdraft;
+  recipient credits and swap legs enforce the Prisma/native integer limit. Ledger
+  legs, log events and balances commit together or roll back together. GET exchange
+  rates and POST calculations share constants.
+- Both native transports validate successful monetary acknowledgements: matching
+  owner, actual coin/gem fields, valid balance range, and a real transfer recipient.
+  An unconfirmed HTTP-200 payload is an error with ledger-review guidance, not a
+  zero balance or success toast.
+- Swift transfer/swap share a synchronous single-flight gate taken before Task
+  creation. Session generation is checked before sending and after awaiting; late
+  results cannot toast success or dismiss another session's sheet. Active controls
+  are disabled while the mutation is in flight. Android already had its visible
+  synchronous busy/input capture gates from the earlier pass.
+- **8 new SQLite wallet regressions passed**: conservation/two ledger legs, correct
+  HTTP rejection, insufficient-balance rollback, recipient overflow rollback,
+  safe swap arithmetic/ranges, concurrent spend bounds and unexpected error propagation.
+  The full local server suite is now **34/34 passed**.
+- **8 new native regressions authored**: Kotlin monetary ACK 2, Swift HTTP ACK 2,
+  Swift real HubViewModel gate/session ordering 4. Total authored this turn:
+  **25 native tests** plus **15 executed server tests**. Latest native execution is
+  still pending; c31adda's iOS archive passed and its server/web checks passed.
+
+Important remaining wallet contract: there is still no durable client operation
+ID for transfer/swap. A manual retry after an ambiguous lost ACK can duplicate a
+completed operation. No automatic financial retry was added, and a tap gate is
+not represented as a solution to that separate delivery problem. Real concurrency,
+UI cancellation and ledger review still require native/device acceptance.

@@ -34,6 +34,7 @@ final class HubViewModel: ObservableObject {
 
     @Published var wallet = WalletUi()
     @Published private(set) var checkinBusy = false
+    @Published private(set) var walletMutationBusy = false
     private var walletRequest = UUID()
     private var marketRequest = UUID()
     private var logsRequest = UUID()
@@ -134,19 +135,39 @@ final class HubViewModel: ObservableObject {
 
     // MARK: transfer
 
-    func transfer(handle: String, amount: Int, note: String?, completion: @escaping (Bool) -> Void) {
-        Task { @MainActor in
-            guard let api = api else { return }
+    /// Gate is taken before creating the task, not after its first suspension.
+    @discardableResult
+    func performWalletMutation(operation: @escaping () async throws -> String,
+                               completion: @escaping (Result<String, Error>) -> Void) -> Task<Void, Never>? {
+        guard !walletMutationBusy else { return nil }
+        walletMutationBusy = true
+        let epoch = session.sessionGeneration
+        return Task { @MainActor in
+            defer { walletMutationBusy = false }
+            guard session.sessionGeneration == epoch else { return }
             do {
-                let result = try await api.transferCoins(toUsername: handle, amount: amount, note: note)
-                toast("Sent \(amount) PC to @\(result.to?.username ?? result.to?.name ?? "?")")
-                loadWallet()
-                completion(true)
+                try Task.checkCancellation()
+                let message = try await operation()
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                completion(.success(message))
             } catch {
-                toast(describe(error), isError: true)
-                completion(false)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                completion(.failure(error))
             }
         }
+    }
+
+    func transfer(handle: String, amount: Int, note: String?, completion: @escaping (Bool) -> Void) {
+        guard let api else { completion(false); return }
+        performWalletMutation(operation: {
+            let result = try await api.transferCoins(toUsername: handle, amount: amount, note: note)
+            return "Sent \(amount) PC to @\(result.to?.username ?? result.to?.name ?? "?")"
+        }, completion: { result in
+            switch result {
+            case .success(let message): self.toast(message); self.loadWallet(); completion(true)
+            case .failure(let error): self.toast(self.describe(error), isError: true); completion(false)
+            }
+        })
     }
 
     // MARK: swap
@@ -159,18 +180,16 @@ final class HubViewModel: ObservableObject {
     }
 
     func swap(direction: String, amount: Int, completion: @escaping (Bool) -> Void) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                let result = try await api.swap(direction: direction, amount: amount)
-                toast(result.note ?? "Swap complete")
-                loadWallet()
-                completion(true)
-            } catch {
-                toast(describe(error), isError: true)
-                completion(false)
+        guard let api else { completion(false); return }
+        performWalletMutation(operation: {
+            let result = try await api.swap(direction: direction, amount: amount)
+            return result.note ?? "Swap complete"
+        }, completion: { result in
+            switch result {
+            case .success(let message): self.toast(message); self.loadWallet(); completion(true)
+            case .failure(let error): self.toast(self.describe(error), isError: true); completion(false)
             }
-        }
+        })
     }
 
     // MARK: tasks
@@ -677,6 +696,7 @@ private struct HubTransferSheet: View {
                 }
             }
         }
+        .disabled(vm.walletMutationBusy)
         .navigationTitle("Send PC")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -724,6 +744,7 @@ private struct HubSwapSheet: View {
                 }
             }
         }
+        .disabled(vm.walletMutationBusy)
         .navigationTitle("PC ⇄ GEM")
         .navigationBarTitleDisplayMode(.inline)
         .task { vm.loadSwap() }
