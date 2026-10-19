@@ -120,6 +120,11 @@ class PulseReplyReceiver : BroadcastReceiver() {
  * it (app/src/test - no Robolectric needed).
  */
 object PulseReplyPayload {
+    /** Only the explicit RemoteInput broadcast may be mutable. */
+    fun replyPendingIntentFlags(sdk: Int = Build.VERSION.SDK_INT): Int =
+        PendingIntent.FLAG_UPDATE_CURRENT or
+            if (sdk >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+
 
     const val KEY_REPLY_TEXT = "pulse_reply_text"
     const val EXTRA_CONVERSATION_ID = "app.pulse.android.reply.conversationId"

@@ -72,12 +72,30 @@ struct PulseApp: App {
     static func handleOutboxTask(_ task: BGTask) {
         scheduleOutboxRefresh()
         let work = Task { @MainActor in
-            await PulseOutboxEngine.active?.flush()
-            task.setTaskCompleted(success: true)
+            let succeeded = await Self.flushBackgroundOutbox()
+            task.setTaskCompleted(success: succeeded && !Task.isCancelled)
         }
         task.expirationHandler = {
             work.cancel()
         }
+    }
+
+    @MainActor
+    private static func flushBackgroundOutbox() async -> Bool {
+        if let active = PulseOutboxEngine.active { return await active.flush() }
+        guard let viewer = PulseKeychain.shared.loadViewer(),
+              let token = PulseKeychain.shared.loadSessionToken() else { return false }
+        PulseEndpoints.loadPersistedOverride()
+        await PulseEndpoints.fetchManifestOverride()
+        guard !Task.isCancelled, PulseKeychain.shared.loadViewer()?.id == viewer.id,
+              PulseKeychain.shared.loadSessionToken() == token else { return false }
+        do {
+            let store = try PulseStore.openAccount(gateway: PulseEndpoints.gatewayURL.absoluteString, viewerId: viewer.id)
+            let api = PulseAPIClient(baseURL: PulseEndpoints.gatewayURL, userId: viewer.id, authToken: token)
+            let engine = PulseOutboxEngine(store: store) { api }
+            defer { engine.stop() }
+            return await engine.flush()
+        } catch { return false }
     }
 
     /// Submits the background-refresh request (15 min earliest). Failures -

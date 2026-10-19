@@ -2789,6 +2789,7 @@ final class ChatsViewModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 6_000_000_000)
                 guard !Task.isCancelled, let self else { return }
+                guard session.isForeground, session.ready else { continue }
                 await self.refreshQuiet(session: session)
             }
         }

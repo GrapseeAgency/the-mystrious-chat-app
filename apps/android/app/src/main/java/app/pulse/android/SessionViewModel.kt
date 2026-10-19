@@ -53,33 +53,14 @@ class SessionViewModel @Inject constructor(
                 }
             }
         }
-        // R52-c - a rejected token NEVER tears the session down anymore: the
-        // "Your session ended" onboarding kick the user hit is dead. The
-        // device silently reclaims the SAME identity by name (Pulse
-        // identities are name-keyed and self-declared - the login endpoint IS
-        // the re-auth), the fresh token persists inside the repository, and
-        // realtime re-arms. Offline -> nothing changes: the viewer stays, the
-        // outbox keeps queueing, the retry happens on the next rejection
-        // (throttled). Explicit sign-out (forgetViewer) is the ONLY way out.
+        // Authentication failure is not permission to reclaim an identity by name.
         viewModelScope.launch {
             sessionTokenStore.invalidated.collect { invalid ->
-                if (!invalid) return@collect
-                val id = prefs.viewerId.first() ?: return@collect
-                val name = prefs.viewerName.first().takeUnless { it.isNullOrBlank() }
-                    ?: return@collect
-                val now = System.currentTimeMillis()
-                if (now - lastSilentReauth < SILENT_REAUTH_THROTTLE_MS) return@collect
-                lastSilentReauth = now
-                repo.login(name).fold(
-                    onSuccess = {
-                        _sessionNotice.value = null
-                        repo.start(id)
-                    },
-                    onFailure = {
-                        // Stay exactly where we are - the app remains fully
-                        // usable offline; the next 401 retries (throttled).
-                    },
-                )
+                if (invalid) {
+                    repo.stop()
+                    OutboxWorker.cancel(appContext)
+                    _sessionNotice.value = "Session expired. Pending messages are kept; sign in again to synchronize."
+                }
             }
         }
         // Outbox → WorkManager bridge: a pending queue always has an expedited,
@@ -92,13 +73,6 @@ class SessionViewModel @Inject constructor(
     }
 
     private val _sessionNotice = MutableStateFlow<String?>(null)
-
-    /** R52-c throttle: at most one silent re-auth per 10s window. */
-    private var lastSilentReauth = 0L
-
-    private companion object {
-        const val SILENT_REAUTH_THROTTLE_MS = 10_000L
-    }
 
     /** One-shot honest notice when the session token was rejected (401 / join:error). */
     val sessionNotice: StateFlow<String?> = _sessionNotice.asStateFlow()
@@ -152,6 +126,8 @@ class SessionViewModel @Inject constructor(
     }
 
     fun forgetViewer() {
+        repo.stop()
+        OutboxWorker.cancel(appContext)
         viewModelScope.launch {
             // Task 5-d - BEFORE the identity is cleared: DELETE /api/push/register
             // { token } with the stored FCM token (token-only body, no userId
@@ -166,7 +142,7 @@ class SessionViewModel @Inject constructor(
     }
 
     fun bootstrap(viewerId: String?) {
-        viewerId?.let { repo.start(it) }
+        if (viewerId == null) repo.stop() else repo.start(viewerId)
     }
 
     /** Point REST + realtime at a user-provided origin (null = go offline). */

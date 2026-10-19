@@ -164,6 +164,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -244,11 +245,25 @@ class PulseRepositoryImpl @Inject constructor(
     private val flushMutex = Mutex()
     private var selfHealJob: Job? = null
 
+    override fun stop() {
+        viewerId = null
+        socket.disconnect()
+        scope.coroutineContext.cancelChildren()
+        pumpStarted = false
+        selfHealJob = null
+        onlineIds.value = emptySet()
+        connectedFlow.value = false
+    }
+
     override fun start(userId: String) {
         if (viewerId == userId && socket.isJoined) return
+        if (viewerId != userId) stop()
         viewerId = userId
         startPump()
-        socket.connect(userId)
+        scope.launch {
+            sessionTokenStore.load()
+            if (viewerId == userId) socket.connect(userId)
+        }
         // Demo companion: every identity (fresh or upgraded install) gets the
         // on-device Nova room so the chat surface is explorable offline.
         scope.launch { runCatching { ensureDemoSeeded(userId) } }
@@ -958,8 +973,7 @@ class PulseRepositoryImpl @Inject constructor(
                             createdAt = nowIso,
                         ),
                     )
-                    outboxDao.trimBeyond(MAX_OUTBOX)
-                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
+                                eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
                     Result.success(SendReceipt(message = temp, streak = null))
                 } else {
                     messageDao.deleteById(temp.id)
@@ -1009,7 +1023,7 @@ class PulseRepositoryImpl @Inject constructor(
             anonAlias = anonAliasPreview.takeIf { anon },
         )
         if (!viewerId.isNullOrBlank()) {
-            messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+            messageDao.upsertAll(listOf(MessageEntity.from(temp).copy(kind = (kind ?: "text").uppercase(), payloadJson = payload)))
         }
         return when (
             val r = api.sendMessage(
@@ -1047,8 +1061,7 @@ class PulseRepositoryImpl @Inject constructor(
                             createdAt = nowIso,
                         ),
                     )
-                    outboxDao.trimBeyond(MAX_OUTBOX)
-                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
+                                eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
                     Result.success(SendReceipt(message = temp, streak = null))
                 } else {
                     messageDao.deleteById(temp.id)
@@ -1300,8 +1313,7 @@ class PulseRepositoryImpl @Inject constructor(
                             createdAt = nowIso,
                         ),
                     )
-                    outboxDao.trimBeyond(MAX_OUTBOX)
-                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, targetConversationId))
+                                eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, targetConversationId))
                     return Result.success(temp)
                 }
                 Result.failure(apiExceptionOf(r))
@@ -1578,7 +1590,6 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun enqueueOutbox(entry: OutboxEntry): Result<Unit> = try {
         outboxDao.insert(OutboxEntity.from(entry))
-        outboxDao.trimBeyond(MAX_OUTBOX)
         Result.success(Unit)
     } catch (e: Exception) {
         Result.failure(e)
@@ -1587,26 +1598,37 @@ class PulseRepositoryImpl @Inject constructor(
     override fun observeOutbox(): Flow<List<OutboxEntry>> =
         outboxDao.observeAll().map { rows -> rows.map { it.toEntry() } }
 
-    override suspend fun outboxPending(): List<OutboxEntry> = outboxDao.all().map { it.toEntry() }
+    override suspend fun outboxPending(): List<OutboxEntry> {
+        val owner = viewerId ?: return emptyList()
+        return outboxDao.allForOwner(owner).map { it.toEntry() }
+    }
 
     /** ONE POST attempt - classification rides on OutboxDeliveryException. */
-    override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> =
-        when (val r = api.sendMessage(entry.conversationId, viewerId ?: "", entry.content)) {
+    override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> {
+        val owner = viewerId
+        val temp = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+        if (owner.isNullOrBlank() || sessionTokenStore.cached.isNullOrBlank() ||
+            temp == null || temp.authorId != owner || temp.conversationId != entry.conversationId
+        ) return Result.failure(OutboxDeliveryException(OutboxFailureClass.RETRY, "Sign in to the message's original account to send it"))
+        return when (val r = api.sendMessage(
+            entry.conversationId, owner, entry.content,
+            replyToId = temp.replyToId, parentId = temp.threadRootId,
+            topicId = temp.topicId, kind = temp.kind.lowercase(),
+            payload = temp.payloadJson?.let { PulseJson.parseToJsonElement(it) as? kotlinx.serialization.json.JsonObject },
+        )) {
             is PulseResult.Success -> Result.success(r.value.messageOrThrow())
             is PulseResult.Failure -> {
                 val classification = when (r.kind) {
                     PulseResult.Failure.Kind.VALIDATION,
                     PulseResult.Failure.Kind.FORBIDDEN,
                     PulseResult.Failure.Kind.NOT_FOUND,
-                    PulseResult.Failure.Kind.AUTH,
                     -> OutboxFailureClass.DROP
                     else -> OutboxFailureClass.RETRY
                 }
-                Result.failure(
-                    OutboxDeliveryException(classification, r.message ?: r.kind.name),
-                )
+                Result.failure(OutboxDeliveryException(classification, r.message ?: r.kind.name))
             }
         }
+    }
 
     override suspend fun resolveOutboxDelivery(entry: OutboxEntry, real: Message) {
         messageDao.upsertAll(listOf(MessageEntity.from(real, reactionsJsonOf(real))))
@@ -1633,6 +1655,9 @@ class PulseRepositoryImpl @Inject constructor(
      * source of truth, unit-tested at the domain layer.
      */
     override suspend fun flushOutbox(): FlushReport = flushMutex.withLock {
+        if (viewerId == null || sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) {
+            return@withLock FlushReport(sent = 0, dropped = 0, pending = outboxDao.count())
+        }
         val report = FlushOutboxUseCase(this).invoke()
         if (report.pending > 0) scheduleSelfHeal()
         report

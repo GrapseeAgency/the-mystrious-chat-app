@@ -662,6 +662,11 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox ORDER BY id ASC LIMIT 50")
     suspend fun all(): List<OutboxEntity>
 
+    /** Unknown/foreign ownership is quarantined, never attributed to the current viewer. */
+    @Query("SELECT o.* FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
+        "WHERE m.authorId = :owner AND m.conversationId = o.conversationId ORDER BY o.id ASC LIMIT 50")
+    suspend fun allForOwner(owner: String): List<OutboxEntity>
+
     @Query("DELETE FROM outbox WHERE id = :id")
     suspend fun deleteById(id: Long)
 

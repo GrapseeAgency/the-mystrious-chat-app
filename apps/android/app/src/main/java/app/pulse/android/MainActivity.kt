@@ -158,6 +158,8 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
 import dagger.hilt.android.AndroidEntryPoint
@@ -290,25 +292,27 @@ class MainActivity : FragmentActivity() {
         if (!reminderLoopStarted) {
             reminderLoopStarted = true
             lifecycleScope.launch {
-                while (true) {
-                    runCatching {
-                        val due = repository.reminders(dueOnly = true).getOrNull()?.items.orEmpty()
-                        for (item in due) {
-                            app.pulse.android.notify.ReminderNotifier.show(
-                                this@MainActivity,
-                                item.id,
-                                item.note.ifBlank { "Reminder" },
-                                item.snippet ?: item.conversation.name,
-                                // R2-C item 6 - the tap deep-links into the chat.
-                                // R7 item 4 - the anchored message rides along so
-                                // the room auto-jumps + flashes on open.
-                                item.conversationId.ifBlank { null },
-                                item.messageId,
-                            )
-                            runCatching { repository.resolveReminder(item.id) }
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    while (true) {
+                        runCatching {
+                            val due = repository.reminders(dueOnly = true).getOrNull()?.items.orEmpty()
+                            for (item in due) {
+                                app.pulse.android.notify.ReminderNotifier.show(
+                                    this@MainActivity,
+                                    item.id,
+                                    item.note.ifBlank { "Reminder" },
+                                    item.snippet ?: item.conversation.name,
+                                    // R2-C item 6 - the tap deep-links into the chat.
+                                    // R7 item 4 - the anchored message rides along so
+                                    // the room auto-jumps + flashes on open.
+                                    item.conversationId.ifBlank { null },
+                                    item.messageId,
+                                )
+                                runCatching { repository.resolveReminder(item.id) }
+                            }
                         }
+                        delay(30_000)
                     }
-                    delay(30_000)
                 }
             }
         }
@@ -317,6 +321,7 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         app.pulse.android.notify.IncomingAttention.foreground = false
+        if (!isChangingConfigurations) appLock.onHostStopped()
     }
 
     override fun onResume() {
@@ -512,6 +517,11 @@ fun PulseRoot(
     // it when the stored token was rejected) finally reaches the onboarding
     // screen it was always meant for.
     val sessionNotice by session.sessionNotice.collectAsStateWithLifecycle()
+    val noticeContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(sessionNotice) {
+        sessionNotice?.let { android.widget.Toast.makeText(noticeContext, it, android.widget.Toast.LENGTH_LONG).show() }
+    }
+
 
     // Web parity: no viewer identity → the onboarding IS the app (name →
     // live @handle picker). Wait for prefs hydration to avoid a flash.

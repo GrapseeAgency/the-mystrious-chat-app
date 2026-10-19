@@ -242,6 +242,9 @@ interface PulseRepository {
     /** Bind the client to a viewer identity (REST userId + socket join). Idempotent per id. */
     fun start(userId: String)
 
+    /** End the current account transport and cancel account-owned work. */
+    fun stop() {}
+
     val viewerId: String?
 
     fun observeConversations(query: String = ""): Flow<List<Conversation>>

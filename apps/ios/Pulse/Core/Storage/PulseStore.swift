@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import GRDB
 
@@ -24,6 +25,26 @@ import GRDB
 /// single-writer POST /api/calls - network-failed rows flush on socket
 /// reconnect / app start, mirroring the PulseOutboxEngine trigger style).
 public final class PulseStore: Sendable {
+    /// Legacy pulse.sqlite is intentionally left untouched: its rows have no
+    /// provable account ownership. Never adopt another user's pending sends.
+    public static func accountFilename(gateway: String, viewerId: String) -> String {
+        let origin = gateway.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let identity = "\(origin.utf8.count):\(origin)\(viewerId.utf8.count):\(viewerId)"
+        let digest = SHA256.hash(data: Data(identity.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return "pulse-account-\(digest).sqlite"
+    }
+
+    public static func openAccount(gateway: String, viewerId: String) throws -> PulseStore {
+        let directory = try FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true
+        )
+        return try PulseStore(path: directory.appendingPathComponent(
+            accountFilename(gateway: gateway, viewerId: viewerId)
+        ).path)
+    }
+
     private let dbQueue: DatabaseQueue
 
     public init(path: String) throws {

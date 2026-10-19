@@ -19,9 +19,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -110,11 +114,12 @@ internal fun MirrorRoot(
     shortcutAction: String? = null,
     onConsumeShortcutAction: () -> Unit = {},
 ) {
-    val viewerId by session.viewerId.collectAsState()
-    val viewerName by session.viewerName.collectAsState()
-    val conversations by repository.observeConversations().collectAsState(initial = emptyList())
-    val presence by repository.observePresence().collectAsState(initial = emptySet())
-    var tab by remember { mutableStateOf(MirrorTab.Chats) }
+    val viewerId by session.viewerId.collectAsStateWithLifecycle()
+    val viewerName by session.viewerName.collectAsStateWithLifecycle()
+    val conversations by repository.observeConversations().collectAsStateWithLifecycle(initialValue = emptyList())
+    val presence by repository.observePresence().collectAsStateWithLifecycle(initialValue = emptySet())
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var tab by rememberSaveable { mutableStateOf(MirrorTab.Chats) }
     var openRoom by remember { mutableStateOf<Conversation?>(null) }
     // R73 - keeps the room composed while the close slide-out plays
     // (openRoom flips null immediately; the exit animation needs the convo).
@@ -151,11 +156,11 @@ internal fun MirrorRoot(
     // (web chats-tab.tsx:795 applies the persisted listFilter on load).
     var filter by remember { mutableStateOf(MirrorFilter.All) }
     var filterSeeded by remember { mutableStateOf(false) }
-    val savedListFilter by session.chatsListFilter.collectAsState()
+    val savedListFilter by session.chatsListFilter.collectAsStateWithLifecycle()
     // R74 - web prefs.reducedMotion: gates the full-screen message effects
-    val reducedMotion by session.reducedMotion.collectAsState()
+    val reducedMotion by session.reducedMotion.collectAsStateWithLifecycle()
     // R75 - Spotlight theme action needs the RESOLVED dark state (web resolvedTheme)
-    val darkOverride by session.darkOverride.collectAsState()
+    val darkOverride by session.darkOverride.collectAsStateWithLifecycle()
     val systemDark = isSystemInDarkTheme()
     val darkResolved = when (darkOverride) {
         "light" -> false
@@ -285,51 +290,55 @@ internal fun MirrorRoot(
 
     // R64 - typing state: relay events - per-conversation typer list (4s TTL).
     var typers by remember { mutableStateOf<List<MirrorTyper>>(emptyList()) }
-    LaunchedEffect(viewerId) {
-        if (viewerId == null) return@LaunchedEffect
-        launch {
-            repository.events().collect { event ->
-                if (event is PulseEvent.Typing && event.userId != viewerId) {
-                    typers = if (event.isTyping) {
-                        typers
-                            .filter { it.userId != event.userId || it.conversationId != event.conversationId }
-                            .plus(MirrorTyper(event.conversationId, event.userId, event.userName, System.currentTimeMillis() + 4_000L))
-                    } else {
-                        typers.filter { !(it.userId == event.userId && it.conversationId == event.conversationId) }
+    LaunchedEffect(viewerId, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (viewerId == null) return@repeatOnLifecycle
+            launch {
+                repository.events().collect { event ->
+                    if (event is PulseEvent.Typing && event.userId != viewerId) {
+                        typers = if (event.isTyping) {
+                            typers
+                                .filter { it.userId != event.userId || it.conversationId != event.conversationId }
+                                .plus(MirrorTyper(event.conversationId, event.userId, event.userName, System.currentTimeMillis() + 4_000L))
+                        } else {
+                            typers.filter { !(it.userId == event.userId && it.conversationId == event.conversationId) }
+                        }
+                    } else if (event is PulseEvent.MessageReceived) {
+                        // Realtime snappiness: refetch the list when a message lands.
+                        runCatching { repository.refreshConversations() }
                     }
-                } else if (event is PulseEvent.MessageReceived) {
-                    // Realtime snappiness: refetch the list when a message lands.
-                    runCatching { repository.refreshConversations() }
                 }
             }
-        }
-        // Expire stale typers on a 1s beat (web ~4s auto-expiry parity).
-        while (true) {
-            delay(1_000)
-            val now = System.currentTimeMillis()
-            val stale = typers.any { it.expiresAt <= now }
-            if (stale) typers = typers.filter { it.expiresAt > now }
+            // Expire stale typers on a 1s beat (web ~4s auto-expiry parity).
+            while (true) {
+                delay(1_000)
+                val now = System.currentTimeMillis()
+                val stale = typers.any { it.expiresAt <= now }
+                if (stale) typers = typers.filter { it.expiresAt > now }
+            }
         }
     }
 
     // Refresh rhythm: conversations + stories + folders + mentions on mount and every 5s.
-    LaunchedEffect(viewerId) {
-        while (true) {
-            if (viewerId != null) {
-                runCatching { repository.refreshConversations() }
-                stories = repository.stories().getOrDefault(emptyList())
-                folders = repository.folders().getOrDefault(emptyList()).map { f ->
-                    MirrorFolderChip(
-                        id = f.id,
-                        name = f.name,
-                        emoji = f.emoji,
-                        count = f.conversationIds.count { cid -> conversations.any { it.id == cid } },
-                        conversationIds = f.conversationIds,
-                    )
+    LaunchedEffect(viewerId, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                if (viewerId != null) {
+                    runCatching { repository.refreshConversations() }
+                    stories = repository.stories().getOrDefault(emptyList())
+                    folders = repository.folders().getOrDefault(emptyList()).map { f ->
+                        MirrorFolderChip(
+                            id = f.id,
+                            name = f.name,
+                            emoji = f.emoji,
+                            count = f.conversationIds.count { cid -> conversations.any { it.id == cid } },
+                            conversationIds = f.conversationIds,
+                        )
+                    }
+                    mentionCount = repository.mentions().getOrDefault(emptyList()).size
                 }
-                mentionCount = repository.mentions().getOrDefault(emptyList()).size
+                delay(5_000)
             }
-            delay(5_000)
         }
     }
 
@@ -1008,7 +1017,7 @@ private fun MirrorRoomScaffold(
     jumpMessageId: String? = null,
     onJumpConsumed: () -> Unit = {},
 ) {
-    val messages by repository.observeMessages(convo.id).collectAsState(initial = emptyList<Message>())
+    val messages by repository.observeMessages(convo.id).collectAsStateWithLifecycle(initialValue = emptyList<Message>())
     var phrases by remember { mutableStateOf<List<QuickPhrase>>(emptyList()) }
     var muted by remember { mutableStateOf(convo.isMuted) }
     var ttlSeconds by remember { mutableStateOf(0) }
@@ -1132,7 +1141,7 @@ private fun MirrorPipChat(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val messages by repository.observeMessages(convo.id).collectAsState(initial = emptyList<Message>())
+    val messages by repository.observeMessages(convo.id).collectAsStateWithLifecycle(initialValue = emptyList<Message>())
     var draft by remember { mutableStateOf("") }
     // R72 - channel truth: the pip window cannot send into a broadcast room
     // either (the server would 403 - mirror the locked composer honestly)

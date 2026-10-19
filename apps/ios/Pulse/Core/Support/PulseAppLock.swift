@@ -39,7 +39,9 @@ public final class PulseAppLock: ObservableObject {
     /// user-cancelled attempts stay silent by design).
     @Published public private(set) var statusMessage: String?
 
-    private init() {}
+    init(defaults: UserDefaults = .standard) {
+        needsLock = defaults.bool(forKey: PulsePrefs.appLockEnabledKey)
+    }
 
     /// RootView scenePhase → .background handler. Arming WITHOUT the
     /// toggle explicitly clears any stale gate (idempotent either way).

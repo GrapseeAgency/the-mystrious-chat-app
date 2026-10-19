@@ -51,4 +51,14 @@ class PulseReplyReceiverTest {
         assertEquals(conv.hashCode().and(0x3FFFFFFF), PulseReplyPayload.notificationId(conv))
         assertTrue(PulseReplyPayload.notificationId(conv) >= 0)
     }
+    @Test
+    fun `direct reply allows RemoteInput fill in without an immutable flag`() {
+        val immutable = android.app.PendingIntent.FLAG_IMMUTABLE
+        val mutable = android.app.PendingIntent.FLAG_MUTABLE
+        for (sdk in listOf(24, 30, 31, 34, 35)) {
+            val flags = PulseReplyPayload.replyPendingIntentFlags(sdk)
+            assertEquals(0, flags and immutable)
+            assertEquals(if (sdk >= 31) mutable else 0, flags and mutable)
+        }
+    }
 }

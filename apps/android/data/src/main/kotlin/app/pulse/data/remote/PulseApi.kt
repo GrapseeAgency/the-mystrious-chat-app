@@ -179,6 +179,7 @@ class PulseApi(
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -208,6 +209,7 @@ class PulseApi(
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -234,6 +236,7 @@ class PulseApi(
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -552,6 +555,7 @@ class PulseApi(
                 failureOf(res.status.value, res.bodyAsText())
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -656,6 +660,7 @@ class PulseApi(
                 failureOf(res.status.value, text)
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -690,6 +695,7 @@ class PulseApi(
             val text = res.bodyAsText()
             if (res.status.isSuccess()) PulseResult.Success(messageOf(text)) else failureOf(res.status.value, text)
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -780,6 +786,7 @@ class PulseApi(
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -832,6 +839,7 @@ class PulseApi(
                 failureOf(res.status.value, text)
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -965,6 +973,7 @@ class PulseApi(
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -986,6 +995,7 @@ class PulseApi(
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -1005,6 +1015,7 @@ class PulseApi(
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -1028,6 +1039,7 @@ class PulseApi(
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -1051,6 +1063,7 @@ class PulseApi(
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }
@@ -1366,6 +1379,7 @@ class PulseApi(
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
         }
     }

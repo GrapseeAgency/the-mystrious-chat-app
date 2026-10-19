@@ -103,15 +103,15 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(engine.count(), 12)
     }
 
-    func testQueueCapsAtFiftyDroppingOldest() throws {
+    func testQueueRetainsEveryAcceptedMessageBeyondOneBatch() throws {
         let store = try PulseStore()
         let engine = makeEngine(store, nil)
         for index in 0..<55 {
             engine.append(conversationId: "c1", clientId: "cap-\(index)", content: "msg \(index)")
         }
-        XCTAssertEqual(engine.count(), 50)
+        XCTAssertEqual(engine.count(), 55)
         let rows = try store.outboxAll()
-        XCTAssertEqual(rows.first?.clientId, "cap-5")
+        XCTAssertEqual(rows.first?.clientId, "cap-0")
         XCTAssertEqual(rows.last?.clientId, "cap-54")
     }
 
@@ -214,6 +214,36 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertFalse(PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: .network, message: nil)))
         XCTAssertFalse(PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: .server, message: nil, status: 502)))
         XCTAssertFalse(PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: .unknown, message: nil)))
+    }
+
+    func testTransientHTTPFailuresRetainIntent() async throws {
+        for status in [401, 408, 425, 429, 500, 503] {
+            let store = try PulseStore()
+            try store.appendOutbox(conversationId: "c1", clientId: "a", content: "keep")
+            let sender = StubSender(behaviors: ["keep": .httpError(status: status)])
+            let engine = makeEngine(store, sender)
+            defer { engine.stop() }
+            XCTAssertFalse(isDroppableHTTPStatus(status))
+            let complete = await engine.flush()
+            XCTAssertFalse(complete)
+            XCTAssertEqual(try store.outboxAll().map(\.content), ["keep"])
+        }
+    }
+
+    private func isDroppableHTTPStatus(_ status: Int) -> Bool {
+        PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: PulseAPIClient.kind(for: status), message: nil, status: status))
+    }
+
+    func testStoppedEngineCannotSend() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "a", content: "keep")
+        let sender = StubSender(behaviors: [:])
+        let engine = makeEngine(store, sender)
+        engine.stop()
+        let complete = await engine.flush()
+        XCTAssertFalse(complete)
+        XCTAssertEqual(sender.attempts(of: "keep"), 0)
+        XCTAssertEqual(store.countOutbox(), 1)
     }
 
     // R1-W2B D28 - queued forwards flush with their stored body

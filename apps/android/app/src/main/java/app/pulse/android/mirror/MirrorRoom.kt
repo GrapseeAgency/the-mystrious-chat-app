@@ -64,7 +64,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -443,7 +443,7 @@ internal fun MirrorRoom(
     var slowModeSecondsLeft by remember { mutableStateOf(0) }
     var sendError by remember { mutableStateOf<String?>(null) }
     // R73 - offline outbox pill (web pulse-outbox: queued sends count)
-    val outboxRows by repository.observeOutbox().collectAsState(initial = emptyList())
+    val outboxRows by repository.observeOutbox().collectAsStateWithLifecycle(initialValue = emptyList())
     val pendingOutbox = outboxRows.count { it.conversationId == groupId }
     // R73 - scheduled sends chip above the composer (web scheduled chip)
     var scheduledCount by remember { mutableStateOf(0) }
@@ -460,8 +460,7 @@ internal fun MirrorRoom(
     }
     LaunchedEffect(draftValue.text, draftRestored) {
         if (!draftRestored) return@LaunchedEffect
-        if (draftValue.text.isBlank()) return@LaunchedEffect
-        delay(600)
+        if (draftValue.text.isNotBlank()) delay(600)
         runCatching { repository.saveDraft(groupId, draftValue.text) }
     }
     // R69 - the web Conversation menu full set (chat-room.tsx L4096-4454):
@@ -588,7 +587,7 @@ internal fun MirrorRoom(
     }
     // topic rail data: real observeTopics + a server refetch per topic switch
     val topics by remember(groupId) { repository.observeTopics(groupId) }
-        .collectAsState(initial = emptyList())
+        .collectAsStateWithLifecycle(initialValue = emptyList())
     LaunchedEffect(topicsVisible) {
         if (topicsVisible) runCatching { repository.refreshTopics(groupId) }
     }
@@ -1030,7 +1029,21 @@ internal fun MirrorRoom(
             cancelRecording()
             return
         }
+        // UI state is not recorder state. Finalize the M4A before reading it.
+        val recorder = recorderRef.value
+        val finalized = runCatching {
+            checkNotNull(recorder) { "Recording is no longer available" }
+            recorder.stop()
+        }
+        runCatching { recorder?.release() }
+        recorderRef.value = null
         recording = false
+        if (finalized.isFailure) {
+            file.delete()
+            recordFileRef.value = null
+            sendError = "Recording could not be finalized. Please record again."
+            return
+        }
         voiceBusy = true
         CoroutineScope(Dispatchers.IO).launch {
             val outcome = runCatching {
@@ -1062,10 +1075,18 @@ internal fun MirrorRoom(
         }
     }
 
-    LaunchedEffect(messages.size) {
-        // R76 - while a jump is pending the bottom chase is suspended (the
-        // jump scroll owns the list until it lands or gives up)
-        if (!jumpActive && entries.isNotEmpty()) listState.animateScrollToItem(entries.size - 1)
+    var previousEntryCount by remember(groupId) { mutableStateOf(0) }
+    var previousTailId by remember(groupId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(messages.lastOrNull()?.id, entries.size) {
+        val tail = messages.lastOrNull()
+        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        if (shouldFollowMessageTail(
+                previousEntryCount, lastVisible, previousTailId, tail?.id,
+                tail?.authorId == viewerId, jumpActive,
+            ) && entries.isNotEmpty()
+        ) listState.animateScrollToItem(entries.lastIndex)
+        previousEntryCount = entries.size
+        previousTailId = tail?.id
     }
     // Leaving the room always cancels the typing signal (web unmount parity).
     androidx.compose.runtime.DisposableEffect(Unit) {
@@ -1127,8 +1148,8 @@ internal fun MirrorRoom(
     // theme override (chat.convThemes) ?? the global Appearance default; the
     // optional tint replaces the top glow color (web applyConvTint). The room
     // is always dark (web R54-c) so the dark glow palette is the only one.
-    val convThemes by repository.convThemes.collectAsState(initial = emptyMap<String, ConvTheme>())
-    val globalPrefs by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
+    val convThemes by repository.convThemes.collectAsStateWithLifecycle(initialValue = emptyMap<String, ConvTheme>())
+    val globalPrefs by repository.pulsePrefs.collectAsStateWithLifecycle(initialValue = WirePulsePrefs())
     val roomTheme = convThemes[groupId]
     val roomWallpaper = roomTheme?.wallpaper ?: (globalPrefs.wallpaper ?: "none")
     val roomTint = roomTheme?.tint

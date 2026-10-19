@@ -186,13 +186,15 @@ class PulseSocketClient(
     private fun effectiveBase(): String = socketUrl.ifBlank { PulseEndpoints.socketUrl }
 
     fun connect(userId: String) {
+        val sameViewer = joinedUserId == userId
+        if (!sameViewer) disconnectSocket()
         joinedUserId = userId
         val base = effectiveBase()
         if (base.isBlank()) {
             Log.i(TAG, "Realtime disabled - no relay base baked; staying offline-first")
             return
         }
-        if (socket?.connected() == true) return
+        if (sameViewer && socket?.connected() == true) return
         disconnectSocket() // clean slate - no double handlers across reconnects
 
         val sock = IO.socket(

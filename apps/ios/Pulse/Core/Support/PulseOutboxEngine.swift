@@ -72,12 +72,12 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
 }
 
 /// Outbox engine - offline sends, mirroring src/lib/pulse-outbox.ts:
-///   • FIFO queue, hard cap 50 (oldest dropped beyond it)
+///   • FIFO durable queue, bounded drain batches (never evict pending sends)
 ///   • flush drains in order and STOPS at the first network-class failure
 ///     (temporal order - later sends must never overtake earlier ones)
 ///   • success → real row upserted, `local_<clientId>` temp row deleted,
 ///     outbox entry deleted, UI notified
-///   • 4xx (validation/forbidden/404/…) → entry dropped + temp row deleted +
+///   • Permanent 4xx (validation/forbidden/404) → entry dropped + temp row deleted +
 ///     honest toast (retrying could never succeed)
 ///   • network failure → attempts++, retried on the next trigger
 /// Triggers: session start with pending entries, socket (re)connect, app
@@ -92,7 +92,7 @@ public final class PulseOutboxEngine: ObservableObject {
         case dropped(clientId: String, conversationId: String, reason: String)
     }
 
-    /// Web MAX_QUEUE parity.
+    /// Per-pass batch size, NOT a destructive storage limit.
     public static let maxEntries = 50
     /// BGAppRefreshTask identifier (registered in PulseApp, permitted in
     /// project.yml → BGTaskSchedulerPermittedIdentifiers).
@@ -114,6 +114,8 @@ public final class PulseOutboxEngine: ObservableObject {
     private let senderProvider: () -> (any PulseOutboxSending)?
     private var healTask: Task<Void, Never>?
     private var working = false
+    private var stopped = false
+    private var retryNotBefore = Date.distantPast
     // R1-W2B D41 - NWPathMonitor flush trigger (spec F-OF-04). The monitor
     // lives as long as the engine (its handler only weakly references self,
     // so engine teardown releases it) and its satisfaction EDGE calls the
@@ -145,7 +147,6 @@ public final class PulseOutboxEngine: ObservableObject {
         } catch {
             // Duplicate clientId (double-tap) - already queued, nothing to do.
         }
-        trimToLimit()
         pendingCount = store.countOutbox()
         startHealTimer()
     }
@@ -164,19 +165,16 @@ public final class PulseOutboxEngine: ObservableObject {
         } catch {
             // Duplicate clientId - already queued.
         }
-        trimToLimit()
         pendingCount = store.countOutbox()
         startHealTimer()
     }
 
-    /// Web parity: `next.length > MAX_QUEUE ? next.slice(-MAX_QUEUE)`.
-    private func trimToLimit() {
-        guard let entries = try? store.outboxAll(), entries.count > Self.maxEntries else { return }
-        let excess = entries.dropLast(Self.maxEntries)
-        for entry in excess {
-            guard let id = entry.id else { continue }
-            try? store.deleteOutbox(id: id)
-        }
+    /// Stop the account-owned engine before replacing its transport or store.
+    public func stop() {
+        stopped = true
+        stopHealTimer()
+        pathMonitor.cancel()
+        onEvent = nil
     }
 
     /// Total held messages across conversations.
@@ -188,14 +186,17 @@ public final class PulseOutboxEngine: ObservableObject {
 
     /// Drains the queue in FIFO order. Safe to call from every trigger -
     /// re-entrant calls are ignored while a flush is running.
-    public func flush() async {
-        guard !working else { return }
-        guard let sender = senderProvider() else { return }
-        let entries = (try? store.outboxAll()) ?? []
+    @discardableResult
+    public func flush() async -> Bool {
+        guard !stopped, !working, !Task.isCancelled, Date() >= retryNotBefore else { return false }
+        guard let sender = senderProvider() else { return false }
+        let entries: [OutboxRow]
+        do { entries = Array(try store.outboxAll().prefix(Self.maxEntries)) }
+        catch { return false }
         guard !entries.isEmpty else {
             pendingCount = 0
             stopHealTimer()
-            return
+            return true
         }
 
         working = true
@@ -208,7 +209,7 @@ public final class PulseOutboxEngine: ObservableObject {
         }
 
         for entry in entries {
-            if Task.isCancelled { break }
+            if Task.isCancelled || stopped { break }
             do {
                 // R1-W2B D28 - a forward entry re-POSTs its stored kind +
                 // media paths (web ForwardPayload parity); plain sends keep
@@ -231,12 +232,18 @@ public final class PulseOutboxEngine: ObservableObject {
                     payload: nil,
                     anon: nil
                 )
-                try? store.upsert(messages: [real])
-                try? store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))
-                if let id = entry.id { try? store.deleteOutbox(id: id) }
+                guard !stopped, !Task.isCancelled else { return false }
+                try store.upsert(messages: [real])
+                try store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))
+                if let id = entry.id { try store.deleteOutbox(id: id) }
                 pendingCount = store.countOutbox()
                 onEvent?(.delivered(message: real, conversationId: entry.conversationId, clientId: entry.clientId))
             } catch {
+                if Task.isCancelled || stopped { return false }
+                if let failure = error as? PulseAPIClient.Failure,
+                   failure.status == 429 || failure.kind == .rateLimited {
+                    retryNotBefore = Date().addingTimeInterval(TimeInterval(max(1, failure.retryAfter ?? 60)))
+                }
                 if Self.isDroppable(error) {
                     try? store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))
                     if let id = entry.id { try? store.deleteOutbox(id: id) }
@@ -250,6 +257,7 @@ public final class PulseOutboxEngine: ObservableObject {
                 break
             }
         }
+        return !Task.isCancelled && !stopped && store.countOutbox() == 0
     }
 
     // self-heal timer
@@ -313,10 +321,10 @@ public final class PulseOutboxEngine: ObservableObject {
     /// Everything else (network / 5xx / unknown transport errors) retries.
     public static func isDroppable(_ error: Error) -> Bool {
         guard let failure = error as? PulseAPIClient.Failure else { return false }
-        if let status = failure.status { return (400 ..< 500).contains(status) }
+        if let status = failure.status { return (400 ..< 500).contains(status) && ![401, 408, 425, 429].contains(status) }
         switch failure.kind {
-        case .validation, .forbidden, .notFound, .auth, .rateLimited: return true
-        case .network, .server, .unknown: return false
+        case .validation, .forbidden, .notFound: return true
+        case .auth, .rateLimited, .network, .server, .unknown: return false
         }
     }
 

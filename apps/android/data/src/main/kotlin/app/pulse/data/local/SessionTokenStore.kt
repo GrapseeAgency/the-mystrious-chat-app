@@ -118,9 +118,10 @@ class SessionTokenStore @Inject constructor(
      */
     suspend fun markInvalid(reason: String?) {
         if (cached == null && !_invalidated.value) return
-        Log.w(TAG, "session token rejected - clearing ($reason)")
-        persistence.clear()
-        cached = null
+        // Retain the rejected credential until explicit recovery/sign-out.
+        // Removing the header would turn a rejected authenticated request into
+        // a tokenless request accepted by older servers.
+        Log.w(TAG, "session token rejected; authenticated work must pause")
         _invalidated.value = true
     }
 

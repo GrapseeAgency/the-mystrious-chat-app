@@ -103,15 +103,15 @@ class SessionTokenStoreTest {
     }
 
     @Test
-    fun `markInvalid clears the credential and raises the flag`() = runTest {
+    fun `markInvalid retains the rejected credential to prevent anonymous downgrade`() = runTest {
         val persistence = FakePersistence()
         val store = SessionTokenStore(persistence, FakeCipher())
         store.save(TOKEN_64)
 
         store.markInvalid("Session token is invalid or has been rotated. Log in again.")
 
-        assertNull(store.cached)
-        assertTrue(persistence.backing.isEmpty())
+        assertEquals(TOKEN_64, store.cached)
+        assertFalse(persistence.backing.isEmpty())
         assertTrue(store.invalidated.value)
     }
 

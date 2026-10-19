@@ -3946,7 +3946,7 @@ final class RoomViewModel: ObservableObject {
                     // REM-B F-MS-23 - effect-flagged rows burst full-screen.
                     fireIncomingEffectIfAny(message, viewerId: session.viewer?.id, session: session)
                     if message.senderId != session.viewer?.id {
-                        Task { try? await session.api.markRead(conversationId: self.conversationId) }
+                        Task { await session.markReadIfVisible(conversationId: self.conversationId) }
                     }
                 case .messageDeleted(let convId, let raw):
                     guard convId == self.conversationId else { return }
@@ -4050,7 +4050,7 @@ final class RoomViewModel: ObservableObject {
             phase = .loaded
             errorText = nil
             try? session.store?.upsert(messages: page.messages)
-            try? await session.api.markRead(conversationId: conversationId)
+            await session.markReadIfVisible(conversationId: conversationId)
             resolveInitialJump()
         } catch {
             phase = .failed(RoomViewModel.describe(error))
