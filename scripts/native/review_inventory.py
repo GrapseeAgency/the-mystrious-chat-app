@@ -28,7 +28,7 @@ def sources():
 def main():
     count = 0
     with OUTPUT.open("w", newline="") as stream:
-        writer = csv.writer(stream)
+        writer = csv.writer(stream, lineterminator="\n")
         writer.writerow([
             "path", "feature_tree", "lines", "sha256", "coverage",
             "detached_android_scope_occurrences", "swift_task_occurrences",
