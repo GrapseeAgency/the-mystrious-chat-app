@@ -612,4 +612,24 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertEqual(chunker.feed(Array(repeating: Int16(2), count: 4000)).map(\.seq), [2])
     }
 
+    func testPttPressStartsImmediatelyAndHoldReleaseStops() {
+        var ptt = VoicePttGesturePolicy()
+        XCTAssertEqual(ptt.press(nowMs: 1000, transmitting: false), true)
+        XCTAssertNil(ptt.press(nowMs: 1050, transmitting: true))
+        XCTAssertFalse(ptt.release(nowMs: 1260))
+    }
+    func testPttShortTapLatchesAndSecondPressStops() {
+        var ptt = VoicePttGesturePolicy()
+        XCTAssertEqual(ptt.press(nowMs: 1000, transmitting: false), true)
+        XCTAssertTrue(ptt.release(nowMs: 1080))
+        XCTAssertEqual(ptt.press(nowMs: 1100, transmitting: true), false)
+        XCTAssertFalse(ptt.release(nowMs: 1180))
+    }
+    func testCancelledPttCannotLatchOnLateRelease() {
+        var ptt = VoicePttGesturePolicy()
+        _ = ptt.press(nowMs: 1000, transmitting: false)
+        ptt.cancel()
+        XCTAssertFalse(ptt.release(nowMs: 1010))
+    }
+
 }

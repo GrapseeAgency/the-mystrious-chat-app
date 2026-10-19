@@ -676,3 +676,23 @@ public struct CaptionWindowAccumulator: Equatable, Sendable {
         busy = false
     }
 }
+
+/// Press starts capture immediately; only a completed short tap may keep it latched.
+/// Release/cancel can STOP, but can never resurrect a revoked transmission.
+struct VoicePttGesturePolicy {
+    private(set) var startedAtMs: Double?
+    private var beganLatched = false
+    var isPressed: Bool { startedAtMs != nil }
+    mutating func press(nowMs: Double, transmitting: Bool) -> Bool? {
+        guard startedAtMs == nil else { return nil }
+        startedAtMs = nowMs
+        beganLatched = transmitting
+        return !transmitting
+    }
+    mutating func release(nowMs: Double) -> Bool {
+        guard let start = startedAtMs else { return false }
+        startedAtMs = nil
+        return !beganLatched && nowMs - start < 260
+    }
+    mutating func cancel() { startedAtMs = nil }
+}

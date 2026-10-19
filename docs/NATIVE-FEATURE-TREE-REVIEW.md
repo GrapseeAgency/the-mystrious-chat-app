@@ -327,3 +327,24 @@ Platform contracts consulted: Android AudioRecord stop/read/release and AudioTra
 write return values, API availability, and pause/flush for immediate stream stop:
 https://developer.android.com/reference/kotlin/android/media/AudioRecord
 https://developer.android.com/reference/android/media/AudioTrack
+
+
+### iOS gesture/surface continuation
+
+- Removed the PTT activation timer rather than merely adding another timer guard.
+  Press starts capture immediately; release can stop or preserve an existing latch,
+  never restart a revoked transmission. Gesture cancellation, dragging outside,
+  surface disappearance, backgrounding and loss of eligibility stop the press.
+  Durations use uptime. SwiftUI recognizer behavior still needs device/UI acceptance.
+- Microphone permission retries have their own request generation. Closing or switching
+  the surface invalidates a pending retry while preserving the listener seat, and
+  a stale retry cannot clear a newer request's pending indicator. Closed surfaces
+  cannot initiate PTT through a late UI callback. Closing an initial joining attempt
+  cancels that attempt rather than opening capture after its UI has gone away.
+- Switching Space rooms now leaves the old room first and resets old players/identity.
+- Added **5 Swift regression methods** (three PTT policy, one closed-surface delayed
+  permission, one Space switch). Together with the Android continuation this is
+  **22 new native regression methods**, not a declaration of their execution result.
+- Native compilation caught incorrect Java UUID construction in the new focus code;
+  corrected to `UUID.randomUUID()` in both routers. No prior failed build is counted
+  as a pass, and syntax parsing alone is not compilation proof.

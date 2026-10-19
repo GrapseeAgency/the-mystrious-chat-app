@@ -181,4 +181,42 @@ final class VoiceRoomOwnershipTests: XCTestCase {
         XCTAssertFalse(gate.acquire(recorder))
     }
 
+    func testClosedSurfaceRejectsLateMicrophoneGrantWhileKeepingListenerSeat() async throws {
+        let session = PulseSession(), audio = Audio()
+        let model = VoiceRoomSessionModel(session: session, defaults: isolatedDefaults(), engine: audio)
+        model.joinStage(conversationId: "room")
+        model.joinVoice(conversationId: "room")
+        model.handle(.stageState(conversationId: "room", raw: ["host": ["id": "", "name": "Me"]]))
+        let prompt = expectation(description: "microphone prompt")
+        audio.permissionRequested = { prompt.fulfill() }
+        let attempt = Task { await model.retryMicAccess() }
+        await fulfillment(of: [prompt], timeout: 1)
+        model.closeSurface()
+        audio.requests[0].resume(returning: true)
+        await attempt.value
+        XCTAssertEqual(audio.starts, 0)
+        XCTAssertFalse(model.microphoneReady)
+        XCTAssertFalse(model.requestingMicrophone)
+        XCTAssertFalse(model.canTransmit)
+        XCTAssertEqual(model.voice.status, .joined)
+        model.setPtt(on: true)
+        XCTAssertFalse(audio.gate)
+        model.leaveStage()
+        model.leaveVoice()
+    }
+
+    func testSwitchingSpaceClearsOldPlayersAndUsesNewSurfaceIdentity() {
+        let session = PulseSession(), audio = Audio()
+        let model = VoiceRoomSessionModel(session: session, defaults: isolatedDefaults(), engine: audio)
+        model.joinSpace(conversationId: "old")
+        model.handle(.spaceState(conversationId: "old", raw: ["players": [["id": "old-peer"]]]))
+        XCTAssertEqual(model.space.players.count, 1)
+        model.joinSpace(conversationId: "new")
+        XCTAssertEqual(model.surfaceConversationId, "new")
+        XCTAssertTrue(model.space.players.isEmpty)
+        model.handle(.spaceState(conversationId: "old", raw: ["players": [["id": "late-peer"]]]))
+        XCTAssertTrue(model.space.players.isEmpty)
+        model.leaveSpace()
+    }
+
 }

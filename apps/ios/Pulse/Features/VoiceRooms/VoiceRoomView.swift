@@ -288,11 +288,10 @@ struct TogglePill: View {
 struct PTTButton: View {
     @ObservedObject var model: VoiceRoomSessionModel
 
-    /// Web parity hold threshold (voice-room-sheet.tsx).
-    private let holdThresholdMs: UInt64 = 260
-
-    @State private var pressStart: Date?
-    @State private var holdTask: Task<Void, Never>?
+    @Environment(\.scenePhase) private var scenePhase
+    @GestureState private var fingerDown = false
+    @State private var press = VoicePttGesturePolicy()
+    @State private var pressGeneration = UUID()
 
     private var transmitting: Bool {
         model.voice.transmitting
@@ -326,7 +325,7 @@ struct PTTButton: View {
                 .animation(.pulse(.pulseBouncy, reduceMotion: PulseMotion.reduceMotion), value: transmitting)
                 .accessibilityLabel(transmitting ? "Stop talking" : "Push to talk")
                 .accessibilityHint("Hold to talk, tap to latch")
-                .accessibilityAddTraits(model.canTransmit ? [] : .isButton)
+                .accessibilityAddTraits(.isButton)
                 .accessibilityAction(named: Text("Toggle talk")) {
                     model.setPtt(on: !transmitting)
                 }
@@ -335,41 +334,51 @@ struct PTTButton: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(transmitting ? PulseTheme.accent : PulseTheme.textTertiary)
         }
-        .onDisappear {
-            holdTask?.cancel()
-            pressStart = nil
-            // A surface teardown must never leave a stuck transmission.
-            if transmitting {
-                model.setPtt(on: false)
+        .onDisappear { cancelPress() }
+        .onChange(of: model.canTransmit) { allowed in if !allowed { cancelPress() } }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active { cancelPress(); model.cancelPendingMicrophoneRequest() }
+        }
+        .onChange(of: fingerDown) { down in
+            guard !down else { return }
+            let ticket = pressGeneration
+            // Let onEnded consume a completed tap first. A cancelled recognizer
+            // resets GestureState without onEnded and must never leave capture latched.
+            DispatchQueue.main.async {
+                if pressGeneration == ticket, press.isPressed { cancelPress() }
             }
         }
     }
 
+    private func cancelPress() {
+        pressGeneration = UUID()
+        press.cancel()
+        model.setPtt(on: false)
+    }
+
+    private func isInsideControl(_ point: CGPoint) -> Bool {
+        let dx = point.x - 54, dy = point.y - 54
+        return dx * dx + dy * dy <= 54 * 54
+    }
+
     private var pushToTalkGesture: some Gesture {
         DragGesture(minimumDistance: 0)
-            .onChanged { _ in
-                guard pressStart == nil else { return }
-                pressStart = Date()
+            .updating($fingerDown) { _, down, _ in down = true }
+            .onChanged { value in
+                guard isInsideControl(value.location) else { cancelPress(); return }
+                guard model.canTransmit,
+                      let on = press.press(nowMs: ProcessInfo.processInfo.systemUptime * 1000,
+                                           transmitting: transmitting) else { return }
+                pressGeneration = UUID()
                 PulseHaptics.tap()
-                holdTask = Task { [weak model] in
-                    try? await Task.sleep(nanoseconds: holdThresholdMs * 1_000_000)
-                    guard !Task.isCancelled else { return }
-                    model?.setPtt(on: true) // hold mode - talk while pressed
-                    PulseHaptics.success()
-                }
+                model.setPtt(on: on)
             }
-            .onEnded { _ in
-                let start = pressStart
-                pressStart = nil
-                holdTask?.cancel()
-                holdTask = nil
-                guard let start else { return }
-                let heldMs = Date().timeIntervalSince(start) * 1000
-                if heldMs >= Double(holdThresholdMs) {
-                    model.setPtt(on: false) // hold ends on release
-                } else {
-                    model.setPtt(on: !transmitting) // tap = latch toggle
-                }
+            .onEnded { value in
+                guard isInsideControl(value.location) else { cancelPress(); return }
+                guard press.isPressed else { return }
+                pressGeneration = UUID()
+                let keepLatched = press.release(nowMs: ProcessInfo.processInfo.systemUptime * 1000)
+                if !keepLatched { model.setPtt(on: false) }
             }
     }
 }

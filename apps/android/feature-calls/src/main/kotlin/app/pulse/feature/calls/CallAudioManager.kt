@@ -15,7 +15,7 @@ import java.util.UUID
 /** Compatibility-safe route owner. Device focus/interruption acceptance is still required. */
 class CallAudioManager(context: Context) {
     private val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val token = UUID.randomUUID.randomUUID().toString()
+    private val token = UUID.randomUUID().toString()
     private var focusRequest: AudioFocusRequest? = null
     private var active = false
     private var savedMode = AudioManager.MODE_NORMAL

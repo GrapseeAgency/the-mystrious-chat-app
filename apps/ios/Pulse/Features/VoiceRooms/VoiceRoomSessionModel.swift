@@ -55,6 +55,7 @@ public final class VoiceRoomSessionModel: ObservableObject {
     private let engine: any VoiceRoomAudioDriving
     private var audioGeneration = UUID()
     private var captionGeneration = UUID()
+    private var microphoneRequestGeneration = UUID()
     private(set) var audioJoinTask: Task<Void, Never>?
     private var accumulator = CaptionWindowAccumulator()
     private var lastTranscriptEmitMs: Double = 0
@@ -114,10 +115,15 @@ public final class VoiceRoomSessionModel: ObservableObject {
 
     private func invalidateAudioAttempt() {
         audioGeneration = UUID()
-        requestingMicrophone = false
+        cancelPendingMicrophoneRequest()
         accumulator.clear()
         audioJoinTask?.cancel()
         audioJoinTask = nil
+    }
+
+    func cancelPendingMicrophoneRequest() {
+        microphoneRequestGeneration = UUID()
+        requestingMicrophone = false
     }
 
     // viewer helpers
@@ -262,7 +268,8 @@ public final class VoiceRoomSessionModel: ObservableObject {
     }
 
     public var canTransmit: Bool {
-        mayUseMicrophone && microphoneReady && audioIssue == nil
+        (surface == .voice || surface == .stage) && surfaceConversationId == voice.conversationId
+            && mayUseMicrophone && microphoneReady && audioIssue == nil
             && voice.status == .joined
             && !voice.micMuted
             && voice.connected
@@ -329,13 +336,15 @@ public final class VoiceRoomSessionModel: ObservableObject {
     /// VR-10 - the mic banner's "Try again": re-run permission + engine
     /// start; the room stays joined and listening throughout.
     public func retryMicAccess() async {
-        guard mayUseMicrophone, !requestingMicrophone, let conversationId = voice.conversationId else { return }
+        guard mayUseMicrophone, !requestingMicrophone, let conversationId = voice.conversationId,
+              surface == .voice || surface == .stage, surfaceConversationId == conversationId else { return }
         requestingMicrophone = true
         let ticket = audioGeneration
-        defer { if audioGeneration == ticket { requestingMicrophone = false } }
+        let request = microphoneRequestGeneration
+        defer { if microphoneRequestGeneration == request { requestingMicrophone = false } }
         let epoch = session.sessionGeneration
         let granted = await engine.requestMicPermission()
-        guard !Task.isCancelled, audioGeneration == ticket,
+        guard !Task.isCancelled, audioGeneration == ticket, microphoneRequestGeneration == request,
               session.sessionGeneration == epoch,
               mayUseMicrophone, voice.conversationId == conversationId else { return }
         micIssue = engine.startCapture(micGranted: granted)
@@ -581,7 +590,8 @@ public final class VoiceRoomSessionModel: ObservableObject {
     // space (SP-1…SP-5)
 
     public func joinSpace(conversationId: String) {
-        guard !space.joined else { return }
+        if space.joined, spaceConversationId == conversationId { open(.space); return }
+        if space.joined { leaveSpace() }
         spaceGeneration = UUID()
         space.beginJoin()
         // R1-W2G D46 - the durable last-position cache seeds the initial
@@ -670,6 +680,10 @@ public final class VoiceRoomSessionModel: ObservableObject {
     @Published public private(set) var surfaceConversationId: String?
 
     public func open(_ surface: Surface) {
+        if self.surface != surface {
+            cancelPendingMicrophoneRequest()
+            setPtt(on: false)
+        }
         self.surface = surface
         surfaceConversationId = currentConversationId(for: surface)
     }
@@ -697,7 +711,11 @@ public final class VoiceRoomSessionModel: ObservableObject {
     /// stage:leave (ST-7); space close emits space:leave (SP-1).
     public func closeSurface() {
         let closing = surface
+        cancelPendingMicrophoneRequest()
+        setPtt(on: false)
         surface = nil
+        surfaceConversationId = nil
+        if closing == .voice && voice.status == .joining { leaveVoice() }
         if closing == .stage { leaveStage() }
         if closing == .space { leaveSpace() }
     }
