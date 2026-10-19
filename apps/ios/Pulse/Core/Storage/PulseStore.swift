@@ -407,7 +407,7 @@ public final class PulseStore: Sendable {
         let rows = try dbQueue.read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM message WHERE conversationId = :cid ORDER BY createdAt ASC LIMIT :limit",
+                sql: "SELECT * FROM (SELECT * FROM message WHERE conversationId = :cid ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
                 arguments: ["cid": conversationId, "limit": limit],
             )
         }
@@ -433,7 +433,7 @@ public final class PulseStore: Sendable {
         let rows = try dbQueue.read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM message WHERE parentId = :root ORDER BY createdAt ASC LIMIT :limit",
+                sql: "SELECT * FROM (SELECT * FROM message WHERE parentId = :root ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
                 arguments: ["root": threadRootId, "limit": limit],
             )
         }

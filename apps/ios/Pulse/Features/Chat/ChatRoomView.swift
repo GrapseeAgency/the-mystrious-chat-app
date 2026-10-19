@@ -4700,7 +4700,6 @@ final class RoomViewModel: ObservableObject {
             requestRecap(session: session)
             return true
         case .effect(let name, let content):
-            draft = ""
             // R3-A item 8 - the web send path can never fire an effect with
             // an empty body (its send button is disabled on empty input), so
             // the machine mirrors that honestly instead of POSTing "".
@@ -4724,11 +4723,6 @@ final class RoomViewModel: ObservableObject {
             return
         }
         guard editingTarget == nil, staged == nil else { return }
-        draft = ""
-        replyTarget = nil
-        typingStopTask?.cancel()
-        typingStopTask = nil
-        session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
         sendWithEffect(effect: effect, content: body, session: session)
     }
 
@@ -4769,37 +4763,24 @@ final class RoomViewModel: ObservableObject {
     /// F-MS-22/23 - effect-flagged send: payload { effect } rides kind text;
     /// the sender's client fires the burst locally (web fireParticles parity).
     private func sendWithEffect(effect: String, content: String, session: PulseSession) {
-        guard let viewer = session.viewer, editingTarget == nil, staged == nil else { return }
-        let clientId = UUID().uuidString
-        let temp = TempMessages.make(
-            conversationId: conversationId,
-            viewer: viewer,
-            clientId: clientId,
-            content: content,
-            parentId: nil,
-        )
-        upsert(temp)
-        try? session.store?.upsert(messages: [temp])
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let message = try await session.api.sendMessage(
-                    conversationId: conversationId,
-                    content: content,
-                    topicId: activeTopicId,
-                    payload: ["effect": effect],
-                )
-                self.swapTemp(temp.id, for: message, session: session)
-                if let kindName = PulseRemediationLogic.particleKind(forEffect: effect) {
-                    let kind = Self.particleKind(named: kindName)
-                    session.particles.fire(kind: kind, count: Self.particleCount(for: kind), center: CGPoint(x: 0.5, y: 0.85))
-                }
-                self.loadTopics(session: session)
-            } catch {
-                self.messages.removeAll { $0.id == temp.id }
-                try? session.store?.deleteMessage(id: temp.id)
-                self.errorText = Self.describe(error)
-            }
+        guard let viewer = session.viewer, let store = session.store, session.ready,
+              editingTarget == nil, staged == nil else {
+            errorText = "Message was not queued. Your draft is kept until the account store is ready."
+            return
+        }
+        do {
+            let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: conversationId,
+                content: content, effect: effect, replyTo: replyTarget, topicId: activeTopicId, anon: isGroupRoom && anonOn)
+            upsert(message)
+            draft = ""; replyTarget = nil
+            if isGroupRoom { anonOn = false }
+            typingStopTask?.cancel(); typingStopTask = nil
+            scheduleDraftSave(session: session)
+            session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch {
+            errorText = "Message was not queued. Your draft is kept; select the effect again. " + Self.describe(error)
         }
     }
 
@@ -4949,6 +4930,11 @@ final class RoomViewModel: ObservableObject {
             guard conversationId == self.conversationId else { return }
             upsert(message)
             messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
+            if let session, let effect = PulseRemediationLogic.effectOfPayload(message.payload),
+               let name = PulseRemediationLogic.particleKind(forEffect: effect) {
+                let kind = Self.particleKind(named: name)
+                session.particles.fire(kind: kind, count: Self.particleCount(for: kind), center: CGPoint(x: 0.5, y: 0.85))
+            }
         case .dropped(let clientId, let conversationId):
             guard conversationId == self.conversationId else { return }
             messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
@@ -5669,72 +5655,6 @@ final class RoomViewModel: ObservableObject {
               let kindName = PulseRemediationLogic.particleKind(forEffect: effect) else { return }
         let kind = Self.particleKind(named: kindName)
         session.particles.fire(kind: kind, count: Self.particleCount(for: kind), center: CGPoint(x: 0.5, y: 0.85))
-    }
-}
-
-/// Optimistic temp-row factory shared by the river AND thread sends -
-/// id `local_<clientId>` (Wave 0 convention), viewer sender, quote block,
-/// optional thread parent. Real rows replace it by id + content dedupe.
-/// @MainActor: builds on PulseOutboxEngine.tempMessageId (MainActor-static).
-@MainActor
-enum TempMessages {
-    static func make(
-        conversationId: String,
-        viewer: PulseViewer,
-        clientId: String,
-        content: String,
-        parentId: String?,
-        replyTo: WireChatMessage? = nil,
-        anon: Bool = false,
-        anonAlias: String? = nil,
-    ) -> WireChatMessage {
-        let sender = WireSender(
-            id: viewer.id,
-            name: viewer.name,
-            username: viewer.username,
-            color: viewer.color,
-            avatar: viewer.avatar,
-        )
-        let quoted = replyTo.map { source in
-            WireReplySnippet(
-                id: source.id,
-                content: source.content,
-                senderName: source.sender?.name ?? "",
-                deleted: source.deletedAt != nil,
-            )
-        }
-        return WireChatMessage(
-            id: PulseOutboxEngine.tempMessageId(clientId: clientId),
-            conversationId: conversationId,
-            senderId: viewer.id,
-            content: content,
-            kind: "text",
-            createdAt: PulseOutboxClock.now(),
-            editedAt: nil,
-            deletedAt: nil,
-            sender: sender,
-            reactions: nil,
-            replyTo: quoted,
-            parentId: parentId,
-            imagePath: nil,
-            audioPath: nil,
-            durationMs: nil,
-            filePath: nil,
-            fileName: nil,
-            fileSize: nil,
-            pinnedAt: nil,
-            viewOnce: nil,
-            anon: anon ? true : nil,
-            anonAlias: anonAlias,
-            viewedAt: nil,
-            viewedBy: nil,
-            transcript: nil,
-            transcribedAt: nil,
-            topicId: nil,
-            linkUrl: nil,
-            linkPreview: nil,
-            poll: nil,
-        )
     }
 }
 

@@ -882,3 +882,41 @@ lost in old cached records: those require a successful server refresh. Added two
 wire→domain→cache regression methods. 4f7d918's iOS device archive passed; Android
 compilation failed on the above two expressions; corrected native execution is
 pending rather than assumed successful.
+
+### Swift text/effect delivery and alternate-room live reconciliation
+
+- Replaced the alternate room's clear-draft → detached `try?` POST with a shared
+  durable text enqueue operation. Text, effect, alias flag, quote and topic are
+  committed with the optimistic message before the composer is cleared. An
+  unavailable store leaves the composer intact. No separate sender or new retry
+  identity is introduced: the existing account-owned outbox sends and reconciles
+  the persisted operation. Empty armed effects now ask for text without disarming.
+- The primary room's effect/slash-effect path also uses this operation instead of
+  deleting the temporary message on an uncertain network result. Quote/topic/mask
+  metadata now travel with the effect. Animation happens on outbox confirmation;
+  local enqueue failure keeps the text (the effect chooser can be opened again).
+- The alternate room rehydrates its cached timeline and pending bubbles on reopen,
+  retains pending messages during refresh, swaps exact temporary IDs on delivery,
+  and reconciles permanent rejections through the existing outbox recovery path.
+  Queued messages display a clock, not success ticks. Confirmed messages say sent,
+  not read without a peer read receipt.
+- Added room-scoped live message/edit/reaction/deletion handling and foreground /
+  reconnect refresh. Decodable events update immediately and invalidate older
+  reads instead of requiring a full HTTP refresh per message. Partial events
+  trigger authoritative refresh. Active-room ownership and the existing visible /
+  unlocked read-receipt guard now apply to this presentation too.
+- Alternate-room reactions now use owned, per-message mutation gates with failure
+  feedback and follow-up reconciliation; queued local IDs are not sent as server
+  reaction targets. Refresh waits for these mutations to settle.
+- Fixed both SQLite cache-window reads: they selected the **oldest** 300 messages,
+  hiding recent messages when reopening a long room/thread offline. They now take
+  the newest bounded window, then return it in reading order with stable ID ties.
+
+Added four native test methods for disk reopen/metadata/receipt replacement,
+invalid sends, ordered pending merge and newest room/thread windows. Source
+inventory now includes the shared delivery factory. Syntax/diff checks pass;
+current Swift changes require native compilation/execution, not available locally.
+This does not fix every send path: alternate-room attachments, stickers/location,
+TTL idle-screen timers and full thread/history navigation still need deeper work.
+Already-discarded historical drafts or carrier fields cannot be reconstructed from
+local storage. No production SQL deployment or main-branch update has been made.

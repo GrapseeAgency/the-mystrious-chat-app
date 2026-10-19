@@ -1368,6 +1368,8 @@ struct MirrorRoomView: View {
     let row: MirrorViewModel.MirrorRow
     @ObservedObject var session: PulseSession
     let onBack: () -> Void
+    @State private var readRevision = 0
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var roomOperations = PulseRoomOperations()
     @State private var refreshRevision = 0
     @State private var loadError: String?
@@ -1634,31 +1636,83 @@ struct MirrorRoomView: View {
         .onChange(of: photoItem) { item in
             handlePhotoPick(item)
         }
-        .onDisappear { roomOperations.stop() }
-        .task(id: refreshRevision) {
-            let api = session.api
+        .onReceive(session.outboxEvents) { event in
+            switch event {
+            case .delivered(let message, let conversationId, let clientId):
+                guard conversationId == row.id else { return }
+                roomOperations.invalidateReads()
+                messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
+                acceptCarrier(message)
+            case .dropped(let clientId, let conversationId):
+                guard conversationId == row.id else { return }
+                roomOperations.invalidateReads()
+                messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
+            }
+        }
+        .onReceive(session.signals) { signal in
+            switch signal {
+            case .messageNew(let id, let raw):
+                guard id == row.id else { return }
+                if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message) }
+                else { refreshRevision &+= 1 }
+                readRevision &+= 1
+            case .messageDeleted(let id, let raw):
+                guard id == row.id else { return }
+                if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message.deletedCopy()) }
+                else { refreshRevision &+= 1 }
+            case .messageReact(let id, let raw), .messageEnvelope(_, let id, let raw):
+                guard id == row.id else { return }
+                if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message) }
+                else { refreshRevision &+= 1 }
+            default: break
+            }
+        }
+        .onChange(of: session.connected) { connected in if connected { refreshRevision &+= 1 } }
+        .onAppear { session.activeRoomId = row.id }
+        .onDisappear {
+            roomOperations.stop()
+            if session.activeRoomId == row.id { session.activeRoomId = nil }
+        }
+        .task(id: readRevision) {
+            if readRevision > 0 && !Task.isCancelled && scenePhase == .active {
+                await session.markReadIfVisible(conversationId: row.id)
+            }
+        }
+        .task(id: roomOperations.settledRevision) {
+            if roomOperations.settledRevision > 0 && scenePhase == .active { await load() }
+        }
+        .task(id: "\(refreshRevision):\(scenePhase)") {
+            guard scenePhase == .active else { return }
+            if messages.isEmpty, let store = session.store {
+                do {
+                    messages = PulseTextDelivery.timeline(try store.messages(conversationId: row.id),
+                        pending: try PulseTextDelivery.pendingMessages(store: store, conversationId: row.id))
+                } catch { loadError = "Local messages could not be read." }
+            }
             if await load(), !Task.isCancelled {
-                try? await api.markRead(conversationId: row.id)
+                await session.markReadIfVisible(conversationId: row.id)
             }
         }
     }
 
     private func acceptCarrier(_ message: WireChatMessage) {
-        guard message.conversationId == row.id, message.senderId == session.api.userId else { return }
+        guard message.conversationId == row.id else { return }
         roomOperations.invalidateReads()
-        if let index = messages.firstIndex(where: { $0.id == message.id }) { messages[index] = message }
-        else { messages.append(message) }
+        messages = PulseTextDelivery.timeline(messages, pending: [message])
     }
 
     @discardableResult
     private func load() async -> Bool {
+        guard scenePhase == .active else { return false }
         guard let ticket = roomOperations.beginRead() else { return false }
         let api = session.api
         let generation = session.sessionGeneration
         do {
             let page = try await api.messages(conversationId: row.id)
             guard roomOperations.accepts(ticket), generation == session.sessionGeneration else { return false }
-            messages = page.messages
+            let pending = try session.store.map { try PulseTextDelivery.pendingMessages(store: $0, conversationId: row.id) } ?? []
+            try session.store?.upsert(messages: page.messages)
+            messages = PulseTextDelivery.timeline(page.messages, pending: pending)
             loadError = nil
         } catch {
             if roomOperations.accepts(ticket), generation == session.sessionGeneration {
@@ -1674,36 +1728,55 @@ struct MirrorRoomView: View {
         return roomOperations.accepts(ticket) && generation == session.sessionGeneration
     }
 
-    // web 5580: the fab swaps to send when the draft holds text OR an
-    // effect is armed - an armed effect can send on its own.
+    // Keep the send affordance while an effect is armed, but require text:
+    // the server rejects empty text even when an effect payload is present.
     private var hasSendPayload: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || armedEffect != nil
     }
 
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || armedEffect != nil else { return }
-        let payload: [String: Any]? = armedEffect.map { ["effect": $0] }
-        let anon: Bool? = anonNext ? true : nil
-        armedEffect = nil
-        anonNext = false
-        draft = ""
-        Task {
-            _ = try? await session.api.sendMessage(
-                conversationId: row.id,
-                content: text,
-                payload: payload,
-                anon: anon
-            )
-            await load()
+        guard !text.isEmpty else {
+            session.toasts.show("Type a message first; the armed effect is kept.")
+            return
+        }
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            session.toasts.show("The account store is not ready. Your draft is kept.")
+            return
+        }
+        do {
+            let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: row.id,
+                content: text, effect: armedEffect, anon: row.isGroup && anonNext)
+            acceptCarrier(message)
+            draft = ""; armedEffect = nil; anonNext = false
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch {
+            session.toasts.show("Message was not queued. Your draft and effect are kept.")
         }
     }
 
     private func react(_ messageId: String, _ emoji: String) {
-        Task {
-            _ = try? await session.api.react(messageId: messageId, emoji: emoji)
-            await load()
+        guard !messageId.hasPrefix("local_") else {
+            session.toasts.show("Wait for this queued message to be sent before reacting.")
+            return
         }
+        let api = session.api
+        let generation = session.sessionGeneration
+        roomOperations.run(key: "reaction-" + messageId, operation: {
+            do {
+                let message = try await api.react(messageId: messageId, emoji: emoji)
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration, message.id == messageId, message.conversationId == row.id else { return false }
+                acceptCarrier(message)
+                return true
+            } catch {
+                if !Task.isCancelled && generation == session.sessionGeneration {
+                    session.toasts.show("Reaction was not confirmed. Refreshing its current state.")
+                }
+                return false
+            }
+        })
     }
 
     // MARK: R102 - tray actions (every tile a real send)
@@ -2173,8 +2246,9 @@ struct MirrorBubble: View {
                             // meta row: the read ticks
                             HStack(spacing: 0) {
                                 Spacer(minLength: 0)
-                                Image(systemName: "checkmark.double")
+                                Image(systemName: message.id.hasPrefix("local_") ? "clock" : "checkmark")
                                     .font(.system(size: 12)).foregroundColor(MirrorArt.onBubbleOut)
+                                    .accessibilityLabel(message.id.hasPrefix("local_") ? "Queued for delivery" : "Sent")
                             }
                             .padding(.top, 2)
                         }
