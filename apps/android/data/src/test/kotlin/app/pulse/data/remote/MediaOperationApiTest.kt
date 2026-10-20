@@ -36,4 +36,26 @@ class MediaOperationApiTest {
             assertEquals("1700", payload["durationMs"]?.jsonPrimitive?.content)
         } finally { http.close() }
     }
+    @Test fun malformedSuccessfulSendIsUnknownDeliveryNotPermanentRejection() = runTest {
+        val http = HttpClient(MockEngine { respond("{", HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+        try {
+            val result = PulseApi(http, gateway = { "https://fixture.invalid" })
+                .sendMessage("room", "viewer", "keep identity", clientId = "stable-operation-001")
+            assertTrue(result is PulseResult.Failure)
+            assertEquals(PulseResult.Failure.Kind.SERVER, (result as PulseResult.Failure).kind)
+        } finally { http.close() }
+    }
+
+    @Test fun rateLimitHeaderReachesTheOutboxPolicy() = runTest {
+        val http = HttpClient(MockEngine {
+            respond("{\"error\":\"wait\"}", HttpStatusCode.TooManyRequests,
+                headersOf("Content-Type" to listOf("application/json"), "Retry-After" to listOf("120")))
+        })
+        try {
+            val result = PulseApi(http, gateway = { "https://fixture.invalid" })
+                .sendMessage("room", "viewer", "held", clientId = "stable-operation-002")
+            assertEquals(120, (result as PulseResult.Failure).retryAfter)
+        } finally { http.close() }
+    }
+
 }

@@ -5,6 +5,7 @@
 // row, list bump, archive-unlock, socket relay.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { scheduledDeliveryDecision } from '@/lib/scheduled-delivery'
 import { mapMessage, memberIdsOf, notifySocket, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -45,59 +46,25 @@ export async function POST(req: Request) {
         const row = await tx.scheduledMessage.findUnique({ where: { id } })
         if (!row || row.sentAt !== null || row.cancelledAt !== null || row.scheduledAt > new Date()) return null
 
-        // R48 - dispatch-time block guard: a DM scheduled BEFORE a block must
-        // never fire after the block lands (the send pipeline would reject it,
-        // but replaying a 403 forever is worse than an honest refusal). In a
-        // DM with a UserBlock in EITHER direction the row is marked cancelled
-        // (cancelledAt + cancelledReason='blocked') so it leaves the queue and
-        // shows "Not sent - blocked" in the sender's scheduled list. Groups
-        // are untouched (shared groups keep working - WhatsApp semantics).
-        const conv = await tx.conversation.findUnique({
-          where: { id: row.conversationId },
-          select: { isGroup: true },
-        })
-        if (conv && !conv.isGroup) {
-          const others = await tx.conversationParticipant.findMany({
-            where: { conversationId: row.conversationId, userId: { not: row.senderId } },
-            select: { userId: true },
-          })
-          if (others.length > 0) {
-            const blockRow = await tx.userBlock.findFirst({
-              where: {
-                OR: others.flatMap((o) => [
-                  { blockerId: row.senderId, blockedId: o.userId },
-                  { blockerId: o.userId, blockedId: row.senderId },
-                ]),
-              },
-              select: { id: true },
-            })
-            if (blockRow) {
-              const now = new Date()
-              await tx.scheduledMessage.update({
-                where: { id },
-                data: { cancelledAt: now, cancelledReason: 'blocked' },
-              })
-              return null
-            }
-          }
+        const now = new Date()
+        const decision = await scheduledDeliveryDecision(tx, row.conversationId, row.senderId, now)
+        if (decision.state === 'wait') return null // remain queued until slow mode allows it
+        if (decision.state === 'cancel') {
+          await tx.scheduledMessage.update({ where: { id }, data: { cancelledAt: now, cancelledReason: decision.reason } })
+          return null
         }
 
         const created = await tx.message.create({
-          data: { conversationId: row.conversationId, senderId: row.senderId, content: row.content },
+          data: { conversationId: row.conversationId, senderId: row.senderId, content: row.content,
+            createdAt: now, expiresAt: decision.expiresAt },
           include: MESSAGE_FULL_INCLUDE,
         })
-        const now = new Date()
         await tx.scheduledMessage.update({ where: { id }, data: { sentAt: now } })
         await tx.conversation.update({
           where: { id: row.conversationId },
           data: { updatedAt: now },
         })
-        await tx.conversationParticipant.update({
-          where: {
-            userId_conversationId: { userId: row.senderId, conversationId: row.conversationId },
-          },
-          data: { lastReadAt: now },
-        })
+        // A scheduled send must not mark unseen incoming messages as read.
         await tx.conversationParticipant.updateMany({
           where: { conversationId: row.conversationId, userId: { not: row.senderId }, archivedAt: { not: null } },
           data: { archivedAt: null },

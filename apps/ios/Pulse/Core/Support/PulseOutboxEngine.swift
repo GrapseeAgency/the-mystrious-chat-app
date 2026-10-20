@@ -132,7 +132,8 @@ public final class PulseOutboxEngine: ObservableObject {
     private var healGeneration = UUID()
     private var working = false
     private var stopped = false
-    private var retryNotBefore = Date.distantPast
+    private var retryNotBefore: TimeInterval = 0
+    private let monotonicNow: () -> TimeInterval
     // R1-W2B D41 - NWPathMonitor flush trigger (spec F-OF-04). The monitor
     // lives as long as the engine (its handler only weakly references self,
     // so engine teardown releases it) and its satisfaction EDGE calls the
@@ -141,8 +142,10 @@ public final class PulseOutboxEngine: ObservableObject {
     private var pathMonitorStarted = false
     private var lastPathSatisfied = false
 
-    public init(store: PulseStore, monitorNetwork: Bool = true, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
+    public init(store: PulseStore, monitorNetwork: Bool = true,
+                monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
         self.store = store
+        self.monotonicNow = monotonicNow
         self.senderProvider = senderProvider
         pendingCount = store.countPendingOutbox()
         if pendingCount > 0 {
@@ -195,7 +198,7 @@ public final class PulseOutboxEngine: ObservableObject {
 
     /// Total held messages across conversations.
     public func holdRetries(seconds: Int) {
-        retryNotBefore = max(retryNotBefore, Date().addingTimeInterval(TimeInterval(max(1, seconds))))
+        retryNotBefore = max(retryNotBefore, monotonicNow() + TimeInterval(min(86_400, max(1, seconds))))
     }
 
     public func reloadPending() {
@@ -213,7 +216,7 @@ public final class PulseOutboxEngine: ObservableObject {
     /// re-entrant calls are ignored while a flush is running.
     @discardableResult
     public func flush() async -> Bool {
-        guard !stopped, !working, !Task.isCancelled, Date() >= retryNotBefore else { return false }
+        guard !stopped, !working, !Task.isCancelled, monotonicNow() >= retryNotBefore else { return false }
         guard let sender = senderProvider() else { return false }
         let entries: [OutboxRow]
         do { entries = Array(try store.outboxPending().prefix(Self.maxEntries)) }

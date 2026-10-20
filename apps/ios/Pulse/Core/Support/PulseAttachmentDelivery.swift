@@ -7,6 +7,7 @@ enum PulseAttachmentDelivery {
     static func enqueue(store: PulseStore, viewer: PulseViewer, conversationId: String,
                         content: String, dataUrl: String, envelope: PulseOutboxForward,
                         replyTo: WireChatMessage? = nil) throws -> WireChatMessage {
+        let content = try PulseTextDelivery.validatedContent(content, allowEmpty: true)
         let document = envelope.kind == "file"
         let limit = document ? ((10 * 1024 * 1024 + 2) / 3) * 4 + 128 : 4_500_000
         guard dataUrl.utf8.count <= limit else {

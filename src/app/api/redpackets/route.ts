@@ -165,12 +165,8 @@ export async function POST(req: Request) {
         data: { payload: finalPayload },
       })
 
-      // keep list ordering / read state / archives in lockstep with sends
+      // Update ordering/archives, never infer reading from sending.
       await tx.conversation.update({ where: { id: conversationId }, data: { updatedAt: now } })
-      await tx.conversationParticipant.update({
-        where: { userId_conversationId: { userId, conversationId } },
-        data: { lastReadAt: now },
-      })
       await tx.conversationParticipant.updateMany({
         where: { conversationId, userId: { not: userId }, archivedAt: { not: null } },
         data: { archivedAt: null },

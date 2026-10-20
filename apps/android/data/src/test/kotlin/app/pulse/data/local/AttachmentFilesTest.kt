@@ -45,4 +45,10 @@ class AttachmentFilesTest {
         assertTrue(runCatching { AttachmentValidation.validated(draft.copy(dataUrl = "data:text/plain;base64,")) }.isFailure)
         assertTrue(runCatching { AttachmentValidation.validated(draft.copy(viewOnce = true)) }.isFailure)
     }
+    @Test fun `caption limit matches gateway UTF16 length before upload`() {
+        val draft = AttachmentDraft("attachment-test-0001", "room", "image", "data:image/jpeg;base64,YQ==")
+        assertEquals(2000, AttachmentValidation.validated(draft.copy(caption = "🌿".repeat(1000))).caption.length)
+        assertTrue(runCatching { AttachmentValidation.validated(draft.copy(caption = "🌿".repeat(1001))) }.isFailure)
+    }
+
 }

@@ -189,6 +189,12 @@ public enum PulseRoomParityLogic {
         return ReceiptSplit(seenBy: seen, deliveredTo: delivered)
     }
 
+    /// Own-device reads and malformed message dates never prove another person read.
+    public static func peerReadCount(watermarks: [String: Date], viewerId: String?, createdAtIso: String) -> Int {
+        guard let viewerId, !viewerId.isEmpty, let created = PulseFormat.date(createdAtIso) else { return 0 }
+        return watermarks.filter { $0.key != viewerId && $0.value >= created }.count
+    }
+
     // R7 - message clustering lives in PulseCluster (file scope below)
 
     // R4-A item 2 - one-shot incognito (web + Android parity)

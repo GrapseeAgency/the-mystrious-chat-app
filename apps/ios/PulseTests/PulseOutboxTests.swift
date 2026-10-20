@@ -558,4 +558,22 @@ enum OutboxFixtures {
             poll: nil,
         )
     }
+    func testMonotonicRetryHoldSurvivesRepeatedFlushAndShorterHold() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "held", content: "held")
+        var now: TimeInterval = 100
+        let sender = StubSender(behaviors: [:])
+        let engine = PulseOutboxEngine(store: store, monitorNetwork: false, monotonicNow: { now }, senderProvider: { sender })
+        defer { engine.stop() }
+        engine.holdRetries(seconds: 60)
+        now = 110
+        engine.holdRetries(seconds: 1)
+        _ = await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "held"), 0)
+        now = 160
+        _ = await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "held"), 1)
+        XCTAssertEqual(store.countPendingOutbox(), 0)
+    }
+
 }

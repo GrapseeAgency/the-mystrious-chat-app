@@ -151,7 +151,7 @@ struct ScheduledManagerSheet: View {
                             .lineLimit(3)
                         HStack(spacing: 6) {
                             if item.cancelledAt != nil {
-                                Label("Dispatch refused", systemImage: "xmark.octagon.fill")
+                                Label(refusalLabel(item.cancelledReason), systemImage: "xmark.octagon.fill")
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(.red)
                             } else {
@@ -196,6 +196,16 @@ struct ScheduledManagerSheet: View {
     private func load() async {
         items = (try? await session.api.scheduledMessages(conversationId: conversationId)) ?? []
         loading = false
+    }
+
+    private func refusalLabel(_ reason: String?) -> String {
+        switch reason {
+        case "blocked": return "Not sent — blocked"
+        case "not_member": return "Not sent — no longer a member"
+        case "announcement_only": return "Not sent — only admins can post"
+        case "conversation_missing": return "Not sent — chat unavailable"
+        default: return "Dispatch refused"
+        }
     }
 
     private func cancel(_ item: WireScheduledItem) {

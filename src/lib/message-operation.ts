@@ -143,7 +143,6 @@ export async function createRoomObject(db: PrismaClient, request: RoomCreation) 
       createdAt: now,
     }, select: { id: true, payload: true } })
     await tx.conversation.update({ where: { id: conversationId }, data: { updatedAt: now }, select: { id: true } })
-    await tx.conversationParticipant.updateMany({ where: { userId, conversationId }, data: { lastReadAt: now } })
     await tx.conversationParticipant.updateMany({ where: { conversationId, userId: { not: userId }, archivedAt: { not: null } }, data: { archivedAt: null } })
     return message
   }, id => db.message.findFirst({ where: {

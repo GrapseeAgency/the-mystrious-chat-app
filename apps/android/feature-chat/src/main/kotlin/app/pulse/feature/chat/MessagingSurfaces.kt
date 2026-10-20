@@ -703,7 +703,13 @@ internal fun ScheduledSendsSheet(
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     if (refused) {
-                                        "Not sent - blocked · was " + PulseTime.listStamp(item.scheduledAtIso)
+                                        "Not sent - " + when (item.cancelledReason) {
+                                            "blocked" -> "blocked"
+                                            "not_member" -> "no longer a member"
+                                            "announcement_only" -> "only admins can post"
+                                            "conversation_missing" -> "chat unavailable"
+                                            else -> "dispatch refused"
+                                        } + " · was " + PulseTime.listStamp(item.scheduledAtIso)
                                     } else {
                                         PulseTime.listStamp(item.scheduledAtIso) + " · " + PulseTime.clock(item.scheduledAtIso)
                                     },

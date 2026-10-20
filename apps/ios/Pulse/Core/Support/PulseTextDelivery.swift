@@ -7,7 +7,7 @@ enum PulseTextDelivery {
     static func enqueue(store: PulseStore, viewer: PulseViewer, conversationId: String,
                         content: String, effect: String? = nil, replyTo: WireChatMessage? = nil,
                         topicId: String? = nil, anon: Bool = false) throws -> WireChatMessage {
-        let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = try validatedContent(content, allowEmpty: false)
         guard !text.isEmpty, !conversationId.isEmpty else {
             throw PulseAPIClient.Failure(kind: .validation, message: "Type a message first; effects ride a text message.")
         }
@@ -26,6 +26,18 @@ enum PulseTextDelivery {
         try store.enqueueMessage(message, clientId: id, envelope: PulseOutboxForward(
             kind: "text", replyToId: replyTo?.id, topicId: topicId, payload: payload, anon: anon))
         return message
+    }
+
+    static func validatedContent(_ content: String, allowEmpty: Bool) throws -> String {
+        let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard allowEmpty || !text.isEmpty else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Type a message first.")
+        }
+        // JavaScript's server limit counts UTF-16 units, not Swift graphemes.
+        guard text.utf16.count <= 2000 else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Message or caption exceeds the 2000-character limit.")
+        }
+        return text
     }
 
     static func pendingMessages(store: PulseStore, conversationId: String) throws -> [WireChatMessage] {

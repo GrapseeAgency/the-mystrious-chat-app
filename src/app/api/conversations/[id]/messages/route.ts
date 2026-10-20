@@ -650,11 +650,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
     // Bump list ordering - @updatedAt allows an explicit value write.
     await tx.conversation.update({ where: { id }, data: { updatedAt: now } })
-    // Sender obviously read their own message.
-    await tx.conversationParticipant.update({
-      where: { userId_conversationId: { userId: senderId, conversationId: id } },
-      data: { lastReadAt: now },
-    })
+    // Sending (including background retries) is not evidence of reading the
+    // conversation. Only the explicit /read boundary may advance lastReadAt.
     // A new message from the sender pulls the chat out of every OTHER
     // member's archive (WhatsApp behaviour - archive ≠ mute).
     await tx.conversationParticipant.updateMany({

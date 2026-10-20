@@ -68,4 +68,14 @@ final class TextDeliveryTests: XCTestCase {
         XCTAssertEqual(try store.messages(conversationId: "room", limit: 2).map(\.id), ["second", "third"])
         XCTAssertEqual(try store.messages(threadRootId: "root", limit: 2).map(\.id), ["second", "third"])
     }
+    func testOversizedUnicodeNeverEntersDurableQueue() throws {
+        let store = try PulseStore()
+        XCTAssertEqual(try PulseTextDelivery.validatedContent(String(repeating: "🌿", count: 1000), allowEmpty: false).utf16.count, 2000)
+        XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: String(repeating: "🌿", count: 1001)))
+        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertThrowsError(try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer, conversationId: "room",
+            content: String(repeating: "x", count: 2001), dataUrl: "data:image/jpeg;base64,YQ==", envelope: PulseOutboxForward(kind: "image")))
+        XCTAssertEqual(store.countOutbox(), 0)
+    }
+
 }

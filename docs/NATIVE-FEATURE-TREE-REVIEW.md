@@ -1152,3 +1152,70 @@ re-reports its visible boundary after claiming active-room ownership, covering
 child-before-parent `onAppear` ordering when reopening cached history. The shared
 server changes must be deployed with the new natives; an old `/read` handler
 ignoring `messageId` cannot provide the new boundary guarantee.
+
+### Send ordering, ambiguous acknowledgements, scheduled delivery and false Seen
+
+A second end-to-end pass found independent immediate-send POSTs alongside Android's
+outbox drainer. A new text could overtake an older pending message, and the same
+operation could be attempted concurrently. Text/rich sends now persist first and
+share a single dispatch gate with recovery. The immediate path is allowed only
+for the queue head; otherwise it returns the already-durable queued envelope
+without waiting for a media upload. Cancellation releases the gate and schedules
+account-owned healing. A malformed success response or a failed local ACK write
+keeps the original operation ID queued rather than encouraging a new send ID.
+
+The shared Android transport classified several ordinary HTTP rejections as
+UNKNOWN. Outbox handling now explicitly retains 400/409/410/413/415 responses as
+rejected intent, excluded from automatic retries, instead of indefinitely retrying
+a structurally unsendable message. Authentication/timeouts/rate limits/5xx remain
+retryable. POST response decoding failures are server/unknown-ack failures, not
+proof the user's message was rejected. Rate-limit holds use a monotonic clock,
+apply to both immediate sends and recovery, and cannot be shortened by another
+trigger. Android also propagates Retry-After delta-seconds/HTTP dates (server Date
+used when present) into that policy. Swift's existing hold now uses an injected
+monotonic clock rather than wall-clock time.
+
+Read-state repairs:
+- The primary Swift room seeded its own viewer's watermark into peer Seen math.
+  Reopening a room could therefore claim another person had read a message based
+  on the sender's own activity. Peer-only counting now excludes self, requires a
+  valid viewer/message timestamp, and group footers report explicit Read-by counts.
+  Fresh privacy/detail snapshots replace peer receipt data, fenced against newer
+  live receipts and retired sessions. Android group labels also distinguish counts.
+- Message POST, packet creation, room-object creation and scheduled dispatch used
+  to update the sender's lastReadAt automatically. Background delivery is not proof
+  of reading other people's messages. Those writes are removed; explicit read
+  acknowledgements own read progress. This was necessary in addition to the last
+  revision's visible-bound native requests.
+- Inbox unread queries now exclude expired rows at request time, including the exact
+  expiry boundary. Expired latest previews fall back to an unexpired row without
+  requiring someone to open the chat and incidentally trigger its purge.
+
+Following scheduled sends through dispatch exposed more gaps. Dispatch now checks
+current membership, announcement-mode role and DM blocks inside its transaction,
+waits through slow mode, and sets expiresAt from the room's current TTL. The old
+participant read update incidentally rejected removed senders; the new explicit
+membership guard preserves that safety without manufacturing read receipts.
+Both native scheduled-message managers show the actual refusal reason rather than
+labeling every cancellation as blocked or providing only a generic status.
+
+Finally, Swift text/caption validation now uses the gateway's 2,000 UTF-16-unit
+limit before journal insertion. Android persisted captions no longer allow 4,000
+units only to fail after upload. This preserves the selected attachment/composer
+for correction instead of uploading an envelope the message endpoint cannot accept.
+
+Verification: all 90 server contract tests passed locally; new cases cover TTL
+unread filtering, dispatch-time permissions/blocks/slow mode/TTL, and background
+creation not advancing reads. New Kotlin cases exercise dispatch exclusion, queue
+head ordering, cancellation release, retry holds, terminal-vs-transient failures,
+header parsing and ambiguous successful responses. New Swift cases cover own-read
+exclusion, monotonic holds and emoji/caption length before enqueue. These native
+cases are authored but not executed locally; syntax parsing and changed TypeScript
+helper type checks passed. Native builds for this tranche remain required.
+
+Boundaries still open: retry fairness is account-wide FIFO, so a long cooldown can
+hold another conversation behind it; retry deadlines are not persisted over process
+restart. Historical membership/default-read timestamps, timestamp ties, topic/thread
+read modeling, device-delivery ACKs, scheduled-send lost relay recovery and text
+queue/composer atomic handoff still need deeper work. Server behavior changes require
+server deployment alongside the native release. This is not a whole-app closure.

@@ -182,7 +182,7 @@ class PulseApi(
             val res = http.get(url(path)) { authHeader() }
             val text = res.bodyAsText()
             if (res.status.isSuccess()) PulseResult.Success(parse(text))
-            else failureOf(res.status.value, text)
+            else failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {
@@ -211,7 +211,7 @@ class PulseApi(
                 @Suppress("UNCHECKED_CAST")
                 PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
             } else {
-                failureOf(res.status.value, text)
+                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
@@ -238,7 +238,7 @@ class PulseApi(
                 @Suppress("UNCHECKED_CAST")
                 PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
             } else {
-                failureOf(res.status.value, text)
+                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
@@ -263,7 +263,7 @@ class PulseApi(
      * the onboarding username_taken flow needs the server's suggestion to
      * survive the trip (web parity: createUserRequest in onboarding-screen.tsx).
      */
-    private fun failureOf(status: Int, body: String): PulseResult.Failure {
+    private fun failureOf(status: Int, body: String, retryHeader: String? = null, serverDate: String? = null): PulseResult.Failure {
         var message: String? = body.take(300)
         var code: String? = null
         var suggestion: String? = null
@@ -297,6 +297,7 @@ class PulseApi(
         // typed Kind.AUTH failure rides back to the caller AND the hook lets
         // the store layer clear the credential + raise the re-login flow.
         if (status == 401) onAuthInvalid(message)
+        retryAfter = listOfNotNull(retryAfter?.takeIf { it > 0 }, retryAfterSeconds(retryHeader, serverDate)).maxOrNull()
         val base = PulseResult.fromHttp(status, message)
         return base.copy(code = code, suggestion = suggestion, status = status, retryAfter = retryAfter, receiptClientId = receiptClientId)
     }
@@ -572,7 +573,7 @@ class PulseApi(
             if (res.status.isSuccess()) {
                 PulseResult.Success(res.readBytes())
             } else {
-                failureOf(res.status.value, res.bodyAsText())
+                failureOf(res.status.value, res.bodyAsText(), res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
@@ -677,7 +678,7 @@ class PulseApi(
                     runCatching { PulseJson.decodeFromString(OkDto.serializer(), text) }.getOrDefault(OkDto(ok = true)),
                 )
             } else {
-                failureOf(res.status.value, text)
+                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
@@ -713,7 +714,7 @@ class PulseApi(
                 setBody(jsonOf("requesterId" to requesterId).toString())
             }
             val text = res.bodyAsText()
-            if (res.status.isSuccess()) PulseResult.Success(messageOf(text)) else failureOf(res.status.value, text)
+            if (res.status.isSuccess()) PulseResult.Success(messageOf(text)) else failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
@@ -797,7 +798,7 @@ class PulseApi(
             }
             val text = res.bodyAsText()
             if (!res.status.isSuccess()) {
-                failureOf(res.status.value, text)
+                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             } else {
                 val root = PulseJson.parseToJsonElement(text)
                 val inner = (root as? JsonObject)?.get("message") as? JsonObject
@@ -856,7 +857,7 @@ class PulseApi(
             if (res.status.isSuccess()) {
                 PulseResult.Success(runCatching { PulseJson.decodeFromString(OkDto.serializer(), text) }.getOrDefault(OkDto(ok = true)))
             } else {
-                failureOf(res.status.value, text)
+                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
@@ -988,7 +989,7 @@ class PulseApi(
                 @Suppress("UNCHECKED_CAST")
                 PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
             } else {
-                failureOf(res.status.value, text)
+                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
@@ -1010,7 +1011,7 @@ class PulseApi(
                 @Suppress("UNCHECKED_CAST")
                 PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
             } else {
-                failureOf(res.status.value, text)
+                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
@@ -1030,7 +1031,7 @@ class PulseApi(
                 @Suppress("UNCHECKED_CAST")
                 PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
             } else {
-                failureOf(res.status.value, text)
+                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
@@ -1054,7 +1055,7 @@ class PulseApi(
                 @Suppress("UNCHECKED_CAST")
                 PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
             } else {
-                failureOf(res.status.value, text)
+                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
@@ -1078,7 +1079,7 @@ class PulseApi(
                 @Suppress("UNCHECKED_CAST")
                 PulseResult.Success((parse?.invoke(text) ?: Unit) as T)
             } else {
-                failureOf(res.status.value, text)
+                failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
@@ -1411,7 +1412,7 @@ class PulseApi(
             )
             val text = res.bodyAsText()
             if (res.status.isSuccess()) PulseResult.Success(PulseJson.decodeFromString(WhiteboardClearResultDto.serializer(), text))
-            else failureOf(res.status.value, text)
+            else failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
         } catch (e: kotlinx.serialization.SerializationException) {
             PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
         } catch (e: Exception) {

@@ -159,6 +159,7 @@ private struct RoomMessageRow: View {
                 groupChat: conversation.isGroup,
                 viewerColor: { colorOf(message.senderId) },
                 seen: viewModel.isSeen(message),
+                seenLabel: viewModel.readLabel(message),
                 flashing: viewModel.flashMessageId == message.id,
                 replyCount: viewModel.replyCount(for: message),
                 bubbleRadius: bubbleRadius,
@@ -2785,6 +2786,7 @@ struct BubbleView: View {
     let groupChat: Bool
     let viewerColor: () -> Color
     var seen: Bool = false
+    var seenLabel: String = "Seen"
     var onLongPressActions: Bool = true
     /// Wave 1 - jump flash ring, live thread-reply chip, media surfaces.
     var flashing: Bool = false
@@ -2950,7 +2952,7 @@ struct BubbleView: View {
                 }
 
                 if mine && seen {
-                    Text("Seen")
+                    Text(seenLabel)
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(PulseTheme.emberGlowTop)
                         .padding(.trailing, 6)
@@ -3828,6 +3830,7 @@ final class RoomViewModel: ObservableObject {
     private var initialJumpMessageId: String?
     /// Member read watermarks (id → lastReadAt) - group-aware "Seen".
     private var memberWatermarks: [String: Date] = [:]
+    private var receiptRevision = 0
     // Wave 2 voice plumbing - recorder + single active player + timers.
     private var voiceRecorder: VoiceRecorder?
     private var voicePermissionTask: Task<Void, Never>?
@@ -3925,7 +3928,7 @@ final class RoomViewModel: ObservableObject {
             unreadCount: conversation.unreadCount,
         )
         self.roomScreenPrivacy = conversation.screenPrivacy
-        for member in conversation.members {
+        for member in conversation.members where member.id != viewerId {
             if let stamp = member.lastReadAt {
                 memberWatermarks[member.id] = PulseFormat.date(stamp)
             }
@@ -4026,6 +4029,7 @@ final class RoomViewModel: ObservableObject {
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
                     // Missing or reordered receipts cannot invent/regress Seen.
                     guard let at = lastReadAt.flatMap({ PulseFormat.date($0) }) else { return }
+                    receiptRevision += 1
                     memberWatermarks[userId] = max(memberWatermarks[userId] ?? .distantPast, at)
                     partnerLastReadAt = max(partnerLastReadAt ?? .distantPast, at)
                 case .typing(let convId, let userId, let userName, let isTyping):
@@ -4463,8 +4467,18 @@ final class RoomViewModel: ObservableObject {
     /// PATCH (privacy sheet, DM-block toggle): the river re-veils without a
     /// refetch. Same adoption rules as loadPrivacyState.
     func applyFreshDetail(_ detail: WireConversationSummary) {
+        adoptReadMembers(detail)
         roomScreenPrivacy = detail.screenPrivacy
         dmBlocked = !detail.isGroup && detail.dmBlockedNow
+    }
+
+    private func adoptReadMembers(_ detail: WireConversationSummary) {
+        memberWatermarks = detail.members.reduce(into: [String: Date]()) { stamps, member in
+            guard member.id != session?.viewer?.id, let stamp = member.lastReadAt,
+                  let at = PulseFormat.date(stamp) else { return }
+            stamps[member.id] = max(stamps[member.id] ?? .distantPast, at)
+        }
+        partnerLastReadAt = memberWatermarks.values.max()
     }
 
     /// One quiet detail GET on room open (web detail-query parity): refresh
@@ -4472,7 +4486,12 @@ final class RoomViewModel: ObservableObject {
     /// prefs map. Local state stays authoritative until this lands.
     func loadPrivacyState(session: PulseSession) async {
         let viewerId = session.viewer?.id ?? ""
-        guard !viewerId.isEmpty, let detail = try? await session.api.conversationDetail(id: conversationId, userId: viewerId) else { return }
+        let epoch = session.sessionGeneration
+        let revision = receiptRevision
+        let client = session.api
+        guard !viewerId.isEmpty, let detail = try? await client.conversationDetail(id: conversationId, userId: viewerId),
+              !Task.isCancelled, session.sessionGeneration == epoch else { return }
+        if receiptRevision == revision { adoptReadMembers(detail) }
         roomScreenPrivacy = detail.screenPrivacy
         // R47 - the same detail GET carries the DM dead-end flag (either
         // direction); groups always decode false here.
@@ -4996,16 +5015,18 @@ final class RoomViewModel: ObservableObject {
         replyTarget = nil
     }
 
+    func readLabel(_ message: WireChatMessage) -> String {
+        let count = PulseRoomParityLogic.peerReadCount(watermarks: memberWatermarks,
+            viewerId: session?.viewer?.id, createdAtIso: message.createdAt)
+        return isGroupRoom ? "Read by \(count)" : "Seen"
+    }
+
     func isSeen(_ message: WireChatMessage) -> Bool {
         guard message.senderId == session?.viewer?.id,
               let last = messages.last(where: { $0.senderId == session?.viewer?.id }) else { return false }
         guard last.id == message.id else { return false }
-        // Wave 1 - group-aware watermarks: any OTHER member's lastReadAt
-        // covering this message counts as seen (DM keeps the partner path).
-        var stamps = Array(memberWatermarks.values)
-        if let partner = partnerLastReadAt { stamps.append(partner) }
-        guard let seen = stamps.max() else { return false }
-        return seen >= (PulseFormat.date(message.createdAt) ?? .distantFuture)
+        return PulseRoomParityLogic.peerReadCount(watermarks: memberWatermarks,
+            viewerId: session?.viewer?.id, createdAtIso: message.createdAt) > 0
     }
 
     // ── Wave 1 message actions ─────────────────────────────

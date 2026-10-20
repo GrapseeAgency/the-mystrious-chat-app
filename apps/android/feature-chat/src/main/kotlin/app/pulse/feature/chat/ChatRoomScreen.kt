@@ -3834,6 +3834,10 @@ private fun MessageRow(
                     others.any { (it.lastReadAt ?: 0L) >= createdAtMs } ||
                         (partnerLastReadAt ?: 0L) >= createdAtMs
                     )
+                val readCount = others.count { createdAtMs > 0L && (it.lastReadAt ?: 0L) >= createdAtMs }
+                val readLabel = if (conversation?.kind == Conversation.Kind.GROUP || conversation?.kind == Conversation.Kind.CHANNEL) {
+                    if (readCount > 0) "Read by $readCount" else "Read"
+                } else "Seen"
                 Row(
                     Modifier.padding(end = 4.dp, top = 1.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -3845,7 +3849,7 @@ private fun MessageRow(
                             modifier = Modifier.size(13.dp),
                         )
                         Text(
-                            "Seen",
+                            readLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = PulsePalette.Emerald,
                             fontWeight = FontWeight.SemiBold,

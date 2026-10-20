@@ -107,3 +107,10 @@ test('missing receipt storage fails before creating any object', () => fixture(a
   await assert.rejects(createRoomObject(db, game), { status: 503 })
   assert.equal(await db.gameMatch.count(), 0); assert.equal(await db.message.count(), 0)
 }))
+
+test('a background creation send never pretends the sender read the conversation', () => fixture(async db => {
+  await db.$executeRaw`UPDATE ConversationParticipant SET lastReadAt=${new Date('2001-01-01T00:00:00.000Z')} WHERE id='px'`
+  await createRoomObject(db, game)
+  const row = (await db.$queryRaw`SELECT lastReadAt FROM ConversationParticipant WHERE id='px'`)[0]
+  assert.equal(row.lastReadAt.getUTCFullYear(), 2001)
+}))

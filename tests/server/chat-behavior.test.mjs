@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { advanceReadReceipt, receiptRecipients } from '../../src/lib/read-receipt.ts'
+import { unreadMessages, unexpiredMessages } from '../../src/lib/message-visibility.ts'
+import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { openDirectConversation } from '../../src/lib/direct-conversation.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 const t = n => new Date(`2026-10-20T00:00:${String(n).padStart(2, '0')}.000Z`)
@@ -23,7 +25,8 @@ async function fixture(run) {
         lastReadAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME,
         handRaisedAt DATETIME, screenPrivacy BOOLEAN NOT NULL DEFAULT false, manualUnread BOOLEAN NOT NULL DEFAULT false,
         draft TEXT, UNIQUE(userId,conversationId))`,
-      `CREATE TABLE Message(id TEXT PRIMARY KEY, conversationId TEXT, createdAt DATETIME)`,
+      `CREATE TABLE Message(id TEXT PRIMARY KEY, conversationId TEXT, createdAt DATETIME, senderId TEXT,
+        expiresAt DATETIME, deletedAt DATETIME, viaAutomation BOOLEAN NOT NULL DEFAULT false)`,
       `CREATE TABLE UserBlock(id TEXT PRIMARY KEY, blockerId TEXT, blockedId TEXT)`,
     ]) await db.$executeRawUnsafe(sql)
     await run(db)
@@ -31,7 +34,7 @@ async function fixture(run) {
 }
 async function seedRead(db) {
   await db.$executeRaw`INSERT INTO ConversationParticipant(id,userId,conversationId,lastReadAt,manualUnread) VALUES ('p','reader','room',${t(0)},true)`
-  await db.$executeRaw`INSERT INTO Message VALUES ('displayed','room',${t(10)}),('not-displayed','room',${t(20)}),('foreign','other',${t(30)})`
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,createdAt) VALUES ('displayed','room',${t(10)}),('not-displayed','room',${t(20)}),('foreign','other',${t(30)})`
 }
 test('reading a displayed row leaves later, undisplayed arrival unread', () => fixture(async db => {
   await seedRead(db)
@@ -85,4 +88,48 @@ test('either-direction block forbids a new DM but preserves existing history', (
   const first = await openDirectConversation(db, ['a','b'])
   await db.$executeRaw`INSERT INTO UserBlock VALUES ('block','a','b')`
   assert.equal((await openDirectConversation(db, ['b','a'])).id, first.id)
+}))
+
+test('expired deleted and own messages cannot leave unread ghosts before purge', () => fixture(async db => {
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,expiresAt,deletedAt) VALUES
+    ('alive','room','peer',${t(10)},NULL,NULL),
+    ('expired','room','peer',${t(15)},${t(20)},NULL),
+    ('deleted','room','peer',${t(16)},NULL,${t(19)}),
+    ('own','room','reader',${t(17)},NULL,NULL)`
+  assert.equal(await db.message.count({ where: unreadMessages('room', 'reader', t(0), t(20)) }), 1)
+  assert.equal(await db.message.count({ where: unreadMessages('room', 'reader', t(0), t(19)) }), 2)
+  const preview = await db.message.findFirst({ where: { conversationId: 'room', ...unexpiredMessages(t(20)) }, orderBy: { createdAt: 'desc' }, select: { id: true } })
+  assert.notEqual(preview.id, 'expired')
+}))
+async function scheduledFixture(db, group = true) {
+  await db.$executeRaw`INSERT INTO Conversation(id,isGroup,broadcastMode,ttlSeconds,slowModeSeconds,updatedAt) VALUES ('room',${group},false,60,10,${t(0)})`
+  await db.$executeRaw`INSERT INTO ConversationParticipant(id,userId,conversationId,role,lastReadAt) VALUES ('sender','sender','room','member',${t(0)}),('peer','peer','room','member',${t(0)})`
+}
+test('scheduled dispatch rechecks membership and announcement role', () => fixture(async db => {
+  await scheduledFixture(db)
+  await db.conversation.update({ where: { id: 'room' }, data: { broadcastMode: true } })
+  assert.deepEqual(await scheduledDeliveryDecision(db, 'room', 'sender', t(20)), { state: 'cancel', reason: 'announcement_only' })
+  await db.conversationParticipant.update({ where: { id: 'sender' }, data: { role: 'admin' } })
+  assert.equal((await scheduledDeliveryDecision(db, 'room', 'sender', t(20))).state, 'send')
+  await db.conversationParticipant.delete({ where: { id: 'sender' } })
+  assert.deepEqual(await scheduledDeliveryDecision(db, 'room', 'sender', t(20)), { state: 'cancel', reason: 'not_member' })
+}))
+test('scheduled dispatch obeys slow mode and current disappearing-message TTL', () => fixture(async db => {
+  await scheduledFixture(db)
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,deletedAt) VALUES ('last','room','sender',${t(10)},${t(12)})`
+  assert.deepEqual(await scheduledDeliveryDecision(db, 'room', 'sender', t(15)), { state: 'wait' })
+  const ready = await scheduledDeliveryDecision(db, 'room', 'sender', t(20))
+  assert.equal(ready.state, 'send')
+  assert.equal(ready.expiresAt.getTime() - t(20).getTime(), 60_000)
+  await db.message.update({ where: { id: 'last' }, data: { viaAutomation: true }, select: { id: true } })
+  assert.equal((await scheduledDeliveryDecision(db, 'room', 'sender', t(15))).state, 'send')
+  assert.equal((await db.$queryRaw`SELECT lastReadAt FROM ConversationParticipant WHERE id='sender'`)[0].lastReadAt.getTime(), t(0).getTime())
+}))
+test('a DM blocked after scheduling is refused at delivery time in either direction', () => fixture(async db => {
+  await scheduledFixture(db, false)
+  for (const [a,b] of [['sender','peer'],['peer','sender']]) {
+    await db.$executeRaw`DELETE FROM UserBlock`
+    await db.$executeRaw`INSERT INTO UserBlock VALUES ('block',${a},${b})`
+    assert.deepEqual(await scheduledDeliveryDecision(db, 'room', 'sender', t(20)), { state: 'cancel', reason: 'blocked' })
+  }
 }))

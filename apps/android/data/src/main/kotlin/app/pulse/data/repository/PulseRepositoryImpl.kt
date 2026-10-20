@@ -250,7 +250,7 @@ class PulseRepositoryImpl constructor(
     @Volatile private var attachmentSession = java.util.UUID.randomUUID().toString()
     @Volatile private var pumpStarted = false
 
-    private val flushMutex = Mutex()
+    private val dispatchGate = app.pulse.domain.sync.MessageDispatchGate()
     private var selfHealJob: Job? = null
 
     override fun stop() {
@@ -972,46 +972,24 @@ class PulseRepositoryImpl constructor(
             threadRootId = parentId,
             topicId = if (parentId == null) topicId else null,
         )
-        val durable = true
         database.withTransaction {
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
-            if (durable) outboxDao.insert(OutboxEntity(
+            outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
             ))
         }
-        return when (val r = api.sendMessage(
-            conversationId = conversationId,
-            senderId = owner,
-            content = body,
-            clientId = clientId,
-            replyToId = replyToId,
-            // THREAD REPLY rides `parentId` - NEVER conflated with replyToId (spec §1.1).
-            parentId = parentId,
-            // Wave 2 topic filing (spec §1 row 10): never on thread replies.
-            topicId = if (parentId == null) topicId else null,
-        )) {
-            is PulseResult.Success -> {
-                val receipt = r.value.toReceipt()
-                val message = receipt.message
-                database.withTransaction {
-                    messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-                    messageDao.deleteById(temp.id)
-                    outboxDao.deleteByClientId(clientId)
-                }
-                scheduleConversationsRefresh()
-                Result.success(receipt)
-            }
-            is PulseResult.Failure -> {
-                if (durable && r.kind !in setOf(PulseResult.Failure.Kind.VALIDATION,
-                        PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND)) {
-                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
-                    Result.success(SendReceipt(message = temp, streak = null))
-                } else {
-                    // Keep rejected intent separately; never overwrite a newer composer draft.
-                    dropOutboxEntry(clientId, r.message ?: "Message rejected")
-                    Result.failure(apiExceptionOf(r))
-                }
-            }
+        return sendPersistedNowOrQueue(temp, clientId) {
+            api.sendMessage(
+                conversationId = conversationId,
+                senderId = owner,
+                content = body,
+                clientId = clientId,
+                replyToId = replyToId,
+                // THREAD REPLY rides `parentId` - NEVER conflated with replyToId (spec §1.1).
+                parentId = parentId,
+                // Wave 2 topic filing (spec §1 row 10): never on thread replies.
+                topicId = if (parentId == null) topicId else null,
+            )
         }
     }
 
@@ -1063,16 +1041,15 @@ class PulseRepositoryImpl constructor(
             // the server will store (web optimistic-mask parity).
             anonAlias = anonAliasPreview.takeIf { anon },
         )
-        val durable = true
         database.withTransaction {
             messageDao.upsertAll(listOf(MessageEntity.from(temp.copy(payload = payload)).copy(kind = if (kind == "audio") "VOICE" else kind.uppercase(java.util.Locale.ROOT))))
-            if (durable) outboxDao.insert(OutboxEntity(
+            outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
                 kind = kind, wirePayload = payload,
             ))
         }
-        return when (
-            val r = api.sendMessage(
+        return sendPersistedNowOrQueue(temp.copy(payload = payload, kind = kindOf(kind)), clientId) {
+            api.sendMessage(
                 conversationId = conversationId,
                 senderId = owner,
                 content = body,
@@ -1084,29 +1061,70 @@ class PulseRepositoryImpl constructor(
                 anon = anon.takeIf { it },
                 payload = richPayload,
             )
-        ) {
-            is PulseResult.Success -> {
-                val receipt = r.value.toReceipt()
-                val message = receipt.message
-                database.withTransaction {
-                    messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-                    messageDao.deleteById(temp.id)
-                    outboxDao.deleteByClientId(clientId)
+        }
+    }
+
+    private suspend fun sendPersistedNowOrQueue(
+        temp: Message,
+        clientId: String,
+        send: suspend () -> PulseResult<app.pulse.protocol.MessageSendEnvelopeDto>,
+    ): Result<SendReceipt> {
+        val immediate = try {
+            dispatchGate.tryImmediate(
+                isHead = {
+                    viewerId == temp.authorId &&
+                        outboxDao.allForOwner(temp.authorId).firstOrNull()?.clientId == clientId
+                },
+            ) {
+                when (val response = send()) {
+                    is PulseResult.Success -> {
+                        val receipt = response.value.toReceipt()
+                        database.withTransaction {
+                            messageDao.upsertAll(listOf(MessageEntity.from(receipt.message, reactionsJsonOf(receipt.message))))
+                            messageDao.deleteById(temp.id)
+                            outboxDao.deleteByClientId(clientId)
+                        }
+                        scheduleConversationsRefresh()
+                        Result.success(receipt)
+                    }
+                    is PulseResult.Failure -> {
+                        holdMessageRetries(response)
+                        if (response.outboxFailureClass() == OutboxFailureClass.DROP) {
+                            dropOutboxEntry(clientId, response.message ?: "Message rejected")
+                            Result.failure(apiExceptionOf(response))
+                        } else {
+                            scheduleSelfHeal()
+                            eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, temp.conversationId))
+                            Result.success(SendReceipt(message = temp, streak = null))
+                        }
+                    }
                 }
-                scheduleConversationsRefresh()
-                Result.success(receipt)
             }
-            is PulseResult.Failure -> {
-                if (durable && r.kind !in setOf(PulseResult.Failure.Kind.VALIDATION,
-                        PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND)) {
-                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
-                    Result.success(SendReceipt(message = temp, streak = null))
-                } else {
-                    // Keep rejected intent separately; never overwrite a newer composer draft.
-                    dropOutboxEntry(clientId, r.message ?: "Message rejected")
-                    Result.failure(apiExceptionOf(r))
-                }
-            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            // An unknown response or failed local ACK write is not proof of
+            // rejection. The committed operation must retry under its SAME ID.
+            Log.w(TAG, "Message acknowledgement is unconfirmed; retained for retry", error)
+            null
+        } finally {
+            if (viewerId == temp.authorId) scheduleSelfHeal()
+        }
+        if (immediate != null) return immediate
+        eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, temp.conversationId))
+        // Bytes/metadata are already durable. Never wait for a large upload to
+        // finish before acknowledging that the next text is safely queued.
+        scope.launch {
+            try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) { Log.w(TAG, "Message remains queued", error); scheduleSelfHeal() }
+        }
+        return Result.success(SendReceipt(message = temp, streak = null))
+    }
+
+    private fun holdMessageRetries(failure: PulseResult.Failure) {
+        if (failure.status == 429 || failure.kind == PulseResult.Failure.Kind.RATE_LIMITED) {
+            dispatchGate.holdRetries(failure.retryAfter)
         }
     }
 
@@ -1176,7 +1194,7 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun editAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, revision: Long, sessionKey: String): Result<Unit> = try {
         requireAttachmentSession(sessionKey)
-        require(caption.length <= 4000) { "Caption is too long" }
+        require(caption.length <= 2000) { "Caption is too long" }
         database.attachmentDraftDao().edit(conversationId, selectionId, caption, viewOnce, revision)
         Result.success(Unit)
     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
@@ -1304,10 +1322,6 @@ class PulseRepositoryImpl constructor(
             messageDao.countsByThread(rootIds).associate { it.rootId to it.cnt }
         }.getOrDefault(emptyMap())
     }
-
-    /** The outbox queues PURE TEXT only - thread/quote sends are online-only. */
-    private fun queueableSend(replyToId: String?, parentId: String?): Boolean =
-        replyToId == null && parentId == null
 
     override suspend fun editMessage(messageId: String, content: String): Result<Message> =
         when (val r = api.editMessage(messageId, viewerId ?: "", content)) {
@@ -1770,7 +1784,8 @@ class PulseRepositoryImpl constructor(
                 is PulseResult.Success -> upload.value.filePath?.takeIf { it.isNotBlank() }
                     ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Upload receipt was not confirmed; original attachment is kept"))
                 is PulseResult.Failure -> {
-                    val classification = if (upload.kind in setOf(PulseResult.Failure.Kind.VALIDATION, PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND)) OutboxFailureClass.DROP else OutboxFailureClass.RETRY
+                    holdMessageRetries(upload)
+                    val classification = upload.outboxFailureClass()
                     return Result.failure(OutboxDeliveryException(classification, upload.message ?: "Upload was not confirmed"))
                 }
             }
@@ -1817,13 +1832,8 @@ class PulseRepositoryImpl constructor(
         )) {
             is PulseResult.Success -> Result.success(r.value.messageOrThrow())
             is PulseResult.Failure -> {
-                val classification = when (r.kind) {
-                    PulseResult.Failure.Kind.VALIDATION,
-                    PulseResult.Failure.Kind.FORBIDDEN,
-                    PulseResult.Failure.Kind.NOT_FOUND,
-                    -> OutboxFailureClass.DROP
-                    else -> OutboxFailureClass.RETRY
-                }
+                holdMessageRetries(r)
+                val classification = r.outboxFailureClass()
                 Result.failure(OutboxDeliveryException(classification, r.message ?: r.kind.name))
             }
         }
@@ -1856,9 +1866,13 @@ class PulseRepositoryImpl constructor(
      * self-heal). The drain policy itself is FlushOutboxUseCase - single
      * source of truth, unit-tested at the domain layer.
      */
-    override suspend fun flushOutbox(): FlushReport = flushMutex.withLock {
+    override suspend fun flushOutbox(): FlushReport = dispatchGate.serialized {
         if (viewerId == null || sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) {
-            return@withLock FlushReport(sent = 0, dropped = 0, pending = outboxDao.count())
+            return@serialized FlushReport(sent = 0, dropped = 0, pending = outboxDao.count())
+        }
+        if (dispatchGate.remainingDelayMillis() > 0L) {
+            scheduleSelfHeal()
+            return@serialized FlushReport(pending = outboxDao.count())
         }
         val report = FlushOutboxUseCase(this).invoke()
         if (report.pending > 0) scheduleSelfHeal()
@@ -1869,7 +1883,7 @@ class PulseRepositoryImpl constructor(
     private fun scheduleSelfHeal() {
         if (selfHealJob?.isActive == true) return
         selfHealJob = scope.launch {
-            delay(SELF_HEAL_MS)
+            delay(maxOf(SELF_HEAL_MS, dispatchGate.remainingDelayMillis()))
             // Release the scheduling slot before flush requests its next retry.
             selfHealJob = null
             runCatching { flushOutbox() }
