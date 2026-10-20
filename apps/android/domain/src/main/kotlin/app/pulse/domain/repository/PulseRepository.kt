@@ -490,6 +490,11 @@ interface PulseRepository {
      */
     suspend fun messagesPage(conversationId: String, before: String?, limit: Int = 40): Pair<List<Message>, Boolean>
 
+    /** Stable composite cursor: still works if the cached anchor expires or is purged. */
+    suspend fun messagesBefore(conversationId: String, beforeId: String, beforeCreatedAt: String, limit: Int = 40): Pair<List<Message>, Boolean> =
+        messagesPage(conversationId, beforeId, limit)
+
+
     /** GET /api/conversations/{id}/messages?limit=100&q= - in-conversation search (hits upserted). */
     suspend fun searchInConversation(conversationId: String, query: String): List<Message>
 

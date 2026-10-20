@@ -1,5 +1,7 @@
 package app.pulse.feature.chat
 
+import app.pulse.domain.sync.MessageHistoryCursor
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ensureActive
 import android.content.Context
 import android.media.MediaRecorder
@@ -164,6 +166,7 @@ class ChatRoomViewModel @Inject constructor(
         val connected: Boolean? = null,
         val notice: RoomNotice? = null,
         val flashMessageId: String? = null,
+        val flashRevision: Long = 0,
         val searchOpen: Boolean = false,
         val searchResults: List<Message> = emptyList(),
         val searching: Boolean = false,
@@ -398,9 +401,9 @@ class ChatRoomViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    /** Jump target awaiting enough of the window to be loaded (search/pin/quote/global). */
-    private val _jumpTarget = MutableStateFlow<String?>(null)
-    val jumpTarget: StateFlow<String?> = _jumpTarget.asStateFlow()
+    private val _threadJumpRoot = MutableStateFlow<String?>(null)
+    val threadJumpRoot: StateFlow<String?> = _threadJumpRoot.asStateFlow()
+    fun consumeThreadJump() { _threadJumpRoot.value = null }
 
     private var typingJob: Job? = null
     private var draftSaveJob: Job? = null
@@ -409,7 +412,16 @@ class ChatRoomViewModel @Inject constructor(
     private var activeSearchQuery = ""
     private var pinsJob: Job? = null
     private var flashJob: Job? = null
-    private var jumpExpansionJob: Job? = null
+    private var historyJob: Job? = null
+    private var historyRevision = 0L
+    private var historyCursor: MessageHistoryCursor? = null
+
+    private fun cancelHistory() {
+        historyRevision++
+        historyJob?.cancel()
+        historyJob = null
+        _state.value = _state.value.copy(loading = false, loadingOlder = false)
+    }
 
     private var attachmentTask: Job? = null
     private var attachmentEpoch = 0L
@@ -454,17 +466,12 @@ class ChatRoomViewModel @Inject constructor(
                 if (composerRevision == 0L && !server.isNullOrBlank()) _initialDraft.value = server
             }
         }
+        retry()
+        val initialHistoryTicket = historyRevision
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true)
-            runCatching { repo.messagesPage(conversationId, before = null, limit = 200) }
-                .onSuccess { (_, hasMore) ->
-                    _state.value = _state.value.copy(loading = false, hasMore = hasMore)
-                }
-                .onFailure { failure ->
-                    _state.value = _state.value.copy(loading = false, error = failure.message)
-                }
+            state.first { !it.loading }
             loadPins()
-            initialJumpMessageId?.takeIf { it.isNotBlank() }?.let { jumpTo(it) }
+            if (historyRevision == initialHistoryTicket) initialJumpMessageId?.takeIf { it.isNotBlank() }?.let { jumpTo(it) }
         }
         viewModelScope.launch {
             repo.observeConnected().collect { connected ->
@@ -903,106 +910,103 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     fun retry() {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            runCatching { repo.messagesPage(conversationId, before = null, limit = 200) }
-                .onSuccess { (_, hasMore) -> _state.value = _state.value.copy(loading = false, hasMore = hasMore) }
-                .onFailure { _state.value = _state.value.copy(loading = false, error = it.message) }
+        cancelHistory()
+        val ticket = historyRevision
+        _state.value = _state.value.copy(loading = true, error = null)
+        historyJob = viewModelScope.launch {
+            try {
+                val (rows, more) = repo.messagesPage(conversationId, before = null, limit = 200)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (historyRevision != ticket) return@launch
+                historyCursor = MessageHistoryCursor.oldest(rows)
+                _state.value = _state.value.copy(loading = false, hasMore = more)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (historyRevision == ticket) _state.value = _state.value.copy(loading = false, error = failure.message)
+            }
         }
     }
 
-    // ── pagination (spec row 2): before= cursor pages of 40 ────
-
-    /** Oldest REAL row (temps are echoes, never cursors). */
-    private fun oldestLoaded(): Message? = messages.value.firstOrNull { !it.id.startsWith(TEMP_MESSAGE_PREFIX) }
+    /** A raw page cursor survives pages containing only replies or other topics. */
+    private suspend fun earlierPage(): List<Message> {
+        val cursor = historyCursor ?: MessageHistoryCursor.oldest(repo.observeMessages(conversationId).first())
+            ?: return emptyList<Message>().also { _state.value = _state.value.copy(hasMore = false) }
+        val (rows, more) = repo.messagesBefore(conversationId, beforeId = cursor.id, beforeCreatedAt = cursor.createdAt, limit = PAGE_SIZE)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val next = MessageHistoryCursor.oldest(rows)
+        if (next != null && !next.precedes(cursor)) throw IllegalStateException("History returned a repeated page")
+        historyCursor = next ?: cursor
+        _state.value = _state.value.copy(hasMore = more && rows.isNotEmpty())
+        return rows
+    }
 
     fun loadOlder() {
-        val current = _state.value
-        if (current.loadingOlder || !current.hasMore) return
-        val cursor = oldestLoaded()?.createdAt ?: return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(loadingOlder = true)
-            runCatching { repo.messagesPage(conversationId, before = cursor, limit = PAGE_SIZE) }
-                .onSuccess { (rows, more) ->
-                    _state.value = _state.value.copy(
-                        loadingOlder = false,
-                        hasMore = more && rows.isNotEmpty(),
-                    )
+        if (_state.value.loading || _state.value.loadingOlder || !_state.value.hasMore) return
+        val ticket = historyRevision
+        _state.value = _state.value.copy(loadingOlder = true)
+        historyJob = viewModelScope.launch {
+            try {
+                repeat(5) {
+                    val rows = earlierPage()
+                    if (!_state.value.hasMore || rows.any { it.threadRootId == null &&
+                            (_activeTopicId.value == null || it.topicId == _activeTopicId.value) &&
+                            (it.expiresAtEpochMs?.let { expiry -> expiry > System.currentTimeMillis() } != false) }) return@launch
                 }
-                .onFailure {
-                    _state.value = _state.value.copy(
-                        loadingOlder = false,
-                        notice = RoomNotice("Couldn't load older messages", isError = true),
-                    )
-                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (historyRevision == ticket) notify("Couldn't load older messages. Try again.", isError = true)
+            } finally {
+                if (historyRevision == ticket) _state.value = _state.value.copy(loadingOlder = false)
+            }
         }
     }
 
-    // ── jump + flash (search / pins / quotes / global hits) ────
-
+    // A jump owns its paging task. UI recompositions must not restart it.
     fun jumpTo(messageId: String) {
         if (messageId.isBlank()) return
-        if (messages.value.any { it.id == messageId }) {
-            flash(messageId)
-        } else {
-            _jumpTarget.value = messageId
-        }
-    }
-
-    fun consumeJumpTarget() {
-        _jumpTarget.value = null
-    }
-
-    /**
-     * Bounded window expansion (web parity ≤14 rounds): page older until the
-     * jump target surfaces or the history is honestly exhausted. Cancel-and-
-     * replace: a new target (or a racing loadOlder) never strands the gate.
-     */
-    fun expandForJump(messageId: String) {
-        // Jump surfaces (search/pins/quotes/saved) are whole-room - a topic
-        // filter would hide the target. Fall back to General first.
+        cancelHistory()
+        _threadJumpRoot.value = null
         _activeTopicId.value = null
-        jumpExpansionJob?.cancel()
-        jumpExpansionJob = viewModelScope.launch {
-            var found = false
+        val ticket = historyRevision
+        _state.value = _state.value.copy(loadingOlder = true)
+        historyJob = viewModelScope.launch {
             try {
+                var target = repo.observeMessages(conversationId).first().firstOrNull { it.id == messageId }
                 var rounds = 0
-                while (rounds < JUMP_MAX_ROUNDS && _state.value.hasMore) {
-                    if (messages.value.any { it.id == messageId }) {
-                        found = true
-                        break
-                    }
-                    val cursor = oldestLoaded()?.createdAt ?: break
-                    _state.value = _state.value.copy(loadingOlder = true)
-                    val pageResult = runCatching { repo.messagesPage(conversationId, before = cursor, limit = PAGE_SIZE) }
-                    if (pageResult.isFailure) {
-                        _state.value = _state.value.copy(loadingOlder = false)
-                        break
-                    }
-                    val (rows, more) = pageResult.getOrThrow()
-                    _state.value = _state.value.copy(loadingOlder = false, hasMore = more && rows.isNotEmpty())
-                    if (messages.value.any { it.id == messageId }) {
-                        found = true
-                        break
-                    }
-                    rounds += 1
+                while (target == null && _state.value.hasMore && rounds < JUMP_MAX_ROUNDS) {
+                    val page = earlierPage()
+                    target = page.firstOrNull { it.id == messageId }
+                    rounds++
                 }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (target == null || target.isDeleted || (target.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+                    notify("Couldn't reach that message in this chat's history", isError = true)
+                } else {
+                    val rootId = target.threadRootId
+                    if (rootId == null) flash(target.id)
+                    else {
+                        val (root, _) = repo.loadThread(rootId)
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        if (root.conversationId != conversationId || root.isDeleted) throw IllegalStateException("Thread unavailable")
+                        _threadJumpRoot.value = root.id
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (historyRevision == ticket) notify("Couldn't open that message. Try again.", isError = true)
             } finally {
-                _state.value = _state.value.copy(loadingOlder = false)
+                if (historyRevision == ticket) _state.value = _state.value.copy(loadingOlder = false)
             }
-            if (found) {
-                flash(messageId)
-            } else {
-                notify("Couldn't reach that message in this chat's history", isError = true)
-            }
-            _jumpTarget.value = null
         }
     }
 
     /** Amber ring pulse on one bubble (~1.5s), then it fades and clears. */
     fun flash(messageId: String) {
         flashJob?.cancel()
-        _state.value = _state.value.copy(flashMessageId = messageId)
+        _state.value = _state.value.copy(flashMessageId = messageId, flashRevision = _state.value.flashRevision + 1)
         flashJob = viewModelScope.launch {
             delay(1_600)
             if (_state.value.flashMessageId == messageId) {
@@ -1432,6 +1436,8 @@ class ChatRoomViewModel @Inject constructor(
      * via the Room flow - improvement over the web 3.5s cache poll).
      */
     fun setActiveTopic(topicId: String?) {
+        cancelHistory()
+        _threadJumpRoot.value = null
         _activeTopicId.value = topicId
         if (topicId != null) {
             viewModelScope.launch { runCatching { repo.refreshMessages(conversationId, topicId) } }

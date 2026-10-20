@@ -1496,7 +1496,7 @@ class PulseRepositoryImpl constructor(
         val watermark = messageEventClock.get()
         val page = when (val r = api.thread(rootId, viewerId ?: "")) {
             is PulseResult.Success -> r.value
-            is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+            is PulseResult.Failure -> throw apiExceptionOf(r)
         }
         val parent = page.parent?.toDomain() ?: throw IllegalStateException("thread parent missing")
         val replies = page.replies.map { it.toDomain() } // wire order: createdAt asc
@@ -1505,19 +1505,29 @@ class PulseRepositoryImpl constructor(
         val merged = cacheFetchedMessages(listOf(parent) + replies, watermark)
         val currentParent = merged.firstOrNull { it.id == parent.id }
             ?: throw IllegalStateException("Thread parent is no longer available")
-        return currentParent to merged.filter { it.id != parent.id }
+        if (currentParent.id != rootId || currentParent.threadRootId != null || currentParent.isDeleted ||
+            (currentParent.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+            throw PulseApiException("NOT_FOUND", "This thread is no longer available", status = 410)
+        }
+        return currentParent to merged.filter { it.threadRootId == rootId && it.conversationId == currentParent.conversationId }
     }
 
     override suspend fun messagesPage(conversationId: String, before: String?, limit: Int): Pair<List<Message>, Boolean> {
-        val watermark = messageEventClock.get()
         val anchor = before?.let { messageDao.byId(it)?.takeIf { row -> row.conversationId == conversationId }
             ?: messageDao.firstAtTimestamp(conversationId, it) }
-        val page = when (val r = api.messages(conversationId, limit, anchor?.createdAt ?: before, beforeId = anchor?.id)) {
+        return fetchMessagePage(conversationId, anchor?.createdAt ?: before, anchor?.id, limit)
+    }
+
+    override suspend fun messagesBefore(conversationId: String, beforeId: String, beforeCreatedAt: String, limit: Int): Pair<List<Message>, Boolean> =
+        fetchMessagePage(conversationId, beforeCreatedAt, beforeId, limit)
+
+    private suspend fun fetchMessagePage(conversationId: String, before: String?, beforeId: String?, limit: Int): Pair<List<Message>, Boolean> {
+        val watermark = messageEventClock.get()
+        val page = when (val r = api.messages(conversationId, limit, before, beforeId = beforeId)) {
             is PulseResult.Success -> r.value
-            is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+            is PulseResult.Failure -> throw apiExceptionOf(r)
         }
-        val rows = page.messages.map { it.toDomain() } // wire order: asc
-        // Pagination merge = plain upserts; loaded window grows in Room.
+        val rows = page.messages.map { it.toDomain() }
         return cacheFetchedMessages(rows, watermark) to page.hasMore
     }
 

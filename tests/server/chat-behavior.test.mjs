@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { advanceReadReceipt, receiptRecipients } from '../../src/lib/read-receipt.ts'
-import { removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
+import { threadRepliesWhere, removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
 import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { openDirectConversation } from '../../src/lib/direct-conversation.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
@@ -191,4 +191,16 @@ test('explicit unsave retries stay removed, affect only the owner, and need no s
   assert.deepEqual(await removeSavedMessage(db, 'alice', 'never-saved'), { saved: false })
   assert.equal(await db.savedMessage.count({ where: { userId: 'alice' } }), 0)
   assert.equal(await db.savedMessage.count({ where: { userId: 'bob' } }), 1)
+}))
+
+
+test('thread reader excludes foreign-room and expired replies even with a matching parent link', () => fixture(async db => {
+  await db.$executeRawUnsafe('ALTER TABLE Message ADD COLUMN parentId TEXT')
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,parentId,createdAt,expiresAt) VALUES
+    ('live','room','root',${t(0)},NULL),
+    ('foreign','other','root',${t(0)},NULL),
+    ('expired','room','root',${t(0)},${t(20)}),
+    ('different-thread','room','other-root',${t(0)},NULL)`
+  const rows = await db.message.findMany({ where: threadRepliesWhere('root', 'room', t(20)), select: { id: true } })
+  assert.deepEqual(rows.map(row => row.id), ['live'])
 }))

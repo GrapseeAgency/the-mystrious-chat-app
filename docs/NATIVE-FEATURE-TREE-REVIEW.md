@@ -1520,3 +1520,54 @@ notification copies; legacy Pin toggle replay; bounded global search (newest 1,2
 known-mutated snapshot instead of discovering a newly matching edit automatically.
 Explicit Unpin requires backend/native co-deployment; older servers fail visibly. This
 entry records targeted repairs, not whole-app or feature-tree completion.
+
+### Older-history navigation and thread availability (2026-10-21)
+
+Traced primary Kotlin/Swift search/pin/quote jumps into older pages and thread
+read/send surfaces, plus the backend thread reader. Autumn styling is unchanged;
+Android adds a normal themed “Load earlier messages” action for sparse history.
+
+- Android primary history now retains a composite `(createdAt, id)` cursor from
+  raw pages. Hidden replies and other-topic rows advance it, timestamp ties do not
+  collapse into one boundary, and anchor deletion from cache cannot turn a message
+  ID into a malformed timestamp query. Paging no longer depends on Room having
+  emitted a newly fetched page to the UI before the next request starts.
+- Manual history, retries and jumps share cancellable ownership. New jumps/topic
+  changes cancel the previous task; cancellation is rethrown rather than published
+  as an error or allowed to clear a newer operation's loading state. A repeated page
+  is detected. Sparse ranges have a bounded five-page batch plus a manual continuation.
+- Both primary chat screens distinguish a thread reply from a river message and
+  open its validated root instead of repeatedly searching the filtered main timeline.
+  Swift clears a conflicting topic filter before jumping. Repeating a jump to the
+  same message issues another scroll request on both platforms; it is not swallowed
+  by a remembered message ID. This opens the correct thread but does **not yet**
+  guarantee scrolling/highlighting the exact reply inside a long thread.
+- Android preserves typed HTTP status for thread failures. Explicit 403/404/410
+  denial hides cached parent/replies and disables sending until a successful retry;
+  network/500 errors alone are not interpreted as revocation. Reconnection retries
+  thread validation. Cached content is masked immediately, not after a separate
+  Room emission, and a refused/expired thread cannot hand off a pending file download.
+- Swift rehydrates and rechecks the cached root rather than trusting the sheet's
+  original snapshot. Deleted/expired/nested/foreign roots are unavailable, including
+  an expired cache row hidden by ordinary message reads. Thread lightboxes close on
+  known deletion/expiry of their selected message. Android uses the same root shape
+  and deadline checks for reply admission.
+- Backend thread replies are explicitly scoped to the authorized root's conversation,
+  not just its parent ID. Root/reply deadlines are checked again before response
+  construction so a slow read does not knowingly deliver already-expired content.
+
+Executed locally: 99/99 server contracts, including actual SQLite cross-room reply
+exclusion; standalone TypeScript checking of message-visibility; native source syntax
+and diff checks. Added Kotlin raw-cursor/timestamp-tie/root-denial regressions and Swift
+cached-expired-root/availability regressions. Native compiler/device checks require the
+GitHub runners and are not replaced by parser success. Inventory: 324 production files.
+
+Official reference consulted: Kotlin kotlinx.coroutines `docs/topics/coroutines-cancellation.md`
+(cancellation exceptions must be rethrown; structured child cancellation), retrieved
+from https://github.com/Kotlin/kotlinx.coroutines via GitHub API.
+
+Remaining: exact thread-reply anchoring, beyond-window target lookup (jumps still cap
+at 14 pages), thread pagination, Mirror parity for the new stable composite cursor,
+authoritative revocation persisted across navigation/restart, media/export copies and
+server message-version ordering. These are bounded runtime repairs, not whole-app
+completion or a blanket offline authorization guarantee.

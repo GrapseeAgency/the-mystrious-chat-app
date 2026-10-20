@@ -959,6 +959,12 @@ private struct RoomContent: View {
             // R2-B R38/R42 - server truth for both veil flags on room open.
             await viewModel.loadPrivacyState(session: session)
         }
+        .onChange(of: viewModel.jumpThreadRoot) { _, root in
+            if let root {
+                threadRoot = root
+                viewModel.consumeThreadJump()
+            }
+        }
         .sheet(item: $threadRoot) { root in
             ThreadView(conversation: conversation, root: root, session: session)
         }
@@ -1601,8 +1607,8 @@ private struct RoomContent: View {
                     }
                 }
             }
-            .onChange(of: viewModel.jumpTargetId) { _, target in
-                guard let target else { return }
+            .onChange(of: viewModel.jumpRequestRevision) { _, _ in
+                guard let target = viewModel.jumpTargetId else { return }
                 proxy.scrollTo(target, anchor: .center)
             }
             .onAppear {
@@ -3716,7 +3722,10 @@ final class RoomViewModel: ObservableObject {
     @Published private(set) var replyCounts: [String: Int] = [:]
     @Published private(set) var pins: [WireChatMessage] = []
     @Published private(set) var flashMessageId: String?
+    @Published private(set) var jumpRequestRevision: UInt64 = 0
     @Published private(set) var jumpTargetId: String?
+    @Published private(set) var jumpThreadRoot: WireChatMessage?
+    func consumeThreadJump() { jumpThreadRoot = nil }
     @Published private(set) var searchResults: [WireChatMessage] = []
     @Published private(set) var searching = false
     @Published var editingTarget: WireChatMessage?
@@ -4302,12 +4311,53 @@ final class RoomViewModel: ObservableObject {
     }
 
     func jumpTo(_ messageId: String) {
-        if messages.contains(where: { $0.id == messageId }) {
-            scrollAndFlash(messageId)
-        } else {
-            guard let session = session else { return }
-            cancelHistory()
-            historyTask = Task { await expandForJump(messageId, session: session, rounds: 0) }
+        guard let session, !messageId.isEmpty else { return }
+        cancelHistory() // Even an in-window jump supersedes an older history request.
+        jumpThreadRoot = nil
+        let ticket = historyGeneration, epoch = session.sessionGeneration
+        historyTask = Task {
+            if activeTopicId != nil {
+                riverReloadTask?.cancel()
+                activeTopicId = nil
+                historyCursor = nil
+                await reloadRiver(session: session)
+            }
+            guard !Task.isCancelled, historyGeneration == ticket, session.sessionGeneration == epoch else { return }
+            if let target = (try? session.store?.message(id: messageId)) ?? messages.first(where: { $0.id == messageId }) {
+                await resolveJump(target, session: session)
+            } else {
+                await expandForJump(messageId, session: session, rounds: 0)
+            }
+        }
+    }
+
+    private func resolveJump(_ target: WireChatMessage, session: PulseSession) async {
+        guard target.conversationId == conversationId, target.deletedAt == nil,
+              PulseRemediationLogic.isAlive(target.expiresAt) else {
+            session.toasts.show("This message is no longer available")
+            return
+        }
+        guard let rootId = target.parentId else {
+            messages = PulseTimelineMerge.merge(messages, incoming: [target], topicId: nil)
+            scrollAndFlash(target.id)
+            return
+        }
+        let ticket = historyGeneration, epoch = session.sessionGeneration, revision = session.messageRevision
+        do {
+            let page = try await session.api.thread(rootId: rootId, userId: session.api.userId)
+            guard !Task.isCancelled, ticket == historyGeneration, epoch == session.sessionGeneration else { return }
+            let fresh = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
+            try session.store?.upsert(messages: fresh)
+            let root = fresh.first(where: { $0.id == rootId }) ?? (try? session.store?.message(id: rootId))
+            guard let root, root.conversationId == conversationId, root.parentId == nil,
+                  root.deletedAt == nil, PulseRemediationLogic.isAlive(root.expiresAt) else {
+                session.toasts.show("This thread is no longer available")
+                return
+            }
+            jumpThreadRoot = root
+        } catch {
+            guard !Task.isCancelled, ticket == historyGeneration, epoch == session.sessionGeneration else { return }
+            session.toasts.show("Couldn't open this message's thread. Try again.")
         }
     }
 
@@ -4351,8 +4401,10 @@ final class RoomViewModel: ObservableObject {
             try store?.upsert(messages: fresh)
             messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: topic)
             hasMore = page.hasMore && !page.messages.isEmpty
-            if messages.contains(where: { $0.id == messageId }) {
-                scrollAndFlash(messageId)
+            if page.messages.contains(where: { $0.id == messageId }) {
+                if let target = fresh.first(where: { $0.id == messageId }) ?? (try? store?.message(id: messageId)) {
+                    await resolveJump(target, session: session)
+                } else { session.toasts.show("This message is no longer available") }
             } else if page.messages.isEmpty {
                 session.toasts.show("Couldn't reach that message in this chat's history")
             } else {
@@ -4367,6 +4419,7 @@ final class RoomViewModel: ObservableObject {
 
     private func scrollAndFlash(_ messageId: String) {
         jumpTargetId = messageId
+        jumpRequestRevision &+= 1
         flashMessageId = messageId
         flashClearTask?.cancel()
         flashClearTask = Task { [weak self] in

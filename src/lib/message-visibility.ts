@@ -20,6 +20,11 @@ export function threadRootAvailable(root: {
     root.parentId === null && !isExpiredMessage(root, at)
 }
 
+/** A malformed cross-room parent link must not bypass the root's membership check. */
+export function threadRepliesWhere(rootId: string, roomId: string, at: Date): Prisma.MessageWhereInput {
+  return { parentId: rootId, conversationId: roomId, ...unexpiredMessages(at) }
+}
+
 /** One aggregate snapshot supplies BOTH the badge and its offline expiry schedule.
  * Never derive unread from a client's partial message page or the latest preview.
  */

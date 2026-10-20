@@ -1,5 +1,10 @@
 package app.pulse.feature.chat
 
+import app.pulse.domain.model.PulseApiException
+import app.pulse.domain.sync.threadRootAvailable
+import app.pulse.domain.sync.threadAccessDenied
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.distinctUntilChanged
 import app.pulse.ui.PulseIcons
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -101,6 +106,7 @@ class ThreadViewModel @Inject constructor(
 
     data class UiState(
         val loading: Boolean = false,
+        val unavailable: Boolean = false,
         val draft: String = "",
         val sending: Boolean = false,
         val error: String? = null,
@@ -114,8 +120,10 @@ class ThreadViewModel @Inject constructor(
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     /** The thread root - rehydrated from Room, refreshed by loadThread. */
-    val parent: StateFlow<Message?> = repo.observeMessages(conversationId)
-        .map { rows -> rows.firstOrNull { it.id == rootId } }
+    val parent: StateFlow<Message?> = combine(repo.observeMessages(conversationId),
+        _state.map { it.unavailable }.distinctUntilChanged()) { rows, denied ->
+            if (denied) null else rows.firstOrNull { threadRootAvailable(it, conversationId, rootId) }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** R3-B item 2 - the room summary; its roster drives @mention highlight. */
@@ -130,17 +138,11 @@ class ThreadViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true)
-            runCatching { repo.loadThread(rootId) }
-                .onSuccess { _state.value = _state.value.copy(loading = false) }
-                .onFailure { failure ->
-                    _state.value = _state.value.copy(loading = false, error = failure.message)
-                }
-        }
+        retry()
         viewModelScope.launch {
             repo.observeConnected().collect { connected ->
                 _state.value = _state.value.copy(connected = connected)
+                if (connected) retry()
             }
         }
         viewModelScope.launch {
@@ -164,7 +166,7 @@ class ThreadViewModel @Inject constructor(
     /** Clear only the submitted revision, after persistence/acknowledgement. */
     fun send() {
         val state = _state.value
-        if (state.sending || state.draft.isBlank() || parent.value?.isDeleted != false) return
+        if (state.sending || state.unavailable || state.draft.isBlank() || !threadRootAvailable(parent.value, conversationId, rootId)) return
         val revision = composerRevision
         _state.value = state.copy(sending = true)
         viewModelScope.launch {
@@ -185,11 +187,22 @@ class ThreadViewModel @Inject constructor(
     }
 
     fun retry() {
+        if (_state.value.loading) return
+        _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            runCatching { repo.loadThread(rootId) }
-                .onSuccess { _state.value = _state.value.copy(loading = false) }
-                .onFailure { _state.value = _state.value.copy(loading = false, error = it.message) }
+            try {
+                val (root, _) = repo.loadThread(rootId)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!threadRootAvailable(root, conversationId, rootId)) throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
+                _state.value = _state.value.copy(loading = false, unavailable = false, error = null)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                val denied = threadAccessDenied((failure as? PulseApiException)?.status)
+                _state.value = _state.value.copy(loading = false, error = failure.message,
+                    unavailable = _state.value.unavailable || denied,
+                    openedFile = if (denied) null else _state.value.openedFile)
+            }
         }
     }
 
@@ -205,11 +218,19 @@ class ThreadViewModel @Inject constructor(
 
     fun openFile(message: Message, share: Boolean) {
         val path = message.filePath ?: return
+        if (_state.value.unavailable || !threadRootAvailable(parent.value, conversationId, rootId) || message.isDeleted ||
+            (message.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) return
         if (_state.value.downloadingFileId != null) return
         _state.value = _state.value.copy(downloadingFileId = message.id)
         viewModelScope.launch {
             repo.downloadMedia(path)
                 .onSuccess { absolutePath ->
+                    val current = if (message.id == rootId) parent.value else replies.value.firstOrNull { it.id == message.id }
+                    if (_state.value.unavailable || !threadRootAvailable(parent.value, conversationId, rootId) || current == null || current.isDeleted ||
+                        (current.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+                        _state.value = _state.value.copy(downloadingFileId = null)
+                        return@onSuccess
+                    }
                     _state.value = _state.value.copy(
                         downloadingFileId = null,
                         openedFile = FileReady(
@@ -260,9 +281,12 @@ fun ThreadScreen(
     onBack: () -> Unit,
     viewModel: ThreadViewModel = hiltViewModel(),
 ) {
-    val parent by viewModel.parent.collectAsStateWithLifecycle()
-    val replies by viewModel.replies.collectAsStateWithLifecycle()
+    val cachedParent by viewModel.parent.collectAsStateWithLifecycle()
+    val cachedReplies by viewModel.replies.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // Do not wait for a separate Room/StateFlow emission to hide refused content.
+    val parent = cachedParent.takeUnless { state.unavailable }
+    val replies = if (state.unavailable) emptyList() else cachedReplies
     // R3-B item 2 - the roster that drives @mention highlight in bubbles.
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val memberNames = conversation?.memberNames.orEmpty()
@@ -442,7 +466,7 @@ fun ThreadScreen(
             }
 
             // Durable replies survive the connection dropping.
-            androidx.compose.animation.AnimatedVisibility(visible = state.connected == false) {
+            androidx.compose.animation.AnimatedVisibility(visible = state.connected == false && !state.unavailable && parent != null) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
                     modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
@@ -485,7 +509,7 @@ fun ThreadScreen(
                     },
                 )
                 Spacer(Modifier.width(6.dp))
-                val canSend = draft.isNotBlank() && !state.sending && parent?.isDeleted == false
+                val canSend = draft.isNotBlank() && !state.sending && !state.unavailable && threadRootAvailable(parent, viewModel.conversationId, viewModel.rootId)
                 IconButton(
                     onClick = {
                         if (!canSend) return@IconButton

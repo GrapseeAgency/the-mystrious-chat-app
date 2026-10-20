@@ -200,7 +200,7 @@ fun ChatRoomScreen(
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val replyCounts by viewModel.replyCounts.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val jumpTarget by viewModel.jumpTarget.collectAsStateWithLifecycle()
+    val threadJumpRoot by viewModel.threadJumpRoot.collectAsStateWithLifecycle()
     val topics by viewModel.topics.collectAsStateWithLifecycle()
     val activeTopicId by viewModel.activeTopicId.collectAsStateWithLifecycle()
     val recording by viewModel.recording.collectAsStateWithLifecycle()
@@ -271,8 +271,7 @@ fun ChatRoomScreen(
     var pollBuilderOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var wasEditing by remember { mutableStateOf(false) }
-    var expandedFor by remember { mutableStateOf<String?>(null) }
-    var scrolledFlash by remember { mutableStateOf<String?>(null) }
+    var scrolledFlash by remember(state.flashRevision) { mutableStateOf<String?>(null) }
     // R1-W2A - reaction picker / who-reacted / stickers / slash help /
     // schedule / quick-phrases hosts (D27, F-MS-24, F-MS-22, F-MS-29).
     var reactionPickerTarget by remember { mutableStateOf<Message?>(null) }
@@ -457,21 +456,14 @@ fun ChatRoomScreen(
         }
     }
 
-    // Jump resolution: in-window targets are already flashing (VM flash());
-    // out-of-window targets expand the window (bounded ≤14 before= rounds).
-    LaunchedEffect(jumpTarget, rows) {
-        val target = jumpTarget ?: return@LaunchedEffect
-        if (rows.any { it is TimelineRow.Msg && it.message.id == target }) {
-            viewModel.consumeJumpTarget()
-            viewModel.flash(target)
-        } else if (expandedFor != target) {
-            expandedFor = target
-            viewModel.expandForJump(target)
-        }
+    LaunchedEffect(threadJumpRoot) {
+        val root = threadJumpRoot ?: return@LaunchedEffect
+        viewModel.consumeThreadJump()
+        onOpenThread(conversationId, root)
     }
 
     // The flash ring also scrolls the bubble into view (search/pins/quotes).
-    LaunchedEffect(state.flashMessageId, rows) {
+    LaunchedEffect(state.flashRevision, state.flashMessageId, rows) {
         val id = state.flashMessageId ?: return@LaunchedEffect
         if (scrolledFlash == id) return@LaunchedEffect
         val index = rowsReversed.indexOfFirst { it is TimelineRow.Msg && it.message.id == id }
@@ -956,6 +948,14 @@ fun ChatRoomScreen(
                                         if (row.head) Modifier.padding(top = clusterHeadGap) else Modifier,
                                     ),
                             )
+                        }
+                    }
+                }
+                if (state.hasMore) {
+                    item(key = "history-earlier") {
+                        TextButton(onClick = viewModel::loadOlder, enabled = !state.loading && !state.loadingOlder,
+                            modifier = Modifier.fillMaxWidth()) {
+                            Text(if (state.loadingOlder) "Loading earlier messages…" else "Load earlier messages")
                         }
                     }
                 }

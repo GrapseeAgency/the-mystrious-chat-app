@@ -23,6 +23,7 @@ struct ThreadView: View {
     // Wave 2 view-once - threads reuse the same gate/burn bubble; the reveal
     // opens the lightbox right here (the sheet owns its cover).
     @State private var lightbox: MediaLightboxTarget?
+    @State private var lightboxMessageId: String?
     @FocusState private var composerFocused: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -161,10 +162,13 @@ struct ThreadView: View {
     /// Wave 2 view-once in threads - instant reveal (web parity), then the
     /// idempotent burn stamp; the relayed envelope reconciles the rest.
     private func revealViewOnce(_ message: WireChatMessage) {
-        guard message.viewOnce == true,
+        guard !rootUnavailable, message.deletedAt == nil, PulseRemediationLogic.isAlive(message.expiresAt),
+              message.conversationId == conversation.id, message.id == root.id || message.parentId == root.id,
+              message.viewOnce == true,
               message.senderId != viewerId,
               message.viewedAt == nil,
               let url = PulseMediaOpener.url(for: message) else { return }
+        lightboxMessageId = message.id
         lightbox = MediaLightboxTarget(url: url, caption: message.content, expiresAt: message.expiresAt)
         guard let viewer = session.viewer else { return }
         let api = session.api
@@ -197,13 +201,14 @@ struct ThreadView: View {
         let epoch = session.sessionGeneration
         let api = session.api
         let store = session.store
+        // The sheet's input is a snapshot; a cached tombstone/edit is newer.
+        if let cachedRoot = try? store?.message(id: root.id, now: .distantPast) { parent = cachedRoot }
         if let cached = try? store?.messages(threadRootId: root.id) {
             replies = PulseTextDelivery.timeline(replies, pending: cached)
         }
         phase = .loaded
         pruneExpired()
-        guard (parent ?? root).deletedAt == nil,
-              PulseRemediationLogic.isAlive((parent ?? root).expiresAt) else { return }
+        guard PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else { return }
         let revision = session.messageRevision
         do {
             let page = try await api.thread(rootId: root.id, userId: viewerId)
@@ -211,7 +216,11 @@ struct ThreadView: View {
             // A slower HTTP snapshot must not undo a newer edit/deletion relay.
             let fresh = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
             try store?.upsert(messages: fresh)
-            if let current = fresh.first(where: { $0.id == root.id }) { parent = current }
+            parent = fresh.first(where: { $0.id == root.id }) ?? (try? store?.message(id: root.id, now: .distantPast)) ?? parent
+            guard PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else {
+                pruneExpired()
+                return
+            }
             replies = PulseTextDelivery.timeline(replies, pending: fresh.filter { $0.parentId == root.id })
             phase = .loaded
             errorText = nil
@@ -230,12 +239,20 @@ struct ThreadView: View {
     }
 
     private func pruneExpired(now: Date = Date()) {
+        if let cachedRoot = try? session.store?.message(id: root.id, now: .distantPast) { parent = cachedRoot }
         let parentMessage = parent ?? root
-        if parentMessage.deletedAt != nil || !PulseRemediationLogic.isAlive(parentMessage.expiresAt, now: now) {
+        if !PulseRemediationLogic.threadRootAvailable(parentMessage, roomId: conversation.id, rootId: root.id, now: now) {
             rootUnavailable = true
             replies = []
             lightbox = nil
         } else {
+            if let selected = lightboxMessageId {
+                let current = selected == parentMessage.id ? parentMessage : replies.first(where: { $0.id == selected })
+                if current == nil || current?.deletedAt != nil || !PulseRemediationLogic.isAlive(current?.expiresAt, now: now) {
+                    lightbox = nil
+                    lightboxMessageId = nil
+                }
+            }
             let visible = replies.filter { PulseRemediationLogic.isAlive($0.expiresAt, now: now) }
             if visible.count != replies.count {
                 replies = visible
