@@ -30,6 +30,9 @@ final class TextDeliveryTests: XCTestCase {
         XCTAssertEqual(entry.clientId, first.clientId)
         XCTAssertEqual(queued.id, PulseOutboxEngine.tempMessageId(clientId: entry.clientId))
         XCTAssertEqual(try reopened.message(id: queued.id)?.content, "Still here")
+        XCTAssertEqual(try reopened.message(id: queued.id)?.anon, true)
+        XCTAssertEqual(try reopened.message(id: queued.id)?.anonAlias, queued.anonAlias)
+        XCTAssertEqual(try reopened.message(id: queued.id)?.replyTo?.id, "quote")
         let envelope = try XCTUnwrap(PulseOutboxForward.decode(entry.payloadJson))
         XCTAssertEqual(envelope.replyToId, "quote")
         XCTAssertEqual(envelope.topicId, "topic")
@@ -76,6 +79,24 @@ final class TextDeliveryTests: XCTestCase {
         XCTAssertThrowsError(try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer, conversationId: "room",
             content: String(repeating: "x", count: 2001), dataUrl: "data:image/jpeg;base64,YQ==", envelope: PulseOutboxForward(kind: "image")))
         XCTAssertEqual(store.countOutbox(), 0)
+    }
+
+    func testIdenticalThreadRepliesKeepSeparateDurableOperationIdsAndParentMetadata() throws {
+        let store = try PulseStore()
+        let first = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: "same", topicId: "ignored", parentId: "root")
+        let second = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: "same", parentId: "root")
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertEqual(first.parentId, "root")
+        XCTAssertNil(first.topicId)
+        XCTAssertEqual(try store.messages(threadRootId: "root").count, 2)
+        let queue = try store.outboxPending()
+        XCTAssertEqual(queue.count, 2)
+        XCTAssertTrue(queue.allSatisfy { PulseOutboxForward.decode($0.payloadJson)?.parentId == "root" })
+        let confirmed = try message("confirmed", parent: "root")
+        try store.resolveDelivery(clientId: queue[0].clientId, message: confirmed)
+        XCTAssertEqual(try store.outboxPending().count, 1)
+        XCTAssertNotNil(try store.message(id: second.id))
+        XCTAssertEqual(Set(try store.messages(threadRootId: "root").map(\.id)), Set(["confirmed", second.id]))
     }
 
 }

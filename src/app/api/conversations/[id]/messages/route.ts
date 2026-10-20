@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { db } from '@/lib/db'
+import { threadRootAvailable } from '@/lib/message-visibility'
 import { decodeMessageSyncCursor, encodeMessageSyncCursor, messageSyncWhere, messagesBefore, MESSAGE_ORDER_ASC, MESSAGE_ORDER_DESC, type MessageSyncCursor } from '@/lib/message-sync'
 import { messageOperation, replayMessageOperation, commitMessageOperation, MessageOperationError } from '@/lib/message-operation'
 import {
@@ -584,15 +585,15 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (parentId) {
     const root = await db.message.findUnique({
       where: { id: parentId },
-      select: { conversationId: true, deletedAt: true, parentId: true },
+      select: { conversationId: true, deletedAt: true, parentId: true, expiresAt: true },
     })
-    if (!root || root.conversationId !== id || root.deletedAt) {
+    if (!threadRootAvailable(root, id, new Date())) {
       return NextResponse.json(
         { error: 'parentId must reference an existing message in this conversation.' },
         { status: 400 },
       )
     }
-    if (root.parentId !== null) {
+    if (root && root.parentId !== null) {
       return NextResponse.json(
         { error: 'Threads are one level deep - reply to the thread root instead.' },
         { status: 400 },
@@ -615,6 +616,13 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const anon = anonRequested && conv.isGroup
   const anonAlias = anon ? anonAliasFor(senderId, id) : null
   const committed = await commitMessageOperation(db, operation, async (tx) => {
+    if (parentId) {
+      const root = await tx.message.findUnique({ where: { id: parentId },
+        select: { conversationId: true, deletedAt: true, parentId: true, expiresAt: true } })
+      if (!threadRootAvailable(root, id, new Date())) {
+        throw new MessageOperationError(410, 'This thread is no longer available.')
+      }
+    }
     const created = await tx.message.create({
       data: {
         conversationId: id,

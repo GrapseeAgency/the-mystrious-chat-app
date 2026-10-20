@@ -1253,7 +1253,7 @@ private struct RoomContent: View {
     private var chatBodyStyled12: some View {
         chatBodyStyled11
         .fullScreenCover(item: $lightbox) { target in
-            MediaLightboxView(url: target.url, caption: target.caption)
+            MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt)
         }
         .fullScreenCover(item: $quicklook) { target in
             QuickLookView(url: target.url)
@@ -1778,7 +1778,7 @@ private struct RoomContent: View {
             session.toasts.show("Media unavailable")
             return
         }
-        lightbox = MediaLightboxTarget(url: url, caption: message.content)
+        lightbox = MediaLightboxTarget(url: url, caption: message.content, expiresAt: message.expiresAt)
     }
 
     private func openFile(_ message: WireChatMessage) {
@@ -4087,6 +4087,10 @@ final class RoomViewModel: ObservableObject {
             .sink { [weak self] event in
                 self?.handleOutboxEvent(event)
             }
+            .store(in: &cancellables)
+
+        session.messageVisibilityClock
+            .sink { [weak self] _ in self?.refilterInPlace() }
             .store(in: &cancellables)
 
         // Typer expiry sweep - keeps the dots honest without server stop events.

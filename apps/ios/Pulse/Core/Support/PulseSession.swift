@@ -133,9 +133,13 @@ public final class PulseSession: ObservableObject {
     public var sessionGeneration: UUID { generation }
     private var startupTask: Task<Void, Never>?
 
+    /// Visibility-only clock: no network work or whole-session re-render per tick.
+    public let messageVisibilityClock = PassthroughSubject<Date, Never>()
+
     public func setForeground(_ active: Bool) {
         isForeground = active
         if active {
+            messageVisibilityClock.send(Date())
             readFailureCount = 0
             Task { await markReadIfVisible(conversationId: activeRoomId) }
         } else { readReceiptTask?.cancel() }
@@ -196,6 +200,7 @@ public final class PulseSession: ObservableObject {
             .autoconnect()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
+                if self?.isForeground == true { self?.messageVisibilityClock.send(Date()) }
                 self?.pruneTypers()
                 self?.prefs?.refreshQuietGate() // Wave 8 - quiet window opens/closes on the minute
             }

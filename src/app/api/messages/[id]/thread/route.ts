@@ -1,6 +1,7 @@
 // /api/messages/[id]/thread - Slack/Zulip-style thread reader
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { threadRootAvailable, unexpiredMessages } from '@/lib/message-visibility'
 import {
   mapMessage,
   MESSAGE_FULL_INCLUDE,
@@ -45,9 +46,13 @@ export async function GET(req: Request, { params }: RouteCtx) {
     )
   }
 
+  const now = new Date()
+  if (!threadRootAvailable(root, root.conversationId, now)) {
+    return NextResponse.json({ error: 'This thread is no longer available.' }, { status: 410 })
+  }
   const replies = await db.message.findMany({
-    where: { parentId: id },
-    orderBy: { createdAt: 'asc' },
+    where: { parentId: id, ...unexpiredMessages(now) },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     include: MESSAGE_FULL_INCLUDE,
   })
 

@@ -642,10 +642,10 @@ class PulseRepositoryImpl constructor(
         }
 
     override fun observeMessages(conversationId: String): Flow<List<Message>> =
-        messageDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }
+        messageDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
 
     override fun observeThreadMessages(rootId: String): Flow<List<Message>> =
-        messageDao.observeThread(rootId).map { rows -> rows.map { it.toDomain() } }
+        messageDao.observeThread(rootId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
 
     override fun observeDrafts(): Flow<Map<String, String>> = draftDao.observeAll().map { rows ->
         rows.filter { it.text.isNotBlank() }.associate { it.conversationId to it.text }
@@ -1852,8 +1852,9 @@ class PulseRepositoryImpl constructor(
     override suspend fun dropOutboxEntry(clientId: String, reason: String) {
         // Retain the echo as the full retry/recovery envelope, hidden by the DAO
         // timeline query. A later canonical delivery can still resolve this row.
+        val message = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
         if (outboxDao.markFailed(clientId, reason) > 0) {
-            eventsBus.tryEmit(PulseEvent.OutboxDropped(clientId, "Saved in Drafts & outbox: $reason"))
+            eventsBus.tryEmit(PulseEvent.OutboxDropped(clientId, "Saved in Drafts & outbox: $reason", message?.conversationId, message?.threadRootId))
         }
     }
 

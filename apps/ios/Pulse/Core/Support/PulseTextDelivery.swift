@@ -6,7 +6,7 @@ import Foundation
 enum PulseTextDelivery {
     static func enqueue(store: PulseStore, viewer: PulseViewer, conversationId: String,
                         content: String, effect: String? = nil, replyTo: WireChatMessage? = nil,
-                        topicId: String? = nil, anon: Bool = false) throws -> WireChatMessage {
+                        topicId: String? = nil, anon: Bool = false, parentId: String? = nil) throws -> WireChatMessage {
         let text = try validatedContent(content, allowEmpty: false)
         guard !text.isEmpty, !conversationId.isEmpty else {
             throw PulseAPIClient.Failure(kind: .validation, message: "Type a message first; effects ride a text message.")
@@ -21,10 +21,10 @@ enum PulseTextDelivery {
         let id = UUID().uuidString
         let alias = anon ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: conversationId) : nil
         var message = TempMessages.make(conversationId: conversationId, viewer: viewer, clientId: id,
-                                       content: text, parentId: nil, replyTo: replyTo, anon: anon, anonAlias: alias, topicId: topicId)
+                                       content: text, parentId: parentId, replyTo: replyTo, anon: anon, anonAlias: alias, topicId: parentId == nil ? topicId : nil)
         message.payload = payload
         try store.enqueueMessage(message, clientId: id, envelope: PulseOutboxForward(
-            kind: "text", replyToId: replyTo?.id, topicId: topicId, payload: payload, anon: anon))
+            kind: "text", replyToId: replyTo?.id, parentId: parentId, topicId: parentId == nil ? topicId : nil, payload: payload, anon: anon))
         return message
     }
 
@@ -60,7 +60,7 @@ enum PulseTextDelivery {
 
 /// Optimistic temp-row factory shared by the river AND thread sends -
 /// id `local_<clientId>` (Wave 0 convention), viewer sender, quote block,
-/// optional thread parent. Real rows replace it by id + content dedupe.
+/// optional thread parent. Real rows replace it by operation ID, never by matching content.
 /// @MainActor: builds on PulseOutboxEngine.tempMessageId (MainActor-static).
 @MainActor
 enum TempMessages {

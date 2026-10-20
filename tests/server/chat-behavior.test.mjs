@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { advanceReadReceipt, receiptRecipients } from '../../src/lib/read-receipt.ts'
-import { unreadMessages, unexpiredMessages } from '../../src/lib/message-visibility.ts'
+import { unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
 import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { openDirectConversation } from '../../src/lib/direct-conversation.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
@@ -133,3 +133,13 @@ test('a DM blocked after scheduling is refused at delivery time in either direct
     assert.deepEqual(await scheduledDeliveryDecision(db, 'room', 'sender', t(20)), { state: 'cancel', reason: 'blocked' })
   }
 }))
+
+test('thread roots are unavailable at expiry, after deletion, across rooms, or when nested', () => {
+  const root = { conversationId: 'room', parentId: null, deletedAt: null, expiresAt: t(20) }
+  assert.equal(threadRootAvailable(root, 'room', t(19)), true)
+  assert.equal(threadRootAvailable(root, 'room', t(20)), false)
+  assert.equal(threadRootAvailable(root, 'other', t(19)), false)
+  assert.equal(threadRootAvailable({ ...root, parentId: 'another' }, 'room', t(19)), false)
+  assert.equal(threadRootAvailable({ ...root, deletedAt: t(18) }, 'room', t(19)), false)
+  assert.equal(threadRootAvailable(null, 'room', t(19)), false)
+})

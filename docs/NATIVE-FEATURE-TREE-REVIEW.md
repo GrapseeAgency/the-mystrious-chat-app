@@ -1219,3 +1219,61 @@ restart. Historical membership/default-read timestamps, timestamp ties, topic/th
 read modeling, device-delivery ACKs, scheduled-send lost relay recovery and text
 queue/composer atomic handoff still need deeper work. Server behavior changes require
 server deployment alongside the native release. This is not a whole-app closure.
+
+### Offline expiry, privacy-preserving cache and thread delivery
+
+The next pass traced expiry beyond the ordinary history endpoint. Android's primary
+room and thread streams only changed when Room emitted; a quiet/offline room could
+keep an expired bubble indefinitely. The repository now exposes expiry-aware flows
+for both readers, with a cancellable nearest-deadline wait and bounded wall-clock
+rechecks. iOS primary/Mirror rooms, saved library and threads now react to a local
+foreground visibility clock, not only socket arrivals. Shared native image viewers
+close when their message's TTL elapses. These are visibility controls, not secure
+erasure or revocation of an attachment already exported outside the application.
+
+More importantly, the Swift SQLite writer dropped `expiresAt`, `viewOnce`, `anon`,
+`anonAlias`, reply snippets and other envelope fields. Reopening offline could turn
+a restricted attachment into an ordinary image. Store v10 now keeps the complete
+wire envelope and a numeric expiry column. History windows, individual lookups,
+thread counts and saved-cache reads apply expiry before LIMIT; transcription patches
+update both representations. Deleted copies also retain the expiry/metadata instead
+of silently making a tombstone permanent. A malformed full envelope is not decoded
+through the older privacy-less fallback.
+
+**Upgrade consequence:** confirmed v9 message cache and its preview text are
+invalidated because missing privacy flags cannot be reconstructed safely. History
+reloads from the server on connection. Durable local operations (`local_` rows),
+outbox entries, drafts and account separation remain intact. This does not delete
+server history. New migration/round-trip tests cover the cache refresh boundary,
+view-once/mask/quote preservation, expiry boundary, and transcript updates.
+
+Threads were another independent delivery path. Swift cleared the draft before a
+non-durable POST, omitted the generated operation ID from the actual request, and
+deduplicated successful replies by equal text. It now journals through the shared
+text/outbox engine with parentId, consumes confirmations by operation ID, preserves
+separate identical replies, and keeps validation failures in the composer. Thread
+refreshes are session/revision fenced; incoming edits/deletions update existing IDs.
+A dead/expired root disables the composer and hides its thread. Android's thread
+composer now uses the validated use case, preserves a newer composer revision,
+prevents duplicate in-flight taps and clears only after the repository accepts the
+intent. Its former "replies won't queue" label contradicted the now-durable backend
+path and has been corrected. Rejection notices are scoped by room/thread instead
+of blaming whichever conversation happens to be open.
+
+Backend counterparts: thread GET refuses expired/deleted/nested roots and filters
+expired replies. Send validates the root again inside the message/receipt transaction.
+Search, pinned messages and saved-library reads no longer disclose expired rows
+while awaiting purge; saved reads also require current conversation membership.
+No unrelated web presentation or autumn styling was changed.
+
+The previous revision's native checks exposed two concrete follow-ups: the intended
+Android malformed-ACK classification edit had missed the POST catch, and the Swift
+monotonic-clock test was accidentally outside its XCTest class. Both source errors
+are corrected here. All 91 server contracts pass locally; changed native syntax and
+visibility-helper TypeScript checks pass. Newly authored native cache/expiry/thread
+cases still require execution by the native builds; syntax checks are not substitutes.
+
+Open boundaries include offline inbox summary expiry, quote/notification/exported
+copies, wall-clock trust, comprehensive media playback expiry, account-wide retry
+fairness and broader thread pagination/device exercise. No whole-app completion or
+full disappearing-message erasure is claimed.

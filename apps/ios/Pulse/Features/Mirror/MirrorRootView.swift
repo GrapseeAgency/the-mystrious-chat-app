@@ -1671,6 +1671,13 @@ struct MirrorRoomView: View {
         .onChange(of: photoItem) { item in
             handlePhotoPick(item)
         }
+        .onReceive(session.messageVisibilityClock) { now in
+            let visible = messages.filter { PulseRemediationLogic.isAlive($0.expiresAt, now: now) }
+            if visible.count != messages.count {
+                messages = visible
+                updateReadBoundary()
+            }
+        }
         .onReceive(session.outboxEvents) { event in
             switch event {
             case .delivered(let message, let conversationId, let clientId):

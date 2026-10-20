@@ -214,7 +214,7 @@ class PulseApi(
                 failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
-            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+            PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "The gateway acknowledgement could not be decoded; the action may have completed")
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)

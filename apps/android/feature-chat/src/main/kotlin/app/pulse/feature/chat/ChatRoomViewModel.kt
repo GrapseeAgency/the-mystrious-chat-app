@@ -499,7 +499,7 @@ class ChatRoomViewModel @Inject constructor(
                             app.pulse.core.fx.PulseFx.fire(kind)
                         }
                     }
-                    is PulseEvent.OutboxDropped -> notify("Message couldn't be delivered", isError = true)
+                    is PulseEvent.OutboxDropped -> if (event.conversationId == conversationId && event.threadRootId == null) notify(event.reason, isError = true)
                     else -> Unit
                 }
             }

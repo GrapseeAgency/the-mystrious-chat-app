@@ -91,6 +91,7 @@ struct MediaLightboxTarget: Identifiable {
     let id = UUID()
     let url: URL
     let caption: String
+    var expiresAt: String? = nil
 }
 
 struct QuickLookTarget: Identifiable {
@@ -156,6 +157,7 @@ enum PulseMediaOpener {
 struct MediaLightboxView: View {
     let url: URL?
     let caption: String
+    var expiresAt: String? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -213,6 +215,15 @@ struct MediaLightboxView: View {
             .padding(.trailing, 16)
             .padding(.top, 8)
             .accessibilityLabel("Close")
+        }
+        .task(id: expiresAt) {
+            guard let stamp = expiresAt, let deadline = PulseFormat.date(stamp) else { return }
+            while !Task.isCancelled {
+                let remaining = deadline.timeIntervalSinceNow
+                if remaining <= 0 { dismiss(); return }
+                do { try await Task.sleep(nanoseconds: UInt64(min(remaining, 30) * 1_000_000_000)) }
+                catch { return }
+            }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: zoom)
     }

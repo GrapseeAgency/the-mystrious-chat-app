@@ -91,6 +91,7 @@ targets:
           - "Fixtures/node_modules"
     dependencies:
       - target: Pulse
+      - package: GRDB
 schemes:
   Pulse:
     build:

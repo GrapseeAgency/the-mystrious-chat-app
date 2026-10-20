@@ -106,7 +106,7 @@ sealed interface PulseEvent {
     /** A send failed network-class and now waits in the outbox (`local_<clientId>` bubble). */
     data class OutboxQueued(val clientId: String, val conversationId: String) : PulseEvent
     /** A queued send hit a definitive 4xx verdict - the entry and its temp bubble are gone. */
-    data class OutboxDropped(val clientId: String, val reason: String) : PulseEvent
+    data class OutboxDropped(val clientId: String, val reason: String, val conversationId: String? = null, val threadRootId: String? = null) : PulseEvent
     /** A queued send delivered - the temp row was swapped for the real message. */
     data class OutboxFlushed(val clientId: String, val message: Message) : PulseEvent
 
@@ -428,7 +428,7 @@ interface PulseRepository {
     /** Delivery success: swap the temp `local_<clientId>` row for the real message + drop the outbox row. */
     suspend fun resolveOutboxDelivery(entry: OutboxEntry, real: Message)
 
-    /** Definitive 4xx verdict: delete the outbox row + temp row (+ OutboxDropped event). */
+    /** Definitive rejection: retain failed intent, hide pending echo, emit scoped notice. */
     suspend fun dropOutboxEntry(clientId: String, reason: String)
 
     /** Retryable failure: attempts++ on the held entry. */

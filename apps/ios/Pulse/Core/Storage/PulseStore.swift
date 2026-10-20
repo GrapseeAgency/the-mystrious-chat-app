@@ -229,6 +229,17 @@ public final class PulseStore: Sendable {
         m.registerMigration("v9") { db in
             try db.alter(table: "outbox") { t in t.add(column: "failureReason", .text) }
         }
+        m.registerMigration("v10") { db in
+            try db.alter(table: "message") { t in
+                t.add(column: "wireJson", .text)
+                t.add(column: "expiresAtEpoch", .double)
+            }
+            // Older caches omitted TTL and view-once flags. Treat them as
+            // unknown, not permanent/unrestricted media. Keep durable local
+            // operations and drafts; confirmed history reloads from the server.
+            try db.execute(sql: "DELETE FROM message WHERE substr(id, 1, 6) != 'local_'")
+            try db.execute(sql: "UPDATE conversation SET lastMessagePreview = NULL")
+        }
         return m
     }
 
@@ -338,13 +349,13 @@ public final class PulseStore: Sendable {
                                  audioPath, durationMs, filePath, fileName, fileSize,
                                  editedAt, deletedAt, reactionsJson, senderColor,
                                  viewedAt, transcript, transcribedAt, pollJson,
-                                 linkPreviewJson, topicId, payloadJson, translationsJson)
+                                 linkPreviewJson, topicId, payloadJson, translationsJson, wireJson, expiresAtEpoch)
             VALUES (:id, :conversationId, :authorId, :authorName, :kind, :body,
                     :createdAt, :replyToId, :pinnedAt, :parentId, :imagePath,
                     :audioPath, :durationMs, :filePath, :fileName, :fileSize,
                     :editedAt, :deletedAt, :reactionsJson, :senderColor,
                     :viewedAt, :transcript, :transcribedAt, :pollJson,
-                    :linkPreviewJson, :topicId, :payloadJson, :translationsJson)
+                    :linkPreviewJson, :topicId, :payloadJson, :translationsJson, :wireJson, :expiresAtEpoch)
             ON CONFLICT(id) DO UPDATE SET
               authorName=:authorName, kind=:kind, body=:body, pinnedAt=:pinnedAt,
               parentId=:parentId, imagePath=:imagePath, audioPath=:audioPath,
@@ -353,7 +364,8 @@ public final class PulseStore: Sendable {
               reactionsJson=:reactionsJson, senderColor=:senderColor,
               viewedAt=:viewedAt, transcript=:transcript, transcribedAt=:transcribedAt,
               pollJson=:pollJson, linkPreviewJson=:linkPreviewJson, topicId=:topicId,
-              payloadJson=:payloadJson, translationsJson=:translationsJson
+              payloadJson=:payloadJson, translationsJson=:translationsJson,
+              wireJson=:wireJson, expiresAtEpoch=:expiresAtEpoch
             """,
             arguments: [
                 "id": m.id, "conversationId": m.conversationId, "authorId": m.senderId,
@@ -373,6 +385,8 @@ public final class PulseStore: Sendable {
                 "topicId": m.topicId,
                 "payloadJson": m.payload,
                 "translationsJson": Self.translationsJsonData(m.translations),
+                "wireJson": String(decoding: try JSONEncoder().encode(m), as: UTF8.self),
+                "expiresAtEpoch": m.expiresAt.flatMap { PulseFormat.date($0)?.timeIntervalSince1970 },
             ],
         )
     }
@@ -403,12 +417,12 @@ public final class PulseStore: Sendable {
         }
     }
 
-    public func messages(conversationId: String, limit: Int = 300) throws -> [WireChatMessage] {
+    public func messages(conversationId: String, limit: Int = 300, now: Date = Date()) throws -> [WireChatMessage] {
         let rows = try dbQueue.read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM (SELECT * FROM message WHERE conversationId = :cid ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
-                arguments: ["cid": conversationId, "limit": limit],
+                sql: "SELECT * FROM (SELECT * FROM message WHERE conversationId = :cid AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
+                arguments: ["cid": conversationId, "limit": limit, "now": now.timeIntervalSince1970],
             )
         }
         return rows.compactMap(Self.messageRow(from:))
@@ -416,12 +430,12 @@ public final class PulseStore: Sendable {
 
     /// One cached row by id (jump anchoring: a search hit that lands on a
     /// thread reply needs its parentId to target the river). nil = not cached.
-    public func message(id: String) throws -> WireChatMessage? {
+    public func message(id: String, now: Date = Date()) throws -> WireChatMessage? {
         try dbQueue.read { db in
             try Row.fetchOne(
                 db,
-                sql: "SELECT * FROM message WHERE id = :id",
-                arguments: ["id": id],
+                sql: "SELECT * FROM message WHERE id = :id AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now)",
+                arguments: ["id": id, "now": now.timeIntervalSince1970],
             )
             .flatMap(Self.messageRow(from:))
         }
@@ -429,12 +443,12 @@ public final class PulseStore: Sendable {
 
     /// Thread replies for one root, oldest → newest (v3 parentId column -
     /// replyToId keeps the inline-quote id and is never mixed in).
-    public func messages(threadRootId: String, limit: Int = 300) throws -> [WireChatMessage] {
+    public func messages(threadRootId: String, limit: Int = 300, now: Date = Date()) throws -> [WireChatMessage] {
         let rows = try dbQueue.read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM (SELECT * FROM message WHERE parentId = :root ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
-                arguments: ["root": threadRootId, "limit": limit],
+                sql: "SELECT * FROM (SELECT * FROM message WHERE parentId = :root AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
+                arguments: ["root": threadRootId, "limit": limit, "now": now.timeIntervalSince1970],
             )
         }
         return rows.compactMap(Self.messageRow(from:))
@@ -442,12 +456,13 @@ public final class PulseStore: Sendable {
 
     /// Reply counts per cached thread root - one query powers every river
     /// "N replies" chip (no per-thread COUNT round-trips).
-    public func threadReplyCounts() throws -> [String: Int] {
+    public func threadReplyCounts(now: Date = Date()) throws -> [String: Int] {
         try dbQueue.read { db in
             var counts: [String: Int] = [:]
             let rows = try Row.fetchAll(
                 db,
-                sql: "SELECT parentId, COUNT(*) AS replyCount FROM message WHERE parentId IS NOT NULL GROUP BY parentId",
+                sql: "SELECT parentId, COUNT(*) AS replyCount FROM message WHERE parentId IS NOT NULL AND deletedAt IS NULL AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) GROUP BY parentId",
+                arguments: ["now": now.timeIntervalSince1970],
             )
             for row in rows {
                 if let root: String = row["parentId"] {
@@ -459,13 +474,13 @@ public final class PulseStore: Sendable {
         }
     }
 
-    /// Rehydrate a wire-ish message from a cached row (v3 full fidelity:
-    /// thread root, media, edit/delete stamps and grouped reactions all
-    /// round-trip; only the sender OBJECT is reduced to name + color).
-    /// W2-DATA-B v4 - poll/linkPreview JSON cards, the burn stamp,
-    /// transcript pair and topicId rebuild too (viewedBy/linkUrl are NOT
-    /// cached columns; they arrive again with the next wire refresh).
+    /// Full authoritative envelope for new rows; column fallback only for
+    /// legacy local operations preserved by the privacy-cache migration.
     private static func messageRow(from row: Row) -> WireChatMessage? {
+        if let wire: String = row["wireJson"] {
+            // Corrupt full envelopes must not fall back to missing privacy flags.
+            return try? JSONDecoder().decode(WireChatMessage.self, from: Data(wire.utf8))
+        }
         guard let id: String = row["id"],
               let conversationId: String = row["conversationId"],
               let authorId: String = row["authorId"],
@@ -664,15 +679,16 @@ public final class PulseStore: Sendable {
 
     /// Offline read path for the saved library. Missing conversation metadata
     /// remains unknown; the saved message body is still usable without a feed fetch.
-    public func cachedSavedItems() throws -> [WireSavedItem] {
+    public func cachedSavedItems(now: Date = Date()) throws -> [WireSavedItem] {
         try dbQueue.read { db in
             try Row.fetchAll(db, sql: """
                 SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName,
                        c.kind AS savedConversationKind
                 FROM savedMessages s JOIN message m ON m.id = s.messageId
                 LEFT JOIN conversation c ON c.id = s.conversationId
+                WHERE m.expiresAtEpoch IS NULL OR m.expiresAtEpoch > :now
                 ORDER BY s.savedAt DESC, s.messageId DESC
-                """).compactMap { row in
+                """, arguments: ["now": now.timeIntervalSince1970]).compactMap { row in
                     guard let message = Self.messageRow(from: row),
                           let savedAt: String = row["savedStamp"] else { return nil }
                     let kind: String? = row["savedConversationKind"]
@@ -708,7 +724,7 @@ public final class PulseStore: Sendable {
     public func updateTranscription(messageId: String, transcript: String, transcribedAt: String) throws {
         _ = try dbQueue.write { db in
             try db.execute(
-                sql: "UPDATE message SET transcript = :transcript, transcribedAt = :at WHERE id = :id",
+                sql: "UPDATE message SET transcript = :transcript, transcribedAt = :at, wireJson = CASE WHEN wireJson IS NOT NULL THEN json_set(wireJson, '$.transcript', :transcript, '$.transcribedAt', :at) END WHERE id = :id",
                 arguments: ["transcript": transcript, "at": transcribedAt, "id": messageId],
             )
         }

@@ -46,6 +46,10 @@ struct SavedLibraryView: View {
         }
         .presentationDetents([.large])
         .task { await load() }
+        .onReceive(session.messageVisibilityClock) { now in
+            let visible = items.filter { PulseRemediationLogic.isAlive($0.message.expiresAt, now: now) }
+            if visible.count != items.count { items = visible }
+        }
     }
 
     // ── data ─────────────────────────────────────────────────
@@ -67,7 +71,7 @@ struct SavedLibraryView: View {
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
             try? store?.upsert(savedItems: fresh)
             try? store?.replaceSaved(messageIds: fresh.map { $0.message.id })
-            items = fresh
+            items = fresh.filter { PulseRemediationLogic.isAlive($0.message.expiresAt) }
             phase = .loaded
         } catch {
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }

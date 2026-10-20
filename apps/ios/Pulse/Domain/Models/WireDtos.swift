@@ -814,7 +814,8 @@ extension WireChatMessage {
             anon: anon, anonAlias: anonAlias,
             viewedAt: viewedAt, viewedBy: viewedBy, transcript: transcript,
             transcribedAt: transcribedAt, topicId: topicId, linkUrl: linkUrl,
-            linkPreview: linkPreview, poll: poll
+            linkPreview: linkPreview, poll: poll, payload: payload, expiresAt: expiresAt,
+            viaAutomation: viaAutomation, translations: translations
         )
     }
 

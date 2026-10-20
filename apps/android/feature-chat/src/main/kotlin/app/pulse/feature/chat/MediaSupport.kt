@@ -561,6 +561,15 @@ internal fun ImageLightbox(
     message: Message,
     onDismiss: () -> Unit,
 ) {
+    val dismiss = androidx.compose.runtime.rememberUpdatedState(onDismiss)
+    androidx.compose.runtime.LaunchedEffect(message.id, message.expiresAtEpochMs) {
+        val deadline = message.expiresAtEpochMs ?: return@LaunchedEffect
+        while (true) {
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0L) { dismiss.value(); break }
+            kotlinx.coroutines.delay(remaining.coerceAtMost(30_000L))
+        }
+    }
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
