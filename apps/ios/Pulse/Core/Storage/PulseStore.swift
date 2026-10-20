@@ -433,6 +433,15 @@ public final class PulseStore: Sendable {
         }
     }
 
+    public func clearMessagePin(id: String) throws {
+        try dbQueue.write { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [id]),
+                  var message = Self.messageRow(from: row) else { return }
+            message.pinnedAt = nil
+            try Self.writeMessage(message, db: db)
+        }
+    }
+
     public func deleteMessage(id: String) throws {
         _ = try dbQueue.write { db in
             try db.execute(sql: "DELETE FROM message WHERE id = :id", arguments: ["id": id])

@@ -1,5 +1,6 @@
 package app.pulse.android.mirror
 
+import app.pulse.domain.sync.reconcileMessageSelection
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -415,7 +416,7 @@ internal fun MirrorRoom(
     onManageGroup: () -> Unit,
     onMuteChoice: (String?) -> Unit,
     onTtlChoice: (Int) -> Unit,
-    onUnpinMessage: (String) -> Unit,
+    onUnpinMessage: suspend (String) -> Result<Unit>,
     fetchPinned: suspend () -> List<Message>,
     pipActive: Boolean,
     onTogglePip: () -> Unit,
@@ -605,7 +606,13 @@ internal fun MirrorRoom(
     }
     LaunchedEffect(menuOpen) {
         if (menuOpen) {
-            pinnedCount = fetchPinned().size
+            try {
+                pinnedCount = fetchPinned().size
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Keep last known count; the pinned sheet exposes Retry.
+            }
             repository.reminders(false).onSuccess { page ->
                 val now = System.currentTimeMillis()
                 upcomingReminders = page.items.count { item ->
@@ -2504,6 +2511,7 @@ internal fun MirrorRoom(
     // R64 - pinned messages: live server list with unpin.
     if (pinnedOpen) {
         MirrorPinnedSheet(
+            messages = messages,
             fetchPinned = fetchPinned,
             onUnpin = onUnpinMessage,
             onDismiss = { pinnedOpen = false },
@@ -2942,9 +2950,13 @@ private fun MirrorMenuStrip(label: String, choices: List<String>, onPick: (Strin
 @Composable
 private fun MirrorRoomSearchSheet(messages: List<Message>, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
-    val hits = remember(query, messages) {
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1_000) } }
+    val hits = remember(query, messages, now) {
         if (query.isBlank()) emptyList()
-        else messages.filter { it.body.contains(query, ignoreCase = true) }.take(40)
+        else reconcileMessageSelection(messages, messages, now) {
+            !it.viewOnce && it.body.contains(query.trim(), ignoreCase = true)
+        }.take(40)
     }
     Box(
         Modifier
@@ -3021,13 +3033,27 @@ private fun MirrorRoomSearchSheet(messages: List<Message>, onDismiss: () -> Unit
 /** Pinned messages sheet: the live server pins with unpin actions. */
 @Composable
 private fun MirrorPinnedSheet(
+    messages: List<Message>,
     fetchPinned: suspend () -> List<Message>,
-    onUnpin: (String) -> Unit,
+    onUnpin: suspend (String) -> Result<Unit>,
     onDismiss: () -> Unit,
 ) {
     var pinned by remember { mutableStateOf<List<Message>?>(null) }
-    LaunchedEffect(Unit) {
-        pinned = runCatching { fetchPinned() }.getOrDefault(emptyList())
+    var error by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableStateOf(0) }
+    var busy by remember { mutableStateOf(setOf<String>()) }
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1_000) } }
+    LaunchedEffect(retry) {
+        error = null
+        try {
+            pinned = fetchPinned()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            error = "Couldn't load pins. Tap to retry."
+        }
     }
     Box(
         Modifier
@@ -3053,9 +3079,14 @@ private fun MirrorPinnedSheet(
                 letterSpacing = 1.2.sp,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
             )
-            val list = pinned
+            error?.let { text ->
+                Text(text, color = MirrorArt.Accent, fontSize = 13.sp,
+                    modifier = Modifier.padding(8.dp).clickable(enabled = busy.isEmpty()) { retry++ })
+            }
+            val list = pinned?.let { reconcileMessageSelection(it, messages, now) { row -> row.pinnedAt != null && !row.viewOnce } }
             when {
-                list == null -> Text("Loading pins…", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+                list == null && error == null -> Text("Loading pins…", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+                list == null -> Unit
                 list.isEmpty() -> Text("Nothing pinned yet", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
                 else -> Column(
                     Modifier
@@ -3081,7 +3112,22 @@ private fun MirrorPinnedSheet(
                                 Modifier
                                     .size(32.dp)
                                     .clip(CircleShape)
-                                    .clickable { onUnpin(message.id) },
+                                    .clickable(enabled = busy.isEmpty()) {
+                                        busy = busy + message.id
+                                        scope.launch {
+                                            try {
+                                                onUnpin(message.id).getOrThrow()
+                                                pinned = pinned?.filterNot { it.id == message.id }
+                                                error = null
+                                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                                throw cancelled
+                                            } catch (_: Exception) {
+                                                error = "Couldn't remove pin. Try Unpin again."
+                                            } finally {
+                                                busy = busy - message.id
+                                            }
+                                        }
+                                    },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 MirrorLucideIcon("LPinOff", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))

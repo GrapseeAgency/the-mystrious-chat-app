@@ -15,6 +15,19 @@ import org.junit.jupiter.api.Test
 class ChatMessageDtoParityTest {
 
     @Test
+    fun `search safety metadata and explicit unpin acknowledgement decode`() {
+        val hit = PulseJson.decodeFromString(SearchHitDto.serializer(), """{"id":"hit","viewOnce":true,"anon":true,"anonAlias":"Fox","expiresAt":"2026-10-21T00:00:00Z"}""")
+        assertTrue(hit.viewOnce)
+        assertTrue(hit.anon)
+        assertEquals("Fox", hit.anonAlias)
+        assertEquals("2026-10-21T00:00:00Z", hit.expiresAt)
+        assertTrue(PulseJson.decodeFromString(UnpinAckDto.serializer(), """{"unpinned":true}""").unpinned)
+        org.junit.jupiter.api.Assertions.assertThrows(kotlinx.serialization.SerializationException::class.java) {
+            PulseJson.decodeFromString(UnpinAckDto.serializer(), "{}")
+        }
+    }
+
+    @Test
     fun `full media + thread + lifecycle row decodes`() {
         val json = """
         {

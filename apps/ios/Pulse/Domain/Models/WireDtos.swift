@@ -193,7 +193,7 @@ public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     public let filePath: String?
     public let fileName: String?
     public let fileSize: Int?
-    public let pinnedAt: String?
+    public var pinnedAt: String?
     public let viewOnce: Bool?
     public let anon: Bool?
     public let anonAlias: String?
@@ -684,6 +684,17 @@ public struct WireSearchMessage: Codable, Hashable, Sendable {
     public let filePath: String?
     public let fileName: String?
     public let sender: WireSender?
+    public var expiresAt: String? = nil
+    public var viewOnce: Bool? = nil
+    public var anon: Bool? = nil
+    public var anonAlias: String? = nil
+
+    public func isVisibleSearchHit(now: Date = Date()) -> Bool {
+        guard deletedAt == nil, viewOnce != true else { return false }
+        if let expiresAt { return PulseFormat.date(expiresAt).map { $0 > now } ?? false }
+        return true
+    }
+    public var searchSenderName: String { anon == true ? (anonAlias ?? "Anonymous") : (sender?.name ?? "?") }
 }
 
 public struct WireSearchPage: Codable, Sendable {

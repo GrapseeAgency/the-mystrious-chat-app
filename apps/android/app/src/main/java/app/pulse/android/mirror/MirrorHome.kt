@@ -1,5 +1,7 @@
 package app.pulse.android.mirror
 
+import app.pulse.domain.sync.isVisibleSearchHit
+import kotlinx.coroutines.flow.collect
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -466,7 +468,7 @@ internal fun MirrorHome(
                 var hits by remember(searchQuery) { mutableStateOf<List<MessageHit>?>(null) }
                 LaunchedEffect(searchQuery) {
                     kotlinx.coroutines.delay(250)
-                    hits = runCatching { repository.searchMessages(searchQuery).getOrNull() }.getOrNull()
+                    repository.observeMessageSearch(searchQuery).collect { hits = it.getOrNull() }
                 }
                 val loaded = hits
                 if (loaded != null && loaded.isNotEmpty()) {
@@ -484,7 +486,7 @@ internal fun MirrorHome(
                                 Modifier
                                     .widthIn(max = maxW)
                                     .fillMaxWidth()
-                                    .clickable { onOpenConversationId(hit.conversationId, hit.id) }
+                                    .clickable { if (hit.isVisibleSearchHit()) onOpenConversationId(hit.conversationId, hit.id) }
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

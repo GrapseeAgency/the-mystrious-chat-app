@@ -4218,11 +4218,11 @@ final class RoomViewModel: ObservableObject {
     private func refilterInPlace() {
         let current = Dictionary(messages.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let nextPins = pins.map { current[$0.id] ?? $0 }.filter {
-            $0.deletedAt == nil && $0.pinnedAt != nil && PulseRemediationLogic.isAlive($0.expiresAt)
+            $0.pinnedAt != nil && PulseRemediationLogic.isVisiblePreview($0)
         }
         if nextPins != pins { pins = nextPins }
         let nextSearch = searchResults.map { current[$0.id] ?? $0 }.filter {
-            $0.deletedAt == nil && PulseRemediationLogic.isAlive($0.expiresAt) &&
+            PulseRemediationLogic.isVisiblePreview($0) &&
                 $0.content.localizedCaseInsensitiveContains(activeSearchQuery)
         }
 
@@ -4981,7 +4981,7 @@ final class RoomViewModel: ObservableObject {
                 messages = messages.map { byId[$0.id] ?? $0 }
                 pins = fresh.compactMap { row in
                     session.acceptsSyncMessage(row.id, startedAt: watermark) ? row : (try? session.store?.message(id: row.id))
-                }.filter { $0.deletedAt == nil && $0.pinnedAt != nil && PulseRemediationLogic.isAlive($0.expiresAt) }
+                }.filter { $0.pinnedAt != nil && PulseRemediationLogic.isVisiblePreview($0) }
             } catch {
                 guard pinsGeneration == ticket, session.sessionGeneration == epoch else { return }
                 session.toasts.show("Couldn't refresh pinned messages")
@@ -5019,7 +5019,7 @@ final class RoomViewModel: ObservableObject {
         guard !body.isEmpty else { return }
         let revision = draftEditRevision, ticket = editGeneration
         let epoch = session.sessionGeneration
-        let client = session.api, store = session.store
+        let client = session.api
         let watermark = session.messageRevision
         savingEdit = true
         editSaveTask = Task { [weak self] in
@@ -5030,7 +5030,7 @@ final class RoomViewModel: ObservableObject {
                 try Task.checkCancellation()
                 guard session.sessionGeneration == epoch, self.editGeneration == ticket else { return }
                 if session.acceptsSyncMessage(fresh.id, startedAt: watermark) {
-                    try store?.upsert(messages: [fresh])
+                    try session.recordMessageMutation(fresh)
                     self.upsert(fresh)
                 }
                 if self.draftEditRevision == revision && self.draftJournal?.isCurrentOwner == true {
@@ -5047,31 +5047,52 @@ final class RoomViewModel: ObservableObject {
     }
 
     func delete(_ message: WireChatMessage, session: PulseSession) {
+        let epoch = session.sessionGeneration, api = session.api
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await session.api.deleteOwnMessage(id: message.id)
+                try await api.deleteOwnMessage(id: message.id)
+                guard session.sessionGeneration == epoch else { return }
                 let tombstone = message.deletedCopy()
                 self.upsert(tombstone)
-                try? session.store?.upsert(messages: [tombstone])
+                try session.recordMessageMutation(tombstone)
                 PulseHaptics.tap()
             } catch {
+                guard session.sessionGeneration == epoch else { return }
                 self.errorText = Self.describe(error)
             }
         }
     }
 
+    private var pinActions: Set<String> = []
     func togglePin(_ message: WireChatMessage, session: PulseSession) {
+        guard let viewer = session.viewer, !pinActions.contains(message.id) else { return }
+        pinActions.insert(message.id)
+        let epoch = session.sessionGeneration, watermark = session.messageRevision
         PulseHaptics.tap()
         Task { [weak self] in
-            guard let self, let viewer = session.viewer else { return }
+            guard let self else { return }
+            defer { pinActions.remove(message.id) }
             do {
-                let fresh = try await session.api.toggleMessagePin(id: message.id, userId: viewer.id)
-                self.upsert(fresh)
-                try? session.store?.upsert(messages: [fresh])
-                self.loadPins(session: session)
-                session.toasts.show(fresh.pinnedAt == nil ? "Unpinned" : "Pinned")
+                if message.pinnedAt != nil {
+                    try await session.api.unpinMessage(id: message.id, userId: viewer.id)
+                    guard session.sessionGeneration == epoch else { return }
+                    try session.applyPinRemoval(message.id, startedAt: watermark)
+                    if let latest = try session.store?.message(id: message.id) { self.upsert(latest) }
+                    self.loadPins(session: session)
+                    session.toasts.show("Unpinned")
+                } else {
+                    let fresh = try await session.api.toggleMessagePin(id: message.id, userId: viewer.id)
+                    guard session.sessionGeneration == epoch else { return }
+                    if session.acceptsSyncMessage(message.id, startedAt: watermark) {
+                        self.upsert(fresh)
+                        try session.recordMessageMutation(fresh)
+                    }
+                    self.loadPins(session: session)
+                    session.toasts.show(fresh.pinnedAt == nil ? "Unpinned" : "Pinned")
+                }
             } catch {
+                guard session.sessionGeneration == epoch else { return }
                 self.errorText = Self.describe(error)
             }
         }

@@ -7,6 +7,7 @@
 //   → { messages: SearchResultMessage[], total: number }
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { visibleSearchHit } from '@/lib/search-visibility'
 import { unexpiredMessages } from '@/lib/message-visibility'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 import type { SearchResultMessage } from '@/lib/types'
@@ -77,21 +78,18 @@ export async function GET(req: Request) {
     include: MESSAGE_FULL_INCLUDE,
   })
 
-  const hits = rows
-    .filter(
-      (row) =>
-        (row.content.length > 0 && row.content.toLowerCase().includes(needle)) ||
-        // R41 - document fileName is a first-class match field (same
-        // case-insensitive substring rule as content).
-        (row.fileName !== null && row.fileName.length > 0 && row.fileName.toLowerCase().includes(needle)),
-    )
-    .slice(0, RESULT_CAP)
+  const messages: SearchResultMessage[] = []
+  for (const row of rows) {
+    // Avoid serializing up to 1,200 rich messages when only 30 previews are needed.
+    if (messages.length === RESULT_CAP) break
+    if (row.viewOnce || !(row.content.toLowerCase().includes(needle) || (row.fileName ?? '').toLowerCase().includes(needle))) continue
+    const hit = visibleSearchHit({
+      ...mapMessage(row, userId),
+      conversationName: titleByConv.get(row.conversationId) ?? 'Chat',
+      isGroup: groupByConv.get(row.conversationId) ?? false,
+    }, needle)
+    if (hit) messages.push(hit)
+  }
 
-  const messages: SearchResultMessage[] = hits.map((row) => ({
-    ...mapMessage(row),
-    conversationName: titleByConv.get(row.conversationId) ?? 'Chat',
-    isGroup: groupByConv.get(row.conversationId) ?? false,
-  }))
-
-  return NextResponse.json({ messages, total: hits.length })
+  return NextResponse.json({ messages, total: messages.length })
 }

@@ -116,6 +116,8 @@ data class MessageHit(
     val imageOnly: Boolean = false,
     val isFile: Boolean = false,
     val fileName: String? = null,
+    val expiresAtEpochMs: Long? = null,
+    val viewOnce: Boolean = false,
 )
 
 // Wave 2 messaging depth - polls / link previews / saved / topics / ASR

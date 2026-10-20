@@ -1473,3 +1473,50 @@ reported, not retried through a potentially destructive toggle. The saved API re
 100-item window. Global search, notification/exported copies, media viewers, and broad
 membership-revocation/cache policy are not established by these repairs. No whole-app
 correctness or completed-feature-tree claim is made.
+
+### Global search, Mirror pin/search sheets, and partial bulk deletion (2026-10-21)
+
+- Android global search, Mirror home search and Spotlight now collect a cancellable
+  expiry-aware stream instead of retaining a single HTTP snapshot. Query changes clear
+  older hits immediately. Known authoritative message mutations retire affected search
+  snapshots, including local delete/edit ACKs; fresh matching edits require a re-query.
+- Swift global search clears old results/loading state on query change/close and rejects
+  responses from cancelled queries or retired sessions. Its visibility clock removes
+  expired/deleted/view-once/known-mutated results. Local primary-room edit/delete ACKs
+  now advance the same revision fence used by remote envelopes. Query values encode
+  separators such as &, + and # instead of letting them alter URL parameters.
+- Search DTOs retain expiry/view-once/anonymous metadata. Backend search filters unsafe
+  retained previews, masks anonymous sender identity, and returns the actual visible hit
+  count. Native search chrome also masks anonymous authors for older compatible servers.
+  Swift can resolve an uncached conversation on search-result activation instead of
+  silently ignoring the tap; existing cached rooms remain navigable offline.
+- Explicit owner-authenticated DELETE /api/messages/{id}/pin removes a pin rather than
+  toggling it. Membership validation and removal share a SQLite transaction. Both native
+  clients require an explicit positive acknowledgement; there is no legacy-toggle
+  fallback. Primary-room Unpin and Mirror Unpin await this operation and suppress repeat
+  pending taps. Legacy **Pin** still uses POST toggle and is not claimed repeat-safe.
+- Android refreshes pin snapshots atomically, retires absent cached pin flags, and
+  protects newer mutations from older fetches. Mirror pin sheets now show load/action
+  errors and Retry, reconcile current cached versions and expire detached previews.
+  Swift pin removals update both the serialized GRDB payload and indexed pin field.
+  Mirror search sheets and primary selections exclude deleted, expired and view-once
+  bodies. These behavior changes preserve the autumn palette/layout.
+- Android Clear My Messages previously deleted **all** selected cached rows if just one
+  request succeeded, hiding rows whose deletion failed. It now caches only acknowledged
+  tombstones, retains failed rows for retry, and reports complete failure. Its history
+  source is still bounded to 500 rows; this is not an unlimited bulk-delete guarantee.
+
+Executed locally: 98/98 server contracts (including real SQLite repeated Unpin and
+nonmember refusal), standalone search/pin-helper TypeScript checks. Added native tests
+for search expiry/cancellation/metadata, encoded queries, required acknowledgements,
+view-once selections and GRDB pin-payload consistency. Native compiler/device execution
+must run on GitHub; parser checks are not compilation. No generated native builds are
+stored here. Inventory updated to 322 production sources.
+
+Still open: thread-root navigation and server revalidation of stale message targets;
+unknown offline changes and broad membership-revocation/cache rules; media/export/
+notification copies; legacy Pin toggle replay; bounded global search (newest 1,200 rows,
+30 hits); server ordering without per-message versions. Search invalidation removes a
+known-mutated snapshot instead of discovering a newly matching edit automatically.
+Explicit Unpin requires backend/native co-deployment; older servers fail visibly. This
+entry records targeted repairs, not whole-app or feature-tree completion.

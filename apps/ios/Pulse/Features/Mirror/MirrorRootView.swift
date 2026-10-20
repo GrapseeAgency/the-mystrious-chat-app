@@ -2512,6 +2512,11 @@ struct MirrorRoomSheetView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var pinned: [WireChatMessage]?
+    @State private var pinError: String?
+    @State private var pinBusy = false
+    @State private var pinRequest = UUID()
+    @State private var pinEpoch: UUID?
+    @State private var previewNow = Date()
 
     var body: some View {
         MirrorPanel(title: panelTitle) {
@@ -2535,7 +2540,7 @@ struct MirrorRoomSheetView: View {
                     let q = query.trimmingCharacters(in: .whitespaces).lowercased()
                     let hits = q.isEmpty
                         ? []
-                        : messages.filter { ($0.content ?? "").lowercased().contains(q) }.suffix(40)
+                        : messages.filter { PulseRemediationLogic.isVisiblePreview($0, now: previewNow) && $0.content.lowercased().contains(q) }.suffix(40)
                     if !q.isEmpty && hits.isEmpty {
                         MirrorPanelHint("No matches in this conversation")
                     }
@@ -2550,6 +2555,10 @@ struct MirrorRoomSheetView: View {
                 }
             case .pinned:
                 MirrorPanelScroll {
+                    if let pinError {
+                        Button(pinError + " Retry") { Task { await loadPins() } }
+                            .foregroundColor(MirrorArt.accent).disabled(pinBusy)
+                    }
                     if let pins = pinned {
                         if pins.isEmpty {
                             MirrorPanelHint("Nothing pinned yet")
@@ -2565,24 +2574,22 @@ struct MirrorRoomSheetView: View {
                                 Spacer(minLength: 0)
                                 Button {
                                     Task {
-                                        _ = try? await session.api.toggleMessagePin(id: message.id, userId: session.api.userId)
-                                        pinned = (try? await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)) ?? []
+                                        await unpin(message)
                                     }
                                 } label: {
                                     Image(systemName: "pin.slash").font(.system(size: 13)).foregroundColor(MirrorArt.dim)
                                         .frame(width: 32, height: 32)
                                 }
                                 .buttonStyle(.plain)
+                                .disabled(pinBusy)
                             }
                             .padding(.horizontal, 8).padding(.vertical, 6)
                         }
-                    } else {
+                    } else if pinError == nil {
                         MirrorPanelHint("Loading pins…")
                     }
                 }
-                .task {
-                    pinned = (try? await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)) ?? []
-                }
+                .task { await loadPins() }
             // R102 - the tray surfaces
             case .poll:
                 MirrorPollBuilder(session: session, row: row, onSent: onSent)
@@ -2601,6 +2608,58 @@ struct MirrorRoomSheetView: View {
             case .location:
                 MirrorLocationBuilder(session: session, row: row, onCreated: onCreated)
             }
+        }
+        .onReceive(session.messageVisibilityClock) { now in
+            previewNow = now
+            reconcilePins()
+        }
+        .onChange(of: messages) { _ in reconcilePins() }
+        .onDisappear { pinRequest = UUID() }
+    }
+
+    private func reconcilePins() {
+        guard pinEpoch == session.sessionGeneration else { pinned = nil; return }
+        pinned = pinned?.map { message in
+            (try? session.store?.message(id: message.id)) ?? messages.first(where: { $0.id == message.id }) ?? message
+        }.filter { $0.pinnedAt != nil && PulseRemediationLogic.isVisiblePreview($0, now: previewNow) }
+    }
+
+    private func loadPins() async {
+        guard !pinBusy else { return }
+        let ticket = UUID(), epoch = session.sessionGeneration, watermark = session.messageRevision
+        pinRequest = ticket
+        pinEpoch = epoch
+        pinError = nil
+        do {
+            let fresh = try await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)
+            guard !Task.isCancelled, pinRequest == ticket, session.sessionGeneration == epoch else { return }
+            let accepted = fresh.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            try session.store?.upsert(messages: accepted)
+            pinned = fresh.compactMap { message in
+                session.acceptsSyncMessage(message.id, startedAt: watermark) ? message : (try? session.store?.message(id: message.id))
+            }
+            reconcilePins()
+        } catch {
+            guard !Task.isCancelled, pinRequest == ticket, session.sessionGeneration == epoch else { return }
+            pinError = "Couldn't load pinned messages."
+        }
+    }
+
+    private func unpin(_ message: WireChatMessage) async {
+        guard !pinBusy else { return }
+        pinBusy = true
+        pinRequest = UUID() // A pending GET must not restore this selection.
+        let epoch = session.sessionGeneration, watermark = session.messageRevision
+        defer { pinBusy = false }
+        do {
+            try await session.api.unpinMessage(id: message.id, userId: session.api.userId)
+            guard session.sessionGeneration == epoch else { return }
+            try session.applyPinRemoval(message.id, startedAt: watermark)
+            pinned = pinned?.filter { $0.id != message.id }
+            pinError = nil
+        } catch {
+            guard session.sessionGeneration == epoch else { return }
+            pinError = "Couldn't remove pin. Try Unpin again."
         }
     }
 

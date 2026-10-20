@@ -1,6 +1,8 @@
 // /api/messages/[id]/pin - toggle pinned state for a message
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { removeMessagePin, PinAccessError } from '@/lib/pin-operation'
 import {
   mapMessage,
   memberIdsOf,
@@ -79,4 +81,27 @@ export async function POST(req: Request, { params }: RouteCtx) {
   })
 
   return NextResponse.json({ message: mapped })
+}
+
+
+/** Retrying an acknowledged/lost-response Unpin must never pin it again. */
+export async function DELETE(req: Request, { params }: RouteCtx) {
+  const { id } = await params
+  const body = await safeJson(req)
+  const userId = strField(body.userId)
+  const denied = await requireActionOwner(req, userId, 'unpin')
+  if (denied) return denied
+  try {
+    const conversationId = await removeMessagePin(db, userId, id)
+    const message = await db.message.findUnique({ where: { id }, include: MESSAGE_FULL_INCLUDE })
+    if (message) {
+      const recipients = await memberIdsOf(conversationId)
+      await notifySocket('message:pinned', recipients, { type: 'message:pinned', message: mapMessage(message),
+        recipientIds: recipients, conversationId })
+    }
+    return NextResponse.json({ unpinned: true })
+  } catch (error) {
+    if (error instanceof PinAccessError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
+  }
 }

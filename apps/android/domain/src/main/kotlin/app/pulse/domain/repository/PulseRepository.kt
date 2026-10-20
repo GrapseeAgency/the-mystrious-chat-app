@@ -389,6 +389,9 @@ interface PulseRepository {
 
     /** GET /api/search?userId=&q= - server message search (≥2 chars, caller debounces). */
     suspend fun searchMessages(query: String): Result<List<MessageHit>>
+    fun observeMessageSearch(query: String): Flow<Result<List<MessageHit>>> = kotlinx.coroutines.flow.flow {
+        emit(searchMessages(query))
+    }
 
     /** Full paginated-ish history for export/clear (single bounded fetch). */
     suspend fun fullHistory(conversationId: String): Result<List<Message>>
@@ -476,6 +479,7 @@ interface PulseRepository {
 
     /** GET /api/conversations/{id}/pinned?userId= - pinned rows, pinnedAt asc (also upserts Room). */
     suspend fun pinnedMessages(conversationId: String): List<Message>
+    suspend fun unpinMessage(messageId: String): Result<Unit> = Result.failure(UnsupportedOperationException("Explicit unpin unavailable"))
 
     /** GET /api/messages/{id}/thread?userId= → (parent, replies asc) - also upserts Room. */
     suspend fun loadThread(rootId: String): Pair<Message, List<Message>>

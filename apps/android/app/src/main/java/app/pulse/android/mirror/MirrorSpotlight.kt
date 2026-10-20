@@ -1,5 +1,7 @@
 package app.pulse.android.mirror
 
+import app.pulse.domain.sync.isVisibleSearchHit
+import kotlinx.coroutines.flow.collect
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.core.Animatable
@@ -276,7 +278,6 @@ internal fun MirrorSpotlightOverlay(
     val haptics = LocalHapticFeedback.current
 
     var query by remember { mutableStateOf("") }
-    var debounced by remember { mutableStateOf("") }
     var recents by remember { mutableStateOf(spotReadRecents(context)) }
     var checkinPending by remember { mutableStateOf(false) }
 
@@ -290,24 +291,22 @@ internal fun MirrorSpotlightOverlay(
         }
     }
 
-    // 250ms debounce feeding the server message search (web spotlight.tsx:181-184)
-    LaunchedEffect(query) {
-        delay(250)
-        debounced = query.trim()
-    }
-
     var msgHits by remember { mutableStateOf<List<MessageHit>?>(null) }
     var msgSearching by remember { mutableStateOf(false) }
-    LaunchedEffect(debounced) {
-        if (debounced.length < 2) {
+    LaunchedEffect(query, repository) {
+        msgHits = null
+        val term = query.trim()
+        if (term.length < 2) {
             msgHits = null
             msgSearching = false
             return@LaunchedEffect
         }
         msgSearching = true
-        val hits = repository.searchMessages(debounced).getOrNull()
-        msgHits = hits
-        msgSearching = false
+        delay(250)
+        repository.observeMessageSearch(term).collect {
+            msgHits = it.getOrNull()
+            msgSearching = false
+        }
     }
 
     val q = query.trim()
@@ -382,7 +381,7 @@ internal fun MirrorSpotlightOverlay(
         .take(6)
 
     // Message rows (web spotlight.tsx:340-345): server hits, top 8
-    val msgRows = if (debounced.length >= 2) (msgHits ?: emptyList()).take(8) else emptyList()
+    val msgRows = if (q.length >= 2) (msgHits ?: emptyList()).take(8) else emptyList()
 
     // Section model (web spotlight.tsx:292-352)
     val sections: List<Pair<String, List<SpotRow>>> = when {
@@ -401,7 +400,7 @@ internal fun MirrorSpotlightOverlay(
     }
     val flat = sections.flatMap { it.second }
     val nothingFound = q.isNotEmpty() && flat.isEmpty() && !msgSearching
-    val serverPending = debounced.length >= 2 && msgSearching && msgHits == null
+    val serverPending = q.length >= 2 && msgSearching && msgHits == null
 
     Box(
         Modifier
@@ -557,7 +556,7 @@ internal fun MirrorSpotlightOverlay(
                                                         }
                                                         is RMessage -> {
                                                             if (q.isNotBlank()) spotPushRecent(context, q)
-                                                            onOpenMessage(row.hit.conversationId, row.hit.id)
+                                                            if (row.hit.isVisibleSearchHit()) onOpenMessage(row.hit.conversationId, row.hit.id)
                                                         }
                                                     }
                                                     if (!keep) onDismiss()

@@ -179,6 +179,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.emitAll
+import app.pulse.domain.sync.withSearchHitExpiry
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -611,6 +613,7 @@ class PulseRepositoryImpl constructor(
      */
     private val messageCacheMutex = Mutex()
     private val messageEventClock = java.util.concurrent.atomic.AtomicLong()
+    private val messageCacheChanges = MutableStateFlow(0L)
     private val messageEventRevisions = mutableMapOf<String, Long>()
 
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
@@ -620,6 +623,7 @@ class PulseRepositoryImpl constructor(
             messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
             // Persist tombstones too; an event-only deletion resurrects after restart.
             messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+            messageCacheChanges.value = messageEventClock.get()
         }
         if (signal.event == app.pulse.protocol.SocketEvents.MESSAGE_DELETED) {
             eventsBus.tryEmit(
@@ -1448,15 +1452,44 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun pinnedMessages(conversationId: String): List<Message> {
-        val watermark = messageEventClock.get()
-        val page = when (val r = api.pinnedMessages(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> r.value
-            is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+    private val pinRefreshLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+    override suspend fun pinnedMessages(conversationId: String): List<Message> =
+        pinRefreshLocks.getOrPut(conversationId) { Mutex() }.withLock {
+            val watermark = messageEventClock.get()
+            val page = when (val r = api.pinnedMessages(conversationId, viewerId ?: "")) {
+                is PulseResult.Success -> r.value
+                is PulseResult.Failure -> throw apiExceptionOf(r)
+            }
+            messageCacheMutex.withLock {
+                database.withTransaction {
+                    val ids = page.messages.map { it.id }.toSet()
+                    // A full empty list must retire stale cached pin flags too.
+                    val missing = messageDao.pinned(conversationId).filter {
+                        it.id !in ids && (messageEventRevisions[it.id] ?: 0L) <= watermark
+                    }
+                    messageDao.upsertAll(missing.map { it.copy(pinnedAt = null) })
+                    cacheFetchedMessagesLocked(page.messages.map { it.toDomain() }, watermark)
+                    messageDao.pinned(conversationId).map { it.toDomain() }.filter { savedMessageVisible(it) }
+                }
+            }
         }
-        val rows = page.messages.map { it.toDomain() }
-        // Upsert keeps the Room cache (pin glyphs, banners) authoritative.
-        return cacheFetchedMessages(rows, watermark)
+
+    override suspend fun unpinMessage(messageId: String): Result<Unit> {
+        val watermark = messageEventClock.get()
+        return when (val response = api.unpinMessage(messageId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                messageCacheMutex.withLock {
+                    // A later relayed re-pin wins over this operation's late ACK.
+                    if ((messageEventRevisions[messageId] ?: 0L) <= watermark) {
+                        messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
+                        messageDao.byId(messageId)?.let { messageDao.upsertAll(listOf(it.copy(pinnedAt = null))) }
+                        messageCacheChanges.value = messageEventClock.get()
+                    }
+                }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+        }
     }
 
     override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
@@ -2366,19 +2399,34 @@ class PulseRepositoryImpl constructor(
                         conversationId = hit.conversationId,
                         conversationName = hit.conversationName ?: "Chat",
                         isGroup = hit.isGroup,
-                        senderName = hit.sender?.name ?: "",
-                        senderColor = hit.sender?.color,
+                        senderName = if (hit.anon) hit.anonAlias ?: "Anonymous" else hit.sender?.name ?: "",
+                        senderColor = if (hit.anon) null else hit.sender?.color,
                         content = hit.content,
                         createdAt = hit.createdAt,
                         deleted = hit.deletedAt != null,
                         imageOnly = hit.imagePath != null && hit.content.isBlank(),
                         isFile = hit.filePath != null,
                         fileName = hit.fileName,
+                        expiresAtEpochMs = hit.expiresAt?.let { PulseTime.epochMs(it) },
+                        viewOnce = hit.viewOnce,
                     )
                 },
             )
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
+
+    override fun observeMessageSearch(query: String): Flow<Result<List<MessageHit>>> = kotlinx.coroutines.flow.flow {
+        val watermark = messageEventClock.get()
+        val result = searchMessages(query)
+        val hits = result.getOrElse { emit(Result.failure(it)); return@flow }
+        emitAll(messageCacheChanges.map {
+            messageCacheMutex.withLock {
+                // A selected result is a snapshot, not authorization to retain
+                // a body after a known edit/delete. Re-query to discover new matches.
+                hits.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
+            }
+        }.withSearchHitExpiry().map { Result.success(it) })
     }
 
     override suspend fun fullHistory(conversationId: String): Result<List<Message>> =
@@ -2395,9 +2443,7 @@ class PulseRepositoryImpl constructor(
                 // upsert the deleted row here (server truth) so "Message
                 // deleted" renders immediately (the VM's refetch then rides
                 // the delta path for anything genuinely newer).
-                r.value.toDomain().let { domain ->
-                    messageDao.upsertAll(listOf(MessageEntity.from(domain, reactionsJsonOf(domain))))
-                }
+                upsertMessage(r.value.toDomain())
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -2430,10 +2476,12 @@ class PulseRepositoryImpl constructor(
         val mine = history.filter { it.authorId == viewerId && !it.isDeleted }
         var cleared = 0
         for (message in mine) {
-            if (api.deleteMessage(message.id, viewerId ?: "") is PulseResult.Success) cleared += 1
-            // keep going - clear as many of my own messages as the server allows
+            when (val response = api.deleteMessage(message.id, viewerId ?: "")) {
+                is PulseResult.Success -> { upsertMessage(response.value.toDomain()); cleared += 1 }
+                is PulseResult.Failure -> Unit // Failed rows remain intact and retryable.
+            }
         }
-        if (cleared > 0) messageDao.deleteByIds(mine.map { it.id })
+        if (mine.isNotEmpty() && cleared == 0) return Result.failure(IllegalStateException("No messages could be deleted. Try again."))
         scheduleConversationsRefresh()
         return Result.success(cleared)
     }
@@ -2452,6 +2500,7 @@ class PulseRepositoryImpl constructor(
     private suspend fun upsertMessage(m: Message) = messageCacheMutex.withLock {
         messageEventRevisions[m.id] = messageEventClock.incrementAndGet()
         messageDao.upsertAll(listOf(MessageEntity.from(m, reactionsJsonOf(m))))
+        messageCacheChanges.value = messageEventClock.get()
     }
 
     // Wave 2 messaging depth (spec §0/§1 - routes verified live)

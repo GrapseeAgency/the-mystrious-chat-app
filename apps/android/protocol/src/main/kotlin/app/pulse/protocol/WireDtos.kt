@@ -94,6 +94,9 @@ data class PinnedPageDto(
     val messages: List<ChatMessageDto> = emptyList(),
 )
 
+@Serializable
+data class UnpinAckDto(val unpinned: Boolean)
+
 /** POST /api/messages/{id}/save { userId } → { saved } (per-user toggle). */
 @Serializable
 data class SavedToggleDto(
@@ -337,6 +340,10 @@ data class SearchHitDto(
     val filePath: String? = null,
     val fileName: String? = null,
     val sender: SenderDto? = null,
+    val expiresAt: String? = null,
+    val viewOnce: Boolean = false,
+    val anon: Boolean = false,
+    val anonAlias: String? = null,
 )
 
 @Serializable

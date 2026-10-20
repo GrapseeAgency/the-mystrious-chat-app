@@ -644,6 +644,9 @@ interface ConversationDao {
 
 @Dao
 interface MessageDao {
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND pinnedAt IS NOT NULL ORDER BY pinnedAt ASC, id ASC")
+    suspend fun pinned(conversationId: String): List<MessageEntity>
+
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 

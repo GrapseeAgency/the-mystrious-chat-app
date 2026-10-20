@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.domain.sync.isVisibleSearchHit
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -466,7 +467,7 @@ fun ChatsScreen(
                         },
                         onOpenHit = { hit ->
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
-                            onOpenRoom(hit.conversationId, hit.id)
+                            if (hit.isVisibleSearchHit()) onOpenRoom(hit.conversationId, hit.id)
                         },
                         // R14 gap 14 - the Actions block atop the empty-query
                         // surface (web spotlight.tsx:237-291).

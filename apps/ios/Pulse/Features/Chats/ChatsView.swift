@@ -698,8 +698,22 @@ struct ChatsView: View {
                         SectionHeader(label: "MESSAGES", count: viewModel.serverTotal ?? hits.count)
                         ForEach(hits, id: \.id) { hit in
                             SearchMessageRowView(hit: hit, query: viewModel.deferredQuery) {
-                                if let conv = viewModel.summaries.first(where: { $0.id == hit.conversationId }) {
-                                    openRoom(conv, jumpMessageId: hit.id)
+                                guard hit.isVisibleSearchHit(), let viewer = session.viewer else { return }
+                                if let cached = viewModel.summaries.first(where: { $0.id == hit.conversationId }) {
+                                    openRoom(cached, jumpMessageId: hit.id)
+                                    return
+                                }
+                                let epoch = session.sessionGeneration, api = session.api
+                                Task {
+                                    do {
+                                        let conv = try await api.conversationDetail(id: hit.conversationId, userId: viewer.id)
+                                        guard session.sessionGeneration == epoch, hit.isVisibleSearchHit(),
+                                              viewModel.serverHits?.contains(where: { $0.id == hit.id }) == true else { return }
+                                        openRoom(conv, jumpMessageId: hit.id)
+                                    } catch {
+                                        guard session.sessionGeneration == epoch else { return }
+                                        session.toasts.show("Couldn’t open this result. Check your connection or try again.")
+                                    }
                                 }
                             }
                         }
@@ -1769,9 +1783,9 @@ private struct SearchMessageRowView: View {
             HStack(spacing: 12) {
                 ZStack(alignment: .bottomTrailing) {
                     RowAvatar(
-                        name: hit.sender?.name ?? "?",
-                        colorName: hit.sender?.color,
-                        photoPath: hit.sender?.avatar,
+                        name: hit.searchSenderName,
+                        colorName: hit.anon == true ? nil : hit.sender?.color,
+                        photoPath: hit.anon == true ? nil : hit.sender?.avatar,
                         size: 40,
                     )
                     if hit.isGroup == true {
@@ -2607,6 +2621,7 @@ final class ChatsViewModel: ObservableObject {
     private var hasLoadedSummary = false
     private var refreshGeneration: UInt64 = 0
     private var searchDebounceTask: Task<Void, Never>?
+    private var searchMessageRevision: UInt64 = 0
     private var observing = false
     private var cancellables: Set<AnyCancellable> = []
 
@@ -2818,6 +2833,10 @@ final class ChatsViewModel: ObservableObject {
 
     private func expireInbox(session: PulseSession) {
         let now = Date()
+        if let hits = serverHits {
+            let visible = hits.filter { $0.isVisibleSearchHit(now: now) && session.acceptsSyncMessage($0.id, startedAt: searchMessageRevision) }
+            if visible != hits { serverHits = visible; serverTotal = visible.count }
+        }
         let next = summaries.map { $0.removingExpiredSummary(at: now) }
         if next != summaries { summaries = next }
         if cachedRows.contains(where: { $0.conv != $0.conv.removingExpiredSummary(at: now) }) {
@@ -2999,6 +3018,10 @@ final class ChatsViewModel: ObservableObject {
     func searchTextChanged(_ value: String, session: PulseSession) {
         query = value
         searchDebounceTask?.cancel()
+        serverHits = nil
+        serverTotal = nil
+        serverSearching = false
+        let epoch = session.sessionGeneration
         let trimmed = value.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
             deferredQuery = ""
@@ -3008,16 +3031,20 @@ final class ChatsViewModel: ObservableObject {
             spotlightRecents = recentsStore.read()
             return
         }
+        serverSearching = trimmed.count >= 2
         searchDebounceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled, let self else { return }
             self.deferredQuery = trimmed
             if trimmed.count >= 2 {
                 self.serverSearching = true
+                let watermark = session.messageRevision
                 let page = await session.api.searchMessages(trimmed)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, self.query == value else { return }
+                self.searchMessageRevision = watermark
                 self.serverSearching = false
-                self.serverHits = page?.messages ?? nil
-                self.serverTotal = page?.total
+                self.serverHits = page?.messages?.filter { $0.isVisibleSearchHit() && session.acceptsSyncMessage($0.id, startedAt: watermark) }
+                self.serverTotal = self.serverHits?.count
             }
         }
     }
@@ -3046,6 +3073,7 @@ final class ChatsViewModel: ObservableObject {
         deferredQuery = ""
         serverHits = nil
         serverTotal = nil
+        serverSearching = false
     }
 
     /// R2-D ITEM 8 - reload the recents rail when entering search mode so

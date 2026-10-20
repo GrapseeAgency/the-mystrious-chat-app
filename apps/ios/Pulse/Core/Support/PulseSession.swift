@@ -126,6 +126,19 @@ public final class PulseSession: ObservableObject {
         (messageRevisions[id] ?? 0) <= revision
     }
 
+    public func recordMessageMutation(_ message: WireChatMessage) throws {
+        try store?.upsert(messages: [message])
+        noteMessageRevision(message.id)
+        messageVisibilityClock.send(Date())
+    }
+
+    public func applyPinRemoval(_ id: String, startedAt revision: UInt64) throws {
+        guard acceptsSyncMessage(id, startedAt: revision) else { return }
+        try store?.clearMessagePin(id: id)
+        noteMessageRevision(id)
+        messageVisibilityClock.send(Date())
+    }
+
     private func noteMessageRevision(_ id: String) {
         messageRevision &+= 1
         messageRevisions[id] = messageRevision

@@ -812,14 +812,22 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
+    private val pinActions = mutableSetOf<String>()
     fun toggleMessagePin(messageId: String) {
+        if (!pinActions.add(messageId)) return
+        val selected = messages.value.firstOrNull { it.id == messageId } ?: _state.value.pins.firstOrNull { it.id == messageId }
         viewModelScope.launch {
-            repo.toggleMessagePin(messageId)
-                .onSuccess { message ->
-                    notify(if (message.pinnedAt != null) "Message pinned" else "Message unpinned")
-                    loadPins()
+            try {
+                if (selected?.pinnedAt != null) {
+                    repo.unpinMessage(messageId)
+                        .onSuccess { notify("Message unpinned"); loadPins() }
+                        .onFailure { notify("Couldn't remove the pin", isError = true) }
+                } else {
+                    repo.toggleMessagePin(messageId)
+                        .onSuccess { notify(if (it.pinnedAt != null) "Message pinned" else "Message unpinned"); loadPins() }
+                        .onFailure { notify("Couldn't update the pin", isError = true) }
                 }
-                .onFailure { notify("Couldn't update the pin", isError = true) }
+            } finally { pinActions.remove(messageId) }
         }
     }
 

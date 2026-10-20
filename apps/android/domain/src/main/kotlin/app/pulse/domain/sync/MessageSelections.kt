@@ -10,6 +10,6 @@ fun reconcileMessageSelection(
 ): List<Message> {
     val latest = current.associateBy { it.id }
     return selected.map { latest[it.id] ?: it }.filter {
-        !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) && keep(it)
+        !it.isDeleted && !it.viewOnce && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) && keep(it)
     }
 }

@@ -35,6 +35,11 @@ class SavedMessageVisibilityTest {
         assertEquals(1, rows.size)
     }
 
+    @Test fun `view once messages cannot become detached pin or search previews`() {
+        val once = message("once").copy(viewOnce = true, pinnedAt = "now")
+        assertTrue(reconcileMessageSelection(listOf(once), emptyList(), 1).isEmpty())
+    }
+
     @Test fun `pin and search selections follow edits deletes and expiry without treating partial history as removal`() {
         val original = message("edit").copy(pinnedAt = "pinned")
         val unknown = message("outside-window").copy(pinnedAt = "pinned")
