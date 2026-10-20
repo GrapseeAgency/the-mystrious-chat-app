@@ -14,7 +14,7 @@ saved items, navigation, or their interactions. Old comments saying â€œverifiedâ
 - **Repaired in source:** a concrete transition changed; native compilation and acceptance may still be pending.
 - **Executed check:** the exact test layer and result are stated below. SQL checks and syntax parsing are not device tests.
 
-`NATIVE-SOURCE-INVENTORY.csv` enumerates **300 production files: 186 Kotlin and 114 Swift**.
+`NATIVE-SOURCE-INVENTORY.csv` enumerates **318 production files: 195 Kotlin and 123 Swift**.
 It covers all twelve Android modules' `src/main` Kotlin and all Swift beneath
 `apps/ios/Pulse`. This deliberately excludes native tests, generated sources,
 resources/manifests, build scripts, extensions outside Pulse, and the backend.
@@ -1333,3 +1333,45 @@ account queue intentionally, heal cadence can add recovery latency, offline inbo
 summary expiry remains open, and draft-to-queue handoff is not yet crash-atomic.
 Backend/native co-deployment is needed to obtain scoped slow-mode behavior; old
 servers safely retain global behavior. The autumn presentation is unchanged.
+
+
+### Crash-atomic composer handoff (2026-10-20)
+
+Traced normal/effect/anonymous sends from both native presentations to local storage.
+Previously the queued operation and draft clear were separate writes. A process exit
+between them could restore the sent text as a new composer, and a delayed journal or
+debounce could resurrect it even without a crash.
+
+- Swift queues the optimistic message, complete envelope and explicit empty draft in
+  one GRDB transaction. Composer journals reserve ordered revisions synchronously;
+  old writers cannot run over a consumed revision. Separate handles for the same
+  database share the fence. Rollback does not advance it or discard the front buffer.
+  Primary keystrokes now journal directly from the model mutation; Mirror gained
+  synchronous local journaling/restoration rather than an unpersisted text field.
+- Android uses the same Room transaction for message/outbox/draft consumption, with
+  an explicit room/account/revision token passed only by composer sends. Journal
+  versions and mutexes belong to the reused account database handle, not a particular
+  repository lifetime. Debounced saves retain their original token, instead of
+  reserving a fresh edit after Send. Mirror journals actual text mutations rather
+  than staging stale text on disposal; an ACK's UI clear is not a new persistent edit.
+  The on-device demo send also consumes its draft with its local message write.
+- Empty local snapshots override stale server drafts in restore and conversation
+  previews; draft-manager lists/counts omit those tombstones. Android clear-all uses
+  tombstones and revision fencing rather than deletion that old pending writes undo.
+  The effect drawer no longer deletes the saved draft before enqueue succeeds.
+- A newer edit is not owned by an older send. Thread, sticker, location and attachment
+  sends without a composer token do not consume unrelated text. A token from another
+  account/store/room is rejected before persistence. The autumn presentation is unchanged.
+
+Verification in this checkout: changed Kotlin/Swift sources parse; `git diff --check`
+passes; the existing 92 server contracts pass (no backend change in this tranche).
+New XCTest/Android regressions cover delayed writers, reopen, newer edits, noncomposer
+sends, ownership rejection, and an injected SQLite draft-write failure rolling back
+message/outbox inserts. Native compilation and execution are delegated to GitHub's
+native runners, not claimed from the syntax check.
+
+Limits: this is local crash-atomic handoff, not a cross-device draft-conflict protocol.
+Server draft mirroring is best effort; interrupted requests/other devices still need
+server-side revision ordering. Unsaved keystrokes can still be lost on storage failure
+or process death before their journal write commits. Native device/background checks,
+offline inbox summary expiry, and the other open feature-tree boundaries remain work.

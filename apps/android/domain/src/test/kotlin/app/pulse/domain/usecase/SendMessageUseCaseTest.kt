@@ -22,6 +22,7 @@ class SendMessageUseCaseTest {
         val sent = mutableListOf<Message>()
         var lastReplyToId: String? = null
         var lastParentId: String? = null
+        var lastDraftToken: app.pulse.domain.model.ComposerDraftToken? = null
         override val viewerId: String? = "a"
         override fun start(userId: String) {}
         override fun observeConversations(query: String) =
@@ -41,7 +42,9 @@ class SendMessageUseCaseTest {
             replyToId: String?,
             parentId: String?,
             topicId: String?,
+            draftToken: app.pulse.domain.model.ComposerDraftToken?,
         ): Result<SendReceipt> {
+            lastDraftToken = draftToken
             val m = Message(
                 id = "m1", conversationId = conversationId, authorId = "a", authorName = "n",
                 kind = Message.Kind.TEXT, body = body, createdAt = "t", replyToId = replyToId,
@@ -220,7 +223,11 @@ class SendMessageUseCaseTest {
             replyToId: String?,
             parentId: String?,
             topicId: String?,
-        ): Result<SendReceipt> = Result.failure(UnsupportedOperationException())
+            draftToken: app.pulse.domain.model.ComposerDraftToken?,
+        ): Result<SendReceipt> {
+            lastDraftToken = draftToken
+            return Result.failure(UnsupportedOperationException())
+        }
 
         // Wave 2 messaging depth (stubs - the send path is the subject here)
         override suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit> =
@@ -427,5 +434,15 @@ class SendMessageUseCaseTest {
         assertTrue(result.isSuccess)
         assertEquals("m42", repo.lastReplyToId)
         assertNull(repo.lastParentId)
+    }
+    @Test fun `composer token reaches plain and anonymous sends but not independent threads`() = runTest {
+        val repo = FakeRepo()
+        val token = app.pulse.domain.model.ComposerDraftToken("c1", "a", 12)
+        SendMessageUseCase(repo)("c1", "plain", draftToken = token)
+        assertEquals(token, repo.lastDraftToken)
+        SendMessageUseCase(repo)("c1", "anonymous", anon = true, draftToken = token)
+        assertEquals(token, repo.lastDraftToken)
+        SendMessageUseCase(repo)("c1", "thread", parentId = "root")
+        assertNull(repo.lastDraftToken)
     }
 }

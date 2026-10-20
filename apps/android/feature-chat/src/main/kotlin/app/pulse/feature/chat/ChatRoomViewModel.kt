@@ -426,7 +426,7 @@ class ChatRoomViewModel @Inject constructor(
             // Wave 0 draft restore: the local draft table wins; when it is
             // empty fall back to the server-mirrored myDraft on the summary.
             val local = runCatching { repo.observeDraft(conversationId).firstOrNull() }.getOrNull()
-            if (!local.isNullOrBlank()) {
+            if (local != null) {
                 if (composerRevision == 0L) _initialDraft.value = local
             } else {
                 val server = runCatching {
@@ -535,6 +535,7 @@ class ChatRoomViewModel @Inject constructor(
         if (_state.value.editing != null) return // composer is editing a row, not drafting
         composerRevision++
         repo.stageDraft(conversationId, text) // reserve/write locally before the debounce
+        val draftToken = repo.captureDraftToken(conversationId)
         val userName = viewerName()
         val now = android.os.SystemClock.elapsedRealtime()
         if (text.isBlank()) {
@@ -555,7 +556,7 @@ class ChatRoomViewModel @Inject constructor(
         draftSaveJob?.cancel()
         draftSaveJob = viewModelScope.launch {
             delay(600)
-            runCatching { repo.saveDraft(conversationId, text) }
+            runCatching { draftToken?.let { repo.saveStagedDraft(conversationId, text, it) } }
                 .onFailure { _state.value = _state.value.copy(error = it.message) }
         }
     }
@@ -587,6 +588,8 @@ class ChatRoomViewModel @Inject constructor(
             return
         }
         val revision = composerRevision
+        val draftToken = repo.captureDraftToken(conversationId)
+        draftSaveJob?.cancel()
         val topic = _activeTopicId.value
         val reply = _state.value.replyTo
         val replyId = reply?.id
@@ -605,7 +608,7 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch {
             // Quote replies DO file to the active topic (only THREAD replies
             // are excluded - the repo drops topicId on parentId sends).
-            safelySend { sendUseCase(conversationId, body, replyId, topicId = topic, anon = anonArmed, anonAliasPreview = anonAliasPreview) }
+            safelySend { sendUseCase(conversationId, body, replyId, topicId = topic, anon = anonArmed, anonAliasPreview = anonAliasPreview, draftToken = draftToken) }
                 .onSuccess { receipt ->
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         // Network-class failure → queued in the outbox. The
@@ -660,6 +663,8 @@ class ChatRoomViewModel @Inject constructor(
             return
         }
         val revision = composerRevision
+        val draftToken = if (consumeDraft) repo.captureDraftToken(conversationId) else null
+        if (consumeDraft) draftSaveJob?.cancel()
         val topic = _activeTopicId.value
         val reply = _state.value.replyTo
         val replyId = reply?.id
@@ -673,6 +678,7 @@ class ChatRoomViewModel @Inject constructor(
                 anon = anon,
                 replyToId = replyId,
                 topicId = topic,
+                draftToken = draftToken,
             ) }
                 .onSuccess { receipt ->
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
@@ -708,7 +714,13 @@ class ChatRoomViewModel @Inject constructor(
 
     private fun consumeComposer(revision: Long) {
         // A response for message A does not own the newer draft B.
-        if (composerRevision == revision) onDraftChanged("")
+        if (composerRevision == revision) {
+            // Local consumption already committed with the outbox. An ACK is
+            // not a new edit and must not overwrite a reopened room's draft.
+            composerRevision++
+            draftSaveJob?.cancel()
+            viewModelScope.launch { repo.setTyping(conversationId, viewerName(), false) }
+        }
     }
 
     /**

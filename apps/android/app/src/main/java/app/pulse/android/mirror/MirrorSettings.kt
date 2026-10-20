@@ -233,7 +233,8 @@ internal fun MirrorSettingsScreen(
     val uiTheme by session.uiTheme.collectAsState()
     val navStyle by session.navStyle.collectAsState()
     val darkOverride by session.darkOverride.collectAsState()
-    val drafts by repository.observeDrafts().collectAsState(initial = emptyMap())
+    val draftSnapshots by repository.observeDrafts().collectAsState(initial = emptyMap())
+    val drafts = draftSnapshots.filterValues { it.isNotBlank() }
     val outbox by repository.observeOutbox().collectAsState(initial = emptyList())
     val connected by repository.observeConnected().collectAsState(initial = false)
     val presence by repository.observePresence().collectAsState(initial = emptySet())

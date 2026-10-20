@@ -6,7 +6,7 @@ import Foundation
 enum PulseTextDelivery {
     static func enqueue(store: PulseStore, viewer: PulseViewer, conversationId: String,
                         content: String, effect: String? = nil, replyTo: WireChatMessage? = nil,
-                        topicId: String? = nil, anon: Bool = false, parentId: String? = nil) throws -> WireChatMessage {
+                        topicId: String? = nil, anon: Bool = false, parentId: String? = nil, draftJournal: PulseDraftJournal? = nil) throws -> WireChatMessage {
         let text = try validatedContent(content, allowEmpty: false)
         guard !text.isEmpty, !conversationId.isEmpty else {
             throw PulseAPIClient.Failure(kind: .validation, message: "Type a message first; effects ride a text message.")
@@ -23,8 +23,10 @@ enum PulseTextDelivery {
         var message = TempMessages.make(conversationId: conversationId, viewer: viewer, clientId: id,
                                        content: text, parentId: parentId, replyTo: replyTo, anon: anon, anonAlias: alias, topicId: parentId == nil ? topicId : nil)
         message.payload = payload
-        try store.enqueueMessage(message, clientId: id, envelope: PulseOutboxForward(
-            kind: "text", replyToId: replyTo?.id, parentId: parentId, topicId: parentId == nil ? topicId : nil, payload: payload, anon: anon))
+        let consumption = try draftJournal?.prepareSend()
+        let consumed = try store.enqueueMessage(message, clientId: id, envelope: PulseOutboxForward(
+            kind: "text", replyToId: replyTo?.id, parentId: parentId, topicId: parentId == nil ? topicId : nil, payload: payload, anon: anon), consumingDraft: consumption)
+        if consumed { draftJournal?.didConsumeDraft() }
         return message
     }
 

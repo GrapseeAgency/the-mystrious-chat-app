@@ -1856,9 +1856,11 @@ fun ChatRoomScreen(
                     // The /effects outcome machine, reused verbatim: a draft
                     // rides the effect-flagged send (sendCurrentDraft's
                     // Outcome.Effect branch).
-                    viewModel.sendEffect(effect, draft)
+                    val submitted = draft
                     draft = ""
-                    viewModel.onDraftChanged("")
+                    viewModel.sendEffect(effect, submitted, onRejected = {
+                        if (draft.isBlank()) { draft = submitted; viewModel.onDraftChanged(submitted) }
+                    })
                 } else {
                     // Empty draft → stage the command; the existing slash
                     // machine sends it on the next send tap (web arms the

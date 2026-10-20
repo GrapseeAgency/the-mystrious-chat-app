@@ -424,7 +424,16 @@ internal fun MirrorRoom(
 ) {
     // R73 - the composer draft is a TextFieldValue: the mention autocomplete
     // needs the caret position to replace the @token in place (web L2923-2961).
-    val composerDraft = remember(groupId) { RoomComposerDraft() }
+    var editing by remember(groupId) { mutableStateOf<Message?>(null) }
+    var stagedDraftToken by remember(repository, groupId) { mutableStateOf<app.pulse.domain.model.ComposerDraftToken?>(null) }
+    val composerDraft = remember(repository, groupId) {
+        RoomComposerDraft { text ->
+            if (editing == null) {
+                repository.stageDraft(groupId, text)
+                stagedDraftToken = repository.captureDraftToken(groupId)
+            }
+        }
+    }
     var draftValue by composerDraft
     val roomActionsLive = remember(groupId) { java.util.concurrent.atomic.AtomicBoolean(true) }
     DisposableEffect(roomActionsLive) { onDispose { roomActionsLive.set(false) } }
@@ -439,7 +448,6 @@ internal fun MirrorRoom(
     // R73 - message-level state (web chat-room.tsx): reply bar, edit bar,
     // the long-press action panel and the surfaces it opens.
     var replyTo by remember(groupId) { mutableStateOf<Message?>(null) }
-    var editing by remember(groupId) { mutableStateOf<Message?>(null) }
     var draftBeforeEdit by remember(groupId) { mutableStateOf<TextFieldValue?>(null) }
     var replyBeforeEdit by remember(groupId) { mutableStateOf<Message?>(null) }
     fun finishEditing() {
@@ -481,15 +489,13 @@ internal fun MirrorRoom(
     }
     LaunchedEffect(draftValue.text, draftRestored, editing?.id) {
         if (!draftRestored || editing != null) return@LaunchedEffect
-        repository.stageDraft(groupId, draftValue.text)
-        if (draftValue.text.isNotBlank()) delay(600)
-        runCatching { repository.saveDraft(groupId, draftValue.text) }
+        val text = draftValue.text
+        val token = stagedDraftToken ?: return@LaunchedEffect
+        if (text.isNotBlank()) delay(600)
+        runCatching { repository.saveStagedDraft(groupId, text, token) }
     }
-    val latestDraft by androidx.compose.runtime.rememberUpdatedState(if (editing != null) draftBeforeEdit?.text.orEmpty() else draftValue.text)
-    val restoredDraft by androidx.compose.runtime.rememberUpdatedState(draftRestored)
-    DisposableEffect(repository, groupId) {
-        onDispose { if (restoredDraft) repository.stageDraft(groupId, latestDraft) }
-    }
+    // Keystrokes are staged synchronously by RoomComposerDraft. Do NOT stage on
+    // disposal: a queued send may already own this text while its ACK is pending.
     // R69 - the web Conversation menu full set (chat-room.tsx L4096-4454):
     // every row opens the same real surface the web opens.
     var remindersOpen by remember { mutableStateOf(false) }
@@ -917,6 +923,7 @@ internal fun MirrorRoom(
             is MirrorSlashBody.Send -> slash.content
             null -> rawText
         }
+        val draftToken = repository.captureDraftToken(groupId)
         val editTarget = editing
         val replyTarget = replyTo
         // R74 - web consumes the armed effect at submit time (chat-room L3137:
@@ -942,12 +949,14 @@ internal fun MirrorRoom(
                         payload = payload,
                         topicId = sendTopicId,
                         replyToId = replyTarget?.id,
+                        draftToken = draftToken,
                     ).getOrThrow()
                 } else if (anonTarget) {
                     repository.sendRichMessage(
                         conversationId = groupId,
                         body = text.take(2000),
                         replyToId = replyTarget?.id,
+                        draftToken = draftToken,
                         topicId = sendTopicId,
                         anon = true,
                         anonAliasPreview = mirrorAnonAliasPreview(viewerId, groupId),
@@ -957,6 +966,7 @@ internal fun MirrorRoom(
                         conversationId = groupId,
                         body = text,
                         replyToId = replyTarget?.id,
+                        draftToken = draftToken,
                         topicId = sendTopicId,
                     ).getOrThrow()
                 }
@@ -968,7 +978,7 @@ internal fun MirrorRoom(
                     if (editTarget != null) {
                         if (editing?.id == editTarget.id && composerDraft.revision == submittedRevision) finishEditing()
                     } else {
-                        composerDraft.clearIfUnchanged(submittedRevision)
+                        composerDraft.clearIfUnchanged(submittedRevision, notify = false)
                         if (replyTo?.id == replyTarget?.id) replyTo = null
                     }
                     sendError = null

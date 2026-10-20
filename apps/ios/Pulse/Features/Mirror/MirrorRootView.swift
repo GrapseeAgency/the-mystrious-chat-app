@@ -1393,7 +1393,20 @@ struct MirrorRoomView: View {
     @State private var messages: [WireChatMessage] = []
     @State private var memberNames: [String] = []
     @State private var memberRows: [WireConversationMember] = []
-    @State private var draft = ""
+    @State private var draftText = ""
+    @State private var draftJournal: PulseDraftJournal?
+    private var draft: String {
+        get { draftText }
+        nonmutating set {
+            draftText = newValue
+            guard let draftJournal else { return }
+            let write = draftJournal.submit(newValue, revision: DispatchTime.now().uptimeNanoseconds)
+            Task {
+                do { try await write.value }
+                catch { session.toasts.show("Draft could not be saved. Check device storage.") }
+            }
+        }
+    }
     // R64 - room kebab + sheets + the composer focus ring
     @State private var menuOpen = false
     @State private var activeSheet: MirrorRoomSheet?
@@ -1577,7 +1590,7 @@ struct MirrorRoomView: View {
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
-                        TextField("Type here", text: $draft, axis: .vertical)
+                        TextField("Type here", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical)
                             .font(.system(size: 15)).foregroundColor(MirrorArt.text)
                             .lineLimit(1...5)
                             .padding(.vertical, 6)
@@ -1712,7 +1725,15 @@ struct MirrorRoomView: View {
             }
         }
         .onChange(of: session.connected) { connected in if connected { refreshRevision &+= 1 } }
-        .onAppear { session.activeRoomId = row.id; updateReadBoundary() }
+        .onAppear {
+            session.activeRoomId = row.id
+            if draftJournal == nil, let store = session.store {
+                let journal = PulseDraftJournal(store: store, conversationId: row.id)
+                draftJournal = journal
+                draft = journal.snapshot ?? row.draft ?? ""
+            }
+            updateReadBoundary()
+        }
         .onDisappear {
             cancelVoiceRecording()
             roomOperations.stop()
@@ -1801,7 +1822,7 @@ struct MirrorRoomView: View {
         }
         do {
             let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: row.id,
-                content: text, effect: armedEffect, anon: row.isGroup && anonNext)
+                content: text, effect: armedEffect, anon: row.isGroup && anonNext, draftJournal: draftJournal)
             acceptCarrier(message)
             draft = ""; armedEffect = nil; anonNext = false
             session.outbox?.reloadPending()

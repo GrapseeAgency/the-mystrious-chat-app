@@ -677,7 +677,7 @@ private fun openConversation(viewModel: ChatsViewModel, conv: Conversation, onOp
 
 /** Local DraftDao row wins over the server-mirrored myDraft (spec row 1). */
 private fun Conversation.withLocalDraft(local: String?): Conversation =
-    if (local.isNullOrBlank()) this else copy(myDraft = local)
+    if (local == null) this else copy(myDraft = local)
 
 /**
  * Archived sub-page (spec §9) - same rows, same swipe/sheet actions, the

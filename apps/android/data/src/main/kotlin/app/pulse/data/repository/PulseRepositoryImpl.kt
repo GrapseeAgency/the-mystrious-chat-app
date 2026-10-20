@@ -388,7 +388,20 @@ class PulseRepositoryImpl constructor(
 
     /** Data & Storage - drop every composer draft at once. */
     override suspend fun clearAllDrafts() {
-        draftDao.clearAll()
+        draftMutex.withLock {
+            val rooms = draftDao.all().map { it.conversationId }.toSet() + draftVersions.keys
+            val revisions = rooms.associateWith { room ->
+                draftVersions.getOrPut(room) { java.util.concurrent.atomic.AtomicLong() }.get()
+            }
+            database.withTransaction {
+                rooms.forEach { draftDao.upsert(DraftEntity(it, "", java.time.OffsetDateTime.now().toString())) }
+            }
+            revisions.forEach { (room, revision) ->
+                if (draftVersions[room]?.compareAndSet(revision, revision + 1) == true) {
+                    scope.launch { mirrorDraft(room, "", revision + 1) }
+                }
+            }
+        }
     }
 
     /** One collector, started once per process: signals → Room + events. */
@@ -638,9 +651,12 @@ class PulseRepositoryImpl constructor(
 
     // reads
     override fun observeConversations(query: String): Flow<List<Conversation>> =
-        conversationDao.observeAll().map { rows ->
-            rows.map { it.toDomain() }
-                .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
+        kotlinx.coroutines.flow.combine(conversationDao.observeAll(), draftDao.observeAll()) { rows, drafts ->
+            val local = drafts.associate { it.conversationId to it.text }
+            rows.map { row ->
+                val conversation = row.toDomain()
+                local[conversation.id]?.let { conversation.copy(myDraft = it) } ?: conversation
+            }.filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
         }
 
     override fun observeMessages(conversationId: String): Flow<List<Message>> =
@@ -650,7 +666,7 @@ class PulseRepositoryImpl constructor(
         messageDao.observeThread(rootId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
 
     override fun observeDrafts(): Flow<Map<String, String>> = draftDao.observeAll().map { rows ->
-        rows.filter { it.text.isNotBlank() }.associate { it.conversationId to it.text }
+        rows.associate { it.conversationId to it.text }
     }
 
     override fun observePresence(): Flow<Set<String>> = onlineIds.asStateFlow()
@@ -805,10 +821,14 @@ class PulseRepositoryImpl constructor(
         replyToId: String?,
         parentId: String?,
         topicId: String?,
+        draftToken: app.pulse.domain.model.ComposerDraftToken?,
     ): Result<SendReceipt> {
         val demo = app.pulse.domain.model.PulseDemo
         if (viewerId.isNullOrBlank()) {
             return Result.failure(IllegalStateException("No identity - complete onboarding first."))
+        }
+        if (draftToken != null && (draftToken.ownerId != viewerId || draftToken.conversationId != conversationId)) {
+            return Result.failure(IllegalStateException("The composer account changed; nothing was saved"))
         }
         val mine = Message(
             id = "demo_out_" + java.util.UUID.randomUUID().toString().replace("-", "").take(16),
@@ -822,7 +842,7 @@ class PulseRepositoryImpl constructor(
             threadRootId = parentId,
             topicId = topicId,
         )
-        messageDao.upsertAll(listOf(MessageEntity.from(mine)))
+        persistComposerSend(draftToken) { messageDao.upsertAll(listOf(MessageEntity.from(mine))) }
         mutateConversation(conversationId) {
             it.copy(
                 lastMessagePreview = body,
@@ -948,17 +968,21 @@ class PulseRepositoryImpl constructor(
         replyToId: String?,
         parentId: String?,
         topicId: String?,
+        draftToken: app.pulse.domain.model.ComposerDraftToken?,
     ): Result<SendReceipt> {
         // Demo companion room: fully on-device. No gateway round-trip, no
         // outbox - the bubble settles instantly and Nova replies locally.
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
-            return demoSend(conversationId, body, replyToId, parentId, topicId)
+            return demoSend(conversationId, body, replyToId, parentId, topicId, draftToken)
         }
         // Optimistic echo FIRST (spec §2 row 2): the bubble appears on the very
         // keystroke-to-send beat, not after the round-trip. The same clientId
         // then either reconciles with the real row, rides the outbox, or is
         // retracted on a definitive failure.
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
+        if (draftToken != null && (draftToken.ownerId != owner || draftToken.conversationId != conversationId)) {
+            return Result.failure(IllegalStateException("The composer account changed; nothing was queued"))
+        }
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
             .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
@@ -974,7 +998,7 @@ class PulseRepositoryImpl constructor(
             threadRootId = parentId,
             topicId = if (parentId == null) topicId else null,
         )
-        database.withTransaction {
+        persistComposerSend(draftToken) {
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
             outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
@@ -1010,11 +1034,12 @@ class PulseRepositoryImpl constructor(
         replyToId: String?,
         parentId: String?,
         topicId: String?,
+        draftToken: app.pulse.domain.model.ComposerDraftToken?,
     ): Result<SendReceipt> {
         // Demo room rides the same on-device path (sticker/effect wrappers
         // degrade to their text body here - the bursts still fire client-side).
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
-            return demoSend(conversationId, body, replyToId, parentId, topicId)
+            return demoSend(conversationId, body, replyToId, parentId, topicId, draftToken)
         }
         if (kind !in setOf("text", "image", "audio", "file", "sticker", "location")) {
             return Result.failure(IllegalArgumentException("Unsupported message kind"))
@@ -1024,6 +1049,9 @@ class PulseRepositoryImpl constructor(
                 ?: return Result.failure(IllegalArgumentException("Message payload must be a JSON object"))
         }
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
+        if (draftToken != null && (draftToken.ownerId != owner || draftToken.conversationId != conversationId)) {
+            return Result.failure(IllegalStateException("The composer account changed; nothing was queued"))
+        }
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
             .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
@@ -1043,7 +1071,7 @@ class PulseRepositoryImpl constructor(
             // the server will store (web optimistic-mask parity).
             anonAlias = anonAliasPreview.takeIf { anon },
         )
-        database.withTransaction {
+        persistComposerSend(draftToken) {
             messageDao.upsertAll(listOf(MessageEntity.from(temp.copy(payload = payload)).copy(kind = if (kind == "audio") "VOICE" else kind.uppercase(java.util.Locale.ROOT))))
             outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
@@ -1064,6 +1092,30 @@ class PulseRepositoryImpl constructor(
                 payload = richPayload,
             )
         }
+    }
+
+    /** Queue + explicit draft clear commit together; late journal writes share this lock. */
+    private suspend fun persistComposerSend(token: app.pulse.domain.model.ComposerDraftToken?, write: suspend () -> Unit) {
+        draftMutex.withLock {
+            val counter = token?.let { draftVersions[it.conversationId] }
+            val consume = token != null && counter?.get() == token.revision
+            database.withTransaction {
+                write()
+                if (consume) draftDao.upsert(DraftEntity(checkNotNull(token).conversationId, "", java.time.OffsetDateTime.now().toString()))
+            }
+            if (consume) {
+                val consumed = checkNotNull(token)
+                if (counter?.compareAndSet(consumed.revision, consumed.revision + 1) == true) {
+                    scope.launch { mirrorDraft(consumed.conversationId, "", consumed.revision + 1) }
+                }
+            }
+        }
+    }
+
+    override fun captureDraftToken(conversationId: String): app.pulse.domain.model.ComposerDraftToken? {
+        val owner = viewerId ?: return null
+        val counter = draftVersions.getOrPut(conversationId) { java.util.concurrent.atomic.AtomicLong() }
+        return app.pulse.domain.model.ComposerDraftToken(conversationId, owner, counter.get())
     }
 
     private suspend fun sendPersistedNowOrQueue(
@@ -1908,8 +1960,10 @@ class PulseRepositoryImpl constructor(
 
     // drafts (Wave 0 - web pulse-drafts parity)
 
-    private val draftVersions = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong>()
-    private val draftMutex = Mutex()
+    private val draftWrites = DraftWriteCoordinator.forDatabase(database)
+    private val draftVersions = draftWrites.versions
+    private val draftMutex = draftWrites.localMutex
+    private val draftServerMutex = draftWrites.serverMutex
     // Finite local journal writes outlive UI/transport teardown; no network work
     // runs in this scope. Every write remains bound to this account's database.
     private val draftWriteScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -1918,10 +1972,11 @@ class PulseRepositoryImpl constructor(
         .getOrPut(id) { java.util.concurrent.atomic.AtomicLong() }.incrementAndGet()
 
     private suspend fun writeLocalDraft(id: String, text: String, version: Long) = draftMutex.withLock {
-        if (draftVersions[id]?.get() != version) return@withLock
+        if (draftVersions[id]?.get() != version) return@withLock false
         val value = text.take(MAX_DRAFT)
-        if (value.isBlank()) draftDao.delete(id)
-        else draftDao.upsert(DraftEntity(id, value, java.time.OffsetDateTime.now().toString()))
+        // Empty is an explicit local clear, not permission to restore stale server text.
+        draftDao.upsert(DraftEntity(id, if (value.isBlank()) "" else value, java.time.OffsetDateTime.now().toString()))
+        true
     }
 
     override fun stageDraft(conversationId: String, text: String) {
@@ -1932,8 +1987,23 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun saveDraft(conversationId: String, text: String) {
-        writeLocalDraft(conversationId, text, nextDraftVersion(conversationId))
-        setServerDraft(conversationId, text.take(MAX_DRAFT))
+        val revision = nextDraftVersion(conversationId)
+        if (writeLocalDraft(conversationId, text, revision)) mirrorDraft(conversationId, text, revision)
+    }
+
+    override suspend fun saveStagedDraft(conversationId: String, text: String, token: app.pulse.domain.model.ComposerDraftToken) {
+        if (token.ownerId != viewerId || token.conversationId != conversationId) return
+        if (writeLocalDraft(conversationId, text, token.revision)) {
+            mirrorDraft(conversationId, text, token.revision)
+        }
+    }
+
+    private suspend fun mirrorDraft(conversationId: String, text: String, revision: Long) = draftServerMutex.withLock {
+        // An already-running old request finishes before the clear/new edit;
+        // a delayed request that has not started loses its revision fence.
+        if (!app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId) && draftVersions[conversationId]?.get() == revision) {
+            setServerDraft(conversationId, text.take(MAX_DRAFT))
+        }
     }
 
     override suspend fun clearDraft(conversationId: String) = saveDraft(conversationId, "")

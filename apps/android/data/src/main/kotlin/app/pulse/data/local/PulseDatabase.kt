@@ -782,6 +782,9 @@ interface DraftDao {
     @Query("SELECT * FROM draft")
     fun observeAll(): Flow<List<DraftEntity>>
 
+    @Query("SELECT * FROM draft")
+    suspend fun all(): List<DraftEntity>
+
     @Query("SELECT * FROM draft WHERE conversationId = :conversationId")
     suspend fun get(conversationId: String): DraftEntity?
 

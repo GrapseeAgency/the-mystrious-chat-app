@@ -393,13 +393,30 @@ public final class PulseStore: Sendable {
 
     /// Persist operation and optimistic bubble before any network I/O.
     public func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward) throws {
+        _ = try enqueueMessage(message, clientId: clientId, envelope: envelope, consumingDraft: nil)
+    }
+
+    @discardableResult
+    func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
+                        consumingDraft token: PulseDraftConsumption?) throws -> Bool {
         guard let payload = PulseOutboxForward.encode(envelope) else { throw CocoaError(.coderInvalidValue) }
-        try dbQueue.write { db in
-            try Self.writeMessage(message, db: db)
-            try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
-                content: message.content, kind: envelope.kind ?? "text", createdAt: PulseOutboxClock.now(),
-                attempts: 0, payloadJson: payload).insert(db)
+        if let token, token.storageIdentity != storageIdentity || token.conversationId != message.conversationId {
+            throw CocoaError(.userCancelled)
         }
+        let commit: (Bool) throws -> Void = { consume in
+            try self.dbQueue.write { db in
+                try Self.writeMessage(message, db: db)
+                try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
+                    content: message.content, kind: envelope.kind ?? "text", createdAt: PulseOutboxClock.now(),
+                    attempts: 0, payloadJson: payload).insert(db)
+                if consume { try Self.writeDraftSnapshot(db, room: message.conversationId, text: "") }
+            }
+        }
+        if let token {
+            return try draftFence.enqueue(token.conversationId, expected: token.revision, action: commit)
+        }
+        try commit(false)
+        return false
     }
 
     /// The acknowledgement is one SQLite transaction, never three independent writes.
@@ -864,8 +881,7 @@ public final class PulseStore: Sendable {
 
     // drafts (Wave 0 - composer persistence, web pulse-drafts parity)
 
-    /// Upserts the composer draft. Empty text clears the row (a blank local
-    /// draft must never shadow the server's myDraft).
+    /// Empty text is a local tombstone, overriding stale server drafts.
     public func saveDraft(conversationId: String, text: String) throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -875,19 +891,25 @@ public final class PulseStore: Sendable {
         try saveDraftSnapshot(conversationId: conversationId, text: text)
     }
 
-    /// Unlike legacy saveDraft, an empty snapshot is an explicit local clear.
-    /// It prevents a stale server myDraft from resurrecting sent/discarded text.
-    func saveDraftSnapshot(conversationId: String, text: String) throws {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: """
-                INSERT INTO draft (conversationId, text, updatedAt)
-                VALUES (:cid, :text, :updatedAt)
-                ON CONFLICT(conversationId) DO UPDATE SET text=:text, updatedAt=:updatedAt
-                """,
-                arguments: ["cid": conversationId, "text": text, "updatedAt": PulseOutboxClock.now()],
-            )
+    /// All draft writes and composer sends for this database share an ordering fence.
+    private var draftFence: PulseDraftWriteFence { PulseDraftWriteFence.shared(for: storageIdentity) }
+
+    func reserveDraftWrite(conversationId: String) -> UInt64 { draftFence.reserve(conversationId) }
+    func captureDraftConsumption(conversationId: String) -> PulseDraftConsumption {
+        PulseDraftConsumption(storageIdentity: storageIdentity, conversationId: conversationId, revision: draftFence.current(conversationId))
+    }
+
+    func saveDraftSnapshot(conversationId: String, text: String, expectedRevision: UInt64? = nil) throws {
+        try draftFence.write(conversationId, expected: expectedRevision) {
+            try dbQueue.write { db in try Self.writeDraftSnapshot(db, room: conversationId, text: text) }
         }
+    }
+
+    private static func writeDraftSnapshot(_ db: Database, room: String, text: String) throws {
+        try db.execute(sql: """
+            INSERT INTO draft (conversationId, text, updatedAt) VALUES (:cid, :text, :updatedAt)
+            ON CONFLICT(conversationId) DO UPDATE SET text=:text, updatedAt=:updatedAt
+            """, arguments: ["cid": room, "text": text, "updatedAt": PulseOutboxClock.now()])
     }
 
     /// Local draft for a conversation; nil when absent/blank (legacy consumers).
@@ -930,9 +952,7 @@ public final class PulseStore: Sendable {
     }
 
     public func deleteDraft(conversationId: String) throws {
-        _ = try dbQueue.write { db in
-            try db.execute(sql: "DELETE FROM draft WHERE conversationId = :cid", arguments: ["cid": conversationId])
-        }
+        try saveDraftSnapshot(conversationId: conversationId, text: "")
     }
 
     // call log (W3-b - Wave 3 native calls)

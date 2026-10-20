@@ -22,6 +22,7 @@ class SendMessageUseCase(private val repo: PulseRepository) {
          */
         anon: Boolean = false,
         anonAliasPreview: String? = null,
+        draftToken: app.pulse.domain.model.ComposerDraftToken? = null,
     ): Result<SendReceipt> {
         val trimmed = body.trim()
         if (trimmed.isEmpty()) return Result.failure(IllegalArgumentException("Message body is empty"))
@@ -35,9 +36,10 @@ class SendMessageUseCase(private val repo: PulseRepository) {
                 topicId = topicId,
                 anon = true,
                 anonAliasPreview = anonAliasPreview,
+                draftToken = draftToken,
             )
         } else {
-            repo.sendMessage(conversationId, trimmed, replyToId, parentId, topicId)
+            repo.sendMessage(conversationId, trimmed, replyToId, parentId, topicId, draftToken)
         }
     }
 

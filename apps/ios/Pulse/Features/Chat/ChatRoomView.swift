@@ -3695,7 +3695,12 @@ final class RoomViewModel: ObservableObject {
     @Published private(set) var typers: [Typer] = []
     @Published private(set) var partnerLastReadAt: Date?
     @Published var draft = "" {
-        didSet { if oldValue != draft { draftEditRevision &+= 1 } }
+        didSet {
+            if oldValue != draft {
+                draftEditRevision &+= 1
+                if editingTarget == nil { journalDraft(draft) }
+            }
+        }
     }
     private var draftEditRevision: UInt64 = 0
     private var draftBeforeEdit: String?
@@ -4585,7 +4590,6 @@ final class RoomViewModel: ObservableObject {
 
     private func scheduleDraftSave(session: PulseSession) {
         let text = draft
-        journalDraft(text) // local durability is not delayed by the server debounce
         draftSaveTask?.cancel()
         let client = session.api
         let epoch = session.sessionGeneration
@@ -4608,7 +4612,7 @@ final class RoomViewModel: ObservableObject {
         }
         do {
             let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: conversationId,
-                content: draft, replyTo: replyTarget, topicId: activeTopicId, anon: isGroupRoom && anonOn)
+                content: draft, replyTo: replyTarget, topicId: activeTopicId, anon: isGroupRoom && anonOn, draftJournal: draftJournal)
             upsert(message)
             errorText = nil
             // Durable intent owns the quote/mask; a late ACK must not mutate
@@ -4729,7 +4733,7 @@ final class RoomViewModel: ObservableObject {
         }
         do {
             let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: conversationId,
-                content: content, effect: effect, replyTo: replyTarget, topicId: activeTopicId, anon: isGroupRoom && anonOn)
+                content: content, effect: effect, replyTo: replyTarget, topicId: activeTopicId, anon: isGroupRoom && anonOn, draftJournal: draftJournal)
             upsert(message)
             draft = ""; replyTarget = nil
             if isGroupRoom { anonOn = false }
