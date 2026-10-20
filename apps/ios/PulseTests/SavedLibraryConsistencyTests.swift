@@ -28,7 +28,7 @@ final class SavedLibraryConsistencyTests: XCTestCase {
         try store.upsert(savedItems: [stale])
         try store.upsert(messages: [stale.message.deletedCopy()])
         try store.upsert(savedItems: [stale], replacingSnapshot: true, preservingMessageIds: ["row"])
-        XCTAssertTrue(try store.cachedSavedItems().isEmpty())
+        XCTAssertTrue(try store.cachedSavedItems().isEmpty)
         XCTAssertNotNil(try store.message(id: "row")?.deletedAt)
         let edit = try item("edited", content: "fresh edit")
         try store.upsert(messages: [edit.message])
@@ -64,7 +64,7 @@ final class SavedLibraryConsistencyTests: XCTestCase {
         XCTAssertNil(try store.message(id: "new"))
         try await connection.write { try $0.execute(sql: "DROP TRIGGER fail_saved") }
         try store.upsert(savedItems: [], replacingSnapshot: true)
-        XCTAssertTrue(try store.cachedSavedItems().isEmpty())
+        XCTAssertTrue(try store.cachedSavedItems().isEmpty)
         XCTAssertNotNil(try store.message(id: "old"))
     }
 }

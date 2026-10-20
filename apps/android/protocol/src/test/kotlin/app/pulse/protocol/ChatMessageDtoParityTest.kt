@@ -138,7 +138,7 @@ class ChatMessageDtoParityTest {
 
         val savedOn = PulseJson.decodeFromString(SavedToggleDto.serializer(), """{"saved":true}""")
         assertTrue(savedOn.saved)
-        val savedOff = PulseJson.decodeFromString(SavedToggleDto.serializer(), "{}")
+        val savedOff = PulseJson.decodeFromString(SavedToggleDto.serializer(), """{"saved":false}""")
         assertFalse(savedOff.saved)
     }
 
