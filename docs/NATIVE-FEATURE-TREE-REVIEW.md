@@ -14,7 +14,7 @@ saved items, navigation, or their interactions. Old comments saying â€œverifiedâ
 - **Repaired in source:** a concrete transition changed; native compilation and acceptance may still be pending.
 - **Executed check:** the exact test layer and result are stated below. SQL checks and syntax parsing are not device tests.
 
-`NATIVE-SOURCE-INVENTORY.csv` enumerates **300 production files: 186 Kotlin and 114 Swift**.
+`NATIVE-SOURCE-INVENTORY.csv` enumerates **321 production files: 200 Kotlin and 121 Swift**.
 It covers all twelve Android modules' `src/main` Kotlin and all Swift beneath
 `apps/ios/Pulse`. This deliberately excludes native tests, generated sources,
 resources/manifests, build scripts, extensions outside Pulse, and the backend.
@@ -1333,3 +1333,190 @@ account queue intentionally, heal cadence can add recovery latency, offline inbo
 summary expiry remains open, and draft-to-queue handoff is not yet crash-atomic.
 Backend/native co-deployment is needed to obtain scoped slow-mode behavior; old
 servers safely retain global behavior. The autumn presentation is unchanged.
+
+
+### Crash-atomic composer handoff (2026-10-20)
+
+Traced normal/effect/anonymous sends from both native presentations to local storage.
+Previously the queued operation and draft clear were separate writes. A process exit
+between them could restore the sent text as a new composer, and a delayed journal or
+debounce could resurrect it even without a crash.
+
+- Swift queues the optimistic message, complete envelope and explicit empty draft in
+  one GRDB transaction. Composer journals reserve ordered revisions synchronously;
+  old writers cannot run over a consumed revision. Separate handles for the same
+  database share the fence. Rollback does not advance it or discard the front buffer.
+  Primary keystrokes now journal directly from the model mutation; Mirror gained
+  synchronous local journaling/restoration rather than an unpersisted text field.
+- Android uses the same Room transaction for message/outbox/draft consumption, with
+  an explicit room/account/revision token passed only by composer sends. Journal
+  versions and mutexes belong to the reused account database handle, not a particular
+  repository lifetime. Debounced saves retain their original token, instead of
+  reserving a fresh edit after Send. Mirror journals actual text mutations rather
+  than staging stale text on disposal; an ACK's UI clear is not a new persistent edit.
+  The on-device demo send also consumes its draft with its local message write.
+- Empty local snapshots override stale server drafts in restore and conversation
+  previews; draft-manager lists/counts omit those tombstones. Android clear-all uses
+  tombstones and revision fencing rather than deletion that old pending writes undo.
+  The effect drawer no longer deletes the saved draft before enqueue succeeds.
+- A newer edit is not owned by an older send. Thread, sticker, location and attachment
+  sends without a composer token do not consume unrelated text. A token from another
+  account/store/room is rejected before persistence. The autumn presentation is unchanged.
+
+Verification in this checkout: changed Kotlin/Swift sources parse; `git diff --check`
+passes; the existing 92 server contracts pass (no backend change in this tranche).
+New XCTest/Android regressions cover delayed writers, reopen, newer edits, noncomposer
+sends, ownership rejection, and an injected SQLite draft-write failure rolling back
+message/outbox inserts. Native compilation and execution are delegated to GitHub's
+native runners, not claimed from the syntax check.
+
+Limits: this is local crash-atomic handoff, not a cross-device draft-conflict protocol.
+Server draft mirroring is best effort; interrupted requests/other devices still need
+server-side revision ordering. Unsaved keystrokes can still be lost on storage failure
+or process death before their journal write commits. Native device/background checks,
+offline inbox summary expiry, and the other open feature-tree boundaries remain work.
+
+
+### Offline inbox expiry and authoritative snapshot replacement (2026-10-20)
+
+The message timeline's TTL filter did not protect the inbox. Android discarded
+`lastMessage.expiresAt` when mapping summaries to Room; Swift rebuilt a permanent
+synthetic message from a cached snippet. A failed poll left those previews and badge
+counts on-screen indefinitely. Counting cached history instead would be wrong: it is
+a bounded/partial window, and the preview need not be an unread message.
+
+- The server now aggregates unread rows by expiry in one query, returning the total
+  and its `unreadExpirations` schedule from the same aggregate. Expired/deleted/own/read
+  rows are excluded. Permanent unread stays in the count but has no deadline bucket.
+- Android persists the preview deadline and unread schedule (Room v13) and applies a
+  clock-driven projection to the shared conversation flow used by both presentations.
+  Expired text, author/file/type decorations disappear; only expired unread buckets
+  subtract from the badge. New Room emissions replace pending timers; stopped collectors
+  cancel them. iOS preserves the complete summary envelope in GRDB v11, projects it on
+  cache restore, and reevaluates both visible inbox presentations independently of network
+  polling. Optimistic pin/mute/archive/manual-unread copies preserve expiry/privacy fields.
+- Old inbox caches have no trustworthy expiry provenance. Migration retires their
+  derived previews/counts, not room identities, messages, drafts, or durable operations.
+  New snapshots restore those derived fields. This may temporarily hide a legacy badge
+  while offline; it does not mark any server messages as read.
+- Android detail endpoints omit inbox-only fields. Opening room info, changing a group
+  photo/name/TTL, or receiving another detail response now merges those fields instead
+  of resetting preview/unread/pin/archive state to DTO defaults. Explicit zero counts
+  on real summaries remain authoritative.
+- Successful complete lists replace cached server-room snapshots atomically, including
+  empty lists; Android's local demo room remains local. Delayed list responses are fenced,
+  and Swift polling now updates the persistent cache too. An empty iOS response no longer
+  falls back to stale cached rooms. Draft/outbox recovery is not deleted with inbox rows.
+- Manual-unread remains independent of numeric unread on both platforms and in both
+  Unread filters. No autumn styling or layout changes were made.
+
+Executed here: 93/93 server contracts, including grouped deadlines and permanent-unread
+retention; standalone TypeScript checking of the visibility/aggregate helper; changed
+native syntax and diff checks. Added native clock/deadline, restart, migration, empty
+snapshot, and detail-merge regressions. Native compilation/execution for this tranche
+still requires the GitHub runners. The preceding draft-handoff Android build and both
+API 30/34 instrumented jobs passed; iOS archived successfully but its test compile found
+three missing async awaits in the new GRDB rollback test, corrected in `633a7e1`.
+
+Limits: exact offline unread decay needs the updated backend's schedule. Older servers
+still provide preview expiry, but native clients do not guess which unrelated unread
+messages have expired. Device wall-clock trust, unknown offline deletions/read receipts
+from other devices, notification/exported copies and full cached-media revocation remain
+open. An expired preview clears rather than inventing an older preview from partial local
+history; the next successful server refresh selects the current latest live message.
+
+
+### Saved-library consistency, explicit Unsave, and detached selections (2026-10-20)
+
+The Android saved observer watched only bookmark markers, then read message bodies
+through unobserved one-shot DAO calls. Editing or deleting a saved message did not
+necessarily redraw the library. Mirror fetched once into detached state and stayed on
+Loading forever after failure. Swift's library expired rows on a clock, but did not
+observe message-cache changes; a late library response could overwrite a newer relay
+edit/deletion. Both libraries used a save toggle for Unsave, making response-loss retries
+capable of saving a message again.
+
+- Android now observes one Room join across messages, saved markers and conversation
+  metadata; deleted rows are excluded and a cancellable clock removes expired items
+  offline. Primary and Mirror saved screens render that stream, not stale HTTP-returned
+  copies. Mirror failures stop loading and expose Retry without changing autumn styling.
+  Primary Unsave unwraps repository failures instead of accidentally treating Result.failure
+  as a successful runCatching result.
+- Saved refresh commits message versions and exact marker replacement together on both
+  platforms. Android serializes library fetch/save/remove operations and applies the
+  existing per-message revision fence inside the transaction; local mutation ACKs now
+  advance that fence too. Swift observes the GRDB join, preserves cache rows changed since
+  a fetch began, and fences refresh against bookmark changes. Primary Save updates the
+  local marker immediately after acknowledgement and suppresses duplicate pending taps.
+- DELETE /api/messages/{id}/save is an explicit owner-authenticated removal. Repeating it
+  cannot recreate a bookmark; it also permits cleanup after message deletion or leaving
+  a room. Native Unsave calls DELETE, validates the acknowledgement, and never falls back
+  to the toggle. POST Save rejects already-expired messages. Legacy POST remains a toggle.
+- Primary-room pin/search selections now reconcile current cached content and expire
+  detached snapshots. Android cancelled searches cannot publish after the next query;
+  Swift query/pin responses respect session/message revision fences and retain fresh
+  response content rather than overwriting it with an older loaded-window copy. Missing
+  history alone is not interpreted as deletion. Mirror pin/search sheets and global
+  spotlight results still need their own full lifecycle trace.
+
+Executed: 94 server contracts pass, including repeat-safe owner-scoped removal without
+an extant message; visibility/helper TypeScript checking and changed-native syntax/diff
+checks pass. Added native saved-clock/selection/acknowledgement, observed-join, deletion,
+late-refresh and rollback regressions; native runner execution for this source remains
+pending. Previous b5109bb iOS execution passed. Its Android compile found a duplicate
+Serializable annotation (and the Conversation annotation displaced onto the new expiry
+model); 0ea0fd3 restores one annotation to each class. Parsing alone did not catch that
+compiler error and is not claimed as compilation.
+
+Backend/native co-deployment is required for explicit Unsave; an older server's 405 is
+reported, not retried through a potentially destructive toggle. The saved API remains a
+100-item window. Global search, notification/exported copies, media viewers, and broad
+membership-revocation/cache policy are not established by these repairs. No whole-app
+correctness or completed-feature-tree claim is made.
+
+### Global search, Mirror pin/search sheets, and partial bulk deletion (2026-10-21)
+
+- Android global search, Mirror home search and Spotlight now collect a cancellable
+  expiry-aware stream instead of retaining a single HTTP snapshot. Query changes clear
+  older hits immediately. Known authoritative message mutations retire affected search
+  snapshots, including local delete/edit ACKs; fresh matching edits require a re-query.
+- Swift global search clears old results/loading state on query change/close and rejects
+  responses from cancelled queries or retired sessions. Its visibility clock removes
+  expired/deleted/view-once/known-mutated results. Local primary-room edit/delete ACKs
+  now advance the same revision fence used by remote envelopes. Query values encode
+  separators such as &, + and # instead of letting them alter URL parameters.
+- Search DTOs retain expiry/view-once/anonymous metadata. Backend search filters unsafe
+  retained previews, masks anonymous sender identity, and returns the actual visible hit
+  count. Native search chrome also masks anonymous authors for older compatible servers.
+  Swift can resolve an uncached conversation on search-result activation instead of
+  silently ignoring the tap; existing cached rooms remain navigable offline.
+- Explicit owner-authenticated DELETE /api/messages/{id}/pin removes a pin rather than
+  toggling it. Membership validation and removal share a SQLite transaction. Both native
+  clients require an explicit positive acknowledgement; there is no legacy-toggle
+  fallback. Primary-room Unpin and Mirror Unpin await this operation and suppress repeat
+  pending taps. Legacy **Pin** still uses POST toggle and is not claimed repeat-safe.
+- Android refreshes pin snapshots atomically, retires absent cached pin flags, and
+  protects newer mutations from older fetches. Mirror pin sheets now show load/action
+  errors and Retry, reconcile current cached versions and expire detached previews.
+  Swift pin removals update both the serialized GRDB payload and indexed pin field.
+  Mirror search sheets and primary selections exclude deleted, expired and view-once
+  bodies. These behavior changes preserve the autumn palette/layout.
+- Android Clear My Messages previously deleted **all** selected cached rows if just one
+  request succeeded, hiding rows whose deletion failed. It now caches only acknowledged
+  tombstones, retains failed rows for retry, and reports complete failure. Its history
+  source is still bounded to 500 rows; this is not an unlimited bulk-delete guarantee.
+
+Executed locally: 98/98 server contracts (including real SQLite repeated Unpin and
+nonmember refusal), standalone search/pin-helper TypeScript checks. Added native tests
+for search expiry/cancellation/metadata, encoded queries, required acknowledgements,
+view-once selections and GRDB pin-payload consistency. Native compiler/device execution
+must run on GitHub; parser checks are not compilation. No generated native builds are
+stored here. Inventory updated to 322 production sources.
+
+Still open: thread-root navigation and server revalidation of stale message targets;
+unknown offline changes and broad membership-revocation/cache rules; media/export/
+notification copies; legacy Pin toggle replay; bounded global search (newest 1,200 rows,
+30 hits); server ordering without per-message versions. Search invalidation removes a
+known-mutated snapshot instead of discovering a newly matching edit automatically.
+Explicit Unpin requires backend/native co-deployment; older servers fail visibly. This
+entry records targeted repairs, not whole-app or feature-tree completion.

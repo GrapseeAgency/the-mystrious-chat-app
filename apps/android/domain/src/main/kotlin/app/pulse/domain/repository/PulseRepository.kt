@@ -308,6 +308,8 @@ interface PulseRepository {
     fun observeThreadMessages(rootId: String): Flow<List<Message>>
 
     /** Live per-conversation drafts (chats-list "Draft:" preview merge - local wins). */
+    // Includes empty tombstones: inbox merges must override stale server text;
+    // draft-manager lists/counts must filter blank values.
     fun observeDrafts(): Flow<Map<String, String>>
 
     /** Pull the latest lists from the gateway into the local cache. */
@@ -339,6 +341,7 @@ interface PulseRepository {
         parentId: String? = null,
         /** Wave 2 topic filing - dropped on thread replies (spec §1 row 10). */
         topicId: String? = null,
+        draftToken: app.pulse.domain.model.ComposerDraftToken? = null,
     ): Result<SendReceipt>
     suspend fun markRead(conversationId: String): Result<Unit>
     /** Displayed server message boundary; never acknowledge unseen arrivals. */
@@ -386,6 +389,9 @@ interface PulseRepository {
 
     /** GET /api/search?userId=&q= - server message search (≥2 chars, caller debounces). */
     suspend fun searchMessages(query: String): Result<List<MessageHit>>
+    fun observeMessageSearch(query: String): Flow<Result<List<MessageHit>>> = kotlinx.coroutines.flow.flow {
+        emit(searchMessages(query))
+    }
 
     /** Full paginated-ish history for export/clear (single bounded fetch). */
     suspend fun fullHistory(conversationId: String): Result<List<Message>>
@@ -419,6 +425,9 @@ interface PulseRepository {
     /** Live outbox rows (oldest first) - pending-bubble state + worker triggering. */
     fun observeOutbox(): Flow<List<OutboxEntry>>
 
+    /** Reserve no work: snapshot the current composer revision before launching Send. */
+    fun captureDraftToken(conversationId: String): app.pulse.domain.model.ComposerDraftToken? = null
+
     /** FIFO snapshot (≤50 oldest) the drain policy walks. */
     suspend fun outboxPending(): List<OutboxEntry>
 
@@ -448,6 +457,8 @@ interface PulseRepository {
     fun stageDraft(conversationId: String, text: String) {}
     /** Persist the composer draft (≤2000 chars; blank clears) and mirror remotely. */
     suspend fun saveDraft(conversationId: String, text: String)
+    /** Debounced mirror of an already-staged revision; must not reserve a new edit. */
+    suspend fun saveStagedDraft(conversationId: String, text: String, token: app.pulse.domain.model.ComposerDraftToken) {}
 
     /** Drop the local composer draft (send delivered / composer cleared). */
     suspend fun clearDraft(conversationId: String)
@@ -468,6 +479,7 @@ interface PulseRepository {
 
     /** GET /api/conversations/{id}/pinned?userId= - pinned rows, pinnedAt asc (also upserts Room). */
     suspend fun pinnedMessages(conversationId: String): List<Message>
+    suspend fun unpinMessage(messageId: String): Result<Unit> = Result.failure(UnsupportedOperationException("Explicit unpin unavailable"))
 
     /** GET /api/messages/{id}/thread?userId= → (parent, replies asc) - also upserts Room. */
     suspend fun loadThread(rootId: String): Pair<Message, List<Message>>
@@ -629,6 +641,7 @@ interface PulseRepository {
         replyToId: String? = null,
         parentId: String? = null,
         topicId: String? = null,
+        draftToken: app.pulse.domain.model.ComposerDraftToken? = null,
     ): Result<SendReceipt>
 
     // Wave 2 messaging depth (spec WAVE2 §0 - all routes exist on the wire)

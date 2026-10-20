@@ -3,6 +3,7 @@ package app.pulse.data.local
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
+import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.Insert
@@ -85,6 +86,8 @@ data class ConversationEntity(
     val otherUserId: String?,
     val isChannel: Boolean,
     @ColumnInfo(defaultValue = "[]") val membersJson: String = "[]",
+    val lastMessageExpiresAtEpochMs: Long? = null,
+    @ColumnInfo(defaultValue = "'[]'") val unreadExpirationsJson: String = "[]",
 ) {
     fun toDomain() = Conversation(
         id = id,
@@ -118,6 +121,10 @@ data class ConversationEntity(
         mutedUntilEpoch = mutedUntilEpoch,
         otherUserId = otherUserId,
         isChannel = isChannel,
+        lastMessageExpiresAtEpochMs = lastMessageExpiresAtEpochMs,
+        unreadExpirations = runCatching {
+            app.pulse.protocol.PulseJson.decodeFromString(kotlinx.serialization.builtins.ListSerializer(app.pulse.domain.model.UnreadExpiration.serializer()), unreadExpirationsJson)
+        }.getOrDefault(emptyList()),
     )
 
     companion object {
@@ -148,6 +155,8 @@ data class ConversationEntity(
             mutedUntilEpoch = m.mutedUntilEpoch,
             otherUserId = m.otherUserId,
             isChannel = m.isChannel,
+            lastMessageExpiresAtEpochMs = m.lastMessageExpiresAtEpochMs,
+            unreadExpirationsJson = app.pulse.protocol.PulseJson.encodeToString(kotlinx.serialization.builtins.ListSerializer(app.pulse.domain.model.UnreadExpiration.serializer()), m.unreadExpirations),
             membersJson = app.pulse.protocol.PulseJson.encodeToString(
                 kotlinx.serialization.builtins.ListSerializer(ConversationMember.serializer()),
                 m.members,
@@ -616,6 +625,10 @@ data class DraftEntity(
 
 @Dao
 interface ConversationDao {
+    /** Used inside snapshot replacement's transaction; no SQL variable limit for large inboxes. */
+    @Query("DELETE FROM conversations WHERE id != :localId")
+    suspend fun clearServerSnapshot(localId: String)
+
     @Query("SELECT * FROM conversations ORDER BY isPinned DESC, lastActivityAt DESC")
     fun observeAll(): Flow<List<ConversationEntity>>
 
@@ -631,6 +644,9 @@ interface ConversationDao {
 
 @Dao
 interface MessageDao {
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND pinnedAt IS NOT NULL ORDER BY pinnedAt ASC, id ASC")
+    suspend fun pinned(conversationId: String): List<MessageEntity>
+
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 
@@ -782,6 +798,9 @@ interface DraftDao {
     @Query("SELECT * FROM draft")
     fun observeAll(): Flow<List<DraftEntity>>
 
+    @Query("SELECT * FROM draft")
+    suspend fun all(): List<DraftEntity>
+
     @Query("SELECT * FROM draft WHERE conversationId = :conversationId")
     suspend fun get(conversationId: String): DraftEntity?
 
@@ -862,9 +881,35 @@ interface CallLogDao {
     suspend fun queueCount(): Int
 }
 
+/** A single observed join invalidates on saved markers, message edits/deletes,
+ * and conversation title changes; no N+1 reads of unobserved message rows. */
+data class SavedLibraryRow(
+    @Embedded val message: MessageEntity,
+    val savedStamp: String,
+    val savedConversationName: String?,
+    val savedConversationKind: String?,
+) {
+    fun toDomain() = app.pulse.domain.model.SavedItem(
+        savedAt = app.pulse.core.time.PulseTime.epochMs(savedStamp),
+        conversationId = message.conversationId,
+        conversationName = savedConversationName,
+        isGroup = savedConversationKind?.let { it != "DM" } ?: false,
+        message = message.toDomain(),
+    )
+}
+
 /** Saved-library index (Wave 2) - server cap 100, newest first, no pagination. */
 @Dao
 interface SavedDao {
+    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId WHERE m.deletedAt IS NULL ORDER BY s.savedAt DESC, s.messageId DESC")
+    fun observeLibrary(): Flow<List<SavedLibraryRow>>
+
+    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId WHERE m.deletedAt IS NULL ORDER BY s.savedAt DESC, s.messageId DESC")
+    suspend fun library(): List<SavedLibraryRow>
+
+    @Query("DELETE FROM savedMessages")
+    suspend fun clear()
+
     @Upsert
     suspend fun upsertAll(items: List<SavedMessageEntity>)
 
@@ -961,7 +1006,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1101,6 +1146,15 @@ abstract class PulseDatabase : RoomDatabase() {
                 // Wave 7 rich-object carriers (red packet / game / tournament) -
                 // the raw payload JSON must survive offline restarts.
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
+            }
+        }
+
+        /** Old preview caches lack expiry provenance; retire only derived inbox data. */
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE conversations ADD COLUMN lastMessageExpiresAtEpochMs INTEGER")
+                db.execSQL("ALTER TABLE conversations ADD COLUMN unreadExpirationsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("UPDATE conversations SET lastMessagePreview = NULL, lastMessageAuthorName = NULL, lastMessageKind = NULL, unreadCount = 0, lastMessageMine = 0, lastMessageDeleted = 0, lastMessageIsReply = 0, lastMessageIsImage = 0, lastMessageIsAudio = 0, lastMessageIsFile = 0, lastMessageFileName = NULL")
             }
         }
 

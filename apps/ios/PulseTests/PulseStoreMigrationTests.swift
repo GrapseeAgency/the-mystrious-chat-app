@@ -717,7 +717,8 @@ final class PulseStoreMigrationTests: XCTestCase {
             try db.write { tx in
                 try tx.execute(sql: "ALTER TABLE message DROP COLUMN wireJson")
                 try tx.execute(sql: "ALTER TABLE message DROP COLUMN expiresAtEpoch")
-                try tx.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'v10'")
+                try tx.execute(sql: "ALTER TABLE conversation DROP COLUMN wireJson")
+                try tx.execute(sql: "DELETE FROM grdb_migrations WHERE identifier IN ('v10', 'v11')")
             }
         }
         let reopened = try PulseStore(path: url.path)

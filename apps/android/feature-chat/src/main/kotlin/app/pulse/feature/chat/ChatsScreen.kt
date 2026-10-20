@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.domain.sync.isVisibleSearchHit
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -326,7 +327,7 @@ fun ChatsScreen(
             val ids = folders.firstOrNull { it.id == activeFolderId }?.conversationIds.orEmpty().toSet()
             locallyFiltered.filter { it.id in ids }
         }
-        listFilter == "unread" -> locallyFiltered.filter { it.unreadCount > 0 }
+        listFilter == "unread" -> locallyFiltered.filter { it.unreadCount > 0 || it.myManualUnread }
         listFilter == "groups" -> locallyFiltered.filter { it.isGroupish }
         else -> locallyFiltered
     }
@@ -466,7 +467,7 @@ fun ChatsScreen(
                         },
                         onOpenHit = { hit ->
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
-                            onOpenRoom(hit.conversationId, hit.id)
+                            if (hit.isVisibleSearchHit()) onOpenRoom(hit.conversationId, hit.id)
                         },
                         // R14 gap 14 - the Actions block atop the empty-query
                         // surface (web spotlight.tsx:237-291).
@@ -677,7 +678,7 @@ private fun openConversation(viewModel: ChatsViewModel, conv: Conversation, onOp
 
 /** Local DraftDao row wins over the server-mirrored myDraft (spec row 1). */
 private fun Conversation.withLocalDraft(local: String?): Conversation =
-    if (local.isNullOrBlank()) this else copy(myDraft = local)
+    if (local == null) this else copy(myDraft = local)
 
 /**
  * Archived sub-page (spec §9) - same rows, same swipe/sheet actions, the

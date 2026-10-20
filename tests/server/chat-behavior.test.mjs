@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { advanceReadReceipt, receiptRecipients } from '../../src/lib/read-receipt.ts'
-import { unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
+import { removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
 import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { openDirectConversation } from '../../src/lib/direct-conversation.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
@@ -159,4 +159,36 @@ test('concurrent transactional sends cannot both bypass room slow mode', () => f
     if (result.status === 'fulfilled' && result.value.state === 'wait') assert.equal(result.value.retryAfter, 10)
     if (result.status === 'rejected') assert.ok(['P2034', 'P2028', 'P1008'].includes(result.reason.code), String(result.reason))
   }
+}))
+
+
+test('offline unread schedule counts only live incoming unread rows and keeps permanent unread', () => fixture(async db => {
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,expiresAt,deletedAt) VALUES
+    ('permanent','room','peer',${t(10)},NULL,NULL),
+    ('soon-a','room','peer',${t(11)},${t(30)},NULL),
+    ('soon-b','room','peer',${t(12)},${t(30)},NULL),
+    ('later','room','peer',${t(13)},${t(40)},NULL),
+    ('read','room','peer',${t(0)},${t(40)},NULL),
+    ('own','room','reader',${t(14)},${t(40)},NULL),
+    ('expired','room','peer',${t(15)},${t(20)},NULL),
+    ('deleted','room','peer',${t(16)},${t(40)},${t(19)}),
+    ('other','elsewhere','peer',${t(17)},${t(40)},NULL)`
+  assert.deepEqual(await unreadSnapshot(db, 'room', 'reader', t(0), t(20)), {
+    unreadCount: 4, unreadExpirations: [{ expiresAt: t(30).toISOString(), count: 2 }, { expiresAt: t(40).toISOString(), count: 1 }],
+  })
+  assert.deepEqual(await unreadSnapshot(db, 'room', 'reader', t(0), t(30)), {
+    unreadCount: 2, unreadExpirations: [{ expiresAt: t(40).toISOString(), count: 1 }],
+  })
+  assert.deepEqual(await unreadSnapshot(db, 'room', 'reader', t(0), t(40)), { unreadCount: 1, unreadExpirations: [] })
+}))
+
+
+test('explicit unsave retries stay removed, affect only the owner, and need no surviving message', () => fixture(async db => {
+  await db.$executeRawUnsafe('CREATE TABLE SavedMessage(id TEXT PRIMARY KEY, userId TEXT, messageId TEXT, savedAt DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(userId,messageId))')
+  await db.$executeRaw`INSERT INTO SavedMessage(id,userId,messageId) VALUES ('a','alice','gone'),('b','bob','gone')`
+  assert.deepEqual(await removeSavedMessage(db, 'alice', 'gone'), { saved: false })
+  assert.deepEqual(await removeSavedMessage(db, 'alice', 'gone'), { saved: false })
+  assert.deepEqual(await removeSavedMessage(db, 'alice', 'never-saved'), { saved: false })
+  assert.equal(await db.savedMessage.count({ where: { userId: 'alice' } }), 0)
+  assert.equal(await db.savedMessage.count({ where: { userId: 'bob' } }), 1)
 }))

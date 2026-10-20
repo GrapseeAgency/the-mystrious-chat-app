@@ -240,6 +240,10 @@ public final class PulseStore: Sendable {
             try db.execute(sql: "DELETE FROM message WHERE substr(id, 1, 6) != 'local_'")
             try db.execute(sql: "UPDATE conversation SET lastMessagePreview = NULL")
         }
+        m.registerMigration("v11") { db in
+            try db.alter(table: "conversation") { t in t.add(column: "wireJson", .text) }
+            try db.execute(sql: "UPDATE conversation SET lastMessagePreview = NULL, unreadCount = 0")
+        }
         return m
     }
 
@@ -290,23 +294,24 @@ public final class PulseStore: Sendable {
     }
 
     // conversation cache
-    public func upsert(conversations: [PulseConversation]) throws {
+    public func upsert(conversations: [PulseConversation], replacingSnapshot: Bool = false) throws {
         try dbQueue.write { db in
+            if replacingSnapshot { try db.execute(sql: "DELETE FROM conversation") }
             for c in conversations {
                 try db.execute(
                     sql: """
                     INSERT INTO conversation (id, kind, title, lastMessagePreview, lastActivityAt,
-                                              unreadCount, isPinned, isMuted, isArchived)
-                    VALUES (:id, :kind, :title, :preview, :activity, :unread, :pinned, :muted, :archived)
+                                              unreadCount, isPinned, isMuted, isArchived, wireJson)
+                    VALUES (:id, :kind, :title, :preview, :activity, :unread, :pinned, :muted, :archived, :wire)
                     ON CONFLICT(id) DO UPDATE SET
                       kind=:kind, title=:title, lastMessagePreview=:preview, lastActivityAt=:activity,
-                      unreadCount=:unread, isPinned=:pinned, isMuted=:muted, isArchived=:archived
+                      unreadCount=:unread, isPinned=:pinned, isMuted=:muted, isArchived=:archived, wireJson=:wire
                     """,
                     arguments: [
                         "id": c.id, "kind": String(describing: c.kind), "title": c.title,
                         "preview": c.lastMessagePreview, "activity": c.lastActivityAt,
                         "unread": c.unreadCount, "pinned": c.isPinned, "muted": c.isMuted,
-                        "archived": c.isArchived,
+                        "archived": c.isArchived, "wire": c.wireJson,
                     ],
                 )
             }
@@ -393,13 +398,30 @@ public final class PulseStore: Sendable {
 
     /// Persist operation and optimistic bubble before any network I/O.
     public func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward) throws {
+        _ = try enqueueMessage(message, clientId: clientId, envelope: envelope, consumingDraft: nil)
+    }
+
+    @discardableResult
+    func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
+                        consumingDraft token: PulseDraftConsumption?) throws -> Bool {
         guard let payload = PulseOutboxForward.encode(envelope) else { throw CocoaError(.coderInvalidValue) }
-        try dbQueue.write { db in
-            try Self.writeMessage(message, db: db)
-            try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
-                content: message.content, kind: envelope.kind ?? "text", createdAt: PulseOutboxClock.now(),
-                attempts: 0, payloadJson: payload).insert(db)
+        if let token, token.storageIdentity != storageIdentity || token.conversationId != message.conversationId {
+            throw CocoaError(.userCancelled)
         }
+        let commit: (Bool) throws -> Void = { consume in
+            try self.dbQueue.write { db in
+                try Self.writeMessage(message, db: db)
+                try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
+                    content: message.content, kind: envelope.kind ?? "text", createdAt: PulseOutboxClock.now(),
+                    attempts: 0, payloadJson: payload).insert(db)
+                if consume { try Self.writeDraftSnapshot(db, room: message.conversationId, text: "") }
+            }
+        }
+        if let token {
+            return try draftFence.enqueue(token.conversationId, expected: token.revision, action: commit)
+        }
+        try commit(false)
+        return false
     }
 
     /// The acknowledgement is one SQLite transaction, never three independent writes.
@@ -408,6 +430,15 @@ public final class PulseStore: Sendable {
             try Self.writeMessage(message, db: db)
             try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
             try db.execute(sql: "DELETE FROM outbox WHERE clientId = ?", arguments: [clientId])
+        }
+    }
+
+    public func clearMessagePin(id: String) throws {
+        try dbQueue.write { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [id]),
+                  var message = Self.messageRow(from: row) else { return }
+            message.pinnedAt = nil
+            try Self.writeMessage(message, db: db)
         }
     }
 
@@ -645,10 +676,11 @@ public final class PulseStore: Sendable {
 
     /// Saved-library sync: upserts every item's message row (full fidelity,
     /// shared writer) AND its savedMessages marker (savedAt ISO from wire).
-    public func upsert(savedItems: [WireSavedItem]) throws {
+    public func upsert(savedItems: [WireSavedItem], replacingSnapshot: Bool = false, preservingMessageIds: Set<String> = []) throws {
         try dbQueue.write { db in
+            if replacingSnapshot { try db.execute(sql: "DELETE FROM savedMessages") }
             for item in savedItems {
-                try Self.writeMessage(item.message, db: db)
+                if !preservingMessageIds.contains(item.message.id) { try Self.writeMessage(item.message, db: db) }
                 try db.execute(
                     sql: """
                     INSERT INTO savedMessages (messageId, conversationId, savedAt)
@@ -680,36 +712,40 @@ public final class PulseStore: Sendable {
     /// Offline read path for the saved library. Missing conversation metadata
     /// remains unknown; the saved message body is still usable without a feed fetch.
     public func cachedSavedItems(now: Date = Date()) throws -> [WireSavedItem] {
-        try dbQueue.read { db in
-            try Row.fetchAll(db, sql: """
-                SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName,
-                       c.kind AS savedConversationKind
-                FROM savedMessages s JOIN message m ON m.id = s.messageId
-                LEFT JOIN conversation c ON c.id = s.conversationId
-                WHERE m.expiresAtEpoch IS NULL OR m.expiresAtEpoch > :now
-                ORDER BY s.savedAt DESC, s.messageId DESC
-                """, arguments: ["now": now.timeIntervalSince1970]).compactMap { row in
-                    guard let message = Self.messageRow(from: row),
-                          let savedAt: String = row["savedStamp"] else { return nil }
-                    let kind: String? = row["savedConversationKind"]
-                    return WireSavedItem(
-                        savedAt: savedAt,
-                        conversation: WireSavedConversation(
-                            id: message.conversationId,
-                            isGroup: kind.map { $0 != "DM" },
-                            name: row["savedConversationName"]
-                        ),
-                        message: message
-                    )
-                }
-        }
+        try dbQueue.read { db in try Self.savedItems(in: db, now: now) }
+    }
+
+    public func observeSavedItems() -> DatabasePublishers.Value<[WireSavedItem]> {
+        ValueObservation.tracking { db in try Self.savedItems(in: db, now: Date()) }.publisher(in: dbQueue)
+    }
+
+    private static func savedItems(in db: Database, now: Date) throws -> [WireSavedItem] {
+        try Row.fetchAll(db, sql: """
+            SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName,
+                   c.kind AS savedConversationKind
+            FROM savedMessages s JOIN message m ON m.id = s.messageId
+            LEFT JOIN conversation c ON c.id = s.conversationId
+            WHERE m.deletedAt IS NULL AND (m.expiresAtEpoch IS NULL OR m.expiresAtEpoch > :now)
+            ORDER BY s.savedAt DESC, s.messageId DESC
+            """, arguments: ["now": now.timeIntervalSince1970]).compactMap { row in
+                guard let message = Self.messageRow(from: row),
+                      let savedAt: String = row["savedStamp"] else { return nil }
+                let kind: String? = row["savedConversationKind"]
+                return WireSavedItem(
+                    savedAt: savedAt,
+                    conversation: WireSavedConversation(
+                        id: message.conversationId,
+                        isGroup: kind.map { $0 != "DM" },
+                        name: row["savedConversationName"]
+                    ),
+                    message: message
+                )
+            }
     }
 
     /// Every currently-saved message id (row-check + dock badge source).
     public func savedIds() throws -> Set<String> {
-        try dbQueue.read { db in
-            Set(try String.fetchAll(db, sql: "SELECT messageId FROM savedMessages"))
-        }
+        Set(try cachedSavedItems().map { $0.message.id })
     }
 
     /// Unsave one message locally (row action "Unsave").
@@ -864,8 +900,7 @@ public final class PulseStore: Sendable {
 
     // drafts (Wave 0 - composer persistence, web pulse-drafts parity)
 
-    /// Upserts the composer draft. Empty text clears the row (a blank local
-    /// draft must never shadow the server's myDraft).
+    /// Empty text is a local tombstone, overriding stale server drafts.
     public func saveDraft(conversationId: String, text: String) throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -875,19 +910,25 @@ public final class PulseStore: Sendable {
         try saveDraftSnapshot(conversationId: conversationId, text: text)
     }
 
-    /// Unlike legacy saveDraft, an empty snapshot is an explicit local clear.
-    /// It prevents a stale server myDraft from resurrecting sent/discarded text.
-    func saveDraftSnapshot(conversationId: String, text: String) throws {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: """
-                INSERT INTO draft (conversationId, text, updatedAt)
-                VALUES (:cid, :text, :updatedAt)
-                ON CONFLICT(conversationId) DO UPDATE SET text=:text, updatedAt=:updatedAt
-                """,
-                arguments: ["cid": conversationId, "text": text, "updatedAt": PulseOutboxClock.now()],
-            )
+    /// All draft writes and composer sends for this database share an ordering fence.
+    private var draftFence: PulseDraftWriteFence { PulseDraftWriteFence.shared(for: storageIdentity) }
+
+    func reserveDraftWrite(conversationId: String) -> UInt64 { draftFence.reserve(conversationId) }
+    func captureDraftConsumption(conversationId: String) -> PulseDraftConsumption {
+        PulseDraftConsumption(storageIdentity: storageIdentity, conversationId: conversationId, revision: draftFence.current(conversationId))
+    }
+
+    func saveDraftSnapshot(conversationId: String, text: String, expectedRevision: UInt64? = nil) throws {
+        try draftFence.write(conversationId, expected: expectedRevision) {
+            try dbQueue.write { db in try Self.writeDraftSnapshot(db, room: conversationId, text: text) }
         }
+    }
+
+    private static func writeDraftSnapshot(_ db: Database, room: String, text: String) throws {
+        try db.execute(sql: """
+            INSERT INTO draft (conversationId, text, updatedAt) VALUES (:cid, :text, :updatedAt)
+            ON CONFLICT(conversationId) DO UPDATE SET text=:text, updatedAt=:updatedAt
+            """, arguments: ["cid": room, "text": text, "updatedAt": PulseOutboxClock.now()])
     }
 
     /// Local draft for a conversation; nil when absent/blank (legacy consumers).
@@ -930,9 +971,7 @@ public final class PulseStore: Sendable {
     }
 
     public func deleteDraft(conversationId: String) throws {
-        _ = try dbQueue.write { db in
-            try db.execute(sql: "DELETE FROM draft WHERE conversationId = :cid", arguments: ["cid": conversationId])
-        }
+        try saveDraftSnapshot(conversationId: conversationId, text: "")
     }
 
     // call log (W3-b - Wave 3 native calls)
@@ -1075,9 +1114,14 @@ struct PulseConversationRow: Codable, FetchableRecord, PersistableRecord, TableR
     var isPinned: Bool
     var isMuted: Bool
     var isArchived: Bool
+    var wireJson: String?
 
     func toDomain() -> PulseConversation {
-        PulseConversation(
+        if let wireJson, let data = wireJson.data(using: .utf8),
+           let summary = try? JSONDecoder().decode(WireConversationSummary.self, from: data) {
+            return summary.removingExpiredSummary().toDomain()
+        }
+        return PulseConversation(
             id: id,
             kind: PulseConversation.Kind(rawValue: kind) ?? .DM,
             title: title,
@@ -1088,6 +1132,7 @@ struct PulseConversationRow: Codable, FetchableRecord, PersistableRecord, TableR
             isPinned: isPinned,
             isMuted: isMuted,
             isArchived: isArchived,
+            wireJson: wireJson,
         )
     }
 }

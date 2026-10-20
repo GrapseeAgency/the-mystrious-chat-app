@@ -1,5 +1,6 @@
 package app.pulse.android.mirror
 
+import app.pulse.domain.sync.reconcileMessageSelection
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -415,7 +416,7 @@ internal fun MirrorRoom(
     onManageGroup: () -> Unit,
     onMuteChoice: (String?) -> Unit,
     onTtlChoice: (Int) -> Unit,
-    onUnpinMessage: (String) -> Unit,
+    onUnpinMessage: suspend (String) -> Result<Unit>,
     fetchPinned: suspend () -> List<Message>,
     pipActive: Boolean,
     onTogglePip: () -> Unit,
@@ -424,7 +425,16 @@ internal fun MirrorRoom(
 ) {
     // R73 - the composer draft is a TextFieldValue: the mention autocomplete
     // needs the caret position to replace the @token in place (web L2923-2961).
-    val composerDraft = remember(groupId) { RoomComposerDraft() }
+    var editing by remember(groupId) { mutableStateOf<Message?>(null) }
+    var stagedDraftToken by remember(repository, groupId) { mutableStateOf<app.pulse.domain.model.ComposerDraftToken?>(null) }
+    val composerDraft = remember(repository, groupId) {
+        RoomComposerDraft { text ->
+            if (editing == null) {
+                repository.stageDraft(groupId, text)
+                stagedDraftToken = repository.captureDraftToken(groupId)
+            }
+        }
+    }
     var draftValue by composerDraft
     val roomActionsLive = remember(groupId) { java.util.concurrent.atomic.AtomicBoolean(true) }
     DisposableEffect(roomActionsLive) { onDispose { roomActionsLive.set(false) } }
@@ -439,7 +449,6 @@ internal fun MirrorRoom(
     // R73 - message-level state (web chat-room.tsx): reply bar, edit bar,
     // the long-press action panel and the surfaces it opens.
     var replyTo by remember(groupId) { mutableStateOf<Message?>(null) }
-    var editing by remember(groupId) { mutableStateOf<Message?>(null) }
     var draftBeforeEdit by remember(groupId) { mutableStateOf<TextFieldValue?>(null) }
     var replyBeforeEdit by remember(groupId) { mutableStateOf<Message?>(null) }
     fun finishEditing() {
@@ -481,15 +490,13 @@ internal fun MirrorRoom(
     }
     LaunchedEffect(draftValue.text, draftRestored, editing?.id) {
         if (!draftRestored || editing != null) return@LaunchedEffect
-        repository.stageDraft(groupId, draftValue.text)
-        if (draftValue.text.isNotBlank()) delay(600)
-        runCatching { repository.saveDraft(groupId, draftValue.text) }
+        val text = draftValue.text
+        val token = stagedDraftToken ?: return@LaunchedEffect
+        if (text.isNotBlank()) delay(600)
+        runCatching { repository.saveStagedDraft(groupId, text, token) }
     }
-    val latestDraft by androidx.compose.runtime.rememberUpdatedState(if (editing != null) draftBeforeEdit?.text.orEmpty() else draftValue.text)
-    val restoredDraft by androidx.compose.runtime.rememberUpdatedState(draftRestored)
-    DisposableEffect(repository, groupId) {
-        onDispose { if (restoredDraft) repository.stageDraft(groupId, latestDraft) }
-    }
+    // Keystrokes are staged synchronously by RoomComposerDraft. Do NOT stage on
+    // disposal: a queued send may already own this text while its ACK is pending.
     // R69 - the web Conversation menu full set (chat-room.tsx L4096-4454):
     // every row opens the same real surface the web opens.
     var remindersOpen by remember { mutableStateOf(false) }
@@ -599,7 +606,13 @@ internal fun MirrorRoom(
     }
     LaunchedEffect(menuOpen) {
         if (menuOpen) {
-            pinnedCount = fetchPinned().size
+            try {
+                pinnedCount = fetchPinned().size
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Keep last known count; the pinned sheet exposes Retry.
+            }
             repository.reminders(false).onSuccess { page ->
                 val now = System.currentTimeMillis()
                 upcomingReminders = page.items.count { item ->
@@ -917,6 +930,7 @@ internal fun MirrorRoom(
             is MirrorSlashBody.Send -> slash.content
             null -> rawText
         }
+        val draftToken = repository.captureDraftToken(groupId)
         val editTarget = editing
         val replyTarget = replyTo
         // R74 - web consumes the armed effect at submit time (chat-room L3137:
@@ -942,12 +956,14 @@ internal fun MirrorRoom(
                         payload = payload,
                         topicId = sendTopicId,
                         replyToId = replyTarget?.id,
+                        draftToken = draftToken,
                     ).getOrThrow()
                 } else if (anonTarget) {
                     repository.sendRichMessage(
                         conversationId = groupId,
                         body = text.take(2000),
                         replyToId = replyTarget?.id,
+                        draftToken = draftToken,
                         topicId = sendTopicId,
                         anon = true,
                         anonAliasPreview = mirrorAnonAliasPreview(viewerId, groupId),
@@ -957,6 +973,7 @@ internal fun MirrorRoom(
                         conversationId = groupId,
                         body = text,
                         replyToId = replyTarget?.id,
+                        draftToken = draftToken,
                         topicId = sendTopicId,
                     ).getOrThrow()
                 }
@@ -968,7 +985,7 @@ internal fun MirrorRoom(
                     if (editTarget != null) {
                         if (editing?.id == editTarget.id && composerDraft.revision == submittedRevision) finishEditing()
                     } else {
-                        composerDraft.clearIfUnchanged(submittedRevision)
+                        composerDraft.clearIfUnchanged(submittedRevision, notify = false)
                         if (replyTo?.id == replyTarget?.id) replyTo = null
                     }
                     sendError = null
@@ -2494,6 +2511,7 @@ internal fun MirrorRoom(
     // R64 - pinned messages: live server list with unpin.
     if (pinnedOpen) {
         MirrorPinnedSheet(
+            messages = messages,
             fetchPinned = fetchPinned,
             onUnpin = onUnpinMessage,
             onDismiss = { pinnedOpen = false },
@@ -2932,9 +2950,13 @@ private fun MirrorMenuStrip(label: String, choices: List<String>, onPick: (Strin
 @Composable
 private fun MirrorRoomSearchSheet(messages: List<Message>, onDismiss: () -> Unit) {
     var query by remember { mutableStateOf("") }
-    val hits = remember(query, messages) {
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1_000) } }
+    val hits = remember(query, messages, now) {
         if (query.isBlank()) emptyList()
-        else messages.filter { it.body.contains(query, ignoreCase = true) }.take(40)
+        else reconcileMessageSelection(messages, messages, now) {
+            !it.viewOnce && it.body.contains(query.trim(), ignoreCase = true)
+        }.take(40)
     }
     Box(
         Modifier
@@ -3011,13 +3033,27 @@ private fun MirrorRoomSearchSheet(messages: List<Message>, onDismiss: () -> Unit
 /** Pinned messages sheet: the live server pins with unpin actions. */
 @Composable
 private fun MirrorPinnedSheet(
+    messages: List<Message>,
     fetchPinned: suspend () -> List<Message>,
-    onUnpin: (String) -> Unit,
+    onUnpin: suspend (String) -> Result<Unit>,
     onDismiss: () -> Unit,
 ) {
     var pinned by remember { mutableStateOf<List<Message>?>(null) }
-    LaunchedEffect(Unit) {
-        pinned = runCatching { fetchPinned() }.getOrDefault(emptyList())
+    var error by remember { mutableStateOf<String?>(null) }
+    var retry by remember { mutableStateOf(0) }
+    var busy by remember { mutableStateOf(setOf<String>()) }
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1_000) } }
+    LaunchedEffect(retry) {
+        error = null
+        try {
+            pinned = fetchPinned()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            error = "Couldn't load pins. Tap to retry."
+        }
     }
     Box(
         Modifier
@@ -3043,9 +3079,14 @@ private fun MirrorPinnedSheet(
                 letterSpacing = 1.2.sp,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
             )
-            val list = pinned
+            error?.let { text ->
+                Text(text, color = MirrorArt.Accent, fontSize = 13.sp,
+                    modifier = Modifier.padding(8.dp).clickable(enabled = busy.isEmpty()) { retry++ })
+            }
+            val list = pinned?.let { reconcileMessageSelection(it, messages, now) { row -> row.pinnedAt != null && !row.viewOnce } }
             when {
-                list == null -> Text("Loading pins…", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+                list == null && error == null -> Text("Loading pins…", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
+                list == null -> Unit
                 list.isEmpty() -> Text("Nothing pinned yet", color = MirrorArt.Faint, fontSize = 13.sp, modifier = Modifier.padding(8.dp))
                 else -> Column(
                     Modifier
@@ -3071,7 +3112,22 @@ private fun MirrorPinnedSheet(
                                 Modifier
                                     .size(32.dp)
                                     .clip(CircleShape)
-                                    .clickable { onUnpin(message.id) },
+                                    .clickable(enabled = busy.isEmpty()) {
+                                        busy = busy + message.id
+                                        scope.launch {
+                                            try {
+                                                onUnpin(message.id).getOrThrow()
+                                                pinned = pinned?.filterNot { it.id == message.id }
+                                                error = null
+                                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                                throw cancelled
+                                            } catch (_: Exception) {
+                                                error = "Couldn't remove pin. Try Unpin again."
+                                            } finally {
+                                                busy = busy - message.id
+                                            }
+                                        }
+                                    },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 MirrorLucideIcon("LPinOff", tint = MirrorArt.Dim, modifier = Modifier.size(16.dp))

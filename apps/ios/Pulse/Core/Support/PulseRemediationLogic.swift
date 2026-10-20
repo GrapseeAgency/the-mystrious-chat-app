@@ -82,6 +82,12 @@ public enum PulseRemediationLogic {
         return expires > now
     }
 
+    public static func isVisiblePreview(_ message: WireChatMessage, now: Date = Date()) -> Bool {
+        guard message.deletedAt == nil, message.viewOnce != true else { return false }
+        if let expires = message.expiresAt { return PulseFormat.date(expires).map { $0 > now } ?? false }
+        return true
+    }
+
     // F-MS-02 - bubble text formatting
 
     public enum TextSegment: Equatable {

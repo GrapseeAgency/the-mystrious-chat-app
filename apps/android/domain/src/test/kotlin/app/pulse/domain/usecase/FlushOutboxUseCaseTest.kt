@@ -80,6 +80,7 @@ class FlushOutboxUseCaseTest {
             replyToId: String?,
             parentId: String?,
             topicId: String?,
+            draftToken: app.pulse.domain.model.ComposerDraftToken?,
         ): Result<SendReceipt> =
             Result.failure(UnsupportedOperationException())
         override suspend fun markRead(conversationId: String) = Result.success(Unit)
@@ -251,6 +252,7 @@ class FlushOutboxUseCaseTest {
             replyToId: String?,
             parentId: String?,
             topicId: String?,
+            draftToken: app.pulse.domain.model.ComposerDraftToken?,
         ): Result<SendReceipt> = Result.failure(UnsupportedOperationException())
 
         // Wave 2 messaging depth (unused by the outbox policy)

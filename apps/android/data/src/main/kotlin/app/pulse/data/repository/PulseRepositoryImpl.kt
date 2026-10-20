@@ -1,5 +1,7 @@
 package app.pulse.data.repository
 
+import app.pulse.domain.sync.withConversationExpiry
+import app.pulse.domain.sync.withSavedMessageExpiry
 import app.pulse.domain.sync.withMessageExpiry
 
 import app.pulse.protocol.objectPayloadText
@@ -177,6 +179,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.emitAll
+import app.pulse.domain.sync.withSearchHitExpiry
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -388,7 +392,24 @@ class PulseRepositoryImpl constructor(
 
     /** Data & Storage - drop every composer draft at once. */
     override suspend fun clearAllDrafts() {
-        draftDao.clearAll()
+        draftMutex.withLock {
+            // Cancellation after SQLite commit must not skip the in-memory fence:
+            // old journal tasks intentionally outlive the composing UI.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                val rooms = draftDao.all().map { it.conversationId }.toSet() + draftVersions.keys
+                val revisions = rooms.associateWith { room ->
+                    draftVersions.getOrPut(room) { java.util.concurrent.atomic.AtomicLong() }.get()
+                }
+                database.withTransaction {
+                    rooms.forEach { draftDao.upsert(DraftEntity(it, "", java.time.OffsetDateTime.now().toString())) }
+                }
+                revisions.forEach { (room, revision) ->
+                    if (draftVersions[room]?.compareAndSet(revision, revision + 1) == true) {
+                        scope.launch { mirrorDraft(room, "", revision + 1) }
+                    }
+                }
+            }
+        }
     }
 
     /** One collector, started once per process: signals → Room + events. */
@@ -592,6 +613,7 @@ class PulseRepositoryImpl constructor(
      */
     private val messageCacheMutex = Mutex()
     private val messageEventClock = java.util.concurrent.atomic.AtomicLong()
+    private val messageCacheChanges = MutableStateFlow(0L)
     private val messageEventRevisions = mutableMapOf<String, Long>()
 
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
@@ -601,6 +623,7 @@ class PulseRepositoryImpl constructor(
             messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
             // Persist tombstones too; an event-only deletion resurrects after restart.
             messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+            messageCacheChanges.value = messageEventClock.get()
         }
         if (signal.event == app.pulse.protocol.SocketEvents.MESSAGE_DELETED) {
             eventsBus.tryEmit(
@@ -614,14 +637,17 @@ class PulseRepositoryImpl constructor(
 
     /** A late GET must not undo a socket edit/delete, including in its return value. */
     private suspend fun cacheFetchedMessages(rows: List<Message>, watermark: Long): List<Message> =
-        messageCacheMutex.withLock {
-            val fresh = rows.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
-            messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-            rows.mapNotNull { row ->
-                if ((messageEventRevisions[row.id] ?: 0L) > watermark) messageDao.byId(row.id)?.toDomain()
-                else row
-            }
+        messageCacheMutex.withLock { cacheFetchedMessagesLocked(rows, watermark) }
+
+    /** Caller holds messageCacheMutex; saved snapshot replacement also wraps this in a transaction. */
+    private suspend fun cacheFetchedMessagesLocked(rows: List<Message>, watermark: Long): List<Message> {
+        val fresh = rows.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
+        messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
+        return rows.mapNotNull { row ->
+            if ((messageEventRevisions[row.id] ?: 0L) > watermark) messageDao.byId(row.id)?.toDomain()
+            else row
         }
+    }
 
     private var refreshScheduled = false
 
@@ -638,10 +664,13 @@ class PulseRepositoryImpl constructor(
 
     // reads
     override fun observeConversations(query: String): Flow<List<Conversation>> =
-        conversationDao.observeAll().map { rows ->
-            rows.map { it.toDomain() }
-                .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
-        }
+        kotlinx.coroutines.flow.combine(conversationDao.observeAll(), draftDao.observeAll()) { rows, drafts ->
+            val local = drafts.associate { it.conversationId to it.text }
+            rows.map { row ->
+                val conversation = row.toDomain()
+                local[conversation.id]?.let { conversation.copy(myDraft = it) } ?: conversation
+            }.filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
+        }.withConversationExpiry()
 
     override fun observeMessages(conversationId: String): Flow<List<Message>> =
         messageDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
@@ -650,7 +679,7 @@ class PulseRepositoryImpl constructor(
         messageDao.observeThread(rootId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
 
     override fun observeDrafts(): Flow<Map<String, String>> = draftDao.observeAll().map { rows ->
-        rows.filter { it.text.isNotBlank() }.associate { it.conversationId to it.text }
+        rows.associate { it.conversationId to it.text }
     }
 
     override fun observePresence(): Flow<Set<String>> = onlineIds.asStateFlow()
@@ -659,12 +688,30 @@ class PulseRepositoryImpl constructor(
 
     override fun events(): Flow<PulseEvent> = eventsBus.asSharedFlow()
 
-    override suspend fun refreshConversations(): Result<Unit> = when (val r = api.conversations(viewerId ?: "")) {
-        is PulseResult.Success -> {
-            conversationDao.upsertAll(r.value.conversations.map { ConversationEntity.from(it.toDomain(viewerId)) })
-            Result.success(Unit)
+    private val inboxRefreshVersion = java.util.concurrent.atomic.AtomicLong()
+
+    private suspend fun cacheConversation(dto: ConversationSummaryDto): Conversation = database.withTransaction {
+        inboxRefreshVersion.incrementAndGet() // pre-mutation list responses cannot erase a created/updated room
+        val previous = conversationDao.byId(dto.id)?.toDomain()
+        dto.toDomain(viewerId, previous).also { conversationDao.upsertAll(listOf(ConversationEntity.from(it))) }
+    }
+
+    override suspend fun refreshConversations(): Result<Unit> {
+        val version = inboxRefreshVersion.incrementAndGet()
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        return when (val r = api.conversations(owner)) {
+            is PulseResult.Success -> {
+                database.withTransaction {
+                    if (version == inboxRefreshVersion.get() && owner == viewerId) {
+                        val rows = r.value.conversations.map { ConversationEntity.from(it.toDomain(owner)) }
+                        conversationDao.clearServerSnapshot(app.pulse.domain.model.PulseDemo.CONVERSATION_ID)
+                        conversationDao.upsertAll(rows)
+                    }
+                }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
-        is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
     }
 
     override suspend fun refreshMessages(conversationId: String, limit: Int): Result<Unit> =
@@ -805,10 +852,14 @@ class PulseRepositoryImpl constructor(
         replyToId: String?,
         parentId: String?,
         topicId: String?,
+        draftToken: app.pulse.domain.model.ComposerDraftToken?,
     ): Result<SendReceipt> {
         val demo = app.pulse.domain.model.PulseDemo
         if (viewerId.isNullOrBlank()) {
             return Result.failure(IllegalStateException("No identity - complete onboarding first."))
+        }
+        if (draftToken != null && (draftToken.ownerId != viewerId || draftToken.conversationId != conversationId)) {
+            return Result.failure(IllegalStateException("The composer account changed; nothing was saved"))
         }
         val mine = Message(
             id = "demo_out_" + java.util.UUID.randomUUID().toString().replace("-", "").take(16),
@@ -822,7 +873,7 @@ class PulseRepositoryImpl constructor(
             threadRootId = parentId,
             topicId = topicId,
         )
-        messageDao.upsertAll(listOf(MessageEntity.from(mine)))
+        persistComposerSend(draftToken) { messageDao.upsertAll(listOf(MessageEntity.from(mine))) }
         mutateConversation(conversationId) {
             it.copy(
                 lastMessagePreview = body,
@@ -933,7 +984,7 @@ class PulseRepositoryImpl constructor(
     private suspend fun createConversation(memberIds: List<String>, isGroup: Boolean, name: String?): Result<Conversation> =
         when (val r = api.createConversation(viewerId ?: "", memberIds, isGroup, name)) {
             is PulseResult.Success -> {
-                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                cacheConversation(r.value)
                 Result.success(r.value.toDomain(viewerId))
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -948,17 +999,21 @@ class PulseRepositoryImpl constructor(
         replyToId: String?,
         parentId: String?,
         topicId: String?,
+        draftToken: app.pulse.domain.model.ComposerDraftToken?,
     ): Result<SendReceipt> {
         // Demo companion room: fully on-device. No gateway round-trip, no
         // outbox - the bubble settles instantly and Nova replies locally.
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
-            return demoSend(conversationId, body, replyToId, parentId, topicId)
+            return demoSend(conversationId, body, replyToId, parentId, topicId, draftToken)
         }
         // Optimistic echo FIRST (spec §2 row 2): the bubble appears on the very
         // keystroke-to-send beat, not after the round-trip. The same clientId
         // then either reconciles with the real row, rides the outbox, or is
         // retracted on a definitive failure.
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
+        if (draftToken != null && (draftToken.ownerId != owner || draftToken.conversationId != conversationId)) {
+            return Result.failure(IllegalStateException("The composer account changed; nothing was queued"))
+        }
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
             .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
@@ -974,7 +1029,7 @@ class PulseRepositoryImpl constructor(
             threadRootId = parentId,
             topicId = if (parentId == null) topicId else null,
         )
-        database.withTransaction {
+        persistComposerSend(draftToken) {
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
             outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
@@ -1010,11 +1065,12 @@ class PulseRepositoryImpl constructor(
         replyToId: String?,
         parentId: String?,
         topicId: String?,
+        draftToken: app.pulse.domain.model.ComposerDraftToken?,
     ): Result<SendReceipt> {
         // Demo room rides the same on-device path (sticker/effect wrappers
         // degrade to their text body here - the bursts still fire client-side).
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
-            return demoSend(conversationId, body, replyToId, parentId, topicId)
+            return demoSend(conversationId, body, replyToId, parentId, topicId, draftToken)
         }
         if (kind !in setOf("text", "image", "audio", "file", "sticker", "location")) {
             return Result.failure(IllegalArgumentException("Unsupported message kind"))
@@ -1024,6 +1080,9 @@ class PulseRepositoryImpl constructor(
                 ?: return Result.failure(IllegalArgumentException("Message payload must be a JSON object"))
         }
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
+        if (draftToken != null && (draftToken.ownerId != owner || draftToken.conversationId != conversationId)) {
+            return Result.failure(IllegalStateException("The composer account changed; nothing was queued"))
+        }
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
             .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
@@ -1043,7 +1102,7 @@ class PulseRepositoryImpl constructor(
             // the server will store (web optimistic-mask parity).
             anonAlias = anonAliasPreview.takeIf { anon },
         )
-        database.withTransaction {
+        persistComposerSend(draftToken) {
             messageDao.upsertAll(listOf(MessageEntity.from(temp.copy(payload = payload)).copy(kind = if (kind == "audio") "VOICE" else kind.uppercase(java.util.Locale.ROOT))))
             outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
@@ -1064,6 +1123,34 @@ class PulseRepositoryImpl constructor(
                 payload = richPayload,
             )
         }
+    }
+
+    /** Queue + explicit draft clear commit together; late journal writes share this lock. */
+    private suspend fun persistComposerSend(token: app.pulse.domain.model.ComposerDraftToken?, write: suspend () -> Unit) {
+        draftMutex.withLock {
+            // Cancellation after SQLite commit must not skip the in-memory fence:
+            // old journal tasks intentionally outlive the composing UI.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                val counter = token?.let { draftVersions[it.conversationId] }
+                val consume = token != null && counter?.get() == token.revision
+                database.withTransaction {
+                    write()
+                    if (consume) draftDao.upsert(DraftEntity(checkNotNull(token).conversationId, "", java.time.OffsetDateTime.now().toString()))
+                }
+                if (consume) {
+                    val consumed = checkNotNull(token)
+                    if (counter?.compareAndSet(consumed.revision, consumed.revision + 1) == true) {
+                        scope.launch { mirrorDraft(consumed.conversationId, "", consumed.revision + 1) }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun captureDraftToken(conversationId: String): app.pulse.domain.model.ComposerDraftToken? {
+        val owner = viewerId ?: return null
+        val counter = draftVersions.getOrPut(conversationId) { java.util.concurrent.atomic.AtomicLong() }
+        return app.pulse.domain.model.ComposerDraftToken(conversationId, owner, counter.get())
     }
 
     private suspend fun sendPersistedNowOrQueue(
@@ -1334,7 +1421,7 @@ class PulseRepositoryImpl constructor(
         when (val r = api.editMessage(messageId, viewerId ?: "", content)) {
             is PulseResult.Success -> {
                 val message = r.value.toDomain()
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                upsertMessage(message)
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -1344,27 +1431,65 @@ class PulseRepositoryImpl constructor(
         when (val r = api.toggleMessagePin(messageId, viewerId ?: "")) {
             is PulseResult.Success -> {
                 val message = r.value.toDomain()
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                upsertMessage(message)
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun toggleMessageSave(messageId: String): Result<Boolean> =
+    private val savedOperations = Mutex()
+
+    override suspend fun toggleMessageSave(messageId: String): Result<Boolean> = savedOperations.withLock {
         when (val r = api.toggleMessageSave(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.saved)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Success -> {
+                if (!r.value.saved) savedDao.deleteById(messageId)
+                else messageDao.byId(messageId)?.let { row ->
+                    savedDao.upsertAll(listOf(SavedMessageEntity(messageId, row.conversationId, java.time.OffsetDateTime.now().toString())))
+                }
+                Result.success(r.value.saved)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+    }
+
+    private val pinRefreshLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+    override suspend fun pinnedMessages(conversationId: String): List<Message> =
+        pinRefreshLocks.getOrPut(conversationId) { Mutex() }.withLock {
+            val watermark = messageEventClock.get()
+            val page = when (val r = api.pinnedMessages(conversationId, viewerId ?: "")) {
+                is PulseResult.Success -> r.value
+                is PulseResult.Failure -> throw apiExceptionOf(r)
+            }
+            messageCacheMutex.withLock {
+                database.withTransaction {
+                    val ids = page.messages.map { it.id }.toSet()
+                    // A full empty list must retire stale cached pin flags too.
+                    val missing = messageDao.pinned(conversationId).filter {
+                        it.id !in ids && (messageEventRevisions[it.id] ?: 0L) <= watermark
+                    }
+                    messageDao.upsertAll(missing.map { it.copy(pinnedAt = null) })
+                    cacheFetchedMessagesLocked(page.messages.map { it.toDomain() }, watermark)
+                    messageDao.pinned(conversationId).map { it.toDomain() }.filter { savedMessageVisible(it) }
+                }
+            }
         }
 
-    override suspend fun pinnedMessages(conversationId: String): List<Message> {
+    override suspend fun unpinMessage(messageId: String): Result<Unit> {
         val watermark = messageEventClock.get()
-        val page = when (val r = api.pinnedMessages(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> r.value
-            is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+        return when (val response = api.unpinMessage(messageId, viewerId ?: "")) {
+            is PulseResult.Success -> {
+                messageCacheMutex.withLock {
+                    // A later relayed re-pin wins over this operation's late ACK.
+                    if ((messageEventRevisions[messageId] ?: 0L) <= watermark) {
+                        messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
+                        messageDao.byId(messageId)?.let { messageDao.upsertAll(listOf(it.copy(pinnedAt = null))) }
+                        messageCacheChanges.value = messageEventClock.get()
+                    }
+                }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
         }
-        val rows = page.messages.map { it.toDomain() }
-        // Upsert keeps the Room cache (pin glyphs, banners) authoritative.
-        return cacheFetchedMessages(rows, watermark)
     }
 
     override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
@@ -1523,8 +1648,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun conversationDetail(conversationId: String): Result<Conversation> =
         when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
             is PulseResult.Success -> {
-                val conversation = r.value.toDomain(viewerId)
-                conversationDao.upsertAll(listOf(ConversationEntity.from(conversation)))
+                val conversation = cacheConversation(r.value)
                 Result.success(conversation)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -1537,7 +1661,7 @@ class PulseRepositoryImpl constructor(
         when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
             is PulseResult.Success -> {
                 val dto = r.value
-                conversationDao.upsertAll(listOf(ConversationEntity.from(dto.toDomain(viewerId))))
+                cacheConversation(dto)
                 Result.success(
                     GroupMeta(
                         myRole = dto.members.firstOrNull { it.id == viewerId }?.role,
@@ -1575,7 +1699,7 @@ class PulseRepositoryImpl constructor(
     ): Result<Unit> =
         when (val r = api.patchConversation(conversationId, viewerId ?: "", name = name, broadcast = broadcast, screenPrivacy = screenPrivacy)) {
             is PulseResult.Success -> {
-                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                cacheConversation(r.value)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -1601,7 +1725,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit> =
         when (val r = api.patchConversation(conversationId, viewerId ?: "", photo = normalizeUploadPath(photoPath))) {
             is PulseResult.Success -> {
-                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                cacheConversation(r.value)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -1694,7 +1818,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun setMemberRole(conversationId: String, userId: String, promote: Boolean): Result<Unit> =
         when (val r = api.promoteDemote(conversationId, viewerId ?: "", userId, promote)) {
             is PulseResult.Success -> {
-                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                cacheConversation(r.value)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -1725,7 +1849,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun setDisappearingTtl(conversationId: String, ttlSeconds: Int): Result<Int> =
         when (val r = api.setDisappearingTtl(conversationId, viewerId ?: "", ttlSeconds)) {
             is PulseResult.Success -> {
-                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                cacheConversation(r.value)
                 Result.success(r.value.ttlSeconds ?: ttlSeconds)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -1908,8 +2032,10 @@ class PulseRepositoryImpl constructor(
 
     // drafts (Wave 0 - web pulse-drafts parity)
 
-    private val draftVersions = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong>()
-    private val draftMutex = Mutex()
+    private val draftWrites = DraftWriteCoordinator.forDatabase(database)
+    private val draftVersions = draftWrites.versions
+    private val draftMutex = draftWrites.localMutex
+    private val draftServerMutex = draftWrites.serverMutex
     // Finite local journal writes outlive UI/transport teardown; no network work
     // runs in this scope. Every write remains bound to this account's database.
     private val draftWriteScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -1918,10 +2044,11 @@ class PulseRepositoryImpl constructor(
         .getOrPut(id) { java.util.concurrent.atomic.AtomicLong() }.incrementAndGet()
 
     private suspend fun writeLocalDraft(id: String, text: String, version: Long) = draftMutex.withLock {
-        if (draftVersions[id]?.get() != version) return@withLock
+        if (draftVersions[id]?.get() != version) return@withLock false
         val value = text.take(MAX_DRAFT)
-        if (value.isBlank()) draftDao.delete(id)
-        else draftDao.upsert(DraftEntity(id, value, java.time.OffsetDateTime.now().toString()))
+        // Empty is an explicit local clear, not permission to restore stale server text.
+        draftDao.upsert(DraftEntity(id, if (value.isBlank()) "" else value, java.time.OffsetDateTime.now().toString()))
+        true
     }
 
     override fun stageDraft(conversationId: String, text: String) {
@@ -1932,8 +2059,23 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun saveDraft(conversationId: String, text: String) {
-        writeLocalDraft(conversationId, text, nextDraftVersion(conversationId))
-        setServerDraft(conversationId, text.take(MAX_DRAFT))
+        val revision = nextDraftVersion(conversationId)
+        if (writeLocalDraft(conversationId, text, revision)) mirrorDraft(conversationId, text, revision)
+    }
+
+    override suspend fun saveStagedDraft(conversationId: String, text: String, token: app.pulse.domain.model.ComposerDraftToken) {
+        if (token.ownerId != viewerId || token.conversationId != conversationId) return
+        if (writeLocalDraft(conversationId, text, token.revision)) {
+            mirrorDraft(conversationId, text, token.revision)
+        }
+    }
+
+    private suspend fun mirrorDraft(conversationId: String, text: String, revision: Long) = draftServerMutex.withLock {
+        // Serialize attempted mirrors; skip revisions replaced before the request.
+        // This is best effort, not server-side cross-device conflict resolution.
+        if (!app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId) && draftVersions[conversationId]?.get() == revision) {
+            setServerDraft(conversationId, text.take(MAX_DRAFT))
+        }
     }
 
     override suspend fun clearDraft(conversationId: String) = saveDraft(conversationId, "")
@@ -2004,8 +2146,11 @@ class PulseRepositoryImpl constructor(
      * instantly and the server call + refresh reconcile the truth afterwards.
      */
     private suspend fun mutateConversation(id: String, transform: (Conversation) -> Conversation) {
-        val row = conversationDao.byId(id) ?: return
-        conversationDao.upsertAll(listOf(ConversationEntity.from(transform(row.toDomain()))))
+        database.withTransaction {
+            val row = conversationDao.byId(id) ?: return@withTransaction
+            inboxRefreshVersion.incrementAndGet()
+            conversationDao.upsertAll(listOf(ConversationEntity.from(transform(row.toDomain()))))
+        }
     }
 
     override suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit> {
@@ -2091,8 +2236,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun createSelfChat(): Result<Conversation> =
         when (val r = api.createSelfChat(viewerId ?: "")) {
             is PulseResult.Success -> {
-                val conversation = r.value.toDomain(viewerId)
-                conversationDao.upsertAll(listOf(ConversationEntity.from(conversation)))
+                val conversation = cacheConversation(r.value)
                 Result.success(conversation)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -2255,19 +2399,34 @@ class PulseRepositoryImpl constructor(
                         conversationId = hit.conversationId,
                         conversationName = hit.conversationName ?: "Chat",
                         isGroup = hit.isGroup,
-                        senderName = hit.sender?.name ?: "",
-                        senderColor = hit.sender?.color,
+                        senderName = if (hit.anon) hit.anonAlias ?: "Anonymous" else hit.sender?.name ?: "",
+                        senderColor = if (hit.anon) null else hit.sender?.color,
                         content = hit.content,
                         createdAt = hit.createdAt,
                         deleted = hit.deletedAt != null,
                         imageOnly = hit.imagePath != null && hit.content.isBlank(),
                         isFile = hit.filePath != null,
                         fileName = hit.fileName,
+                        expiresAtEpochMs = hit.expiresAt?.let { PulseTime.epochMs(it) },
+                        viewOnce = hit.viewOnce,
                     )
                 },
             )
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
+
+    override fun observeMessageSearch(query: String): Flow<Result<List<MessageHit>>> = kotlinx.coroutines.flow.flow {
+        val watermark = messageEventClock.get()
+        val result = searchMessages(query)
+        val hits = result.getOrElse { emit(Result.failure(it)); return@flow }
+        emitAll(messageCacheChanges.map {
+            messageCacheMutex.withLock {
+                // A selected result is a snapshot, not authorization to retain
+                // a body after a known edit/delete. Re-query to discover new matches.
+                hits.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
+            }
+        }.withSearchHitExpiry().map { Result.success(it) })
     }
 
     override suspend fun fullHistory(conversationId: String): Result<List<Message>> =
@@ -2284,9 +2443,7 @@ class PulseRepositoryImpl constructor(
                 // upsert the deleted row here (server truth) so "Message
                 // deleted" renders immediately (the VM's refetch then rides
                 // the delta path for anything genuinely newer).
-                r.value.toDomain().let { domain ->
-                    messageDao.upsertAll(listOf(MessageEntity.from(domain, reactionsJsonOf(domain))))
-                }
+                upsertMessage(r.value.toDomain())
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -2319,10 +2476,12 @@ class PulseRepositoryImpl constructor(
         val mine = history.filter { it.authorId == viewerId && !it.isDeleted }
         var cleared = 0
         for (message in mine) {
-            if (api.deleteMessage(message.id, viewerId ?: "") is PulseResult.Success) cleared += 1
-            // keep going - clear as many of my own messages as the server allows
+            when (val response = api.deleteMessage(message.id, viewerId ?: "")) {
+                is PulseResult.Success -> { upsertMessage(response.value.toDomain()); cleared += 1 }
+                is PulseResult.Failure -> Unit // Failed rows remain intact and retryable.
+            }
         }
-        if (cleared > 0) messageDao.deleteByIds(mine.map { it.id })
+        if (mine.isNotEmpty() && cleared == 0) return Result.failure(IllegalStateException("No messages could be deleted. Try again."))
         scheduleConversationsRefresh()
         return Result.success(cleared)
     }
@@ -2338,8 +2497,10 @@ class PulseRepositoryImpl constructor(
     )
 
     /** One-row cache write shared by every Wave-2 read-modify-write path. */
-    private suspend fun upsertMessage(m: Message) {
+    private suspend fun upsertMessage(m: Message) = messageCacheMutex.withLock {
+        messageEventRevisions[m.id] = messageEventClock.incrementAndGet()
         messageDao.upsertAll(listOf(MessageEntity.from(m, reactionsJsonOf(m))))
+        messageCacheChanges.value = messageEventClock.get()
     }
 
     // Wave 2 messaging depth (spec §0/§1 - routes verified live)
@@ -2425,46 +2586,40 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> =
+    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> = savedOperations.withLock {
+        val watermark = messageEventClock.get()
         when (val r = api.savedList(viewerId ?: "")) {
+            is PulseResult.Success -> messageCacheMutex.withLock {
+                database.withTransaction {
+                    // One commit: message versions + exact index, including an empty list.
+                    // An older GET cannot overwrite a socket/local edit or deletion.
+                    cacheFetchedMessagesLocked(r.value.items.map { it.message.toDomain() }, watermark)
+                    savedDao.clear()
+                    savedDao.upsertAll(r.value.items.map { it.toSavedEntity() })
+                    Result.success(savedDao.library().map { it.toDomain() }.filter { savedMessageVisible(it.message) })
+                }
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+    }
+
+    private fun savedMessageVisible(message: Message): Boolean = !message.isDeleted &&
+        (message.expiresAtEpochMs?.let { it > System.currentTimeMillis() } != false)
+
+    override fun observeSavedLibrary(): Flow<List<SavedItem>> = savedDao.observeLibrary()
+        .map { rows -> rows.map { it.toDomain() } }.withSavedMessageExpiry()
+
+    override suspend fun unsaveMessage(messageId: String): Result<Boolean> = savedOperations.withLock {
+        when (val r = api.unsaveMessage(messageId, viewerId ?: "")) {
             is PulseResult.Success -> {
-                val items = r.value.items
-                // 1) the carried message rows into the cache - the library
-                //    renders them offline afterwards (spec §1 row 14).
-                messageDao.upsertAll(
-                    items.map { MessageEntity.from(it.message.toDomain(), reactionsJsonOf(it.message.toDomain())) },
-                )
-                // 2) the savedMessages index rows.
-                val savedRows = items.map { it.toSavedEntity() }
-                savedDao.upsertAll(savedRows)
-                // 3) prune - server truth: rows it no longer lists are gone.
-                val keep = savedRows.map { it.messageId }.toSet()
-                val stale = savedDao.all().filter { it.messageId !in keep }.map { it.messageId }
-                if (stale.isNotEmpty()) savedDao.deleteByIds(stale)
-                Result.success(items.map { it.toSavedItem() })
+                if (r.value.saved) Result.failure(IllegalStateException("Message was not removed from saved"))
+                else {
+                    savedDao.deleteById(messageId)
+                    Result.success(false)
+                }
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
-
-    override fun observeSavedLibrary(): Flow<List<SavedItem>> =
-        savedDao.observeAll().map { rows ->
-            rows.mapNotNull { row ->
-                val entity = messageDao.byId(row.messageId) ?: return@mapNotNull null
-                val conversation = conversationDao.byId(row.conversationId)
-                SavedItem(
-                    savedAt = PulseTime.epochMs(row.savedAt),
-                    conversationId = row.conversationId,
-                    conversationName = conversation?.title,
-                    isGroup = conversation?.kind == "GROUP",
-                    message = entity.toDomain(),
-                )
-            }
-        }
-
-    override suspend fun unsaveMessage(messageId: String): Result<Boolean> {
-        val result = toggleMessageSave(messageId)
-        if (result.getOrNull() == false) savedDao.deleteById(messageId)
-        return result
     }
 
     override suspend fun refreshTopics(conversationId: String): Result<Unit> =
@@ -3470,7 +3625,7 @@ class PulseRepositoryImpl constructor(
 
 // wire → domain mappers (kept beside the cache they feed)
 
-fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
+fun ConversationSummaryDto.toDomain(viewerId: String?, previous: Conversation? = null): Conversation {
     val others = members.filter { it.id != viewerId }
     val title = name
         ?: others.firstOrNull()?.name
@@ -3488,7 +3643,7 @@ fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
     val isAudio = !isImage && last?.audioPath != null && collapsed.isEmpty()
     val isFile = !isImage && !isAudio && last?.kind == "file" && last?.filePath != null
     val mutedEpoch = PulseTime.epochMs(mutedUntil)
-    return Conversation(
+    val mapped = Conversation(
         id = id,
         kind = kind,
         title = title,
@@ -3498,7 +3653,12 @@ fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
         lastMessageKind = last?.kind,
         // Web row stamp prefers the last message's time, falling back to updatedAt.
         lastActivityAt = last?.createdAt ?: updatedAt,
-        unreadCount = unreadCount,
+        unreadCount = unreadCount ?: 0,
+        lastMessageExpiresAtEpochMs = PulseTime.epochMs(last?.expiresAt).takeIf { it > 0 },
+        unreadExpirations = unreadExpirations.mapNotNull {
+            val deadline = PulseTime.epochMs(it.expiresAt)
+            if (deadline > 0 && it.count > 0) app.pulse.domain.model.UnreadExpiration(deadline, it.count) else null
+        },
         isPinned = !pinnedAt.isNullOrBlank(),
         // Mute truth = the window is in the future, not merely non-null (spec §7.4).
         isMuted = mutedEpoch > System.currentTimeMillis(),
@@ -3531,6 +3691,27 @@ fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
                 role = dto.role,
             )
         },
+    )
+    // Detail endpoints omit lastMessage/unread and viewer pin/archive fields.
+    // Opening room info must not wipe the inbox preview, badge or expiry schedule.
+    if (unreadCount != null || previous == null) return mapped
+    return mapped.copy(
+        lastMessagePreview = previous.lastMessagePreview,
+        lastMessageAuthorName = previous.lastMessageAuthorName,
+        lastMessageKind = previous.lastMessageKind,
+        lastActivityAt = previous.lastActivityAt,
+        unreadCount = previous.unreadCount,
+        unreadExpirations = previous.unreadExpirations,
+        lastMessageExpiresAtEpochMs = previous.lastMessageExpiresAtEpochMs,
+        lastMessageMine = previous.lastMessageMine,
+        lastMessageDeleted = previous.lastMessageDeleted,
+        lastMessageIsReply = previous.lastMessageIsReply,
+        lastMessageIsImage = previous.lastMessageIsImage,
+        lastMessageIsAudio = previous.lastMessageIsAudio,
+        lastMessageIsFile = previous.lastMessageIsFile,
+        lastMessageFileName = previous.lastMessageFileName,
+        isPinned = previous.isPinned, isArchived = previous.isArchived,
+        isMuted = previous.isMuted, mutedUntilEpoch = previous.mutedUntilEpoch,
     )
 }
 

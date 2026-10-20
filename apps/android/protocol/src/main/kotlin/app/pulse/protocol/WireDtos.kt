@@ -94,10 +94,13 @@ data class PinnedPageDto(
     val messages: List<ChatMessageDto> = emptyList(),
 )
 
+@Serializable
+data class UnpinAckDto(val unpinned: Boolean)
+
 /** POST /api/messages/{id}/save { userId } → { saved } (per-user toggle). */
 @Serializable
 data class SavedToggleDto(
-    val saved: Boolean = false,
+    val saved: Boolean,
 )
 
 // R5-B: POST /api/conversations/[id]/messages response envelope
@@ -177,6 +180,9 @@ data class ConversationMemberDto(
 )
 
 @Serializable
+data class UnreadExpirationDto(val expiresAt: String, val count: Int)
+
+@Serializable
 data class ConversationSummaryDto(
     val id: String,
     val isGroup: Boolean = false,
@@ -190,7 +196,8 @@ data class ConversationSummaryDto(
     val updatedAt: String? = null,
     val members: List<ConversationMemberDto> = emptyList(),
     val lastMessage: ChatMessageDto? = null,
-    val unreadCount: Int = 0,
+    val unreadCount: Int? = null,
+    val unreadExpirations: List<UnreadExpirationDto> = emptyList(),
     val pinnedAt: String? = null,
     val mutedUntil: String? = null,
     val archivedAt: String? = null,
@@ -333,6 +340,10 @@ data class SearchHitDto(
     val filePath: String? = null,
     val fileName: String? = null,
     val sender: SenderDto? = null,
+    val expiresAt: String? = null,
+    val viewOnce: Boolean = false,
+    val anon: Boolean = false,
+    val anonAlias: String? = null,
 )
 
 @Serializable

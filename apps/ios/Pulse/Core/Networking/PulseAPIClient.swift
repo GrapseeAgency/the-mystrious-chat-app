@@ -359,10 +359,26 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extract(from: data)
     }
 
+    private struct UnpinAck: Decodable { let unpinned: Bool }
+    public func unpinMessage(id: String, userId: String) async throws {
+        let data = try await deleteRaw("/api/messages/\(id)/pin", body: ["userId": userId])
+        guard try decoder.decode(UnpinAck.self, from: data).unpinned else {
+            throw Failure(kind: .server, message: "The pin was not removed. Try again.")
+        }
+    }
+
     /// POST /api/messages/{id}/save {userId} - save/star toggle → {saved}.
     public func toggleMessageSave(id: String, userId: String) async throws -> Bool {
         let data = try await postRaw("/api/messages/\(id)/save", body: ["userId": userId])
         return try decoder.decode(WireSavedToggle.self, from: data).saved
+    }
+
+    /// Explicit removal; a retry must never invoke the save toggle.
+    public func unsaveMessage(id: String, userId: String) async throws {
+        let data = try await deleteRaw("/api/messages/\(id)/save", body: ["userId": userId])
+        guard try decoder.decode(WireSavedToggle.self, from: data).saved == false else {
+            throw Failure(kind: .server, message: "The saved message was not removed. Try again.")
+        }
     }
 
     /// GET /api/conversations/{id}/pinned?userId= - pins list, pinnedAt asc.
@@ -710,8 +726,13 @@ public struct PulseAPIClient: Sendable {
     /// GET /api/search?userId=&q= - server message search (nil = unreachable;
     /// the Messages section is omitted silently - local results still work).
     public func searchMessages(_ query: String) async -> WireSearchPage? {
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        return try? await get("/api/search?userId=\(userId)&q=\(encoded)", as: WireSearchPage.self)
+        return try? await get(Self.searchPath(userId: userId, query: query), as: WireSearchPage.self)
+    }
+
+    static func searchPath(userId: String, query: String) -> String {
+        // Query values must encode &, + and #; urlQueryAllowed admits separators.
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        return "/api/search?userId=\(userId.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")&q=\(query.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")"
     }
 
     /// DELETE /api/messages/{id} { requesterId } - soft-delete MY OWN message

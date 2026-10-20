@@ -106,11 +106,16 @@ final class MirrorViewModel: ObservableObject {
     }
 
     private var timer: Timer?
+    private var expiryTimer: Timer?
+    private var inbox: [WireConversationSummary] = []
+    private weak var store: PulseStore?
+    private var refreshRevision: UInt64 = 0
     private var client: PulseAPIClient?
 
 
     /// One conversation summary -> the home row (web chats-row mapping).
     static func buildRow(summary: WireConversationSummary, viewerId: String) -> MirrorRow {
+        let summary = summary.removingExpiredSummary()
         let other = summary.members.first { $0.id != viewerId }
         let last = summary.lastMessage
         let deleted = last?.deletedAt != nil
@@ -126,7 +131,7 @@ final class MirrorViewModel: ObservableObject {
         let authorPrefix: String
         if mine {
             authorPrefix = "You: "
-        } else if summary.isGroup {
+        } else if summary.isGroup && last != nil {
             authorPrefix = (last?.sender?.name ?? "") + ": "
         } else {
             authorPrefix = ""
@@ -154,6 +159,13 @@ final class MirrorViewModel: ObservableObject {
 
     func start(session: PulseSession) {
         client = session.api
+        store = session.store
+        inbox = ((try? store?.cachedConversations()) ?? []).map { WireConversationSummary(cached: $0) }
+        projectInbox()
+        expiryTimer?.invalidate()
+        expiryTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.projectInbox() }
+        }
         timer?.invalidate()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -161,17 +173,33 @@ final class MirrorViewModel: ObservableObject {
         }
     }
 
-    func stop() { timer?.invalidate(); timer = nil }
+    func stop() {
+        timer?.invalidate(); timer = nil
+        expiryTimer?.invalidate(); expiryTimer = nil
+        refreshRevision &+= 1
+    }
+
+    private func projectInbox() {
+        guard let client else { return }
+        inbox = inbox.map { $0.removingExpiredSummary() }
+        let built = inbox.map { Self.buildRow(summary: $0, viewerId: client.userId) }
+        let active = built.filter { !$0.isArchived }, archived = built.filter { $0.isArchived }
+        if rows != active { rows = active }
+        if archivedRows != archived { archivedRows = archived }
+    }
 
     func refresh() {
         guard let client else { return }
+        refreshRevision &+= 1
+        let revision = refreshRevision, store = store
         Task { @MainActor in
             // rows - real summaries, same mapping the web home uses;
             // R64 web parity: the main list EXCLUDES archived chats
             if let page = try? await client.conversations() {
-                let built = page.map { MirrorViewModel.buildRow(summary: $0, viewerId: client.userId) }
-                rows = built.filter { !$0.isArchived }
-                archivedRows = built.filter { $0.isArchived }
+                guard revision == refreshRevision else { return }
+                inbox = page
+                projectInbox()
+                try? store?.upsert(conversations: page.map { $0.toDomain() }, replacingSnapshot: true)
             }
             // profile row (tolerant subset), stats, coins
             if let url = URL(string: PulseEndpoints.gatewayURL.absoluteString + "/api/users/" + client.userId) {
@@ -275,7 +303,7 @@ struct MirrorHomeView: View {
     private var visibleRows: [MirrorViewModel.MirrorRow] {
         let base: [MirrorViewModel.MirrorRow]
         switch chip {
-        case 1: base = model.rows.filter { $0.unread > 0 }
+        case 1: base = model.rows.filter { $0.unread > 0 || $0.manualUnread }
         case 2: base = model.rows.filter { $0.isGroup }
         default: base = model.rows
         }
@@ -1393,7 +1421,20 @@ struct MirrorRoomView: View {
     @State private var messages: [WireChatMessage] = []
     @State private var memberNames: [String] = []
     @State private var memberRows: [WireConversationMember] = []
-    @State private var draft = ""
+    @State private var draftText = ""
+    @State private var draftJournal: PulseDraftJournal?
+    private var draft: String {
+        get { draftText }
+        nonmutating set {
+            draftText = newValue
+            guard let draftJournal else { return }
+            let write = draftJournal.submit(newValue, revision: DispatchTime.now().uptimeNanoseconds)
+            Task {
+                do { try await write.value }
+                catch { session.toasts.show("Draft could not be saved. Check device storage.") }
+            }
+        }
+    }
     // R64 - room kebab + sheets + the composer focus ring
     @State private var menuOpen = false
     @State private var activeSheet: MirrorRoomSheet?
@@ -1577,7 +1618,7 @@ struct MirrorRoomView: View {
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
-                        TextField("Type here", text: $draft, axis: .vertical)
+                        TextField("Type here", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical)
                             .font(.system(size: 15)).foregroundColor(MirrorArt.text)
                             .lineLimit(1...5)
                             .padding(.vertical, 6)
@@ -1712,7 +1753,15 @@ struct MirrorRoomView: View {
             }
         }
         .onChange(of: session.connected) { connected in if connected { refreshRevision &+= 1 } }
-        .onAppear { session.activeRoomId = row.id; updateReadBoundary() }
+        .onAppear {
+            session.activeRoomId = row.id
+            if draftJournal == nil, let store = session.store {
+                let journal = PulseDraftJournal(store: store, conversationId: row.id)
+                draftJournal = journal
+                draft = journal.snapshot ?? row.draft ?? ""
+            }
+            updateReadBoundary()
+        }
         .onDisappear {
             cancelVoiceRecording()
             roomOperations.stop()
@@ -1801,7 +1850,7 @@ struct MirrorRoomView: View {
         }
         do {
             let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: row.id,
-                content: text, effect: armedEffect, anon: row.isGroup && anonNext)
+                content: text, effect: armedEffect, anon: row.isGroup && anonNext, draftJournal: draftJournal)
             acceptCarrier(message)
             draft = ""; armedEffect = nil; anonNext = false
             session.outbox?.reloadPending()
@@ -2463,6 +2512,11 @@ struct MirrorRoomSheetView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var pinned: [WireChatMessage]?
+    @State private var pinError: String?
+    @State private var pinBusy = false
+    @State private var pinRequest = UUID()
+    @State private var pinEpoch: UUID?
+    @State private var previewNow = Date()
 
     var body: some View {
         MirrorPanel(title: panelTitle) {
@@ -2486,7 +2540,7 @@ struct MirrorRoomSheetView: View {
                     let q = query.trimmingCharacters(in: .whitespaces).lowercased()
                     let hits = q.isEmpty
                         ? []
-                        : messages.filter { ($0.content ?? "").lowercased().contains(q) }.suffix(40)
+                        : messages.filter { PulseRemediationLogic.isVisiblePreview($0, now: previewNow) && $0.content.lowercased().contains(q) }.suffix(40)
                     if !q.isEmpty && hits.isEmpty {
                         MirrorPanelHint("No matches in this conversation")
                     }
@@ -2501,6 +2555,10 @@ struct MirrorRoomSheetView: View {
                 }
             case .pinned:
                 MirrorPanelScroll {
+                    if let pinError {
+                        Button(pinError + " Retry") { Task { await loadPins() } }
+                            .foregroundColor(MirrorArt.accent).disabled(pinBusy)
+                    }
                     if let pins = pinned {
                         if pins.isEmpty {
                             MirrorPanelHint("Nothing pinned yet")
@@ -2516,24 +2574,22 @@ struct MirrorRoomSheetView: View {
                                 Spacer(minLength: 0)
                                 Button {
                                     Task {
-                                        _ = try? await session.api.toggleMessagePin(id: message.id, userId: session.api.userId)
-                                        pinned = (try? await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)) ?? []
+                                        await unpin(message)
                                     }
                                 } label: {
                                     Image(systemName: "pin.slash").font(.system(size: 13)).foregroundColor(MirrorArt.dim)
                                         .frame(width: 32, height: 32)
                                 }
                                 .buttonStyle(.plain)
+                                .disabled(pinBusy)
                             }
                             .padding(.horizontal, 8).padding(.vertical, 6)
                         }
-                    } else {
+                    } else if pinError == nil {
                         MirrorPanelHint("Loading pins…")
                     }
                 }
-                .task {
-                    pinned = (try? await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)) ?? []
-                }
+                .task { await loadPins() }
             // R102 - the tray surfaces
             case .poll:
                 MirrorPollBuilder(session: session, row: row, onSent: onSent)
@@ -2552,6 +2608,58 @@ struct MirrorRoomSheetView: View {
             case .location:
                 MirrorLocationBuilder(session: session, row: row, onCreated: onCreated)
             }
+        }
+        .onReceive(session.messageVisibilityClock) { now in
+            previewNow = now
+            reconcilePins()
+        }
+        .onChange(of: messages) { _ in reconcilePins() }
+        .onDisappear { pinRequest = UUID() }
+    }
+
+    private func reconcilePins() {
+        guard pinEpoch == session.sessionGeneration else { pinned = nil; return }
+        pinned = pinned?.map { message in
+            (try? session.store?.message(id: message.id)) ?? messages.first(where: { $0.id == message.id }) ?? message
+        }.filter { $0.pinnedAt != nil && PulseRemediationLogic.isVisiblePreview($0, now: previewNow) }
+    }
+
+    private func loadPins() async {
+        guard !pinBusy else { return }
+        let ticket = UUID(), epoch = session.sessionGeneration, watermark = session.messageRevision
+        pinRequest = ticket
+        pinEpoch = epoch
+        pinError = nil
+        do {
+            let fresh = try await session.api.pinnedMessages(conversationId: row.id, userId: session.api.userId)
+            guard !Task.isCancelled, pinRequest == ticket, session.sessionGeneration == epoch else { return }
+            let accepted = fresh.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            try session.store?.upsert(messages: accepted)
+            pinned = fresh.compactMap { message in
+                session.acceptsSyncMessage(message.id, startedAt: watermark) ? message : (try? session.store?.message(id: message.id))
+            }
+            reconcilePins()
+        } catch {
+            guard !Task.isCancelled, pinRequest == ticket, session.sessionGeneration == epoch else { return }
+            pinError = "Couldn't load pinned messages."
+        }
+    }
+
+    private func unpin(_ message: WireChatMessage) async {
+        guard !pinBusy else { return }
+        pinBusy = true
+        pinRequest = UUID() // A pending GET must not restore this selection.
+        let epoch = session.sessionGeneration, watermark = session.messageRevision
+        defer { pinBusy = false }
+        do {
+            try await session.api.unpinMessage(id: message.id, userId: session.api.userId)
+            guard session.sessionGeneration == epoch else { return }
+            try session.applyPinRemoval(message.id, startedAt: watermark)
+            pinned = pinned?.filter { $0.id != message.id }
+            pinError = nil
+        } catch {
+            guard session.sessionGeneration == epoch else { return }
+            pinError = "Couldn't remove pin. Try Unpin again."
         }
     }
 

@@ -1,10 +1,11 @@
 import SwiftUI
+import Combine
 
 /// Wave 2 saved library (spec §1 row 14) - GET /api/users/{id}/saved (newest
 /// first, cap 100, NO server pagination/search) mirrored into the GRDB cache
-/// via upsert(savedItems:) + replaceSaved(messageIds:), then rendered with a
+/// via one atomic snapshot replacement, then observed with a
 /// LOCAL search over sender/content/conversation, an honest loading/error/
-/// empty state, row Unsave via the existing save toggle, and "open original"
+/// empty state, row Unsave via explicit repeat-safe removal, and "open original"
 /// = resolve the full conversation → Chats stack pushes the room with a
 /// jump-to-message target (the same path global search uses).
 struct SavedLibraryView: View {
@@ -21,6 +22,7 @@ struct SavedLibraryView: View {
     @State private var openingId: String?
     @State private var removingIds: Set<String> = []
     @State private var loadGeneration = UUID()
+    @State private var libraryObservation: AnyCancellable?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -45,9 +47,19 @@ struct SavedLibraryView: View {
             }
         }
         .presentationDetents([.large])
-        .task { await load() }
+        .task {
+            if let store = session.store {
+                libraryObservation = store.observeSavedItems()
+                    .receive(on: DispatchQueue.main)
+                    .sink(receiveCompletion: { completion in
+                        if case .failure = completion { session.toasts.show("Saved messages could not be read from storage") }
+                    }, receiveValue: { rows in items = rows })
+            }
+            await load()
+        }
+        .onDisappear { libraryObservation?.cancel(); libraryObservation = nil; loadGeneration = UUID() }
         .onReceive(session.messageVisibilityClock) { now in
-            let visible = items.filter { PulseRemediationLogic.isAlive($0.message.expiresAt, now: now) }
+            let visible = items.filter { $0.message.deletedAt == nil && PulseRemediationLogic.isAlive($0.message.expiresAt, now: now) }
             if visible.count != items.count { items = visible }
         }
     }
@@ -64,14 +76,21 @@ struct SavedLibraryView: View {
         let epoch = session.sessionGeneration
         let api = session.api
         let store = session.store
+        let watermark = session.messageRevision
+        let savedWatermark = session.savedRevision
         if items.isEmpty, let cached = try? store?.cachedSavedItems() { items = cached }
         phase = items.isEmpty ? .loading : .loaded
         do {
             let fresh = try await api.savedLibrary(userId: viewer.id)
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
-            try? store?.upsert(savedItems: fresh)
-            try? store?.replaceSaved(messageIds: fresh.map { $0.message.id })
-            items = fresh.filter { PulseRemediationLogic.isAlive($0.message.expiresAt) }
+            guard savedWatermark == session.savedRevision else { phase = .loaded; return }
+            let changed = Set(fresh.filter { !session.acceptsSyncMessage($0.message.id, startedAt: watermark) }.map { $0.message.id })
+            if let store {
+                try store.upsert(savedItems: fresh, replacingSnapshot: true, preservingMessageIds: changed)
+                items = try store.cachedSavedItems()
+            } else {
+                items = fresh.filter { !changed.contains($0.message.id) && $0.message.deletedAt == nil && PulseRemediationLogic.isAlive($0.message.expiresAt) }
+            }
             phase = .loaded
         } catch {
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
@@ -87,15 +106,18 @@ struct SavedLibraryView: View {
     private func unsave(_ item: WireSavedItem) {
         guard let viewer = session.viewer, !removingIds.contains(item.message.id) else { return }
         removingIds.insert(item.message.id)
+        loadGeneration = UUID()
         let epoch = session.sessionGeneration
         let api = session.api
         let store = session.store
         Task {
             defer { removingIds.remove(item.message.id) }
             do {
-                _ = try await api.toggleMessageSave(id: item.message.id, userId: viewer.id)
+                try await api.unsaveMessage(id: item.message.id, userId: viewer.id)
                 guard session.sessionGeneration == epoch else { return }
-                try? store?.deleteSaved(messageId: item.message.id)
+                loadGeneration = UUID()
+                session.noteSavedMutation()
+                try store?.deleteSaved(messageId: item.message.id)
                 items.removeAll { $0.message.id == item.message.id }
                 await load()
             } catch {
@@ -107,7 +129,9 @@ struct SavedLibraryView: View {
     /// Resolves the FULL conversation (members drive room colors/title) then
     /// hands it to the Chats stack with the jump target.
     private func openOriginal(_ item: WireSavedItem) {
-        guard openingId == nil, let viewer = session.viewer else { return }
+        guard openingId == nil, let viewer = session.viewer,
+              item.message.deletedAt == nil, PulseRemediationLogic.isAlive(item.message.expiresAt),
+              items.contains(where: { $0.message.id == item.message.id }) else { return }
         openingId = item.message.id
         let epoch = session.sessionGeneration
         let api = session.api
@@ -118,7 +142,9 @@ struct SavedLibraryView: View {
                     id: item.conversation.id,
                     userId: viewer.id,
                 )
-                guard session.sessionGeneration == epoch else { return }
+                guard session.sessionGeneration == epoch,
+                      items.contains(where: { $0.message.id == item.message.id }),
+                      PulseRemediationLogic.isAlive(item.message.expiresAt) else { return }
                 onOpenOriginal(conversation, item.message.id)
             } catch {
                 session.toasts.show("Couldn't open the original chat")

@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import kotlinx.coroutines.ensureActive
 import android.content.Context
 import android.media.MediaRecorder
 import android.net.Uri
@@ -405,6 +406,8 @@ class ChatRoomViewModel @Inject constructor(
     private var draftSaveJob: Job? = null
     private var readJob: Job? = null
     private var searchJob: Job? = null
+    private var activeSearchQuery = ""
+    private var pinsJob: Job? = null
     private var flashJob: Job? = null
     private var jumpExpansionJob: Job? = null
 
@@ -421,12 +424,26 @@ class ChatRoomViewModel @Inject constructor(
     private var readingAnchor: String? = null
 
     init {
+        viewModelScope.launch {
+            // This Room stream includes messages cached by pin/search requests,
+            // and emits at TTL deadlines even without any network activity.
+            repo.observeMessages(conversationId).collect { current ->
+                val now = System.currentTimeMillis()
+                _state.value = _state.value.copy(
+                    pins = app.pulse.domain.sync.reconcileMessageSelection(_state.value.pins, current, now) { it.pinnedAt != null },
+                    searchResults = app.pulse.domain.sync.reconcileMessageSelection(_state.value.searchResults, current, now) {
+                        activeSearchQuery.isNotBlank() && it.body.contains(activeSearchQuery, ignoreCase = true)
+                    },
+                )
+            }
+        }
+
         restoreAttachmentDraft()
         viewModelScope.launch {
             // Wave 0 draft restore: the local draft table wins; when it is
             // empty fall back to the server-mirrored myDraft on the summary.
             val local = runCatching { repo.observeDraft(conversationId).firstOrNull() }.getOrNull()
-            if (!local.isNullOrBlank()) {
+            if (local != null) {
                 if (composerRevision == 0L) _initialDraft.value = local
             } else {
                 val server = runCatching {
@@ -535,6 +552,7 @@ class ChatRoomViewModel @Inject constructor(
         if (_state.value.editing != null) return // composer is editing a row, not drafting
         composerRevision++
         repo.stageDraft(conversationId, text) // reserve/write locally before the debounce
+        val draftToken = repo.captureDraftToken(conversationId)
         val userName = viewerName()
         val now = android.os.SystemClock.elapsedRealtime()
         if (text.isBlank()) {
@@ -555,7 +573,7 @@ class ChatRoomViewModel @Inject constructor(
         draftSaveJob?.cancel()
         draftSaveJob = viewModelScope.launch {
             delay(600)
-            runCatching { repo.saveDraft(conversationId, text) }
+            runCatching { draftToken?.let { repo.saveStagedDraft(conversationId, text, it) } }
                 .onFailure { _state.value = _state.value.copy(error = it.message) }
         }
     }
@@ -587,6 +605,8 @@ class ChatRoomViewModel @Inject constructor(
             return
         }
         val revision = composerRevision
+        val draftToken = repo.captureDraftToken(conversationId)
+        draftSaveJob?.cancel()
         val topic = _activeTopicId.value
         val reply = _state.value.replyTo
         val replyId = reply?.id
@@ -605,7 +625,7 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch {
             // Quote replies DO file to the active topic (only THREAD replies
             // are excluded - the repo drops topicId on parentId sends).
-            safelySend { sendUseCase(conversationId, body, replyId, topicId = topic, anon = anonArmed, anonAliasPreview = anonAliasPreview) }
+            safelySend { sendUseCase(conversationId, body, replyId, topicId = topic, anon = anonArmed, anonAliasPreview = anonAliasPreview, draftToken = draftToken) }
                 .onSuccess { receipt ->
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         // Network-class failure → queued in the outbox. The
@@ -660,6 +680,8 @@ class ChatRoomViewModel @Inject constructor(
             return
         }
         val revision = composerRevision
+        val draftToken = if (consumeDraft) repo.captureDraftToken(conversationId) else null
+        if (consumeDraft) draftSaveJob?.cancel()
         val topic = _activeTopicId.value
         val reply = _state.value.replyTo
         val replyId = reply?.id
@@ -673,6 +695,7 @@ class ChatRoomViewModel @Inject constructor(
                 anon = anon,
                 replyToId = replyId,
                 topicId = topic,
+                draftToken = draftToken,
             ) }
                 .onSuccess { receipt ->
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
@@ -708,7 +731,13 @@ class ChatRoomViewModel @Inject constructor(
 
     private fun consumeComposer(revision: Long) {
         // A response for message A does not own the newer draft B.
-        if (composerRevision == revision) onDraftChanged("")
+        if (composerRevision == revision) {
+            // Local consumption already committed with the outbox. An ACK is
+            // not a new edit and must not overwrite a reopened room's draft.
+            composerRevision++
+            draftSaveJob?.cancel()
+            viewModelScope.launch { repo.setTyping(conversationId, viewerName(), false) }
+        }
     }
 
     /**
@@ -769,20 +798,36 @@ class ChatRoomViewModel @Inject constructor(
     // ── pin / save / delete / forward ───────────────────────────
 
     fun loadPins() {
-        viewModelScope.launch {
-            runCatching { repo.pinnedMessages(conversationId) }
-                .onSuccess { pins -> _state.value = _state.value.copy(pins = pins) }
+        pinsJob?.cancel()
+        pinsJob = viewModelScope.launch {
+            try {
+                val pins = repo.pinnedMessages(conversationId)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                _state.value = _state.value.copy(pins = app.pulse.domain.sync.reconcileMessageSelection(pins, emptyList(), System.currentTimeMillis()) { it.pinnedAt != null })
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                notify("Couldn't refresh pinned messages", isError = true)
+            }
         }
     }
 
+    private val pinActions = mutableSetOf<String>()
     fun toggleMessagePin(messageId: String) {
+        if (!pinActions.add(messageId)) return
+        val selected = messages.value.firstOrNull { it.id == messageId } ?: _state.value.pins.firstOrNull { it.id == messageId }
         viewModelScope.launch {
-            repo.toggleMessagePin(messageId)
-                .onSuccess { message ->
-                    notify(if (message.pinnedAt != null) "Message pinned" else "Message unpinned")
-                    loadPins()
+            try {
+                if (selected?.pinnedAt != null) {
+                    repo.unpinMessage(messageId)
+                        .onSuccess { notify("Message unpinned"); loadPins() }
+                        .onFailure { notify("Couldn't remove the pin", isError = true) }
+                } else {
+                    repo.toggleMessagePin(messageId)
+                        .onSuccess { notify(if (it.pinnedAt != null) "Message pinned" else "Message unpinned"); loadPins() }
+                        .onFailure { notify("Couldn't update the pin", isError = true) }
                 }
-                .onFailure { notify("Couldn't update the pin", isError = true) }
+            } finally { pinActions.remove(messageId) }
         }
     }
 
@@ -970,6 +1015,7 @@ class ChatRoomViewModel @Inject constructor(
 
     fun setSearchOpen(open: Boolean) {
         searchJob?.cancel()
+        activeSearchQuery = ""
         _state.value = _state.value.copy(
             searchOpen = open,
             searchResults = emptyList(),
@@ -980,6 +1026,7 @@ class ChatRoomViewModel @Inject constructor(
     fun onSearchQueryChanged(query: String) {
         searchJob?.cancel()
         val q = query.trim()
+        activeSearchQuery = q
         if (q.length < 2) {
             _state.value = _state.value.copy(searchResults = emptyList(), searching = false)
             return
@@ -989,10 +1036,12 @@ class ChatRoomViewModel @Inject constructor(
             delay(250)
             val serverHits = runCatching { repo.searchInConversation(conversationId, q) }
                 .getOrDefault(emptyList())
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (activeSearchQuery != q) return@launch
             val localHits = messages.value.filter { it.body.contains(q, ignoreCase = true) }
             val merged = (serverHits + localHits)
                 .distinctBy { it.id }
-                .filter { !it.isDeleted }
+                .filter { !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > System.currentTimeMillis() } != false) && it.body.contains(q, ignoreCase = true) }
                 .sortedBy { it.createdAt }
             _state.value = _state.value.copy(searchResults = merged, searching = false)
         }

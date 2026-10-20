@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import kotlinx.coroutines.flow.collect
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -257,11 +258,14 @@ class ChatsViewModel @Inject constructor(
             _searching.value = false
             return
         }
+        _searchHits.value = emptyList()
         _searching.value = true
         searchJob = viewModelScope.launch {
             delay(250)
-            _searchHits.value = repo.searchMessages(trimmed).getOrDefault(emptyList())
-            _searching.value = false
+            repo.observeMessageSearch(trimmed).collect { result ->
+                _searchHits.value = result.getOrDefault(emptyList())
+                _searching.value = false
+            }
         }
     }
 

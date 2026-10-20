@@ -14,13 +14,13 @@ final class PulseDraftJournal {
     private actor Writer {
         var newest: [String: (owner: UInt64, revision: UInt64)] = [:]
 
-        func save(_ text: String, revision: UInt64, owner: UInt64, store: PulseStore, room: String) throws {
+        func save(_ text: String, revision: UInt64, owner: UInt64, store: PulseStore, room: String, writeRevision: UInt64) throws {
             let key = store.storageIdentity + "\u{0}" + room
             if let previous = newest[key] {
                 guard owner > previous.owner || (owner == previous.owner && revision >= previous.revision) else { return }
             }
             newest[key] = (owner, revision)
-            try store.saveDraftSnapshot(conversationId: room, text: text)
+            try store.saveDraftSnapshot(conversationId: room, text: text, expectedRevision: writeRevision)
         }
     }
     private static let writer = Writer()
@@ -54,14 +54,26 @@ final class PulseDraftJournal {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : text
         Self.snapshots[key] = Snapshot(owner: owner, revision: revision, text: value)
         let store = store, room = room, owner = owner, key = key
+        let writeRevision = store.reserveDraftWrite(conversationId: room)
         return Task {
-            try await Self.writer.save(value, revision: revision, owner: owner, store: store, room: room)
+            try await Self.writer.save(value, revision: revision, owner: owner, store: store, room: room, writeRevision: writeRevision)
             if let current = Self.snapshots[key], current.owner == owner, current.revision == revision {
                 // The committed value can now be read from SQLite. Keep the
                 // ordering fence, but do not retain every draft's body in RAM.
                 Self.snapshots[key] = Snapshot(owner: owner, revision: revision, text: nil)
             }
         }
+    }
+
+    func prepareSend() throws -> PulseDraftConsumption {
+        guard isCurrentOwner else { throw CocoaError(.userCancelled) }
+        return store.captureDraftConsumption(conversationId: room)
+    }
+
+    /// Called synchronously after the same transaction committed queue + clear.
+    func didConsumeDraft() {
+        guard let current = Self.snapshots[key], current.owner == owner else { return }
+        Self.snapshots[key] = Snapshot(owner: owner, revision: current.revision &+ 1, text: "")
     }
 
     func save(_ text: String, revision: UInt64) async throws {

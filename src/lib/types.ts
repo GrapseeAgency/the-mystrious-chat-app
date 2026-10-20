@@ -136,6 +136,8 @@ export interface ConversationSummary {
   members: AppUser[] // every participant EXCEPT is never filtered; UI filters out self where needed
   lastMessage: ChatMessage | null
   unreadCount: number // count of non-deleted messages from others newer than my lastReadAt
+  /** Expiring portions of this exact count, for offline native badge projection. */
+  unreadExpirations?: { expiresAt: string; count: number }[]
   myStreak: { count: number } | null // R31-a viewer's LIVE chat streak (null = none / broken)
   /** R33-b additive: streak whose lastDay is YESTERDAY UTC with count >= 2 -
    *  still live (myStreak stays populated) but dies at tonight's UTC midnight

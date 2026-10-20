@@ -48,6 +48,9 @@ data class ConversationMember(
     val role: String? = null,
 )
 
+@Serializable
+data class UnreadExpiration(val expiresAtEpochMs: Long, val count: Int)
+
 /** A conversation in the chats list - mirrors web `ConversationSummary`. */
 @Serializable
 data class Conversation(
@@ -91,6 +94,8 @@ data class Conversation(
     val otherUserId: String? = null,
     /** Broadcast-only channel (web broadcastMode). */
     val isChannel: Boolean = false,
+    val lastMessageExpiresAtEpochMs: Long? = null,
+    val unreadExpirations: List<UnreadExpiration> = emptyList(),
 ) {
     enum class Kind { DM, GROUP, CHANNEL, SPACE, VOICE, STAGE }
 
@@ -111,6 +116,8 @@ data class MessageHit(
     val imageOnly: Boolean = false,
     val isFile: Boolean = false,
     val fileName: String? = null,
+    val expiresAtEpochMs: Long? = null,
+    val viewOnce: Boolean = false,
 )
 
 // Wave 2 messaging depth - polls / link previews / saved / topics / ASR

@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -153,11 +154,21 @@ internal fun MirrorSavedSheet(
     onOpenConversation: (String, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var items by remember { mutableStateOf<List<SavedItem>?>(null) }
-    LaunchedEffect(viewerId) {
-        items = runCatching { repository.refreshSavedLibrary() }.getOrNull()?.getOrNull()
+    val list by repository.observeSavedLibrary().collectAsStateWithLifecycle(initialValue = emptyList())
+    var loading by remember(viewerId) { mutableStateOf(true) }
+    var error by remember(viewerId) { mutableStateOf<String?>(null) }
+    var retry by remember(viewerId) { mutableStateOf(0) }
+    LaunchedEffect(repository, viewerId, retry) {
+        loading = true
+        error = null
+        try {
+            repository.refreshSavedLibrary().getOrThrow()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            error = failure.message ?: "Saved messages could not be refreshed"
+        } finally { loading = false }
     }
-    val list = items ?: emptyList()
 
     Box(
         Modifier
@@ -187,7 +198,7 @@ internal fun MirrorSavedSheet(
                 Spacer(Modifier.width(6.dp))
                 Text(
                     when {
-                        items == null -> "Loading"
+                        loading && list.isEmpty() -> "Loading"
                         list.size == 1 -> "1 saved message"
                         else -> "${list.size} saved messages"
                     },
@@ -196,7 +207,12 @@ internal fun MirrorSavedSheet(
                     fontWeight = FontWeight.Bold,
                 )
             }
-            if (items == null) {
+            if (error != null) {
+                androidx.compose.material3.TextButton(onClick = { retry++ }) {
+                    Text("Could not refresh · Retry", color = MirrorArt.Dim)
+                }
+            }
+            if (loading && list.isEmpty()) {
                 Box(
                     Modifier
                         .fillMaxWidth()
@@ -230,7 +246,7 @@ internal fun MirrorSavedSheet(
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "Long-press a message in any chat and choose Save message.",
+                        error ?: "Long-press a message in any chat and choose Save message.",
                         color = MirrorArt.Dim,
                         fontSize = 12.sp,
                         lineHeight = 17.sp,

@@ -528,9 +528,22 @@ class PulseApi(
     suspend fun toggleMessagePin(messageId: String, userId: String): PulseResult<ChatMessageDto> =
         post("/api/messages/$messageId/pin", jsonOf("userId" to userId)) { messageOf(it) }
 
+    suspend fun unpinMessage(messageId: String, userId: String): PulseResult<Unit> =
+        deleteWithBody("/api/messages/$messageId/pin", userId) {
+            val ack = PulseJson.decodeFromString(app.pulse.protocol.UnpinAckDto.serializer(), it)
+            if (!ack.unpinned) throw kotlinx.serialization.SerializationException("Unpin was not acknowledged")
+            Unit
+        }
+
     /** POST /api/messages/{id}/save { userId } → { saved } (per-user toggle). */
     suspend fun toggleMessageSave(messageId: String, userId: String): PulseResult<SavedToggleDto> =
         post("/api/messages/$messageId/save", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(SavedToggleDto.serializer(), it)
+        }
+
+    /** Explicit Unsave: retrying a lost response cannot recreate the bookmark. */
+    suspend fun unsaveMessage(messageId: String, userId: String): PulseResult<SavedToggleDto> =
+        deleteWithBody("/api/messages/$messageId/save", userId) {
             PulseJson.decodeFromString(SavedToggleDto.serializer(), it)
         }
 

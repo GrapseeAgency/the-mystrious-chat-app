@@ -1121,14 +1121,8 @@ private fun MirrorRoomScaffold(
                 }
             }
         },
-        onUnpinMessage = { messageId ->
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching { repository.toggleMessagePin(messageId) }
-            }
-        },
-        fetchPinned = {
-            runCatching { repository.pinnedMessages(convo.id) }.getOrDefault(emptyList())
-        },
+        onUnpinMessage = { messageId -> repository.unpinMessage(messageId) },
+        fetchPinned = { repository.pinnedMessages(convo.id) },
         pipActive = pipActive,
         onTogglePip = onTogglePip,
     )

@@ -118,10 +118,25 @@ public final class PulseSession: ObservableObject {
     @Published public private(set) var startupError: String?
     @Published public private(set) var isForeground = false
     public private(set) var messageRevision: UInt64 = 0
+    public private(set) var savedRevision: UInt64 = 0
+    public func noteSavedMutation() { savedRevision &+= 1 }
     private var messageRevisions: [String: UInt64] = [:]
 
     public func acceptsSyncMessage(_ id: String, startedAt revision: UInt64) -> Bool {
         (messageRevisions[id] ?? 0) <= revision
+    }
+
+    public func recordMessageMutation(_ message: WireChatMessage) throws {
+        try store?.upsert(messages: [message])
+        noteMessageRevision(message.id)
+        messageVisibilityClock.send(Date())
+    }
+
+    public func applyPinRemoval(_ id: String, startedAt revision: UInt64) throws {
+        guard acceptsSyncMessage(id, startedAt: revision) else { return }
+        try store?.clearMessagePin(id: id)
+        noteMessageRevision(id)
+        messageVisibilityClock.send(Date())
     }
 
     private func noteMessageRevision(_ id: String) {

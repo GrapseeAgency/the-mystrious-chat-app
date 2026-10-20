@@ -35,4 +35,17 @@ class RoomComposerDraftTest {
         assertTrue(draft.clearIfUnchanged(submitted))
         assertFalse(draft.clearIfUnchanged(submitted))
     }
+    @Test fun keystrokesJournalImmediatelyButAcknowledgementsAreNotNewEdits() {
+        val saved = mutableListOf<String>()
+        val draft = RoomComposerDraft { saved += it }
+        draft.update(TextFieldValue("sent"))
+        assertEquals(listOf("sent"), saved)
+        val submitted = draft.revision
+        draft.update(TextFieldValue("sent", selection = TextRange(2)))
+        assertEquals(1, saved.size)
+        assertTrue(draft.clearIfUnchanged(submitted, notify = false))
+        assertEquals(listOf("sent"), saved)
+        draft.update(TextFieldValue("next"))
+        assertEquals(listOf("sent", "next"), saved)
+    }
 }
