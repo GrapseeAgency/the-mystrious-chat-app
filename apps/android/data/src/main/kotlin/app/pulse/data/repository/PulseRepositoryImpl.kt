@@ -389,16 +389,20 @@ class PulseRepositoryImpl constructor(
     /** Data & Storage - drop every composer draft at once. */
     override suspend fun clearAllDrafts() {
         draftMutex.withLock {
-            val rooms = draftDao.all().map { it.conversationId }.toSet() + draftVersions.keys
-            val revisions = rooms.associateWith { room ->
-                draftVersions.getOrPut(room) { java.util.concurrent.atomic.AtomicLong() }.get()
-            }
-            database.withTransaction {
-                rooms.forEach { draftDao.upsert(DraftEntity(it, "", java.time.OffsetDateTime.now().toString())) }
-            }
-            revisions.forEach { (room, revision) ->
-                if (draftVersions[room]?.compareAndSet(revision, revision + 1) == true) {
-                    scope.launch { mirrorDraft(room, "", revision + 1) }
+            // Cancellation after SQLite commit must not skip the in-memory fence:
+            // old journal tasks intentionally outlive the composing UI.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                val rooms = draftDao.all().map { it.conversationId }.toSet() + draftVersions.keys
+                val revisions = rooms.associateWith { room ->
+                    draftVersions.getOrPut(room) { java.util.concurrent.atomic.AtomicLong() }.get()
+                }
+                database.withTransaction {
+                    rooms.forEach { draftDao.upsert(DraftEntity(it, "", java.time.OffsetDateTime.now().toString())) }
+                }
+                revisions.forEach { (room, revision) ->
+                    if (draftVersions[room]?.compareAndSet(revision, revision + 1) == true) {
+                        scope.launch { mirrorDraft(room, "", revision + 1) }
+                    }
                 }
             }
         }
@@ -1097,16 +1101,20 @@ class PulseRepositoryImpl constructor(
     /** Queue + explicit draft clear commit together; late journal writes share this lock. */
     private suspend fun persistComposerSend(token: app.pulse.domain.model.ComposerDraftToken?, write: suspend () -> Unit) {
         draftMutex.withLock {
-            val counter = token?.let { draftVersions[it.conversationId] }
-            val consume = token != null && counter?.get() == token.revision
-            database.withTransaction {
-                write()
-                if (consume) draftDao.upsert(DraftEntity(checkNotNull(token).conversationId, "", java.time.OffsetDateTime.now().toString()))
-            }
-            if (consume) {
-                val consumed = checkNotNull(token)
-                if (counter?.compareAndSet(consumed.revision, consumed.revision + 1) == true) {
-                    scope.launch { mirrorDraft(consumed.conversationId, "", consumed.revision + 1) }
+            // Cancellation after SQLite commit must not skip the in-memory fence:
+            // old journal tasks intentionally outlive the composing UI.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                val counter = token?.let { draftVersions[it.conversationId] }
+                val consume = token != null && counter?.get() == token.revision
+                database.withTransaction {
+                    write()
+                    if (consume) draftDao.upsert(DraftEntity(checkNotNull(token).conversationId, "", java.time.OffsetDateTime.now().toString()))
+                }
+                if (consume) {
+                    val consumed = checkNotNull(token)
+                    if (counter?.compareAndSet(consumed.revision, consumed.revision + 1) == true) {
+                        scope.launch { mirrorDraft(consumed.conversationId, "", consumed.revision + 1) }
+                    }
                 }
             }
         }
@@ -1999,8 +2007,8 @@ class PulseRepositoryImpl constructor(
     }
 
     private suspend fun mirrorDraft(conversationId: String, text: String, revision: Long) = draftServerMutex.withLock {
-        // An already-running old request finishes before the clear/new edit;
-        // a delayed request that has not started loses its revision fence.
+        // Serialize attempted mirrors; skip revisions replaced before the request.
+        // This is best effort, not server-side cross-device conflict resolution.
         if (!app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId) && draftVersions[conversationId]?.get() == revision) {
             setServerDraft(conversationId, text.take(MAX_DRAFT))
         }

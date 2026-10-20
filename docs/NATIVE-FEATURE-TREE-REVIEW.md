@@ -14,7 +14,7 @@ saved items, navigation, or their interactions. Old comments saying â€œverifiedâ
 - **Repaired in source:** a concrete transition changed; native compilation and acceptance may still be pending.
 - **Executed check:** the exact test layer and result are stated below. SQL checks and syntax parsing are not device tests.
 
-`NATIVE-SOURCE-INVENTORY.csv` enumerates **318 production files: 195 Kotlin and 123 Swift**.
+`NATIVE-SOURCE-INVENTORY.csv` enumerates **318 production files: 198 Kotlin and 120 Swift**.
 It covers all twelve Android modules' `src/main` Kotlin and all Swift beneath
 `apps/ios/Pulse`. This deliberately excludes native tests, generated sources,
 resources/manifests, build scripts, extensions outside Pulse, and the backend.
