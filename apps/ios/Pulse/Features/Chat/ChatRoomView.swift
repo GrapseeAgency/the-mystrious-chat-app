@@ -4601,124 +4601,27 @@ final class RoomViewModel: ObservableObject {
     }
 
     func send(session: PulseSession) {
-        let body = draft.trimmingCharacters(in: .whitespaces)
-        let replySource = replyTarget
-        let replyId = replySource?.id
-        guard !body.isEmpty, staged == nil, editingTarget == nil else { return }
-        draft = ""
-        replyTarget = nil
-        typingStopTask?.cancel()
-        typingStopTask = nil
-        // Wave 1 optimistic send - the temp bubble paints immediately and
-        // swaps for the server row (web onMutate parity). Network-class
-        // failure keeps the temp + queues the outbox (Wave 0 semantics).
+        guard staged == nil, editingTarget == nil else { return }
         guard let viewer = session.viewer, let store = session.store, session.ready else {
-            draft = body
-            errorText = "The gateway is unreachable."
+            errorText = "The account store is not ready. Your draft is kept."
             return
         }
-        let epoch = session.sessionGeneration
-        let client = session.api
-        let sendTopicId = activeTopicId
-        let clientId = UUID().uuidString
-        // REM-B F-MS-17 - groups only: armed mask + the server's deterministic
-        // FNV-1a alias (the optimistic bubble shows the exact stored alias).
-        let anonAlias = (isGroupRoom && anonOn) ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: conversationId) : nil
-        // R4-A item 2 - armed state captured AT SEND TIME (Android
-        // `anonArmed` parity) so an in-flight toggle can't desync the
-        // one-shot verdict.
-        let wasAnonArmed = anonAlias != nil
-        let temp = TempMessages.make(
-            conversationId: conversationId,
-            viewer: viewer,
-            clientId: clientId,
-            content: body,
-            parentId: nil,
-            replyTo: replySource,
-            anon: anonAlias != nil,
-            anonAlias: anonAlias,
-        )
         do {
-            try store.enqueueMessage(temp, clientId: clientId, envelope: PulseOutboxForward(
-                replyToId: replyId, topicId: sendTopicId, anon: anonAlias != nil))
-        } catch {
-            draft = body
-            replyTarget = replySource
-            errorText = "Message was not queued: local storage is unavailable. Your draft is kept."
-            return
-        }
-        scheduleDraftSave(session: session) // clear only after durable local enqueue, never on a late ACK
-        upsert(temp)
-        session.outbox?.reloadPending()
-        Task { [weak self] in
-            guard let self, session.sessionGeneration == epoch else { return }
-            do {
-                let result = try await client.sendMessageWithStreak(
-                    conversationId: conversationId,
-                    clientId: clientId,
-                    content: body,
-                    replyToId: replyId,
-                    topicId: sendTopicId,
-                    anon: anonAlias != nil,
-                )
-                // Commit to the captured account, even if logout happened in flight.
-                try store.resolveDelivery(clientId: clientId, message: result.message)
-                guard session.sessionGeneration == epoch else { return }
-                session.outbox?.reloadPending()
-                self.messages.removeAll { $0.id == temp.id }
-                self.upsert(result.message)
-                // R5-A Item 5 - streak nudge (web chat-room.tsx:1736-1751):
-                // fires ONLY when THIS send GREW the streak (second-or-later
-                // consecutive day). Same-day re-sends carry no streak sibling
-                // and restarts carry continued=false - both stay silent here,
-                // mirrored from PulseStreakVerdict.
-                if let line = PulseStreakVerdict.toastLine(
-                    count: result.streak?.count,
-                    continued: result.streak?.continued,
-                ) {
-                    session.toasts.show(line)
-                }
-                // R4-A item 2 - ONE-SHOT incognito: a server-accepted send
-                // consumes the mask and the hint pill hides with it (web
-                // chat-room.tsx:1747-1751 onSuccess; Android R3-B one-shot
-                // disarm, ChatRoomViewModel.kt:566-570). Gated on the
-                // send-time arming like Android - a plain send never touches
-                // a mask the user armed mid-flight.
-                if wasAnonArmed {
-                    self.anonOn = PulseRoomParityLogic.anonDisarmAfterSend(armed: wasAnonArmed, serverAccepted: true)
-                }
-                session.particles.fire(kind: .burst, count: 22)
-                session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
-                // Wave 2 topics - own send bumps Topic.lastMessageAt server-side.
-                self.loadTopics(session: session)
-                // Wave 2 link previews - spec §1 row 8: the ORIGINAL SENDER's
-                // client triggers /unfurl once, fire-and-forget, ignoring the
-                // result (nil is valid = nothing link-ish / host unreachable).
-                if UnfurlTrigger.matches(body) {
-                    self.triggerUnfurl(for: result.message, viewerId: viewer.id, session: session)
-                }
-            } catch {
-                guard session.sessionGeneration == epoch else { return }
-                if PulseOutboxEngine.isDroppable(error) {
-                    do {
-                        try store.rejectOutbox(clientId: clientId, reason: Self.describe(error))
-                    } catch {
-                        self.errorText = "Could not update local storage; pending data was retained."
-                        return
-                    }
-                    self.messages.removeAll { $0.id == temp.id }
-                    self.errorText = "Not sent. Original message kept in Settings → Drafts & outbox. " + Self.describe(error)
-                } else {
-                    if let failure = error as? PulseAPIClient.Failure,
-                       failure.status == 429, let wait = failure.retryAfter, wait > 0 {
-                        self.armSlowModeLock(seconds: wait)
-                        session.outbox?.holdRetries(seconds: wait)
-                    }
-                    session.toasts.show("Message saved in the outbox; delivery will retry")
-                }
-                session.outbox?.reloadPending()
-            }
-        }
+            let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: conversationId,
+                content: draft, replyTo: replyTarget, topicId: activeTopicId, anon: isGroupRoom && anonOn)
+            upsert(message)
+            errorText = nil
+            // Durable intent owns the quote/mask; a late ACK must not mutate
+            // a newer draft or an independently rearmed mask.
+            draft = ""
+            replyTarget = nil
+            if isGroupRoom { anonOn = false }
+            typingStopTask?.cancel(); typingStopTask = nil
+            scheduleDraftSave(session: session)
+            session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch { errorText = "Message was not queued. Your draft is kept. " + Self.describe(error) }
     }
 
     // ── REM-B F-MS-22 - slash commands ─────────────────────
@@ -4843,26 +4746,25 @@ final class RoomViewModel: ObservableObject {
     // ── REM-B F-MS-24 - stickers ───────────────────────────
 
     /// kind "sticker" + payload { emoji, pack } (web sticker-picker parity;
-    /// the bubble renders the emoji big). Online-only like all rich kinds.
+    /// the bubble renders the emoji big). Uses the shared durable dispatcher.
     func sendSticker(emoji: String, pack: String, session: PulseSession) {
-        guard let viewer = session.viewer else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let message = try await session.api.sendMessage(
-                    conversationId: conversationId,
-                    content: emoji,
-                    kind: "sticker",
-                    topicId: activeTopicId,
-                    payload: ["emoji": emoji, "pack": pack],
-                )
-                self.upsert(message)
-                try? session.store?.upsert(messages: [message])
-                self.loadTopics(session: session)
-            } catch {
-                session.toasts.show(Self.describe(error))
-            }
+        enqueueRich(kind: "sticker", content: emoji, payload: ["emoji": emoji, "pack": pack], session: session)
+    }
+
+    private func enqueueRich(kind: String, content: String, payload: [String: Any], session: PulseSession) {
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            session.toasts.show("Local storage is not ready. Nothing was queued.")
+            return
         }
+        do {
+            let message = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: conversationId,
+                kind: kind, content: content, payload: payload, replyTo: replyTarget, topicId: activeTopicId, anon: isGroupRoom && anonOn)
+            upsert(message)
+            replyTarget = nil
+            if isGroupRoom { anonOn = false }
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch { session.toasts.show("Message was not queued. " + Self.describe(error)) }
     }
 
     // ── R1-W2B F-MD-06 - translate ───────────────────────
@@ -4892,27 +4794,10 @@ final class RoomViewModel: ObservableObject {
     // ── R1-W2B F-MD-07 - location send ───────────────────
 
     /// kind "location" + payload { lat, lng, label } (web sendLocation parity,
-    /// chat-room.tsx:3120-3138; content rides empty like the web). Online-only
-    /// like every rich kind - failures surface the honest toast.
+    /// chat-room.tsx:3120-3138; content rides empty like the web). Persisted
+    /// before delivery, with the same ordering/recovery as text.
     func sendLocation(lat: Double, lng: Double, label: String, session: PulseSession) {
-        guard session.viewer != nil else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let message = try await session.api.sendMessage(
-                    conversationId: self.conversationId,
-                    content: "",
-                    kind: "location",
-                    topicId: self.activeTopicId,
-                    payload: ["lat": lat, "lng": lng, "label": label],
-                )
-                self.upsert(message)
-                try? session.store?.upsert(messages: [message])
-                self.loadTopics(session: session)
-            } catch {
-                session.toasts.show(Self.describe(error))
-            }
-        }
+        enqueueRich(kind: "location", content: "", payload: ["lat": lat, "lng": lng, "label": label], session: session)
     }
 
     // ── R1-W2B F-MS-29 - quick phrases ───────────────────
@@ -4959,15 +4844,19 @@ final class RoomViewModel: ObservableObject {
     }
 
     /// Wave 2 - fire-and-forget unfurl after OWN link-bearing send (spec §1
-    /// row 8). Detached + swallow-everything: the card arrives either through
-    /// this row or the link:preview relay envelope.
+    /// row 8). A response from a retired session or older than a relay must
+    /// not overwrite the current message cache.
     private func triggerUnfurl(for message: WireChatMessage, viewerId: String, session: PulseSession) {
         let api = session.api
         let store = session.store
-        Task.detached { [weak self] in
-            guard let row = try? await api.unfurl(messageId: message.id, userId: viewerId) else { return }
+        let epoch = session.sessionGeneration
+        let revision = session.messageRevision
+        Task { [weak self] in
+            guard let row = try? await api.unfurl(messageId: message.id, userId: viewerId),
+                  !Task.isCancelled, session.sessionGeneration == epoch,
+                  session.acceptsSyncMessage(message.id, startedAt: revision) else { return }
             try? store?.upsert(messages: [row])
-            await MainActor.run { self?.upsert(row) }
+            self?.upsert(row)
         }
     }
 
@@ -4986,6 +4875,15 @@ final class RoomViewModel: ObservableObject {
             guard conversationId == self.conversationId else { return }
             upsert(message)
             messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
+            if message.parentId == nil, let session {
+                loadTopics(session: session)
+                if PulseRemediationLogic.effectOfPayload(message.payload) == nil {
+                    session.particles.fire(kind: .burst, count: 22)
+                }
+                if let viewer = session.viewer, UnfurlTrigger.matches(message.content) {
+                    triggerUnfurl(for: message, viewerId: viewer.id, session: session)
+                }
+            }
             if let session, let effect = PulseRemediationLogic.effectOfPayload(message.payload),
                let name = PulseRemediationLogic.particleKind(forEffect: effect) {
                 let kind = Self.particleKind(named: name)

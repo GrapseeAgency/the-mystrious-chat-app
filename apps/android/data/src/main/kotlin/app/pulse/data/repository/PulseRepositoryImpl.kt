@@ -1,5 +1,7 @@
 package app.pulse.data.repository
 
+import app.pulse.domain.sync.withMessageExpiry
+
 import app.pulse.protocol.objectPayloadText
 import kotlinx.coroutines.ensureActive
 
@@ -1073,8 +1075,9 @@ class PulseRepositoryImpl constructor(
             dispatchGate.tryImmediate(
                 isHead = {
                     viewerId == temp.authorId &&
-                        outboxDao.allForOwner(temp.authorId).firstOrNull()?.clientId == clientId
+                        outboxDao.allForOwner(temp.authorId, dispatchGate.blockedConversations().toList()).firstOrNull()?.clientId == clientId
                 },
+                conversationId = temp.conversationId,
             ) {
                 when (val response = send()) {
                     is PulseResult.Success -> {
@@ -1088,12 +1091,15 @@ class PulseRepositoryImpl constructor(
                         Result.success(receipt)
                     }
                     is PulseResult.Failure -> {
-                        holdMessageRetries(response)
+                        holdMessageRetries(response, temp.conversationId)
                         if (response.outboxFailureClass() == OutboxFailureClass.DROP) {
                             dropOutboxEntry(clientId, response.message ?: "Message rejected")
                             Result.failure(apiExceptionOf(response))
                         } else {
                             scheduleSelfHeal()
+                            if (response.outboxFailureClass(messageEndpoint = true) == OutboxFailureClass.ROOM_RETRY) {
+                                scope.launch { runCatching { flushOutbox() }.onFailure { scheduleSelfHeal() } }
+                            }
                             eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, temp.conversationId))
                             Result.success(SendReceipt(message = temp, streak = null))
                         }
@@ -1122,9 +1128,10 @@ class PulseRepositoryImpl constructor(
         return Result.success(SendReceipt(message = temp, streak = null))
     }
 
-    private fun holdMessageRetries(failure: PulseResult.Failure) {
+    private fun holdMessageRetries(failure: PulseResult.Failure, conversationId: String? = null) {
         if (failure.status == 429 || failure.kind == PulseResult.Failure.Kind.RATE_LIMITED) {
-            dispatchGate.holdRetries(failure.retryAfter)
+            val room = conversationId.takeIf { failure.status == 429 && failure.code == "slow_mode" }
+            dispatchGate.holdRetries(failure.retryAfter, room)
         }
     }
 
@@ -1767,6 +1774,13 @@ class PulseRepositoryImpl constructor(
         return outboxDao.allForOwner(owner).map { it.toEntry() }
     }
 
+    override suspend fun outboxReady(excludingRooms: Set<String>): List<OutboxEntry> {
+        val owner = viewerId ?: return emptyList()
+        return outboxDao.allForOwner(owner, (excludingRooms + dispatchGate.blockedConversations()).toList()).map { it.toEntry() }
+    }
+
+    override suspend fun pendingOutboxCount(): Int = viewerId?.let { outboxDao.pendingCountForOwner(it) } ?: 0
+
     /** ONE POST attempt - classification rides on OutboxDeliveryException. */
     override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> {
         val current = outboxDao.pendingByClientId(entry.clientId)
@@ -1832,8 +1846,8 @@ class PulseRepositoryImpl constructor(
         )) {
             is PulseResult.Success -> Result.success(r.value.messageOrThrow())
             is PulseResult.Failure -> {
-                holdMessageRetries(r)
-                val classification = r.outboxFailureClass()
+                holdMessageRetries(r, entry.conversationId)
+                val classification = r.outboxFailureClass(messageEndpoint = true)
                 Result.failure(OutboxDeliveryException(classification, r.message ?: r.kind.name))
             }
         }
@@ -1869,11 +1883,11 @@ class PulseRepositoryImpl constructor(
      */
     override suspend fun flushOutbox(): FlushReport = dispatchGate.serialized {
         if (viewerId == null || sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) {
-            return@serialized FlushReport(sent = 0, dropped = 0, pending = outboxDao.count())
+            return@serialized FlushReport(sent = 0, dropped = 0, pending = pendingOutboxCount())
         }
         if (dispatchGate.remainingDelayMillis() > 0L) {
             scheduleSelfHeal()
-            return@serialized FlushReport(pending = outboxDao.count())
+            return@serialized FlushReport(pending = pendingOutboxCount())
         }
         val report = FlushOutboxUseCase(this).invoke()
         if (report.pending > 0) scheduleSelfHeal()

@@ -13,6 +13,7 @@ final class PulseOutboxTests: XCTestCase {
             case success
             case httpError(status: Int)
             case networkError
+            case roomCooldown(seconds: Int)
         }
 
         var uploadCount = 0
@@ -36,6 +37,11 @@ final class PulseOutboxTests: XCTestCase {
 
         init(behaviors: [String: Behavior]) {
             self.behaviors = behaviors
+        }
+
+        func setBehavior(_ behavior: Behavior, for content: String) {
+            lock.lock(); defer { lock.unlock() }
+            behaviors[content] = behavior
         }
 
         private func behavior(for content: String) -> Behavior {
@@ -93,6 +99,8 @@ final class PulseOutboxTests: XCTestCase {
                 return OutboxFixtures.makeMessage(id: "srv-\(content)", conversationId: conversationId, content: content)
             case .httpError(let status):
                 throw PulseAPIClient.Failure(kind: PulseAPIClient.kind(for: status), message: "server said no", status: status)
+            case .roomCooldown(let seconds):
+                throw PulseAPIClient.Failure(kind: .rateLimited, message: "slow mode", code: "slow_mode", status: 429, retryAfter: seconds)
             case .networkError:
                 throw PulseAPIClient.Failure(kind: .network, message: nil)
             }
@@ -535,6 +543,63 @@ final class PulseOutboxTests: XCTestCase {
         _ = await engine.flush()
         XCTAssertEqual(sender.attempts(of: "held"), 1)
         XCTAssertEqual(store.countPendingOutbox(), 0)
+    }
+
+    func testRoomCooldownBypassesLongPrefixButPreservesThatRoomsFIFOAndIdentity() async throws {
+        let store = try PulseStore()
+        for i in 0..<75 { try store.appendOutbox(conversationId: "slow", clientId: "slow-\(i)", content: "slow-\(i)") }
+        try store.appendOutbox(conversationId: "direct", clientId: "direct", content: "direct")
+        var now: TimeInterval = 100
+        let sender = StubSender(behaviors: ["slow-0": .roomCooldown(seconds: 60)])
+        let engine = PulseOutboxEngine(store: store, monitorNetwork: false, monotonicNow: { now }) { sender }
+        defer { engine.stop() }
+        _ = await engine.flush()
+        XCTAssertEqual(sender.operationIds, ["slow-0", "direct"])
+        XCTAssertEqual(store.countPendingOutbox(), 75)
+        _ = await engine.flush()
+        XCTAssertEqual(sender.operationIds, ["slow-0", "direct"])
+        sender.setBehavior(.success, for: "slow-0")
+        now += 60
+        _ = await engine.flush()
+        XCTAssertEqual(Array(sender.operationIds.dropFirst(2)), (0..<50).map { "slow-\($0)" })
+        XCTAssertEqual(store.countPendingOutbox(), 25)
+    }
+
+    func testUnknown429StillHoldsEveryRoom() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "a", clientId: "a", content: "a")
+        try store.appendOutbox(conversationId: "b", clientId: "b", content: "b")
+        let sender = StubSender(behaviors: ["a": .httpError(status: 429)])
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        _ = await engine.flush()
+        _ = await engine.flush()
+        XCTAssertEqual(sender.operationIds, ["a"])
+        XCTAssertEqual(store.countPendingOutbox(), 2)
+    }
+
+    func testUpload429CannotPretendToBeRoomSlowMode() async throws {
+        let store = try PulseStore()
+        _ = try PulseAttachmentDelivery.enqueue(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            conversationId: "a", content: "", dataUrl: "data:audio/mp4;base64,aGVsbG8=", envelope: PulseOutboxForward(kind: "audio", durationMs: 1800))
+        try store.appendOutbox(conversationId: "b", clientId: "b", content: "b")
+        let sender = StubSender(behaviors: [:])
+        sender.beforeUploadReturn = { throw PulseAPIClient.Failure(kind: .rateLimited, message: "upload throttle", code: "slow_mode", status: 429, retryAfter: 60) }
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        _ = await engine.flush()
+        _ = await engine.flush()
+        XCTAssertEqual(sender.uploadCount, 1)
+        XCTAssertTrue(sender.operationIds.isEmpty)
+        XCTAssertEqual(store.countPendingOutbox(), 2)
+    }
+
+    func testRetryAfterHTTPDateUsesGatewayClockAndMalformedHeaderIsNotAZeroDelay() {
+        XCTAssertEqual(PulseAPIClient.retryAfterSeconds("120", serverDate: nil), 120)
+        XCTAssertEqual(PulseAPIClient.retryAfterSeconds("Tue, 20 Oct 2026 12:02:00 GMT",
+            serverDate: "Tue, 20 Oct 2026 12:00:00 GMT", now: Date(timeIntervalSince1970: 0)), 120)
+        XCTAssertNil(PulseAPIClient.retryAfterSeconds("broken", serverDate: nil))
+        XCTAssertNil(PulseAPIClient.retryAfterSeconds("-3", serverDate: nil))
     }
 
 }

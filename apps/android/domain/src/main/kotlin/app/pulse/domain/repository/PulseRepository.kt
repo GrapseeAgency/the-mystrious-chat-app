@@ -422,6 +422,13 @@ interface PulseRepository {
     /** FIFO snapshot (≤50 oldest) the drain policy walks. */
     suspend fun outboxPending(): List<OutboxEntry>
 
+    /** Exclude held rooms BEFORE applying the batch limit; otherwise a long queue starves peers. */
+    suspend fun outboxReady(excludingRooms: Set<String>): List<OutboxEntry> =
+        outboxPending().filter { it.conversationId !in excludingRooms }
+
+    /** Includes held rooms, excludes rejected/foreign intents. */
+    suspend fun pendingOutboxCount(): Int = outboxPending().size
+
     /** ONE delivery attempt for an outbox entry - never mutates outbox state itself. */
     suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message>
 

@@ -48,4 +48,23 @@ class OutboxOwnershipTest {
             assertEquals(55, db.outboxDao().allOwned("a").size)
         } finally { db.close() }
     }
+    @Test fun heldRoomExclusionPrecedesLimitAndCountsKeepAllOwnedPendingIntent() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
+        try {
+            suspend fun enqueue(id: String, room: String) {
+                db.outboxDao().insert(OutboxEntity.from(OutboxEntry(conversationId = room, clientId = id, content = id, createdAt = "2026-10-20T00:00:00Z")))
+                db.messageDao().upsertAll(listOf(MessageEntity.from(Message(id = "local_$id", conversationId = room,
+                    authorId = "owner", authorName = "Owner", kind = Message.Kind.TEXT, body = id, createdAt = "2026-10-20T00:00:00Z"))))
+            }
+            repeat(75) { enqueue("held-$it", "slow") }
+            enqueue("ready", "direct")
+            assertEquals(50, db.outboxDao().allForOwner("owner").size)
+            assertEquals(listOf("ready"), db.outboxDao().allForOwner("owner", listOf("slow")).map { it.clientId })
+            assertEquals(76, db.outboxDao().pendingCountForOwner("owner"))
+            db.outboxDao().markFailed("ready", "forbidden")
+            assertEquals(75, db.outboxDao().pendingCountForOwner("owner"))
+            assertEquals(0, db.outboxDao().pendingCountForOwner("other"))
+        } finally { db.close() }
+    }
+
 }

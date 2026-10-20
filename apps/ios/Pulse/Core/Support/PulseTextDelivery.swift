@@ -28,6 +28,39 @@ enum PulseTextDelivery {
         return message
     }
 
+    /// Structured small sends use the same journal and dispatcher as text/media.
+    static func enqueueRich(store: PulseStore, viewer: PulseViewer, conversationId: String,
+                            kind: String, content: String = "", payload: [String: Any],
+                            replyTo: WireChatMessage? = nil, topicId: String? = nil, anon: Bool = false) throws -> WireChatMessage {
+        guard !conversationId.isEmpty, ["sticker", "location"].contains(kind) else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Unsupported message type.")
+        }
+        let text = try validatedContent(content, allowEmpty: true)
+        if kind == "location" {
+            guard let lat = payload["lat"] as? Double, let lng = payload["lng"] as? Double,
+                  lat.isFinite, lng.isFinite, (-90...90).contains(lat), (-180...180).contains(lng) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Location is invalid.")
+            }
+        } else {
+            guard let emoji = payload["emoji"] as? String, !emoji.isEmpty else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Select a sticker first.")
+            }
+        }
+        guard JSONSerialization.isValidJSONObject(payload) else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Message metadata is invalid.")
+        }
+        let raw = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
+        let envelope = PulseOutboxForward(kind: kind, replyToId: replyTo?.id, topicId: topicId, payload: raw, anon: anon)
+        let id = UUID().uuidString
+        var message = TempMessages.make(conversationId: conversationId, viewer: viewer, clientId: id,
+            content: text, parentId: nil, replyTo: replyTo, anon: anon,
+            anonAlias: anon ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: conversationId) : nil,
+            topicId: topicId, attachment: envelope)
+        message.payload = raw
+        try store.enqueueMessage(message, clientId: id, envelope: envelope)
+        return message
+    }
+
     static func validatedContent(_ content: String, allowEmpty: Bool) throws -> String {
         let text = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard allowEmpty || !text.isEmpty else {

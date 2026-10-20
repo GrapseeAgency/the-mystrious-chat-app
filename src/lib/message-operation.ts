@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import type { Prisma, PrismaClient } from '../../prisma/generated-client'
 
 export class MessageOperationError extends Error {
-  constructor(public readonly status: number, message: string, public readonly clientId?: string, public readonly code?: string) { super(message) }
+  constructor(public readonly status: number, message: string, public readonly clientId?: string, public readonly code?: string, public readonly retryAfter?: number) { super(message) }
 }
 export interface MessageOperation {
   senderId: string

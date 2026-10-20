@@ -48,13 +48,14 @@ class MediaOperationApiTest {
 
     @Test fun rateLimitHeaderReachesTheOutboxPolicy() = runTest {
         val http = HttpClient(MockEngine {
-            respond("{\"error\":\"wait\"}", HttpStatusCode.TooManyRequests,
+            respond("{\"error\":\"wait\",\"code\":\"slow_mode\"}", HttpStatusCode.TooManyRequests,
                 headersOf("Content-Type" to listOf("application/json"), "Retry-After" to listOf("120")))
         })
         try {
             val result = PulseApi(http, gateway = { "https://fixture.invalid" })
                 .sendMessage("room", "viewer", "held", clientId = "stable-operation-002")
             assertEquals(120, (result as PulseResult.Failure).retryAfter)
+            assertEquals("slow_mode", result.code)
         } finally { http.close() }
     }
 

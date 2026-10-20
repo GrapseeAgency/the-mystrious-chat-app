@@ -16,4 +16,12 @@ class OutboxFailurePolicyTest {
             assertEquals(OutboxFailureClass.RETRY, PulseResult.fromHttp(status).copy(status = status).outboxFailureClass())
         }
     }
+    @Test fun `only an explicit message endpoint slow mode verdict can be bypassed`() {
+        val failure = PulseResult.Failure(PulseResult.Failure.Kind.RATE_LIMITED, status = 429, code = "slow_mode")
+        assertEquals(OutboxFailureClass.ROOM_RETRY, failure.outboxFailureClass(messageEndpoint = true))
+        assertEquals(OutboxFailureClass.RETRY, failure.outboxFailureClass()) // upload response
+        assertEquals(OutboxFailureClass.RETRY, failure.copy(code = null).outboxFailureClass(messageEndpoint = true))
+        assertEquals(OutboxFailureClass.RETRY, failure.copy(status = 503).outboxFailureClass(messageEndpoint = true))
+    }
+
 }

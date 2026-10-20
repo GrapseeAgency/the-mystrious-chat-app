@@ -2542,7 +2542,7 @@ struct MirrorRoomSheetView: View {
             case .phrases:
                 MirrorPhrasesBuilder(session: session, onInsert: onInsertDraft)
             case .sticker:
-                MirrorStickerBuilder(session: session, row: row, onSent: onSent)
+                MirrorStickerBuilder(session: session, row: row, onCreated: onCreated)
             case .events:
                 MirrorEventsBuilder(session: session, row: row, onSent: onSent)
             case .kanban:
@@ -2550,7 +2550,7 @@ struct MirrorRoomSheetView: View {
             case .tournament:
                 MirrorTournamentBuilder(session: session, row: row, onSent: onSent, onCreated: onCreated)
             case .location:
-                MirrorLocationBuilder(session: session, row: row, onSent: onSent)
+                MirrorLocationBuilder(session: session, row: row, onCreated: onCreated)
             }
         }
     }
@@ -2912,8 +2912,9 @@ private struct MirrorPhrasesBuilder: View {
 private struct MirrorStickerBuilder: View {
     @ObservedObject var session: PulseSession
     let row: MirrorViewModel.MirrorRow
-    let onSent: () -> Void
+    let onCreated: (WireChatMessage) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var didQueue = false
 
     private let packs: [(name: String, emoji: [String])] = [
         ("Classic", ["\u{1F600}", "\u{1F602}", "\u{1F979}", "\u{1F60D}", "\u{1F914}", "\u{1F60E}", "\u{1F973}", "\u{1F634}"]),
@@ -2945,20 +2946,20 @@ private struct MirrorStickerBuilder: View {
     }
 
     private func send(_ emoji: String, _ pack: String) {
-        Task {
-            do {
-                _ = try await session.api.sendMessage(
-                    conversationId: row.id,
-                    content: "",
-                    kind: "sticker",
-                    payload: ["emoji": emoji, "pack": pack]
-                )
-                dismiss()
-                onSent()
-            } catch {
-                session.toasts.show("Sticker failed - check the connection")
-            }
+        guard !didQueue else { return }
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            session.toasts.show("Local storage is not ready. Nothing was queued.")
+            return
         }
+        do {
+            let message = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: row.id,
+                kind: "sticker", content: emoji, payload: ["emoji": emoji, "pack": pack])
+            didQueue = true
+            onCreated(message)
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+            dismiss()
+        } catch { session.toasts.show("Message was not queued. " + RoomViewModel.describe(error)) }
     }
 }
 
@@ -3134,7 +3135,7 @@ private struct MirrorTournamentBuilder: View {
 private struct MirrorLocationBuilder: View {
     @ObservedObject var session: PulseSession
     let row: MirrorViewModel.MirrorRow
-    let onSent: () -> Void
+    let onCreated: (WireChatMessage) -> Void
     @Environment(\.dismiss) private var dismiss
     @StateObject private var locator = MirrorLocationOnce()
     @State private var busy = false
@@ -3159,25 +3160,23 @@ private struct MirrorLocationBuilder: View {
     }
 
     private func send(_ coordinate: CLLocationCoordinate2D) {
+        guard !busy else { return }
         busy = true
-        Task {
-            defer { busy = false }
-            do {
-                _ = try await session.api.sendMessage(
-                    conversationId: row.id,
-                    content: "",
-                    kind: "location",
-                    payload: [
-                        "lat": coordinate.latitude,
-                        "lng": coordinate.longitude,
-                        "label": "My location",
-                    ]
-                )
-                dismiss()
-                onSent()
-            } catch {
-                session.toasts.show("Location failed - check the connection")
-            }
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            busy = false
+            session.toasts.show("Local storage is not ready. Nothing was queued.")
+            return
+        }
+        do {
+            let message = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: row.id,
+                kind: "location", payload: ["lat": coordinate.latitude, "lng": coordinate.longitude, "label": "My location"])
+            onCreated(message)
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+            dismiss()
+        } catch {
+            busy = false
+            session.toasts.show("Message was not queued. " + RoomViewModel.describe(error))
         }
     }
 }

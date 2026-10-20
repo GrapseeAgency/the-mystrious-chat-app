@@ -1770,12 +1770,11 @@ public struct PulseAPIClient: Sendable {
                 receiptClientId = body.clientId
                 if body.code == "username_taken" { kind = .validation }
             }
-            // F-MS-20 - the Retry-After header backs the body field (web
-            // apiJson parity: body number wins, else parse the header).
-            if retryAfter == nil, let raw = http.value(forHTTPHeaderField: "Retry-After"),
-               let seconds = Int(raw), seconds > 0 {
-                retryAfter = seconds
-            }
+            // Respect the stricter positive body/header delay. HTTP dates are
+            // relative to the gateway Date header when available, not a skewed phone clock.
+            retryAfter = [retryAfter.flatMap { $0 > 0 ? min($0, 86_400) : nil },
+                Self.retryAfterSeconds(http.value(forHTTPHeaderField: "Retry-After"), serverDate: http.value(forHTTPHeaderField: "Date"))]
+                .compactMap { $0 }.max()
             throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode, retryAfter: retryAfter, receiptClientId: receiptClientId)
         }
         return data
@@ -1790,6 +1789,18 @@ public struct PulseAPIClient: Sendable {
         guard let token, !token.isEmpty else { return request }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         return request
+    }
+
+    static func retryAfterSeconds(_ header: String?, serverDate: String?, now: Date = Date()) -> Int? {
+        guard let raw = header?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        if let seconds = Int(raw) { return seconds >= 0 ? min(86_400, max(1, seconds)) : nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        guard let deadline = formatter.date(from: raw) else { return nil }
+        let origin = serverDate.flatMap { formatter.date(from: $0) } ?? now
+        return Int(min(86_400, max(1, ceil(deadline.timeIntervalSince(origin)))))
     }
 
     static func kind(for status: Int) -> Failure.Kind {

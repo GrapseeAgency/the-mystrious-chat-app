@@ -1,10 +1,10 @@
 import type { Prisma } from '../../prisma/generated-client'
 
-type Decision = { state: 'send'; expiresAt: Date | null } | { state: 'wait' } |
+type Decision = { state: 'send'; expiresAt: Date | null } | { state: 'wait'; retryAfter: number } |
   { state: 'cancel'; reason: 'not_member' | 'announcement_only' | 'blocked' | 'conversation_missing' }
 
-/** Re-evaluate permissions at dispatch, not only when the user scheduled it. */
-export async function scheduledDeliveryDecision(tx: Prisma.TransactionClient, room: string, sender: string, now: Date): Promise<Decision> {
+/** Re-evaluate inside the write transaction for both immediate and scheduled sends. */
+export async function messageDeliveryDecision(tx: Prisma.TransactionClient, room: string, sender: string, now: Date): Promise<Decision> {
   const conversation = await tx.conversation.findUnique({ where: { id: room },
     select: { isGroup: true, broadcastMode: true, ttlSeconds: true, slowModeSeconds: true } })
   if (!conversation) return { state: 'cancel', reason: 'conversation_missing' }
@@ -23,7 +23,12 @@ export async function scheduledDeliveryDecision(tx: Prisma.TransactionClient, ro
   if (conversation.slowModeSeconds > 0 && participant.role !== 'admin') {
     const last = await tx.message.findFirst({ where: { conversationId: room, senderId: sender, viaAutomation: false },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { createdAt: true } })
-    if (last && now.getTime() - last.createdAt.getTime() < conversation.slowModeSeconds * 1000) return { state: 'wait' }
+    if (last) {
+      const remaining = conversation.slowModeSeconds * 1000 - (now.getTime() - last.createdAt.getTime())
+      if (remaining > 0) return { state: 'wait', retryAfter: Math.ceil(remaining / 1000) }
+    }
   }
   return { state: 'send', expiresAt: conversation.ttlSeconds > 0 ? new Date(now.getTime() + conversation.ttlSeconds * 1000) : null }
 }
+
+export const scheduledDeliveryDecision = messageDeliveryDecision

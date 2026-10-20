@@ -1277,3 +1277,59 @@ Open boundaries include offline inbox summary expiry, quote/notification/exporte
 copies, wall-clock trust, comprehensive media playback expiry, account-wide retry
 fairness and broader thread pagination/device exercise. No whole-app completion or
 full disappearing-message erasure is claimed.
+
+### Room-scoped cooldowns and remaining immediate-send bypasses
+
+Queue tracing found an important distinction missing from both platforms: a room's
+slow-mode response was treated like a gateway-wide rate limit. An earlier held group
+message could therefore stop an unrelated DM. The server now identifies this verdict
+with `code: slow_mode`; only an explicit message-endpoint 429 with that code permits
+room-level bypass. Upload throttles, unknown/legacy 429s, network/authentication and
+server errors remain conservative/global failures.
+
+Both engines preserve FIFO within a room while skipping a held room for other ready
+work. SQLite applies exclusions BEFORE the limit, so 75 older held messages cannot
+hide the next healthy conversation behind a 50-row snapshot. Android keeps the shared
+immediate/recovery writer gate and now evaluates its head against eligible rooms.
+The drain rereads eligibility after each operation, retains rejected intent without
+stopping valid followers, and counts held owner-owned pending rows separately from
+ready rows. Global holds dominate all room holds. Swift uses a corresponding
+SQLite head query and monotonic room deadlines; short cooldowns reschedule a sleeping
+heal timer without cancelling an already-running recovery pass.
+
+A deeper caller trace also found Swift's primary plain-text composer still posting
+outside that engine, despite persisting a row first. It could race recovery, overtake
+older operations, miss the shared length check and ignore a retry hold. Primary text,
+stickers and map pins now enqueue through the shared delivery helpers. Mirror's
+sticker/location sheets do the same and immediately hand the pending carrier back
+to the room, including offline. The text/quote/topic/mask are owned by the durable
+operation before clearing composer state. A late ACK cannot erase new input or
+consume a newly armed mask. Streak receipt handling was moved onto the engine ACK
+path rather than removed; effects, topic refresh and link unfurl remain wired to
+confirmed delivery. Unfurl results are fenced against retired sessions/newer relays.
+Swift Retry-After parsing now also supports server-relative HTTP dates and takes the
+stricter positive body/header delay.
+
+The server's slow-mode check was outside the message write transaction. Two devices
+could both pass it before either write committed. Ordinary sends now use the same
+transactional policy as scheduled delivery: current membership, announcement role,
+blocking, slow mode and TTL are rechecked at the write boundary. Cooldown errors
+carry both the machine code and Retry-After; no unconfirmed operation identity is
+retired by this change.
+
+Verification: 92 server contract cases pass locally, including two concurrent
+transactional sends producing only one accepted message. Visibility/delivery helper
+TypeScript checking (with Node typings) and changed native syntax checks pass.
+Authored native regressions cover long-prefix room starvation, global/upload throttle
+isolation, room/global deadline precedence, bounded FIFO recovery, retained rejection,
+header parsing, and rich queued metadata. Native execution for this revision remains
+required. Prior-revision checks revealed an omitted Android expiry extension import
+and an iOS assertion expecting the old empty-reaction normalization; the import is
+fixed and the assertion now checks exact v10 envelope equality. This does not imply
+all runtime paths or devices have been validated.
+
+Remaining limits: cooldown state is process-local, unknown failures still stop the
+account queue intentionally, heal cadence can add recovery latency, offline inbox
+summary expiry remains open, and draft-to-queue handoff is not yet crash-atomic.
+Backend/native co-deployment is needed to obtain scoped slow-mode behavior; old
+servers safely retain global behavior. The autumn presentation is unchanged.

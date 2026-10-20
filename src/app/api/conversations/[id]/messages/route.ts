@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { db } from '@/lib/db'
+import { messageDeliveryDecision } from '@/lib/scheduled-delivery'
 import { threadRootAvailable } from '@/lib/message-visibility'
 import { decodeMessageSyncCursor, encodeMessageSyncCursor, messageSyncWhere, messagesBefore, MESSAGE_ORDER_ASC, MESSAGE_ORDER_DESC, type MessageSyncCursor } from '@/lib/message-sync'
 import { messageOperation, replayMessageOperation, commitMessageOperation, MessageOperationError } from '@/lib/message-operation'
@@ -535,32 +536,6 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
   }
 
-  // R44 - Telegram-style slow mode: members must wait slowModeSeconds between
-  // sends; admins are always exempt. The window counts the ACT of sending -
-  // soft-deleted messages still consume it (delete-then-resend cannot bypass),
-  // while automation replies (machine-sent on the creator's behalf, R39) do
-  // NOT start a new window for the member.
-  if (conv.slowModeSeconds > 0 && participant.role !== 'admin') {
-    const lastOwn = await db.message.findFirst({
-      where: { conversationId: id, senderId: senderId, viaAutomation: false },
-      orderBy: [...MESSAGE_ORDER_DESC],
-      select: { createdAt: true },
-    })
-    if (lastOwn) {
-      const elapsed = Date.now() - lastOwn.createdAt.getTime()
-      const windowMs = conv.slowModeSeconds * 1000
-      if (elapsed < windowMs) {
-        const retryAfter = Math.ceil((windowMs - elapsed) / 1000)
-        return NextResponse.json(
-          {
-            error: `Slow mode is on - wait ${retryAfter}s before sending again.`,
-            retryAfter,
-          },
-          { status: 429, headers: { 'Retry-After': String(retryAfter) } },
-        )
-      }
-    }
-  }
 
   // R24-b: optional Zulip-style topic filing - the topic must belong to THIS
   // conversation; message.topicId lands inside the create (General = null).
@@ -611,11 +586,17 @@ export async function POST(req: Request, { params }: RouteCtx) {
   }
 
   const now = new Date()
-  const expiresAt = conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
   // Anonymous flag only applies inside groups; DM sends stay named.
   const anon = anonRequested && conv.isGroup
   const anonAlias = anon ? anonAliasFor(senderId, id) : null
   const committed = await commitMessageOperation(db, operation, async (tx) => {
+    const policy = await messageDeliveryDecision(tx, id, senderId, new Date())
+    if (policy.state === 'wait') {
+      throw new MessageOperationError(429, `Slow mode is on - wait ${policy.retryAfter}s before sending again.`,
+        undefined, 'slow_mode', policy.retryAfter)
+    }
+    if (policy.state === 'cancel') throw new MessageOperationError(403, `Message not sent: ${policy.reason}.`, undefined, policy.reason)
+    const expiresAt = policy.expiresAt
     if (parentId) {
       const root = await tx.message.findUnique({ where: { id: parentId },
         select: { conversationId: true, deletedAt: true, parentId: true, expiresAt: true } })
@@ -671,7 +652,10 @@ export async function POST(req: Request, { params }: RouteCtx) {
     if (error instanceof MessageOperationError) return error
     throw error
   })
-  if (committed instanceof MessageOperationError) return NextResponse.json({ error: committed.message }, { status: committed.status })
+  if (committed instanceof MessageOperationError) return NextResponse.json(
+    { error: committed.message, code: committed.code, retryAfter: committed.retryAfter },
+    { status: committed.status, ...(committed.retryAfter ? { headers: { 'Retry-After': String(committed.retryAfter) } } : {}) },
+  )
   const { message, replayed } = committed
   if (replayed) return NextResponse.json({ message: mapMessage(message, senderId), replayed: true, xpAwarded: 0 })
 

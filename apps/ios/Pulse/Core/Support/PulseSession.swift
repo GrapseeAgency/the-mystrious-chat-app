@@ -521,6 +521,11 @@ public final class PulseSession: ObservableObject {
         guard let store, let viewer else { return }
         let client = api
         let engine = PulseOutboxEngine(store: store) { client }
+        engine.onAcknowledgement = { [weak self] receipt in
+            if let line = PulseStreakVerdict.toastLine(count: receipt.streak?.count, continued: receipt.streak?.continued) {
+                self?.toasts.show(line)
+            }
+        }
         engine.onEvent = { [weak self] event in
             self?.routeOutboxEvent(event)
         }

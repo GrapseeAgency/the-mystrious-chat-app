@@ -117,7 +117,7 @@ test('scheduled dispatch rechecks membership and announcement role', () => fixtu
 test('scheduled dispatch obeys slow mode and current disappearing-message TTL', () => fixture(async db => {
   await scheduledFixture(db)
   await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,deletedAt) VALUES ('last','room','sender',${t(10)},${t(12)})`
-  assert.deepEqual(await scheduledDeliveryDecision(db, 'room', 'sender', t(15)), { state: 'wait' })
+  assert.deepEqual(await scheduledDeliveryDecision(db, 'room', 'sender', t(15)), { state: 'wait', retryAfter: 5 })
   const ready = await scheduledDeliveryDecision(db, 'room', 'sender', t(20))
   assert.equal(ready.state, 'send')
   assert.equal(ready.expiresAt.getTime() - t(20).getTime(), 60_000)
@@ -143,3 +143,20 @@ test('thread roots are unavailable at expiry, after deletion, across rooms, or w
   assert.equal(threadRootAvailable({ ...root, deletedAt: t(18) }, 'room', t(19)), false)
   assert.equal(threadRootAvailable(null, 'room', t(19)), false)
 })
+
+test('concurrent transactional sends cannot both bypass room slow mode', () => fixture(async db => {
+  await scheduledFixture(db)
+  const send = id => db.$transaction(async tx => {
+    const decision = await scheduledDeliveryDecision(tx, 'room', 'sender', t(20))
+    if (decision.state !== 'send') return decision
+    await tx.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,expiresAt) VALUES (${id},'room','sender',${t(20)},${decision.expiresAt})`
+    return decision
+  })
+  const results = await Promise.allSettled([send('first'), send('second')])
+  assert.equal(await db.message.count(), 1)
+  assert.equal(results.filter(r => r.status === 'fulfilled' && r.value.state === 'send').length, 1)
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value.state === 'wait') assert.equal(result.value.retryAfter, 10)
+    if (result.status === 'rejected') assert.ok(['P2034', 'P2028', 'P1008'].includes(result.reason.code), String(result.reason))
+  }
+}))

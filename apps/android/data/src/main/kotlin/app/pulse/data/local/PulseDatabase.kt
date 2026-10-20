@@ -742,8 +742,12 @@ interface OutboxDao {
 
     /** Unknown/foreign ownership is quarantined, never attributed to the current viewer. */
     @Query("SELECT o.id, o.conversationId, o.clientId, o.content, o.kind, o.createdAt, o.attempts, o.failureReason, o.wirePayload, NULL AS uploadKey FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
-        "WHERE m.authorId = :owner AND m.conversationId = o.conversationId AND o.failureReason IS NULL ORDER BY o.id ASC LIMIT 50")
-    suspend fun allForOwner(owner: String): List<OutboxEntity>
+        "WHERE m.authorId = :owner AND m.conversationId = o.conversationId AND o.failureReason IS NULL AND o.conversationId NOT IN (:excludedRooms) ORDER BY o.id ASC LIMIT 50")
+    suspend fun allForOwner(owner: String, excludedRooms: List<String> = emptyList()): List<OutboxEntity>
+
+    @Query("SELECT COUNT(*) FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
+        "WHERE m.authorId = :owner AND m.conversationId = o.conversationId AND o.failureReason IS NULL")
+    suspend fun pendingCountForOwner(owner: String): Int
 
     @Query("DELETE FROM outbox WHERE id = :id")
     suspend fun deleteById(id: Long)

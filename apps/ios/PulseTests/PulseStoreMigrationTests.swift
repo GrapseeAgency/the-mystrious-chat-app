@@ -374,7 +374,8 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(row.deletedAt, "2026-09-07T15:30:00.000Z")
         XCTAssertNil(row.parentId)
         XCTAssertNil(row.pinnedAt)
-        XCTAssertNil(row.reactions) // reactionsJson reset to '[]'
+        XCTAssertEqual(row.reactions, []) // v10 preserves the exact authoritative empty array
+        XCTAssertEqual(row, edited)
         XCTAssertNil(row.imagePath)
     }
 

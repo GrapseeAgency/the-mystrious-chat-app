@@ -771,6 +771,17 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Apply room exclusions in SQLite before LIMIT, not to a truncated FIFO snapshot.
+    public func nextPendingOutbox(excludingConversations: Set<String>) throws -> OutboxRow? {
+        let rooms = excludingConversations.sorted()
+        let placeholders = Array(repeating: "?", count: rooms.count).joined(separator: ",")
+        let exclusion = rooms.isEmpty ? "" : " AND conversationId NOT IN (\(placeholders))"
+        return try dbQueue.read { db in
+            try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE failureReason IS NULL" + exclusion + " ORDER BY id ASC LIMIT 1",
+                arguments: StatementArguments(rooms))
+        }
+    }
+
     public func countPendingOutbox() -> Int {
         (try? dbQueue.read { db in
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox WHERE failureReason IS NULL")

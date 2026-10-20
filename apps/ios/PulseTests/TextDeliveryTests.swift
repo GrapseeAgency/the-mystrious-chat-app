@@ -99,4 +99,23 @@ final class TextDeliveryTests: XCTestCase {
         XCTAssertEqual(Set(try store.messages(threadRootId: "root").map(\.id)), Set(["confirmed", second.id]))
     }
 
+    func testStickerAndLocationKeepKindPayloadAndIdentityInTheSameQueueAsText() throws {
+        let store = try PulseStore()
+        let sticker = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: "room",
+            kind: "sticker", content: "🌿", payload: ["emoji": "🌿", "pack": "autumn"], replyTo: message("quote"), topicId: "topic", anon: true)
+        let pin = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: "room",
+            kind: "location", payload: ["lat": 23.01, "lng": 91.39, "label": "Here"])
+        XCTAssertEqual(sticker.kind, "sticker")
+        XCTAssertEqual(pin.kind, "location")
+        let queue = try store.outboxPending()
+        XCTAssertEqual(queue.count, 2)
+        let envelope = try XCTUnwrap(PulseOutboxForward.decode(queue[0].payloadJson))
+        XCTAssertEqual(envelope.replyToId, "quote")
+        XCTAssertEqual(envelope.topicId, "topic")
+        XCTAssertEqual(envelope.anon, true)
+        XCTAssertEqual(try store.message(id: sticker.id)?.payload, envelope.payload)
+        XCTAssertThrowsError(try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: "room", kind: "location", payload: ["lat": Double.nan, "lng": 10.0]))
+        XCTAssertEqual(store.countPendingOutbox(), 2)
+    }
+
 }

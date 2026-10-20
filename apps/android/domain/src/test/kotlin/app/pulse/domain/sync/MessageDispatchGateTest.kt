@@ -52,4 +52,21 @@ class MessageDispatchGateTest {
         time += 50_000L
         assertEquals("allowed", gate.tryImmediate({ true }) { "allowed" })
     }
+    @Test fun `room cooldown cannot freeze another room and global holds still dominate`() = runTest {
+        var now = 1000L
+        val gate = MessageDispatchGate { now }
+        gate.holdRetries(60, "slow")
+        gate.holdRetries(1, "slow")
+        assertEquals(setOf("slow"), gate.blockedConversations())
+        assertNull(gate.tryImmediate({ true }, "slow") { "not yet" })
+        assertEquals("sent", gate.tryImmediate({ true }, "direct") { "sent" })
+        gate.holdRetries(90)
+        assertNull(gate.tryImmediate({ true }, "direct") { "globally held" })
+        now += 60_000
+        assertTrue(gate.blockedConversations().isEmpty())
+        assertNull(gate.tryImmediate({ true }, "slow") { "still globally held" })
+        now += 30_000
+        assertEquals("sent", gate.tryImmediate({ true }, "slow") { "sent" })
+    }
+
 }
