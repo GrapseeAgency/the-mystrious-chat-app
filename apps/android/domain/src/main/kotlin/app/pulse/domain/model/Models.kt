@@ -48,11 +48,11 @@ data class ConversationMember(
     val role: String? = null,
 )
 
-/** A conversation in the chats list - mirrors web `ConversationSummary`. */
-@Serializable
 @Serializable
 data class UnreadExpiration(val expiresAtEpochMs: Long, val count: Int)
 
+/** A conversation in the chats list - mirrors web `ConversationSummary`. */
+@Serializable
 data class Conversation(
     val id: String,
     val kind: Kind,
