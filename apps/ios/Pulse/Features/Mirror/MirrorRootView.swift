@@ -463,6 +463,8 @@ struct MirrorHomeSheetView: View {
     let onOpenRow: (MirrorViewModel.MirrorRow) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var users: [WireUser] = []
+    @State private var directoryError: String?
+    @State private var directoryRevision = 0
     @State private var query = ""
     @State private var groupName = ""
     @State private var picked: Set<String> = []
@@ -504,6 +506,10 @@ struct MirrorHomeSheetView: View {
                 }
             } else {
                 MirrorPanelSearch(query: $query)
+                if let directoryError {
+                    Button(directoryError + " Tap to retry.") { directoryRevision += 1 }
+                        .font(.caption).foregroundStyle(MirrorArt.accent).padding(8)
+                }
                 MirrorPanelScroll {
                     ForEach(filteredUsers) { user in
                         if sheet == .newGroup {
@@ -547,8 +553,17 @@ struct MirrorHomeSheetView: View {
                 }
             }
         }
-        .task {
-            users = (try? await session.api.users()) ?? []
+        .task(id: directoryRevision) {
+            let epoch = session.sessionGeneration
+            do {
+                let loaded = try await session.api.users()
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                users = loaded.filter { $0.id != session.viewer?.id }
+                directoryError = nil
+            } catch is CancellationError {} catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                directoryError = "People could not be loaded."
+            }
         }
     }
 
@@ -1368,6 +1383,8 @@ struct MirrorRoomView: View {
     let row: MirrorViewModel.MirrorRow
     @ObservedObject var session: PulseSession
     let onBack: () -> Void
+    @State private var isReadingTail = false
+    @State private var didInitialScroll = false
     @State private var readRevision = 0
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var roomOperations = PulseRoomOperations()
@@ -1464,6 +1481,7 @@ struct MirrorRoomView: View {
                                     isGroup: row.isGroup,
                                     head: head,
                                     memberNames: memberNames,
+                                    receiptMembers: memberRows,
                                     viewerId: session.viewer?.id ?? "",
                                     bubbleMax: bubbleMax,
                                     mediaBaseURL: session.api.baseURL,
@@ -1473,12 +1491,20 @@ struct MirrorRoomView: View {
                                 .id(message.id)
                             }
                         }
+                        Color.clear.frame(height: 1).id("read-tail")
+                            .onAppear { isReadingTail = true; updateReadBoundary() }
+                            .onDisappear { isReadingTail = false; updateReadBoundary() }
                     }
                     .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 8)
                 }
-                .onChange(of: messages.count) { _ in
-                    if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                .onChange(of: messages.last?.id) { _ in
+                    if !didInitialScroll || isReadingTail || messages.last?.senderId == session.viewer?.id {
+                        if !messages.isEmpty { proxy.scrollTo("read-tail", anchor: .bottom); didInitialScroll = true }
+                    }
+                    updateReadBoundary()
                 }
+                .onChange(of: trayOpen) { _ in updateReadBoundary() }
+                .onChange(of: activeSheet != nil || menuOpen || trayEffectsOpen) { _ in updateReadBoundary() }
                 // R102 tap-away scrim (web 5113-5131): a transparent catcher
                 // over the message list closes the tray; the tray + composer
                 // themselves stay interactive.
@@ -1665,6 +1691,8 @@ struct MirrorRoomView: View {
                 if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message) }
                 else { refreshRevision &+= 1 }
                 readRevision &+= 1
+            case .messageRead(let id, let reader, _):
+                if id == row.id && reader != session.viewer?.id { refreshRevision &+= 1 }
             case .messageDeleted(let id, let raw):
                 guard id == row.id else { return }
                 if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message.deletedCopy()) }
@@ -1707,6 +1735,11 @@ struct MirrorRoomView: View {
                 await session.markReadIfVisible(conversationId: row.id)
             }
         }
+    }
+
+    private func updateReadBoundary() {
+        session.setVisibleReadBoundary(conversationId: row.id,
+            messageId: isReadingTail && !trayOpen && activeSheet == nil && !menuOpen && !trayEffectsOpen ? messages.last(where: { !$0.id.hasPrefix("local_") })?.id : nil)
     }
 
     private func acceptCarrier(_ message: WireChatMessage) {
@@ -2178,10 +2211,20 @@ struct MirrorBubble: View {
     let isGroup: Bool
     let head: Bool
     let memberNames: [String]
+    let receiptMembers: [WireConversationMember]
     let viewerId: String
     let bubbleMax: CGFloat
     let mediaBaseURL: URL
     let onToggleReaction: (String) -> Void
+
+    private var receiptStatus: String {
+        if message.id.hasPrefix("local_") { return "Queued" }
+        let split = PulseRoomParityLogic.receiptSplit(
+            members: receiptMembers.map { .init(id: $0.id, lastReadAtIso: $0.lastReadAt) },
+            viewerId: viewerId, createdAtIso: message.createdAt)
+        guard !split.seenBy.isEmpty else { return "Sent" }
+        return isGroup && !split.deliveredTo.isEmpty ? "Read by \(split.seenBy.count)" : "Seen"
+    }
 
     private func attachmentURL(_ path: String) -> URL {
         mediaBaseURL.appendingPathComponent("api/uploads", isDirectory: true)
@@ -2276,9 +2319,10 @@ struct MirrorBubble: View {
                             // meta row: the read ticks
                             HStack(spacing: 0) {
                                 Spacer(minLength: 0)
-                                Image(systemName: message.id.hasPrefix("local_") ? "clock" : "checkmark")
+                                Text(receiptStatus).font(.system(size: 10)).padding(.trailing, 4)
+                                Image(systemName: message.id.hasPrefix("local_") ? "clock" : (receiptStatus == "Sent" ? "checkmark" : "checkmark.circle.fill"))
                                     .font(.system(size: 12)).foregroundColor(MirrorArt.onBubbleOut)
-                                    .accessibilityLabel(message.id.hasPrefix("local_") ? "Queued for delivery" : "Sent")
+                                    .accessibilityLabel(receiptStatus)
                             }
                             .padding(.top, 2)
                         }

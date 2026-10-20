@@ -118,6 +118,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.core.media.PulseMedia
 import app.pulse.core.time.PulseTime
@@ -427,6 +428,23 @@ fun ChatRoomScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
+    val readObscured = actionTarget != null || forwardTarget != null || infoTarget != null || deleteTarget != null ||
+        lightboxTarget != null || pinsOpen || attachOpen || pollBuilderOpen || reactionPickerTarget != null ||
+        whoReactedFor != null || stickerOpen || scheduleOpen || scheduledOpen || helpOpen || locationOpen || themeOpen || state.searchOpen
+    LaunchedEffect(lifecycleOwner, rowsReversed, pipFocusedId, privacyHidden, readObscured) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            try {
+                snapshotFlow {
+                    val visible = listState.layoutInfo.visibleItemsInfo.map { it.key }.toSet()
+                    if (privacyHidden || readObscured || (pipFocusedId != null && pipFocusedId != conversation?.id)) null
+                    else rowsReversed.filterIsInstance<TimelineRow.Msg>().firstOrNull {
+                        it.key in visible && !it.message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)
+                    }?.message?.id
+                }.collect { viewModel.setReadingAnchor(it) }
+            } finally { viewModel.setReadingAnchor(null) }
+        }
+    }
+
     // Load-older trigger - the reverseLayout list ends at the OLDEST rows;
     // the VM gates reentrancy and the hasMore/limit rules.
     LaunchedEffect(listState) {
@@ -650,14 +668,18 @@ fun ChatRoomScreen(
     /** Composer send - leading-slash drafts run the command machine first. */
     fun sendCurrentDraft() {
         if (draft.isBlank()) return
-        val outcome = PulseSlash.applySlash(draft)
+        val submitted = draft
+        val restoreRejected = {
+            if (draft.isBlank()) { draft = submitted; viewModel.onDraftChanged(submitted) }
+        }
+        val outcome = PulseSlash.applySlash(submitted)
         when (outcome) {
             is PulseSlash.Outcome.Send -> {
-                viewModel.send(outcome.content)
+                viewModel.send(outcome.content, onRejected = restoreRejected)
                 if (state.editing == null) draft = "" // edit path clears on success
             }
             is PulseSlash.Outcome.Effect -> {
-                viewModel.sendEffect(outcome.effect, outcome.content)
+                viewModel.sendEffect(outcome.effect, outcome.content, onRejected = restoreRejected)
                 draft = ""
             }
             else -> runPaletteCommand(

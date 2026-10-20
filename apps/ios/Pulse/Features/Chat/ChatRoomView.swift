@@ -60,6 +60,7 @@ struct ChatRoomView: View {
         }
         .onDisappear {
             session.roomVisible = false
+            viewModel?.isTailVisible = false
             if session.activeRoomId == conversation.id {
                 session.activeRoomId = nil
             }
@@ -387,6 +388,17 @@ private struct RoomContent: View {
 
     // R2-B - the veil reads the app scene (the native blur/hidden signal).
     @Environment(\.scenePhase) private var scenePhase
+
+    private var readSurfaceObscured: Bool {
+        let messageSurface = threadRoot != nil || forwardSource != nil || infoTarget != nil ||
+            lightbox != nil || quicklook != nil || reactionTarget != nil || whoReactedOpen
+        let roomSurface = pinsOpen || searchOpen || showFileImporter || showCamera || pollBuilderOpen ||
+            safetyOpen || dmInfoOpen || groupInfoOpen || scheduleOpen || scheduledManagerOpen ||
+            stickerOpen || locationOpen || themeOpen || phrasesOpen || leaderboardOpen
+        let collaboration = wave7.redPacketCreateOpen || wave7.gameCreateOpen || wave7.tournamentCreateOpen ||
+            wave7.kanbanOpen || wave7.whiteboardOpen || wave7.eventsOpen || wave7.remindersOpen
+        return messageSurface || roomSurface || collaboration
+    }
 
     /// F-CH-04 - broadcast composer lock: broadcastMode on + the viewer is
     /// NOT an admin (server 403s the post; the web hides the composer too).
@@ -902,6 +914,7 @@ private struct RoomContent: View {
 
     private var chatBodyStyled1: some View {
         chatBodyStyled0
+        .onChange(of: readSurfaceObscured) { _, hidden in viewModel.readSurfaceObscured = hidden }
         .sheet(isPresented: $safetyOpen) {
             if let partner = dmPartner {
                 SafetySheetView(session: session, peer: partner)
@@ -1571,6 +1584,9 @@ private struct RoomContent: View {
                 .padding(.vertical, 10)
             }
             .defaultScrollAnchor(.bottom)
+            .onChange(of: viewModel.messages.last?.id) { _, _ in
+                viewModel.noteRiverChanged()
+            }
             .onChange(of: viewModel.messages.count) { _, _ in
                 // R26 - the missed-badge machine + tail-id pill arming run
                 // on every river change; the auto-scroll only fires while
@@ -2660,8 +2676,8 @@ private struct MessageInfoSheet: View {
                 } header: {
                     Text(seenTitle)
                 }
-                // R2-D - "Delivered to" = everyone who hasn't read it yet
-                // (web chat-room.tsx:5940-5957 + Android MessageSheets parity).
+                // A missing read receipt is NOT proof of device delivery.
+                // Privacy-disabled receipts also belong in this unknown group.
                 Section {
                     if split.deliveredTo.isEmpty {
                         Text("Everyone has seen this message")
@@ -2672,7 +2688,7 @@ private struct MessageInfoSheet: View {
                         receiptRow(member, seen: false)
                     }
                 } header: {
-                    Text("Delivered to · \(split.deliveredTo.count)")
+                    Text("No read confirmation · \(split.deliveredTo.count)")
                 }
                 if let reactions = message.reactions, !reactions.isEmpty {
                     Section("Reactions") {
@@ -2721,7 +2737,7 @@ private struct MessageInfoSheet: View {
                     .font(.subheadline)
                 Text(seen
                     ? "Read at \(PulseFormat.listStamp(member.lastReadAtIso))"
-                    : "Delivered")
+                    : "No read confirmation")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -3748,14 +3764,22 @@ final class RoomViewModel: ObservableObject {
     private var lastTailId: String?
     /// The tail sentinel row is on-screen - the viewer sits at the bottom
     /// (the native nearBottomRef). Reaching the bottom resets the badge.
-    @Published var isTailVisible = true {
+    @Published var isTailVisible = false {
         didSet {
+            updateReadBoundary()
             guard oldValue != isTailVisible, isTailVisible else { return }
             missedCount = 0
             lastSeenLen = messages.count
             showJumpPill = false
         }
     }
+    @Published var readSurfaceObscured = false { didSet { updateReadBoundary() } }
+
+    private func updateReadBoundary() {
+        session?.setVisibleReadBoundary(conversationId: conversationId,
+            messageId: isTailVisible && !readSurfaceObscured ? messages.last(where: { !$0.id.hasPrefix("local_") })?.id : nil)
+    }
+
     /// Web showJump - armed when a new tail lands while scrolled away,
     /// cleared at the bottom (never by the scroll position alone).
     @Published private(set) var showJumpPill = false
@@ -3999,9 +4023,10 @@ final class RoomViewModel: ObservableObject {
                     try? session.store?.upsert(messages: [message])
                 case .messageRead(let convId, let userId, let lastReadAt):
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
-                    // W1-DATA-B - trust the relayed watermark when present;
-                    // fall back to "now" (older relays / clock-safety).
-                    partnerLastReadAt = lastReadAt.flatMap { PulseFormat.date($0) } ?? Date()
+                    // Missing or reordered receipts cannot invent/regress Seen.
+                    guard let at = lastReadAt.flatMap({ PulseFormat.date($0) }) else { return }
+                    memberWatermarks[userId] = max(memberWatermarks[userId] ?? .distantPast, at)
+                    partnerLastReadAt = max(partnerLastReadAt ?? .distantPast, at)
                 case .typing(let convId, let userId, let userName, let isTyping):
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
                     var bucket = typers.filter { $0.userId != userId }
@@ -4334,6 +4359,7 @@ final class RoomViewModel: ObservableObject {
     /// (load older) grow the badge silently without arming the pill - the
     /// web's exact behavior (the pill show is tail-id driven).
     func noteRiverChanged() {
+        updateReadBoundary()
         let newLen = messages.count
         if isTailVisible {
             missedCount = 0

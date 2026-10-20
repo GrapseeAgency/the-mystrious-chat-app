@@ -5,7 +5,10 @@
 // Self-service comfort setting - never admin-gated (mirrors R42 screenPrivacy).
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { safeJson, strField } from '@/lib/serializers'
+import { safeJson, strField, notifySocket } from '@/lib/serializers'
+
+import { bearerToken } from '@/lib/session-token'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,6 +30,10 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   const userId = strField(body.userId)
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  }
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, userId, 'unread marker')
+    if (denied) return denied
   }
   if (typeof body.on !== 'boolean') {
     return NextResponse.json({ error: 'on must be a boolean.' }, { status: 400 })
@@ -54,5 +61,6 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     data: { manualUnread: body.on },
   })
 
+  await notifySocket('conversation:updated', [userId], { conversationId: id })
   return NextResponse.json({ ok: true, manualUnread: body.on })
 }

@@ -73,7 +73,9 @@ internal fun MirrorContacts(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var openingUser by remember { mutableStateOf<String?>(null) }
-    var people by remember { mutableStateOf<List<User>>(emptyList()) }
+    var people by remember(viewerId) { mutableStateOf<List<User>>(emptyList()) }
+    var loadError by remember(viewerId) { mutableStateOf(false) }
+    var loadRevision by remember { mutableStateOf(0) }
     var viewerName by remember { mutableStateOf("") }
     var viewerAbout by remember { mutableStateOf("") }
     var viewerColor by remember { mutableStateOf<String?>(null) }
@@ -82,8 +84,11 @@ internal fun MirrorContacts(
     val onlineIds by repository.observePresence().collectAsState(initial = emptySet())
     val conversations by repository.observeConversations().collectAsState(initial = emptyList())
 
-    LaunchedEffect(Unit) {
-        people = repository.users("").getOrDefault(emptyList()).filter { it.id != viewerId }
+    LaunchedEffect(viewerId, loadRevision) {
+        repository.users("").onSuccess { loaded ->
+            people = loaded.filter { it.id != viewerId }
+            loadError = false
+        }.onFailure { loadError = true }
         val me = repository.me()
         viewerName = me?.name.orEmpty()
         viewerAbout = me?.bio.orEmpty()
@@ -132,6 +137,8 @@ internal fun MirrorContacts(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("Contacts", color = SubPageInk.Zinc50, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    if (loadError) Text("Couldn't load people. Tap to retry.", color = SubPageInk.Amber400,
+                        fontSize = 12.sp, modifier = Modifier.clickable { loadRevision++ }.padding(vertical = 8.dp))
                     Text(
                         others.size.toString() + (if (others.size == 1) " person" else " people") +
                             " on this Pulse · $onlineCount online",

@@ -303,9 +303,10 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extractSendResult(from: data)
     }
 
-    public func markRead(conversationId: String) async throws {
-        // N10-b transport fix - POST /read requires { userId } (400 otherwise).
-        try await postEmpty("/api/conversations/\(conversationId)/read", body: ["userId": userId])
+    public func markRead(conversationId: String, messageId: String? = nil) async throws {
+        var body = ["userId": userId]
+        if let messageId { body["messageId"] = messageId }
+        try await postEmpty("/api/conversations/\(conversationId)/read", body: body)
     }
 
     /// N10-b transport fix - PATCH /pin { userId }; the server TOGGLES the pin

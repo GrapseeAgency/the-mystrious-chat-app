@@ -81,7 +81,20 @@ public final class PulseSession: ObservableObject {
     /// Wave 8 - the conversation currently owning the screen (ChatRoomView
     /// writes it). The incoming-attention gate uses it as the "you are
     /// reading this room" check - no ping for the room in front of you.
-    @Published public var activeRoomId: String?
+    @Published public var activeRoomId: String? {
+        didSet {
+            if oldValue != activeRoomId {
+                visibleReadMessageId = nil
+                lastReadAcknowledged = nil
+                readReceiptTask?.cancel()
+            }
+        }
+    }
+    private var visibleReadMessageId: String?
+    private var lastReadAcknowledged: String?
+    private var readFailureCount = 0
+    private var readReceiptTask: Task<Void, Never>?
+    private var readsInFlight: Set<String> = []
     /// Wave 8 - weak handoff to the RootView-owned PulsePrefs (incoming
     /// attention gating + the settings PATCH funnel + quiet-gate refresh).
     public private(set) weak var prefs: PulsePrefs?
@@ -122,14 +135,53 @@ public final class PulseSession: ObservableObject {
 
     public func setForeground(_ active: Bool) {
         isForeground = active
-        if active { Task { await markReadIfVisible(conversationId: activeRoomId) } }
+        if active {
+            readFailureCount = 0
+            Task { await markReadIfVisible(conversationId: activeRoomId) }
+        } else { readReceiptTask?.cancel() }
+    }
+
+    public func setVisibleReadBoundary(conversationId: String, messageId: String?) {
+        guard activeRoomId == conversationId else { return }
+        guard visibleReadMessageId != messageId else { return }
+        visibleReadMessageId = messageId
+        readFailureCount = 0
+        readReceiptTask?.cancel()
+        guard messageId != nil else { return }
+        let epoch = generation
+        readReceiptTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 600_000_000) } catch { return }
+            guard let self, self.generation == epoch else { return }
+            await self.markReadIfVisible(conversationId: conversationId)
+        }
     }
 
     public func markReadIfVisible(conversationId: String?) async {
         guard let conversationId, ready, isForeground,
-              activeRoomId == conversationId, !PulseAppLock.shared.needsLock else { return }
+              activeRoomId == conversationId, !PulseAppLock.shared.needsLock,
+              let messageId = visibleReadMessageId, messageId != lastReadAcknowledged,
+              !readsInFlight.contains(messageId) else { return }
         let client = api
-        try? await client.markRead(conversationId: conversationId)
+        let epoch = generation
+        readsInFlight.insert(messageId)
+        defer { readsInFlight.remove(messageId) }
+        do {
+            try await client.markRead(conversationId: conversationId, messageId: messageId)
+            guard generation == epoch else { return }
+            lastReadAcknowledged = messageId
+            readFailureCount = 0
+            noteInboxChanged()
+        } catch {
+            guard !Task.isCancelled, generation == epoch, isForeground,
+                  visibleReadMessageId == messageId, readFailureCount < 3 else { return }
+            readFailureCount += 1
+            let wait = UInt64(readFailureCount) * 1_500_000_000
+            readReceiptTask = Task { [weak self] in
+                do { try await Task.sleep(nanoseconds: wait) } catch { return }
+                guard let self, self.generation == epoch else { return }
+                await self.markReadIfVisible(conversationId: conversationId)
+            }
+        }
     }
 
     private var socket: PulseSocketClient?
@@ -631,6 +683,7 @@ public final class PulseSession: ObservableObject {
             connected = isOn
             // Flush trigger: socket connect / reconnect.
             if isOn {
+                Task { await markReadIfVisible(conversationId: activeRoomId) }
                 flushOutbox()
                 // W3-b - same trigger for the queued single-writer call rows.
                 callEngine?.flushCallLogQueueOnReconnect()
@@ -655,6 +708,10 @@ public final class PulseSession: ObservableObject {
             // translation:added - live surfaces re-fetch on this tick.
             realtimeRefreshTick += 1
             cacheMessage(from: raw)
+        case .messageRead:
+            // Includes the viewer's other devices, even with receipt privacy on.
+            noteInboxChanged()
+            realtimeRefreshTick += 1
         case .conversationUpdated:
             realtimeRefreshTick += 1
         case .callSignal(let event, let raw):

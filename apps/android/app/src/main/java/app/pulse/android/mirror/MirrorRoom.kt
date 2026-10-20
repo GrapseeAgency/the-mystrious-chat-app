@@ -563,23 +563,6 @@ internal fun MirrorRoom(
             trayEffectsOpen || slashHelpOpen || safetyOpen || scheduleOpen ||
             phraseManagerOpen
     val readerLifecycle = LocalLifecycleOwner.current
-    LaunchedEffect(groupId, readingEnabled, roomPanelOpen, actionFor, forwardFor, threadFor, infoFor) {
-        readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            if (!readingEnabled || roomPanelOpen || actionFor != null || forwardFor != null ||
-                threadFor != null || infoFor != null
-            ) return@repeatOnLifecycle
-            app.pulse.android.notify.IncomingAttention.activeReadingRoom = groupId
-            try {
-                repository.observeMessages(groupId).collect { rows ->
-                    if (rows.isNotEmpty()) repository.markRead(groupId)
-                }
-            } finally {
-                if (app.pulse.android.notify.IncomingAttention.activeReadingRoom == groupId) {
-                    app.pulse.android.notify.IncomingAttention.activeReadingRoom = null
-                }
-            }
-        }
-    }
     androidx.activity.compose.BackHandler(enabled = roomPanelOpen) {
         when {
             menuOpen -> menuOpen = false
@@ -660,6 +643,28 @@ internal fun MirrorRoom(
     }
     val visibleMessages = remember(messages, activeTopicId, timelineNow) { visibleRoomMessages(messages, activeTopicId, timelineNow) }
     val entries = remember(visibleMessages) { buildRoomEntries(visibleMessages) }
+    LaunchedEffect(groupId, readingEnabled, roomPanelOpen, actionFor, forwardFor, threadFor, infoFor, visibleMessages) {
+        readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (!readingEnabled || roomPanelOpen || actionFor != null || forwardFor != null || threadFor != null || infoFor != null) return@repeatOnLifecycle
+            app.pulse.android.notify.IncomingAttention.activeReadingRoom = groupId
+            try {
+                androidx.compose.runtime.snapshotFlow {
+                    val visible = listState.layoutInfo.visibleItemsInfo.map { it.key }.toSet()
+                    visibleMessages.lastOrNull { it.id in visible && !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) }?.id
+                }.collectLatest { id ->
+                    if (id != null) {
+                        delay(600)
+                        repeat(3) { attempt ->
+                            if (repository.markReadThrough(groupId, id).isSuccess) return@collectLatest
+                            delay(1_500L * (attempt + 1))
+                        }
+                    }
+                }
+            } finally {
+                if (app.pulse.android.notify.IncomingAttention.activeReadingRoom == groupId) app.pulse.android.notify.IncomingAttention.activeReadingRoom = null
+            }
+        }
+    }
     val historyScope = rememberCoroutineScope()
     var loadingHistory by remember(groupId) { mutableStateOf(false) }
     var historyHasMore by remember(groupId) { mutableStateOf(true) }

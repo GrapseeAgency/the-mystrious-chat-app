@@ -413,6 +413,13 @@ class ChatRoomViewModel @Inject constructor(
     private var persistedAttachmentId: String? = null
     private var recordingAttachmentSession: String? = null
 
+    private var composerRevision = 0L
+    private var lastTypingSentAt = 0L
+    private val typingPeers = linkedMapOf<String, String>()
+    private val typingExpiry = mutableMapOf<String, Job>()
+
+    private var readingAnchor: String? = null
+
     init {
         restoreAttachmentDraft()
         viewModelScope.launch {
@@ -420,14 +427,14 @@ class ChatRoomViewModel @Inject constructor(
             // empty fall back to the server-mirrored myDraft on the summary.
             val local = runCatching { repo.observeDraft(conversationId).firstOrNull() }.getOrNull()
             if (!local.isNullOrBlank()) {
-                _initialDraft.value = local
+                if (composerRevision == 0L) _initialDraft.value = local
             } else {
                 val server = runCatching {
                     repo.observeConversations()
                         .map { list -> list.firstOrNull { it.id == conversationId }?.myDraft }
                         .firstOrNull { !it.isNullOrBlank() }
                 }.getOrNull()
-                if (!server.isNullOrBlank()) _initialDraft.value = server
+                if (composerRevision == 0L && !server.isNullOrBlank()) _initialDraft.value = server
             }
         }
         viewModelScope.launch {
@@ -439,13 +446,13 @@ class ChatRoomViewModel @Inject constructor(
                 .onFailure { failure ->
                     _state.value = _state.value.copy(loading = false, error = failure.message)
                 }
-            scheduleRead()
             loadPins()
             initialJumpMessageId?.takeIf { it.isNotBlank() }?.let { jumpTo(it) }
         }
         viewModelScope.launch {
             repo.observeConnected().collect { connected ->
                 _state.value = _state.value.copy(connected = connected)
+                if (connected) scheduleRead()
             }
         }
         viewModelScope.launch {
@@ -464,13 +471,19 @@ class ChatRoomViewModel @Inject constructor(
             repo.events().collect { event ->
                 when (event) {
                     is PulseEvent.Typing -> if (event.conversationId == conversationId && event.userId != repo.viewerId) {
-                        _state.value = if (event.isTyping) {
-                            _state.value.copy(partnerTypingName = event.userName.ifBlank { "Someone" })
-                        } else {
-                            _state.value.copy(partnerTypingName = null)
-                        }
+                        typingExpiry.remove(event.userId)?.cancel()
+                        if (event.isTyping) {
+                            typingPeers[event.userId] = event.userName.ifBlank { "Someone" }
+                            typingExpiry[event.userId] = viewModelScope.launch {
+                                delay(4_000)
+                                typingPeers.remove(event.userId)
+                                typingExpiry.remove(event.userId)
+                                _state.value = _state.value.copy(partnerTypingName = typingPeers.values.lastOrNull())
+                            }
+                        } else typingPeers.remove(event.userId)
+                        _state.value = _state.value.copy(partnerTypingName = typingPeers.values.lastOrNull())
                     }
-                    is PulseEvent.MessageRead -> if (event.conversationId == conversationId) {
+                    is PulseEvent.MessageRead -> if (event.conversationId == conversationId && event.userId != repo.viewerId) {
                         val at = PulseTime.parse(event.at)?.toInstant()?.toEpochMilli()
                         if (at != null) {
                             _state.value = _state.value.copy(
@@ -479,7 +492,6 @@ class ChatRoomViewModel @Inject constructor(
                         }
                     }
                     is PulseEvent.MessageReceived -> if (event.conversationId == conversationId) {
-                        scheduleRead()
                         // D29/F-MS-23 - incoming effect payloads fire the
                         // app-wide burst (web triggerEffectFor parity:
                         // confetti→confetti · sparkles→stars · lasers/echo→burst).
@@ -496,11 +508,24 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── read receipts (spec row 3): debounced 600ms while the room is open ──
 
+
+    fun setReadingAnchor(messageId: String?) {
+        if (readingAnchor == messageId) return
+        readingAnchor = messageId
+        readJob?.cancel()
+        scheduleRead()
+    }
+
     private fun scheduleRead() {
+        val anchor = readingAnchor ?: return
         readJob?.cancel()
         readJob = viewModelScope.launch {
             delay(600)
-            runCatching { repo.markRead(conversationId) }
+            repeat(3) { attempt ->
+                if (readingAnchor != anchor) return@launch
+                if (safelySend { repo.markReadThrough(conversationId, anchor) }.isSuccess) return@launch
+                delay(1_500L * (attempt + 1))
+            }
         }
     }
 
@@ -508,8 +533,15 @@ class ChatRoomViewModel @Inject constructor(
 
     fun onDraftChanged(text: String) {
         if (_state.value.editing != null) return // composer is editing a row, not drafting
+        composerRevision++
+        repo.stageDraft(conversationId, text) // reserve/write locally before the debounce
         val userName = viewerName()
-        if (typingJob?.isActive != true) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (text.isBlank()) {
+            lastTypingSentAt = 0L
+            viewModelScope.launch { repo.setTyping(conversationId, userName, false) }
+        } else if (typingJob?.isActive != true || now - lastTypingSentAt >= 1_500L) {
+            lastTypingSentAt = now
             viewModelScope.launch { repo.setTyping(conversationId, userName, true) }
         }
         typingJob?.cancel()
@@ -548,13 +580,16 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── send / edit ─────────────────────────────────────────────
 
-    fun send(body: String) {
+    fun send(body: String, onRejected: (() -> Unit)? = null) {
         val editing = _state.value.editing
         if (editing != null) {
             sendEdit(editing.id, body)
             return
         }
-        val replyId = _state.value.replyTo?.id
+        val revision = composerRevision
+        val topic = _activeTopicId.value
+        val reply = _state.value.replyTo
+        val replyId = reply?.id
         _state.value = _state.value.copy(replyTo = null)
         // R3-B item 4 - the arming only consumes on a real send in GROUPS
         // (web chat-room.tsx:1670 gates on isGroup). The optimistic echo
@@ -570,7 +605,7 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch {
             // Quote replies DO file to the active topic (only THREAD replies
             // are excluded - the repo drops topicId on parentId sends).
-            sendUseCase(conversationId, body, replyId, topicId = _activeTopicId.value, anon = anonArmed, anonAliasPreview = anonAliasPreview)
+            safelySend { sendUseCase(conversationId, body, replyId, topicId = topic, anon = anonArmed, anonAliasPreview = anonAliasPreview) }
                 .onSuccess { receipt ->
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         // Network-class failure → queued in the outbox. The
@@ -578,14 +613,14 @@ class ChatRoomViewModel @Inject constructor(
                         // draft and let the pending bubble + banner tell it.
                         // (Incognito sends never reach this branch - the repo
                         // refuses to queue an un-maskable row.)
-                        runCatching { repo.clearDraft(conversationId) }
+                        consumeComposer(revision)
                     } else {
                         // One-shot: web disarms the mask after a successful send
                         // (chat-room.tsx:1747-1750).
                         if (anonArmed) _anonNext.value = false
                         app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
                         repo.setTyping(conversationId, viewerName(), false)
-                        runCatching { repo.clearDraft(conversationId) }
+                        consumeComposer(revision)
                         afterOwnSend(receipt.message)
                         // R31-a parity - the web-verbatim streak nudge (fires
                         // only when THIS send GREW the streak, second-or-later
@@ -595,6 +630,10 @@ class ChatRoomViewModel @Inject constructor(
                 }
                 .onFailure { failure ->
                     _state.value = _state.value.copy(error = failureNotice(failure))
+                    if (composerRevision == revision) {
+                        if (_state.value.replyTo == null) _state.value = _state.value.copy(replyTo = reply)
+                        onRejected?.invoke()
+                    }
                 }
         }
     }
@@ -610,6 +649,8 @@ class ChatRoomViewModel @Inject constructor(
         payload: String? = null,
         anon: Boolean = false,
         onDelivered: ((Message) -> Unit)? = null,
+        onRejected: (() -> Unit)? = null,
+        consumeDraft: Boolean = false,
         /** Send burst kind - effect sends map to their web EFFECT_PARTICLES kind. */
         fxKind: app.pulse.core.fx.PulseFx.BurstKind? = app.pulse.core.fx.PulseFx.BurstKind.BURST,
     ) {
@@ -618,25 +659,28 @@ class ChatRoomViewModel @Inject constructor(
             sendEdit(editing.id, body)
             return
         }
-        val replyId = _state.value.replyTo?.id
+        val revision = composerRevision
+        val topic = _activeTopicId.value
+        val reply = _state.value.replyTo
+        val replyId = reply?.id
         _state.value = _state.value.copy(replyTo = null)
         viewModelScope.launch {
-            repo.sendRichMessage(
+            safelySend { repo.sendRichMessage(
                 conversationId = conversationId,
                 body = body,
                 kind = kind,
                 payload = payload,
                 anon = anon,
                 replyToId = replyId,
-                topicId = _activeTopicId.value,
-            )
+                topicId = topic,
+            ) }
                 .onSuccess { receipt ->
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
-                        runCatching { repo.clearDraft(conversationId) }
+                        if (consumeDraft) consumeComposer(revision)
                     } else {
                         fxKind?.let { kind -> app.pulse.core.fx.PulseFx.fire(kind, count = 26) }
                         repo.setTyping(conversationId, viewerName(), false)
-                        runCatching { repo.clearDraft(conversationId) }
+                        if (consumeDraft) consumeComposer(revision)
                         afterOwnSend(receipt.message)
                         onDelivered?.invoke(receipt.message)
                         maybeStreakNudge(receipt.streak)
@@ -644,8 +688,27 @@ class ChatRoomViewModel @Inject constructor(
                 }
                 .onFailure { failure ->
                     _state.value = _state.value.copy(error = failureNotice(failure))
+                    if (composerRevision == revision) {
+                        if (_state.value.replyTo == null) _state.value = _state.value.copy(replyTo = reply)
+                        onRejected?.invoke()
+                    }
                 }
         }
+    }
+
+    private suspend fun <T> safelySend(block: suspend () -> Result<T>): Result<T> {
+        return try {
+            block()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    private fun consumeComposer(revision: Long) {
+        // A response for message A does not own the newer draft B.
+        if (composerRevision == revision) onDraftChanged("")
     }
 
     /**
@@ -776,7 +839,7 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     /** /effects <name> [text] - effect rides the text row's payload blob. */
-    fun sendEffect(effect: String, content: String) {
+    fun sendEffect(effect: String, content: String, onRejected: (() -> Unit)? = null) {
         if (effect !in app.pulse.protocol.PulseWave7Logic.EFFECT_NAMES) return
         val payload = app.pulse.protocol.PulseJson.encodeToString(
             app.pulse.protocol.EffectPayloadDto.serializer(),
@@ -789,6 +852,8 @@ class ChatRoomViewModel @Inject constructor(
             // Own effect sends fire the mapped burst (web parity) - the
             // generic send burst is replaced, not stacked.
             fxKind = PulseEffects.burstKindOf(effect),
+            onRejected = onRejected,
+            consumeDraft = onRejected != null,
         )
     }
 

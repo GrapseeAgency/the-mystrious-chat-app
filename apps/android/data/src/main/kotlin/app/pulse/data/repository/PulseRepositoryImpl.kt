@@ -420,9 +420,10 @@ class PulseRepositoryImpl constructor(
                     is PulseSocketClient.Signal.Joined -> onlineIds.value = signal.onlineUserIds.toSet()
                     is PulseSocketClient.Signal.PresenceSnapshot -> onlineIds.value = signal.onlineUserIds.toSet()
                     is PulseSocketClient.Signal.MessageEnvelope -> onMessageEnvelope(signal)
-                    is PulseSocketClient.Signal.Read -> eventsBus.tryEmit(
-                        PulseEvent.MessageRead(signal.conversationId, signal.userId, signal.lastReadAt),
-                    )
+                    is PulseSocketClient.Signal.Read -> {
+                        eventsBus.tryEmit(PulseEvent.MessageRead(signal.conversationId, signal.userId, signal.lastReadAt))
+                        scheduleConversationsRefresh()
+                    }
                     is PulseSocketClient.Signal.Typing -> eventsBus.tryEmit(
                         PulseEvent.Typing(signal.conversationId, signal.userId, signal.userName, signal.isTyping),
                     )
@@ -1911,24 +1912,22 @@ class PulseRepositoryImpl constructor(
     override fun observeDraft(conversationId: String): Flow<String?> =
         draftDao.observe(conversationId).map { it?.text }
 
-    override suspend fun markRead(conversationId: String): Result<Unit> {
-        // Demo room is on-device: zero the badge locally, no gateway verdict.
+    override suspend fun markRead(conversationId: String): Result<Unit> = acknowledgeRead(conversationId, null)
+
+    override suspend fun markReadThrough(conversationId: String, messageId: String): Result<Unit> =
+        acknowledgeRead(conversationId, messageId)
+
+    private suspend fun acknowledgeRead(conversationId: String, messageId: String?): Result<Unit> {
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
             mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
             return Result.success(Unit)
         }
-        // Optimistic: zero the badge locally, revert if the server refuses.
-        val before = conversationDao.byId(conversationId)?.toDomain()
-        if (before != null) {
-            mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
-        }
-        val result = api.postAction(
-            "/api/conversations/$conversationId/read",
-            PulseApi.jsonOf("userId" to (viewerId ?: "")),
-        ).toResult()
-        if (result.isFailure && before != null) {
-            mutateConversation(conversationId) { before }
-        }
+        val owner = viewerId ?: return Result.failure(IllegalStateException("The account is no longer active"))
+        val result = api.postAction("/api/conversations/$conversationId/read",
+            PulseApi.jsonOf("userId" to owner, "messageId" to messageId)).toResult()
+        // Do not zero newer arrivals or roll an entire stale conversation back
+        // over messages/pins received while the read request was in flight.
+        if (result.isSuccess && viewerId == owner) scheduleConversationsRefresh()
         return result
     }
 

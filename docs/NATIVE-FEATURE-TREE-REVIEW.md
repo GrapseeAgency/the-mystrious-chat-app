@@ -1078,3 +1078,69 @@ while reading storage. Delivery also rechecks pending intent after upload-file
 cleanup, which can suspend while a user discards the row. This prevents starting a
 POST for an observed removed row; it cannot recall a request already in flight or
 already accepted remotely. Removed obsolete comments describing media as online-only.
+
+### Everyday chat: displayed reads, unread state, contact → DM and composer ownership
+
+Traced the primary and mirror native rooms through read APIs, cached summaries,
+member watermarks, directory loading, direct-conversation creation and text sends.
+Kept the existing autumn/ember palette and layout; this is behavior work, not a
+replacement UI.
+
+Repairs:
+- Native automatic reads now carry a displayed **server message ID**. The server
+  validates that the row belongs to that room and advances the member watermark
+  monotonically to its creation time, not request-time `now`. A later arrival
+  remains unread. Unknown/foreign boundaries cannot clear the manual unread flag.
+- Android primary receipts are driven by visible list rows while RESUMED, not
+  ViewModel initialization or background socket arrival. Mirror uses its visible
+  rows and existing panel/lifecycle gates. Swift primary/mirror use the rendered
+  tail, foreground/unlocked session and common sheet/overlay gates; no loaded
+  boundary means no automatic acknowledgement. Transient failures get bounded
+  retries without inventing a successful local badge clear.
+- Read privacy now applies to the live relay as well as fetched summaries. With
+  receipts disabled, only the reader's own devices receive the update. Native
+  caches refresh on receipts; Android excludes own-device receipts from partner
+  Seen state. Swift no longer substitutes the current time for a malformed
+  receipt, and ignores backwards progress.
+- Android no longer clears a whole unread summary optimistically then restores an
+  obsolete snapshot over incoming messages on failure. Confirmed reads refresh
+  authoritative summaries. Explicit mark-unread changes notify only that user's
+  devices. Anchored native reads require existing credential ownership; present
+  credentials also bind legacy read/mark-unread and conversation-creation actors.
+- Swift mirror now renders Queued / Sent / Seen / partial-group Read-by counts
+  from actual member watermarks. Both primary message-info sheets label missing
+  receipts **No read confirmation**, not Delivered: membership is not evidence
+  that a recipient device received a message.
+- Direct-conversation lookup/block checks/create are one serializable transaction
+  with bounded contention retries. Reversed-member requests and response-loss
+  retries reopen the same DM; concurrent contacts taps cannot both commit a new
+  thread via this route. Existing blocked history remains accessible; new blocked
+  pairs are refused. Both mirror directories retain loaded people and expose
+  retry on fetch failure instead of silently replacing them with an empty list;
+  Swift excludes the signed-in user from new-chat/group choices.
+- Android primary text/effect sends capture the chosen topic and composer revision
+  before suspending. Late acknowledgements no longer clear a newer draft; sticker
+  and location sends do not consume unrelated text. Local edits reserve their
+  draft journal version immediately, before debounce. Storage/validation failures
+  can restore the submitted composer/quote only if no newer edit owns it, instead
+  of losing text or overwriting the next message. Late initial draft restoration
+  likewise cannot override a composer the user already touched.
+- Android primary typing now expires per participant, refreshes while continuous
+  typing continues, and does not clear another participant when one stops. Swift
+  mirror no longer unconditionally scrolls a reader out of older history on every
+  new message; initial loading, own sends and following the tail remain supported.
+
+Verification: 85 server contract tests executed successfully, including eight new
+real SQLite/Prisma read-boundary, privacy-recipient, membership/block and concurrent
+DM cases. Changed Kotlin/Swift syntax parses; native type/device verification is
+pending for this revision. The prior 4c673ce Android/iOS builds and tests completed
+successfully, which does not verify these new changes.
+
+Remaining boundaries: read state is still a **conversation-wide timestamp**, not
+per-topic/per-thread or a timestamp-plus-ID cursor. Equal-millisecond messages and
+new-member historical-read semantics need a schema-level follow-up. No independent
+recipient-device delivery ACK exists. Legacy tokenless web compatibility is retained,
+not presented as full server authorization hardening. This does not merge pre-existing
+duplicate DMs, add phone-address-book sync, or reconstruct a crash between text
+queue insertion and composer cleanup. Physical-device visibility, rapid sheet /
+call-overlay transitions and loss-of-network sequences still require exercising.

@@ -156,9 +156,9 @@ public enum PulseRoomParityLogic {
     /// chat-room.tsx:5893-5960 + Android MessageSheets.kt:379-424 parity):
     ///   • the viewer is never a recipient (excluded first);
     ///   • "Seen by" = members whose lastReadAt >= the message's createdAt;
-    ///   • "Delivered to" = the rest.
-    /// A missing or unparseable watermark counts as delivered (never seen) -
-    /// web `Number.isNaN(readMs)` parity.
+    ///   • the rest have no read confirmation (privacy/offline/unread unknown).
+    /// `deliveredTo` retains its legacy API name, but is NOT a device-delivery
+    /// receipt. The native sheets must label it as unconfirmed.
     public struct ReceiptSplit: Equatable, Sendable {
         public let seenBy: [ReceiptMember]
         public let deliveredTo: [ReceiptMember]
