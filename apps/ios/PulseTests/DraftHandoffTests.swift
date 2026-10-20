@@ -53,15 +53,16 @@ final class DraftHandoffTests: XCTestCase {
         let journal = PulseDraftJournal(store: store, conversationId: "room")
         try await journal.save("keep me", revision: 1)
         let connection = try DatabaseQueue(path: path)
-        try connection.write { db in
+        try await connection.write { db in
             try db.execute(sql: "CREATE TRIGGER fail_draft BEFORE INSERT ON draft BEGIN SELECT RAISE(ABORT, 'disk write failed'); END")
         }
         XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: "keep me", draftJournal: journal))
         XCTAssertEqual(store.countOutbox(), 0)
         XCTAssertEqual(journal.snapshot, "keep me")
         XCTAssertEqual(store.draftSnapshot(conversationId: "room"), "keep me")
-        XCTAssertEqual(try connection.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM message") }, 0)
-        try connection.write { try $0.execute(sql: "DROP TRIGGER fail_draft") }
+        let messageCount = try await connection.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM message") }
+        XCTAssertEqual(messageCount, 0)
+        try await connection.write { try $0.execute(sql: "DROP TRIGGER fail_draft") }
         _ = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: "keep me", draftJournal: journal)
         XCTAssertEqual(store.draftSnapshot(conversationId: "room"), "")
     }
