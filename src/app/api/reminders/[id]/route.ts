@@ -3,6 +3,7 @@
 // showing the nudge); DELETE cancels it outright. Owner-only, both.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { resolveReminder, deleteReminder, ReminderContractError } from '@/lib/reminder-contract'
 import { safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -24,21 +25,11 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  const row = await db.reminder.findUnique({ where: { id } })
-  if (!row) {
-    return NextResponse.json({ error: 'Reminder not found.' }, { status: 404 })
+  try { return NextResponse.json(await resolveReminder(db, id, userId)) }
+  catch (error) {
+    if (error instanceof ReminderContractError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
-  if (row.userId !== userId) {
-    return NextResponse.json({ error: 'Only the owner can resolve this reminder.' }, { status: 403 })
-  }
-
-  if (row.firedAt !== null) {
-    return NextResponse.json({ ok: true, firedAt: row.firedAt.toISOString() })
-  }
-
-  const firedAt = new Date()
-  await db.reminder.update({ where: { id }, data: { firedAt } })
-  return NextResponse.json({ ok: true, firedAt: firedAt.toISOString() })
 }
 
 /** DELETE /api/reminders/[id]  body { userId } → { ok: true } */
@@ -51,14 +42,9 @@ export async function DELETE(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  const row = await db.reminder.findUnique({ where: { id } })
-  if (!row) {
-    return NextResponse.json({ error: 'Reminder not found.' }, { status: 404 })
+  try { return NextResponse.json(await deleteReminder(db, id, userId)) }
+  catch (error) {
+    if (error instanceof ReminderContractError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
-  if (row.userId !== userId) {
-    return NextResponse.json({ error: 'Only the owner can cancel this reminder.' }, { status: 403 })
-  }
-
-  await db.reminder.delete({ where: { id } })
-  return NextResponse.json({ ok: true })
 }

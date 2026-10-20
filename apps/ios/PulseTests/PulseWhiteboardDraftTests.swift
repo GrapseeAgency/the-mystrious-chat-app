@@ -67,4 +67,34 @@ final class PulseWhiteboardDraftTests: XCTestCase {
         XCTAssertTrue(PulseWhiteboardDraft.strokes(conversationId: "conv-3", defaults: defaults).isEmpty)
         XCTAssertEqual(PulseWhiteboardDraft.strokes(conversationId: "conv-4", defaults: defaults).count, 1)
     }
+
+    func testAcknowledgementPreservesStrokesAppendedDuringPost() {
+        let first = stroke("a", 1, [[0, 0], [1, 1]])
+        let next = stroke("b", 2, [[0, 1], [1, 0]])
+        PulseWhiteboardDraft.append(first, conversationId: "c", defaults: defaults)
+        let batch = PulseWhiteboardDraft.batch(conversationId: "c", defaults: defaults)
+        PulseWhiteboardDraft.append(next, conversationId: "c", defaults: defaults)
+        XCTAssertTrue(PulseWhiteboardDraft.acknowledge(batch, conversationId: "c", defaults: defaults))
+        XCTAssertEqual(PulseWhiteboardDraft.strokes(conversationId: "c", defaults: defaults), [next])
+        XCTAssertFalse(PulseWhiteboardDraft.acknowledge(batch, conversationId: "c", defaults: defaults))
+    }
+
+    func testResetThenIdenticalNewDrawingCannotBeRemovedByOldAck() {
+        let drawn = stroke("a", 1, [[0, 0], [1, 1]])
+        PulseWhiteboardDraft.append(drawn, conversationId: "c", defaults: defaults)
+        let batch = PulseWhiteboardDraft.batch(conversationId: "c", defaults: defaults)
+        PulseWhiteboardDraft.clear(conversationId: "c", defaults: defaults)
+        PulseWhiteboardDraft.append(drawn, conversationId: "c", defaults: defaults)
+        XCTAssertFalse(PulseWhiteboardDraft.acknowledge(batch, conversationId: "c", defaults: defaults))
+        XCTAssertEqual(PulseWhiteboardDraft.strokes(conversationId: "c", defaults: defaults), [drawn])
+    }
+
+    func testReconciliationInvalidatesAnInFlightBatch() {
+        let drawn = stroke("a", 1, [[0, 0], [1, 1]])
+        PulseWhiteboardDraft.append(drawn, conversationId: "c", defaults: defaults)
+        let batch = PulseWhiteboardDraft.batch(conversationId: "c", defaults: defaults)
+        PulseWhiteboardDraft.replaceAll(conversationId: "c", strokes: [drawn], defaults: defaults)
+        XCTAssertFalse(PulseWhiteboardDraft.acknowledge(batch, conversationId: "c", defaults: defaults))
+        XCTAssertEqual(PulseWhiteboardDraft.strokes(conversationId: "c", defaults: defaults), [drawn])
+    }
 }

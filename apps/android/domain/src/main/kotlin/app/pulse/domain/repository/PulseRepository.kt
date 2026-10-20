@@ -106,7 +106,7 @@ sealed interface PulseEvent {
     /** A send failed network-class and now waits in the outbox (`local_<clientId>` bubble). */
     data class OutboxQueued(val clientId: String, val conversationId: String) : PulseEvent
     /** A queued send hit a definitive 4xx verdict - the entry and its temp bubble are gone. */
-    data class OutboxDropped(val clientId: String, val reason: String) : PulseEvent
+    data class OutboxDropped(val clientId: String, val reason: String, val conversationId: String? = null, val threadRootId: String? = null) : PulseEvent
     /** A queued send delivered - the temp row was swapped for the real message. */
     data class OutboxFlushed(val clientId: String, val message: Message) : PulseEvent
 
@@ -242,6 +242,12 @@ interface PulseRepository {
     /** Bind the client to a viewer identity (REST userId + socket join). Idempotent per id. */
     fun start(userId: String)
 
+    /** End the current account transport and cancel account-owned work. */
+    fun stop() {}
+
+    /** Capture the account receiver before launching feature-owned asynchronous work. */
+    fun boundToCurrentAccount(): PulseRepository = this
+
     val viewerId: String?
 
     fun observeConversations(query: String = ""): Flow<List<Conversation>>
@@ -288,7 +294,11 @@ interface PulseRepository {
     /** Data & Storage manager - drop ONE held outbox row (+ its temp bubble). */
     suspend fun discardOutboxEntry(clientId: String)
 
-    /** Data & Storage manager - drop EVERY held outbox row. */
+    /** Explicit retry of this owner's rejected intent; preserves its original ID/envelope. */
+    suspend fun retryOutboxEntry(clientId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Outbox retry is unavailable"))
+
+    /** Data & Storage manager - drop this owner's held outbox rows. */
     suspend fun clearOutbox()
 
     /** Data & Storage manager - drop every composer draft at once. */
@@ -331,6 +341,8 @@ interface PulseRepository {
         topicId: String? = null,
     ): Result<SendReceipt>
     suspend fun markRead(conversationId: String): Result<Unit>
+    /** Displayed server message boundary; never acknowledge unseen arrivals. */
+    suspend fun markReadThrough(conversationId: String, messageId: String): Result<Unit> = markRead(conversationId)
     suspend fun setTyping(conversationId: String, userName: String, typing: Boolean)
     suspend fun react(messageId: String, emoji: String): Result<Unit>
     suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit>
@@ -387,6 +399,18 @@ interface PulseRepository {
     /** Soft-delete MY OWN non-deleted messages sequentially - returns the cleared count. */
     suspend fun clearMyMessages(conversationId: String): Result<Int>
 
+    /** Ephemeral session fence, not a credential; preparation must capture it before suspending. */
+    fun attachmentSessionKey(): String? = null
+    suspend fun saveAttachmentDraft(draft: app.pulse.domain.model.AttachmentDraft, sessionKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
+    suspend fun loadAttachmentDraft(conversationId: String, sessionKey: String): Result<app.pulse.domain.model.AttachmentDraft?> = Result.success(null)
+    suspend fun editAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, revision: Long, sessionKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
+    suspend fun discardAttachmentDraft(conversationId: String, selectionId: String, sessionKey: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
+    suspend fun queueAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, topicId: String?, sessionKey: String): Result<Message> =
+        Result.failure(UnsupportedOperationException("Attachment storage unavailable"))
+
     // offline outbox + drafts (Wave 0 - web pulse-outbox/pulse-drafts parity)
 
     /** Persist an outgoing message for later delivery (FIFO, capped at 50). */
@@ -398,13 +422,20 @@ interface PulseRepository {
     /** FIFO snapshot (≤50 oldest) the drain policy walks. */
     suspend fun outboxPending(): List<OutboxEntry>
 
+    /** Exclude held rooms BEFORE applying the batch limit; otherwise a long queue starves peers. */
+    suspend fun outboxReady(excludingRooms: Set<String>): List<OutboxEntry> =
+        outboxPending().filter { it.conversationId !in excludingRooms }
+
+    /** Includes held rooms, excludes rejected/foreign intents. */
+    suspend fun pendingOutboxCount(): Int = outboxPending().size
+
     /** ONE delivery attempt for an outbox entry - never mutates outbox state itself. */
     suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message>
 
     /** Delivery success: swap the temp `local_<clientId>` row for the real message + drop the outbox row. */
     suspend fun resolveOutboxDelivery(entry: OutboxEntry, real: Message)
 
-    /** Definitive 4xx verdict: delete the outbox row + temp row (+ OutboxDropped event). */
+    /** Definitive rejection: retain failed intent, hide pending echo, emit scoped notice. */
     suspend fun dropOutboxEntry(clientId: String, reason: String)
 
     /** Retryable failure: attempts++ on the held entry. */
@@ -413,7 +444,9 @@ interface PulseRepository {
     /** Full drain with the standard policy - every flush trigger funnels here. */
     suspend fun flushOutbox(): FlushReport
 
-    /** Persist the composer draft (≤2000 chars; blank clears). */
+    /** Journal locally without waiting for a server debounce or a composable lifetime. */
+    fun stageDraft(conversationId: String, text: String) {}
+    /** Persist the composer draft (≤2000 chars; blank clears) and mirror remotely. */
     suspend fun saveDraft(conversationId: String, text: String)
 
     /** Drop the local composer draft (send delivered / composer cleared). */
@@ -478,6 +511,7 @@ interface PulseRepository {
         kind: String? = null,
         viewOnce: Boolean? = null,
         topicId: String? = null,
+        clientId: String? = null,
     ): Result<Message>
 
     /** GET /api/uploads/{file} → bytes saved under cacheDir/downloads - returns the absolute path. */
@@ -818,6 +852,9 @@ interface PulseRepository {
     suspend fun grabRedPacket(packetId: String): Result<RedPacketGrabResultDto>
 
     /** GET /api/conversations/{id}/whiteboard?since= - since=null → full snapshot. */
+    /** Account-bound durable queue for the active board surface. */
+    suspend fun loadWhiteboardDraft(conversationId: String, ownerId: String): List<WhiteboardStrokePostDto> = error("Draft store unavailable")
+    suspend fun updateWhiteboardDraft(conversationId: String, ownerId: String, transform: (List<WhiteboardStrokePostDto>) -> List<WhiteboardStrokePostDto>): List<WhiteboardStrokePostDto> = error("Draft store unavailable")
     suspend fun whiteboard(conversationId: String, since: Long?): Result<WhiteboardPageDto>
 
     /** POST strokes (≤40/call, 2..500 pts, 0..1 coords). */
@@ -863,6 +900,9 @@ interface PulseRepository {
     suspend fun createReminder(conversationId: String, messageId: String?, note: String?, remindAtIso: String): Result<ReminderItemDto>
 
     /** PATCH reminder - owner-only resolve (due loop calls after the nudge). */
+    fun reminderDeliveryOwner(): app.pulse.domain.notify.ReminderOwner? = null
+    /** Background delivery acknowledgement must not remove the just-posted alert. */
+    suspend fun acknowledgeReminderDelivery(reminderId: String): Result<ReminderResolveDto> = resolveReminder(reminderId)
     suspend fun resolveReminder(reminderId: String): Result<ReminderResolveDto>
 
     /** DELETE reminder - owner-only cancel (also unschedules the local notification). */

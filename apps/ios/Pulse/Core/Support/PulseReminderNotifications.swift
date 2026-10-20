@@ -31,7 +31,7 @@ public enum PulseReminderNotifications {
     /// Schedule the offline-capable one-shot; replaces any pending copy.
     /// R2-D - `conversationId` rides the userInfo so the tap routes to the
     /// room (web reminder-tap parity); nil keeps the notification tapless.
-    public static func schedule(reminderId: String, note: String, remindAtEpochMs: Int64, conversationId: String? = nil) {
+    public static func schedule(reminderId: String, note: String, remindAtEpochMs: Int64, conversationId: String? = nil, ownerId: String? = nil) {
         let content = UNMutableNotificationContent()
         content.title = note.isEmpty ? "Reminder" : String(note.prefix(64))
         content.body = "Reminder"
@@ -45,12 +45,11 @@ public enum PulseReminderNotifications {
             content.categoryIdentifier = PulseQuickReply.categoryId
         }
 
-        let fireDate = Date(timeIntervalSince1970: TimeInterval(remindAtEpochMs) / 1000)
-        let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+        let components = Self.triggerComponents(remindAtEpochMs: remindAtEpochMs)
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
 
         let request = UNNotificationRequest(
-            identifier: "pulse-reminder-\(reminderId)",
+            identifier: notificationID(reminderId: reminderId, ownerId: ownerId),
             content: content,
             trigger: trigger,
         )
@@ -61,12 +60,41 @@ public enum PulseReminderNotifications {
         }
     }
 
-    public static func cancel(reminderId: String) {
-        UNUserNotificationCenter.current()
-            .removePendingNotificationRequests(withIdentifiers: ["pulse-reminder-\(reminderId)"])
+    static func notificationID(reminderId: String, ownerId: String?) -> String {
+        guard let ownerId else { return "pulse-reminder-\(reminderId)" }
+        return "pulse-reminder:\(ownerId.utf8.count):\(ownerId):\(reminderId)"
     }
 
-    public static func showNow(reminderId: String, note: String, body: String, conversationId: String? = nil) {
+    static func triggerComponents(remindAtEpochMs: Int64) -> DateComponents {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = Date(timeIntervalSince1970: TimeInterval(remindAtEpochMs) / 1000)
+        var components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        components.calendar = calendar
+        components.timeZone = calendar.timeZone
+        return components
+    }
+
+    public static func cancel(reminderId: String, ownerId: String? = nil) {
+        let center = UNUserNotificationCenter.current()
+        let ids = [notificationID(reminderId: reminderId, ownerId: ownerId), "pulse-reminder-\(reminderId)", "pulse-reminder-fired-\(reminderId)"]
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+
+    /// True means accepted by the OS (or already delivered), not proof the user saw it.
+    public static func showNow(reminderId: String, note: String, body: String, conversationId: String? = nil, ownerId: String? = nil) async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        guard !Task.isCancelled else { return false }
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: break
+        default: return false
+        }
+        let identifier = notificationID(reminderId: reminderId, ownerId: ownerId)
+        let delivered = await center.deliveredNotifications()
+        guard !Task.isCancelled else { return false }
+        if delivered.contains(where: { $0.request.identifier == identifier }) { return true }
         let content = UNMutableNotificationContent()
         content.title = note.isEmpty ? "Reminder" : String(note.prefix(64))
         content.body = String(body.prefix(178))
@@ -77,11 +105,12 @@ public enum PulseReminderNotifications {
             content.categoryIdentifier = PulseQuickReply.categoryId
         }
         let request = UNNotificationRequest(
-            identifier: "pulse-reminder-fired-\(reminderId)",
+            identifier: identifier,
             content: content,
             trigger: nil,
         )
-        UNUserNotificationCenter.current().add(request)
+        do { try await center.add(request); return true }
+        catch { return false }
     }
 
     /// The reminder payload - reminderId + (R2-D) the conversationId the tap
@@ -181,5 +210,44 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
         guard let value = raw as? String else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+/// A failed server resolve is retried without replaying sound every 30 seconds.
+/// Record only accepted notifications; denied/failed enqueue remains retryable.
+@MainActor
+enum PulseReminderDelivery {
+    private static var flights: [String: UUID] = [:]
+    static func ownerKey(_ api: PulseAPIClient) -> String {
+        let origin = api.baseURL.absoluteString
+        return "\(origin.utf8.count):\(origin):\(api.userId)"
+    }
+    private static func key(_ owner: String, _ id: String) -> String {
+        "reminder.queued:\(owner.utf8.count):\(owner):\(id)"
+    }
+    static func queueOnce(ownerId: String, reminderId: String, defaults: UserDefaults = .standard,
+                          retract: () -> Void = {}, enqueue: () async -> Bool) async -> Bool {
+        let key = key(ownerId, reminderId)
+        if defaults.string(forKey: key) == "finished" { return false }
+        if defaults.bool(forKey: key) { return true }
+        guard flights[key] == nil else { return false }
+        let token = UUID()
+        flights[key] = token
+        defer { if flights[key] == token { flights[key] = nil } }
+        guard await enqueue() else { return false }
+        // Cancellation may happen while the OS add() is suspended. Retract a
+        // late acceptance as well as blocking all future stale due responses.
+        guard flights[key] == token, defaults.string(forKey: key) != "finished" else {
+            retract()
+            return false
+        }
+        defaults.set(true, forKey: key)
+        return true
+    }
+    static func finish(ownerId: String, reminderId: String, defaults: UserDefaults = .standard, cancel: () -> Void) {
+        let key = key(ownerId, reminderId)
+        defaults.set("finished", forKey: key)
+        flights[key] = nil
+        cancel()
     }
 }

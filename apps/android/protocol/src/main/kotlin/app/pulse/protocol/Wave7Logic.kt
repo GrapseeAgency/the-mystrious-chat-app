@@ -80,13 +80,13 @@ object PulseWave7Logic {
     /** Tolerant decode of a game message payload (raw JSON string). */
     fun gamePayload(payload: String?): GamePayloadDto? {
         if (payload.isNullOrBlank()) return null
-        return runCatching { PulseJson.decodeFromString(GamePayloadDto.serializer(), payload) }.getOrNull()
+        return runCatching { PulseJson.decodeFromString(GamePayloadDto.serializer(), payload) }.getOrNull()?.takeIf { it.matchId.isNotBlank() }
     }
 
     /** Tolerant decode of a tournament message payload (raw JSON string). */
     fun tournamentPayload(payload: String?): TournamentPayloadDto? {
         if (payload.isNullOrBlank()) return null
-        return runCatching { PulseJson.decodeFromString(TournamentPayloadDto.serializer(), payload) }.getOrNull()
+        return runCatching { PulseJson.decodeFromString(TournamentPayloadDto.serializer(), payload) }.getOrNull()?.takeIf { it.tournamentId.isNotBlank() }
     }
 
     /** R1-W2A - tolerant decode of a sticker message payload ({emoji,pack}). */
@@ -131,7 +131,7 @@ object PulseWave7Logic {
 
     /** True when the viewer can still act on this match (a seated player, active, their turn). */
     fun isMyTurn(match: GameMatchDto, viewerId: String): Boolean {
-        if (match.status != "active") return false
+        if (match.status != "active" || match.playerOId.isNullOrBlank() || match.playerXId == match.playerOId || viewerId.isBlank()) return false
         val side = sideOf(match, viewerId) ?: return false
         return match.turn == side.toString()
     }

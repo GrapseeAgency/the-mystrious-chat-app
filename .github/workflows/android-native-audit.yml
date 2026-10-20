@@ -4,13 +4,13 @@ name: Pulse Android Native Audit
 # and versionName as the shipping release, but a SEPARATE applicationId
 # (app.pulse.chat.native) and launcher label ("Pulse Native") so it installs
 # SIDE BY SIDE with the store build. The signed artifact is attached to the
-# existing release as an extra asset - the release's own assets stay as-is.
+# workflow run only. Auditing never modifies an existing release.
 
 on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   native-audit:
@@ -51,21 +51,15 @@ jobs:
         run: |
           APK=app/build/outputs/apk/release/app-release.apk
           test -f "$APK"
-          unzip -p "$APK" AndroidManifest.xml | strings | grep -q "app.pulse.chat.native" || true
+          ANALYZER=$(find "$ANDROID_HOME/cmdline-tools" -path '*/bin/apkanalyzer' | head -1)
+          test -n "$ANALYZER"
+          test "$("$ANALYZER" manifest application-id "$APK")" = "app.pulse.chat.native"
           echo "APK bytes: $(wc -c < "$APK")"
 
       - name: Rename artifact
         run: |
           cp apps/android/app/build/outputs/apk/release/app-release.apk \
             "Pulse-native-audit-${{ steps.ver.outputs.name }}.apk"
-
-      - name: Attach to the existing release (extra asset)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "v${{ steps.ver.outputs.name }}" \
-            "Pulse-native-audit-${{ steps.ver.outputs.name }}.apk" \
-            --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4

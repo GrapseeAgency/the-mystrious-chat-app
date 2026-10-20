@@ -221,6 +221,7 @@ internal fun MirrorSettingsScreen(
     onOpenHub: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val recoveryScope = androidx.compose.runtime.rememberCoroutineScope()
     val prefsWire by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
     val prefs = prefsWire.resolvedOrDefaults()
     val soundOn by session.soundOn.collectAsState()
@@ -424,7 +425,8 @@ internal fun MirrorSettingsScreen(
                             prefs = prefs,
                             listFilter = listFilter,
                             drafts = drafts.size,
-                            outbox = outbox.size,
+                            outbox = outbox,
+                            onDiscard = { clientId -> recoveryScope.launch { repository.discardOutboxEntry(clientId) } },
                             onPrefs = { savePrefs(it) },
                             onListFilter = { value -> session.setChatsListFilter(value) },
                         )
@@ -1261,10 +1263,12 @@ private fun ChatSection(
     prefs: ResolvedPrefs,
     listFilter: String,
     drafts: Int,
-    outbox: Int,
+    outbox: List<app.pulse.domain.model.OutboxEntry>,
+    onDiscard: (String) -> Unit,
     onPrefs: (WirePulsePrefs) -> Unit,
     onListFilter: (String) -> Unit,
 ) {
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     SettingsGroup("Message look") {
         SettingsPickerBlock(
             glyph = "LImage",
@@ -1346,22 +1350,21 @@ private fun ChatSection(
             caption = "Per-conversation composer drafts stored on this device.",
             trailing = { SettingsStatusBadge("info", drafts.toString()) },
         )
-        SettingsStaticRow(
-            glyph = "LCloudOff",
-            title = "Offline queue",
-            caption = if (outbox > 0) {
-                "$outbox ${if (outbox == 1) "message" else "messages"} waiting to send when you're back online."
-            } else {
-                "Empty - every composed message has been delivered."
-            },
-            trailing = {
-                if (outbox > 0) {
-                    SettingsStatusBadge("warn", outbox.toString())
-                } else {
-                    MirrorLucideIcon("LCheck", tint = SubPageInk.Amber400, modifier = Modifier.size(16.dp))
+        outbox.forEach { row ->
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                Text(if (row.failureReason == null) "Waiting to send" else "Not sent — kept for recovery",
+                    fontSize = 13.sp, color = if (row.failureReason == null) SubPageInk.Amber400 else Color(0xFFEF4444))
+                Text(row.content, fontSize = 13.sp, maxLines = 4)
+                row.failureReason?.let { Text(it, fontSize = 11.sp) }
+                Row {
+                    androidx.compose.material3.TextButton(onClick = {
+                        clipboard.setText(androidx.compose.ui.text.AnnotatedString(row.content))
+                    }) { Text("Copy text") }
+                    androidx.compose.material3.TextButton(onClick = { onDiscard(row.clientId) }) { Text("Discard") }
                 }
-            },
-        )
+            }
+        }
+        if (outbox.isEmpty()) Text("No retained outgoing messages.", fontSize = 12.sp)
     }
 }
 
@@ -1938,7 +1941,7 @@ private fun DataSection(
             glyph = "LCloudOff",
             title = "Offline queue",
             caption = if (outbox > 0) {
-                "$outbox waiting - discarding drops them without sending."
+                "$outbox retained messages, including any failed sends. Discarding removes their recovery copies."
             } else {
                 "Empty - nothing queued right now."
             },

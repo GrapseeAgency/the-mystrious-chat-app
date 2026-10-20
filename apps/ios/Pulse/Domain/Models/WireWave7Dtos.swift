@@ -42,6 +42,7 @@ public struct WireRedPacketDetail: Codable, Hashable, Sendable {
 }
 
 public struct WireRedPacketGrabResult: Codable, Hashable, Sendable {
+    public var alreadyGrabbed: Bool? = nil
     public let amount: Int
     public let grabbed: Int?
     public let count: Int?
@@ -68,6 +69,8 @@ public struct WireWhiteboardStroke: Codable, Hashable, Sendable {
 }
 
 public struct WireWhiteboardPage: Codable, Sendable {
+    public var operationsVersion: Int? = nil
+    public var complete: Bool? = nil
     public let strokes: [WireWhiteboardStroke]?
     public let serverTime: Int64?
     public let resetAt: Int64?
@@ -77,6 +80,8 @@ public struct WireWhiteboardStrokePost: Codable, Equatable, Sendable {
     public let color: String
     public let width: Double
     public let points: [[Double]]
+    public var clientId: String? = nil
+    public var baseResetAt: Int64? = nil
 }
 
 public struct WireWhiteboardPostResult: Codable, Sendable {
@@ -202,6 +207,7 @@ public struct WireReminderItem: Codable, Hashable, Sendable {
 
 public struct WireRemindersPage: Codable, Sendable {
     public let items: [WireReminderItem]
+    public var nextCursor: String? = nil
 }
 
 public struct WireReminderEnvelope: Codable, Sendable {
@@ -245,6 +251,8 @@ public struct WireGameDetail: Codable, Sendable {
 }
 
 public struct WireGameMatchCreateResult: Codable, Sendable {
+    public let clientId: String?
+    public let replayed: Bool?
     public let match: WireGameMatch?
     public let message: WireChatMessage?
 }
@@ -295,6 +303,8 @@ public struct WireTournamentEnvelope: Codable, Sendable {
 }
 
 public struct WireTournamentCreateResult: Codable, Sendable {
+    public let clientId: String?
+    public let replayed: Bool?
     public let tournament: WireTournamentSummary?
     public let message: WireChatMessage?
 }
@@ -351,6 +361,7 @@ public struct WireTransferTo: Codable, Hashable, Sendable {
 }
 
 public struct WireTransferResult: Codable, Sendable {
+    public var clientId: String? = nil
     public let wallet: WireWallet?
     public let to: WireTransferTo?
 }
@@ -374,6 +385,7 @@ public struct WireSwapPage: Codable, Sendable {
 }
 
 public struct WireSwapResult: Codable, Sendable {
+    public var clientId: String? = nil
     public let wallet: WireWallet?
     public let note: String?
 }

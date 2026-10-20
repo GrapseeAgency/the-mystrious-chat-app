@@ -3,7 +3,7 @@ import XCTest
 
 /// Wave 0 - outbox engine semantics, mirroring src/lib/pulse-outbox.ts:
 /// FIFO ≤50, stop-at-first-network-failure, temp→real swap on success,
-/// 4xx drop + continue. The APIClient boundary is the ONLY mock seam.
+/// Permanent rejection retained as failed + continue. The APIClient boundary is the ONLY mock seam.
 @MainActor
 final class PulseOutboxTests: XCTestCase {
     // stubbed sender (test-only)
@@ -13,11 +13,23 @@ final class PulseOutboxTests: XCTestCase {
             case success
             case httpError(status: Int)
             case networkError
+            case roomCooldown(seconds: Int)
+        }
+
+        var uploadCount = 0
+        var beforeUploadReturn: (() throws -> Void)?
+        func uploadMedia(dataUrl: String) async throws -> String {
+            uploadCount += 1
+            try beforeUploadReturn?()
+            return "uploaded-file.pdf"
         }
 
         private let lock = NSLock()
         private var behaviors: [String: Behavior]
         private var attempted: [String] = []
+        var beforeSend: ((String) throws -> Void)?
+        private(set) var operationIds: [String] = []
+        private(set) var metadata: [String] = []
         /// R1-W2B D28 - every sendMessage's forward-relevant body, recorded
         /// as "kind|imagePath|audioPath|durationMs|filePath|fileName|fileSize"
         /// so the flush pass-through is pinned in tests.
@@ -25,6 +37,11 @@ final class PulseOutboxTests: XCTestCase {
 
         init(behaviors: [String: Behavior]) {
             self.behaviors = behaviors
+        }
+
+        func setBehavior(_ behavior: Behavior, for content: String) {
+            lock.lock(); defer { lock.unlock() }
+            behaviors[content] = behavior
         }
 
         private func behavior(for content: String) -> Behavior {
@@ -52,6 +69,7 @@ final class PulseOutboxTests: XCTestCase {
         // every media/thread field - queued sends stay text-only).
         func sendMessage(
             conversationId: String,
+            clientId: String,
             content: String,
             replyToId: String?,
             parentId: String?,
@@ -69,15 +87,20 @@ final class PulseOutboxTests: XCTestCase {
         ) async throws -> WireChatMessage {
             lock.lock()
             attempted.append(content)
+            operationIds.append(clientId)
+            metadata.append("\(replyToId ?? "nil")|\(topicId ?? "nil")|\(anon == true)")
             attemptedBodies.append(
                 "\(kind ?? "nil")|\(imagePath ?? "nil")|\(audioPath ?? "nil")|\(durationMs.map { String($0) } ?? "nil")|\(filePath ?? "nil")|\(fileName ?? "nil")|\(fileSize.map { String($0) } ?? "nil")",
             )
             lock.unlock()
+            try beforeSend?(content)
             switch behavior(for: content) {
             case .success:
                 return OutboxFixtures.makeMessage(id: "srv-\(content)", conversationId: conversationId, content: content)
             case .httpError(let status):
                 throw PulseAPIClient.Failure(kind: PulseAPIClient.kind(for: status), message: "server said no", status: status)
+            case .roomCooldown(let seconds):
+                throw PulseAPIClient.Failure(kind: .rateLimited, message: "slow mode", code: "slow_mode", status: 429, retryAfter: seconds)
             case .networkError:
                 throw PulseAPIClient.Failure(kind: .network, message: nil)
             }
@@ -87,7 +110,7 @@ final class PulseOutboxTests: XCTestCase {
     // engine helper
 
     private func makeEngine(_ store: PulseStore, _ sender: StubSender?) -> PulseOutboxEngine {
-        PulseOutboxEngine(store: store) { sender }
+        PulseOutboxEngine(store: store, monitorNetwork: false) { sender }
     }
 
     // queue shape
@@ -103,15 +126,15 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(engine.count(), 12)
     }
 
-    func testQueueCapsAtFiftyDroppingOldest() throws {
+    func testQueueRetainsEveryAcceptedMessageBeyondOneBatch() throws {
         let store = try PulseStore()
         let engine = makeEngine(store, nil)
         for index in 0..<55 {
             engine.append(conversationId: "c1", clientId: "cap-\(index)", content: "msg \(index)")
         }
-        XCTAssertEqual(engine.count(), 50)
+        XCTAssertEqual(engine.count(), 55)
         let rows = try store.outboxAll()
-        XCTAssertEqual(rows.first?.clientId, "cap-5")
+        XCTAssertEqual(rows.first?.clientId, "cap-0")
         XCTAssertEqual(rows.last?.clientId, "cap-54")
     }
 
@@ -174,7 +197,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(rows.last?.attempts, 0)
     }
 
-    func testHTTP4xxDropsEntryDeletesTempRowAndContinues() async throws {
+    func testHTTP4xxRetainsFailedIntentRetractsEchoAndContinues() async throws {
         let store = try PulseStore()
         try store.upsert(messages: [OutboxFixtures.makeMessage(
             id: PulseOutboxEngine.tempMessageId(clientId: "cid-bad"),
@@ -195,11 +218,16 @@ final class PulseOutboxTests: XCTestCase {
 
         await engine.flush()
 
-        // The 4xx entry was dropped (temp row deleted) and the drain
+        // The rejected intent is retained (temp row retracted) and the drain
         // CONTINUED - the next entry was still delivered.
         XCTAssertEqual(sender.attempts(of: "bad"), 1)
         XCTAssertEqual(sender.attempts(of: "good"), 1)
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertEqual(try store.outboxAll().first?.content, "bad")
+        XCTAssertNotNil(try store.outboxAll().first?.failureReason)
+        await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "bad"), 1) // retained is not auto-retried
         XCTAssertEqual(drops, 1)
         let messages = try store.messages(conversationId: "c1")
         XCTAssertTrue(messages.contains { $0.id == "srv-good" })
@@ -214,6 +242,36 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertFalse(PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: .network, message: nil)))
         XCTAssertFalse(PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: .server, message: nil, status: 502)))
         XCTAssertFalse(PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: .unknown, message: nil)))
+    }
+
+    func testTransientHTTPFailuresRetainIntent() async throws {
+        for status in [401, 408, 425, 429, 500, 503] {
+            let store = try PulseStore()
+            try store.appendOutbox(conversationId: "c1", clientId: "a", content: "keep")
+            let sender = StubSender(behaviors: ["keep": .httpError(status: status)])
+            let engine = makeEngine(store, sender)
+            defer { engine.stop() }
+            XCTAssertFalse(isDroppableHTTPStatus(status))
+            let complete = await engine.flush()
+            XCTAssertFalse(complete)
+            XCTAssertEqual(try store.outboxAll().map(\.content), ["keep"])
+        }
+    }
+
+    private func isDroppableHTTPStatus(_ status: Int) -> Bool {
+        PulseOutboxEngine.isDroppable(PulseAPIClient.Failure(kind: PulseAPIClient.kind(for: status), message: nil, status: status))
+    }
+
+    func testStoppedEngineCannotSend() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "a", content: "keep")
+        let sender = StubSender(behaviors: [:])
+        let engine = makeEngine(store, sender)
+        engine.stop()
+        let complete = await engine.flush()
+        XCTAssertFalse(complete)
+        XCTAssertEqual(sender.attempts(of: "keep"), 0)
+        XCTAssertEqual(store.countOutbox(), 1)
     }
 
     // R1-W2B D28 - queued forwards flush with their stored body
@@ -260,9 +318,290 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(store.countOutbox(), 0)
         XCTAssertEqual(
             sender.recordedBody(at: 0),
-            "nil|nil|nil|nil|nil|nil|nil",
+            "text|nil|nil|nil|nil|nil|nil",
         )
     }
+    func testRetriesKeepTheOperationIdAndQuotedTopicMetadata() async throws {
+        let store = try PulseStore()
+        let sender = StubSender(behaviors: ["pending": .networkError])
+        let envelope = PulseOutboxForward(replyToId: "quote", topicId: "topic", anon: true)
+        try store.appendOutbox(conversationId: "c1", clientId: "operation-stable-id", content: "pending",
+                               payloadJson: PulseOutboxForward.encode(envelope))
+        let engine = makeEngine(store, sender)
+        await engine.flush()
+        await engine.flush()
+        XCTAssertEqual(sender.operationIds, ["operation-stable-id", "operation-stable-id"])
+        XCTAssertEqual(sender.metadata, ["quote|topic|true", "quote|topic|true"])
+        XCTAssertEqual(store.countOutbox(), 1)
+        engine.stop()
+    }
+
+    func testExactAcknowledgementRetainsAnotherIdenticalPendingSend() throws {
+        let store = try PulseStore()
+        let a = OutboxFixtures.makeMessage(id: "local_operation-a", conversationId: "c1", content: "same")
+        let b = OutboxFixtures.makeMessage(id: "local_operation-b", conversationId: "c1", content: "same")
+        try store.enqueueMessage(a, clientId: "operation-a", envelope: PulseOutboxForward())
+        try store.enqueueMessage(b, clientId: "operation-b", envelope: PulseOutboxForward())
+        try store.resolveDelivery(clientId: "operation-a", message: OutboxFixtures.makeMessage(id: "real-a", conversationId: "c1", content: "same"))
+        XCTAssertEqual(try store.outboxAll().map(\.clientId), ["operation-b"])
+        // Replay the same acknowledgement: still no effect on operation B.
+        try store.resolveDelivery(clientId: "operation-a", message: OutboxFixtures.makeMessage(id: "real-a", conversationId: "c1", content: "same"))
+        XCTAssertEqual(store.countOutbox(), 1)
+    }
+
+    func testConflictingLocalKeyIsReportedNotPretendedQueued() throws {
+        let store = try PulseStore()
+        let engine = makeEngine(store, nil)
+        XCTAssertTrue(engine.append(conversationId: "c1", clientId: "same-key", content: "first"))
+        XCTAssertTrue(engine.append(conversationId: "c1", clientId: "same-key", content: "first"))
+        XCTAssertFalse(engine.append(conversationId: "c1", clientId: "same-key", content: "changed"))
+        XCTAssertEqual(try store.outboxAll().map(\.content), ["first"])
+        engine.stop()
+    }
+
+    func testMalformedEnvelopeIsRetainedRatherThanSendingAlteredContent() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "operation-corrupt", content: "private", payloadJson: "not-json")
+        let sender = StubSender(behaviors: [:])
+        let engine = makeEngine(store, sender)
+        await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "private"), 0)
+        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertNotNil(try store.outboxAll().first?.failureReason)
+        engine.stop()
+    }
+
+    func testRejectionPreservesEnvelopeWithoutOverwritingNewComposer() throws {
+        let store = try PulseStore()
+        let message = OutboxFixtures.makeMessage(id: "local_failed", conversationId: "c1", content: "old send")
+        let envelope = PulseOutboxForward(replyToId: "quote", topicId: "topic", anon: true)
+        try store.enqueueMessage(message, clientId: "failed", envelope: envelope)
+        try store.saveDraft(conversationId: "c1", text: "new unsent thought")
+        XCTAssertTrue(try store.rejectOutbox(clientId: "failed", reason: "No longer a member"))
+        XCTAssertEqual(store.draft(conversationId: "c1"), "new unsent thought")
+        let row = try XCTUnwrap(store.outboxAll().first)
+        XCTAssertEqual(row.content, "old send")
+        let storedEnvelope = try XCTUnwrap(row.payloadJson).data(using: .utf8)!
+        let expectedEnvelope = try XCTUnwrap(PulseOutboxForward.encode(envelope)).data(using: .utf8)!
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: storedEnvelope) as? NSDictionary,
+                       try JSONSerialization.jsonObject(with: expectedEnvelope) as? NSDictionary)
+        XCTAssertEqual(row.failureReason, "No longer a member")
+        XCTAssertTrue(try store.outboxPending().isEmpty)
+    }
+
+    func testLateRefusalCannotUndoAnAlreadyResolvedDelivery() throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "operation", content: "sent")
+        try store.resolveDelivery(clientId: "operation",
+            message: OutboxFixtures.makeMessage(id: "server", conversationId: "c1", content: "sent"))
+        XCTAssertFalse(try store.rejectOutbox(clientId: "operation", reason: "late competing request"))
+        XCTAssertTrue(try store.outboxAll().isEmpty)
+        XCTAssertTrue(try store.messages(conversationId: "c1").contains { $0.id == "server" })
+    }
+
+    func testFailedRowsDoNotStarvePendingBatch() async throws {
+        let store = try PulseStore()
+        for index in 0..<55 {
+            let id = "failed-\(index)"
+            try store.appendOutbox(conversationId: "c1", clientId: id, content: "bad")
+            try store.rejectOutbox(clientId: id, reason: "refused")
+        }
+        try store.appendOutbox(conversationId: "c1", clientId: "good", content: "good")
+        let sender = StubSender(behaviors: [:])
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "bad"), 0)
+        XCTAssertEqual(sender.attempts(of: "good"), 1)
+        XCTAssertEqual(store.countOutbox(), 55)
+        XCTAssertEqual(store.countPendingOutbox(), 0)
+    }
+
+    func testDiscardRemovesPendingEchoAndIntentTogether() throws {
+        let store = try PulseStore()
+        try store.enqueueMessage(OutboxFixtures.makeMessage(id: "local_discard", conversationId: "c1", content: "unsent"),
+            clientId: "discard", envelope: PulseOutboxForward())
+        XCTAssertTrue(try store.isPendingOutbox(clientId: "discard"))
+        try store.deleteOutbox(clientId: "discard")
+        XCTAssertFalse(try store.isPendingOutbox(clientId: "discard"))
+        XCTAssertTrue(try store.messages(conversationId: "c1").isEmpty)
+        XCTAssertTrue(try store.outboxAll().isEmpty)
+    }
+
+    func testDiscardDuringDrainSkipsLaterSnapshotEntry() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "first", content: "first")
+        try store.appendOutbox(conversationId: "c1", clientId: "second", content: "second")
+        let sender = StubSender(behaviors: [:])
+        sender.beforeSend = { content in
+            if content == "first" { try store.deleteOutbox(clientId: "second") }
+        }
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "first"), 1)
+        XCTAssertEqual(sender.attempts(of: "second"), 0)
+    }
+
+    func testFailedIntentSurvivesDatabaseReopen() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("recovery.sqlite").path
+        do {
+            let store = try PulseStore(path: path)
+            try store.appendOutbox(conversationId: "c1", clientId: "held", content: "keep me", payloadJson: "{\"anon\":true}")
+            try store.rejectOutbox(clientId: "held", reason: "forbidden")
+        }
+        let reopened = try PulseStore(path: path)
+        let row = try XCTUnwrap(reopened.outboxAll().first)
+        XCTAssertEqual(row.content, "keep me")
+        XCTAssertEqual(row.payloadJson, "{\"anon\":true}")
+        XCTAssertEqual(row.failureReason, "forbidden")
+        XCTAssertEqual(reopened.countPendingOutbox(), 0)
+    }
+
+
+    func testUploadReceiptSurvivesLostMessageAckWithoutSecondUpload() async throws {
+        let store = try PulseStore()
+        let message = try PulseAttachmentDelivery.enqueue(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            conversationId: "c1", content: "attachment", dataUrl: "data:application/pdf;base64,JVBERg==",
+            envelope: PulseOutboxForward(kind: "file", fileName: "notes.pdf", topicId: "topic", anon: true))
+        let before = try XCTUnwrap(store.outboxPending().first)
+        let lost = StubSender(behaviors: ["attachment": .networkError])
+        let first = makeEngine(store, lost)
+        await first.flush(); first.stop()
+        let saved = try XCTUnwrap(PulseOutboxForward.decode(store.outboxPending().first?.payloadJson))
+        XCTAssertNil(saved.uploadDataUrl)
+        XCTAssertEqual(saved.filePath, "uploaded-file.pdf")
+        XCTAssertEqual(lost.uploadCount, 1)
+        XCTAssertNotNil(try store.message(id: message.id))
+        let retry = StubSender(behaviors: [:])
+        let reopened = makeEngine(store, retry)
+        defer { reopened.stop() }
+        await reopened.flush()
+        XCTAssertEqual(retry.uploadCount, 0)
+        XCTAssertEqual(lost.operationIds, [before.clientId])
+        XCTAssertEqual(retry.operationIds, [before.clientId])
+        XCTAssertEqual(retry.metadata, ["nil|topic|true"])
+        XCTAssertEqual(retry.recordedBody(at: 0), "file|nil|nil|nil|uploaded-file.pdf|notes.pdf|4")
+        XCTAssertNil(try store.message(id: message.id))
+        XCTAssertEqual(store.countOutbox(), 0)
+    }
+
+    func testUnknownUploadKeepsBytesAndDiscardDuringUploadDoesNotSend() async throws {
+        let store = try PulseStore()
+        _ = try PulseAttachmentDelivery.enqueue(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            conversationId: "c1", content: "held", dataUrl: "data:image/jpeg;base64,aGVsbG8=",
+            envelope: PulseOutboxForward(kind: "image", viewOnce: true))
+        let entry = try XCTUnwrap(store.outboxPending().first)
+        let offline = StubSender(behaviors: [:])
+        offline.beforeUploadReturn = { throw URLError(.networkConnectionLost) }
+        let first = makeEngine(store, offline)
+        await first.flush(); first.stop()
+        XCTAssertNotNil(PulseOutboxForward.decode(try store.outboxPending().first?.payloadJson)?.uploadDataUrl)
+        XCTAssertTrue(offline.operationIds.isEmpty)
+        let discarded = StubSender(behaviors: [:])
+        discarded.beforeUploadReturn = { try store.deleteOutbox(clientId: entry.clientId) }
+        let second = makeEngine(store, discarded)
+        defer { second.stop() }
+        await second.flush()
+        XCTAssertTrue(discarded.operationIds.isEmpty)
+        XCTAssertEqual(store.countOutbox(), 0)
+    }
+
+    func testRejectedAttachmentIsManuallyRetryableWithOriginalBytesAndIdentity() throws {
+        let store = try PulseStore()
+        let message = try PulseAttachmentDelivery.enqueue(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            conversationId: "c1", content: "", dataUrl: "data:audio/mp4;base64,aGVsbG8=",
+            envelope: PulseOutboxForward(kind: "audio", durationMs: 1800))
+        let entry = try XCTUnwrap(store.outboxPending().first)
+        XCTAssertTrue(try store.rejectOutbox(clientId: entry.clientId, reason: "forbidden"))
+        XCTAssertTrue(try store.outboxPending().isEmpty)
+        XCTAssertTrue(try store.retryOutbox(clientId: entry.clientId, message: message))
+        XCTAssertEqual(try store.outboxPending().first?.payloadJson, entry.payloadJson)
+        XCTAssertEqual(try store.outboxPending().first?.clientId, entry.clientId)
+        try store.deleteOutbox(clientId: entry.clientId)
+        XCTAssertFalse(try store.retryOutbox(clientId: entry.clientId, message: message))
+        XCTAssertNil(try store.message(id: message.id))
+    }
+
+    func testMonotonicRetryHoldSurvivesRepeatedFlushAndShorterHold() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "c1", clientId: "held", content: "held")
+        var now: TimeInterval = 100
+        let sender = StubSender(behaviors: [:])
+        let engine = PulseOutboxEngine(store: store, monitorNetwork: false, monotonicNow: { now }, senderProvider: { sender })
+        defer { engine.stop() }
+        engine.holdRetries(seconds: 60)
+        now = 110
+        engine.holdRetries(seconds: 1)
+        _ = await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "held"), 0)
+        now = 160
+        _ = await engine.flush()
+        XCTAssertEqual(sender.attempts(of: "held"), 1)
+        XCTAssertEqual(store.countPendingOutbox(), 0)
+    }
+
+    func testRoomCooldownBypassesLongPrefixButPreservesThatRoomsFIFOAndIdentity() async throws {
+        let store = try PulseStore()
+        for i in 0..<75 { try store.appendOutbox(conversationId: "slow", clientId: "slow-\(i)", content: "slow-\(i)") }
+        try store.appendOutbox(conversationId: "direct", clientId: "direct", content: "direct")
+        var now: TimeInterval = 100
+        let sender = StubSender(behaviors: ["slow-0": .roomCooldown(seconds: 60)])
+        let engine = PulseOutboxEngine(store: store, monitorNetwork: false, monotonicNow: { now }) { sender }
+        defer { engine.stop() }
+        _ = await engine.flush()
+        XCTAssertEqual(sender.operationIds, ["slow-0", "direct"])
+        XCTAssertEqual(store.countPendingOutbox(), 75)
+        _ = await engine.flush()
+        XCTAssertEqual(sender.operationIds, ["slow-0", "direct"])
+        sender.setBehavior(.success, for: "slow-0")
+        now += 60
+        _ = await engine.flush()
+        XCTAssertEqual(Array(sender.operationIds.dropFirst(2)), (0..<50).map { "slow-\($0)" })
+        XCTAssertEqual(store.countPendingOutbox(), 25)
+    }
+
+    func testUnknown429StillHoldsEveryRoom() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "a", clientId: "a", content: "a")
+        try store.appendOutbox(conversationId: "b", clientId: "b", content: "b")
+        let sender = StubSender(behaviors: ["a": .httpError(status: 429)])
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        _ = await engine.flush()
+        _ = await engine.flush()
+        XCTAssertEqual(sender.operationIds, ["a"])
+        XCTAssertEqual(store.countPendingOutbox(), 2)
+    }
+
+    func testUpload429CannotPretendToBeRoomSlowMode() async throws {
+        let store = try PulseStore()
+        _ = try PulseAttachmentDelivery.enqueue(store: store, viewer: PulseViewer(id: "me", name: "Me"),
+            conversationId: "a", content: "", dataUrl: "data:audio/mp4;base64,aGVsbG8=", envelope: PulseOutboxForward(kind: "audio", durationMs: 1800))
+        try store.appendOutbox(conversationId: "b", clientId: "b", content: "b")
+        let sender = StubSender(behaviors: [:])
+        sender.beforeUploadReturn = { throw PulseAPIClient.Failure(kind: .rateLimited, message: "upload throttle", code: "slow_mode", status: 429, retryAfter: 60) }
+        let engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        _ = await engine.flush()
+        _ = await engine.flush()
+        XCTAssertEqual(sender.uploadCount, 1)
+        XCTAssertTrue(sender.operationIds.isEmpty)
+        XCTAssertEqual(store.countPendingOutbox(), 2)
+    }
+
+    func testRetryAfterHTTPDateUsesGatewayClockAndMalformedHeaderIsNotAZeroDelay() {
+        XCTAssertEqual(PulseAPIClient.retryAfterSeconds("120", serverDate: nil), 120)
+        XCTAssertEqual(PulseAPIClient.retryAfterSeconds("Tue, 20 Oct 2026 12:02:00 GMT",
+            serverDate: "Tue, 20 Oct 2026 12:00:00 GMT", now: Date(timeIntervalSince1970: 0)), 120)
+        XCTAssertNil(PulseAPIClient.retryAfterSeconds("broken", serverDate: nil))
+        XCTAssertNil(PulseAPIClient.retryAfterSeconds("-3", serverDate: nil))
+    }
+
 }
 
 /// Shared fixture builder - WireChatMessage's memberwise init is internal,

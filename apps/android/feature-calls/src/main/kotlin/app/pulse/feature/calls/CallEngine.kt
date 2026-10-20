@@ -139,6 +139,7 @@ class CallEngine @Inject constructor(
     val snapshot: StateFlow<CallSnapshot> = machine.snapshot
 
     init {
+        audio.onFocusLost = { scope.launch { perform(machine.dispatch(CallEvent.PeerFailed)) } }
         // Relay call:* signals → the state machine (offer/answer/ice/…).
         scope.launch {
             repo.events().collect { event ->
@@ -467,6 +468,7 @@ class CallEngine @Inject constructor(
      */
     private fun acquireMedia(effect: CallEffect.AcquireMedia) {
         runCatching {
+            check(audio.acquire()) { "Audio is unavailable or in use by another live session." }
             ensureFactory()
             if (localTrack == null) {
                 val constraints = MediaConstraints().apply {
@@ -479,7 +481,6 @@ class CallEngine @Inject constructor(
                 localTrack = track
                 _micMuted.value = false
             }
-            audio.acquire()
             // Real camera path - direction decides the gate (same policy for
             // both sides):
             //   CALLER - kind already resolved against camera capability at

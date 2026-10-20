@@ -1,0 +1,93 @@
+package app.pulse.data.remote
+
+import app.pulse.core.result.PulseResult
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.*
+import org.junit.Test
+
+class WalletAcknowledgementTest {
+    @Test fun `red packet replay acknowledgement is distinguished from a new payout`() = runTest {
+        val http = HttpClient(MockEngine { respond("""{"amount":3,"grabbed":2,"count":2,"alreadyGrabbed":true}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+        try {
+            val result = PulseApi(http, gateway = { "https://wallet.test" }).grabRedPacket("packet", "me")
+            assertTrue(result is PulseResult.Success)
+            assertTrue((result as PulseResult.Success).value.alreadyGrabbed)
+        } finally { http.close() }
+    }
+    @Test fun `red packet cannot acknowledge zero or an impossible payout cursor`() = runTest {
+        for (body in listOf("{}", """{"amount":3,"grabbed":2,"count":1}""")) {
+            val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+            try { assertTrue(PulseApi(http, gateway = { "https://wallet.test" }).grabRedPacket("packet", "me") is PulseResult.Failure) }
+            finally { http.close() }
+        }
+    }
+    @Test fun `daily reward cannot be celebrated from missing or inconsistent acknowledgement`() = runTest {
+        for (body in listOf("{}", """{"wallet":{"userId":"me","coins":50,"gems":0,"streak":2,"lastCheckIn":"2026-10-20T00:00:00Z"},"reward":25,"streak":2}""")) {
+            val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+            try { assertTrue(PulseApi(http, gateway = { "https://wallet.test" }).checkinWallet("me") is PulseResult.Failure) }
+            finally { http.close() }
+        }
+    }
+    @Test fun `recipient normalization cannot change with device locale`() = runTest {
+        val previous = java.util.Locale.getDefault()
+        val http = HttpClient(MockEngine { request ->
+            val body = (request.body as io.ktor.http.content.OutgoingContent.ByteArrayContent).bytes().decodeToString()
+            assertTrue(body.contains("\"toUsername\":\"inci\""))
+            respond("""{"wallet":{"userId":"me","coins":10,"gems":0},"to":{"id":"other"}}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+        })
+        try {
+            java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"))
+            assertTrue(PulseApi(http, gateway = { "https://wallet.test" }).transferCoins("me", "@INCI", 1, null) is PulseResult.Success)
+        } finally { java.util.Locale.setDefault(previous); http.close() }
+    }
+    @Test fun `purchase requires both affirmative confirmation and a valid wallet`() = runTest {
+        for (body in listOf("""{"ok":false,"wallet":{"userId":"me","coins":50,"gems":0}}""", """{"ok":true,"wallet":{}}""")) {
+            val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+            try { assertTrue(PulseApi(http, gateway = { "https://wallet.test" }).buyListing("item", "me") is PulseResult.Failure) }
+            finally { http.close() }
+        }
+    }
+    @Test fun `identified mutations use only the receipt endpoint and require matching echo`() = runTest {
+        val id = "operation-00000001"
+        var echo = "wrong-operation"
+        val http = HttpClient(MockEngine { request ->
+            assertEquals("/api/hub/wallet/operations/swap", request.url.encodedPath)
+            val body = (request.body as io.ktor.http.content.OutgoingContent.ByteArrayContent).bytes().decodeToString()
+            assertTrue(body.contains(id))
+            respond("""{"clientId":"$echo","wallet":{"userId":"me","coins":0,"gems":1}}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+        })
+        try {
+            val api = PulseApi(http, gateway = { "https://wallet.test" })
+            assertTrue(api.swap("me", "pc2gem", 100, id) is PulseResult.Failure)
+            echo = id
+            assertTrue(api.swap("me", "pc2gem", 100, id) is PulseResult.Success)
+        } finally { http.close() }
+    }
+    @Test fun `HTTP 200 with missing or wrong owner wallet cannot acknowledge transfer`() = runTest {
+        for (body in listOf("""{"wallet":{},"to":{"id":"other"}}""",
+            """{"wallet":{"userId":"wrong","coins":10,"gems":0},"to":{"id":"other"}}""",
+            """{"wallet":{"userId":"me","coins":-1,"gems":0},"to":{"id":"other"}}""")) {
+            val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+            try {
+                val result = PulseApi(http, gateway = { "https://wallet.test" }).transferCoins("me", "other", 1, null)
+                assertTrue(result is PulseResult.Failure)
+            } finally { http.close() }
+        }
+    }
+    @Test fun `swap requires a complete balance acknowledgement and preserves HTTP rejection`() = runTest {
+        for ((body, status) in listOf("""{"wallet":{},"note":"Swap complete"}""" to HttpStatusCode.OK,
+            """{"error":"Insufficient balance"}""" to HttpStatusCode.PaymentRequired)) {
+            val http = HttpClient(MockEngine { respond(body, status, headersOf("Content-Type", "application/json")) })
+            try {
+                val result = PulseApi(http, gateway = { "https://wallet.test" }).swap("me", "pc2gem", 100)
+                assertTrue(result is PulseResult.Failure)
+                if (status.value == 402) assertEquals(402, (result as PulseResult.Failure).status)
+            } finally { http.close() }
+        }
+    }
+}

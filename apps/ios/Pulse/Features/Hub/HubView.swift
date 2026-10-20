@@ -33,6 +33,11 @@ final class HubViewModel: ObservableObject {
     }
 
     @Published var wallet = WalletUi()
+    @Published private(set) var walletMutationBusy = false
+    private var walletRequest = UUID()
+    private var marketRequest = UUID()
+    private var logsRequest = UUID()
+    private var appsRequest = UUID()
     @Published var tasks: [WireHubTask] = []
     @Published var listings: [WireMarketListing] = []
     @Published var logs: [WireHubLog] = []
@@ -76,18 +81,25 @@ final class HubViewModel: ObservableObject {
     // MARK: wallet + checkin
 
     func loadWallet() {
+        let ticket = UUID()
+        walletRequest = ticket
+        let epoch = session.sessionGeneration
+        let capturedAPI = api
         Task { @MainActor in
+            guard walletRequest == ticket, session.sessionGeneration == epoch else { return }
             wallet.loading = true
             wallet.error = nil
-            guard let api = api else {
+            guard let api = capturedAPI else {
                 wallet.loading = false
                 wallet.error = "No gateway configured - set your server in Profile → Connection."
                 return
             }
             do {
                 let page = try await api.walletPage()
+                guard walletRequest == ticket, session.sessionGeneration == epoch else { return }
                 wallet = WalletUi(loading: false, page: page, stale: false, error: nil)
             } catch {
+                guard walletRequest == ticket, session.sessionGeneration == epoch else { return }
                 wallet.stale = wallet.page != nil
                 wallet.loading = false
                 if wallet.page == nil { wallet.error = describe(error) }
@@ -96,44 +108,57 @@ final class HubViewModel: ObservableObject {
     }
 
     func checkin() {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                let result = try await api.checkinWallet()
-                let streak = result.streak ?? 1
-                // R1-W2G D38 - F-HB-02 "Success haptic + particles". The web
-                // check-in is toast-only (hub-tab.tsx:89-99); the native
-                // reward moment exceeds it per spec: ONE confetti burst
-                // through the shared ParticleBus (same pattern as the
-                // ChatRoomView fires; the overlay + Reduce Motion gate live
-                // in RootView) plus ONE success haptic, once per successful
-                // check-in. The failure path stays silent.
-                session.particles.fire(kind: .confetti, count: 60)
+        guard let api else { return }
+        performWalletMutation(operation: {
+            let result = try await api.checkinWallet()
+            return "Checked in - +\(result.reward ?? 0) PC · \(result.streak ?? 0)-day streak"
+        }, completion: { result in
+            switch result {
+            case .success(let message):
+                self.session.particles.fire(kind: .confetti, count: 60)
                 PulseHaptics.success()
-                toast("Checked in - +\(result.reward ?? 25) PC" + (streak > 1 ? " · \(streak)-day streak" : ""))
-                loadWallet()
-            } catch {
-                loadWallet()
-                toast(describe(error), isError: true)
+                self.toast(message)
+            case .failure(let error): self.toast(self.describe(error), isError: true)
             }
-        }
+            self.loadWallet()
+        })
     }
 
     // MARK: transfer
 
-    func transfer(handle: String, amount: Int, note: String?, completion: @escaping (Bool) -> Void) {
-        Task { @MainActor in
-            guard let api = api else { return }
+    /// Gate is taken before creating the task, not after its first suspension.
+    @discardableResult
+    func performWalletMutation(operation: @escaping () async throws -> String,
+                               completion: @escaping (Result<String, Error>) -> Void) -> Task<Void, Never>? {
+        guard !walletMutationBusy else { return nil }
+        walletMutationBusy = true
+        let epoch = session.sessionGeneration
+        return Task { @MainActor in
+            defer { walletMutationBusy = false }
+            guard session.sessionGeneration == epoch else { return }
             do {
-                let result = try await api.transferCoins(toUsername: handle, amount: amount, note: note)
-                toast("Sent \(amount) PC to @\(result.to?.username ?? result.to?.name ?? "?")")
-                loadWallet()
-                completion(true)
+                try Task.checkCancellation()
+                let message = try await operation()
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                completion(.success(message))
             } catch {
-                toast(describe(error), isError: true)
-                completion(false)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                completion(.failure(error))
             }
         }
+    }
+
+    func transfer(handle: String, amount: Int, note: String?, completion: @escaping (Bool) -> Void) {
+        guard let api else { completion(false); return }
+        performWalletMutation(operation: {
+            let result = try await api.transferCoins(toUsername: handle, amount: amount, note: note)
+            return "Sent \(amount) PC to @\(result.to?.username ?? result.to?.name ?? "?")"
+        }, completion: { result in
+            switch result {
+            case .success(let message): self.toast(message); self.loadWallet(); completion(true)
+            case .failure(let error): self.toast(self.describe(error), isError: true); completion(false)
+            }
+        })
     }
 
     // MARK: swap
@@ -146,18 +171,16 @@ final class HubViewModel: ObservableObject {
     }
 
     func swap(direction: String, amount: Int, completion: @escaping (Bool) -> Void) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                let result = try await api.swap(direction: direction, amount: amount)
-                toast(result.note ?? "Swap complete")
-                loadWallet()
-                completion(true)
-            } catch {
-                toast(describe(error), isError: true)
-                completion(false)
+        guard let api else { completion(false); return }
+        performWalletMutation(operation: {
+            let result = try await api.swap(direction: direction, amount: amount)
+            return result.note ?? "Swap complete"
+        }, completion: { result in
+            switch result {
+            case .success(let message): self.toast(message); self.loadWallet(); completion(true)
+            case .failure(let error): self.toast(self.describe(error), isError: true); completion(false)
             }
-        }
+        })
     }
 
     // MARK: tasks
@@ -238,9 +261,19 @@ final class HubViewModel: ObservableObject {
     // MARK: market
 
     func loadMarket() {
+        let ticket = UUID()
+        marketRequest = ticket
+        let epoch = session.sessionGeneration
         Task { @MainActor in
             guard let api = api else { return }
-            listings = (try? await api.market().listings) ?? []
+            do {
+                let fresh = try await api.market().listings
+                guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
+                listings = fresh
+            } catch {
+                guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
+                toast(describe(error), isError: true) // keep the last real list
+            }
         }
     }
 
@@ -258,25 +291,34 @@ final class HubViewModel: ObservableObject {
     }
 
     func buy(_ listing: WireMarketListing) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                _ = try await api.buyListing(listing.id)
-                toast("Bought \"\(listing.title ?? "")\"")
-                loadWallet()
-                loadMarket()
-            } catch {
-                toast(describe(error), isError: true)
+        guard let api else { return }
+        performWalletMutation(operation: {
+            _ = try await api.buyListing(listing.id)
+            return "Bought \"\(listing.title ?? "")\""
+        }, completion: { result in
+            switch result {
+            case .success(let message): self.toast(message); self.loadWallet(); self.loadMarket()
+            case .failure(let error): self.toast(self.describe(error), isError: true)
             }
-        }
+        })
     }
 
     // MARK: logs
 
     func loadLogs() {
+        let ticket = UUID()
+        logsRequest = ticket
+        let epoch = session.sessionGeneration
         Task { @MainActor in
             guard let api = api else { return }
-            logs = (try? await api.hubLogs(limit: 80, kind: nil).logs) ?? []
+            do {
+                let fresh = try await api.hubLogs(limit: 80, kind: nil).logs
+                guard logsRequest == ticket, session.sessionGeneration == epoch else { return }
+                logs = fresh
+            } catch {
+                guard logsRequest == ticket, session.sessionGeneration == epoch else { return }
+                toast(describe(error), isError: true) // keep the last real list
+            }
         }
     }
 
@@ -345,11 +387,16 @@ final class HubViewModel: ObservableObject {
 
     /// F-HB-10 - My apps fan-out (web hub-data.tsx:61,107 parity).
     func loadMyApps(_ catalog: HubCatalog) {
+        let ticket = UUID()
+        appsRequest = ticket
+        let epoch = session.sessionGeneration
         Task { @MainActor in
             guard let api = api else { return }
-            for app in catalog.apps.prefix(24) {
+            for app in catalog.apps {
+                guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
                 let appId = String(app.n)
                 if let state = try? await api.appInstallState(appId: appId) {
+                    guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
                     installs[appId] = state
                 }
             }
@@ -477,7 +524,7 @@ struct HubView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(checkedIn || vm.wallet.loading)
+            .disabled(checkedIn || vm.wallet.loading || vm.walletMutationBusy)
             if let w = vm.wallet.page?.wallet, !checkedIn, let streak = w.streak, streak > 0 {
                 Text("Next check-in continues your \(streak)-day streak (+\(min(streak * 2, 20)) bonus)")
                     .font(.caption2)
@@ -639,6 +686,7 @@ private struct HubTransferSheet: View {
                 }
             }
         }
+        .disabled(vm.walletMutationBusy)
         .navigationTitle("Send PC")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -686,6 +734,7 @@ private struct HubSwapSheet: View {
                 }
             }
         }
+        .disabled(vm.walletMutationBusy)
         .navigationTitle("PC ⇄ GEM")
         .navigationBarTitleDisplayMode(.inline)
         .task { vm.loadSwap() }
@@ -795,10 +844,12 @@ private struct HubMarketSheet: View {
                         } else if confirmBuy == listing.id {
                             Button("No") { confirmBuy = nil }.buttonStyle(.borderless)
                             Button("Buy") { vm.buy(listing); confirmBuy = nil }
+                                .disabled(vm.walletMutationBusy)
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.small)
                         } else {
                             Button("Buy") { confirmBuy = listing.id }
+                                .disabled(vm.walletMutationBusy)
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
                         }

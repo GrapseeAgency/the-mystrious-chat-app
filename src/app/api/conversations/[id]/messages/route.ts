@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { db } from '@/lib/db'
+import { messageDeliveryDecision } from '@/lib/scheduled-delivery'
+import { threadRootAvailable } from '@/lib/message-visibility'
+import { decodeMessageSyncCursor, encodeMessageSyncCursor, messageSyncWhere, messagesBefore, MESSAGE_ORDER_ASC, MESSAGE_ORDER_DESC, type MessageSyncCursor } from '@/lib/message-sync'
+import { messageOperation, replayMessageOperation, commitMessageOperation, MessageOperationError } from '@/lib/message-operation'
 import {
   dayKey,
   mapMessage,
@@ -147,6 +151,41 @@ export async function GET(req: Request, { params }: RouteCtx) {
     ? { topicId: topicFilterRaw, deletedAt: null as null }
     : null
 
+  const syncFrom = url.searchParams.get('syncFrom')
+  const syncCursor = url.searchParams.get('syncCursor')
+  if (syncFrom !== null || syncCursor !== null) {
+    if (before || newerThan || url.searchParams.get('q')) {
+      return NextResponse.json({ error: 'Sync cannot be combined with search or legacy cursors.' }, { status: 400 })
+    }
+    let cursor: MessageSyncCursor
+    if (syncCursor) {
+      try { cursor = decodeMessageSyncCursor(syncCursor, id, topicFilterRaw || null) }
+      catch { return NextResponse.json({ error: 'Invalid or mismatched sync cursor.' }, { status: 400 }) }
+    } else {
+      const from = syncFrom && parseIsoDate(syncFrom)
+      if (!from) return NextResponse.json({ error: 'Invalid syncFrom.' }, { status: 400 })
+      // Storage failures must remain server failures, not malformed-request errors.
+      const upper = await db.message.findFirst({
+        where: { conversationId: id, createdAt: { gte: from }, ...(topicFilterRaw ? { topicId: topicFilterRaw } : {}) },
+        orderBy: [...MESSAGE_ORDER_DESC], select: { id: true, createdAt: true },
+      })
+      if (!upper) return NextResponse.json({ messages: [], hasMore: false, total: 0, syncVersion: 1, nextSyncCursor: null })
+      cursor = { v: 1, room: id, topic: topicFilterRaw || null, from: from.toISOString(),
+        upper: { at: upper.createdAt.toISOString(), id: upper.id } }
+    }
+    // Includes soft-deleted rows, including in topic views. The client must
+    // receive the tombstone instead of keeping its cached live version.
+    const rows = await db.message.findMany({ where: messageSyncWhere(cursor),
+      orderBy: [...MESSAGE_ORDER_ASC], take: limit + 1, include: MESSAGE_FULL_INCLUDE })
+    const hasMore = rows.length > limit
+    const page = rows.slice(0, limit)
+    const last = page.at(-1)
+    const nextSyncCursor = hasMore && last ? encodeMessageSyncCursor({ ...cursor,
+      after: { at: last.createdAt.toISOString(), id: last.id } }) : null
+    return NextResponse.json({ messages: page.map(m => mapMessage(m)), hasMore,
+      total: page.length, syncVersion: 1, nextSyncCursor })
+  }
+
   // Search mode - case-insensitive substring scan (SQLite has no ICU collation,
   // so matching happens in Node over the conversation's rows). R41: a kind
   // 'file' message also matches when its document fileName contains the query
@@ -157,7 +196,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     const needle = q.toLowerCase()
     const rows = await db.message.findMany({
       where: { conversationId: id, deletedAt: null },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [...MESSAGE_ORDER_DESC],
       include: MESSAGE_FULL_INCLUDE,
     })
     const matched = rows.filter(
@@ -177,10 +216,10 @@ export async function GET(req: Request, { params }: RouteCtx) {
       db.message.findMany({
         where: {
           conversationId: id,
-          createdAt: { lt: before },
+          ...messagesBefore(before, strField(url.searchParams.get('beforeId')) || undefined),
           ...(topicFilter ?? {}),
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [...MESSAGE_ORDER_DESC],
         take: limit,
         include: MESSAGE_FULL_INCLUDE,
       }),
@@ -199,7 +238,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
         ...(newerThan ? { createdAt: { gt: newerThan } } : {}),
         ...(topicFilter ?? {}),
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [...MESSAGE_ORDER_DESC],
       take: limit,
       include: MESSAGE_FULL_INCLUDE,
     }),
@@ -224,6 +263,34 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const senderId = strField(body.senderId)
   if (!senderId) {
     return NextResponse.json({ error: 'senderId is required.' }, { status: 400 })
+  }
+  // Existence + membership checks up-front → clean 404 / 403 semantics.
+  const [conv, participant] = await Promise.all([
+    db.conversation.findUnique({ where: { id } }),
+    db.conversationParticipant.findUnique({
+      where: { userId_conversationId: { userId: senderId, conversationId: id } },
+      select: { id: true, role: true },
+    }),
+  ])
+  if (!conv) {
+    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  }
+  if (!participant) {
+    return NextResponse.json(
+      { error: 'You are not a participant of this conversation.' },
+      { status: 403 },
+    )
+  }
+
+  const findDelivered = (messageId: string) => db.message.findUnique({ where: { id: messageId }, include: MESSAGE_FULL_INCLUDE })
+  let operation: ReturnType<typeof messageOperation>
+  try {
+    operation = messageOperation(senderId, id, body)
+    const replay = await replayMessageOperation(db, operation, findDelivered)
+    if (replay) return NextResponse.json({ message: mapMessage(replay, senderId), replayed: true, xpAwarded: 0 })
+  } catch (error) {
+    if (error instanceof MessageOperationError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
   const content = strField(body.content)
   if (content.length > MESSAGE_MAX) {
@@ -433,24 +500,6 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
   }
 
-  // Existence + membership checks up-front → clean 404 / 403 semantics.
-  const [conv, participant] = await Promise.all([
-    db.conversation.findUnique({ where: { id } }),
-    db.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId: senderId, conversationId: id } },
-      select: { id: true, role: true },
-    }),
-  ])
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-  }
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-
   // Broadcast mode (Discord stage / Telegram channel): admins only post.
   if (conv.isGroup && conv.broadcastMode && participant.role !== 'admin') {
     return NextResponse.json(
@@ -487,32 +536,6 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
   }
 
-  // R44 - Telegram-style slow mode: members must wait slowModeSeconds between
-  // sends; admins are always exempt. The window counts the ACT of sending -
-  // soft-deleted messages still consume it (delete-then-resend cannot bypass),
-  // while automation replies (machine-sent on the creator's behalf, R39) do
-  // NOT start a new window for the member.
-  if (conv.slowModeSeconds > 0 && participant.role !== 'admin') {
-    const lastOwn = await db.message.findFirst({
-      where: { conversationId: id, senderId: senderId, viaAutomation: false },
-      orderBy: { createdAt: 'desc' },
-      select: { createdAt: true },
-    })
-    if (lastOwn) {
-      const elapsed = Date.now() - lastOwn.createdAt.getTime()
-      const windowMs = conv.slowModeSeconds * 1000
-      if (elapsed < windowMs) {
-        const retryAfter = Math.ceil((windowMs - elapsed) / 1000)
-        return NextResponse.json(
-          {
-            error: `Slow mode is on - wait ${retryAfter}s before sending again.`,
-            retryAfter,
-          },
-          { status: 429, headers: { 'Retry-After': String(retryAfter) } },
-        )
-      }
-    }
-  }
 
   // R24-b: optional Zulip-style topic filing - the topic must belong to THIS
   // conversation; message.topicId lands inside the create (General = null).
@@ -537,15 +560,15 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (parentId) {
     const root = await db.message.findUnique({
       where: { id: parentId },
-      select: { conversationId: true, deletedAt: true, parentId: true },
+      select: { conversationId: true, deletedAt: true, parentId: true, expiresAt: true },
     })
-    if (!root || root.conversationId !== id || root.deletedAt) {
+    if (!threadRootAvailable(root, id, new Date())) {
       return NextResponse.json(
         { error: 'parentId must reference an existing message in this conversation.' },
         { status: 400 },
       )
     }
-    if (root.parentId !== null) {
+    if (root && root.parentId !== null) {
       return NextResponse.json(
         { error: 'Threads are one level deep - reply to the thread root instead.' },
         { status: 400 },
@@ -563,11 +586,24 @@ export async function POST(req: Request, { params }: RouteCtx) {
   }
 
   const now = new Date()
-  const expiresAt = conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
   // Anonymous flag only applies inside groups; DM sends stay named.
   const anon = anonRequested && conv.isGroup
   const anonAlias = anon ? anonAliasFor(senderId, id) : null
-  const message = await db.$transaction(async (tx) => {
+  const committed = await commitMessageOperation(db, operation, async (tx) => {
+    const policy = await messageDeliveryDecision(tx, id, senderId, new Date())
+    if (policy.state === 'wait') {
+      throw new MessageOperationError(429, `Slow mode is on - wait ${policy.retryAfter}s before sending again.`,
+        undefined, 'slow_mode', policy.retryAfter)
+    }
+    if (policy.state === 'cancel') throw new MessageOperationError(403, `Message not sent: ${policy.reason}.`, undefined, policy.reason)
+    const expiresAt = policy.expiresAt
+    if (parentId) {
+      const root = await tx.message.findUnique({ where: { id: parentId },
+        select: { conversationId: true, deletedAt: true, parentId: true, expiresAt: true } })
+      if (!threadRootAvailable(root, id, new Date())) {
+        throw new MessageOperationError(410, 'This thread is no longer available.')
+      }
+    }
     const created = await tx.message.create({
       data: {
         conversationId: id,
@@ -603,11 +639,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
     }
     // Bump list ordering - @updatedAt allows an explicit value write.
     await tx.conversation.update({ where: { id }, data: { updatedAt: now } })
-    // Sender obviously read their own message.
-    await tx.conversationParticipant.update({
-      where: { userId_conversationId: { userId: senderId, conversationId: id } },
-      data: { lastReadAt: now },
-    })
+    // Sending (including background retries) is not evidence of reading the
+    // conversation. Only the explicit /read boundary may advance lastReadAt.
     // A new message from the sender pulls the chat out of every OTHER
     // member's archive (WhatsApp behaviour - archive ≠ mute).
     await tx.conversationParticipant.updateMany({
@@ -615,7 +648,16 @@ export async function POST(req: Request, { params }: RouteCtx) {
       data: { archivedAt: null },
     })
     return created
+  }, findDelivered).catch(error => {
+    if (error instanceof MessageOperationError) return error
+    throw error
   })
+  if (committed instanceof MessageOperationError) return NextResponse.json(
+    { error: committed.message, code: committed.code, retryAfter: committed.retryAfter },
+    { status: committed.status, ...(committed.retryAfter ? { headers: { 'Retry-After': String(committed.retryAfter) } } : {}) },
+  )
+  const { message, replayed } = committed
+  if (replayed) return NextResponse.json({ message: mapMessage(message, senderId), replayed: true, xpAwarded: 0 })
 
   // Realtime relay to every OTHER member (sender handles self via response).
   // The `native` block is the parse-free device contract: native clients

@@ -49,6 +49,8 @@ struct ChatRoomView: View {
             session.roomVisible = true
             // Wave 8 - the incoming-attention gate treats THIS room as read.
             session.activeRoomId = conversation.id
+            viewModel?.updateReadBoundary()
+            viewModel?.requestRefresh(session: session)
             // 3-d - the group-call engine tracks the OPEN room: this drives
             // the 20s ongoing-call probe + the 'Ongoing group call' banner
             // (web useGroupCallSession options.conversationId parity). Groups
@@ -59,6 +61,7 @@ struct ChatRoomView: View {
         }
         .onDisappear {
             session.roomVisible = false
+            viewModel?.isTailVisible = false
             if session.activeRoomId == conversation.id {
                 session.activeRoomId = nil
             }
@@ -156,6 +159,7 @@ private struct RoomMessageRow: View {
                 groupChat: conversation.isGroup,
                 viewerColor: { colorOf(message.senderId) },
                 seen: viewModel.isSeen(message),
+                seenLabel: viewModel.readLabel(message),
                 flashing: viewModel.flashMessageId == message.id,
                 replyCount: viewModel.replyCount(for: message),
                 bubbleRadius: bubbleRadius,
@@ -386,6 +390,17 @@ private struct RoomContent: View {
 
     // R2-B - the veil reads the app scene (the native blur/hidden signal).
     @Environment(\.scenePhase) private var scenePhase
+
+    private var readSurfaceObscured: Bool {
+        let messageSurface = threadRoot != nil || forwardSource != nil || infoTarget != nil ||
+            lightbox != nil || quicklook != nil || reactionTarget != nil || whoReactedOpen
+        let roomSurface = pinsOpen || searchOpen || showFileImporter || showCamera || pollBuilderOpen ||
+            safetyOpen || dmInfoOpen || groupInfoOpen || scheduleOpen || scheduledManagerOpen ||
+            stickerOpen || locationOpen || themeOpen || phrasesOpen || leaderboardOpen
+        let collaboration = wave7.redPacketCreateOpen || wave7.gameCreateOpen || wave7.tournamentCreateOpen ||
+            wave7.kanbanOpen || wave7.whiteboardOpen || wave7.eventsOpen || wave7.remindersOpen
+        return messageSurface || roomSurface || collaboration
+    }
 
     /// F-CH-04 - broadcast composer lock: broadcastMode on + the viewer is
     /// NOT an admin (server 403s the post; the web hides the composer too).
@@ -901,6 +916,7 @@ private struct RoomContent: View {
 
     private var chatBodyStyled1: some View {
         chatBodyStyled0
+        .onChange(of: readSurfaceObscured) { _, hidden in viewModel.readSurfaceObscured = hidden }
         .sheet(isPresented: $safetyOpen) {
             if let partner = dmPartner {
                 SafetySheetView(session: session, peer: partner)
@@ -1077,82 +1093,81 @@ private struct RoomContent: View {
             }
         }
         .sheet(isPresented: $wave7.gameCreateOpen) {
+            let roomAPI = session.api
             Wave7GameCreateSheet(
                 members: conversation.members
                     .filter { $0.id != session.viewer?.id }
                     .map { (id: $0.id, name: $0.name) },
                 onCreate: { opponentId in
-                    wave7.createGame(api: session.api, conversationId: conversation.id, opponentId: opponentId)
+                    await wave7.createGame(api: roomAPI, conversationId: conversation.id, opponentId: opponentId)
                 },
             )
+            .id(session.sessionGeneration)
         }
         .sheet(isPresented: $wave7.tournamentCreateOpen) {
+            let roomAPI = session.api
             Wave7TournamentCreateSheet { name in
-                wave7.createTournament(api: session.api, conversationId: conversation.id, name: name)
+                await wave7.createTournament(api: roomAPI, conversationId: conversation.id, name: name)
             }
+            .id(session.sessionGeneration)
         }
     }
 
     private var chatBodyStyled9: some View {
         chatBodyStyled8
         .sheet(isPresented: $wave7.kanbanOpen) {
+            let roomAPI = session.api
             Wave7KanbanSheet(
                 conversationId: conversation.id,
                 viewerId: session.viewer?.id ?? "",
                 isAdmin: false,
                 prefillTitle: nil,
-                loadBoard: { try? await session.api.kanbanBoard(conversationId: conversation.id) },
+                loadBoard: { try? await roomAPI.kanbanBoard(conversationId: conversation.id) },
                 onAddCard: { title, column, assignee in
-                    wave7.addCard(api: session.api, conversationId: conversation.id, title: title, column: column, assigneeId: assignee)
+                    await wave7.addCard(api: roomAPI, conversationId: conversation.id, title: title, column: column, assigneeId: assignee)
                 },
                 onMoveCard: { cardId, column in
-                    wave7.moveCard(api: session.api, cardId: cardId, column: column)
+                    await wave7.moveCard(api: roomAPI, cardId: cardId, column: column)
                 },
                 onDeleteCard: { cardId in
-                    wave7.deleteCard(api: session.api, cardId: cardId)
+                    await wave7.deleteCard(api: roomAPI, cardId: cardId)
                 },
             )
+            .id("\(session.sessionGeneration):\(conversation.id)")
         }
         .sheet(isPresented: $wave7.whiteboardOpen) {
-            Wave7WhiteboardSheet(
-                conversationId: conversation.id,
-                viewerId: session.viewer?.id ?? "",
-                load: { since in try? await session.api.whiteboard(conversationId: conversation.id, since: since) },
-                onStrokes: { strokes in
-                    // R1-W2G D44 - the sheet awaits the sync verdict: the
-                    // draft store clears a stroke only on server confirmation.
-                    await wave7.postStrokes(api: session.api, conversationId: conversation.id, strokes: strokes)
-                },
-                onUndo: { wave7.undoStroke(api: session.api, conversationId: conversation.id) },
-                onClear: { wave7.clearBoard(api: session.api, conversationId: conversation.id) },
-            )
+            Wave7WhiteboardSheet(conversationId: conversation.id,
+                viewerId: session.viewer?.id ?? "", api: session.api)
         }
         .sheet(isPresented: $wave7.eventsOpen) {
+            let roomAPI = session.api
             Wave7EventsSheet(
                 conversationId: conversation.id,
                 viewerId: session.viewer?.id ?? "",
                 isAdmin: false,
-                loadEvents: { try? await session.api.events(conversationId: conversation.id).events },
+                loadEvents: { try? await roomAPI.events(conversationId: conversation.id).events },
                 onCreate: { title, iso, desc, loc in
-                    wave7.createEvent(api: session.api, conversationId: conversation.id, title: title, startsAtIso: iso, description: desc, location: loc)
+                    await wave7.createEvent(api: roomAPI, conversationId: conversation.id, title: title, startsAtIso: iso, description: desc, location: loc)
                 },
-                onRsvp: { eventId, status in wave7.rsvp(api: session.api, eventId: eventId, status: status) },
-                onCheckin: { eventId in wave7.checkin(api: session.api, eventId: eventId) },
-                onDelete: { eventId in wave7.deleteEvent(api: session.api, eventId: eventId) },
+                onRsvp: { eventId, status in await wave7.rsvp(api: roomAPI, eventId: eventId, status: status) },
+                onCheckin: { eventId in await wave7.checkin(api: roomAPI, eventId: eventId) },
+                onDelete: { eventId in await wave7.deleteEvent(api: roomAPI, eventId: eventId) },
             )
+            .id("\(session.sessionGeneration):\(conversation.id)")
         }
     }
 
     private var chatBodyStyled10: some View {
         chatBodyStyled9
         .sheet(isPresented: $wave7.remindersOpen) {
+            let reminderAPI = session.api
             Wave7RemindersSheet(
-                loadReminders: { try? await session.api.reminders(dueOnly: false).items },
+                loadReminders: { try? await reminderAPI.reminders(dueOnly: false).items },
                 onCreate: { note, iso, anchored in
-                    wave7.createReminder(api: session.api, conversationId: conversation.id, note: note, remindAtIso: iso, anchored: anchored)
+                    await wave7.createReminder(api: reminderAPI, conversationId: conversation.id, note: note, remindAtIso: iso, anchored: anchored)
                 },
-                onResolve: { id in wave7.resolveReminder(api: session.api, id: id) },
-                onDelete: { id in wave7.deleteReminder(api: session.api, id: id) },
+                onResolve: { id in wave7.resolveReminder(api: reminderAPI, id: id) },
+                onDelete: { id in wave7.deleteReminder(api: reminderAPI, id: id) },
                 onJump: { item in
                     // R7 - web onReminderJump parity (chat-room.tsx:1093-1103):
                     // close the sheet first; a reminder anchored in THIS room
@@ -1214,22 +1229,23 @@ private struct RoomContent: View {
             }
         }
         .onAppear {
+            let cardAPI = session.api
             wave7.onCarrierMessage = { carrier in
                 viewModel.injectCarrier(carrier)
             }
-            wave7.cardRedPacketLoad = { id in try? await session.api.redPacketDetail(id) }
-            wave7.cardGameLoad = { id in try? await session.api.gameDetail(id) }
-            wave7.cardTournamentLoad = { id in try? await session.api.tournamentDetail(id) }
-            wave7.cardGrab = { id in wave7.grabRedPacket(api: session.api, packetId: id) }
-            wave7.cardMove = { matchId, cell in wave7.moveGame(api: session.api, matchId: matchId, cell: cell) }
-            wave7.cardJoinGame = { matchId in wave7.joinGame(api: session.api, matchId: matchId) }
+            wave7.cardRedPacketLoad = { id in try? await cardAPI.redPacketDetail(id) }
+            wave7.cardGameLoad = { id in try? await cardAPI.gameDetail(id) }
+            wave7.cardTournamentLoad = { id in try? await cardAPI.tournamentDetail(id) }
+            wave7.cardGrab = { id in wave7.grabRedPacket(api: cardAPI, packetId: id) }
+            wave7.cardMove = { matchId, cell in await wave7.moveGame(api: cardAPI, matchId: matchId, cell: cell) }
+            wave7.cardJoinGame = { matchId in await wave7.joinGame(api: cardAPI, matchId: matchId) }
             // R7 - rematch: card hands the opponent id, the room supplies
             // conversation.id + api (in-flight spinner + toast ride wave7).
             wave7.cardRematch = { opponentId in
-                wave7.rematchGame(api: session.api, conversationId: conversation.id, opponentId: opponentId)
+                await wave7.rematchGame(api: cardAPI, conversationId: conversation.id, opponentId: opponentId)
             }
-            wave7.cardJoinTournament = { tid in wave7.joinTournament(api: session.api, tournamentId: tid) }
-            wave7.cardFinishTournament = { tid in wave7.finishTournament(api: session.api, tournamentId: tid) }
+            wave7.cardJoinTournament = { tid in await wave7.joinTournament(api: cardAPI, tournamentId: tid) }
+            wave7.cardFinishTournament = { tid in await wave7.finishTournament(api: cardAPI, tournamentId: tid) }
             wave7.cardOpenDetail = { id in wave7.redPacketDetailId = id }
         }
     }
@@ -1237,7 +1253,7 @@ private struct RoomContent: View {
     private var chatBodyStyled12: some View {
         chatBodyStyled11
         .fullScreenCover(item: $lightbox) { target in
-            MediaLightboxView(url: target.url, caption: target.caption)
+            MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt)
         }
         .fullScreenCover(item: $quicklook) { target in
             QuickLookView(url: target.url)
@@ -1284,11 +1300,7 @@ private struct RoomContent: View {
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             photoItem = nil
-            Task {
-                if let data = try? await item.loadTransferable(type: Data.self) {
-                    viewModel.stageImage(data)
-                }
-            }
+            viewModel.importPhoto(item, session: session)
         }
     }
 
@@ -1498,6 +1510,11 @@ private struct RoomContent: View {
                 // Wave 8 - prefs density: cozy keeps the Wave-0 rhythm,
                 // compact tightens the river (web chat-room density parity).
                 LazyVStack(spacing: prefs.density.rowSpacing) {
+                    if viewModel.hasMore {
+                        Button(viewModel.loadingOlder ? "Loading earlier messages…" : "Load earlier messages") {
+                            viewModel.loadOlder(session: session)
+                        }.disabled(viewModel.loadingOlder)
+                    }
                     if viewModel.messages.isEmpty && viewModel.phase == .loading {
                         ProgressView("Loading messages…")
                             .padding(.top, 40)
@@ -1569,6 +1586,9 @@ private struct RoomContent: View {
                 .padding(.vertical, 10)
             }
             .defaultScrollAnchor(.bottom)
+            .onChange(of: viewModel.messages.last?.id) { _, _ in
+                viewModel.noteRiverChanged()
+            }
             .onChange(of: viewModel.messages.count) { _, _ in
                 // R26 - the missed-badge machine + tail-id pill arming run
                 // on every river change; the auto-scroll only fires while
@@ -1758,7 +1778,7 @@ private struct RoomContent: View {
             session.toasts.show("Media unavailable")
             return
         }
-        lightbox = MediaLightboxTarget(url: url, caption: message.content)
+        lightbox = MediaLightboxTarget(url: url, caption: message.content, expiresAt: message.expiresAt)
     }
 
     private func openFile(_ message: WireChatMessage) {
@@ -2522,15 +2542,15 @@ private struct RoomContent: View {
                 }
                 switch staged.kind {
                 case .image:
-                    AsyncImage(url: staged.previewURL) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                    Group {
+                        if let data = staged.previewData, let image = UIImage(data: data) {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        } else { RoundedRectangle(cornerRadius: 8).fill(.quaternary) }
                     }
                     .frame(width: 44, height: 44)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                case .file:
-                    Image(systemName: "paperclip.circle.fill")
+                case .file, .audio:
+                    Image(systemName: staged.kind == .audio ? "waveform.circle.fill" : "paperclip.circle.fill")
                         .font(.system(size: 30))
                         .foregroundStyle(PulseTheme.emberGlowTop)
                 }
@@ -2658,8 +2678,8 @@ private struct MessageInfoSheet: View {
                 } header: {
                     Text(seenTitle)
                 }
-                // R2-D - "Delivered to" = everyone who hasn't read it yet
-                // (web chat-room.tsx:5940-5957 + Android MessageSheets parity).
+                // A missing read receipt is NOT proof of device delivery.
+                // Privacy-disabled receipts also belong in this unknown group.
                 Section {
                     if split.deliveredTo.isEmpty {
                         Text("Everyone has seen this message")
@@ -2670,7 +2690,7 @@ private struct MessageInfoSheet: View {
                         receiptRow(member, seen: false)
                     }
                 } header: {
-                    Text("Delivered to · \(split.deliveredTo.count)")
+                    Text("No read confirmation · \(split.deliveredTo.count)")
                 }
                 if let reactions = message.reactions, !reactions.isEmpty {
                     Section("Reactions") {
@@ -2719,7 +2739,7 @@ private struct MessageInfoSheet: View {
                     .font(.subheadline)
                 Text(seen
                     ? "Read at \(PulseFormat.listStamp(member.lastReadAtIso))"
-                    : "Delivered")
+                    : "No read confirmation")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -2766,6 +2786,7 @@ struct BubbleView: View {
     let groupChat: Bool
     let viewerColor: () -> Color
     var seen: Bool = false
+    var seenLabel: String = "Seen"
     var onLongPressActions: Bool = true
     /// Wave 1 - jump flash ring, live thread-reply chip, media surfaces.
     var flashing: Bool = false
@@ -2931,7 +2952,7 @@ struct BubbleView: View {
                 }
 
                 if mine && seen {
-                    Text("Seen")
+                    Text(seenLabel)
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(PulseTheme.emberGlowTop)
                         .padding(.trailing, 6)
@@ -2956,7 +2977,10 @@ struct BubbleView: View {
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.50))
             } else {
-                content
+                if let label = PulseAttachmentDelivery.pendingLabel(message) {
+                    Label(label, systemImage: "arrow.up.doc").font(.subheadline)
+                    if !message.content.isEmpty { Text(message.content) }
+                } else { content }
                 // Wave 2 link preview - under the text, suppressed on poll
                 // rows; nothing renders until the unfurl envelope lands.
                 if message.poll == nil, let preview = message.linkPreview {
@@ -3075,12 +3099,13 @@ struct BubbleView: View {
                 matchId: gp.matchId,
                 viewerId: viewerId ?? "",
                 load: { id in await wave7.cardGameLoad(id) },
-                onMove: { cell in wave7.cardMove(gp.matchId, cell) },
-                onJoin: { wave7.cardJoinGame(gp.matchId) },
+                onMove: { cell in await wave7.cardMove(gp.matchId, cell) },
+                onJoin: { await wave7.cardJoinGame(gp.matchId) },
                 // R7 - rematch POSTs /api/games against the finished match's
                 // opponent; toast + carrier message ride the wave7 hub.
                 wave7: wave7,
             )
+            .id("\(viewerId ?? ""):game:\(gp.matchId)")
         } else {
             Text(message.content).font(.body)
         }
@@ -3094,9 +3119,10 @@ struct BubbleView: View {
                 viewerId: viewerId ?? "",
                 isAdmin: message.senderId == viewerId,
                 load: { id in await wave7.cardTournamentLoad(id) },
-                onJoin: { wave7.cardJoinTournament(tp.tournamentId) },
-                onFinish: { wave7.cardFinishTournament(tp.tournamentId) },
+                onJoin: { await wave7.cardJoinTournament(tp.tournamentId) },
+                onFinish: { await wave7.cardFinishTournament(tp.tournamentId) },
             )
+            .id("\(viewerId ?? ""):season:\(tp.tournamentId)")
         } else {
             Text(message.content).font(.body)
         }
@@ -3650,7 +3676,7 @@ final class RoomViewModel: ObservableObject {
 
     /// Wave 1 attach flow - a staged photo/document awaiting upload + send.
     struct StagedMedia: Equatable {
-        enum Kind { case image, file }
+        enum Kind { case image, file, audio }
         let kind: Kind
         let dataUrl: String
         let fileName: String?
@@ -3659,6 +3685,8 @@ final class RoomViewModel: ObservableObject {
         let previewURL: URL?
         /// Wave 2 view-once - image sends only (server: viewOnce needs imagePath).
         let viewOnce: Bool
+        var durationMs: Double? = nil
+        var previewData: Data? = nil
     }
 
     @Published private(set) var messages: [WireChatMessage] = []
@@ -3666,7 +3694,15 @@ final class RoomViewModel: ObservableObject {
     @Published private(set) var errorText: String?
     @Published private(set) var typers: [Typer] = []
     @Published private(set) var partnerLastReadAt: Date?
-    @Published var draft = ""
+    @Published var draft = "" {
+        didSet { if oldValue != draft { draftEditRevision &+= 1 } }
+    }
+    private var draftEditRevision: UInt64 = 0
+    private var draftBeforeEdit: String?
+    private var replyBeforeEdit: WireChatMessage?
+    private var editSaveTask: Task<Void, Never>?
+    private var editGeneration = UUID()
+    private var savingEdit = false
     @Published var replyTarget: WireChatMessage?
 
     // Wave 1 - pagination, threads, actions, search, jump, media.
@@ -3731,14 +3767,22 @@ final class RoomViewModel: ObservableObject {
     private var lastTailId: String?
     /// The tail sentinel row is on-screen - the viewer sits at the bottom
     /// (the native nearBottomRef). Reaching the bottom resets the badge.
-    @Published var isTailVisible = true {
+    @Published var isTailVisible = false {
         didSet {
+            updateReadBoundary()
             guard oldValue != isTailVisible, isTailVisible else { return }
             missedCount = 0
             lastSeenLen = messages.count
             showJumpPill = false
         }
     }
+    @Published var readSurfaceObscured = false { didSet { updateReadBoundary() } }
+
+    func updateReadBoundary() {
+        session?.setVisibleReadBoundary(conversationId: conversationId,
+            messageId: isTailVisible && !readSurfaceObscured ? messages.last(where: { !$0.id.hasPrefix("local_") })?.id : nil)
+    }
+
     /// Web showJump - armed when a new tail lands while scrolled away,
     /// cleared at the bottom (never by the scroll position alone).
     @Published private(set) var showJumpPill = false
@@ -3781,12 +3825,16 @@ final class RoomViewModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var typingStopTask: Task<Void, Never>?
     private var draftSaveTask: Task<Void, Never>?
+    private let draftJournal: PulseDraftJournal?
     private var flashClearTask: Task<Void, Never>?
     private var initialJumpMessageId: String?
     /// Member read watermarks (id → lastReadAt) - group-aware "Seen".
     private var memberWatermarks: [String: Date] = [:]
+    private var receiptRevision = 0
     // Wave 2 voice plumbing - recorder + single active player + timers.
     private var voiceRecorder: VoiceRecorder?
+    private var voicePermissionTask: Task<Void, Never>?
+    private var voicePermissionGeneration = UUID()
     private var recordingStartedAt: Date?
     private var recordingTicker: AnyCancellable?
     /// D31 - the session that armed the hold; the auto-send-at-cap tick needs
@@ -3794,6 +3842,8 @@ final class RoomViewModel: ObservableObject {
     private weak var voiceSession: PulseSession?
     private var topicTicker: AnyCancellable?
     private var voiceLocalFiles: [String: URL] = [:]
+    private var voicePlaybackTask: Task<Void, Never>?
+    private var voicePlaybackGeneration = UUID()
     /// One active voice-note player for the whole room (messageId-keyed).
     private(set) var playback = VoicePlaybackManager()
 
@@ -3865,6 +3915,7 @@ final class RoomViewModel: ObservableObject {
 
     init(conversation: WireConversationSummary, session: PulseSession, initialJumpMessageId: String? = nil) {
         self.conversationId = conversation.id
+        self.draftJournal = session.store.map { PulseDraftJournal(store: $0, conversationId: conversation.id) }
         self.session = session
         self.isGroupRoom = conversation.isGroup
         self.initialJumpMessageId = initialJumpMessageId
@@ -3877,7 +3928,7 @@ final class RoomViewModel: ObservableObject {
             unreadCount: conversation.unreadCount,
         )
         self.roomScreenPrivacy = conversation.screenPrivacy
-        for member in conversation.members {
+        for member in conversation.members where member.id != viewerId {
             if let stamp = member.lastReadAt {
                 memberWatermarks[member.id] = PulseFormat.date(stamp)
             }
@@ -3891,20 +3942,32 @@ final class RoomViewModel: ObservableObject {
         loadScheduled(session: session)
         // R30-b - upcoming reminders for the header badge (one quiet GET).
         loadUpcomingReminderCount(session: session)
-        Task { await refresh(session: session) }
+        requestRefresh(session: session)
     }
 
     /// Wave 2 - a recording/playback must never outlive the room. Called
     /// from ChatRoomView.onDisappear (roomVisible off); a conversation
     /// change builds a NEW view model, so its deinit covers that path.
     func handleRoomDisappeared() {
+        cancelPhotoImport()
+        journalDraft(draftBeforeEdit ?? draft)
+        draftSaveTask?.cancel()
+        typingStopTask?.cancel()
+        refreshTask?.cancel()
+        refreshGeneration = UUID()
+        cancelHistory()
+        riverReloadTask?.cancel()
         cancelVoiceRecording()
+        cancelPendingVoicePlayback()
         playback.stop()
     }
 
     deinit {
         // Plain-class teardown only (no actor-isolated state touched).
         voiceRecorder?.cancel()
+        voicePermissionTask?.cancel()
+        photoImportTask?.cancel()
+        voicePlaybackTask?.cancel()
     }
 
     /// Wave 0 offline rehydration - runs BEFORE the network fetch:
@@ -3914,10 +3977,12 @@ final class RoomViewModel: ObservableObject {
         if let store = session.store {
             let cached = (try? store.messages(conversationId: conversationId)) ?? []
             if !cached.isEmpty {
-                messages = cached
+                messages = riverRows(from: cached)
+                historyCursor = PulseHistoryCursor.oldest(cached)
+                hasMore = historyCursor != nil // cached data alone cannot prove history is exhausted
                 phase = .loaded
             }
-            draft = store.draft(conversationId: conversationId) ?? (conversation.myDraft ?? "")
+            draft = draftJournal?.snapshot ?? store.draftSnapshot(conversationId: conversationId) ?? (conversation.myDraft ?? "")
         } else {
             draft = conversation.myDraft ?? ""
         }
@@ -3946,7 +4011,7 @@ final class RoomViewModel: ObservableObject {
                     // REM-B F-MS-23 - effect-flagged rows burst full-screen.
                     fireIncomingEffectIfAny(message, viewerId: session.viewer?.id, session: session)
                     if message.senderId != session.viewer?.id {
-                        Task { try? await session.api.markRead(conversationId: self.conversationId) }
+                        Task { await session.markReadIfVisible(conversationId: self.conversationId) }
                     }
                 case .messageDeleted(let convId, let raw):
                     guard convId == self.conversationId else { return }
@@ -3962,9 +4027,11 @@ final class RoomViewModel: ObservableObject {
                     try? session.store?.upsert(messages: [message])
                 case .messageRead(let convId, let userId, let lastReadAt):
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
-                    // W1-DATA-B - trust the relayed watermark when present;
-                    // fall back to "now" (older relays / clock-safety).
-                    partnerLastReadAt = lastReadAt.flatMap { PulseFormat.date($0) } ?? Date()
+                    // Missing or reordered receipts cannot invent/regress Seen.
+                    guard let at = lastReadAt.flatMap({ PulseFormat.date($0) }) else { return }
+                    receiptRevision += 1
+                    memberWatermarks[userId] = max(memberWatermarks[userId] ?? .distantPast, at)
+                    partnerLastReadAt = max(partnerLastReadAt ?? .distantPast, at)
                 case .typing(let convId, let userId, let userName, let isTyping):
                     guard convId == self.conversationId, userId != session.viewer?.id else { return }
                     var bucket = typers.filter { $0.userId != userId }
@@ -3983,6 +4050,19 @@ final class RoomViewModel: ObservableObject {
                     fireIncomingEffectIfAny(message, viewerId: session.viewer?.id, session: session)
                 default:
                     break
+                }
+            }
+            .store(in: &cancellables)
+
+        session.$connected.combineLatest(session.$isForeground)
+            .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, foreground in
+                guard let self else { return }
+                if foreground && session.activeRoomId == self.conversationId {
+                    self.requestRefresh(session: session)
+                } else {
+                    self.refreshTask?.cancel()
                 }
             }
             .store(in: &cancellables)
@@ -4009,6 +4089,10 @@ final class RoomViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        session.messageVisibilityClock
+            .sink { [weak self] _ in self?.refilterInPlace() }
+            .store(in: &cancellables)
+
         // Typer expiry sweep - keeps the dots honest without server stop events.
         Timer.publish(every: 1.2, on: .main, in: .common)
             .autoconnect()
@@ -4022,70 +4106,88 @@ final class RoomViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration = UUID()
+    private var historyTask: Task<Void, Never>?
+    private var riverReloadTask: Task<Void, Never>?
+    private var historyGeneration = UUID()
+    private var historyCursor: PulseHistoryCursor?
+
+    private func cancelHistory() {
+        historyGeneration = UUID()
+        historyTask?.cancel()
+        historyTask = nil
+        loadingOlder = false
+    }
+
+    func requestRefresh(session: PulseSession) {
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            guard let self else { return }
+            await self.refresh(session: session)
+        }
+    }
+
     func refresh(session: PulseSession) async {
-        // Cache seed first - the room renders instantly (offline too), then
-        // the network refresh replaces it.
-        if messages.isEmpty, let store = session.store {
-            let cached = (try? store.messages(conversationId: conversationId)) ?? []
-            if !cached.isEmpty {
-                messages = riverRows(from: cached)
-                phase = .loaded
-            }
+        guard session.ready, session.isForeground else { return }
+        let epoch = session.sessionGeneration
+        let ticket = UUID()
+        refreshGeneration = ticket
+        let client = session.api
+        let store = session.store
+        if messages.isEmpty, let store {
+            messages = riverRows(from: (try? store.messages(conversationId: conversationId)) ?? [])
             seedReplyCounts(store: store)
         }
+        let cachedRows = (try? store?.messages(conversationId: conversationId)) ?? messages
+        let real = cachedRows.filter { !$0.id.hasPrefix("local_") }
+        let from = real.min {
+            (PulseFormat.date($0.createdAt) ?? .distantPast) < (PulseFormat.date($1.createdAt) ?? .distantPast)
+        }?.createdAt
         phase = messages.isEmpty ? .loading : phase
+        var cursor: String?
+        var seenCursors = Set<String>()
         do {
-            // D47 delta sync - the route accepts `since=<ISO>` and answers
-            // with only the rows STRICTLY NEWER than the cursor (same shape).
-            // First load (no window on screen yet) keeps the full newest
-            // window; every later refresh fetches just the tail.
-            let deltaCursor = deltaSyncCursor
-            let page = try await session.api.messages(conversationId: conversationId, since: deltaCursor)
-            if deltaCursor != nil {
-                mergeDelta(page.messages)
-            } else {
-                messages = riverRows(from: page.messages)
-                hasMore = page.hasMore
-            }
+            repeat {
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch, refreshGeneration == ticket,
+                      session.isForeground else { return }
+                // Revisit the cached range to heal edits/deletions as well as
+                // drain arbitrarily many new pages after a disconnection.
+                let watermark = session.messageRevision
+                let page = try await client.messages(conversationId: conversationId,
+                    syncFrom: cursor == nil ? from : nil, syncCursor: cursor)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch, refreshGeneration == ticket else { return }
+                if from != nil && page.syncVersion != 1 {
+                    throw PulseAPIClient.Failure(kind: .server, message: "Gateway needs the paged message-sync update")
+                }
+                let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+                try store?.upsert(messages: fresh)
+                messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: activeTopicId)
+                noteRiverChanged()
+                if from == nil {
+                    historyCursor = PulseHistoryCursor.oldest(page.messages)
+                    hasMore = page.hasMore
+                    break
+                }
+                if !page.hasMore { break }
+                guard let next = page.nextSyncCursor, seenCursors.insert(next).inserted else {
+                    throw PulseAPIClient.Failure(kind: .server, message: "Message sync returned a missing or repeated cursor")
+                }
+                cursor = next
+            } while true
             phase = .loaded
             errorText = nil
-            try? session.store?.upsert(messages: page.messages)
-            try? await session.api.markRead(conversationId: conversationId)
+            await session.markReadIfVisible(conversationId: conversationId)
             resolveInitialJump()
+        } catch is CancellationError {
+            // Navigation/background cancellation is not a failed room.
         } catch {
+            guard session.sessionGeneration == epoch, refreshGeneration == ticket else { return }
             phase = .failed(RoomViewModel.describe(error))
-            if messages.isEmpty { errorText = RoomViewModel.describe(error) }
+            errorText = RoomViewModel.describe(error)
         }
-    }
-
-    /// D47 - the delta-sync cursor: the newest REAL (non-optimistic) row's
-    /// wire createdAt ISO, exactly what the route's `since` expects. Local
-    /// `local_` rows are excluded - their client-side stamps must never gate
-    /// what the server considers "newer". Nil = no real rows → full load.
-    private var deltaSyncCursor: String? {
-        let real = messages.filter { !$0.id.hasPrefix("local_") }
-        guard let newest = real.max(by: {
-            let lhs = PulseFormat.date($0.createdAt) ?? .distantPast
-            let rhs = PulseFormat.date($1.createdAt) ?? .distantPast
-            return lhs < rhs
-        }) else { return nil }
-        return newest.createdAt
-    }
-
-    /// D47 - merges a delta page into the river: server rows the window
-    /// doesn't know yet are appended id-dedupe + re-sorted ascending (the
-    /// same rhythm loadOlder uses). Edits/deletes keep flowing through the
-    /// socket signals - this path only ever ADDS missing rows.
-    private func mergeDelta(_ fresh: [WireChatMessage]) {
-        let rows = riverRows(from: fresh)
-        guard !rows.isEmpty else { return }
-        let known = Set(messages.map(\.id))
-        let additions = rows.filter { !known.contains($0.id) }
-        guard !additions.isEmpty else { return }
-        for row in additions {
-            upsert(row)
-        }
-        noteRiverChanged()
     }
 
     /// The main river EXCLUDES thread replies (web parity) - they live in
@@ -4128,30 +4230,49 @@ final class RoomViewModel: ObservableObject {
     /// Wave 1 pagination - older history page (`before` cursor), 40 rows,
     /// merged id-dedupe ascending. The view triggers from the oldest row.
     func loadOlder(session: PulseSession) {
-        guard hasMore, !loadingOlder, let oldest = messages.first(where: { !$0.id.hasPrefix("local_") }) else { return }
+        guard session.ready, hasMore, !loadingOlder,
+              let initial = historyCursor ?? PulseHistoryCursor.oldest(messages) else { return }
+        let epoch = session.sessionGeneration, ticket = historyGeneration
+        let client = session.api, store = session.store
+        let topic = activeTopicId
         loadingOlder = true
-        Task { [weak self] in
+        historyTask = Task { [weak self] in
             guard let self else { return }
-            defer { self.loadingOlder = false }
+            defer { if self.historyGeneration == ticket { self.loadingOlder = false } }
+            var cursor = initial
             do {
-                let page = try await session.api.messages(
-                    conversationId: self.conversationId,
-                    limit: 40,
-                    before: oldest.createdAt,
-                    query: nil,
-                    topicId: self.activeTopicId,
-                )
-                try? session.store?.upsert(messages: page.messages)
-                let known = Set(self.messages.map(\.id))
-                let fresh = page.messages.filter { row in
-                    guard row.parentId == nil, !known.contains(row.id) else { return false }
-                    if let active = self.activeTopicId { return row.topicId == active }
-                    return true
+                // Skip pages containing only hidden replies. A manual header
+                // remains available if a long sparse range needs another batch.
+                for _ in 0..<5 {
+                    try Task.checkCancellation()
+                    let watermark = session.messageRevision
+                    let page = try await client.messages(conversationId: self.conversationId,
+                        limit: 40, before: cursor.createdAt, query: nil, topicId: topic, beforeId: cursor.id)
+                    try Task.checkCancellation()
+                    guard session.sessionGeneration == epoch, self.historyGeneration == ticket,
+                          self.activeTopicId == topic else { return }
+                    guard let next = PulseHistoryCursor.oldest(page.messages) else {
+                        self.hasMore = false
+                        return
+                    }
+                    guard next.precedes(cursor) else {
+                        self.errorText = "History returned a repeated page. Try loading earlier messages again."
+                        return
+                    }
+                    let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+                    try store?.upsert(messages: fresh)
+                    let previousIDs = Set(self.messages.map(\.id))
+                    self.messages = PulseTimelineMerge.merge(self.messages, incoming: fresh, topicId: topic)
+                    self.historyCursor = next
+                    cursor = next
+                    self.hasMore = page.hasMore
+                    if !page.hasMore || self.messages.contains(where: { !previousIDs.contains($0.id) }) { return }
                 }
-                self.messages.insert(contentsOf: fresh, at: 0)
-                self.hasMore = page.hasMore && !page.messages.isEmpty
+            } catch is CancellationError {
+                // Cancellation is not a history error.
             } catch {
-                // Older history is best-effort - the current window stays usable.
+                guard self.historyGeneration == ticket, session.sessionGeneration == epoch else { return }
+                self.errorText = "Couldn't load earlier messages. Your current history is kept."
             }
         }
     }
@@ -4167,7 +4288,8 @@ final class RoomViewModel: ObservableObject {
             scrollAndFlash(messageId)
         } else {
             guard let session = session else { return }
-            Task { await expandForJump(messageId, session: session, rounds: 0) }
+            cancelHistory()
+            historyTask = Task { await expandForJump(messageId, session: session, rounds: 0) }
         }
     }
 
@@ -4179,26 +4301,37 @@ final class RoomViewModel: ObservableObject {
 
     /// Bounded expansion for out-of-window targets (web ≤14 rounds parity).
     private func expandForJump(_ messageId: String, session: PulseSession, rounds: Int) async {
+        guard !Task.isCancelled, session.ready else { return }
+        let epoch = session.sessionGeneration, ticket = historyGeneration
+        let client = session.api, store = session.store
+        let topic = activeTopicId
+        let watermark = session.messageRevision
         guard rounds < 14 else {
             session.toasts.show("Couldn't reach that message in this chat's history")
             return
         }
-        guard hasMore, let oldest = messages.first(where: { !$0.id.hasPrefix("local_") }) else {
+        guard hasMore, let oldest = historyCursor ?? PulseHistoryCursor.oldest(messages) else {
             session.toasts.show("Couldn't reach that message in this chat's history")
             return
         }
         loadingOlder = true
-        defer { loadingOlder = false }
+        defer { if historyGeneration == ticket { loadingOlder = false } }
         do {
-            let page = try await session.api.messages(conversationId: conversationId, limit: 40, before: oldest.createdAt, query: nil, topicId: activeTopicId)
-            try? session.store?.upsert(messages: page.messages)
-            let known = Set(messages.map(\.id))
-            let fresh = page.messages.filter { row in
-                guard row.parentId == nil, !known.contains(row.id) else { return false }
-                if let active = activeTopicId { return row.topicId == active }
-                return true
+            let page = try await client.messages(conversationId: conversationId, limit: 40,
+                before: oldest.createdAt, query: nil, topicId: topic, beforeId: oldest.id)
+            try Task.checkCancellation()
+            guard session.sessionGeneration == epoch, historyGeneration == ticket,
+                  activeTopicId == topic else { return }
+            if let next = PulseHistoryCursor.oldest(page.messages) {
+                guard next.precedes(oldest) else {
+                    session.toasts.show("History returned a repeated page")
+                    return
+                }
+                historyCursor = next
             }
-            messages.insert(contentsOf: fresh, at: 0)
+            let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            try store?.upsert(messages: fresh)
+            messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: topic)
             hasMore = page.hasMore && !page.messages.isEmpty
             if messages.contains(where: { $0.id == messageId }) {
                 scrollAndFlash(messageId)
@@ -4208,6 +4341,8 @@ final class RoomViewModel: ObservableObject {
                 await expandForJump(messageId, session: session, rounds: rounds + 1)
             }
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch,
+                  historyGeneration == ticket else { return }
             session.toasts.show("Couldn't reach that message in this chat's history")
         }
     }
@@ -4233,6 +4368,7 @@ final class RoomViewModel: ObservableObject {
     /// (load older) grow the badge silently without arming the pill - the
     /// web's exact behavior (the pill show is tail-id driven).
     func noteRiverChanged() {
+        updateReadBoundary()
         let newLen = messages.count
         if isTailVisible {
             missedCount = 0
@@ -4335,8 +4471,18 @@ final class RoomViewModel: ObservableObject {
     /// PATCH (privacy sheet, DM-block toggle): the river re-veils without a
     /// refetch. Same adoption rules as loadPrivacyState.
     func applyFreshDetail(_ detail: WireConversationSummary) {
+        adoptReadMembers(detail)
         roomScreenPrivacy = detail.screenPrivacy
         dmBlocked = !detail.isGroup && detail.dmBlockedNow
+    }
+
+    private func adoptReadMembers(_ detail: WireConversationSummary) {
+        memberWatermarks = detail.members.reduce(into: [String: Date]()) { stamps, member in
+            guard member.id != session?.viewer?.id, let stamp = member.lastReadAt,
+                  let at = PulseFormat.date(stamp) else { return }
+            stamps[member.id] = max(stamps[member.id] ?? .distantPast, at)
+        }
+        partnerLastReadAt = memberWatermarks.values.max()
     }
 
     /// One quiet detail GET on room open (web detail-query parity): refresh
@@ -4344,7 +4490,12 @@ final class RoomViewModel: ObservableObject {
     /// prefs map. Local state stays authoritative until this lands.
     func loadPrivacyState(session: PulseSession) async {
         let viewerId = session.viewer?.id ?? ""
-        guard !viewerId.isEmpty, let detail = try? await session.api.conversationDetail(id: conversationId, userId: viewerId) else { return }
+        let epoch = session.sessionGeneration
+        let revision = receiptRevision
+        let client = session.api
+        guard !viewerId.isEmpty, let detail = try? await client.conversationDetail(id: conversationId, userId: viewerId),
+              !Task.isCancelled, session.sessionGeneration == epoch else { return }
+        if receiptRevision == revision { adoptReadMembers(detail) }
         roomScreenPrivacy = detail.screenPrivacy
         // R47 - the same detail GET carries the DM dead-end flag (either
         // direction); groups always decode false here.
@@ -4397,22 +4548,11 @@ final class RoomViewModel: ObservableObject {
     }
 
     func upsert(_ message: WireChatMessage) {
-        // Main river only - thread replies render in ThreadView.
-        if message.parentId != nil { return }
-        // REM-B F-MS-19 - expired rows never surface.
-        guard PulseRemediationLogic.isAlive(message.expiresAt) else { return }
-        // Wave 2 topics - an active topic view must not surface rows filed
-        // elsewhere (the store keeps them; switching back refetches).
-        if let active = activeTopicId, message.topicId != active { return }
-        guard let index = messages.firstIndex(where: { $0.id == message.id }) else {
-            messages.append(message)
-            messages.sort { PulseFormat.date($0.createdAt) ?? .distantPast < PulseFormat.date($1.createdAt) ?? .distantPast }
-            return
-        }
-        messages[index] = message
+        messages = PulseTimelineMerge.merge(messages, incoming: [message], topicId: activeTopicId)
     }
 
     func draftChanged(session: PulseSession) {
+        guard editingTarget == nil else { return }
         // Wave 0 - 600ms debounced draft persistence (web pulse-drafts parity).
         scheduleDraftSave(session: session)
 
@@ -4431,162 +4571,57 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
+    private func journalDraft(_ text: String) {
+        guard let draftJournal else { return }
+        let revision = DispatchTime.now().uptimeNanoseconds
+        // This finite write intentionally survives view disposal. The actor owns
+        // the original store and never dereferences a replacement session.
+        let write = draftJournal.submit(text, revision: revision)
+        Task { [weak self] in
+            do { try await write.value }
+            catch { self?.errorText = "Draft could not be saved: check device storage" }
+        }
+    }
+
     private func scheduleDraftSave(session: PulseSession) {
         let text = draft
+        journalDraft(text) // local durability is not delayed by the server debounce
         draftSaveTask?.cancel()
-        draftSaveTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled, let self else { return }
-            self.persistDraft(text, session: session)
+        let client = session.api
+        let epoch = session.sessionGeneration
+        let room = conversationId
+        guard let viewer = session.viewer else { return }
+        draftSaveTask = Task {
+            do { try await Task.sleep(nanoseconds: 600_000_000) }
+            catch { return }
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            try? await client.setDraft(conversationId: room, userId: viewer.id,
+                draft: text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : text)
         }
-    }
-
-    private func persistDraft(_ text: String, session: PulseSession) {
-        guard let store = session.store else { return }
-        if text.trimmingCharacters(in: .whitespaces).isEmpty {
-            try? store.deleteDraft(conversationId: conversationId)
-        } else {
-            try? store.saveDraft(conversationId: conversationId, text: text)
-        }
-        // Wave 1 server mirror (web pulse-drafts parity) - fire-and-forget,
-        // silent-fail; the local draft stays authoritative for this device.
-        if let viewer = session.viewer {
-            Task {
-                try? await session.api.setDraft(
-                    conversationId: conversationId,
-                    userId: viewer.id,
-                    draft: text.trimmingCharacters(in: .whitespaces).isEmpty ? "" : text,
-                )
-            }
-        }
-    }
-
-    /// Called on the successful-send path - the composer is clean, so the
-    /// local draft must go (server myDraft takes over on the next read).
-    func clearDraft(session: PulseSession) {
-        draftSaveTask?.cancel()
-        draftSaveTask = nil
-        try? session.store?.deleteDraft(conversationId: conversationId)
     }
 
     func send(session: PulseSession) {
-        let body = draft.trimmingCharacters(in: .whitespaces)
-        let replySource = replyTarget
-        let replyId = replySource?.id
-        guard !body.isEmpty, staged == nil, editingTarget == nil else { return }
-        draft = ""
-        replyTarget = nil
-        typingStopTask?.cancel()
-        typingStopTask = nil
-        // Wave 1 optimistic send - the temp bubble paints immediately and
-        // swaps for the server row (web onMutate parity). Network-class
-        // failure keeps the temp + queues the outbox (Wave 0 semantics).
-        guard let viewer = session.viewer else {
-            errorText = "The gateway is unreachable."
+        guard staged == nil, editingTarget == nil else { return }
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            errorText = "The account store is not ready. Your draft is kept."
             return
         }
-        let clientId = UUID().uuidString
-        // REM-B F-MS-17 - groups only: armed mask + the server's deterministic
-        // FNV-1a alias (the optimistic bubble shows the exact stored alias).
-        let anonAlias = (isGroupRoom && anonOn) ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: conversationId) : nil
-        // R4-A item 2 - armed state captured AT SEND TIME (Android
-        // `anonArmed` parity) so an in-flight toggle can't desync the
-        // one-shot verdict.
-        let wasAnonArmed = anonAlias != nil
-        let temp = TempMessages.make(
-            conversationId: conversationId,
-            viewer: viewer,
-            clientId: clientId,
-            content: body,
-            parentId: nil,
-            replyTo: replySource,
-            anon: anonAlias != nil,
-            anonAlias: anonAlias,
-        )
-        upsert(temp)
-        try? session.store?.upsert(messages: [temp])
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let result = try await session.api.sendMessageWithStreak(
-                    conversationId: conversationId,
-                    content: body,
-                    replyToId: replyId,
-                    topicId: activeTopicId,
-                    anon: anonAlias != nil,
-                )
-                self.swapTemp(temp.id, for: result.message, session: session)
-                self.clearDraft(session: session)
-                // R5-A Item 5 - streak nudge (web chat-room.tsx:1736-1751):
-                // fires ONLY when THIS send GREW the streak (second-or-later
-                // consecutive day). Same-day re-sends carry no streak sibling
-                // and restarts carry continued=false - both stay silent here,
-                // mirrored from PulseStreakVerdict.
-                if let line = PulseStreakVerdict.toastLine(
-                    count: result.streak?.count,
-                    continued: result.streak?.continued,
-                ) {
-                    session.toasts.show(line)
-                }
-                // R4-A item 2 - ONE-SHOT incognito: a server-accepted send
-                // consumes the mask and the hint pill hides with it (web
-                // chat-room.tsx:1747-1751 onSuccess; Android R3-B one-shot
-                // disarm, ChatRoomViewModel.kt:566-570). Gated on the
-                // send-time arming like Android - a plain send never touches
-                // a mask the user armed mid-flight.
-                if wasAnonArmed {
-                    self.anonOn = PulseRoomParityLogic.anonDisarmAfterSend(armed: wasAnonArmed, serverAccepted: true)
-                }
-                session.particles.fire(kind: .burst, count: 22)
-                session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
-                // Wave 2 topics - own send bumps Topic.lastMessageAt server-side.
-                self.loadTopics(session: session)
-                // Wave 2 link previews - spec §1 row 8: the ORIGINAL SENDER's
-                // client triggers /unfurl once, fire-and-forget, ignoring the
-                // result (nil is valid = nothing link-ish / host unreachable).
-                if UnfurlTrigger.matches(body) {
-                    self.triggerUnfurl(for: result.message, viewerId: viewer.id, session: session)
-                }
-            } catch {
-                // REM-B F-MS-20 - slow mode: 429 + retryAfter arms the
-                // composer countdown lock (web backoff parity).
-                if let failure = error as? PulseAPIClient.Failure,
-                   failure.status == 429, let wait = failure.retryAfter, wait > 0 {
-                    self.messages.removeAll { $0.id == temp.id }
-                    try? session.store?.deleteMessage(id: temp.id)
-                    self.draft = body
-                    self.armSlowModeLock(seconds: wait)
-                    self.errorText = Self.describe(error)
-                } else if PulseOutboxEngine.isDroppable(error) {
-                    self.messages.removeAll { $0.id == temp.id }
-                    try? session.store?.deleteMessage(id: temp.id)
-                    self.errorText = Self.describe(error)
-                } else {
-                    // R4-A privacy repair (orchestrator) - an incognito send
-                    // NEVER rides the outbox: the queue payload is
-                    // content-only, so a later flush would post the text
-                    // UN-masked (identity leak). Android parity (R3-B
-                    // PulseRepositoryImpl :812-818): retract the optimistic
-                    // bubble, keep the draft, keep the mask armed - privacy
-                    // over delivery.
-                    if wasAnonArmed {
-                        self.messages.removeAll { $0.id == temp.id }
-                        try? session.store?.deleteMessage(id: temp.id)
-                        self.draft = body
-                        session.toasts.show("Incognito needs a live connection - message kept in the composer")
-                    } else {
-                        // Temp row stays (queued clock) - outbox flush reconciles.
-                        // R4-A item 2 - a QUEUED send is not a server-accepted
-                        // send: the mask stays armed (PulseRoomParityLogic
-                        // .anonDisarmAfterSend false branch - Android
-                        // :560-564 parity; the manual disarm path above the
-                        // composer still works).
-                        session.enqueueOutbox(conversationId: conversationId, clientId: clientId, content: body)
-                        session.toasts.show("Message queued - sends when you're back online")
-                    }
-                }
-            }
-        }
+        do {
+            let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: conversationId,
+                content: draft, replyTo: replyTarget, topicId: activeTopicId, anon: isGroupRoom && anonOn)
+            upsert(message)
+            errorText = nil
+            // Durable intent owns the quote/mask; a late ACK must not mutate
+            // a newer draft or an independently rearmed mask.
+            draft = ""
+            replyTarget = nil
+            if isGroupRoom { anonOn = false }
+            typingStopTask?.cancel(); typingStopTask = nil
+            scheduleDraftSave(session: session)
+            session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch { errorText = "Message was not queued. Your draft is kept. " + Self.describe(error) }
     }
 
     // ── REM-B F-MS-22 - slash commands ─────────────────────
@@ -4624,7 +4659,6 @@ final class RoomViewModel: ObservableObject {
             requestRecap(session: session)
             return true
         case .effect(let name, let content):
-            draft = ""
             // R3-A item 8 - the web send path can never fire an effect with
             // an empty body (its send button is disabled on empty input), so
             // the machine mirrors that honestly instead of POSTing "".
@@ -4648,11 +4682,6 @@ final class RoomViewModel: ObservableObject {
             return
         }
         guard editingTarget == nil, staged == nil else { return }
-        draft = ""
-        replyTarget = nil
-        typingStopTask?.cancel()
-        typingStopTask = nil
-        session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
         sendWithEffect(effect: effect, content: body, session: session)
     }
 
@@ -4693,63 +4722,49 @@ final class RoomViewModel: ObservableObject {
     /// F-MS-22/23 - effect-flagged send: payload { effect } rides kind text;
     /// the sender's client fires the burst locally (web fireParticles parity).
     private func sendWithEffect(effect: String, content: String, session: PulseSession) {
-        guard let viewer = session.viewer, editingTarget == nil, staged == nil else { return }
-        let clientId = UUID().uuidString
-        let temp = TempMessages.make(
-            conversationId: conversationId,
-            viewer: viewer,
-            clientId: clientId,
-            content: content,
-            parentId: nil,
-        )
-        upsert(temp)
-        try? session.store?.upsert(messages: [temp])
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let message = try await session.api.sendMessage(
-                    conversationId: conversationId,
-                    content: content,
-                    topicId: activeTopicId,
-                    payload: ["effect": effect],
-                )
-                self.swapTemp(temp.id, for: message, session: session)
-                if let kindName = PulseRemediationLogic.particleKind(forEffect: effect) {
-                    let kind = Self.particleKind(named: kindName)
-                    session.particles.fire(kind: kind, count: Self.particleCount(for: kind), center: CGPoint(x: 0.5, y: 0.85))
-                }
-                self.loadTopics(session: session)
-            } catch {
-                self.messages.removeAll { $0.id == temp.id }
-                try? session.store?.deleteMessage(id: temp.id)
-                self.errorText = Self.describe(error)
-            }
+        guard let viewer = session.viewer, let store = session.store, session.ready,
+              editingTarget == nil, staged == nil else {
+            errorText = "Message was not queued. Your draft is kept until the account store is ready."
+            return
+        }
+        do {
+            let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: conversationId,
+                content: content, effect: effect, replyTo: replyTarget, topicId: activeTopicId, anon: isGroupRoom && anonOn)
+            upsert(message)
+            draft = ""; replyTarget = nil
+            if isGroupRoom { anonOn = false }
+            typingStopTask?.cancel(); typingStopTask = nil
+            scheduleDraftSave(session: session)
+            session.emitTyping(conversationId: conversationId, recipients: [], isTyping: false)
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch {
+            errorText = "Message was not queued. Your draft is kept; select the effect again. " + Self.describe(error)
         }
     }
 
     // ── REM-B F-MS-24 - stickers ───────────────────────────
 
     /// kind "sticker" + payload { emoji, pack } (web sticker-picker parity;
-    /// the bubble renders the emoji big). Online-only like all rich kinds.
+    /// the bubble renders the emoji big). Uses the shared durable dispatcher.
     func sendSticker(emoji: String, pack: String, session: PulseSession) {
-        guard let viewer = session.viewer else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let message = try await session.api.sendMessage(
-                    conversationId: conversationId,
-                    content: emoji,
-                    kind: "sticker",
-                    topicId: activeTopicId,
-                    payload: ["emoji": emoji, "pack": pack],
-                )
-                self.upsert(message)
-                try? session.store?.upsert(messages: [message])
-                self.loadTopics(session: session)
-            } catch {
-                session.toasts.show(Self.describe(error))
-            }
+        enqueueRich(kind: "sticker", content: emoji, payload: ["emoji": emoji, "pack": pack], session: session)
+    }
+
+    private func enqueueRich(kind: String, content: String, payload: [String: Any], session: PulseSession) {
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            session.toasts.show("Local storage is not ready. Nothing was queued.")
+            return
         }
+        do {
+            let message = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: conversationId,
+                kind: kind, content: content, payload: payload, replyTo: replyTarget, topicId: activeTopicId, anon: isGroupRoom && anonOn)
+            upsert(message)
+            replyTarget = nil
+            if isGroupRoom { anonOn = false }
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch { session.toasts.show("Message was not queued. " + Self.describe(error)) }
     }
 
     // ── R1-W2B F-MD-06 - translate ───────────────────────
@@ -4779,27 +4794,10 @@ final class RoomViewModel: ObservableObject {
     // ── R1-W2B F-MD-07 - location send ───────────────────
 
     /// kind "location" + payload { lat, lng, label } (web sendLocation parity,
-    /// chat-room.tsx:3120-3138; content rides empty like the web). Online-only
-    /// like every rich kind - failures surface the honest toast.
+    /// chat-room.tsx:3120-3138; content rides empty like the web). Persisted
+    /// before delivery, with the same ordering/recovery as text.
     func sendLocation(lat: Double, lng: Double, label: String, session: PulseSession) {
-        guard session.viewer != nil else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let message = try await session.api.sendMessage(
-                    conversationId: self.conversationId,
-                    content: "",
-                    kind: "location",
-                    topicId: self.activeTopicId,
-                    payload: ["lat": lat, "lng": lng, "label": label],
-                )
-                self.upsert(message)
-                try? session.store?.upsert(messages: [message])
-                self.loadTopics(session: session)
-            } catch {
-                session.toasts.show(Self.describe(error))
-            }
-        }
+        enqueueRich(kind: "location", content: "", payload: ["lat": lat, "lng": lng, "label": label], session: session)
     }
 
     // ── R1-W2B F-MS-29 - quick phrases ───────────────────
@@ -4821,60 +4819,75 @@ final class RoomViewModel: ObservableObject {
             return
         }
         let iso = ScheduleSheet.isoFormatter.string(from: date)
+        let revision = draftEditRevision
+        let client = session.api
+        let epoch = session.sessionGeneration
         Task { [weak self] in
             guard let self else { return }
             do {
                 // R5-A Item 6 - the returned row joins the cached list (no
                 // refetch) so the chip count + next-dispatch stamp update.
-                let item = try await session.api.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
-                self.draft = ""
+                let item = try await client.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
+                guard session.sessionGeneration == epoch else { return }
+                if self.draftEditRevision == revision && self.draftJournal?.isCurrentOwner == true {
+                    self.draft = ""
+                    self.scheduleDraftSave(session: session)
+                }
                 self.scheduledItems.append(item)
-                try? session.store?.deleteDraft(conversationId: conversationId)
                 PulseHaptics.success()
                 session.toasts.show("Scheduled - \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")
             } catch {
+                guard session.sessionGeneration == epoch else { return }
                 session.toasts.show(Self.describe(error))
             }
         }
     }
 
     /// Wave 2 - fire-and-forget unfurl after OWN link-bearing send (spec §1
-    /// row 8). Detached + swallow-everything: the card arrives either through
-    /// this row or the link:preview relay envelope.
+    /// row 8). A response from a retired session or older than a relay must
+    /// not overwrite the current message cache.
     private func triggerUnfurl(for message: WireChatMessage, viewerId: String, session: PulseSession) {
         let api = session.api
         let store = session.store
-        Task.detached { [weak self] in
-            guard let row = try? await api.unfurl(messageId: message.id, userId: viewerId) else { return }
+        let epoch = session.sessionGeneration
+        let revision = session.messageRevision
+        Task { [weak self] in
+            guard let row = try? await api.unfurl(messageId: message.id, userId: viewerId),
+                  !Task.isCancelled, session.sessionGeneration == epoch,
+                  session.acceptsSyncMessage(message.id, startedAt: revision) else { return }
             try? store?.upsert(messages: [row])
-            await MainActor.run { self?.upsert(row) }
+            self?.upsert(row)
         }
     }
 
-    /// Temp → real reconciliation: swap by id AND dedupe any optimistic row
-    /// with the same sender + content (web sendMessage.onSuccess parity).
+    /// Only the acknowledged operation is retired. Identical sends are distinct.
     private func swapTemp(_ tempId: String, for message: WireChatMessage, session: PulseSession) {
-        messages.removeAll {
-            $0.id == tempId
-                || ($0.id.hasPrefix("local_") && $0.content == message.content && $0.senderId == message.senderId)
-        }
+        messages.removeAll { $0.id == tempId }
         upsert(message)
-        try? session.store?.upsert(messages: [message])
-        try? session.store?.deleteMessage(id: tempId)
+        let clientId = String(tempId.dropFirst("local_".count))
+        do { try session.store?.resolveDelivery(clientId: clientId, message: message) }
+        catch { self.errorText = "Delivered, but local storage could not be updated. Pending data was retained." }
     }
 
-    /// Wave 0 outbox reconciliation - the engine swapped/removed a queued
-    /// placeholder (text sends only; spec §1.2).
     private func handleOutboxEvent(_ event: PulseOutboxEvent) {
         switch event {
-        case .delivered(let message, let conversationId):
+        case .delivered(let message, let conversationId, let clientId):
             guard conversationId == self.conversationId else { return }
             upsert(message)
-            // Generic temp dedupe (web parity): same content + sender.
-            messages.removeAll {
-                $0.id.hasPrefix("local_")
-                    && $0.content == message.content
-                    && $0.senderId == message.senderId
+            messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
+            if message.parentId == nil, let session {
+                loadTopics(session: session)
+                if PulseRemediationLogic.effectOfPayload(message.payload) == nil {
+                    session.particles.fire(kind: .burst, count: 22)
+                }
+                if let viewer = session.viewer, UnfurlTrigger.matches(message.content) {
+                    triggerUnfurl(for: message, viewerId: viewer.id, session: session)
+                }
+            }
+            if let session, let effect = PulseRemediationLogic.effectOfPayload(message.payload),
+               let name = PulseRemediationLogic.particleKind(forEffect: effect) {
+                let kind = Self.particleKind(named: name)
+                session.particles.fire(kind: kind, count: Self.particleCount(for: kind), center: CGPoint(x: 0.5, y: 0.85))
             }
         case .dropped(let clientId, let conversationId):
             guard conversationId == self.conversationId else { return }
@@ -4904,16 +4917,18 @@ final class RoomViewModel: ObservableObject {
         replyTarget = nil
     }
 
+    func readLabel(_ message: WireChatMessage) -> String {
+        let count = PulseRoomParityLogic.peerReadCount(watermarks: memberWatermarks,
+            viewerId: session?.viewer?.id, createdAtIso: message.createdAt)
+        return isGroupRoom ? "Read by \(count)" : "Seen"
+    }
+
     func isSeen(_ message: WireChatMessage) -> Bool {
         guard message.senderId == session?.viewer?.id,
               let last = messages.last(where: { $0.senderId == session?.viewer?.id }) else { return false }
         guard last.id == message.id else { return false }
-        // Wave 1 - group-aware watermarks: any OTHER member's lastReadAt
-        // covering this message counts as seen (DM keeps the partner path).
-        var stamps = Array(memberWatermarks.values)
-        if let partner = partnerLastReadAt { stamps.append(partner) }
-        guard let seen = stamps.max() else { return false }
-        return seen >= (PulseFormat.date(message.createdAt) ?? .distantFuture)
+        return PulseRoomParityLogic.peerReadCount(watermarks: memberWatermarks,
+            viewerId: session?.viewer?.id, createdAtIso: message.createdAt) > 0
     }
 
     // ── Wave 1 message actions ─────────────────────────────
@@ -4927,30 +4942,57 @@ final class RoomViewModel: ObservableObject {
     }
 
     func beginEdit(_ message: WireChatMessage) {
+        editSaveTask?.cancel()
+        editGeneration = UUID()
+        savingEdit = false
+        if editingTarget == nil {
+            draftBeforeEdit = draft
+            replyBeforeEdit = replyTarget
+        }
+        editingTarget = message
         replyTarget = nil
         draft = message.content
-        editingTarget = message
     }
 
     func cancelEdit() {
+        editSaveTask?.cancel()
+        editGeneration = UUID()
+        savingEdit = false
         editingTarget = nil
-        draft = ""
+        draft = draftBeforeEdit ?? ""
+        replyTarget = replyBeforeEdit
+        draftBeforeEdit = nil
+        replyBeforeEdit = nil
     }
 
     func saveEdit(session: PulseSession) {
-        guard let target = editingTarget else { return }
+        guard let target = editingTarget, let viewer = session.viewer, !savingEdit else { return }
         let body = draft.trimmingCharacters(in: .whitespaces)
         guard !body.isEmpty else { return }
-        editingTarget = nil
-        draft = ""
-        // Edits never queue (spec §1.2) - an honest error covers offline.
-        Task { [weak self] in
-            guard let self, let viewer = session.viewer else { return }
+        let revision = draftEditRevision, ticket = editGeneration
+        let epoch = session.sessionGeneration
+        let client = session.api, store = session.store
+        let watermark = session.messageRevision
+        savingEdit = true
+        editSaveTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.editGeneration == ticket { self.savingEdit = false } }
             do {
-                let fresh = try await session.api.editMessage(id: target.id, userId: viewer.id, content: body)
-                self.upsert(fresh)
-                try? session.store?.upsert(messages: [fresh])
+                let fresh = try await client.editMessage(id: target.id, userId: viewer.id, content: body)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch, self.editGeneration == ticket else { return }
+                if session.acceptsSyncMessage(fresh.id, startedAt: watermark) {
+                    try store?.upsert(messages: [fresh])
+                    self.upsert(fresh)
+                }
+                if self.draftEditRevision == revision && self.draftJournal?.isCurrentOwner == true {
+                    self.cancelEdit() // restore the unsent composer, not an empty string
+                    self.scheduleDraftSave(session: session)
+                }
+            } catch is CancellationError {
             } catch {
+                guard self.editGeneration == ticket, session.sessionGeneration == epoch else { return }
+                // Keep the edited text and target available for retry.
                 self.errorText = Self.describe(error)
             }
         }
@@ -5002,7 +5044,41 @@ final class RoomViewModel: ObservableObject {
 
     // ── Wave 1 media staging + upload (spec §1.1) ────────
 
+    private var photoImportTask: Task<Void, Never>?
+    private var photoImportGeneration = UUID()
+
+    private func cancelPhotoImport() {
+        photoImportGeneration = UUID()
+        photoImportTask?.cancel(); photoImportTask = nil
+        uploading = false
+    }
+
+    func importPhoto(_ item: PhotosPickerItem, session: PulseSession) {
+        cancelPhotoImport()
+        guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
+        let ticket = photoImportGeneration
+        let epoch = session.sessionGeneration
+        uploading = true
+        photoImportTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if photoImportGeneration == ticket { uploading = false; photoImportTask = nil }
+            }
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else { throw CocoaError(.fileReadCorruptFile) }
+                guard !Task.isCancelled, photoImportGeneration == ticket, session.sessionGeneration == epoch else { return }
+                stageImage(data)
+            } catch {
+                if !Task.isCancelled, photoImportGeneration == ticket, session.sessionGeneration == epoch {
+                    errorText = "Couldn't read the selected photo. Any previous attachment is kept."
+                }
+            }
+        }
+    }
+
     func stageImage(_ data: Data) {
+        cancelPhotoImport()
+        guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
         guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: data) else {
             errorText = "Couldn't read that image"
             return
@@ -5012,16 +5088,19 @@ final class RoomViewModel: ObservableObject {
             dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg),
             fileName: nil,
             fileSize: jpeg.count,
-            previewURL: URL(dataRepresentation: jpeg, relativeTo: nil),
+            previewURL: nil,
             viewOnce: false,
+            previewData: jpeg,
         )
         caption = ""
     }
 
     func stageDocument(url: URL) {
+        cancelPhotoImport()
+        guard !isRecording, staged?.kind != .audio else { errorText = "Finish or discard the voice note first."; return }
         let secured = url.startAccessingSecurityScopedResource()
         defer { if secured { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url) else {
+        guard let data = try? PulseMediaSupport.readDocument(url: url) else {
             errorText = "Couldn't read that document"
             return
         }
@@ -5047,7 +5126,7 @@ final class RoomViewModel: ObservableObject {
 
     /// Wave 2 view-once - flips the staged card's burn flag (image sends).
     func setStagedViewOnce(_ on: Bool) {
-        guard let current = staged else { return }
+        guard let current = staged, current.kind == .image else { return }
         staged = StagedMedia(
             kind: current.kind,
             dataUrl: current.dataUrl,
@@ -5055,62 +5134,40 @@ final class RoomViewModel: ObservableObject {
             fileSize: current.fileSize,
             previewURL: current.previewURL,
             viewOnce: on,
+            durationMs: current.durationMs,
+            previewData: current.previewData,
         )
     }
 
     func cancelStaged() {
+        cancelPhotoImport()
         staged = nil
         caption = ""
         uploading = false
     }
 
-    /// Upload → send. Media NEVER queues offline (spec §1.2) - failures
-    /// surface an honest inline error and keep the staged card for retry.
+    /// Commit bytes + immutable send metadata before clearing the staged card.
+    /// The account outbox owns upload/retry, even after this screen disappears.
     func sendStaged(session: PulseSession) {
         guard let media = staged, !uploading else { return }
-        guard session.viewer != nil else {
-            errorText = "The gateway is unreachable."
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            errorText = "The account store is not ready. Your attachment is kept."
             return
         }
-        uploading = true
-        let body = caption.trimmingCharacters(in: .whitespaces)
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let filePath = try await session.api.uploadMedia(dataUrl: media.dataUrl)
-                let message: WireChatMessage
-                switch media.kind {
-                case .image:
-                    message = try await session.api.sendMessage(
-                        conversationId: conversationId,
-                        content: body,
-                        imagePath: filePath,
-                        viewOnce: media.viewOnce ? true : nil,
-                        topicId: activeTopicId,
-                    )
-                case .file:
-                    message = try await session.api.sendMessage(
-                        conversationId: conversationId,
-                        content: body,
-                        filePath: filePath,
-                        fileName: media.fileName,
-                        fileSize: media.fileSize,
-                        kind: "file",
-                        topicId: activeTopicId
-                    )
-                }
-                self.uploading = false
-                self.staged = nil
-                self.caption = ""
-                self.upsert(message)
-                try? session.store?.upsert(messages: [message])
-                session.particles.fire(kind: .burst, count: 22)
-                self.loadTopics(session: session)
-            } catch {
-                self.uploading = false
-                self.errorText = Self.describe(error)
-            }
-        }
+        do {
+            let kind: String
+            switch media.kind { case .image: kind = "image"; case .file: kind = "file"; case .audio: kind = "audio" }
+            let message = try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer, conversationId: conversationId,
+                content: caption.trimmingCharacters(in: .whitespacesAndNewlines), dataUrl: media.dataUrl,
+                envelope: PulseOutboxForward(kind: kind, durationMs: media.durationMs,
+                    fileName: media.fileName, fileSize: media.fileSize, topicId: activeTopicId,
+                    anon: isGroupRoom && anonOn, viewOnce: media.viewOnce), replyTo: replyTarget)
+            upsert(message)
+            staged = nil; caption = ""; replyTarget = nil
+            if isGroupRoom { anonOn = false }
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch { errorText = Self.describe(error) }
     }
 
     // ── Wave 2 voice notes (spec §1 rows 1/11/12/15) ─────
@@ -5119,31 +5176,29 @@ final class RoomViewModel: ObservableObject {
     /// Mic TCC first; if the prompt swallows the finger lift the recording
     /// simply continues with the explicit bar (cancel X + slot tap to send).
     func startVoiceRecording(session: PulseSession) {
-        guard !isRecording, voiceRecorder == nil else { return }
+        guard !isRecording, !uploading, voiceRecorder == nil, voicePermissionTask == nil, staged == nil else { return }
         voiceSession = session
-        Task { [weak self] in
+        let generation = UUID(); voicePermissionGeneration = generation
+        let account = session.sessionGeneration
+        voicePermissionTask = Task { [weak self] in
             guard let self else { return }
+            defer { if voicePermissionGeneration == generation { voicePermissionTask = nil } }
             let granted = await VoiceRecorder.requestPermission()
+            guard !Task.isCancelled, generation == voicePermissionGeneration,
+                  account == session.sessionGeneration else { return }
             guard granted else {
-                self.voiceSession = nil
+                voiceSession = nil
                 session.toasts.show("Microphone access is off - enable it in Settings to record voice notes")
                 return
             }
-            guard !self.isRecording, self.voiceRecorder == nil else { return }
+            guard !isRecording, voiceRecorder == nil, staged == nil else { return }
             let recorder = VoiceRecorder()
-            do {
-                try recorder.start()
-            } catch {
-                self.voiceSession = nil
-                session.toasts.show("Couldn't start recording")
-                return
-            }
-            self.voiceRecorder = recorder
-            self.recordingStartedAt = Date()
-            self.recordingElapsedMs = 0
-            self.recordingAmplitudes = []
-            self.isRecording = true
-            self.startRecordingTicker()
+            do { try recorder.start() }
+            catch { voiceSession = nil; session.toasts.show("Couldn't start recording"); return }
+            voiceRecorder = recorder
+            recordingStartedAt = Date(); recordingElapsedMs = 0; recordingAmplitudes = []
+            isRecording = true
+            startRecordingTicker()
         }
     }
 
@@ -5157,18 +5212,20 @@ final class RoomViewModel: ObservableObject {
     }
 
     func cancelVoiceRecording() {
+        voicePermissionGeneration = UUID()
+        voicePermissionTask?.cancel(); voicePermissionTask = nil
+        voiceSession = nil
         guard isRecording else { return }
         voiceRecorder?.cancel()
         teardownRecording()
     }
 
-    /// Send path - stop, round the duration (spec: max(1, round(ms/100)*100)),
-    /// discard <600 ms with the honest toast, else upload + send kind "audio"
-    /// (never queued - media never queues, spec §1.2).
+    /// Stop and stage the recording, then durably enqueue its bytes and metadata.
+    /// A failed upload must not delete the only copy of the user's recording.
     func finishAndSendVoice(session: PulseSession) {
         guard isRecording, !sendingVoice, let startedAt = recordingStartedAt else { return }
         let elapsedMs = Date().timeIntervalSince(startedAt) * 1000
-        let durationMs = VoiceMath.roundedDurationMs(fromElapsedMs: elapsedMs)
+        let durationMs = min(VoiceMath.maximumSendMs, VoiceMath.roundedDurationMs(fromElapsedMs: elapsedMs))
         voiceRecorder?.stop()
         let fileURL = voiceRecorder?.fileURL
         teardownRecording()
@@ -5177,39 +5234,16 @@ final class RoomViewModel: ObservableObject {
             session.toasts.show("Too short - voice note discarded")
             return
         }
-        guard let viewer = session.viewer else {
+        do {
+            let data = try Data(contentsOf: fileURL)
+            staged = StagedMedia(kind: .audio, dataUrl: PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data),
+                fileName: "Voice note.m4a", fileSize: data.count, previewURL: nil, viewOnce: false, durationMs: durationMs)
+            caption = ""
+            // Only the temporary recorder file is removed; the staged bytes remain
+            // on storage failure, or move atomically into the durable outbox.
             try? FileManager.default.removeItem(at: fileURL)
-            errorText = "The gateway is unreachable."
-            return
-        }
-        sendingVoice = true
-        Task { [weak self] in
-            defer {
-                self?.sendingVoice = false
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-            guard let self else { return }
-            do {
-                let data = try Data(contentsOf: fileURL)
-                let dataUrl = PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data)
-                let filePath = try await session.api.uploadMedia(dataUrl: dataUrl)
-                let message = try await session.api.sendMessage(
-                    conversationId: conversationId,
-                    content: "",
-                    audioPath: filePath,
-                    durationMs: durationMs,
-                    kind: "audio",
-                    topicId: activeTopicId,
-                )
-                self.upsert(message)
-                try? session.store?.upsert(messages: [message])
-                session.particles.fire(kind: .burst, count: 22)
-                self.loadTopics(session: session)
-            } catch {
-                // Media NEVER queues (web parity) - honest toast instead.
-                session.toasts.show(Self.describe(error))
-            }
-        }
+            sendStaged(session: session)
+        } catch { errorText = "Could not read the recording. The source file was not deleted." }
     }
 
     private func teardownRecording() {
@@ -5256,14 +5290,21 @@ final class RoomViewModel: ObservableObject {
 
     // ── Wave 2 voice playback (spec §1 rows 12/13) ───────
 
+    private func cancelPendingVoicePlayback() {
+        voicePlaybackGeneration = UUID()
+        voicePlaybackTask?.cancel()
+        voicePlaybackTask = nil
+    }
+
     func toggleVoicePlayback(_ message: WireChatMessage, session: PulseSession) {
+        cancelPendingVoicePlayback()
         if let state = playback.state, state.messageId == message.id {
             if state.playing {
                 playback.pause()
             } else if state.progress < 0.999 {
-                playback.resume()
+                if !playback.resume() { session.toasts.show("Voice note could not play") }
             } else {
-                playback.replay()
+                if !playback.replay() { session.toasts.show("Voice note could not play") }
             }
             return
         }
@@ -5277,21 +5318,32 @@ final class RoomViewModel: ObservableObject {
             session.toasts.show("Voice note unavailable")
             return
         }
-        Task { [weak self] in
-            guard let self else { return }
+        let ticket = voicePlaybackGeneration
+        let epoch = session.sessionGeneration
+        voicePlaybackTask = Task { [weak self] in
+            guard !Task.isCancelled, let self, voicePlaybackGeneration == ticket,
+                  session.sessionGeneration == epoch else { return }
             let local: URL
-            if let cached = self.voiceLocalFiles[message.id] {
+            if let cached = voiceLocalFiles[message.id] {
                 local = cached
             } else {
                 do {
                     local = try await PulseMediaOpener.downloadForPreview(url: remote, fileName: "voice-\(message.id).m4a")
-                    self.voiceLocalFiles[message.id] = local
+                    guard !Task.isCancelled, voicePlaybackGeneration == ticket,
+                          session.sessionGeneration == epoch else { return }
+                    voiceLocalFiles[message.id] = local
                 } catch {
+                    guard !Task.isCancelled, voicePlaybackGeneration == ticket,
+                          session.sessionGeneration == epoch else { return }
                     session.toasts.show("Couldn't download the voice note")
                     return
                 }
             }
-            self.playback.start(messageId: message.id, localURL: local, rate: self.voiceRate)
+            guard !Task.isCancelled, voicePlaybackGeneration == ticket,
+                  session.sessionGeneration == epoch else { return }
+            if !playback.start(messageId: message.id, localURL: local, rate: voiceRate) {
+                session.toasts.show("Voice note could not play")
+            }
         }
     }
 
@@ -5442,27 +5494,40 @@ final class RoomViewModel: ObservableObject {
     /// and merges through the store (spec §1 row 9).
     func setActiveTopic(_ id: String?, session: PulseSession) {
         guard activeTopicId != id else { return }
+        cancelHistory()
+        historyCursor = nil
         activeTopicId = id
         PulseHaptics.tap()
-        Task { [weak self] in
+        riverReloadTask?.cancel()
+        riverReloadTask = Task { [weak self] in
             guard let self else { return }
             await self.reloadRiver(session: session)
         }
     }
 
     private func reloadRiver(session: PulseSession) async {
+        guard !Task.isCancelled, session.ready else { return }
+        let epoch = session.sessionGeneration
+        let client = session.api, store = session.store
+        let topic = activeTopicId
+        let watermark = session.messageRevision
         do {
-            let page = try await session.api.messages(conversationId: conversationId, topicId: activeTopicId)
-            messages = riverRows(from: page.messages)
+            let page = try await client.messages(conversationId: conversationId, topicId: topic)
+            try Task.checkCancellation()
+            guard session.sessionGeneration == epoch, activeTopicId == topic else { return }
+            let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            try store?.upsert(messages: fresh)
+            let cached = (try? store?.messages(conversationId: conversationId)) ?? messages
+            messages = PulseTimelineMerge.merge(cached, incoming: fresh, topicId: topic)
+            historyCursor = PulseHistoryCursor.oldest(page.messages)
             hasMore = page.hasMore
             phase = .loaded
-            try? session.store?.upsert(messages: page.messages)
         } catch {
-            // Offline - filter the cache in place instead of failing hard.
-            if let store = session.store {
-                let cached = (try? store.messages(conversationId: conversationId)) ?? []
-                messages = riverRows(from: cached)
-            }
+            guard !Task.isCancelled, session.sessionGeneration == epoch,
+                  activeTopicId == topic else { return }
+            // Offline - retain cached/pending rows in the captured topic.
+            let cached = (try? store?.messages(conversationId: conversationId)) ?? messages
+            messages = PulseTimelineMerge.merge(cached, incoming: [], topicId: topic)
         }
     }
 
@@ -5538,72 +5603,6 @@ final class RoomViewModel: ObservableObject {
               let kindName = PulseRemediationLogic.particleKind(forEffect: effect) else { return }
         let kind = Self.particleKind(named: kindName)
         session.particles.fire(kind: kind, count: Self.particleCount(for: kind), center: CGPoint(x: 0.5, y: 0.85))
-    }
-}
-
-/// Optimistic temp-row factory shared by the river AND thread sends -
-/// id `local_<clientId>` (Wave 0 convention), viewer sender, quote block,
-/// optional thread parent. Real rows replace it by id + content dedupe.
-/// @MainActor: builds on PulseOutboxEngine.tempMessageId (MainActor-static).
-@MainActor
-enum TempMessages {
-    static func make(
-        conversationId: String,
-        viewer: PulseViewer,
-        clientId: String,
-        content: String,
-        parentId: String?,
-        replyTo: WireChatMessage? = nil,
-        anon: Bool = false,
-        anonAlias: String? = nil,
-    ) -> WireChatMessage {
-        let sender = WireSender(
-            id: viewer.id,
-            name: viewer.name,
-            username: viewer.username,
-            color: viewer.color,
-            avatar: viewer.avatar,
-        )
-        let quoted = replyTo.map { source in
-            WireReplySnippet(
-                id: source.id,
-                content: source.content,
-                senderName: source.sender?.name ?? "",
-                deleted: source.deletedAt != nil,
-            )
-        }
-        return WireChatMessage(
-            id: PulseOutboxEngine.tempMessageId(clientId: clientId),
-            conversationId: conversationId,
-            senderId: viewer.id,
-            content: content,
-            kind: "text",
-            createdAt: PulseOutboxClock.now(),
-            editedAt: nil,
-            deletedAt: nil,
-            sender: sender,
-            reactions: nil,
-            replyTo: quoted,
-            parentId: parentId,
-            imagePath: nil,
-            audioPath: nil,
-            durationMs: nil,
-            filePath: nil,
-            fileName: nil,
-            fileSize: nil,
-            pinnedAt: nil,
-            viewOnce: nil,
-            anon: anon ? true : nil,
-            anonAlias: anonAlias,
-            viewedAt: nil,
-            viewedBy: nil,
-            transcript: nil,
-            transcribedAt: nil,
-            topicId: nil,
-            linkUrl: nil,
-            linkPreview: nil,
-            poll: nil,
-        )
     }
 }
 

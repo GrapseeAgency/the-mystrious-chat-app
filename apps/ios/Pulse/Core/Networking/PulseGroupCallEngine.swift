@@ -124,6 +124,8 @@ public final class PulseGroupCallEngine: ObservableObject {
     private var ongoingConversationId: String?
 
     private var cancellables: Set<AnyCancellable> = []
+    private var joinGeneration = UUID()
+    private(set) var preparationTask: Task<Void, Never>?
 
     /// Weak process-wide mirror of the LIVE group engine - the 1:1 engine
     /// consults it so the two call surfaces never fight over the audio
@@ -221,6 +223,8 @@ public final class PulseGroupCallEngine: ObservableObject {
     }
 
     public func leaveCall() {
+        joinGeneration = UUID()
+        preparationTask?.cancel()
         guard uiState == .joining || uiState == .active else { return }
         PulseHaptics.tap()
         if let conv = joinedConv {
@@ -236,6 +240,8 @@ public final class PulseGroupCallEngine: ObservableObject {
     }
 
     public func dismissError() {
+        joinGeneration = UUID()
+        preparationTask?.cancel()
         errorText = nil
         uiState = .idle
     }
@@ -303,16 +309,19 @@ public final class PulseGroupCallEngine: ObservableObject {
         ring = nil
         ringArrivedAt = nil
         uiState = .joining
-        Task { await beginJoin(targetConvId, wanted: wanted, ringOthers: ringOthers, title: title) }
+        let ticket = UUID()
+        joinGeneration = ticket
+        preparationTask = Task { await beginJoin(targetConvId, wanted: wanted, ringOthers: ringOthers, title: title, ticket: ticket) }
     }
 
-    private func beginJoin(_ convId: String, wanted: CallKind, ringOthers: Bool, title: String) async {
+    private func beginJoin(_ convId: String, wanted: CallKind, ringOthers: Bool, title: String, ticket: UUID) async {
+        guard !Task.isCancelled, joinGeneration == ticket else { return }
         var resolved = wanted
         // Camera capability resolves FIRST (web acquireMedia degrade: no
         // usable camera → the call degrades to voice with an honest toast).
         if wanted == .video {
             let cameraOk = await media.requestCameraPermission() && media.canCaptureVideo()
-            guard uiState == .joining, joinedConv == nil else { return }
+            guard !Task.isCancelled, joinGeneration == ticket, uiState == .joining, joinedConv == nil else { return }
             if !cameraOk {
                 toasts.show("Camera unavailable - joining as a voice call")
                 resolved = .voice
@@ -320,15 +329,21 @@ public final class PulseGroupCallEngine: ObservableObject {
             }
         }
         let micGranted = await media.requestMicPermission()
-        guard uiState == .joining, joinedConv == nil else { return }
+        guard !Task.isCancelled, joinGeneration == ticket, uiState == .joining, joinedConv == nil else { return }
         guard micGranted else {
             uiState = .idle
             joinIntent = false
             errorText = Self.micDeniedMessage
             return
         }
-        PulseCallAudioSession.shared.activateForCall()
+        guard PulseCallAudioSession.shared.activateForCall() else {
+            uiState = .idle
+            joinIntent = false
+            errorText = "Audio is unavailable or in use. Leave your room or stop recording first."
+            return
+        }
         guard let audio = media.makeSharedAudioTrack() else {
+            PulseCallAudioSession.shared.restore()
             uiState = .idle
             joinIntent = false
             errorText = "Could not start the call. Try again."

@@ -43,6 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.domain.model.User
 import app.pulse.domain.repository.PulseRepository
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -67,7 +70,12 @@ internal fun MirrorContacts(
     onNewGroup: () -> Unit,
     onAdd: () -> Unit,
 ) {
-    var people by remember { mutableStateOf<List<User>>(emptyList()) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var openingUser by remember { mutableStateOf<String?>(null) }
+    var people by remember(viewerId) { mutableStateOf<List<User>>(emptyList()) }
+    var loadError by remember(viewerId) { mutableStateOf(false) }
+    var loadRevision by remember { mutableStateOf(0) }
     var viewerName by remember { mutableStateOf("") }
     var viewerAbout by remember { mutableStateOf("") }
     var viewerColor by remember { mutableStateOf<String?>(null) }
@@ -76,8 +84,11 @@ internal fun MirrorContacts(
     val onlineIds by repository.observePresence().collectAsState(initial = emptySet())
     val conversations by repository.observeConversations().collectAsState(initial = emptyList())
 
-    LaunchedEffect(Unit) {
-        people = repository.users("").getOrDefault(emptyList()).filter { it.id != viewerId }
+    LaunchedEffect(viewerId, loadRevision) {
+        repository.users("").onSuccess { loaded ->
+            people = loaded.filter { it.id != viewerId }
+            loadError = false
+        }.onFailure { loadError = true }
         val me = repository.me()
         viewerName = me?.name.orEmpty()
         viewerAbout = me?.bio.orEmpty()
@@ -126,6 +137,8 @@ internal fun MirrorContacts(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("Contacts", color = SubPageInk.Zinc50, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    if (loadError) Text("Couldn't load people. Tap to retry.", color = SubPageInk.Amber400,
+                        fontSize = 12.sp, modifier = Modifier.clickable { loadRevision++ }.padding(vertical = 8.dp))
                     Text(
                         others.size.toString() + (if (others.size == 1) " person" else " people") +
                             " on this Pulse · $onlineCount online",
@@ -296,9 +309,23 @@ internal fun MirrorContacts(
                                         if (existing != null) {
                                             onOpenConversation(existing)
                                         } else {
-                                            CoroutineScope(Dispatchers.IO).launch {
-                                                val convo = repository.createDm(person.id).getOrNull()
-                                                if (convo != null) onOpenConversation(convo.id)
+                                            if (openingUser == null) {
+                                                openingUser = person.id
+                                                scope.launch {
+                                                    try {
+                                                        val result = repository.createDm(person.id)
+                                                        coroutineContext.ensureActive()
+                                                        result.fold(
+                                                            onSuccess = { onOpenConversation(it.id) },
+                                                            onFailure = {
+                                                                android.widget.Toast.makeText(
+                                                                    context, it.message ?: "Could not open this chat. Try again.",
+                                                                    android.widget.Toast.LENGTH_SHORT,
+                                                                ).show()
+                                                            },
+                                                        )
+                                                    } finally { openingUser = null }
+                                                }
                                             }
                                         }
                                     },

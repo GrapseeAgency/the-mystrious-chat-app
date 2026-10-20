@@ -1,5 +1,6 @@
 package app.pulse.feature.voice.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -44,7 +45,28 @@ import app.pulse.ui.PulsePalette
 @Composable
 fun VoiceRoomsOverlay(vm: VoiceRoomsViewModel) {
     val surface by vm.surface.collectAsStateWithLifecycle()
+    val voice by vm.voiceState.collectAsStateWithLifecycle()
+    val stage by vm.stageState.collectAsStateWithLifecycle()
+    val issue by vm.audioIssue.collectAsStateWithLifecycle()
+    if (surface == null) {
+        if (voice.joined || stage.joined) {
+            Box(Modifier.fillMaxSize().statusBarsPadding()) {
+                Surface(modifier = Modifier.align(Alignment.TopCenter).padding(8.dp),
+                    shape = RoundedCornerShape(16.dp), color = PulsePalette.Emerald) {
+                    Row(Modifier.padding(12.dp)) {
+                        Text("Live room · open", color = Color.White, modifier = Modifier.clickable {
+                            if (stage.joined) vm.openStage(stage.conversationId) else vm.openVoice(voice.conversationId)
+                        })
+                        Spacer(Modifier.width(24.dp))
+                        Text("Leave", color = Color.White, modifier = Modifier.clickable { vm.leaveAll() })
+                    }
+                }
+            }
+        }
+        return
+    }
     val open = surface ?: return
+    BackHandler { vm.closeSurface() }
 
     Column(
         Modifier
@@ -53,6 +75,7 @@ fun VoiceRoomsOverlay(vm: VoiceRoomsViewModel) {
             .semantics { contentDescription = "Voice rooms overlay" },
     ) {
         RoomKindSwitcher(open, vm)
+        issue?.let { Text(it, color = PulsePalette.Amber, modifier = Modifier.padding(16.dp)) }
         Box(Modifier.fillMaxSize()) {
             when (open.kind) {
                 VoiceRoomsEngine.RoomKind.VOICE ->

@@ -158,7 +158,7 @@ object MediaSupport {
     suspend fun audioToDataUrl(context: Context, file: File, mime: String = "audio/mp4"): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val bytes = file.takeIf { it.exists() && it.length() > 0 }?.readBytes()
+                val bytes = file.takeIf { it.exists() && it.length() > 0 }?.inputStream()?.use { readBounded(it, 3_374_900) }
                     ?: throw IllegalStateException("Recording file is gone")
                 "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
             }
@@ -171,17 +171,30 @@ object MediaSupport {
         val sizeBytes: Long,
     )
 
+    internal fun readBounded(input: java.io.InputStream, maximum: Int): ByteArray {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            if (count == 0) continue
+            require(output.size() + count <= maximum) { "Attachment exceeds the supported size limit" }
+            output.write(buffer, 0, count)
+        }
+        return output.toByteArray()
+    }
+
     /** Document → data-URL with the ≤10MB client gate (spec §1.1). */
     suspend fun documentToDataUrl(context: Context, uri: Uri): Result<Document> = withContext(Dispatchers.IO) {
         runCatching {
             val resolver = context.contentResolver
-            val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+            val bytes = resolver.openInputStream(uri)?.use { readBounded(it, 10 * 1024 * 1024) }
                 ?: throw IllegalStateException("Could not read the selected document")
             if (!PulseMedia.documentFits(bytes.size.toLong())) {
                 throw IllegalStateException("Documents are limited to 10 MB")
             }
             val name = queryDisplayName(context, uri)
-            val mime = resolver.getType(uri) ?: PulseMedia.mimeForFileName(name)
+            val mime = documentMime(resolver.getType(uri), name)
             val size = bytes.size.toLong()
             Document(
                 dataUrl = "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP),
@@ -190,6 +203,15 @@ object MediaSupport {
                 sizeBytes = size,
             )
         }
+    }
+
+    internal fun documentMime(reported: String?, name: String): String {
+        val supported = setOf("application/pdf", "application/zip", "text/plain", "text/csv")
+        val normalized = reported?.substringBefore(';')?.trim()?.lowercase(java.util.Locale.ROOT)
+        if (normalized in supported) return checkNotNull(normalized)
+        val fallback = PulseMedia.mimeForFileName(name)
+        require(fallback in supported) { "Choose a PDF, ZIP, TXT or CSV document" }
+        return fallback // Many document providers report only application/octet-stream.
     }
 
     private fun queryDisplayName(context: Context, uri: Uri): String {
@@ -539,6 +561,15 @@ internal fun ImageLightbox(
     message: Message,
     onDismiss: () -> Unit,
 ) {
+    val dismiss = androidx.compose.runtime.rememberUpdatedState(onDismiss)
+    androidx.compose.runtime.LaunchedEffect(message.id, message.expiresAtEpochMs) {
+        val deadline = message.expiresAtEpochMs ?: return@LaunchedEffect
+        while (true) {
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0L) { dismiss.value(); break }
+            kotlinx.coroutines.delay(remaining.coerceAtMost(30_000L))
+        }
+    }
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }

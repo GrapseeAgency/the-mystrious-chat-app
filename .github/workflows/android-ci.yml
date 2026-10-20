@@ -1,12 +1,13 @@
 name: Pulse Android CI
 
 on:
+  workflow_dispatch: {}
   push:
     branches: [main]
     tags: ['v*']
     paths: ['apps/android/**', 'packages/**', '.github/workflows/android-ci.yml']
   pull_request:
-    paths: ['apps/android/**', '.github/workflows/android-ci.yml']
+    paths: ['apps/android/**', 'packages/**', '.github/workflows/android-ci.yml']
 
 jobs:
   build:
@@ -31,7 +32,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: JVM tests (pure Kotlin — domain + live-protocol + socket round-trip + W4 stories + W5 voice rooms)
-        run: ./gradlew :domain:test :protocol:test :core:build :data:testDebugUnitTest :feature-stories:testDebugUnitTest :feature-voice:testDebugUnitTest
+        run: |
+          set -o pipefail
+          ./gradlew :domain:test :protocol:test :core:build :data:testDebugUnitTest :feature-stories:testDebugUnitTest :feature-voice:testDebugUnitTest :app:testDebugUnitTest :feature-chat:testDebugUnitTest :feature-calls:testDebugUnitTest :feature-hub:testDebugUnitTest :feature-settings:testDebugUnitTest 2>&1 | tee /tmp/pulse-native-jvm.log
+
+      - name: Native test failure diagnostics
+        if: failure()
+        run: python3 ../../scripts/ci/native-test-diagnostics.py
 
       - name: Assemble signed release APK (committed LiveUpdate keystore)
         # R12 — the repo gradle.properties caps the daemon at 1536m, but this
@@ -112,6 +119,7 @@ jobs:
         run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :data:assembleDebugAndroidTest
 
       - name: Run instrumented tests on emulator (launch smoke + Room migration + outbox/draft DAOs)
+        id: instrumented_tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
@@ -120,7 +128,11 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: cd apps/android && ./gradlew :app:connectedDebugAndroidTest :data:connectedDebugAndroidTest
+          script: bash -o pipefail -c 'cd apps/android && ./gradlew :app:connectedDebugAndroidTest :data:connectedDebugAndroidTest 2>&1 | tee /tmp/pulse-native-instrumented.log'
+
+      - name: Instrumented failure details
+        if: failure() && steps.instrumented_tests.conclusion == 'failure'
+        run: python3 ../../scripts/ci/native-test-diagnostics.py
 
       - name: RELEASE smoke - boot the signed artifact, walk onboarding, drive all nav paths
         uses: reactivecircus/android-emulator-runner@v2

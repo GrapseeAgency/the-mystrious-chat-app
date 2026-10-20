@@ -26,6 +26,7 @@ public final class PulseCallAudioSession: ObservableObject {
 
     /// The pre-call session snapshot - restored exactly once, on call end.
     private var saved: SavedSession?
+    private let ownershipToken = UUID()
     private var routeObserver: NSObjectProtocol?
 
     /// Whether a call currently owns the session (engine drives this).
@@ -46,8 +47,10 @@ public final class PulseCallAudioSession: ObservableObject {
     /// the voice-chat configuration. Nested calls (accept while already
     /// active - cannot happen, the machine guards it) would keep the FIRST
     /// snapshot so the original session always wins the restore.
-    public func activateForCall() {
-        guard !isActiveCallSession else { return }
+    @discardableResult
+    public func activateForCall() -> Bool {
+        if isActiveCallSession { return true }
+        guard PulseAudioOwnership.shared.acquire(ownershipToken) else { return false }
         let session = AVAudioSession.sharedInstance()
         saved = SavedSession(category: session.category, options: session.categoryOptions, mode: session.mode)
         do {
@@ -60,17 +63,17 @@ public final class PulseCallAudioSession: ObservableObject {
             isActiveCallSession = true
             speakerOverride = true
             refreshRouteDescription()
+            return true
         } catch {
-            // Audio hardware refused (simulator edge, hardened device policy).
-            // The call still rings/talks over the default route - honest
-            // degradation, never a crash.
-            isActiveCallSession = true
+            restore()
+            return false
         }
     }
 
     /// Call end - restore the saved category/mode/options and deactivate with
     /// notifyOthers so background audio (music, voice-note playback) resumes.
     public func restore() {
+        guard saved != nil || isActiveCallSession else { return }
         let session = AVAudioSession.sharedInstance()
         // Loudspeaker override must be cleared before the category flips back.
         try? session.overrideOutputAudioPort(.none)
@@ -78,7 +81,9 @@ public final class PulseCallAudioSession: ObservableObject {
             try? session.setCategory(saved.category, mode: saved.mode, options: saved.options)
         }
         try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+        saved = nil
         isActiveCallSession = false
+        PulseAudioOwnership.shared.release(ownershipToken)
         speakerOverride = false
         currentOutputRoute = ""
     }
@@ -90,6 +95,7 @@ public final class PulseCallAudioSession: ObservableObject {
     /// (receiver/earpiece). Requires the .playAndRecord category - which the
     /// activation above guarantees while a call is live.
     public func setSpeaker(_ enabled: Bool) {
+        guard isActiveCallSession else { return }
         let session = AVAudioSession.sharedInstance()
         do {
             try session.overrideOutputAudioPort(enabled ? .speaker : .none)

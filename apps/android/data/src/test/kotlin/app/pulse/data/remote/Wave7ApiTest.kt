@@ -233,11 +233,99 @@ class Wave7ApiTest {
         val v = (r as PulseResult.Success).value
         assertEquals("game", v.message?.kind)
 
-        response = """{"match":{"id":"m1","board":"X        ","turn":"O","status":"active","moveCount":1},"playerX":{"id":"u1","name":"A"},"playerO":null}"""
+        response = """{"match":{"id":"m1","playerXId":"u1","playerOId":"u2","board":"    X    ","turn":"O","status":"active","moveCount":1},"playerX":{"id":"u1","name":"A"},"playerO":null}"""
         val mv = api().gameMove("m1", "u1", cell = 4)
         assertTrue(mv is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/games/m1/move"))
         assertTrue(lastBody.contains("\"cell\":4"))
+    }
+
+    @Test
+    fun `winning move replay is accepted but a different square is not confirmed`() = runTest {
+        configured()
+        response = """{"match":{"id":"m","playerXId":"u1","playerOId":"u2","board":"XXXOO    ","turn":"X","status":"x_won","moveCount":5}}"""
+        assertTrue(api().gameMove("m", "u1", 2) is PulseResult.Success)
+        assertTrue(api().gameMove("m", "u1", 8) is PulseResult.Failure)
+        assertTrue(api().game("other-match") is PulseResult.Failure)
+    }
+
+    @Test
+    fun `malformed game replies cannot masquerade as empty boards or successful creation`() = runTest {
+        configured()
+        for (body in listOf("{}", """{"match":{"id":"m"}}""", """{"match":{"id":"m","playerXId":"u1","board":"short","turn":"X","status":"active","moveCount":0}}""")) {
+            response = body
+            assertTrue(api().game("m") is PulseResult.Failure)
+            assertTrue(api().createGame("u1", "room", null) is PulseResult.Failure)
+        }
+    }
+
+    @Test
+    fun `seat and season acknowledgements must belong to the requested user and action`() = runTest {
+        configured()
+        response = """{"match":{"id":"m","playerXId":"x","playerOId":"other","board":"         ","turn":"X","status":"active","moveCount":0}}"""
+        assertTrue(api().joinGame("m", "u1") is PulseResult.Failure)
+        response = """{"entry":{"id":"entry","tournamentId":"season","userId":"other"}}"""
+        assertTrue(api().joinTournament("season", "u1") is PulseResult.Failure)
+        response = """{"tournament":{"id":"season","status":"running"}}"""
+        assertTrue(api().finishTournament("season", "u1") is PulseResult.Failure)
+    }
+
+    @Test
+    fun `season list requests viewer membership and does not turn malformed responses into no seasons`() = runTest {
+        configured()
+        response = "{}"
+        assertTrue(api().tournaments("room", "u1") is PulseResult.Failure)
+        response = """{"tournaments":[{"id":"season","joined":true,"status":"running"}]}"""
+        val result = api().tournaments("room", "u1")
+        assertTrue(result is PulseResult.Success)
+        assertTrue(lastUrl.contains("userId=u1"))
+        assertEquals(true, (result as PulseResult.Success).value.tournaments.single().joined)
+    }
+
+    @Test
+    fun `creation receipt acknowledges an open challenge already joined and never falls back to legacy POST`() = runTest {
+        configured()
+        val id = "creation-operation-01"
+        response = """{"clientId":"creation-operation-01","replayed":true,
+            "match":{"id":"m1","conversationId":"room","playerXId":"u1","playerOId":"u2","board":"X        ","turn":"O","status":"active","moveCount":1},
+            "message":{"id":"carrier","conversationId":"room","senderId":"u1","content":"Challenge","kind":"game","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"matchId\":\"m1\"}"}}"""
+        val reply = api().createGame("u1", "room", null, id)
+        assertTrue(reply is PulseResult.Success)
+        assertTrue((reply as PulseResult.Success).value.replayed)
+        assertTrue(lastUrl.endsWith("/api/games/create"))
+        assertTrue(lastBody.contains(id))
+        response = response.replace("creation-operation-01", "wrong-operation-id")
+        assertTrue(api().createGame("u1", "room", null, id) is PulseResult.Failure)
+        status = HttpStatusCode.NotFound
+        assertTrue(api().createGame("u1", "room", null, id) is PulseResult.Failure)
+        assertTrue(lastUrl.endsWith("/api/games/create"))
+    }
+
+    @Test
+    fun `season creation receipt must identify both the request and the carrier object`() = runTest {
+        configured()
+        val id = "creation-operation-02"
+        response = """{"clientId":"creation-operation-02","replayed":true,
+            "tournament":{"id":"t1","name":"Cup","status":"finished"},
+            "message":{"id":"carrier","conversationId":"room","senderId":"u1","content":"Cup","kind":"tournament","createdAt":"2026-01-15T00:00:00.000Z","payload":"{\"tournamentId\":\"t1\"}"}}"""
+        assertTrue(api().createTournament("u1", "room", "Cup", id) is PulseResult.Success)
+        assertTrue(lastUrl.endsWith("/api/tournaments/create"))
+        response = response.replace("creation-operation-02", "wrong-operation-id")
+        assertTrue(api().createTournament("u1", "room", "Cup", id) is PulseResult.Failure)
+    }
+
+    @Test
+    fun `terminal creation error carries an explicit receipt rather than inferring delivery from 410`() = runTest {
+        configured()
+        status = HttpStatusCode.Gone
+        response = """{"error":"Earlier invitation expired","code":"creation_gone","clientId":"creation-operation-01"}"""
+        val reply = api().createGame("u1", "room", null, "creation-operation-01") as PulseResult.Failure
+        assertEquals("creation_gone", reply.code)
+        assertEquals("creation-operation-01", reply.receiptClientId)
+        response = """{"error":"Gone"}"""
+        val unknown = api().createGame("u1", "room", null, "creation-operation-01") as PulseResult.Failure
+        assertNull(unknown.receiptClientId)
+        assertNull(unknown.code)
     }
 
     // hub economy
@@ -254,7 +342,7 @@ class Wave7ApiTest {
     @Test
     fun `transfer normalizes handle client-side`() = runTest {
         configured()
-        response = """{"wallet":{"userId":"u1","coins":0},"to":{"id":"u2","name":"B","username":"bob"}}"""
+        response = """{"wallet":{"userId":"u1","coins":0,"gems":0},"to":{"id":"u2","name":"B","username":"bob"}}"""
         val r = api().transferCoins("u1", "@Bob", amount = 25, note = null)
         assertTrue(r is PulseResult.Success)
         assertTrue(lastBody.contains("\"toUsername\":\"bob\""))
@@ -272,7 +360,7 @@ class Wave7ApiTest {
     @Test
     fun `market buy posts and returns ok plus wallet`() = runTest {
         configured()
-        response = """{"ok":true,"wallet":{"userId":"u2","coins":40}}"""
+        response = """{"ok":true,"wallet":{"userId":"u2","coins":40,"gems":0}}"""
         val r = api().buyListing("l1", "u2")
         assertTrue(r is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/hub/market/l1/buy"))

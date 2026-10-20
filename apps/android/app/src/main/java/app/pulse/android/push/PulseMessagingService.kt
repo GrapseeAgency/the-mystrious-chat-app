@@ -126,7 +126,7 @@ class PulseMessagingService : FirebaseMessagingService() {
                 this,
                 PulseReplyPayload.notificationId(conversationId),
                 replyIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                PulseReplyPayload.replyPendingIntentFlags(),
             )
             notification.addAction(
                 NotificationCompat.Action.Builder(

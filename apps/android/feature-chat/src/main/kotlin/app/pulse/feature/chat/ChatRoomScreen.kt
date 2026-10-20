@@ -118,6 +118,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pulse.core.media.PulseMedia
 import app.pulse.core.time.PulseTime
@@ -255,7 +256,7 @@ fun ChatRoomScreen(
     val composerFocus = remember { FocusRequester() }
 
     var draft by remember { mutableStateOf("") }
-    var caption by remember { mutableStateOf("") }
+    val caption = state.staged?.caption.orEmpty()
     var actionTarget by remember { mutableStateOf<Message?>(null) }
     var forwardTarget by remember { mutableStateOf<Message?>(null) }
     var infoTarget by remember { mutableStateOf<Message?>(null) }
@@ -425,6 +426,23 @@ fun ChatRoomScreen(
         }
         lifecycleOwner.lifecycle.addObserver(obs)
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
+    val readObscured = actionTarget != null || forwardTarget != null || infoTarget != null || deleteTarget != null ||
+        lightboxTarget != null || pinsOpen || attachOpen || pollBuilderOpen || reactionPickerTarget != null ||
+        whoReactedFor != null || stickerOpen || scheduleOpen || scheduledOpen || helpOpen || locationOpen || themeOpen || state.searchOpen
+    LaunchedEffect(lifecycleOwner, rowsReversed, pipFocusedId, privacyHidden, readObscured) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            try {
+                snapshotFlow {
+                    val visible = listState.layoutInfo.visibleItemsInfo.map { it.key }.toSet()
+                    if (privacyHidden || readObscured || (pipFocusedId != null && pipFocusedId != conversation?.id)) null
+                    else rowsReversed.filterIsInstance<TimelineRow.Msg>().firstOrNull {
+                        it.key in visible && !it.message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)
+                    }?.message?.id
+                }.collect { viewModel.setReadingAnchor(it) }
+            } finally { viewModel.setReadingAnchor(null) }
+        }
     }
 
     // Load-older trigger - the reverseLayout list ends at the OLDEST rows;
@@ -650,15 +668,20 @@ fun ChatRoomScreen(
     /** Composer send - leading-slash drafts run the command machine first. */
     fun sendCurrentDraft() {
         if (draft.isBlank()) return
-        val outcome = PulseSlash.applySlash(draft)
+        val submitted = draft
+        val restoreRejected = {
+            if (draft.isBlank()) { draft = submitted; viewModel.onDraftChanged(submitted) }
+        }
+        val outcome = PulseSlash.applySlash(submitted)
         when (outcome) {
             is PulseSlash.Outcome.Send -> {
-                viewModel.send(outcome.content)
-                if (state.editing == null) draft = "" // edit path clears on success
+                // Clear before invoking: validation can reject synchronously on Main.
+                if (viewModel.state.value.editing == null) draft = "" // edits clear on success
+                viewModel.send(outcome.content, onRejected = restoreRejected)
             }
             is PulseSlash.Outcome.Effect -> {
-                viewModel.sendEffect(outcome.effect, outcome.content)
-                draft = ""
+                if (viewModel.state.value.editing == null) draft = ""
+                viewModel.sendEffect(outcome.effect, outcome.content, onRejected = restoreRejected)
             }
             else -> runPaletteCommand(
                 PulseSlash.SlashCommand(
@@ -1135,16 +1158,14 @@ fun ChatRoomScreen(
                 StagedMediaCard(
                     staged = staged,
                     caption = caption,
-                    onCaptionChange = { caption = it },
+                    onCaptionChange = viewModel::setAttachmentCaption,
                     onViewOnceChange = viewModel::setStagedViewOnce,
                     onSend = {
                         viewModel.sendStaged(caption)
-                        caption = ""
                     },
                     onRetry = viewModel::retryStaged,
                     onRemove = {
                         viewModel.cancelStaged()
-                        caption = ""
                     },
                 )
             }
@@ -2866,7 +2887,7 @@ private fun StagedMediaCard(
                             .size(52.dp)
                             .clip(RoundedCornerShape(10.dp)),
                     )
-                    StagedMedia.Kind.FILE -> Box(
+                    StagedMedia.Kind.FILE, StagedMedia.Kind.AUDIO -> Box(
                         Modifier
                             .size(52.dp)
                             .clip(RoundedCornerShape(10.dp))
@@ -2880,7 +2901,7 @@ private fun StagedMediaCard(
                     Text(
                         when (staged.kind) {
                             StagedMedia.Kind.IMAGE -> "Photo"
-                            StagedMedia.Kind.FILE -> staged.fileName ?: "Document"
+                            StagedMedia.Kind.FILE, StagedMedia.Kind.AUDIO -> staged.fileName ?: "Attachment"
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -2909,26 +2930,26 @@ private fun StagedMediaCard(
                                     .padding(horizontal = 6.dp, vertical = 2.dp),
                             )
                         }
-                        staged.uploading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        staged.uploading || staged.sending -> Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.6.dp, color = EmberPalette.Amber)
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                "Uploading…",
+                                "Preparing and saving…",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White.copy(alpha = 0.45f),
                             )
                         }
-                        staged.uploadedPath != null -> {
+                        staged.saved -> {
                             val size = PulseMedia.humanFileSize(staged.fileSize)
                             Text(
-                                if (size.isEmpty()) "Ready to send" else "Ready to send · $size",
+                                if (size.isEmpty()) "Saved on device — ready to send" else "Saved on device · $size",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = EmberPalette.Online,
                             )
                         }
                     }
                 }
-                IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
+                IconButton(onClick = onRemove, enabled = !staged.sending, modifier = Modifier.size(28.dp)) {
                     Icon(PulseIcons.X, contentDescription = "Remove attachment", modifier = Modifier.size(15.dp), tint = Color.White.copy(alpha = 0.55f))
                 }
             }
@@ -2952,7 +2973,7 @@ private fun StagedMediaCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Switch(checked = staged.viewOnce, onCheckedChange = onViewOnceChange)
+                    Switch(checked = staged.viewOnce, onCheckedChange = onViewOnceChange, enabled = !staged.sending)
                 }
             }
             Row(
@@ -2966,6 +2987,7 @@ private fun StagedMediaCard(
                 BasicTextField(
                     value = caption,
                     onValueChange = onCaptionChange,
+                    enabled = !staged.sending && !(staged.kind == StagedMedia.Kind.AUDIO && staged.uploading),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
                     cursorBrush = SolidColor(EmberPalette.Amber),
                     modifier = Modifier.weight(1f),
@@ -3393,17 +3415,17 @@ private fun MessageRow(
     onOpenFile: () -> Unit,
     onOpenThread: () -> Unit,
     // ── Wave 7 rich-object hooks ──
-    onGameMove: (String, Int) -> Unit = { _, _ -> },
-    onGameJoin: (String) -> Unit = {},
+    onGameMove: suspend (String, Int) -> app.pulse.protocol.GameDetailDto? = { _, _ -> null },
+    onGameJoin: suspend (String) -> app.pulse.protocol.GameDetailDto? = { null },
     onGameLoad: suspend (String) -> app.pulse.protocol.GameDetailDto? = { null },
     // R7 item 3 - rematch on finished matches (web game-tictactoe-card.tsx).
-    onGameRematch: suspend (app.pulse.protocol.GameMatchDto) -> Unit = {},
+    onGameRematch: suspend (app.pulse.protocol.GameMatchDto) -> Boolean = { false },
     onRedPacketLoad: suspend (String) -> app.pulse.protocol.RedPacketDetailDto? = { null },
     onRedPacketGrab: (String) -> Unit = {},
     onRedPacketOpen: (String) -> Unit = {},
     onTournamentLoad: suspend (String) -> app.pulse.protocol.TournamentSummaryDto? = { null },
-    onTournamentJoin: (String) -> Unit = {},
-    onTournamentFinish: (String) -> Unit = {},
+    onTournamentJoin: suspend (String) -> Boolean = { false },
+    onTournamentFinish: suspend (String) -> Boolean = { false },
     // D27 - long-press a reaction chip → who-reacted sheet (null = inert).
     onWhoReacted: ((String) -> Unit)? = null,
     // R6 - M6 - double-tap the bubble fires the heart quick reaction (null = inert).
@@ -3652,6 +3674,14 @@ private fun MessageRow(
                         )
                     },
                 )
+                message.id.startsWith(TEMP_MESSAGE_PREFIX) && message.imagePath == null && message.audioPath == null && message.filePath == null &&
+                    message.kind in setOf(Message.Kind.IMAGE, Message.Kind.VOICE, Message.Kind.FILE) -> {
+                    Text(when (message.kind) {
+                        Message.Kind.IMAGE -> "Photo queued"
+                        Message.Kind.VOICE -> "Voice note queued"
+                        else -> message.fileName ?: "Document queued"
+                    }, modifier = Modifier.padding(12.dp), color = Color.White.copy(alpha = 0.7f))
+                }
                 message.imagePath != null -> MediaWithQuote(
                     quoteId = message.replyToId,
                     quoteBody = message.replyToBody,
@@ -3804,6 +3834,10 @@ private fun MessageRow(
                     others.any { (it.lastReadAt ?: 0L) >= createdAtMs } ||
                         (partnerLastReadAt ?: 0L) >= createdAtMs
                     )
+                val readCount = others.count { createdAtMs > 0L && (it.lastReadAt ?: 0L) >= createdAtMs }
+                val readLabel = if (conversation?.kind == Conversation.Kind.GROUP || conversation?.kind == Conversation.Kind.CHANNEL) {
+                    if (readCount > 0) "Read by $readCount" else "Read"
+                } else "Seen"
                 Row(
                     Modifier.padding(end = 4.dp, top = 1.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -3815,7 +3849,7 @@ private fun MessageRow(
                             modifier = Modifier.size(13.dp),
                         )
                         Text(
-                            "Seen",
+                            readLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = PulsePalette.Emerald,
                             fontWeight = FontWeight.SemiBold,

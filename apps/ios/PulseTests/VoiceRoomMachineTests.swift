@@ -490,6 +490,7 @@ final class VoiceRoomMachineTests: XCTestCase {
 
     func testServerRowWithoutPositionKeepsTheSeededTarget() {
         var space = SpaceModel(myId: "me")
+        space.beginJoin()
         space.seedInitialPosition(x: 0.8, y: 0.7)
         // Server state where OUR row carries no x/y (the server returned
         // nothing for us): the seeded target must survive the reconcile -
@@ -590,4 +591,45 @@ final class VoiceRoomMachineTests: XCTestCase {
         XCTAssertEqual(Array(data[40..<44]), [0, 0, 0, 0])
         XCTAssertFalse(WavEncoder.base64Wav(samples: []).isEmpty)
     }
+    func testSpaceFinalThrottledPositionIsFlushedAndLeaveCancelsIt() {
+        var space = SpaceModel(myId: "me")
+        space.beginJoin()
+        XCTAssertEqual(space.localMove(x: 0.1, y: 0.1, nowMs: 0), .emit(x: 0.1, y: 0.1))
+        XCTAssertEqual(space.localMove(x: 0.9, y: 0.8, nowMs: 50), .throttle)
+        XCTAssertEqual(space.flushMove(nowMs: 79), .throttle)
+        XCTAssertEqual(space.flushMove(nowMs: 80), .emit(x: 0.9, y: 0.8))
+        XCTAssertEqual(space.flushMove(nowMs: 160), .throttle)
+        _ = space.localMove(x: 0.4, y: 0.4, nowMs: 100)
+        space.leave()
+        XCTAssertEqual(space.flushMove(nowMs: 200), .throttle)
+    }
+
+    func testRevokedMicrophoneDropsItsTailWithoutResettingRoomSequence() {
+        var chunker = VoicePcmChunker()
+        XCTAssertEqual(chunker.feed(Array(repeating: Int16(1), count: 4500)).map(\.seq), [1])
+        chunker.discardPartial()
+        XCTAssertEqual(chunker.pendingCount, 0)
+        XCTAssertEqual(chunker.feed(Array(repeating: Int16(2), count: 4000)).map(\.seq), [2])
+    }
+
+    func testPttPressStartsImmediatelyAndHoldReleaseStops() {
+        var ptt = VoicePttGesturePolicy()
+        XCTAssertEqual(ptt.press(nowMs: 1000, transmitting: false), true)
+        XCTAssertNil(ptt.press(nowMs: 1050, transmitting: true))
+        XCTAssertFalse(ptt.release(nowMs: 1260))
+    }
+    func testPttShortTapLatchesAndSecondPressStops() {
+        var ptt = VoicePttGesturePolicy()
+        XCTAssertEqual(ptt.press(nowMs: 1000, transmitting: false), true)
+        XCTAssertTrue(ptt.release(nowMs: 1080))
+        XCTAssertEqual(ptt.press(nowMs: 1100, transmitting: true), false)
+        XCTAssertFalse(ptt.release(nowMs: 1180))
+    }
+    func testCancelledPttCannotLatchOnLateRelease() {
+        var ptt = VoicePttGesturePolicy()
+        _ = ptt.press(nowMs: 1000, transmitting: false)
+        ptt.cancel()
+        XCTAssertFalse(ptt.release(nowMs: 1010))
+    }
+
 }

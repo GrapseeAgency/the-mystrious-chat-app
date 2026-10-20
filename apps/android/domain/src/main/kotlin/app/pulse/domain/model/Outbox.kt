@@ -19,6 +19,11 @@ data class OutboxEntry(
     val createdAt: String,
     /** failed POST count (diagnostics; incremented on retryable failures). */
     val attempts: Int = 0,
+    /** Rejected intent is retained for recovery, not automatic retry. */
+    val failureReason: String? = null,
+    /** Exact rich payload, including an intentional empty JSON object. */
+    val wirePayload: String? = null,
+    val uploadKey: String? = null,
 )
 
 /** Optimistic queued-bubble id convention: `local_<clientId>` (web `temp-` parity). */
@@ -28,7 +33,7 @@ const val TEMP_MESSAGE_PREFIX = "local_"
 data class FlushReport(
     /** entries delivered to the gateway this pass. */
     val sent: Int = 0,
-    /** entries permanently dropped this pass (4xx verdicts). */
+    /** entries retained as rejected this pass (definitive verdicts). */
     val dropped: Int = 0,
     /** entries still held after the pass (network-failure retries). */
     val pending: Int = 0,
@@ -36,11 +41,14 @@ data class FlushReport(
 
 /** How the outbox drain policy treats one failed send attempt. */
 enum class OutboxFailureClass {
-    /** Definitive server verdict (validation/forbidden/not-found/auth) - the entry will never deliver. */
+    /** Definitive rejection: excluded from automatic attempts, retained for user recovery. */
     DROP,
 
     /** Network-class / server hiccup - keep the entry and retry later. */
     RETRY,
+
+    /** Explicit room-only cooldown; preserve this room's FIFO, drain other rooms. */
+    ROOM_RETRY,
 }
 
 /** Failure wrapper that carries the outbox classification alongside the reason. */

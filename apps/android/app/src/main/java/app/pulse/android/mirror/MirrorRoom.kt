@@ -61,10 +61,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -135,7 +138,10 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
@@ -375,6 +381,8 @@ internal fun mirrorSlashSendBody(inputRaw: String): MirrorSlashBody? {
  */
 @Composable
 internal fun MirrorRoom(
+    onOpenLiveRoom: (app.pulse.feature.voice.VoiceRoomsEngine.RoomKind) -> Unit,
+    readingEnabled: Boolean = false,
     title: String,
     color: String?,
     isGroup: Boolean,
@@ -416,7 +424,10 @@ internal fun MirrorRoom(
 ) {
     // R73 - the composer draft is a TextFieldValue: the mention autocomplete
     // needs the caret position to replace the @token in place (web L2923-2961).
-    var draftValue by remember { mutableStateOf(TextFieldValue("")) }
+    val composerDraft = remember(groupId) { RoomComposerDraft() }
+    var draftValue by composerDraft
+    val roomActionsLive = remember(groupId) { java.util.concurrent.atomic.AtomicBoolean(true) }
+    DisposableEffect(roomActionsLive) { onDispose { roomActionsLive.set(false) } }
     var composerFocused by remember { mutableStateOf(false) }
     var phraseManagerOpen by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -427,8 +438,17 @@ internal fun MirrorRoom(
     var ttlStripOpen by remember { mutableStateOf(false) }
     // R73 - message-level state (web chat-room.tsx): reply bar, edit bar,
     // the long-press action panel and the surfaces it opens.
-    var replyTo by remember { mutableStateOf<Message?>(null) }
-    var editing by remember { mutableStateOf<Message?>(null) }
+    var replyTo by remember(groupId) { mutableStateOf<Message?>(null) }
+    var editing by remember(groupId) { mutableStateOf<Message?>(null) }
+    var draftBeforeEdit by remember(groupId) { mutableStateOf<TextFieldValue?>(null) }
+    var replyBeforeEdit by remember(groupId) { mutableStateOf<Message?>(null) }
+    fun finishEditing() {
+        editing = null
+        draftValue = draftBeforeEdit ?: TextFieldValue("")
+        replyTo = replyBeforeEdit
+        draftBeforeEdit = null
+        replyBeforeEdit = null
+    }
     var actionFor by remember { mutableStateOf<Message?>(null) }
     var forwardFor by remember { mutableStateOf<Message?>(null) }
     var threadFor by remember { mutableStateOf<Message?>(null) }
@@ -443,8 +463,8 @@ internal fun MirrorRoom(
     var slowModeSecondsLeft by remember { mutableStateOf(0) }
     var sendError by remember { mutableStateOf<String?>(null) }
     // R73 - offline outbox pill (web pulse-outbox: queued sends count)
-    val outboxRows by repository.observeOutbox().collectAsState(initial = emptyList())
-    val pendingOutbox = outboxRows.count { it.conversationId == groupId }
+    val outboxRows by repository.observeOutbox().collectAsStateWithLifecycle(initialValue = emptyList())
+    val pendingOutbox = outboxRows.count { it.conversationId == groupId && it.failureReason == null }
     // R73 - scheduled sends chip above the composer (web scheduled chip)
     var scheduledCount by remember { mutableStateOf(0) }
     LaunchedEffect(groupId) {
@@ -452,17 +472,23 @@ internal fun MirrorRoom(
     }
     // R73 - composer draft persistence (web pulse-drafts): restore once,
     // debounced 600ms save, clear on send (web saveDraft cadence).
-    var draftRestored by remember { mutableStateOf(false) }
+    var draftRestored by remember(groupId) { mutableStateOf(false) }
     LaunchedEffect(groupId) {
+        val initialRevision = composerDraft.revision
         val saved = runCatching { repository.observeDraft(groupId).firstOrNull() }.getOrNull()
-        if (!saved.isNullOrBlank()) draftValue = TextFieldValue(saved)
+        if (composerDraft.revision == initialRevision && !saved.isNullOrBlank()) draftValue = TextFieldValue(saved)
         draftRestored = true
     }
-    LaunchedEffect(draftValue.text, draftRestored) {
-        if (!draftRestored) return@LaunchedEffect
-        if (draftValue.text.isBlank()) return@LaunchedEffect
-        delay(600)
+    LaunchedEffect(draftValue.text, draftRestored, editing?.id) {
+        if (!draftRestored || editing != null) return@LaunchedEffect
+        repository.stageDraft(groupId, draftValue.text)
+        if (draftValue.text.isNotBlank()) delay(600)
         runCatching { repository.saveDraft(groupId, draftValue.text) }
+    }
+    val latestDraft by androidx.compose.runtime.rememberUpdatedState(if (editing != null) draftBeforeEdit?.text.orEmpty() else draftValue.text)
+    val restoredDraft by androidx.compose.runtime.rememberUpdatedState(draftRestored)
+    DisposableEffect(repository, groupId) {
+        onDispose { if (restoredDraft) repository.stageDraft(groupId, latestDraft) }
     }
     // R69 - the web Conversation menu full set (chat-room.tsx L4096-4454):
     // every row opens the same real surface the web opens.
@@ -472,27 +498,28 @@ internal fun MirrorRoom(
     var eventsOpen by remember { mutableStateOf(false) }
     var kanbanOpen by remember { mutableStateOf(false) }
     var whiteboardOpen by remember { mutableStateOf(false) }
-    var voiceOpen by remember { mutableStateOf(false) }
-    var stageOpen by remember { mutableStateOf(false) }
-    var spaceOpen by remember { mutableStateOf(false) }
     var tournamentOpen by remember { mutableStateOf(false) }
     var topicsVisible by remember { mutableStateOf(false) }
-    var activeTopicId by remember { mutableStateOf<String?>(null) }
+    var activeTopicId by remember(groupId) { mutableStateOf<String?>(null) }
     // R74 - the seven parity surfaces: slash palette arming, incognito,
     // red packet, effects queue, effects tray chooser, help sheet.
     var redPacketOpen by remember { mutableStateOf(false) }
     var trayEffectsOpen by remember { mutableStateOf(false) }
-    var pendingEffect by remember { mutableStateOf<MirrorMessageEffect?>(null) }
-    var anonNext by remember { mutableStateOf(false) }
+    var pendingEffect by remember(groupId) { mutableStateOf<MirrorMessageEffect?>(null) }
+    var anonNext by remember(groupId) { mutableStateOf(false) }
     var slashHelpOpen by remember { mutableStateOf(false) }
-    var gameBusy by remember { mutableStateOf(false) }
+    val gameOwner = repository.reminderDeliveryOwner()
+    var gameBusy by remember(repository, groupId, viewerId, gameOwner) { mutableStateOf(false) }
+    val gameScope = rememberCoroutineScope()
+    var gameJob by remember(repository, groupId, viewerId, gameOwner) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    DisposableEffect(repository, groupId, viewerId, gameOwner) { onDispose { gameJob?.cancel() } }
     // full-screen message effects (confetti/lasers/echo/sparkles) - one
     // canvas, queue capped at 3, nonce per run (web L1460-1512). All per-room
     // state keys on groupId so a room switch never replays the old history.
     var activeEffect by remember { mutableStateOf<MirrorActiveEffect?>(null) }
     val effectQueue = remember { mutableStateListOf<MirrorActiveEffect>() }
     val effectNonce = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    val seenEffectIds = remember(groupId) { HashSet<String>() }
+    val seenEffectIds = remember(groupId, activeTopicId) { HashSet<String>() }
     // live bubble geometry for the effect origin (web querySelector data-mid)
     val bubbleRects: SnapshotStateMap<String, Rect> = androidx.compose.runtime.mutableStateMapOf()
     var effectsHostRect by remember { mutableStateOf(Rect.Zero) }
@@ -528,23 +555,20 @@ internal fun MirrorRoom(
     // stack, then the header strips). With nothing open it disables itself
     // and back falls through to the root handler, which closes the room -
     // WhatsApp's exact layering.
-    androidx.activity.compose.BackHandler(
-        enabled = menuOpen || trayOpen || roomSearchOpen || pinnedOpen ||
+    val roomPanelOpen = menuOpen || trayOpen || roomSearchOpen || pinnedOpen ||
             muteStripOpen || ttlStripOpen || pollOpen || stickerOpen ||
             locationOpen || remindersOpen || scheduledOpen || recapOpen ||
-            eventsOpen || kanbanOpen || whiteboardOpen || voiceOpen ||
-            stageOpen || spaceOpen || tournamentOpen || redPacketOpen ||
+            eventsOpen || kanbanOpen || whiteboardOpen ||
+            tournamentOpen || redPacketOpen ||
             trayEffectsOpen || slashHelpOpen || safetyOpen || scheduleOpen ||
-            phraseManagerOpen,
-    ) {
+            phraseManagerOpen
+    val readerLifecycle = LocalLifecycleOwner.current
+    androidx.activity.compose.BackHandler(enabled = roomPanelOpen) {
         when {
             menuOpen -> menuOpen = false
             safetyOpen -> safetyOpen = false
             redPacketOpen -> redPacketOpen = false
             tournamentOpen -> tournamentOpen = false
-            spaceOpen -> spaceOpen = false
-            stageOpen -> stageOpen = false
-            voiceOpen -> voiceOpen = false
             whiteboardOpen -> whiteboardOpen = false
             kanbanOpen -> kanbanOpen = false
             eventsOpen -> eventsOpen = false
@@ -588,16 +612,94 @@ internal fun MirrorRoom(
     }
     // topic rail data: real observeTopics + a server refetch per topic switch
     val topics by remember(groupId) { repository.observeTopics(groupId) }
-        .collectAsState(initial = emptyList())
+        .collectAsStateWithLifecycle(initialValue = emptyList())
     LaunchedEffect(topicsVisible) {
         if (topicsVisible) runCatching { repository.refreshTopics(groupId) }
     }
-    LaunchedEffect(activeTopicId) {
-        runCatching { repository.refreshMessages(groupId, activeTopicId) }
+    LaunchedEffect(groupId, activeTopicId, readerLifecycle) {
+        readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            var firstAttempt = true
+            repository.observeConnected().distinctUntilChanged().collectLatest { connected ->
+                if (connected || firstAttempt) {
+                    firstAttempt = false
+                    repository.refreshMessages(groupId, activeTopicId)
+                }
+            }
+        }
     }
     val listState = rememberLazyListState()
     val context = LocalContext.current
-    val entries = remember(messages) { buildRoomEntries(messages) }
+    var timelineNow by remember(groupId) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(messages, readerLifecycle) {
+        readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val now = System.currentTimeMillis()
+                timelineNow = now
+                val expiry = messages.mapNotNull { it.expiresAtEpochMs }.filter { it > now }.minOrNull()
+                    ?: kotlinx.coroutines.awaitCancellation()
+                delay((expiry - now).coerceAtLeast(1L))
+            }
+        }
+    }
+    val visibleMessages = remember(messages, activeTopicId, timelineNow) { visibleRoomMessages(messages, activeTopicId, timelineNow) }
+    val entries = remember(visibleMessages) { buildRoomEntries(visibleMessages) }
+    LaunchedEffect(groupId, readingEnabled, roomPanelOpen, actionFor, forwardFor, threadFor, infoFor, visibleMessages) {
+        readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            if (!readingEnabled || roomPanelOpen || actionFor != null || forwardFor != null || threadFor != null || infoFor != null) return@repeatOnLifecycle
+            app.pulse.android.notify.IncomingAttention.activeReadingRoom = groupId
+            try {
+                androidx.compose.runtime.snapshotFlow {
+                    val visible = listState.layoutInfo.visibleItemsInfo.map { it.key }.toSet()
+                    visibleMessages.lastOrNull { it.id in visible && !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) }?.id
+                }.collectLatest { id ->
+                    if (id != null) {
+                        delay(600)
+                        repeat(3) { attempt ->
+                            if (repository.markReadThrough(groupId, id).isSuccess) return@collectLatest
+                            delay(1_500L * (attempt + 1))
+                        }
+                    }
+                }
+            } finally {
+                if (app.pulse.android.notify.IncomingAttention.activeReadingRoom == groupId) app.pulse.android.notify.IncomingAttention.activeReadingRoom = null
+            }
+        }
+    }
+    val historyScope = rememberCoroutineScope()
+    var loadingHistory by remember(groupId) { mutableStateOf(false) }
+    var historyHasMore by remember(groupId) { mutableStateOf(true) }
+    var historyCursor by remember(groupId) { mutableStateOf<String?>(null) }
+    val historyRequestEpoch = remember(groupId) { java.util.concurrent.atomic.AtomicLong() }
+    fun loadEarlierMessages() {
+        if (loadingHistory || !historyHasMore || jumpMessageId != null) return
+        val requestEpoch = historyRequestEpoch.incrementAndGet()
+        loadingHistory = true
+        val topic = activeTopicId
+        historyScope.launch {
+            try {
+                val rows = repository.observeMessages(groupId).first()
+                var cursor = historyCursor ?: oldestRoomMessage(rows)?.id
+                val known = rows.map { it.id }.toSet()
+                repeat(5) {
+                    ensureActive()
+                    val (page, more) = repository.messagesPage(groupId, cursor, 60)
+                    ensureActive()
+                    if (!roomActionsLive.get() || historyRequestEpoch.get() != requestEpoch) return@launch
+                    val next = oldestRoomMessage(page)?.id
+                    if (next == null) { historyHasMore = false; return@launch }
+                    if (next == cursor) { sendError = "History returned a repeated page"; return@launch }
+                    historyCursor = next
+                    cursor = next
+                    historyHasMore = more
+                    if (!more || visibleRoomMessages(page, topic).any { it.id !in known }) return@launch
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (roomActionsLive.get()) sendError = "Couldn't load earlier messages. Try again."
+            } finally { if (historyRequestEpoch.get() == requestEpoch) loadingHistory = false }
+        }
+    }
     // R76 - jump-to-message (web jumpToMessage, chat-room.tsx:1039-1120):
     // page back through the real cache until the hit lands, scroll to it and
     // flash the bubble - the Spotlight / home search / reminder links all
@@ -606,6 +708,9 @@ internal fun MirrorRoom(
     val jumpActive = jumpMessageId != null
     LaunchedEffect(jumpMessageId, groupId) {
         val target = jumpMessageId ?: return@LaunchedEffect
+        historyRequestEpoch.incrementAndGet() // supersede an earlier manual page request
+        loadingHistory = false
+        activeTopicId = null // a search/quote jump must not remain hidden by a topic
         // cold-open race: wait for the open-triggered refresh to seed the cache
         var seed = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
         var waited = 0
@@ -616,23 +721,40 @@ internal fun MirrorRoom(
         }
         // page back (web caps at 14 pages of 60)
         var paged = 0
+        var rawCursor: String? = null
         while (paged < 14) {
             val current = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
             if (current.any { it.id == target }) break
-            val oldest = current.minByOrNull { MirrorRoomEpoch(it.createdAt) } ?: break
+            val cursor = rawCursor ?: oldestRoomMessage(current)?.id ?: break
             val page = runCatching {
-                repository.messagesPage(groupId, oldest.createdAt, 60)
+                repository.messagesPage(groupId, cursor, 60)
             }.getOrNull() ?: break
-            if (page.first.isEmpty()) break
+            val next = oldestRoomMessage(page.first)?.id ?: break
+            if (next == cursor) break
+            rawCursor = next
+            historyCursor = next
+            if (!page.second) break
             paged++
         }
         val fresh = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
-        val idx = buildRoomEntries(fresh).indexOfFirst { it is RoomEntry.Msg && it.message.id == target }
+        val targetRow = fresh.firstOrNull { it.id == target }
+        val parentId = targetRow?.threadRootId
+        if (parentId != null) {
+            val root = fresh.firstOrNull { it.id == parentId }
+                ?: runCatching { repository.loadThread(parentId).first }.getOrNull()
+            ensureActive()
+            if (root != null) threadFor = root else sendError = "Couldn't load this message's thread"
+            onJumpConsumed()
+            return@LaunchedEffect
+        }
+        val idx = buildRoomEntries(visibleRoomMessages(fresh, null)).indexOfFirst { it is RoomEntry.Msg && it.message.id == target }
         if (idx >= 0) {
-            listState.animateScrollToItem(idx.coerceAtLeast(0))
+            listState.animateScrollToItem((idx + 1).coerceAtLeast(0))
             jumpFlashId = target
             delay(1700)
             jumpFlashId = null
+        } else {
+            sendError = "Couldn't reach that message in the available history"
         }
         onJumpConsumed()
     }
@@ -721,16 +843,16 @@ internal fun MirrorRoom(
     // R74 - fire payload effects for messages appended to the tail of the
     // cache (web L1519-1541): seed silently on first load, never replay
     // history, exactly-once per id.
-    LaunchedEffect(messages) {
-        if (messages.isEmpty()) return@LaunchedEffect
-        val tailId = messages.last().id
+    LaunchedEffect(visibleMessages) {
+        if (visibleMessages.isEmpty()) return@LaunchedEffect
+        val tailId = visibleMessages.last().id
         if (seenEffectIds.isEmpty()) {
             // first load or room switch - seed, never replay
-            messages.forEach { seenEffectIds.add(it.id) }
+            visibleMessages.forEach { seenEffectIds.add(it.id) }
             return@LaunchedEffect
         }
         if (!seenEffectIds.contains(tailId)) {
-            for (m in messages.reversed()) {
+            for (m in visibleMessages.reversed()) {
                 if (seenEffectIds.contains(m.id)) break
                 seenEffectIds.add(m.id)
                 val payload = m.payload?.let { raw ->
@@ -744,7 +866,7 @@ internal fun MirrorRoom(
         }
         if (seenEffectIds.size > 400) {
             seenEffectIds.clear()
-            messages.forEach { seenEffectIds.add(it.id) }
+            visibleMessages.forEach { seenEffectIds.add(it.id) }
         }
     }
 
@@ -753,9 +875,11 @@ internal fun MirrorRoom(
     // surfacing, typing stop. Zero silent failures.
     // R74 - armed effects ride kind:"text" + payload {effect} (web L1646);
     // incognito arms anon + the deterministic alias preview (web L1672).
-    var sending by remember { mutableStateOf(false) }
+    var sending by remember(groupId) { mutableStateOf(false) }
     fun sendNow() {
         val rawText = draftValue.text.trim()
+        val submittedRevision = composerDraft.revision
+        val sendTopicId = activeTopicId
         if (broadcastLocked || sending) return
         if (rawText.isEmpty()) return
         if (slowModeUntil > System.currentTimeMillis() && editing == null) return
@@ -771,6 +895,7 @@ internal fun MirrorRoom(
             is MirrorSlashBody.Reminder -> {
                 val parsed = slash
                 stopTyping()
+                sending = true
                 CoroutineScope(Dispatchers.IO).launch {
                     val ok = runCatching {
                         repository.createReminder(
@@ -780,8 +905,10 @@ internal fun MirrorRoom(
                             remindAtIso = parsed.remindAtIso,
                         ).getOrThrow()
                     }.isSuccess
-                    CoroutineScope(Dispatchers.Main).launch {
-                        draftValue = TextFieldValue("")
+                    CoroutineScope(Dispatchers.Main).launch completion@ {
+                        if (!roomActionsLive.get()) return@completion
+                        sending = false
+                        if (ok) composerDraft.clearIfUnchanged(submittedRevision)
                         sendError = if (ok) "Reminder set" else "Could not set the reminder"
                     }
                 }
@@ -813,6 +940,7 @@ internal fun MirrorRoom(
                         body = text.take(2000),
                         kind = "text",
                         payload = payload,
+                        topicId = sendTopicId,
                         replyToId = replyTarget?.id,
                     ).getOrThrow()
                 } else if (anonTarget) {
@@ -820,7 +948,7 @@ internal fun MirrorRoom(
                         conversationId = groupId,
                         body = text.take(2000),
                         replyToId = replyTarget?.id,
-                        topicId = if (replyTarget == null) activeTopicId else null,
+                        topicId = sendTopicId,
                         anon = true,
                         anonAliasPreview = mirrorAnonAliasPreview(viewerId, groupId),
                     ).getOrThrow()
@@ -829,37 +957,34 @@ internal fun MirrorRoom(
                         conversationId = groupId,
                         body = text,
                         replyToId = replyTarget?.id,
-                        topicId = if (replyTarget == null) activeTopicId else null,
+                        topicId = sendTopicId,
                     ).getOrThrow()
                 }
             }
-            CoroutineScope(Dispatchers.Main).launch {
+            CoroutineScope(Dispatchers.Main).launch completion@ {
+                if (!roomActionsLive.get()) return@completion
                 sending = false
                 outcome.onSuccess {
-                    draftValue = TextFieldValue("")
-                    replyTo = null
-                    editing = null
+                    if (editTarget != null) {
+                        if (editing?.id == editTarget.id && composerDraft.revision == submittedRevision) finishEditing()
+                    } else {
+                        composerDraft.clearIfUnchanged(submittedRevision)
+                        if (replyTo?.id == replyTarget?.id) replyTo = null
+                    }
                     sendError = null
                     // R74 - the effect arm is one-shot like the web pendingEffect
                     // (armed stays until a send consumes it - web L3103 keeps it
                     // armed across sends until dismissed; the chip shows it).
                     // R24-b - incognito IS one-shot (web L1751): disarm on success.
                     if (anonTarget) anonNext = false
-                    if (editTarget != null) {
-                        runCatching { repository.clearDraft(groupId) }
-                    }
                 }.onFailure { failure ->
                     val api = failure as? PulseApiException
                     if (api?.retryAfter != null) {
                         slowModeUntil = System.currentTimeMillis() + api.retryAfter!! * 1000L
-                    } else if (api?.kind == "NETWORK" && editTarget == null && replyTarget == null) {
-                        // offline text sends already ride the repository outbox -
-                        // the optimistic echo stays, the offline pill explains it
-                        draftValue = TextFieldValue("")
-                        replyTo = null
                     } else {
                         sendError = when {
-                            api?.status == 403 -> "You cannot post here"
+                            api?.kind in setOf("VALIDATION", "FORBIDDEN", "NOT_FOUND") ->
+                                "Not sent. Original message kept in Settings → Chat → Outbox."
                             else -> "Message failed to send"
                         }
                     }
@@ -873,21 +998,18 @@ internal fun MirrorRoom(
     // can claim. The created invite message rides the normal refresh.
     fun startTicTacToe() {
         if (gameBusy) return
+        val opponentId = if (!isGroup) members.firstOrNull { it.id != viewerId }?.id else null
+        if (!isGroup && opponentId == null) {
+            sendError = "Participant details are unavailable. Reopen the chat before challenging them."
+            return
+        }
         gameBusy = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val opponentId = if (!isGroup) members.firstOrNull { it.id != viewerId }?.id else null
-            val outcome = runCatching {
-                repository.createGame(groupId, opponentId).getOrThrow()
-            }
-            CoroutineScope(Dispatchers.Main).launch {
-                gameBusy = false
-                outcome.onSuccess {
-                    sendError = "Tic-tac-toe challenge sent"
-                    runCatching { repository.refreshMessages(groupId, activeTopicId) }
-                }.onFailure {
-                    sendError = "Could not start the game"
-                }
-            }
+        gameJob = gameScope.launch {
+            try {
+                roomRequest { repository.createGame(groupId, opponentId) }
+                    .onSuccess { sendError = if (it.replayed) "Recovered the previous challenge" else "Tic-tac-toe challenge sent" }
+                    .onFailure { sendError = (it.message ?: "Challenge was not confirmed.") + " Check the chat before retrying." }
+            } finally { gameBusy = false }
         }
     }
 
@@ -909,8 +1031,8 @@ internal fun MirrorRoom(
             cmd == "/redpacket" -> { draftValue = TextFieldValue(""); redPacketOpen = true }
             cmd == "/kanban" -> { draftValue = TextFieldValue(""); kanbanOpen = true }
             cmd == "/events" -> { draftValue = TextFieldValue(""); eventsOpen = true }
-            cmd == "/stage" -> { draftValue = TextFieldValue(""); stageOpen = true }
-            cmd == "/space" -> { draftValue = TextFieldValue(""); spaceOpen = true }
+            cmd == "/stage" -> { draftValue = TextFieldValue(""); onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE) }
+            cmd == "/space" -> { draftValue = TextFieldValue(""); onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE) }
             cmd == "/recap" -> { draftValue = TextFieldValue(""); recapOpen = true }
             cmd == "/help" -> { draftValue = TextFieldValue(""); slashHelpOpen = true }
             cmd == "/game" -> { draftValue = TextFieldValue(""); startTicTacToe() }
@@ -969,20 +1091,44 @@ internal fun MirrorRoom(
 
     // R73 - voice notes (web startRecording chat-room.tsx:3550-3620): real
     // MediaRecorder AAC capture, live timer, discard below 600ms on cancel.
-    var recording by remember { mutableStateOf(false) }
-    var recordSeconds by remember { mutableStateOf(0) }
-    var voiceBusy by remember { mutableStateOf(false) }
-    var recordStartAt by remember { mutableStateOf(0L) }
-    val recorderRef = remember { mutableStateOf<MediaRecorder?>(null) }
-    val recordFileRef = remember { mutableStateOf<File?>(null) }
+    val voiceScope = rememberCoroutineScope()
+    var voiceSendJob by remember(groupId) { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var voiceOperationId by remember(groupId) { mutableStateOf(java.util.UUID.randomUUID().toString()) }
+    var uploadedVoicePath by remember(groupId) { mutableStateOf<String?>(null) }
+    var recording by remember(groupId) { mutableStateOf(false) }
+    var recordSeconds by remember(groupId) { mutableStateOf(0) }
+    var voiceBusy by remember(groupId) { mutableStateOf(false) }
+    var recordStartAt by remember(groupId) { mutableStateOf(0L) }
+    var recordedDurationMs by remember(groupId) { mutableStateOf(0L) }
+    val recorderAudioToken = remember(groupId) { java.util.UUID.randomUUID().toString() }
+    val recorderRef = remember(groupId) { mutableStateOf<MediaRecorder?>(null) }
+    val recordFileRef = remember(groupId) { mutableStateOf<File?>(null) }
+    var voiceTopic by remember(groupId) { mutableStateOf<String?>(null) }
+    var permissionRequestRoom by remember { mutableStateOf<String?>(null) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (permissionRequestRoom != groupId) return@rememberLauncherForActivityResult
+        permissionRequestRoom = null
         if (granted) {
+            if (!readerLifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                sendError = "Return to this room to record a voice note"
+                return@rememberLauncherForActivityResult
+            }
+            if (voiceBusy || recordFileRef.value != null) {
+                sendError = "Send or discard the current voice note first"
+                return@rememberLauncherForActivityResult
+            }
+            if (!app.pulse.core.audio.AudioOwnership.shared.acquireExclusive(recorderAudioToken)) {
+                sendError = "Leave your live room/call or pause playback before recording"
+                return@rememberLauncherForActivityResult
+            }
             val context = context
             runCatching {
                 val file = File(context.cacheDir, "voice-note-${System.currentTimeMillis()}.m4a")
+                recordFileRef.value = file
                 val recorder = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else {
                     @Suppress("DEPRECATION") MediaRecorder()
                 }
+                recorderRef.value = recorder
                 recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
                 recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -994,9 +1140,20 @@ internal fun MirrorRoom(
                 recorderRef.value = recorder
                 recordFileRef.value = file
                 recording = true
-                recordStartAt = System.currentTimeMillis()
+                recordedDurationMs = 0L
+                voiceOperationId = java.util.UUID.randomUUID().toString()
+                voiceTopic = activeTopicId
+                uploadedVoicePath = null
+                recordStartAt = android.os.SystemClock.elapsedRealtime()
                 recordSeconds = 0
-            }.onFailure { sendError = "Microphone unavailable" }
+            }.onFailure {
+                runCatching { recorderRef.value?.release() }
+                recorderRef.value = null
+                app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
+                recordFileRef.value?.delete()
+                recordFileRef.value = null
+                sendError = "Microphone unavailable"
+            }
         } else {
             sendError = "Microphone permission needed for voice notes"
         }
@@ -1004,68 +1161,94 @@ internal fun MirrorRoom(
     LaunchedEffect(recording) {
         while (recording) {
             delay(200)
-            recordSeconds = ((System.currentTimeMillis() - recordStartAt) / 1000L).toInt()
+            recordSeconds = ((android.os.SystemClock.elapsedRealtime() - recordStartAt) / 1000L).toInt()
         }
     }
     fun cancelRecording() {
-        runCatching {
-            recorderRef.value?.stop()
-        }
+        runCatching { recorderRef.value?.stop() }
         runCatching { recorderRef.value?.release() }
         recorderRef.value = null
+        app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
         recordFileRef.value?.delete()
         recordFileRef.value = null
         recording = false
         recordSeconds = 0
+        recordedDurationMs = 0L
+        uploadedVoicePath = null
+    }
+    fun finishRecording(): File? {
+        val file = recordFileRef.value ?: return null
+        val duration = recordedDurationMs.takeIf { it > 0L }
+            ?: (android.os.SystemClock.elapsedRealtime() - recordStartAt).coerceAtLeast(0L)
+        if (duration < 600L) { cancelRecording(); return null }
+        val recorder = recorderRef.value
+        val result = finalizeVoiceNote(file, { recorder?.stop() }, { recorder?.release() })
+        recorderRef.value = null
+        app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
+        recording = false
+        if (result.isFailure) {
+            recordFileRef.value = null
+            sendError = "Recording could not be finalized. Please record again."
+            return null
+        }
+        recordedDurationMs = duration
+        return file
     }
     fun sendRecording() {
-        val file = recordFileRef.value
-        if (file == null) {
-            recording = false
-            return
-        }
-        val durationMs = (System.currentTimeMillis() - recordStartAt).coerceAtLeast(0L)
-        if (durationMs < 600) {
-            // web MIN_VOICE_MS=600 - too-short recordings are discarded
-            cancelRecording()
-            return
-        }
-        recording = false
+        if (voiceBusy) return
+        val file = finishRecording() ?: return
+        val operationId = voiceOperationId
+        val duration = recordedDurationMs
         voiceBusy = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val outcome = runCatching {
-                val dataUrl = "data:audio/mp4;base64," + Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
-                val uploaded = repository.uploadMedia(dataUrl).getOrThrow()
-                repository.sendMediaMessage(
-                    conversationId = groupId,
-                    body = "",
-                    audioPath = uploaded,
-                    durationMs = durationMs,
-                ).getOrThrow()
-            }
-            CoroutineScope(Dispatchers.Main).launch {
-                voiceBusy = false
-                outcome.onSuccess {
-                    runCatching { recorderRef.value?.release() }
-                    recorderRef.value = null
-                    recordFileRef.value?.delete()
-                    recordFileRef.value = null
-                    recordSeconds = 0
-                }.onFailure { sendError = "Voice note failed to send" }
-            }
+        voiceSendJob = voiceScope.launch {
+            try {
+                val uploaded = uploadedVoicePath ?: run {
+                    val dataUrl = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                        "data:audio/mp4;base64," + Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                    }
+                    repository.uploadMedia(dataUrl).getOrThrow().also { uploadedVoicePath = it }
+                }
+                ensureActive()
+                repository.sendMediaMessage(conversationId = groupId, body = "",
+                    audioPath = uploaded, durationMs = duration, clientId = operationId, topicId = voiceTopic).getOrThrow()
+                ensureActive()
+                cancelRecording()
+                sendError = null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                sendError = "Voice note not confirmed. Send again to retry, or discard."
+            } finally { voiceBusy = false }
         }
     }
-    DisposableEffect(Unit) {
+    DisposableEffect(readerLifecycle, groupId) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && recording) {
+                if (finishRecording() != null) {
+                    sendError = "Recording stopped in the background. Send or discard it."
+                }
+            }
+        }
+        readerLifecycle.lifecycle.addObserver(observer)
         onDispose {
-            runCatching { recorderRef.value?.release() }
-            recorderRef.value = null
+            readerLifecycle.lifecycle.removeObserver(observer)
+            voiceSendJob?.cancel()
+            cancelRecording() // scoped upload is canceled; recording belongs to this room
         }
     }
 
-    LaunchedEffect(messages.size) {
-        // R76 - while a jump is pending the bottom chase is suspended (the
-        // jump scroll owns the list until it lands or gives up)
-        if (!jumpActive && entries.isNotEmpty()) listState.animateScrollToItem(entries.size - 1)
+    var previousEntryCount by remember(groupId, activeTopicId) { mutableStateOf(0) }
+    var previousTailId by remember(groupId, activeTopicId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(visibleMessages.lastOrNull()?.id, entries.size, activeTopicId) {
+        val tail = visibleMessages.lastOrNull()
+        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+        if (shouldFollowMessageTail(
+                previousEntryCount, lastVisible, previousTailId, tail?.id,
+                tail?.authorId == viewerId, jumpActive,
+            ) && entries.isNotEmpty()
+        ) listState.animateScrollToItem(entries.size)
+        previousEntryCount = entries.size + 1
+        previousTailId = tail?.id
     }
     // Leaving the room always cancels the typing signal (web unmount parity).
     androidx.compose.runtime.DisposableEffect(Unit) {
@@ -1102,22 +1285,23 @@ internal fun MirrorRoom(
     // composer draft rides as the caption when present (web R40 flow).
     val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            CoroutineScope(Dispatchers.IO).launch {
-                val doc = mirrorUriToDocumentDataUrl(context, uri)
-                if (doc != null) {
-                    val caption = draftValue.text.trim()
-                    runCatching {
-                        val path = repository.uploadMedia(doc.first).getOrThrow()
-                        repository.sendMediaMessage(
-                            groupId,
-                            caption.take(2000),
-                            filePath = path,
-                            fileName = doc.second,
-                            kind = "file",
-                        ).getOrThrow()
-                    }.onSuccess {
-                        CoroutineScope(Dispatchers.Main).launch { draftValue = TextFieldValue("") }
-                    }
+            val caption = draftValue.text.trim()
+            val revision = composerDraft.revision
+            val topic = activeTopicId
+            historyScope.launch {
+                try {
+                    val doc = kotlinx.coroutines.withContext(Dispatchers.IO) { mirrorUriToDocumentDataUrl(context, uri) }
+                        ?: error("Could not open document")
+                    val path = repository.uploadMedia(doc.first).getOrThrow()
+                    ensureActive()
+                    repository.sendMediaMessage(groupId, caption.take(2000), filePath = path,
+                        fileName = doc.second, kind = "file", topicId = topic).getOrThrow()
+                    ensureActive()
+                    if (roomActionsLive.get()) composerDraft.clearIfUnchanged(revision)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (roomActionsLive.get()) sendError = "Document could not be sent. Your current text is kept."
                 }
             }
         }
@@ -1127,8 +1311,8 @@ internal fun MirrorRoom(
     // theme override (chat.convThemes) ?? the global Appearance default; the
     // optional tint replaces the top glow color (web applyConvTint). The room
     // is always dark (web R54-c) so the dark glow palette is the only one.
-    val convThemes by repository.convThemes.collectAsState(initial = emptyMap<String, ConvTheme>())
-    val globalPrefs by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
+    val convThemes by repository.convThemes.collectAsStateWithLifecycle(initialValue = emptyMap<String, ConvTheme>())
+    val globalPrefs by repository.pulsePrefs.collectAsStateWithLifecycle(initialValue = WirePulsePrefs())
     val roomTheme = convThemes[groupId]
     val roomWallpaper = roomTheme?.wallpaper ?: (globalPrefs.wallpaper ?: "none")
     val roomTint = roomTheme?.tint
@@ -1331,6 +1515,13 @@ internal fun MirrorRoom(
                 bottom = 8.dp,
             ),
         ) {
+            item(key = "history-control") {
+                if (historyHasMore) {
+                    androidx.compose.material3.TextButton(onClick = { loadEarlierMessages() }, enabled = !loadingHistory) {
+                        Text(if (loadingHistory) "Loading earlier messages…" else "Load earlier messages")
+                    }
+                }
+            }
             itemsIndexed(entries, key = { _, e ->
                 when (e) {
                     is RoomEntry.DayLabel -> e.key
@@ -1364,7 +1555,7 @@ internal fun MirrorRoom(
                     }
                     is RoomEntry.Msg -> {
                         val mine = entry.message.authorId == viewerId
-                        val lastOwnId = messages.lastOrNull { it.authorId == viewerId && it.deletedAt == null }?.id
+                        val lastOwnId = visibleMessages.lastOrNull { it.authorId == viewerId && it.deletedAt == null }?.id
                         val showReadBy = mine && isGroup &&
                             entry.message.id == lastOwnId && entry.message.deletedAt == null
                         val created = MirrorRoomEpoch(entry.message.createdAt)
@@ -1374,7 +1565,7 @@ internal fun MirrorRoom(
                         // R73 - the web bubble entrance (chat-room.tsx:7510-7520):
                         // the NEWEST row plays the Telegram squash & stretch on
                         // arrival; history rows render settled.
-                        val isNewest = entry.message.id == messages.lastOrNull()?.id
+                        val isNewest = entry.message.id == visibleMessages.lastOrNull()?.id
                         // R76 - the jump flash ring (web flashHighlight): an amber
                         // border drawn OVER the row bounds - zero layout shift.
                         val flashing = jumpFlashId == entry.message.id
@@ -1556,13 +1747,18 @@ internal fun MirrorRoom(
                         tint = MirrorArt.Accent2,
                         text = "Editing message - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
                         onCancel = {
-                            editing = null
-                            draftValue = TextFieldValue("")
+                            finishEditing()
                         },
                     )
                 }
                 sendError?.let {
                     MirrorComposerBar(glyph = "LTriangleAlert", tint = MirrorArt.Red, text = it, onCancel = { sendError = null })
+                }
+                if (!voiceBusy && !recording && recordFileRef.value != null && recordedDurationMs > 0L) {
+                    Row {
+                        androidx.compose.material3.TextButton(onClick = { sendRecording() }) { Text("Send voice note") }
+                        androidx.compose.material3.TextButton(onClick = { cancelRecording(); sendError = null }) { Text("Discard voice note") }
+                    }
                 }
             }
         }
@@ -1973,11 +2169,11 @@ internal fun MirrorRoom(
                         },
                         MirrorTrayTileSpec("LPodcast", "Stage", "Live audio stage for the room", TrayToneOrange) {
                             trayOpen = false
-                            stageOpen = true
+                            onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE)
                         },
                         MirrorTrayTileSpec("LMap", "Space", "Hang out in a spatial room", TrayToneAmber) {
                             trayOpen = false
-                            spaceOpen = true
+                            onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE)
                         },
                         MirrorTrayTileSpec("LGamepad2", "Game", "Start tic-tac-toe here", TrayToneViolet) {
                             trayOpen = false
@@ -2023,6 +2219,7 @@ internal fun MirrorRoom(
                         add(
                             MirrorTrayTileSpec("LMic", "Voice note", "Hold-free recording with a live timer", TrayToneAmber) {
                                 trayOpen = false
+                                permissionRequestRoom = groupId
                                 micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
                             },
                         )
@@ -2164,7 +2361,7 @@ internal fun MirrorRoom(
                     pillStyle = "accentSoft",
                 ) {
                     menuOpen = false
-                    voiceOpen = true
+                    onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.VOICE)
                 }
                 // relocated header PiP - mini chat window
                 MirrorRoomMenuItem("LPictureInPicture2", if (pipActive) "Close mini chat window" else "Mini chat window") {
@@ -2270,11 +2467,11 @@ internal fun MirrorRoom(
                 }
                 MirrorRoomMenuItem("LPodcast", "Stage") {
                     menuOpen = false
-                    stageOpen = true
+                    onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE)
                 }
                 MirrorRoomMenuItem("LMap", "Space") {
                     menuOpen = false
-                    spaceOpen = true
+                    onOpenLiveRoom(app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE)
                 }
                 MirrorRoomMenuItem(
                     "LTrophy",
@@ -2316,11 +2513,12 @@ internal fun MirrorRoom(
     }
     // R72 - schedule message composer (web /schedule drawer)
     if (scheduleOpen) {
+        val scheduledRevision = remember { composerDraft.revision }
         MirrorScheduleComposerSheet(
             repository = repository,
             conversationId = groupId,
             initialDraft = draftValue.text,
-            onConsumedDraft = { draftValue = TextFieldValue("") },
+            onConsumedDraft = { if (roomActionsLive.get()) composerDraft.clearIfUnchanged(scheduledRevision) },
             onDismiss = { scheduleOpen = false },
         )
     }
@@ -2335,15 +2533,6 @@ internal fun MirrorRoom(
     }
     if (whiteboardOpen) {
         MirrorWhiteboardSheet(repository, groupId, viewerId) { whiteboardOpen = false }
-    }
-    if (voiceOpen) {
-        MirrorVoiceRoomSheet(repository, groupId, viewerId, viewerName, viewerColor) { voiceOpen = false }
-    }
-    if (stageOpen) {
-        MirrorStageSheet(repository, groupId, viewerId, viewerName, viewerColor) { stageOpen = false }
-    }
-    if (spaceOpen) {
-        MirrorSpaceSheet(repository, groupId, viewerId, viewerName, viewerColor) { spaceOpen = false }
     }
     if (tournamentOpen) {
         MirrorTournamentSheet(repository, groupId, viewerId) { tournamentOpen = false }
@@ -2368,6 +2557,10 @@ internal fun MirrorRoom(
             repository = repository,
             onReply = { replyTo = target },
             onEdit = {
+                if (editing == null) {
+                    draftBeforeEdit = draftValue
+                    replyBeforeEdit = replyTo
+                }
                 editing = target
                 draftValue = TextFieldValue(target.body)
             },
@@ -2473,10 +2666,8 @@ internal fun MirrorRoom(
             onDismiss = { redPacketOpen = false },
             onSent = {
                 redPacketOpen = false
-                // the server-created packet message rides the next refresh
-                CoroutineScope(Dispatchers.IO).launch {
-                    runCatching { repository.refreshMessages(groupId, activeTopicId) }
-                }
+                // createRedPacket already caches the confirmed carrier message and
+                // schedules its account-owned conversation refresh. No detached job.
             },
         )
     }
@@ -4502,14 +4693,18 @@ private fun MirrorCaptionSheet(imagePath: String, busy: Boolean, onDismiss: () -
  */
 @Composable
 private fun MirrorVoiceNoteBubble(message: Message, mine: Boolean, filePath: String) {
-    val context = LocalContext.current
-    val player = remember(message.id) { MediaPlayer() }
-    var playing by remember { mutableStateOf(false) }
-    var positionMs by remember { mutableStateOf(0) }
-    androidx.compose.runtime.DisposableEffect(message.id) {
-        onDispose {
-            runCatching { player.release() }
+    val vm: app.pulse.feature.chat.VoicePlaybackViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    val state by vm.player.playback.collectAsStateWithLifecycle()
+    val active = state?.takeIf { it.messageId == message.id }
+    val playing = active?.playing == true
+    val positionMs = active?.positionMs?.toInt() ?: 0
+    val lifecycle = LocalLifecycleOwner.current
+    DisposableEffect(message.id, lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) vm.player.releaseIfActive(message.id)
         }
+        lifecycle.lifecycle.addObserver(observer)
+        onDispose { lifecycle.lifecycle.removeObserver(observer); vm.player.releaseIfActive(message.id) }
     }
     // deterministic bars (web voiceBars hash LCG)
     val bars = remember(message.id) {
@@ -4518,12 +4713,6 @@ private fun MirrorVoiceNoteBubble(message: Message, mine: Boolean, filePath: Str
             h = java.lang.Long.remainderUnsigned(h * 1103515245L + 12345L, 2147483648L)
             val v = (h / 2147483648.0)
             0.28f + (v.toFloat() * 0.72f)
-        }
-    }
-    LaunchedEffect(playing) {
-        while (playing) {
-            positionMs = runCatching { player.currentPosition }.getOrDefault(0)
-            delay(200)
         }
     }
     Row(
@@ -4535,26 +4724,7 @@ private fun MirrorVoiceNoteBubble(message: Message, mine: Boolean, filePath: Str
                 .size(34.dp)
                 .clip(CircleShape)
                 .background(if (mine) Color(0x1A000000) else MirrorArt.White10)
-                .mirrorPressClick(onClick = {
-                    if (playing) {
-                        runCatching { player.pause() }
-                        playing = false
-                    } else {
-                        runCatching {
-                            player.reset()
-                            player.setDataSource(PulseEndpoints.http("/api/uploads/$filePath"))
-                            player.setAudioAttributes(
-                                android.media.AudioAttributes.Builder()
-                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                                    .build(),
-                            )
-                            player.prepare()
-                            player.start()
-                            playing = true
-                        }.onFailure { playing = false }
-                    }
-                }),
+                .mirrorPressClick(onClick = { vm.player.toggle(message) }),
             contentAlignment = Alignment.Center,
         ) {
             MirrorLucideIcon(
@@ -4580,7 +4750,8 @@ private fun MirrorVoiceNoteBubble(message: Message, mine: Boolean, filePath: Str
         }
         val totalSec = ((message.durationMs ?: 0L) / 1000L).toInt()
         Text(
-            if (playing) "%d:%02d".format(positionMs / 60000, (positionMs / 1000) % 60)
+            if (active?.loading == true) "Loading…"
+            else if (playing) "%d:%02d".format(positionMs / 60000, (positionMs / 1000) % 60)
             else "%d:%02d".format(totalSec / 60, totalSec % 60),
             color = if (mine) MirrorArt.InkSoft else MirrorArt.Dim,
             fontSize = 10.sp,

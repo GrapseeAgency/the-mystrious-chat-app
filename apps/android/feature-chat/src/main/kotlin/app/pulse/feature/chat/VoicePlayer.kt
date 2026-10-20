@@ -1,5 +1,9 @@
 package app.pulse.feature.chat
 
+import app.pulse.core.audio.AudioOwnership
+import java.util.UUID
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Build
@@ -53,6 +57,11 @@ class VoicePlayer @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var player: MediaPlayer? = null
     private var ticker: Job? = null
+    private var loading: Job? = null
+    private var generation = 0L
+    private val audioToken = UUID.randomUUID().toString()
+    private val _notices = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val notices = _notices.asSharedFlow()
 
     private val _playback = MutableStateFlow<Playback?>(null)
     val playback: StateFlow<Playback?> = _playback.asStateFlow()
@@ -64,81 +73,80 @@ class VoicePlayer @Inject constructor(
     /** Play/pause for a voice row - switching targets releases the previous player. */
     fun toggle(message: Message) {
         val current = _playback.value
+        if (current?.messageId == message.id && current.loading) { release(); return }
         if (current?.messageId == message.id && player != null) {
             val mp = player ?: return
             if (current.playing) {
-                runCatching { mp.pause() }
+                if (runCatching { mp.pause() }.isFailure) { failPlayback(); return }
                 ticker?.cancel()
                 _playback.value = current.copy(playing = false)
+                AudioOwnership.shared.release(audioToken)
             } else {
-                if (current.durationMs in 1..current.positionMs) runCatching { mp.seekTo(0) }
-                runCatching { mp.start() }
+                if (!claimAudio()) return
+                if (runCatching {
+                    if (current.durationMs in 1..current.positionMs) mp.seekTo(0)
+                    applyRate(rate.value)
+                    mp.start()
+                }.isFailure) { failPlayback(); return }
                 _playback.value = current.copy(playing = true)
                 startTicker()
             }
             return
         }
-        val audioPath = message.audioPath?.takeIf { it.isNotBlank() } ?: return
+        val path = message.audioPath?.takeIf { it.isNotBlank() } ?: return
         release()
-        _playback.value = Playback(
-            messageId = message.id,
-            playing = false,
-            loading = true,
-            positionMs = 0,
-            durationMs = message.durationMs ?: 0,
-        )
-        scope.launch {
-            repo.downloadMedia(audioPath)
-                .onSuccess { path -> prepareAndPlay(message.id, path) }
-                .onFailure {
-                    if (_playback.value?.messageId == message.id) _playback.value = null
-                }
+        val ticket = generation
+        val api = repo.boundToCurrentAccount()
+        _playback.value = Playback(message.id, false, true, 0, message.durationMs ?: 0)
+        loading = scope.launch {
+            val downloaded = runCatching { api.downloadMedia(path) }.getOrElse { Result.failure(it) }
+            if (!isActive || ticket != generation) return@launch
+            downloaded.onSuccess { prepareAndPlay(message.id, it, ticket) }
+                .onFailure { failPlayback() }
         }
     }
 
-    /** Create + prepare on IO, then start on the main looper. */
-    private suspend fun prepareAndPlay(messageId: String, localPath: String) {
-        val prepared = withContext(Dispatchers.IO) {
-            runCatching {
-                val mp = MediaPlayer()
-                mp.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build(),
-                )
-                mp.setDataSource(localPath)
-                mp.prepare()
-                mp
-            }
-        }
-        prepared
-            .onSuccess { mp ->
-                if (_playback.value?.messageId != messageId) {
-                    // Another toggle raced us - drop this player, keep the newest.
-                    runCatching { mp.release() }
-                    return@onSuccess
+    private fun claimAudio(): Boolean {
+        if (AudioOwnership.shared.acquirePlayback(audioToken, ::release)) return true
+        _notices.tryEmit("Leave your live room/call or stop recording before playing a voice note.")
+        return false
+    }
+
+    /** MediaPlayer stays on its owning looper; preparation never blocks the UI. */
+    private fun prepareAndPlay(messageId: String, localPath: String, ticket: Long) {
+        if (ticket != generation) return
+        if (!claimAudio()) { release(); return }
+        val mp = try { MediaPlayer() } catch (_: Exception) { failPlayback(); return }
+        player = mp // failure/exit can release even a half-prepared player
+        fun current() = generation == ticket && player === mp
+        try {
+            mp.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            mp.setOnPreparedListener {
+                if (current()) {
+                    if (runCatching { applyRate(rate.value); mp.start() }.isFailure) failPlayback()
+                    else {
+                        _playback.value = Playback(messageId, true, false, 0, mp.duration.toLong())
+                        startTicker()
+                    }
                 }
-                player = mp
-                mp.setOnCompletionListener { finished ->
+            }
+            mp.setOnCompletionListener {
+                if (current()) {
                     ticker?.cancel()
-                    _playback.value = _playback.value
-                        ?.takeIf { it.messageId == messageId }
-                        ?.copy(playing = false, positionMs = finished.duration.toLong())
+                    _playback.value = _playback.value?.copy(playing = false, positionMs = it.duration.toLong())
+                    AudioOwnership.shared.release(audioToken)
                 }
-                applyRate(rate.value)
-                _playback.value = _playback.value?.copy(
-                    loading = false,
-                    playing = true,
-                    durationMs = mp.duration.toLong(),
-                    positionMs = 0,
-                )
-                runCatching { mp.start() }
-                startTicker()
             }
-            .onFailure {
-                if (_playback.value?.messageId == messageId) _playback.value = null
-            }
+            mp.setOnErrorListener { _, _, _ -> if (current()) failPlayback(); true }
+            mp.setDataSource(localPath)
+            mp.prepareAsync()
+        } catch (_: Exception) { if (current()) failPlayback() }
+    }
+
+    private fun failPlayback() {
+        release()
+        _notices.tryEmit("Voice note could not play. Try again.")
     }
 
     /** 100ms position ticker - drives the determinate waveform recoloring. */
@@ -150,7 +158,8 @@ class VoicePlayer @Inject constructor(
                 val mp = player ?: break
                 val snapshot = _playback.value ?: break
                 if (snapshot.playing) {
-                    _playback.value = snapshot.copy(positionMs = mp.currentPosition.toLong())
+                    val position = runCatching { mp.currentPosition.toLong() }.getOrElse { failPlayback(); return@launch }
+                    _playback.value = snapshot.copy(positionMs = position)
                 }
             }
         }
@@ -164,7 +173,8 @@ class VoicePlayer @Inject constructor(
             else -> 1f
         }
         scope.launch { runCatching { prefs.setVoiceRate(next) } }
-        applyRate(next)
+        // setPlaybackParams can start a paused player; apply only under a live lease.
+        if (_playback.value?.playing == true) applyRate(next)
     }
 
     /** API 23+ `setPlaybackParams` guard - lower APIs hide the chip entirely. */
@@ -184,6 +194,9 @@ class VoicePlayer @Inject constructor(
 
     /** Stop + release everything (VM clear, room close, target switch). */
     fun release() {
+        generation++
+        loading?.cancel()
+        loading = null
         ticker?.cancel()
         ticker = null
         player?.let { mp ->
@@ -191,6 +204,7 @@ class VoicePlayer @Inject constructor(
             runCatching { mp.release() }
         }
         player = null
+        AudioOwnership.shared.release(audioToken)
         _playback.value = null
     }
 }

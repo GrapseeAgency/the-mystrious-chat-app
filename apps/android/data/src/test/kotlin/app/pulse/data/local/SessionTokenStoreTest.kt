@@ -15,7 +15,7 @@ import org.junit.Test
  * The fake cipher is a real reversible transform (prefix + reversed payload),
  * so encrypt→decrypt round-trips honestly; a "broken" mode simulates an
  * unreadable at-rest payload (backup-restore key loss) to lock the
- * self-healing path.
+ * fail-closed path.
  */
 class SessionTokenStoreTest {
 
@@ -73,20 +73,17 @@ class SessionTokenStoreTest {
     }
 
     @Test
-    fun `load drops an unreadable payload instead of looping on guaranteed 401s`() = runTest {
+    fun `unreadable credential blocks hydration and retains recovery evidence`() = runTest {
         val persistence = FakePersistence()
-        persistence.write("enc:" + TOKEN_64.reversed())
-
+        val encrypted = "enc:" + TOKEN_64.reversed()
+        persistence.write(encrypted)
         val store = SessionTokenStore(persistence, FakeCipher(broken = true))
-        assertNull(store.load())
+
+        val failure = runCatching { store.load() }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
         assertNull(store.cached)
-        // self-heal is async (store scope on Dispatchers.IO) - wait deterministically
-        for (i in 1..300) {
-            if (persistence.backing.isEmpty()) break
-            Thread.sleep(10)
-        }
-        // self-healed: the dead payload was removed from at-rest storage
-        assertTrue(persistence.backing.isEmpty())
+        assertTrue(store.invalidated.value)
+        assertEquals(listOf(encrypted), persistence.backing)
     }
 
     @Test
@@ -103,15 +100,15 @@ class SessionTokenStoreTest {
     }
 
     @Test
-    fun `markInvalid clears the credential and raises the flag`() = runTest {
+    fun `markInvalid retains the rejected credential to prevent anonymous downgrade`() = runTest {
         val persistence = FakePersistence()
         val store = SessionTokenStore(persistence, FakeCipher())
         store.save(TOKEN_64)
 
         store.markInvalid("Session token is invalid or has been rotated. Log in again.")
 
-        assertNull(store.cached)
-        assertTrue(persistence.backing.isEmpty())
+        assertEquals(TOKEN_64, store.cached)
+        assertFalse(persistence.backing.isEmpty())
         assertTrue(store.invalidated.value)
     }
 

@@ -19,6 +19,8 @@ struct SavedLibraryView: View {
     @State private var items: [WireSavedItem] = []
     @State private var query = ""
     @State private var openingId: String?
+    @State private var removingIds: Set<String> = []
+    @State private var loadGeneration = UUID()
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -44,6 +46,10 @@ struct SavedLibraryView: View {
         }
         .presentationDetents([.large])
         .task { await load() }
+        .onReceive(session.messageVisibilityClock) { now in
+            let visible = items.filter { PulseRemediationLogic.isAlive($0.message.expiresAt, now: now) }
+            if visible.count != items.count { items = visible }
+        }
     }
 
     // ── data ─────────────────────────────────────────────────
@@ -53,16 +59,24 @@ struct SavedLibraryView: View {
             phase = .failed("You need an identity to open the saved library")
             return
         }
+        let ticket = UUID()
+        loadGeneration = ticket
+        let epoch = session.sessionGeneration
+        let api = session.api
+        let store = session.store
+        if items.isEmpty, let cached = try? store?.cachedSavedItems() { items = cached }
         phase = items.isEmpty ? .loading : .loaded
         do {
-            let fresh = try await session.api.savedLibrary(userId: viewer.id)
-            try? session.store?.upsert(savedItems: fresh)
-            try? session.store?.replaceSaved(messageIds: fresh.map { $0.message.id })
-            items = fresh
+            let fresh = try await api.savedLibrary(userId: viewer.id)
+            guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
+            try? store?.upsert(savedItems: fresh)
+            try? store?.replaceSaved(messageIds: fresh.map { $0.message.id })
+            items = fresh.filter { PulseRemediationLogic.isAlive($0.message.expiresAt) }
             phase = .loaded
         } catch {
-            // Offline fallback - the cache mirror stays usable.
-            if let store = session.store, let ids = try? store.savedIds(), !ids.isEmpty {
+            guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
+            // Never call an empty rendered list "loaded" merely because marker IDs exist.
+            if !items.isEmpty {
                 phase = .loaded
             } else {
                 phase = .failed(RoomViewModel.describe(error))
@@ -71,11 +85,18 @@ struct SavedLibraryView: View {
     }
 
     private func unsave(_ item: WireSavedItem) {
-        guard let viewer = session.viewer else { return }
+        guard let viewer = session.viewer, !removingIds.contains(item.message.id) else { return }
+        removingIds.insert(item.message.id)
+        let epoch = session.sessionGeneration
+        let api = session.api
+        let store = session.store
         Task {
+            defer { removingIds.remove(item.message.id) }
             do {
-                _ = try await session.api.toggleMessageSave(id: item.message.id, userId: viewer.id)
-                try? session.store?.deleteSaved(messageId: item.message.id)
+                _ = try await api.toggleMessageSave(id: item.message.id, userId: viewer.id)
+                guard session.sessionGeneration == epoch else { return }
+                try? store?.deleteSaved(messageId: item.message.id)
+                items.removeAll { $0.message.id == item.message.id }
                 await load()
             } catch {
                 session.toasts.show(RoomViewModel.describe(error))
@@ -88,13 +109,16 @@ struct SavedLibraryView: View {
     private func openOriginal(_ item: WireSavedItem) {
         guard openingId == nil, let viewer = session.viewer else { return }
         openingId = item.message.id
+        let epoch = session.sessionGeneration
+        let api = session.api
         Task {
             defer { openingId = nil }
             do {
-                let conversation = try await session.api.conversationDetail(
+                let conversation = try await api.conversationDetail(
                     id: item.conversation.id,
                     userId: viewer.id,
                 )
+                guard session.sessionGeneration == epoch else { return }
                 onOpenOriginal(conversation, item.message.id)
             } catch {
                 session.toasts.show("Couldn't open the original chat")

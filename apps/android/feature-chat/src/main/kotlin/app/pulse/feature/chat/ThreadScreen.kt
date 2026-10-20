@@ -66,6 +66,7 @@ import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.Message
 import app.pulse.domain.model.TEMP_MESSAGE_PREFIX
 import app.pulse.domain.repository.PulseEvent
+import app.pulse.domain.usecase.SendMessageUseCase
 import app.pulse.domain.repository.PulseRepository
 import app.pulse.ui.PulseMotion
 import app.pulse.ui.PulsePalette
@@ -75,6 +76,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -84,7 +86,7 @@ import kotlinx.coroutines.launch
  * (asc). Send rides the ordinary wire path with `parentId = rootId` (spec
  * §1.1: threads are ordinary sends, ONE level deep, never conflated with
  * replyToId); the optimistic echo lands in Room and streams back through
- * the thread flow. Thread replies are NEVER queued offline (spec §1.2).
+ * the thread flow. Thread replies share the durable outbox with the main room.
  */
 @HiltViewModel
 class ThreadViewModel @Inject constructor(
@@ -99,6 +101,8 @@ class ThreadViewModel @Inject constructor(
 
     data class UiState(
         val loading: Boolean = false,
+        val draft: String = "",
+        val sending: Boolean = false,
         val error: String? = null,
         val connected: Boolean? = null,
         val notice: RoomNotice? = null,
@@ -120,7 +124,9 @@ class ThreadViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Replies asc - live Room flow (realtime appends ride message:new upserts). */
-    val replies: StateFlow<List<Message>> = repo.observeThreadMessages(rootId)
+    val replies: StateFlow<List<Message>> = combine(repo.observeThreadMessages(rootId), parent) { rows, root ->
+        if (root == null || root.isDeleted) emptyList() else rows
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
@@ -139,30 +145,42 @@ class ThreadViewModel @Inject constructor(
         }
         viewModelScope.launch {
             repo.events().collect { event ->
-                if (event is PulseEvent.OutboxDropped) {
+                if (event is PulseEvent.OutboxDropped && event.conversationId == conversationId && event.threadRootId == rootId) {
                     _state.value = _state.value.copy(
-                        notice = RoomNotice("Message couldn't be delivered", isError = true),
+                        notice = RoomNotice(event.reason, isError = true),
                     )
                 }
             }
         }
     }
 
-    /**
-     * Thread reply - `parentId = rootId` on the ordinary send path. The repo
-     * writes an optimistic echo (threadRootId set) that streams through the
-     * replies flow; a NETWORK failure retracts it with an honest error (no
-     * outbox row - spec: thread replies not queued).
-     */
-    fun send(body: String) {
+    private var composerRevision = 0L
+
+    fun changeDraft(value: String) {
+        composerRevision++
+        _state.value = _state.value.copy(draft = value)
+    }
+
+    /** Clear only the submitted revision, after persistence/acknowledgement. */
+    fun send() {
+        val state = _state.value
+        if (state.sending || state.draft.isBlank() || parent.value?.isDeleted != false) return
+        val revision = composerRevision
+        _state.value = state.copy(sending = true)
         viewModelScope.launch {
-            repo.sendMessage(conversationId, body.trim(), parentId = rootId)
-                .onSuccess { PulseFx.fire(PulseFx.BurstKind.BURST, count = 26) }
-                .onFailure { failure ->
-                    _state.value = _state.value.copy(
-                        notice = RoomNotice(failure.message ?: "Couldn't send - you appear to be offline", isError = true),
-                    )
+            try {
+                val result = SendMessageUseCase(repo)(conversationId, state.draft, parentId = rootId)
+                result.onSuccess { receipt ->
+                    if (composerRevision == revision) changeDraft("")
+                    if (!receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) PulseFx.fire(PulseFx.BurstKind.BURST, count = 26)
+                }.onFailure { failure ->
+                    _state.value = _state.value.copy(notice = RoomNotice(failure.message ?: "Reply was not queued; your draft is kept", isError = true))
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _state.value = _state.value.copy(notice = RoomNotice("Reply was not confirmed; check Outbox before resending", isError = true))
+            } finally { _state.value = _state.value.copy(sending = false) }
         }
     }
 
@@ -254,9 +272,17 @@ fun ThreadScreen(
     val listState = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
 
-    var draft by remember { mutableStateOf("") }
+    val draft = state.draft
     var lightboxTarget by remember { mutableStateOf<Message?>(null) }
     var anchoredToLatest by remember { mutableStateOf(false) }
+
+    LaunchedEffect(parent, replies) {
+        val target = lightboxTarget
+        if (target != null && (parent == null || parent?.isDeleted == true ||
+                (parent?.id != target.id && replies.none { it.id == target.id && !it.isDeleted }))) {
+            lightboxTarget = null
+        }
+    }
 
     // Stick to the newest reply as the thread grows (realtime appends);
     // the first non-empty emission jumps straight to the end.
@@ -415,14 +441,14 @@ fun ThreadScreen(
                 }
             }
 
-            // Thread replies never queue (spec §1.2) - the honesty strip only.
+            // Durable replies survive the connection dropping.
             androidx.compose.animation.AnimatedVisibility(visible = state.connected == false) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
                     modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
                 ) {
                     Text(
-                        "Offline - replies need a connection and won't queue",
+                        "Offline — replies are saved and sent when connected",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -431,6 +457,9 @@ fun ThreadScreen(
             }
         }
 
+        if (!state.loading && (parent == null || parent?.isDeleted == true)) {
+            Text("This thread is unavailable. Your draft is kept.", modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+        }
         // Composer - thread reply send (parentId rides the ordinary path).
         Surface(tonalElevation = 2.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)) {
             Row(
@@ -439,7 +468,7 @@ fun ThreadScreen(
             ) {
                 BasicTextField(
                     value = draft,
-                    onValueChange = { draft = it },
+                    onValueChange = viewModel::changeDraft,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                     cursorBrush = SolidColor(PulsePalette.Emerald),
                     modifier = Modifier
@@ -456,12 +485,11 @@ fun ThreadScreen(
                     },
                 )
                 Spacer(Modifier.width(6.dp))
-                val canSend = draft.isNotBlank()
+                val canSend = draft.isNotBlank() && !state.sending && parent?.isDeleted == false
                 IconButton(
                     onClick = {
                         if (!canSend) return@IconButton
-                        viewModel.send(draft)
-                        draft = ""
+                        viewModel.send()
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     },
                     modifier = Modifier

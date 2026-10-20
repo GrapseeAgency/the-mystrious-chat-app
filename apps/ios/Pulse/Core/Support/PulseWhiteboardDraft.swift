@@ -1,20 +1,37 @@
 import Foundation
 
-// R1-W2G D44 - the whiteboard PENDING-stroke draft store. A stroke is
-// persisted the moment it is drawn (BEFORE any sync attempt), namespaced
-// per conversation under "whiteboard.draft:<conversationId>" in
-// UserDefaults and JSON-encoded as [WireWhiteboardStrokePost] - the stroke
-// model encoding itself, not a bespoke shape. A crash/kill mid-draw
-// therefore loses nothing: the sheet restores the draft on open, re-syncs
-// it, and a stroke leaves the store only when the server confirms the POST
-// (or honestly on failure - the web truth at whiteboard-sheet.tsx:527-529
-// pending semantics and :497-500 honest removal, with a durable native
-// store the web does not have).
+// Pending strokes survive failed transport. An acknowledgement may remove only
+// the exact batch and queue generation it posted, never strokes drawn after reset.
 public enum PulseWhiteboardDraft {
     /// Namespaced per-conversation key (house "<feature>.<kind>:<id>" style,
     /// cf. "hub:tasks:<viewerId>" / "voice.captions").
     public static func key(_ conversationId: String) -> String {
         "whiteboard.draft:\(conversationId)"
+    }
+
+    public struct Batch {
+        public let strokes: [WireWhiteboardStrokePost]
+        fileprivate let generation: String?
+    }
+
+    /// Callers serialize draft access on the main actor.
+    public static func batch(conversationId: String, defaults: UserDefaults = .standard) -> Batch {
+        Batch(strokes: Array(strokes(conversationId: conversationId, defaults: defaults).prefix(40)),
+              generation: defaults.string(forKey: key(conversationId) + ":generation"))
+    }
+
+    @discardableResult
+    public static func acknowledge(_ batch: Batch, conversationId: String, defaults: UserDefaults = .standard) -> Bool {
+        let pending = strokes(conversationId: conversationId, defaults: defaults)
+        guard !batch.strokes.isEmpty,
+              batch.generation == defaults.string(forKey: key(conversationId) + ":generation"),
+              Array(pending.prefix(batch.strokes.count)) == batch.strokes else { return false }
+        removeFirst(conversationId: conversationId, count: batch.strokes.count, defaults: defaults)
+        return true
+    }
+
+    private static func invalidateBatches(_ conversationId: String, defaults: UserDefaults) {
+        defaults.set(UUID().uuidString, forKey: key(conversationId) + ":generation")
     }
 
     /// The pending strokes for a conversation, oldest first. Anything
@@ -38,17 +55,20 @@ public enum PulseWhiteboardDraft {
         guard count > 0 else { return }
         var pending = strokes(conversationId: conversationId, defaults: defaults)
         guard !pending.isEmpty else { return }
+        invalidateBatches(conversationId, defaults: defaults)
         pending.removeFirst(min(count, pending.count))
         store(pending, conversationId: conversationId, defaults: defaults)
     }
 
     /// Restore-time swap - rewrites the whole draft (the dedupe pass).
     public static func replaceAll(conversationId: String, strokes: [WireWhiteboardStrokePost], defaults: UserDefaults = .standard) {
+        invalidateBatches(conversationId, defaults: defaults)
         store(strokes, conversationId: conversationId, defaults: defaults)
     }
 
     /// Server-side board reset - the pending queue is gone with the board.
     public static func clear(conversationId: String, defaults: UserDefaults = .standard) {
+        invalidateBatches(conversationId, defaults: defaults)
         defaults.removeObject(forKey: key(conversationId))
     }
 

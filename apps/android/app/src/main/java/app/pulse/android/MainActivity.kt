@@ -158,7 +158,10 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -247,6 +250,8 @@ class ShellViewModel @Inject constructor(
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
+    @Inject lateinit var reminderDelivery: app.pulse.android.notify.ReminderDeliveryManager
+
     @Inject lateinit var repository: app.pulse.domain.repository.PulseRepository
 
     /** R10-a - biometric App lock: state holder + prompt presenter. */
@@ -290,25 +295,26 @@ class MainActivity : FragmentActivity() {
         if (!reminderLoopStarted) {
             reminderLoopStarted = true
             lifecycleScope.launch {
-                while (true) {
-                    runCatching {
-                        val due = repository.reminders(dueOnly = true).getOrNull()?.items.orEmpty()
-                        for (item in due) {
-                            app.pulse.android.notify.ReminderNotifier.show(
-                                this@MainActivity,
-                                item.id,
-                                item.note.ifBlank { "Reminder" },
-                                item.snippet ?: item.conversation.name,
-                                // R2-C item 6 - the tap deep-links into the chat.
-                                // R7 item 4 - the anchored message rides along so
-                                // the room auto-jumps + flashes on open.
-                                item.conversationId.ifBlank { null },
-                                item.messageId,
-                            )
-                            runCatching { repository.resolveReminder(item.id) }
+                repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    while (true) {
+                        runCatching {
+                            val bound = repository.boundToCurrentAccount()
+                            val owner = bound.reminderDeliveryOwner()
+                            if (owner != null) {
+                                // Full refresh also arms future rows created on another device.
+                                val items = bound.reminders(dueOnly = false).getOrThrow().items
+                                for (item in items) {
+                                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                    val at = app.pulse.core.time.PulseTime.epochMs(item.remindAt)
+                                    if (item.firedAt != null || at <= 0 || at > System.currentTimeMillis()) continue
+                                    if (reminderDelivery.deliver(owner, item) == app.pulse.domain.notify.ReminderDeliveryGate.Verdict.ACCEPTED) {
+                                        bound.acknowledgeReminderDelivery(item.id)
+                                    }
+                                }
+                            }
                         }
+                        delay(30_000)
                     }
-                    delay(30_000)
                 }
             }
         }
@@ -317,6 +323,7 @@ class MainActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         app.pulse.android.notify.IncomingAttention.foreground = false
+        if (!isChangingConfigurations) appLock.onHostStopped()
     }
 
     override fun onResume() {
@@ -506,12 +513,17 @@ fun PulseRoot(
     }
 
     // Boot the live layer (REST refresh + socket join) as soon as identity exists.
-    LaunchedEffect(viewerId) { session.bootstrap(viewerId) }
+    LaunchedEffect(viewerId, hydrated) { if (hydrated) session.bootstrap(viewerId) }
 
     // R7 item 8 - the session-rotated re-login notice (SessionViewModel sets
     // it when the stored token was rejected) finally reaches the onboarding
     // screen it was always meant for.
     val sessionNotice by session.sessionNotice.collectAsStateWithLifecycle()
+    val noticeContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(sessionNotice) {
+        sessionNotice?.let { android.widget.Toast.makeText(noticeContext, it, android.widget.Toast.LENGTH_LONG).show() }
+    }
+
 
     // Web parity: no viewer identity → the onboarding IS the app (name →
     // live @handle picker). Wait for prefs hydration to avoid a flash.
@@ -533,7 +545,19 @@ fun PulseRoot(
                 modifier = Modifier.fillMaxSize(),
             )
 
-            if (onboarding) {
+            if (!hydrated) {
+                val startupError by session.startupError.collectAsStateWithLifecycle()
+                if (startupError == null) {
+                    androidx.compose.material3.CircularProgressIndicator(Modifier.align(Alignment.Center))
+                } else {
+                    androidx.compose.foundation.layout.Column(Modifier.align(Alignment.Center).padding(24.dp)) {
+                        androidx.compose.material3.Text(startupError.orEmpty())
+                        androidx.compose.material3.TextButton(onClick = session::retryHydration) {
+                            androidx.compose.material3.Text("Retry")
+                        }
+                    }
+                }
+            } else if (onboarding) {
                 OnboardingScreen(
                     sessionNotice = sessionNotice,
                     // R50-a - the connect gate adopts the probed gateway through
@@ -547,10 +571,42 @@ fun PulseRoot(
                 // is lifted 1:1 from the web source, every tap is wired to a
                 // real gateway action, and the room header video/phone icons
                 // dial real 1:1/group calls through the same call engines.
+                androidx.compose.runtime.key(viewerId, storedBase) {
                 val callVm: CallViewModel = hiltViewModel()
                 val groupCallVm: GroupCallViewModel = hiltViewModel()
+                val roomsVm: VoiceRoomsViewModel = hiltViewModel()
+                val noteVm: app.pulse.feature.chat.VoicePlaybackViewModel = hiltViewModel()
+                val noteContext = androidx.compose.ui.platform.LocalContext.current
+                val liveSurface by roomsVm.surface.collectAsStateWithLifecycle()
+                LaunchedEffect(roomsVm) {
+                    roomsVm.audioIssue.collect { issue ->
+                        if (issue != null) android.widget.Toast.makeText(noteContext, issue, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+                LaunchedEffect(noteVm) {
+                    noteVm.player.notices.collect { android.widget.Toast.makeText(noteContext, it, android.widget.Toast.LENGTH_SHORT).show() }
+                }
+                LaunchedEffect(viewerId, viewerName, storedBase) {
+                    roomsVm.setIdentity(viewerId, viewerName, null)
+                }
+                androidx.compose.runtime.DisposableEffect(viewerId, storedBase) {
+                    onDispose {
+                        // Rotation destroys composition, not the retained session/foreground service.
+                        if ((noteContext as? android.app.Activity)?.isChangingConfigurations != true) {
+                            noteVm.player.release(); roomsVm.leaveAll(); callVm.hangup(); groupCallVm.leaveCall()
+                        }
+                    }
+                }
                 app.pulse.android.mirror.MirrorRoot(
+                    onOpenLiveRoom = { cid, kind ->
+                        when (kind) {
+                            app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.VOICE -> roomsVm.openVoice(cid)
+                            app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.STAGE -> roomsVm.openStage(cid)
+                            app.pulse.feature.voice.VoiceRoomsEngine.RoomKind.SPACE -> roomsVm.openSpace(cid)
+                        }
+                    },
                     session = session,
+                    readingEnabled = !appLock.locked.collectAsStateWithLifecycle().value && liveSurface == null,
                     repository = repository,
                     onStartCall = { convo, video ->
                         val viewer = viewerName.orEmpty().ifBlank { "You" }
@@ -583,6 +639,7 @@ fun PulseRoot(
                     shortcutAction = pendingAction,
                     onConsumeShortcutAction = { pendingAction = null },
                 )
+                VoiceRoomsOverlay(roomsVm)
                 CallOverlay(callVm)
                 GroupCallOverlay(groupCallVm)
                 // R76 - the same native entry sheets the retired shells used,
@@ -606,6 +663,7 @@ fun PulseRoot(
                             pendingRoomId = id
                         },
                     )
+                }
                 }
             }
 

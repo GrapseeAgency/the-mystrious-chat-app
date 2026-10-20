@@ -209,6 +209,8 @@ final class StoryViewerMachine: ObservableObject {
     private var started = false
     /// Timestamp of the last tick while unpaused - nil = clock not armed.
     private var lastTickAt: Int64?
+    private var held = false
+    private var playbackBlocked = false
 
     init(startUserId: String? = nil) {
         self.startUserId = startUserId
@@ -245,8 +247,24 @@ final class StoryViewerMachine: ObservableObject {
         apply(go(to: next.index - 1, from: next))
     }
 
-    func holdStart(nowMs: Int64) { var next = bump(); next.paused = true; lastTickAt = nowMs; state = next }
-    func holdEnd(nowMs: Int64) { var next = bump(); next.paused = false; lastTickAt = nowMs; state = next }
+    func holdStart(nowMs: Int64) {
+        held = true
+        updatePause(nowMs: nowMs)
+    }
+    func holdEnd(nowMs: Int64) {
+        held = false
+        updatePause(nowMs: nowMs)
+    }
+    func setPlaybackBlocked(_ blocked: Bool, nowMs: Int64) {
+        playbackBlocked = blocked
+        updatePause(nowMs: nowMs)
+    }
+    private func updatePause(nowMs: Int64) {
+        var next = bump()
+        next.paused = held || playbackBlocked
+        lastTickAt = nowMs
+        state = next
+    }
 
     func dragDismiss() { var next = bump(); next.dismissed = true; state = next }
 

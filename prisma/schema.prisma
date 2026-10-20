@@ -797,3 +797,34 @@ model PushToken {
 
   @@index([userId])
 }
+
+// Durable delivery receipt, intentionally retained after the message is deleted.
+model MessageSendOperation {
+  senderId       String
+  clientId       String
+  conversationId String
+  requestHash    String
+  messageId      String @unique
+
+  @@id([senderId, clientId])
+}
+
+// Tombstone-capable drawing receipt, retained after Undo/Clear.
+model WhiteboardStrokeOperation {
+  senderId    String
+  clientId    String
+  requestHash String
+  strokeId    String @unique
+
+  @@id([senderId, clientId])
+}
+
+// Durable monetary operation verdict; retained independently of user/ledger cleanup.
+model WalletOperation {
+  userId      String
+  clientId    String
+  requestHash String
+  result      String
+
+  @@id([userId, clientId])
+}

@@ -19,21 +19,17 @@ import androidx.work.WorkerParameters
 import androidx.work.CoroutineWorker
 import androidx.work.Data
 import java.util.concurrent.TimeUnit
+import app.pulse.domain.notify.ReminderOwner
+import app.pulse.domain.notify.ReminderDeliveryGate
+import app.pulse.protocol.ReminderItemDto
+import app.pulse.protocol.PulseJson
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 
-/**
- * Wave 7 F-RO-06 - Tier-1 local reminder notifications.
- *
- * Two independent delivery paths (spec: "local schedule fires offline; the
- * due loop polls the API when online"):
- *  1. WorkManager one-shot at remindAt - survives process death (NOT reboot;
- *     documented honest limitation), fires without network.
- *  2. The shell due-loop (MainActivity, 30 s foreground) - server truth,
- *     PATCHes firedAt after the nudge so the web sheet and other devices
- *     converge.
- *
- * Channel + permission model: POST_NOTIFICATIONS is requested once on 33+;
- * denial is honest (loop still fires in-app surfaces, no crash).
- */
+/** WorkManager owns reboot recovery. The shared delivery gate arbitrates all
+ * local delivery paths; no independent boot-cache replay is permitted. */
 object ReminderNotifier {
 
     private const val BASE_NOTIFICATION_ID = 70_000
@@ -75,11 +71,10 @@ object ReminderNotifier {
         }
     }
 
-    /** Runtime notifications permission state (API 33+; below → granted by install). */
     fun notificationsAllowed(context: Context): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
+        NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+            (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
 
     /**
      * R2-C item 6 - [conversationId] (when known) arms the contentIntent:
@@ -91,19 +86,26 @@ object ReminderNotifier {
      */
     fun show(
         context: Context,
+        deliveryKey: String,
         reminderId: String,
         title: String,
         body: String,
         conversationId: String? = null,
         messageId: String? = null,
-    ) {
+    ): Boolean {
         ensureChannel(context)
-        if (!notificationsAllowed(context)) return
+        if (!notificationsAllowed(context)) return false
         // Wave 8 alert gate - server prefs (sound/vibrate) + LOCAL quiet hours:
         // quiet hours win over everything; otherwise the toggles pick the channel.
         val sound = ReminderAlertPolicy.soundOn && !ReminderAlertPolicy.quietNow()
         val vibrate = ReminderAlertPolicy.vibrateOn && !ReminderAlertPolicy.quietNow()
-        val builder = NotificationCompat.Builder(context, channelIdFor(sound, vibrate))
+        val channel = channelIdFor(sound, vibrate)
+        if (Build.VERSION.SDK_INT >= 26) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE) return false
+        }
+        val builder = NotificationCompat.Builder(context, channel)
+        builder.setOnlyAlertOnce(true)
         builder.setSmallIcon(android.R.drawable.ic_popup_reminder)
         builder.setContentTitle(title.take(64))
         builder.setContentText(body.take(178))
@@ -111,7 +113,8 @@ object ReminderNotifier {
         if (!conversationId.isNullOrBlank()) {
             val intent = Intent(
                 Intent.ACTION_VIEW,
-                Uri.parse(app.pulse.core.link.PulseDeepLink.roomUri(conversationId, messageId)),
+                Uri.parse(app.pulse.core.link.PulseDeepLink.roomUri(conversationId, messageId))
+                    .buildUpon().appendQueryParameter("reminder", deliveryKey).build(),
             ).apply {
                     // Confined to OUR pulse:// handler (the manifest VIEW
                     // intent-filter) - never handed to another app.
@@ -130,56 +133,62 @@ object ReminderNotifier {
             )
         }
         val notification = builder.build()
-        NotificationManagerCompat.from(context).notify(BASE_NOTIFICATION_ID + reminderId.hashCode(), notification)
+        return try {
+            // Full string tag prevents Java hash collisions from replacing another alert.
+            NotificationManagerCompat.from(context).notify(deliveryKey, BASE_NOTIFICATION_ID, notification)
+            true
+        } catch (_: SecurityException) { false }
     }
 
-    private fun workName(reminderId: String) = "pulse-reminder-$reminderId"
+    private fun workName(key: String) = "pulse-reminder-v2-$key"
 
-    /** Schedule the offline-capable one-shot; replaces any pending copy of the same reminder. */
-    fun schedule(
-        context: Context,
-        reminderId: String,
-        note: String,
-        remindAtEpochMs: Long,
-        conversationId: String? = null,
-        messageId: String? = null,
-    ) {
-        if (remindAtEpochMs <= System.currentTimeMillis()) return
+    fun schedule(context: Context, owner: ReminderOwner, reminder: ReminderItemDto, at: Long) {
+        val key = "${app.pulse.data.local.AccountStorageKey.namespace(owner.origin, owner.userId)}:${reminder.id}"
         val data = Data.Builder()
-            .putString(KEY_ID, reminderId)
-            .putString(KEY_NOTE, note)
-            .putString(KEY_CONVERSATION_ID, conversationId.orEmpty())
-            .putString(KEY_MESSAGE_ID, messageId.orEmpty())
+            .putString("owner", owner.userId).putString("origin", owner.origin)
+            .putString("reminder", PulseJson.encodeToString(ReminderItemDto.serializer(), reminder))
             .build()
         val request = OneTimeWorkRequestBuilder<ReminderWorker>()
-            .setInitialDelay(remindAtEpochMs - System.currentTimeMillis(), TimeUnit.MILLISECONDS)
-            .setInputData(data)
-            .build()
-        WorkManager.getInstance(context)
-            .enqueueUniqueWork(workName(reminderId), ExistingWorkPolicy.REPLACE, request)
+            .setInitialDelay((at - System.currentTimeMillis()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
+            .setInputData(data).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(workName(key), ExistingWorkPolicy.KEEP, request)
     }
 
-    fun cancel(context: Context, reminderId: String) {
-        WorkManager.getInstance(context).cancelUniqueWork(workName(reminderId))
+    fun cancelWork(context: Context, key: String) {
+        WorkManager.getInstance(context).cancelUniqueWork(workName(key))
     }
 
-    private const val KEY_ID = "reminderId"
-    private const val KEY_NOTE = "note"
-    private const val KEY_CONVERSATION_ID = "conversationId"
-    private const val KEY_MESSAGE_ID = "messageId"
+    fun cancel(context: Context, key: String, reminderId: String) {
+        cancelWork(context, key)
+        // Remove legacy jobs/alerts too, but never create unowned work again.
+        WorkManager.getInstance(context).cancelUniqueWork("pulse-reminder-$reminderId")
+        NotificationManagerCompat.from(context).cancel(key, BASE_NOTIFICATION_ID)
+        NotificationManagerCompat.from(context).cancel(BASE_NOTIFICATION_ID + reminderId.hashCode())
+    }
 
-    /**
-     * Fires the local notification at remindAt (no network needed). Server
-     * convergence stays with the due loop - this worker NEVER PATCHes.
-     */
+    @EntryPoint
+    @InstallIn(SingletonComponent::class)
+    interface DeliveryEntryPoint {
+        fun reminders(): ReminderDeliveryManager
+    }
+
     class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
         override suspend fun doWork(): Result {
-            val id = inputData.getString(KEY_ID) ?: return Result.success()
-            val note = inputData.getString(KEY_NOTE).orEmpty().ifBlank { "Reminder" }
-            val conversationId = inputData.getString(KEY_CONVERSATION_ID).orEmpty().ifBlank { null }
-            val messageId = inputData.getString(KEY_MESSAGE_ID).orEmpty().ifBlank { null }
-            show(applicationContext, id, note, "Reminder", conversationId, messageId)
-            return Result.success()
+            // Legacy jobs carry no trustworthy owner. Foreground refresh replaces
+            // them with scoped work; never guess the currently signed-in user.
+            val owner = inputData.getString("owner") ?: return Result.success()
+            val origin = inputData.getString("origin") ?: return Result.success()
+            val raw = inputData.getString("reminder") ?: return Result.success()
+            val reminder = try {
+                PulseJson.decodeFromString(ReminderItemDto.serializer(), raw)
+            } catch (_: Exception) { return Result.failure() }
+            val manager = EntryPointAccessors.fromApplication(applicationContext, DeliveryEntryPoint::class.java).reminders()
+            return try {
+                when (manager.deliver(ReminderOwner(owner, origin), reminder)) {
+                    ReminderDeliveryGate.Verdict.RETRY -> Result.retry()
+                    else -> Result.success()
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (_: Exception) { Result.retry() }
         }
     }
 }

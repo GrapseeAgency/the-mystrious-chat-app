@@ -16,6 +16,7 @@
 // No mocks - every row lands in Prisma/SQLite.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { createRoomObject, MessageOperationError } from '@/lib/message-operation'
 import {
   mapMessage,
   memberIdsOf,
@@ -29,7 +30,6 @@ export const dynamic = 'force-dynamic'
 
 const GAMES = ['tictactoe'] as const
 const MATCHES_LIST_LIMIT = 25
-const BOARD_SIZE = 9
 
 /** Wire shape of a match - winLine is parsed back into number[] | null. */
 interface SerializedMatch {
@@ -39,7 +39,7 @@ interface SerializedMatch {
   playerXId: string
   playerOId: string | null
   board: string
-  turn: 'X' | 'O'
+  turn: string
   status: string
   winnerId: string | null
   winLine: number[] | null
@@ -81,8 +81,8 @@ function serializeMatch(row: {
     game: row.game,
     playerXId: row.playerXId,
     playerOId: row.playerOId ?? null,
-    board: row.board.padEnd(BOARD_SIZE, ' ').slice(0, BOARD_SIZE),
-    turn: row.turn === 'O' ? 'O' : 'X',
+    board: row.board,
+    turn: row.turn,
     status: row.status,
     winnerId: row.winnerId ?? null,
     winLine,
@@ -115,83 +115,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'opponentId must differ from userId.' }, { status: 400 })
   }
 
-  // Existence + membership up-front → clean 404 / 403 semantics.
-  const conv = await db.conversation.findUnique({
-    where: { id: conversationId },
-    select: { id: true, ttlSeconds: true },
-  })
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  try {
+    const receipt = await createRoomObject(db, { kind: 'game', userId, conversationId, opponentId, clientId: body.clientId })
+    const [row, message] = await Promise.all([
+      db.gameMatch.findUnique({ where: { id: receipt.resourceId } }),
+      db.message.findFirst({ where: { id: receipt.messageId, deletedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, include: MESSAGE_FULL_INCLUDE }),
+    ])
+    if (!row || !message) return NextResponse.json({ error: 'The earlier creation was delivered, but is no longer available. Submit again to start a new one.', code: 'creation_gone', clientId: receipt.clientId }, { status: 410 })
+    const mapped = mapMessage(message, userId)
+    // Notification failure is not creation failure. A replay must not re-notify,
+    // mark the room read again, unarchive it again or create another carrier.
+    if (!receipt.replayed) {
+      try {
+        const recipients = (await memberIdsOf(conversationId)).filter(memberId => memberId !== userId)
+        await notifySocket('message:new', recipients, { type: 'message:new', message: mapped, recipientIds: recipients, conversationId })
+      } catch (error) { console.error('[games/create] relay failed after commit', error) }
+    }
+    return NextResponse.json({ match: serializeMatch(row), message: mapped,
+      clientId: receipt.clientId, replayed: receipt.replayed }, { status: receipt.replayed ? 200 : 201 })
+  } catch (error) {
+    if (error instanceof MessageOperationError) return NextResponse.json({ error: error.message, clientId: error.clientId, code: error.code }, { status: error.status })
+    throw error
   }
-
-  const memberships = await db.conversationParticipant.findMany({
-    where: { conversationId, userId: { in: opponentId ? [userId, opponentId] : [userId] } },
-    select: { userId: true },
-  })
-  const memberSet = new Set(memberships.map((m) => m.userId))
-  if (!memberSet.has(userId)) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-  if (opponentId && !memberSet.has(opponentId)) {
-    return NextResponse.json(
-      { error: 'opponentId must be a participant of this conversation.' },
-      { status: 400 },
-    )
-  }
-
-  // Match + invite message + list-ordering bumps, atomically.
-  const now = new Date()
-  const expiresAt = conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
-  const { match, message } = await db.$transaction(async (tx) => {
-    const created = await tx.gameMatch.create({
-      data: {
-        conversationId,
-        game,
-        playerXId: userId,
-        ...(opponentId ? { playerOId: opponentId } : {}),
-      },
-    })
-    const msg = await tx.message.create({
-      data: {
-        conversationId,
-        senderId: userId,
-        content: opponentId ? 'Tic-tac-toe challenge' : 'Tic-tac-toe open challenge',
-        kind: 'game',
-        payload: JSON.stringify({ matchId: created.id, game: 'tictactoe' }),
-        ...(expiresAt ? { expiresAt } : {}),
-      },
-      include: MESSAGE_FULL_INCLUDE,
-    })
-    await tx.conversation.update({ where: { id: conversationId }, data: { updatedAt: now } })
-    await tx.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId } },
-      data: { lastReadAt: now },
-    })
-    await tx.conversationParticipant.updateMany({
-      where: { conversationId, userId: { not: userId }, archivedAt: { not: null } },
-      data: { archivedAt: null },
-    })
-    return { match: created, message: msg }
-  })
-
-  const mapped = mapMessage(message, userId)
-
-  // Realtime relay to every OTHER member (sender handles self via response).
-  const recipients = (await memberIdsOf(conversationId)).filter((memberId) => memberId !== userId)
-  await notifySocket('message:new', recipients, {
-    type: 'message:new',
-    message: mapped,
-    recipientIds: recipients,
-    conversationId,
-  })
-
-  return NextResponse.json(
-    { match: serializeMatch(match), message: mapped },
-    { status: 201 },
-  )
 }
 
 /**

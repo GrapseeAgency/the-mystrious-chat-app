@@ -228,9 +228,11 @@ struct ForwardSheet: View {
             var delivered = 0
             var queued = 0
             for target in targets {
+                let clientId = UUID().uuidString
                 do {
                     _ = try await session.api.sendMessage(
                         conversationId: target.id,
+                        clientId: clientId,
                         content: source.content,
                         imagePath: source.imagePath,
                         audioPath: source.audioPath,
@@ -249,14 +251,13 @@ struct ForwardSheet: View {
                     }
                     // Network-class - queue the exact forward body; the
                     // engine flushes it on reconnect/foreground/heal.
-                    session.enqueueOutbox(
+                    if session.enqueueOutbox(
                         conversationId: target.id,
-                        clientId: UUID().uuidString,
+                        clientId: clientId,
                         content: source.content,
                         kind: forward.kind ?? "text",
                         payloadJson: PulseOutboxForward.encode(forward),
-                    )
-                    queued += 1
+                    ) { queued += 1 }
                 }
             }
             if delivered > 0 || queued > 0 {

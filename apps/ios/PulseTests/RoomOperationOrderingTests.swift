@@ -1,0 +1,60 @@
+import XCTest
+@testable import Pulse
+
+@MainActor
+final class RoomOperationOrderingTests: XCTestCase {
+    func testCarrierAcceptedFromChildSheetInvalidatesEarlierRoomRead() {
+        let operations = PulseRoomOperations()
+        let stale = operations.beginRead()!
+        operations.invalidateReads()
+        XCTAssertFalse(operations.accepts(stale))
+        XCTAssertTrue(operations.accepts(operations.beginRead()!))
+    }
+    func testFailedCreationKeepsDraftAndReleasesSynchronousGate() async {
+        let operations = PulseRoomOperations()
+        var draft = "Meeting at six"
+        let task = operations.run(key: "create", operation: { false }, onSuccess: { draft = "" })!
+        XCTAssertNil(operations.run(key: "create", operation: { true }))
+        XCTAssertNil(operations.beginRead())
+        await task.value
+        XCTAssertEqual(draft, "Meeting at six")
+        XCTAssertTrue(operations.pending.isEmpty)
+        XCTAssertEqual(operations.settledRevision, 1)
+    }
+    func testPollStartedBeforeMutationCannotRestoreOldRows() async {
+        let operations = PulseRoomOperations()
+        let stale = operations.beginRead()!
+        let task = operations.run(key: "card", operation: { true })!
+        await task.value
+        XCTAssertFalse(operations.accepts(stale))
+        XCTAssertTrue(operations.accepts(operations.beginRead()!))
+    }
+    func testOverlappingWritesDeferPollingUntilBothFinish() async {
+        let operations = PulseRoomOperations()
+        let started = expectation(description: "both started"); started.expectedFulfillmentCount = 2
+        var a: CheckedContinuation<Bool, Never>?, b: CheckedContinuation<Bool, Never>?
+        let first = operations.run(key: "a", operation: { started.fulfill(); return await withCheckedContinuation { a = $0 } })!
+        let second = operations.run(key: "b", operation: { started.fulfill(); return await withCheckedContinuation { b = $0 } })!
+        await fulfillment(of: [started], timeout: 2)
+        a?.resume(returning: true); await first.value
+        XCTAssertNil(operations.beginRead())
+        b?.resume(returning: false); await second.value
+        XCTAssertNotNil(operations.beginRead())
+    }
+    func testDismissalInvalidatesReadAndLateMutationWithoutClearingDraft() async {
+        let operations = PulseRoomOperations()
+        let stale = operations.beginRead()!
+        var draft = "keep"
+        var continuation: CheckedContinuation<Bool, Never>?
+        let started = expectation(description: "started")
+        let task = operations.run(key: "create", operation: {
+            started.fulfill(); return await withCheckedContinuation { continuation = $0 }
+        }, onSuccess: { draft = "" })!
+        await fulfillment(of: [started], timeout: 2)
+        operations.stop()
+        XCTAssertFalse(operations.accepts(stale))
+        continuation?.resume(returning: true); await task.value
+        XCTAssertEqual(draft, "keep")
+        XCTAssertTrue(operations.pending.isEmpty)
+    }
+}

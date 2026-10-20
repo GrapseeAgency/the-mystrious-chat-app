@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /** Device-session state: viewer identity + appearance prefs (DataStore-backed). */
@@ -35,70 +36,37 @@ class SessionViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
-    init {
-        // Cold start order (Wave 0): persisted endpoint overrides BEFORE any
-        // network, then re-seed the plaintext prefs mirror from the encrypted
-        // vault so the identity flows light up even after the legacy viewer.*
-        // keys were folded away.
+    private val _bootstrapped = MutableStateFlow(false)
+
+    private val _startupError = MutableStateFlow<String?>(null)
+    val startupError: StateFlow<String?> = _startupError.asStateFlow()
+
+    fun retryHydration() {
         viewModelScope.launch {
-            runCatching { manifestEndpoints.applyPersisted() }
-            // Wave 8 - the session credential warms the synchronous cache
-            // before the first REST call so the Bearer header rides along.
-            runCatching { sessionTokenStore.load() }
-            runCatching {
-                val vaultJson = secureSessionStore.load() ?: return@runCatching
-                val vault = PulseJson.decodeFromString(SessionVault.serializer(), vaultJson)
-                if (vault.viewerId != null && prefs.viewerId.first() == null) {
-                    prefs.setViewer(vault.viewerId, vault.viewerName, vault.viewerColor)
+            _startupError.value = null
+            try {
+                val userBase = prefs.serverBase.first()
+                if (!userBase.isNullOrBlank()) PulseEndpoints.applyBase(userBase)
+                else manifestEndpoints.applyPersisted()
+                sessionTokenStore.load()
+                secureSessionStore.load()?.let { vaultJson ->
+                    val vault = PulseJson.decodeFromString(SessionVault.serializer(), vaultJson)
+                    if (vault.viewerId != null && prefs.viewerId.first() == null) {
+                        prefs.setViewer(vault.viewerId, vault.viewerName, vault.viewerColor)
+                    }
                 }
-            }
-        }
-        // R52-c - a rejected token NEVER tears the session down anymore: the
-        // "Your session ended" onboarding kick the user hit is dead. The
-        // device silently reclaims the SAME identity by name (Pulse
-        // identities are name-keyed and self-declared - the login endpoint IS
-        // the re-auth), the fresh token persists inside the repository, and
-        // realtime re-arms. Offline -> nothing changes: the viewer stays, the
-        // outbox keeps queueing, the retry happens on the next rejection
-        // (throttled). Explicit sign-out (forgetViewer) is the ONLY way out.
-        viewModelScope.launch {
-            sessionTokenStore.invalidated.collect { invalid ->
-                if (!invalid) return@collect
-                val id = prefs.viewerId.first() ?: return@collect
-                val name = prefs.viewerName.first().takeUnless { it.isNullOrBlank() }
-                    ?: return@collect
-                val now = System.currentTimeMillis()
-                if (now - lastSilentReauth < SILENT_REAUTH_THROTTLE_MS) return@collect
-                lastSilentReauth = now
-                repo.login(name).fold(
-                    onSuccess = {
-                        _sessionNotice.value = null
-                        repo.start(id)
-                    },
-                    onFailure = {
-                        // Stay exactly where we are - the app remains fully
-                        // usable offline; the next 401 retries (throttled).
-                    },
-                )
-            }
-        }
-        // Outbox → WorkManager bridge: a pending queue always has an expedited,
-        // network-constrained worker behind it (unique-name REPLACE).
-        viewModelScope.launch {
-            repo.observeOutbox().collect { entries ->
-                if (entries.isNotEmpty()) OutboxWorker.enqueue(appContext)
+                // Never expose the shell after a failed credential/storage read.
+                prefs.viewerId.first()
+                _bootstrapped.value = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _startupError.value = "Could not open local account storage. Retry without clearing your saved messages."
             }
         }
     }
 
     private val _sessionNotice = MutableStateFlow<String?>(null)
-
-    /** R52-c throttle: at most one silent re-auth per 10s window. */
-    private var lastSilentReauth = 0L
-
-    private companion object {
-        const val SILENT_REAUTH_THROTTLE_MS = 10_000L
-    }
 
     /** One-shot honest notice when the session token was rejected (401 / join:error). */
     val sessionNotice: StateFlow<String?> = _sessionNotice.asStateFlow()
@@ -107,13 +75,10 @@ class SessionViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
-     * True once the persisted prefs have emitted at least once - gates the
-     * onboarding screen so a fresh launch doesn't flash it before DataStore
-     * hands back an existing viewer.
+     * True only after endpoint, credential, and identity storage hydration.
+     * Storage errors leave the shell gated with an explicit retry action.
      */
-    val hydrated: StateFlow<Boolean> = prefs.viewerId
-        .map { true }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val hydrated: StateFlow<Boolean> = _bootstrapped.asStateFlow()
 
     val viewerName: StateFlow<String?> = prefs.viewerName
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -141,6 +106,27 @@ class SessionViewModel @Inject constructor(
     val serverBase: StateFlow<String?> = prefs.serverBase
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    init {
+        retryHydration()
+        // Authentication failure is not permission to reclaim an identity by name.
+        viewModelScope.launch {
+            sessionTokenStore.invalidated.collect { invalid ->
+                if (invalid) {
+                    repo.stop()
+                    OutboxWorker.cancel(appContext)
+                    _sessionNotice.value = "Session expired. Pending messages are kept; sign in again to synchronize."
+                }
+            }
+        }
+        // One network-constrained worker owns retries; KEEP avoids canceling
+        // an in-flight delivery on each queue emission.
+        viewModelScope.launch {
+            repo.observeOutbox().collect { entries ->
+                if (entries.any { it.failureReason == null }) OutboxWorker.enqueue(appContext)
+            }
+        }
+    }
+
     fun chooseViewer(id: String, name: String, color: String? = null) {
         viewModelScope.launch {
             // Identity switch - the old identity's credential must not ride along.
@@ -152,6 +138,8 @@ class SessionViewModel @Inject constructor(
     }
 
     fun forgetViewer() {
+        repo.stop()
+        OutboxWorker.cancel(appContext)
         viewModelScope.launch {
             // Task 5-d - BEFORE the identity is cleared: DELETE /api/push/register
             // { token } with the stored FCM token (token-only body, no userId
@@ -166,13 +154,24 @@ class SessionViewModel @Inject constructor(
     }
 
     fun bootstrap(viewerId: String?) {
-        viewerId?.let { repo.start(it) }
+        if (viewerId == null) repo.stop() else repo.start(viewerId)
     }
 
     /** Point REST + realtime at a user-provided origin (null = go offline). */
     fun setServerBase(value: String?) {
+        if (value.orEmpty().trimEnd('/') == PulseEndpoints.gatewayHttpUrl.trimEnd('/')) return
+        _bootstrapped.value = false
+        repo.stop()
+        OutboxWorker.cancel(appContext)
         PulseEndpoints.applyBase(value)
-        viewModelScope.launch { prefs.setServerBase(value) }
+        viewModelScope.launch {
+            prefs.setServerBase(value)
+            // A new server must never inherit the previous server's token.
+            sessionTokenStore.clear()
+            prefs.setViewer(null, null)
+            secureSessionStore.delete()
+            retryHydration()
+        }
     }
 
     /** Header theme toggle - cycles system → light → dark (web ThemeToggleButton). */

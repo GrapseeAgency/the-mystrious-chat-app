@@ -182,8 +182,13 @@ class ProfileViewModel @Inject constructor(
     }
 
     fun setServerBase(value: String?) {
+        repo.stop()
         PulseEndpoints.applyBase(value)
-        viewModelScope.launch { prefs.setServerBase(value) }
+        viewModelScope.launch {
+            repo.clearSessionToken()
+            prefs.setViewer(null, null)
+            prefs.setServerBase(value)
+        }
     }
 
     /** GET <base>/api/users with a hard 5s budget - ms timing on success. */

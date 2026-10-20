@@ -370,7 +370,7 @@ internal fun ForwardSheet(
 
 /**
  * Read-only message info (own messages): the watermark read model turned into
- * "Seen by" (members whose lastReadAt ≥ createdAt) vs "Delivered to" (the rest)
+ * "Seen by" (members whose lastReadAt ≥ createdAt) vs "No read confirmation" (the rest; no device-delivery ACK exists)
  * plus the full reaction roster with resolved names.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -424,7 +424,7 @@ internal fun MessageInfoSheet(
                     MemberRow(member, check = true)
                 }
             }
-            item { SectionLabel("Delivered to · ${deliveredTo.size}") }
+            item { SectionLabel("No read confirmation · ${deliveredTo.size}") }
             if (deliveredTo.isEmpty()) {
                 item { EmptyHint("Everyone has seen this message") }
             } else {
@@ -496,7 +496,7 @@ private fun MemberRow(member: ConversationMember, check: Boolean) {
         if (check) {
             PulseCheckCheck(tint = PulsePalette.Emerald, modifier = Modifier.size(16.dp))
         } else {
-            Icon(PulseIcons.Clock, contentDescription = "Delivered", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
+            Icon(PulseIcons.Clock, contentDescription = "No read confirmation", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(14.dp))
         }
     }
 }

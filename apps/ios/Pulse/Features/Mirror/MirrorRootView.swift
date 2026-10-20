@@ -236,6 +236,7 @@ struct MirrorRootView: View {
                 .ignoresSafeArea()
             if let row = openRow {
                 MirrorRoomView(row: row, session: session, onBack: { openRow = nil })
+                    .id("\(row.id):\(session.sessionGeneration)")
             } else {
                 VStack(spacing: 0) {
                     switch tab {
@@ -462,6 +463,8 @@ struct MirrorHomeSheetView: View {
     let onOpenRow: (MirrorViewModel.MirrorRow) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var users: [WireUser] = []
+    @State private var directoryError: String?
+    @State private var directoryRevision = 0
     @State private var query = ""
     @State private var groupName = ""
     @State private var picked: Set<String> = []
@@ -503,6 +506,10 @@ struct MirrorHomeSheetView: View {
                 }
             } else {
                 MirrorPanelSearch(query: $query)
+                if let directoryError {
+                    Button(directoryError + " Tap to retry.") { directoryRevision += 1 }
+                        .font(.caption).foregroundStyle(MirrorArt.accent).padding(8)
+                }
                 MirrorPanelScroll {
                     ForEach(filteredUsers) { user in
                         if sheet == .newGroup {
@@ -546,8 +553,17 @@ struct MirrorHomeSheetView: View {
                 }
             }
         }
-        .task {
-            users = (try? await session.api.users()) ?? []
+        .task(id: directoryRevision) {
+            let epoch = session.sessionGeneration
+            do {
+                let loaded = try await session.api.users()
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                users = loaded.filter { $0.id != session.viewer?.id }
+                directoryError = nil
+            } catch is CancellationError {} catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                directoryError = "People could not be loaded."
+            }
         }
     }
 
@@ -1362,10 +1378,18 @@ private enum MirrorBubbleText {
     }
 }
 
+@MainActor
 struct MirrorRoomView: View {
     let row: MirrorViewModel.MirrorRow
     @ObservedObject var session: PulseSession
     let onBack: () -> Void
+    @State private var isReadingTail = false
+    @State private var didInitialScroll = false
+    @State private var readRevision = 0
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var roomOperations = PulseRoomOperations()
+    @State private var refreshRevision = 0
+    @State private var loadError: String?
     @State private var messages: [WireChatMessage] = []
     @State private var memberNames: [String] = []
     @State private var memberRows: [WireConversationMember] = []
@@ -1383,7 +1407,7 @@ struct MirrorRoomView: View {
     @State private var armedEffect: String?
     @State private var anonNext = false
     @State private var docPickerOpen = false
-    @State private var sendingDoc = false
+    @State private var pendingAttachment: (dataUrl: String, envelope: PulseOutboxForward)?
     @State private var photoItem: PhotosPickerItem?
     @State private var recording = false
     @State private var voiceRecorder: VoiceRecorder?
@@ -1395,6 +1419,14 @@ struct MirrorRoomView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let pending = pendingAttachment {
+                HStack {
+                    Text(pending.envelope.fileName ?? "Attachment kept — not queued").font(.caption).lineLimit(1)
+                    Spacer()
+                    Button("Retry") { sendPendingAttachment() }
+                    Button("Discard", role: .destructive) { pendingAttachment = nil }
+                }.padding(10)
+            }
             // header: bg #0d0906/70, hairline bottom, back / 40 avatar / title+subtitle / 3 icons
             VStack(spacing: 0) {
                 HStack(spacing: 2) {
@@ -1422,6 +1454,13 @@ struct MirrorRoomView: View {
             }
             .background(Color(red: 0x0D/255.0, green: 0x09/255.0, blue: 0x06/255.0).opacity(0.7))
 
+            if let loadError {
+                Button("\(loadError) Tap to retry.") { refreshRevision &+= 1 }
+                    .font(.caption).foregroundStyle(MirrorArt.dim).padding(8)
+            }
+            if roomOperations.pending.contains("game-create") {
+                ProgressView("Confirming challenge…").font(.caption)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -1442,20 +1481,30 @@ struct MirrorRoomView: View {
                                     isGroup: row.isGroup,
                                     head: head,
                                     memberNames: memberNames,
+                                    receiptMembers: memberRows,
                                     viewerId: session.viewer?.id ?? "",
                                     bubbleMax: bubbleMax,
+                                    mediaBaseURL: session.api.baseURL,
                                     onToggleReaction: { emoji in react(message.id, emoji) }
                                 )
                                 .padding(.top, head ? 10 : 2)
                                 .id(message.id)
                             }
                         }
+                        Color.clear.frame(height: 1).id("read-tail")
+                            .onAppear { isReadingTail = true; updateReadBoundary() }
+                            .onDisappear { isReadingTail = false; updateReadBoundary() }
                     }
                     .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 8)
                 }
-                .onChange(of: messages.count) { _ in
-                    if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                .onChange(of: messages.last?.id) { _ in
+                    if !didInitialScroll || isReadingTail || messages.last?.senderId == session.viewer?.id {
+                        if !messages.isEmpty { proxy.scrollTo("read-tail", anchor: .bottom); didInitialScroll = true }
+                    }
+                    updateReadBoundary()
                 }
+                .onChange(of: trayOpen) { _ in updateReadBoundary() }
+                .onChange(of: activeSheet != nil || menuOpen || trayEffectsOpen) { _ in updateReadBoundary() }
                 // R102 tap-away scrim (web 5113-5131): a transparent catcher
                 // over the message list closes the tray; the tray + composer
                 // themselves stay interactive.
@@ -1589,6 +1638,7 @@ struct MirrorRoomView: View {
             }
         }
         .sheet(item: $activeSheet) { sheet in
+            let generation = session.sessionGeneration
             MirrorRoomSheetView(
                 sheet: sheet,
                 row: row,
@@ -1600,14 +1650,18 @@ struct MirrorRoomView: View {
                     draft = text
                     composerFocused = true
                 },
-                onSent: { Task { await load() } }
+                onSent: { if generation == session.sessionGeneration { refreshRevision &+= 1 } },
+                onCreated: { message in
+                    if generation == session.sessionGeneration { acceptCarrier(message) }
+                }
             )
+            .id(generation)
         }
         // R102 - real tray surfaces: documents via the system picker, photos
         // via PhotosPicker, and the 1s recording ticker.
         .fileImporter(
             isPresented: $docPickerOpen,
-            allowedContentTypes: [.data],
+            allowedContentTypes: PulseMediaSupport.documentTypes,
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
@@ -1617,50 +1671,167 @@ struct MirrorRoomView: View {
         .onChange(of: photoItem) { item in
             handlePhotoPick(item)
         }
-        .task {
-            await load()
-            try? await session.api.markRead(conversationId: row.id)
+        .onReceive(session.messageVisibilityClock) { now in
+            let visible = messages.filter { PulseRemediationLogic.isAlive($0.expiresAt, now: now) }
+            if visible.count != messages.count {
+                messages = visible
+                updateReadBoundary()
+            }
+        }
+        .onReceive(session.outboxEvents) { event in
+            switch event {
+            case .delivered(let message, let conversationId, let clientId):
+                guard conversationId == row.id else { return }
+                roomOperations.invalidateReads()
+                messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
+                acceptCarrier(message)
+            case .dropped(let clientId, let conversationId):
+                guard conversationId == row.id else { return }
+                roomOperations.invalidateReads()
+                messages.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
+            }
+        }
+        .onReceive(session.signals) { signal in
+            switch signal {
+            case .messageNew(let id, let raw):
+                guard id == row.id else { return }
+                if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message) }
+                else { refreshRevision &+= 1 }
+                readRevision &+= 1
+            case .messageRead(let id, let reader, _):
+                if id == row.id && reader != session.viewer?.id { refreshRevision &+= 1 }
+            case .messageDeleted(let id, let raw):
+                guard id == row.id else { return }
+                if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message.deletedCopy()) }
+                else { refreshRevision &+= 1 }
+            case .messageReact(let id, let raw), .messageEnvelope(_, let id, let raw):
+                guard id == row.id else { return }
+                if let message = PulseSession.decodeMessage(from: raw) { acceptCarrier(message) }
+                else { refreshRevision &+= 1 }
+            default: break
+            }
+        }
+        .onChange(of: session.connected) { connected in if connected { refreshRevision &+= 1 } }
+        .onAppear { session.activeRoomId = row.id; updateReadBoundary() }
+        .onDisappear {
+            cancelVoiceRecording()
+            roomOperations.stop()
+            if session.activeRoomId == row.id { session.activeRoomId = nil }
+        }
+        .task(id: readRevision) {
+            if readRevision > 0 && !Task.isCancelled && scenePhase == .active {
+                await session.markReadIfVisible(conversationId: row.id)
+            }
+        }
+        .task(id: roomOperations.settledRevision) {
+            if roomOperations.settledRevision > 0 && scenePhase == .active { await load() }
+        }
+        .task(id: "\(refreshRevision):\(scenePhase)") {
+            guard scenePhase == .active else {
+                cancelVoiceRecording()
+                roomOperations.stop()
+                return
+            }
+            if messages.isEmpty, let store = session.store {
+                do {
+                    messages = PulseTextDelivery.timeline(try store.messages(conversationId: row.id),
+                        pending: try PulseTextDelivery.pendingMessages(store: store, conversationId: row.id))
+                } catch { loadError = "Local messages could not be read." }
+            }
+            if await load(), !Task.isCancelled {
+                await session.markReadIfVisible(conversationId: row.id)
+            }
         }
     }
 
-    private func load() async {
-        messages = (try? await session.api.messages(conversationId: row.id).messages) ?? []
-        if let summary = try? await session.api.conversationDetail(id: row.id, userId: session.api.userId) {
+    private func updateReadBoundary() {
+        session.setVisibleReadBoundary(conversationId: row.id,
+            messageId: isReadingTail && !trayOpen && activeSheet == nil && !menuOpen && !trayEffectsOpen ? messages.last(where: { !$0.id.hasPrefix("local_") })?.id : nil)
+    }
+
+    private func acceptCarrier(_ message: WireChatMessage) {
+        guard message.conversationId == row.id else { return }
+        roomOperations.invalidateReads()
+        messages = PulseTextDelivery.timeline(messages, pending: [message])
+    }
+
+    @discardableResult
+    private func load() async -> Bool {
+        guard scenePhase == .active else { return false }
+        guard let ticket = roomOperations.beginRead() else { return false }
+        let api = session.api
+        let generation = session.sessionGeneration
+        do {
+            let page = try await api.messages(conversationId: row.id)
+            guard roomOperations.accepts(ticket), generation == session.sessionGeneration else { return false }
+            let pending = try session.store.map { try PulseTextDelivery.pendingMessages(store: $0, conversationId: row.id) } ?? []
+            try session.store?.upsert(messages: page.messages)
+            messages = PulseTextDelivery.timeline(page.messages, pending: pending)
+            loadError = nil
+        } catch {
+            if roomOperations.accepts(ticket), generation == session.sessionGeneration {
+                loadError = "Could not refresh messages. Previous messages are kept."
+            }
+            return false
+        }
+        if let summary = try? await api.conversationDetail(id: row.id, userId: api.userId),
+           roomOperations.accepts(ticket), generation == session.sessionGeneration {
             memberNames = summary.members.map { $0.name }
             memberRows = summary.members
         }
+        return roomOperations.accepts(ticket) && generation == session.sessionGeneration
     }
 
-    // web 5580: the fab swaps to send when the draft holds text OR an
-    // effect is armed - an armed effect can send on its own.
+    // Keep the send affordance while an effect is armed, but require text:
+    // the server rejects empty text even when an effect payload is present.
     private var hasSendPayload: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || armedEffect != nil
+        pendingAttachment != nil || !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || armedEffect != nil
     }
 
     private func send() {
+        if pendingAttachment != nil { sendPendingAttachment(); return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || armedEffect != nil else { return }
-        let payload: [String: Any]? = armedEffect.map { ["effect": $0] }
-        let anon: Bool? = anonNext ? true : nil
-        armedEffect = nil
-        anonNext = false
-        draft = ""
-        Task {
-            _ = try? await session.api.sendMessage(
-                conversationId: row.id,
-                content: text,
-                payload: payload,
-                anon: anon
-            )
-            await load()
+        guard !text.isEmpty else {
+            session.toasts.show("Type a message first; the armed effect is kept.")
+            return
+        }
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            session.toasts.show("The account store is not ready. Your draft is kept.")
+            return
+        }
+        do {
+            let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: row.id,
+                content: text, effect: armedEffect, anon: row.isGroup && anonNext)
+            acceptCarrier(message)
+            draft = ""; armedEffect = nil; anonNext = false
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch {
+            session.toasts.show("Message was not queued. Your draft and effect are kept.")
         }
     }
 
     private func react(_ messageId: String, _ emoji: String) {
-        Task {
-            _ = try? await session.api.react(messageId: messageId, emoji: emoji)
-            await load()
+        guard !messageId.hasPrefix("local_") else {
+            session.toasts.show("Wait for this queued message to be sent before reacting.")
+            return
         }
+        let api = session.api
+        let generation = session.sessionGeneration
+        roomOperations.run(key: "reaction-" + messageId, operation: {
+            do {
+                let message = try await api.react(messageId: messageId, emoji: emoji)
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration, message.id == messageId, message.conversationId == row.id else { return false }
+                acceptCarrier(message)
+                return true
+            } catch {
+                if !Task.isCancelled && generation == session.sessionGeneration {
+                    session.toasts.show("Reaction was not confirmed. Refreshing its current state.")
+                }
+                return false
+            }
+        })
     }
 
     // MARK: R102 - tray actions (every tile a real send)
@@ -1876,111 +2047,132 @@ struct MirrorRoomView: View {
     }
 
     private func startGame() {
-        let opponent = row.isGroup ? nil : memberRows.first { $0.id != session.api.userId }?.id
-        Task {
-            do {
-                _ = try await session.api.createGame(conversationId: row.id, opponentId: opponent)
-                session.toasts.show("Tic-tac-toe challenge sent")
-                await load()
-            } catch {
-                session.toasts.show("Could not start the game")
-            }
-        }
-    }
-
-    // R102 documents (web 3469-3486): security-scoped read, mime from the
-    // extension, POST /api/uploads, kind:"file" send with name + size.
-    private func sendDocument(from url: URL) {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard !sendingDoc, let data = try? Data(contentsOf: url) else {
-            session.toasts.show("Couldn't read that file")
+        let api = session.api
+        let generation = session.sessionGeneration
+        let opponent = row.isGroup ? nil : memberRows.first { $0.id != api.userId }?.id
+        guard row.isGroup || opponent != nil else {
+            session.toasts.show("Participant details are unavailable. Refreshing before a challenge can be sent.")
+            refreshRevision &+= 1
             return
         }
-        sendingDoc = true
-        let name = url.lastPathComponent
-        let mime = PulseMediaSupport.mime(forExtension: url.pathExtension) ?? "application/octet-stream"
-        let size = data.count
-        Task {
-            defer { sendingDoc = false }
+        roomOperations.run(key: "game-create", operation: {
             do {
-                let path = try await session.api.uploadMedia(dataUrl: PulseMediaSupport.dataUrl(mime: mime, data: data))
-                _ = try await session.api.sendMessage(
-                    conversationId: row.id,
-                    content: "",
-                    filePath: path,
-                    fileName: name,
-                    fileSize: size,
-                    kind: "file"
-                )
-                await load()
+                let result = try await api.createGame(conversationId: row.id, opponentId: opponent)
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration, let message = result.message else { return false }
+                acceptCarrier(message)
+                try await api.acknowledgeGameCreation(conversationId: row.id, opponentId: opponent, receipt: result)
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration else { return false }
+                session.toasts.show(result.replayed == true ? "Recovered the previous challenge" : "Tic-tac-toe challenge sent")
+                return true
             } catch {
-                session.toasts.show("Document failed to upload - check the connection")
+                if !Task.isCancelled, generation == session.sessionGeneration {
+                    session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Challenge not confirmed. Retry the same opponent to recover it.")
+                }
+                return false
             }
+        })
+    }
+
+    private func prepareAttachment(dataUrl: String, envelope: PulseOutboxForward) {
+        guard pendingAttachment == nil else {
+            session.toasts.show("Retry or discard the previous attachment first.")
+            return
+        }
+        pendingAttachment = (dataUrl, envelope)
+        sendPendingAttachment()
+    }
+
+    private func sendPendingAttachment() {
+        guard let pending = pendingAttachment, let viewer = session.viewer,
+              let store = session.store, session.ready else {
+            session.toasts.show("The account store is not ready. Your attachment is kept.")
+            return
+        }
+        do {
+            let message = try PulseAttachmentDelivery.enqueue(store: store, viewer: viewer, conversationId: row.id,
+                content: "", dataUrl: pending.dataUrl, envelope: pending.envelope)
+            acceptCarrier(message)
+            pendingAttachment = nil
+            if pending.envelope.anon == true { anonNext = false }
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch {
+            session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Attachment could not be saved. Retry or discard it below.")
         }
     }
 
-    // R102 photos: the camera button is real - PhotosPicker data,
-    // downscale to JPEG, POST /api/uploads, imagePath send.
+    private func sendDocument(from url: URL) {
+        guard pendingAttachment == nil, !recording else {
+            session.toasts.show("Finish the current recording or attachment first.")
+            return
+        }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            guard let mime = PulseMediaSupport.mime(forExtension: url.pathExtension) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Choose a PDF, ZIP, TXT or CSV document.")
+            }
+            let data = try PulseMediaSupport.readDocument(url: url)
+            prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: mime, data: data),
+                envelope: PulseOutboxForward(kind: "file", fileName: url.lastPathComponent, fileSize: data.count, anon: row.isGroup && anonNext))
+        } catch { session.toasts.show((error as? PulseAPIClient.Failure)?.message ?? "Couldn't read that document.") }
+    }
+
     private func handlePhotoPick(_ item: PhotosPickerItem?) {
         guard let item else { return }
         photoItem = nil
-        Task {
-            do {
-                guard let raw = try await item.loadTransferable(type: Data.self) else {
-                    session.toasts.show("Couldn't read that photo")
-                    return
-                }
-                guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: raw) else {
-                    session.toasts.show("Couldn't read that photo")
-                    return
-                }
-                let path = try await session.api.uploadMedia(dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg))
-                _ = try await session.api.sendMessage(
-                    conversationId: row.id,
-                    content: "",
-                    imagePath: path
-                )
-                await load()
-            } catch {
-                session.toasts.show("Photo failed to upload - check the connection")
-            }
+        guard pendingAttachment == nil, !recording, !roomOperations.pending.contains("photo-import") else {
+            session.toasts.show("Finish the current attachment first.")
+            return
         }
+        let generation = session.sessionGeneration
+        let anonymous = row.isGroup && anonNext
+        roomOperations.run(key: "photo-import", operation: {
+            do {
+                guard let raw = try await item.loadTransferable(type: Data.self) else { throw CocoaError(.fileReadCorruptFile) }
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration else { return false }
+                guard let jpeg = PulseMediaSupport.downscaledJPEGData(from: raw) else { throw CocoaError(.fileReadCorruptFile) }
+                prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg),
+                    envelope: PulseOutboxForward(kind: "image", anon: anonymous))
+                return true
+            } catch {
+                if !Task.isCancelled && generation == session.sessionGeneration { session.toasts.show("Couldn't read that photo.") }
+                return false
+            }
+        })
     }
 
-    // R102 voice notes - the VoiceRecorder infra the full room already
-    // ships (VoiceNotes.swift) reused 1:1: TCC permission, AAC record,
-    // 100ms rounding, <600ms discard, upload + kind:"audio" send.
     private func startVoiceRecording() {
-        guard !recording, voiceRecorder == nil else { return }
-        Task {
+        guard !recording, voiceRecorder == nil, pendingAttachment == nil, !roomOperations.pending.contains("photo-import") else { return }
+        let generation = session.sessionGeneration
+        roomOperations.run(key: "voice-permission", operation: {
             let granted = await VoiceRecorder.requestPermission()
+            guard !Task.isCancelled, generation == session.sessionGeneration, scenePhase == .active else { return false }
             guard granted else {
                 session.toasts.show("Microphone access is off - enable it in Settings to record voice notes")
-                return
+                return false
             }
-            guard !recording, voiceRecorder == nil else { return }
+            guard !recording, voiceRecorder == nil, pendingAttachment == nil else { return false }
             let recorder = VoiceRecorder()
-            do {
-                try recorder.start()
-            } catch {
-                session.toasts.show("Couldn't start recording")
-                return
-            }
+            do { try recorder.start() }
+            catch { session.toasts.show("Couldn't start recording"); return false }
             voiceRecorder = recorder
-            recordingStartedAt = Date()
-            recordSeconds = 0
-            recording = true
+            recordingStartedAt = Date(); recordSeconds = 0; recording = true
             recordTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
                 recordSeconds += 1
+                if recordSeconds >= 600 { finishAndSendVoice() }
             }
-        }
+            return true
+        })
     }
 
     private func finishAndSendVoice() {
         guard recording, let startedAt = recordingStartedAt else { return }
         let elapsedMs = Date().timeIntervalSince(startedAt) * 1000
-        let durationMs = VoiceMath.roundedDurationMs(fromElapsedMs: elapsedMs)
+        let durationMs = min(VoiceMath.maximumSendMs, VoiceMath.roundedDurationMs(fromElapsedMs: elapsedMs))
         voiceRecorder?.stop()
         let fileURL = voiceRecorder?.fileURL
         teardownRecording()
@@ -1989,24 +2181,13 @@ struct MirrorRoomView: View {
             session.toasts.show("Too short - voice note discarded")
             return
         }
-        Task {
-            defer { try? FileManager.default.removeItem(at: fileURL) }
-            do {
-                let data = try Data(contentsOf: fileURL)
-                let dataUrl = PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data)
-                let path = try await session.api.uploadMedia(dataUrl: dataUrl)
-                _ = try await session.api.sendMessage(
-                    conversationId: row.id,
-                    content: "",
-                    audioPath: path,
-                    durationMs: durationMs,
-                    kind: "audio"
-                )
-                await load()
-            } catch {
-                session.toasts.show("Voice note failed to upload - check the connection")
-            }
-        }
+        do {
+            let data = try Data(contentsOf: fileURL)
+            prepareAttachment(dataUrl: PulseMediaSupport.dataUrl(mime: "audio/mp4", data: data),
+                envelope: PulseOutboxForward(kind: "audio", durationMs: durationMs, anon: row.isGroup && anonNext))
+            // Either SQLite or the visible retry card now owns these bytes.
+            if pendingAttachment != nil || session.store != nil { try? FileManager.default.removeItem(at: fileURL) }
+        } catch { session.toasts.show("Couldn't read the recording. Its source file was not deleted.") }
     }
 
     private func cancelVoiceRecording() {
@@ -2037,9 +2218,26 @@ struct MirrorBubble: View {
     let isGroup: Bool
     let head: Bool
     let memberNames: [String]
+    let receiptMembers: [WireConversationMember]
     let viewerId: String
     let bubbleMax: CGFloat
+    let mediaBaseURL: URL
     let onToggleReaction: (String) -> Void
+
+    private var receiptStatus: String {
+        if message.id.hasPrefix("local_") { return "Queued" }
+        let split = PulseRoomParityLogic.receiptSplit(
+            members: receiptMembers.map { .init(id: $0.id, lastReadAtIso: $0.lastReadAt) },
+            viewerId: viewerId, createdAtIso: message.createdAt)
+        guard !split.seenBy.isEmpty else { return "Sent" }
+        return isGroup && !split.deliveredTo.isEmpty ? "Read by \(split.seenBy.count)" : "Seen"
+    }
+
+    private func attachmentURL(_ path: String) -> URL {
+        mediaBaseURL.appendingPathComponent("api/uploads", isDirectory: true)
+            .appendingPathComponent(String(path.split(separator: "/").last ?? ""))
+    }
+
 
     private var chips: [MirrorReactionChip] {
         (message.reactions ?? []).map { g in
@@ -2095,8 +2293,14 @@ struct MirrorBubble: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .padding(.bottom, 4)
                         }
-                        if message.kind == "image", let imagePath = message.imagePath {
-                            AsyncImage(url: URL(string: PulseEndpoints.gatewayURL.absoluteString + "/api/uploads/" + imagePath)) { image in
+                        if message.deletedAt != nil {
+                            Label("Message deleted", systemImage: "trash")
+                        } else if message.viewOnce == true && !mine {
+                            Label("View-once photo — use standard chat to open", systemImage: "lock.fill")
+                        } else if let label = PulseAttachmentDelivery.pendingLabel(message) {
+                            Label(label, systemImage: "arrow.up.doc")
+                        } else if message.kind == "image", let imagePath = message.imagePath {
+                            AsyncImage(url: attachmentURL(imagePath)) { image in
                                 image.resizable().aspectRatio(contentMode: .fill)
                             } placeholder: {
                                 Rectangle().fill(MirrorArt.chip)
@@ -2107,6 +2311,14 @@ struct MirrorBubble: View {
                                 Text(MirrorBubbleText.make(message.content, mine: mine, memberNames: memberNames))
                                     .padding(2)
                             }
+                        } else if let path = message.filePath {
+                            Link(destination: attachmentURL(path)) {
+                                Label(message.fileName ?? "Open document", systemImage: "doc")
+                            }
+                            if !message.content.isEmpty { Text(message.content) }
+                        } else if let path = message.audioPath {
+                            Link(destination: attachmentURL(path)) { Label("Open voice note", systemImage: "waveform") }
+                            if !message.content.isEmpty { Text(message.content) }
                         } else {
                             Text(MirrorBubbleText.make(message.content, mine: mine, memberNames: memberNames))
                         }
@@ -2114,8 +2326,10 @@ struct MirrorBubble: View {
                             // meta row: the read ticks
                             HStack(spacing: 0) {
                                 Spacer(minLength: 0)
-                                Image(systemName: "checkmark.double")
+                                Text(receiptStatus).font(.system(size: 10)).padding(.trailing, 4)
+                                Image(systemName: message.id.hasPrefix("local_") ? "clock" : (receiptStatus == "Sent" ? "checkmark" : "checkmark.circle.fill"))
                                     .font(.system(size: 12)).foregroundColor(MirrorArt.onBubbleOut)
+                                    .accessibilityLabel(receiptStatus)
                             }
                             .padding(.top, 2)
                         }
@@ -2245,6 +2459,7 @@ struct MirrorRoomSheetView: View {
     var draftText: String = ""
     var onInsertDraft: (String) -> Void = { _ in }
     var onSent: () -> Void = {}
+    var onCreated: (WireChatMessage) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var pinned: [WireChatMessage]?
@@ -2327,15 +2542,15 @@ struct MirrorRoomSheetView: View {
             case .phrases:
                 MirrorPhrasesBuilder(session: session, onInsert: onInsertDraft)
             case .sticker:
-                MirrorStickerBuilder(session: session, row: row, onSent: onSent)
+                MirrorStickerBuilder(session: session, row: row, onCreated: onCreated)
             case .events:
                 MirrorEventsBuilder(session: session, row: row, onSent: onSent)
             case .kanban:
                 MirrorKanbanBuilder(session: session, row: row, onSent: onSent)
             case .tournament:
-                MirrorTournamentBuilder(session: session, row: row, onSent: onSent)
+                MirrorTournamentBuilder(session: session, row: row, onSent: onSent, onCreated: onCreated)
             case .location:
-                MirrorLocationBuilder(session: session, row: row, onSent: onSent)
+                MirrorLocationBuilder(session: session, row: row, onCreated: onCreated)
             }
         }
     }
@@ -2697,8 +2912,9 @@ private struct MirrorPhrasesBuilder: View {
 private struct MirrorStickerBuilder: View {
     @ObservedObject var session: PulseSession
     let row: MirrorViewModel.MirrorRow
-    let onSent: () -> Void
+    let onCreated: (WireChatMessage) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var didQueue = false
 
     private let packs: [(name: String, emoji: [String])] = [
         ("Classic", ["\u{1F600}", "\u{1F602}", "\u{1F979}", "\u{1F60D}", "\u{1F914}", "\u{1F60E}", "\u{1F973}", "\u{1F634}"]),
@@ -2730,20 +2946,20 @@ private struct MirrorStickerBuilder: View {
     }
 
     private func send(_ emoji: String, _ pack: String) {
-        Task {
-            do {
-                _ = try await session.api.sendMessage(
-                    conversationId: row.id,
-                    content: "",
-                    kind: "sticker",
-                    payload: ["emoji": emoji, "pack": pack]
-                )
-                dismiss()
-                onSent()
-            } catch {
-                session.toasts.show("Sticker failed - check the connection")
-            }
+        guard !didQueue else { return }
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            session.toasts.show("Local storage is not ready. Nothing was queued.")
+            return
         }
+        do {
+            let message = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: row.id,
+                kind: "sticker", content: emoji, payload: ["emoji": emoji, "pack": pack])
+            didQueue = true
+            onCreated(message)
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+            dismiss()
+        } catch { session.toasts.show("Message was not queued. " + RoomViewModel.describe(error)) }
     }
 }
 
@@ -2862,38 +3078,55 @@ private struct MirrorKanbanBuilder: View {
 
 /// Tournament surface - POST /api/tournaments (web group rule enforced at
 /// the tile: the tile itself is disabled outside groups).
+@MainActor
 private struct MirrorTournamentBuilder: View {
     @ObservedObject var session: PulseSession
     let row: MirrorViewModel.MirrorRow
     let onSent: () -> Void
+    let onCreated: (WireChatMessage) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    @State private var busy = false
+    @State private var error: String?
+    @StateObject private var operations = PulseRoomOperations()
 
     var body: some View {
         MirrorPanel(title: "New tournament") {
             VStack(alignment: .leading, spacing: 10) {
                 MirrorPanelHint("BRACKET NAME")
                 MirrorTrayField(placeholder: "Friday night tictactoe...", text: $name)
-                MirrorTrayAction(label: "Start tournament", disabled: name.trimmingCharacters(in: .whitespaces).isEmpty || busy) { send() }
+                    .disabled(!operations.pending.isEmpty)
+                if let error { Text(error).font(.caption).foregroundStyle(.red) }
+                MirrorTrayAction(label: operations.pending.isEmpty ? "Start tournament" : "Confirming…", disabled: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !operations.pending.isEmpty) { send() }
             }
         }
+        .onDisappear { operations.stop() }
+        .onChange(of: session.sessionGeneration) { _ in operations.stop() }
     }
 
     private func send() {
-        busy = true
-        let n = name.trimmingCharacters(in: .whitespaces)
-        Task {
-            defer { busy = false }
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty, n.utf16.count <= 40 else { error = "Use a name between 1 and 40 characters."; return }
+        let api = session.api
+        let generation = session.sessionGeneration
+        error = nil
+        operations.run(key: "create", operation: {
             do {
-                _ = try await session.api.createTournament(conversationId: row.id, name: n)
-                dismiss()
-                onSent()
-                session.toasts.show("Tournament bracket is live")
+                let result = try await api.createTournament(conversationId: row.id, name: n)
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration, let message = result.message else { return false }
+                onCreated(message)
+                try await api.acknowledgeTournamentCreation(conversationId: row.id, name: n, receipt: result)
+                try Task.checkCancellation()
+                guard generation == session.sessionGeneration else { return false }
+                session.toasts.show(result.replayed == true ? "Recovered the previous tournament" : "Tournament is live")
+                return true
             } catch {
-                session.toasts.show("Tournament failed - check the connection")
+                if !Task.isCancelled, generation == session.sessionGeneration {
+                    self.error = (error as? PulseAPIClient.Failure)?.message ?? "Season not confirmed. Retry the same name to recover it."
+                }
+                return false
             }
-        }
+        }, onSuccess: { onSent(); dismiss() })
     }
 }
 
@@ -2902,7 +3135,7 @@ private struct MirrorTournamentBuilder: View {
 private struct MirrorLocationBuilder: View {
     @ObservedObject var session: PulseSession
     let row: MirrorViewModel.MirrorRow
-    let onSent: () -> Void
+    let onCreated: (WireChatMessage) -> Void
     @Environment(\.dismiss) private var dismiss
     @StateObject private var locator = MirrorLocationOnce()
     @State private var busy = false
@@ -2927,25 +3160,23 @@ private struct MirrorLocationBuilder: View {
     }
 
     private func send(_ coordinate: CLLocationCoordinate2D) {
+        guard !busy else { return }
         busy = true
-        Task {
-            defer { busy = false }
-            do {
-                _ = try await session.api.sendMessage(
-                    conversationId: row.id,
-                    content: "",
-                    kind: "location",
-                    payload: [
-                        "lat": coordinate.latitude,
-                        "lng": coordinate.longitude,
-                        "label": "My location",
-                    ]
-                )
-                dismiss()
-                onSent()
-            } catch {
-                session.toasts.show("Location failed - check the connection")
-            }
+        guard let viewer = session.viewer, let store = session.store, session.ready else {
+            busy = false
+            session.toasts.show("Local storage is not ready. Nothing was queued.")
+            return
+        }
+        do {
+            let message = try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: row.id,
+                kind: "location", payload: ["lat": coordinate.latitude, "lng": coordinate.longitude, "label": "My location"])
+            onCreated(message)
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+            dismiss()
+        } catch {
+            busy = false
+            session.toasts.show("Message was not queued. " + RoomViewModel.describe(error))
         }
     }
 }

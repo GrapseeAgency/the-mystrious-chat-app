@@ -85,6 +85,7 @@ data class RedPacketGrabResultDto(
     val amount: Long = 0,
     val grabbed: Int = 0,
     val count: Int = 0,
+    val alreadyGrabbed: Boolean = false,
 )
 
 /** Parses a `kind=="redpacket"` message payload string: {packetId,total,count,note}. */
@@ -125,6 +126,8 @@ data class WhiteboardStrokeDto(
 
 @Serializable
 data class WhiteboardPageDto(
+    val operationsVersion: Int = 0,
+    val complete: Boolean = true,
     val strokes: List<WhiteboardStrokeDto> = emptyList(),
     val serverTime: Long? = null,
     val resetAt: Long? = null,
@@ -132,6 +135,8 @@ data class WhiteboardPageDto(
 
 @Serializable
 data class WhiteboardStrokePostDto(
+    val clientId: String? = null,
+    val baseResetAt: Long? = null,
     val color: String = "#000000",
     val width: Double = 3.0,
     val points: List<List<Double>> = emptyList(),
@@ -265,7 +270,7 @@ data class ReminderItemDto(
 )
 
 @Serializable
-data class RemindersPageDto(val items: List<ReminderItemDto> = emptyList())
+data class RemindersPageDto(val items: List<ReminderItemDto> = emptyList(), val nextCursor: String? = null)
 
 // Quick phrases (F-MS-29) - GET/POST/DELETE /api/users/{id}/phrases
 
@@ -327,6 +332,8 @@ data class GameDetailDto(
 
 @Serializable
 data class GameMatchCreateResultDto(
+    val clientId: String? = null,
+    val replayed: Boolean = false,
     val match: GameMatchDto? = null,
     val message: ChatMessageDto? = null,
 )
@@ -351,6 +358,7 @@ data class TournamentSummaryDto(
     val game: String = "tictactoe",
     /** running | finished */
     val status: String = "running",
+    val joined: Boolean? = null,
     val playerCount: Int? = null,
     val createdAt: String? = null,
     val endsAt: String? = null,
@@ -376,6 +384,8 @@ data class TournamentsPageDto(val tournaments: List<TournamentSummaryDto> = empt
 
 @Serializable
 data class TournamentCreateResultDto(
+    val clientId: String? = null,
+    val replayed: Boolean = false,
     val tournament: TournamentSummaryDto? = null,
     val message: ChatMessageDto? = null,
 )
@@ -456,6 +466,7 @@ data class TransferToDto(
 data class TransferResultDto(
     val wallet: WalletDto = WalletDto(),
     val to: TransferToDto = TransferToDto(),
+    val clientId: String? = null,
 )
 
 @Serializable
@@ -483,6 +494,7 @@ data class SwapPageDto(
 data class SwapResultDto(
     val wallet: WalletDto = WalletDto(),
     val note: String? = null,
+    val clientId: String? = null,
 )
 
 @Serializable

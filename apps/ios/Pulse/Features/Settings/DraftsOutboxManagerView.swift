@@ -46,6 +46,7 @@ struct DraftsOutboxManagerView: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .onAppear { reload() }
+        .onReceive(session.outboxEvents) { _ in reload() }
     }
 
     // drafts
@@ -110,14 +111,14 @@ struct DraftsOutboxManagerView: View {
     // outbox
 
     private var outboxCard: some View {
-        settingsCard(title: "Offline queue", icon: "cloud.slash", count: queued.count) {
+        settingsCard(title: "Outbox & failed sends", icon: "cloud.slash", count: queued.count) {
             if queued.isEmpty {
-                emptyNote("Empty - every composed message has been delivered.")
+                emptyNote("No retained outgoing messages.")
             } else {
                 ForEach(queued, id: \.clientId) { row in
                     outboxRow(row)
                 }
-                Text("These wait to send when you're back online. Discarding drops them without sending.")
+                Text("Pending messages retry online. Failed messages are kept for copying or discarding; they do not retry automatically.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                 clearAllButton(
@@ -159,7 +160,21 @@ struct DraftsOutboxManagerView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Discard queued message for \(name(for: row.conversationId))")
             }
+            if let reason = row.failureReason {
+                Text("Not sent: " + reason).font(.system(size: 12)).foregroundStyle(.red)
+                Button("Retry original message") { session.retryOutbox(clientId: row.clientId); reload() }
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            if let envelope = PulseOutboxForward.decode(row.payloadJson), ["image", "file", "audio"].contains(envelope.kind ?? "") {
+                Label(envelope.fileName ?? (envelope.kind == "audio" ? "Voice note" : "Photo"), systemImage: "paperclip")
+                    .font(.caption)
+                Text(envelope.uploadDataUrl == nil ? "Upload kept; message awaits delivery." : "Attachment bytes kept on this device.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Button("Copy text") { UIPasteboard.general.string = row.content }
+                .font(.system(size: 12, weight: .semibold))
             Text(row.content)
+                .textSelection(.enabled)
                 .font(.system(size: 12.5))
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
@@ -289,7 +304,7 @@ struct DraftsOutboxManagerView: View {
 
     private func deleteQueued(_ row: OutboxRow) {
         PulseHaptics.tap()
-        try? session.store?.deleteOutbox(clientId: row.clientId)
+        session.discardOutbox(clientId: row.clientId, conversationId: row.conversationId)
         reload()
     }
 
@@ -301,7 +316,7 @@ struct DraftsOutboxManagerView: View {
         }
         PulseHaptics.warning()
         for row in queued {
-            try? store.deleteOutbox(clientId: row.clientId)
+            session.discardOutbox(clientId: row.clientId, conversationId: row.conversationId)
         }
         reload()
     }

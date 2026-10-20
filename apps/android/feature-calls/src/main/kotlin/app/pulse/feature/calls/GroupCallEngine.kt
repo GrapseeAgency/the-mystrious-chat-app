@@ -180,6 +180,12 @@ class GroupCallEngine @Inject constructor(
     fun start() {
         if (started) return
         started = true
+        audio.onFocusLost = {
+            scope.launch {
+                leaveCall()
+                _notices.tryEmit("Audio interrupted by another app. Rejoin when ready.")
+            }
+        }
         // gcall:* signal intake - the engine's event side.
         scope.launch {
             repo.events().collect { event ->
@@ -427,6 +433,7 @@ class GroupCallEngine @Inject constructor(
      * (web toast 'Camera unavailable - joining as a voice call').
      */
     private fun acquireMedia(wanted: CallKind) {
+        check(audio.acquire()) { "Audio is unavailable or in use by another live session." }
         ensureFactory()
         if (localAudioTrack == null) {
             val constraints = MediaConstraints().apply {
@@ -438,7 +445,6 @@ class GroupCallEngine @Inject constructor(
             localAudioSource = source
             localAudioTrack = track
         }
-        audio.acquire()
         runCatching { localAudioTrack?.setEnabled(true) }
 
         if (wanted == CallKind.VIDEO && !attachLocalVideo()) {

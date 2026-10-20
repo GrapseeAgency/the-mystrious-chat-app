@@ -86,10 +86,10 @@ class SessionTokenStore @Inject constructor(
         val stored = persistence.read() ?: return null
         val plain = cipher.decryptOrNull(stored)
         if (plain.isNullOrBlank()) {
-            // unreadable at-rest payload (key invalidated by a backup restore,
-            // format drift) - drop it rather than loop on guaranteed 401s
-            scope.launch { persistence.clear() }
-            return null
+            // Do not turn key loss into an anonymous request or destroy the
+            // only recovery evidence. Explicit account recovery must replace it.
+            _invalidated.value = true
+            throw IllegalStateException("Stored session credential could not be decrypted")
         }
         cached = plain
         return plain
@@ -112,15 +112,15 @@ class SessionTokenStore @Inject constructor(
 
     /**
      * The gateway answered 401 (or the relay refused our join): the stored
-     * token is invalid or has been rotated. Clear the credential and raise
-     * the invalidated flag - the app routes to onboarding with an honest
-     * notice (web parity: session-rotated handling).
+     * token is invalid or has been rotated. Retain it and raise the invalidated
+     * flag so transports stop without falling back to anonymous access.
      */
     suspend fun markInvalid(reason: String?) {
         if (cached == null && !_invalidated.value) return
-        Log.w(TAG, "session token rejected - clearing ($reason)")
-        persistence.clear()
-        cached = null
+        // Retain the rejected credential until explicit recovery/sign-out.
+        // Removing the header would turn a rejected authenticated request into
+        // a tokenless request accepted by older servers.
+        Log.w(TAG, "session token rejected; authenticated work must pause")
         _invalidated.value = true
     }
 

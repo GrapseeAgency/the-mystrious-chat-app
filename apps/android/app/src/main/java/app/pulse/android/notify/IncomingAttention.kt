@@ -36,6 +36,8 @@ object IncomingAttention {
     @Volatile
     var foreground: Boolean = false
 
+    @Volatile var activeReadingRoom: String? = null
+
     /**
      * R7 item 7 - notifPreviews mirror (Wave-8 server blob). ON → the
      * attention toast shows the full preview ("Sender: body", 80-char cap);
@@ -59,7 +61,7 @@ object IncomingAttention {
 
     /** One PulseEvent.MessageReceived - evaluates the gate chain live. */
     fun onMessageReceived(context: Context, conversationId: String, message: Message, viewerId: String?) {
-        if (!foreground) return
+        if (!foreground || activeReadingRoom == conversationId) return
         if (viewerId == null || message.authorId == viewerId) return
         if (message.isDeleted) return
         if (ReminderAlertPolicy.quietNow()) return

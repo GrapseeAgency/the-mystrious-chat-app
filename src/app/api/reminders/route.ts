@@ -4,6 +4,7 @@
 // marks rows fired via PATCH /api/reminders/[id].
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { reminderPage, ReminderContractError } from '@/lib/reminder-contract'
 import { parseIsoDate, safeJson, strField } from '@/lib/serializers'
 import type { ReminderItem } from '@/lib/types'
 
@@ -101,14 +102,13 @@ export async function GET(req: Request) {
   }
 
   const dueOnly = url.searchParams.get('due') === '1'
-  const rows = await db.reminder.findMany({
-    where: {
-      userId,
-      ...(dueOnly ? { remindAt: { lte: new Date() }, firedAt: null } : {}),
-    },
-    orderBy: { remindAt: 'asc' },
-    take: 100,
-  })
+  let page
+  try { page = await reminderPage(db, userId, dueOnly, url.searchParams.get('cursor')) }
+  catch (error) {
+    if (error instanceof ReminderContractError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
+  }
+  const rows = page.rows
 
   const items = await Promise.all(
     rows.map(async (row) => {
@@ -124,7 +124,7 @@ export async function GET(req: Request) {
     }),
   )
 
-  return NextResponse.json({ items })
+  return NextResponse.json({ items, nextCursor: page.nextCursor }, { headers: { 'Cache-Control': 'no-store' } })
 }
 
 /**

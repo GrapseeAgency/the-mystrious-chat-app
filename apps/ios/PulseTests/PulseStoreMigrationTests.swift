@@ -1,4 +1,5 @@
 import XCTest
+import GRDB
 @testable import Pulse
 
 /// Wave 0 + Wave 1 - GRDB migration + offline read-path tests.
@@ -373,7 +374,8 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(row.deletedAt, "2026-09-07T15:30:00.000Z")
         XCTAssertNil(row.parentId)
         XCTAssertNil(row.pinnedAt)
-        XCTAssertNil(row.reactions) // reactionsJson reset to '[]'
+        XCTAssertEqual(row.reactions, []) // v10 preserves the exact authoritative empty array
+        XCTAssertEqual(row, edited)
         XCTAssertNil(row.imagePath)
     }
 
@@ -424,17 +426,14 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertNil(legacy.linkPreview)
         XCTAssertNil(legacy.poll)
 
-        // Full-fidelity row: every v4 COLUMN round-trips through GRDB.
-        // viewedAt/transcript/transcribedAt/pollJson/linkPreviewJson/topicId
-        // are real columns; viewedBy + linkUrl are NOT cached (they ride the
-        // next authoritative wire row - v4 store contract, PulseStore.messageRow).
+        // Full wire envelopes now retain privacy and link fields too.
         let rich = try XCTUnwrap(rows.first { $0.id == "v4-poll" })
         XCTAssertEqual(rich.viewedAt, "2026-09-08T12:01:00.000Z")
-        XCTAssertNil(rich.viewedBy)
+        XCTAssertEqual(rich.viewedBy, "u9")
         XCTAssertEqual(rich.transcript, "spoken words")
         XCTAssertEqual(rich.transcribedAt, "2026-09-08T12:02:00.000Z")
         XCTAssertEqual(rich.topicId, "topic-1")
-        XCTAssertNil(rich.linkUrl)
+        XCTAssertEqual(rich.linkUrl, "https://example.com")
         XCTAssertEqual(rich.linkPreview?.url, "https://example.com")
         XCTAssertEqual(rich.linkPreview?.title, "Example Domain")
         XCTAssertEqual(rich.linkPreview?.imageUrl, "https://example.com/og.png")
@@ -497,6 +496,23 @@ final class PulseStoreMigrationTests: XCTestCase {
 
         // Unknown room reads empty.
         XCTAssertEqual(try store.topics(conversationId: "c-missing").count, 0)
+    }
+
+    func testSavedLibraryRehydratesBodiesOfflineAndRespectsUnsave() throws {
+        let store = try PulseStore()
+        let item = WireSavedItem(
+            savedAt: "2026-10-19T10:00:00Z",
+            conversation: WireSavedConversation(id: "saved-room", isGroup: true, name: "Room"),
+            message: makeMessage(id: "saved-message", conversationId: "saved-room", content: "offline body")
+        )
+        try store.upsert(savedItems: [item])
+        let cached = try store.cachedSavedItems()
+        XCTAssertEqual(cached.count, 1)
+        XCTAssertEqual(cached.first?.message.content, "offline body")
+        XCTAssertEqual(cached.first?.conversation.id, "saved-room")
+        try store.deleteSaved(messageId: "saved-message")
+        XCTAssertTrue(try store.cachedSavedItems().isEmpty)
+        XCTAssertNotNil(try store.message(id: "saved-message"))
     }
 
     func testSavedLibraryUpsertReplaceAndDelete() throws {
@@ -658,4 +674,57 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertNil(PulseOutboxForward.decode("not json"))
         XCTAssertNil(PulseOutboxForward.decode(nil))
     }
+    func testPrivacyFlagsAndExpirySurviveCacheAndTombstones() throws {
+        let store = try PulseStore()
+        let source = makeV4Message(id: "private", conversationId: "room", createdAt: "2026-10-20T00:00:00Z")
+        var wire = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(source)) as? [String: Any])
+        wire["expiresAt"] = "2026-10-20T00:00:10Z"
+        wire["viewOnce"] = true
+        wire["anon"] = true
+        wire["anonAlias"] = "Ember"
+        wire["parentId"] = "root"
+        wire["replyTo"] = ["id": "quote", "content": "quoted", "senderName": "Peer", "deleted": false]
+        let message = try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: wire))
+        try store.upsert(messages: [message])
+        let before = try XCTUnwrap(PulseFormat.date("2026-10-20T00:00:09Z"))
+        let at = before.addingTimeInterval(1)
+        XCTAssertEqual(try store.message(id: message.id, now: before), message)
+        XCTAssertEqual(try store.messages(threadRootId: "root", now: before).count, 1)
+        XCTAssertNil(try store.message(id: message.id, now: at))
+        XCTAssertTrue(try store.messages(conversationId: "room", now: at).isEmpty)
+        XCTAssertTrue(try store.messages(threadRootId: "root", now: at).isEmpty)
+        XCTAssertEqual(try store.threadReplyCounts(now: before)["root"], 1)
+        XCTAssertNil(try store.threadReplyCounts(now: at)["root"])
+        XCTAssertEqual(message.deletedCopy().expiresAt, message.expiresAt)
+        try store.updateTranscription(messageId: message.id, transcript: "new transcript", transcribedAt: "2026-10-20T00:00:09Z")
+        let patched = try XCTUnwrap(store.message(id: message.id, now: before))
+        XCTAssertEqual(patched.transcript, "new transcript")
+        XCTAssertEqual(patched.viewOnce, true)
+        XCTAssertEqual(patched.anonAlias, "Ember")
+    }
+
+    func testV9UpgradeInvalidatesUnknownPrivacyCacheButPreservesQueuedIntentAndDrafts() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        do {
+            let store = try PulseStore(path: url.path)
+            try store.upsert(messages: [makeMessage(id: "server-row", conversationId: "room"), makeMessage(id: "local_pending", conversationId: "room")])
+            try store.appendOutbox(conversationId: "room", clientId: "pending", content: "keep me")
+            try store.saveDraft(conversationId: "room", text: "keep draft")
+        }
+        do {
+            let db = try DatabaseQueue(path: url.path)
+            try db.write { tx in
+                try tx.execute(sql: "ALTER TABLE message DROP COLUMN wireJson")
+                try tx.execute(sql: "ALTER TABLE message DROP COLUMN expiresAtEpoch")
+                try tx.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'v10'")
+            }
+        }
+        let reopened = try PulseStore(path: url.path)
+        XCTAssertNil(try reopened.message(id: "server-row"))
+        XCTAssertNotNil(try reopened.message(id: "local_pending"))
+        XCTAssertEqual(reopened.countPendingOutbox(), 1)
+        XCTAssertEqual(reopened.draft(conversationId: "room"), "keep draft")
+    }
+
 }

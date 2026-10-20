@@ -112,6 +112,7 @@ struct RootView: View {
             // Wave 8 - prefs handoff: incoming attention gate, settings PATCH
             // funnel, quiet-gate refresh (idempotent, closures attach once).
             session.attach(prefs: prefs)
+            session.setForeground(scenePhase == .active)
             // 3-d - push handoff: the registration center reads the live API
             // client through this closure (rebuilt per gateway override +
             // identity). attach re-arms any pending token → server POST.
@@ -138,14 +139,7 @@ struct RootView: View {
             if !didBootstrap, let viewer = prefs.viewer {
                 didBootstrap = true
                 session.start(as: viewer)
-                // R14 5-b - boot identity probe (web app-root.tsx BootGate):
-                // a stored identity the server no longer knows (404) wipes
-                // the session and lands on onboarding. Network flakes keep
-                // it - the identical optimistic contract.
-                session.validateStoredIdentity { [weak session] name in
-                    session?.prefs?.setViewer(nil)
-                    session?.toasts.show("“\(name)” no longer exists on this Pulse - sign in or create an identity.")
-                }
+
             }
             // R2-D - reminder-notification taps route like pulse://room: the
             // delegate (registered in PulseApp.init) parses the userInfo into
@@ -160,6 +154,16 @@ struct RootView: View {
             if let tapped = PulseReminderNotificationDelegate.shared.consumeLastTappedRoomId() {
                 session.pendingLinkedRoomId = tapped
             }
+        }
+        .onChange(of: session.ready) { _, ready in
+            guard ready else { return }
+            session.validateStoredIdentity { name in
+                prefs.setViewer(nil)
+                session.toasts.show("“\(name)” no longer exists on this Pulse.")
+            }
+        }
+        .onChange(of: appLock.needsLock) { _, locked in
+            if !locked { Task { await session.markReadIfVisible(conversationId: session.activeRoomId) } }
         }
         .onChange(of: prefs.uiTheme) { _, theme in
             PulseTheme.activeUiTheme = theme
@@ -176,6 +180,7 @@ struct RootView: View {
             session.particles.reduceMotionDisabled = reduceMotion || newValue
         }
         .onChange(of: scenePhase) { _, phase in
+            session.setForeground(phase == .active)
             switch phase {
             case .active:
                 // Outbox flush trigger: app foreground (web visibilitychange).
@@ -298,11 +303,17 @@ struct RootView: View {
 
     @ViewBuilder
     private var authenticatedShell: some View {
-        if prefs.viewer != nil, UserDefaults.standard.bool(forKey: "ui.mirrorAudit") {
-            // R59 - the native mirror audit: the artboard redrawn natively
-            // (SwiftUI) on the REAL session data; the shipping shell stays
-            // untouched behind the flag.
-            MirrorRootView(session: session)
+        // Experimental mirror code is deliberately unreachable: it bypasses
+        // durable messaging and navigation. All users get the native feature shell.
+        if prefs.viewer != nil, !session.ready {
+            VStack(spacing: 16) {
+                if let error = session.startupError {
+                    Text(error).multilineTextAlignment(.center)
+                    Button("Retry") { if let viewer = prefs.viewer { session.start(as: viewer) } }
+                } else {
+                    ProgressView("Opening your account…")
+                }
+            }.padding()
         } else if prefs.viewer != nil {
             ZStack {
                 tabPanels

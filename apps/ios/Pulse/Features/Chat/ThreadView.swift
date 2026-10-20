@@ -5,7 +5,7 @@ import SwiftUI
 /// the thread-ROOT id, NEVER the inline-quote replyToId). Optimistic temp
 /// rows swap on send exactly like the river; realtime appends arrive via the
 /// session signal stream; every landed row persists through the GRDB cache.
-/// Thread replies are NEVER queued offline (spec §2 row 5 - web parity).
+/// Replies use the same durable operation identity and outbox as the main room.
 struct ThreadView: View {
     let conversation: WireConversationSummary
     let root: WireChatMessage
@@ -17,7 +17,8 @@ struct ThreadView: View {
     @State private var replies: [WireChatMessage] = []
     @State private var phase: Phase = .loading
     @State private var draft = ""
-    @State private var sending = false
+    @State private var rootUnavailable = false
+    @State private var loadGeneration = UUID()
     @State private var errorText: String?
     // Wave 2 view-once - threads reuse the same gate/burn bubble; the reveal
     // opens the lightbox right here (the sheet owns its cover).
@@ -27,7 +28,7 @@ struct ThreadView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var viewerId: String { session.viewer?.id ?? "" }
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespaces).isEmpty && !sending }
+    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !rootUnavailable }
 
     var body: some View {
         NavigationStack {
@@ -51,7 +52,9 @@ struct ThreadView: View {
                 if let error = errorText {
                     errorStrip(error)
                 }
-                composer
+                if rootUnavailable {
+                    Text("This thread is no longer available. Your draft is kept.").font(.footnote).padding()
+                } else { composer }
             }
             .background(PulseTheme.pageWash.ignoresSafeArea())
             .navigationTitle("Thread")
@@ -66,10 +69,25 @@ struct ThreadView: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .fullScreenCover(item: $lightbox) { target in
-            MediaLightboxView(url: target.url, caption: target.caption)
+            MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt)
         }
-        .task { await load() }
+        .task(id: session.connected) { await load() }
         .onReceive(session.signals) { handle(signal: $0) }
+        .onReceive(session.messageVisibilityClock) { now in pruneExpired(now: now) }
+        .onReceive(session.outboxEvents) { event in
+            switch event {
+            case .delivered(let message, let room, let clientId):
+                guard room == conversation.id else { return }
+                replies.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
+                if message.parentId == root.id { appendReply(message) }
+            case .dropped(let clientId, let room):
+                guard room == conversation.id,
+                      replies.contains(where: { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }) else { return }
+                replies.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
+                errorText = "Reply not sent. It is kept in Outbox for recovery."
+            }
+        }
+        .onDisappear { loadGeneration = UUID() }
     }
 
     // content
@@ -99,39 +117,43 @@ struct ThreadView: View {
         case .loaded:
             // The parent card - plain bubble, no thread chip, no menus.
             let parentMessage = parent ?? root
-            BubbleView(
-                message: parentMessage,
-                mine: parentMessage.senderId == viewerId,
-                groupChat: conversation.isGroup,
-                viewerColor: { colorOf(senderId: parentMessage.senderId) },
-                // Wave 8 - thread bubbles honor the prefs corner token too.
-                bubbleRadius: session.prefs?.bubbleRadius ?? .lg,
-                viewerId: viewerId,
-                onViewOnceOpen: { message in revealViewOnce(message) },
-                // R3-A item 7 - thread bubbles format + mention-chip too.
-                memberNames: conversation.members.map(\.name),
-            )
-            .padding(.bottom, 4)
-            ForEach(Array(replies.enumerated()), id: \.element.id) { index, reply in
-                // Day chip when the calendar day changes between rows - the
-                // first reply compares against the parent's day.
-                let previous = index == 0 ? parentMessage : replies[index - 1]
-                if PulseFormat.dayLabel(previous.createdAt) != PulseFormat.dayLabel(reply.createdAt) {
-                    CapsuleLabel(PulseFormat.dayLabel(reply.createdAt))
-                        .padding(.vertical, 4)
-                }
+            if !rootUnavailable {
                 BubbleView(
-                    message: reply,
-                    mine: reply.senderId == viewerId,
+                    message: parentMessage,
+                    mine: parentMessage.senderId == viewerId,
                     groupChat: conversation.isGroup,
-                    viewerColor: { colorOf(senderId: reply.senderId) },
-                    // Wave 8 - prefs corner token (session handoff).
+                    viewerColor: { colorOf(senderId: parentMessage.senderId) },
+                    // Wave 8 - thread bubbles honor the prefs corner token too.
                     bubbleRadius: session.prefs?.bubbleRadius ?? .lg,
                     viewerId: viewerId,
                     onViewOnceOpen: { message in revealViewOnce(message) },
                     // R3-A item 7 - thread bubbles format + mention-chip too.
                     memberNames: conversation.members.map(\.name),
                 )
+                .padding(.bottom, 4)
+            }
+            if !rootUnavailable {
+                ForEach(Array(replies.enumerated()), id: \.element.id) { index, reply in
+                    // Day chip when the calendar day changes between rows - the
+                    // first reply compares against the parent's day.
+                    let previous = index == 0 ? parentMessage : replies[index - 1]
+                    if PulseFormat.dayLabel(previous.createdAt) != PulseFormat.dayLabel(reply.createdAt) {
+                        CapsuleLabel(PulseFormat.dayLabel(reply.createdAt))
+                            .padding(.vertical, 4)
+                    }
+                    BubbleView(
+                        message: reply,
+                        mine: reply.senderId == viewerId,
+                        groupChat: conversation.isGroup,
+                        viewerColor: { colorOf(senderId: reply.senderId) },
+                        // Wave 8 - prefs corner token (session handoff).
+                        bubbleRadius: session.prefs?.bubbleRadius ?? .lg,
+                        viewerId: viewerId,
+                        onViewOnceOpen: { message in revealViewOnce(message) },
+                        // R3-A item 7 - thread bubbles format + mention-chip too.
+                        memberNames: conversation.members.map(\.name),
+                    )
+                }
             }
         }
     }
@@ -143,11 +165,15 @@ struct ThreadView: View {
               message.senderId != viewerId,
               message.viewedAt == nil,
               let url = PulseMediaOpener.url(for: message) else { return }
-        lightbox = MediaLightboxTarget(url: url, caption: message.content)
+        lightbox = MediaLightboxTarget(url: url, caption: message.content, expiresAt: message.expiresAt)
         guard let viewer = session.viewer else { return }
+        let api = session.api
+        let store = session.store
+        let epoch = session.sessionGeneration
         Task {
-            if let fresh = try? await session.api.markViewed(messageId: message.id, userId: viewer.id) {
-                try? session.store?.upsert(messages: [fresh])
+            if let fresh = try? await api.markViewed(messageId: message.id, userId: viewer.id) {
+                guard session.sessionGeneration == epoch, !Task.isCancelled else { return }
+                try? store?.upsert(messages: [fresh])
                 if let index = replies.firstIndex(where: { $0.id == fresh.id }) {
                     replies[index] = fresh
                 }
@@ -166,52 +192,80 @@ struct ThreadView: View {
     // data
 
     private func load() async {
-        // Cache seed first - the sheet paints instantly, offline too.
-        if let store = session.store {
-            let cached = (try? store.messages(threadRootId: root.id)) ?? []
-            if !cached.isEmpty {
-                replies = cached
-                phase = .loaded
-            }
+        let ticket = UUID()
+        loadGeneration = ticket
+        let epoch = session.sessionGeneration
+        let api = session.api
+        let store = session.store
+        if let cached = try? store?.messages(threadRootId: root.id) {
+            replies = PulseTextDelivery.timeline(replies, pending: cached)
         }
+        phase = .loaded
+        pruneExpired()
+        guard (parent ?? root).deletedAt == nil,
+              PulseRemediationLogic.isAlive((parent ?? root).expiresAt) else { return }
+        let revision = session.messageRevision
         do {
-            let page = try await session.api.thread(rootId: root.id, userId: viewerId)
-            parent = page.parent
-            replies = page.replies
+            let page = try await api.thread(rootId: root.id, userId: viewerId)
+            guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
+            // A slower HTTP snapshot must not undo a newer edit/deletion relay.
+            let fresh = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
+            try store?.upsert(messages: fresh)
+            if let current = fresh.first(where: { $0.id == root.id }) { parent = current }
+            replies = PulseTextDelivery.timeline(replies, pending: fresh.filter { $0.parentId == root.id })
             phase = .loaded
             errorText = nil
-            try? session.store?.upsert(messages: [page.parent] + page.replies)
+            rootUnavailable = false
+            pruneExpired()
         } catch {
-            if replies.isEmpty {
-                phase = .failed(RoomViewModel.describe(error))
-            } else {
-                phase = .loaded
-                errorText = RoomViewModel.describe(error)
+            guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
+            if let failure = error as? PulseAPIClient.Failure, [403, 404, 410].contains(failure.status ?? 0) {
+                rootUnavailable = true
+                replies = []
+                lightbox = nil
+            }
+            phase = .loaded
+            errorText = RoomViewModel.describe(error)
+        }
+    }
+
+    private func pruneExpired(now: Date = Date()) {
+        let parentMessage = parent ?? root
+        if parentMessage.deletedAt != nil || !PulseRemediationLogic.isAlive(parentMessage.expiresAt, now: now) {
+            rootUnavailable = true
+            replies = []
+            lightbox = nil
+        } else {
+            let visible = replies.filter { PulseRemediationLogic.isAlive($0.expiresAt, now: now) }
+            if visible.count != replies.count {
+                replies = visible
+                lightbox = nil
             }
         }
     }
 
-    /// Realtime - a relayed reply for THIS thread appends (id-dedupe) and
-    /// lands in the GRDB cache; everything else is ignored here.
     private func handle(signal: PulseSocketClient.Signal) {
+        let room: String
+        let message: WireChatMessage
         switch signal {
-        case .messageNew(let conversationId, let raw):
-            guard conversationId == conversation.id,
-                  let message = PulseSession.decodeMessage(from: raw),
-                  message.parentId == root.id else { return }
-            appendReply(message)
-            try? session.store?.upsert(messages: [message])
-        default:
-            break
+        case .messageNew(let id, let raw), .messageReact(let id, let raw), .messageEnvelope(_, let id, let raw):
+            guard let decoded = PulseSession.decodeMessage(from: raw) else { return }
+            room = id; message = decoded
+        case .messageDeleted(let id, let raw):
+            guard let decoded = PulseSession.decodeMessage(from: raw) else { return }
+            room = id; message = decoded.deletedCopy()
+        default: return
         }
+        guard room == conversation.id, message.id == root.id || message.parentId == root.id else { return }
+        if message.id == root.id { parent = message }
+        else { appendReply(message) }
+        try? session.store?.upsert(messages: [message])
+        pruneExpired()
     }
 
     private func appendReply(_ message: WireChatMessage) {
-        guard !replies.contains(where: { $0.id == message.id }) else { return }
-        replies.append(message)
-        replies.sort {
-            (PulseFormat.date($0.createdAt) ?? .distantPast) < (PulseFormat.date($1.createdAt) ?? .distantPast)
-        }
+        guard !rootUnavailable, message.parentId == root.id else { return }
+        replies = PulseTextDelivery.timeline(replies, pending: [message])
     }
 
     // composer
@@ -241,49 +295,20 @@ struct ThreadView: View {
         .background(.ultraThinMaterial)
     }
 
-    /// Optimistic thread send - temp `local_<clientId>` row swaps for the
-    /// real one on success. Any failure removes the temp and surfaces an
-    /// honest error; the outbox NEVER queues thread replies (spec §2 row 5).
+    /// Commit locally before clearing the composer. Recovery always reuses
+    /// the persisted clientId; a lost response never creates a replacement send.
     private func sendReply() {
-        guard let viewer = session.viewer else {
-            errorText = "The gateway is unreachable."
-            return
-        }
-        let body = draft.trimmingCharacters(in: .whitespaces)
-        guard !body.isEmpty, !sending else { return }
-        draft = ""
-        let clientId = UUID().uuidString
-        let temp = TempMessages.make(
-            conversationId: conversation.id,
-            viewer: viewer,
-            clientId: clientId,
-            content: body,
-            parentId: root.id
-        )
-        appendReply(temp)
-        sending = true
-        Task {
-            defer { sending = false }
-            do {
-                let real = try await session.api.sendMessage(
-                    conversationId: conversation.id,
-                    content: body,
-                    parentId: root.id,
-                )
-                replies.removeAll {
-                    $0.id == temp.id
-                        || ($0.id.hasPrefix("local_") && $0.content == real.content && $0.senderId == real.senderId)
-                }
-                appendReply(real)
-                try? session.store?.upsert(messages: [real])
-                try? session.store?.deleteMessage(id: temp.id)
-                session.particles.fire(kind: .burst, count: 18)
-            } catch {
-                replies.removeAll { $0.id == temp.id }
-                try? session.store?.deleteMessage(id: temp.id)
-                errorText = RoomViewModel.describe(error)
-            }
-        }
+        pruneExpired()
+        guard canSend, let viewer = session.viewer, let store = session.store, session.ready else { return }
+        do {
+            let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer,
+                conversationId: conversation.id, content: draft, parentId: root.id)
+            appendReply(message)
+            draft = ""
+            errorText = nil
+            session.outbox?.reloadPending()
+            session.flushOutbox()
+        } catch { errorText = RoomViewModel.describe(error) }
     }
 
     private func errorStrip(_ text: String) -> some View {
@@ -291,6 +316,8 @@ struct ThreadView: View {
             Image(systemName: "exclamationmark.triangle.fill")
             Text(text).font(.footnote).lineLimit(2)
             Spacer()
+            Button("Retry") { Task { await load() } }
+                .font(.footnote.weight(.semibold))
             Button("Dismiss") { errorText = nil }
                 .font(.footnote.weight(.semibold))
         }

@@ -156,9 +156,9 @@ public enum PulseRoomParityLogic {
     /// chat-room.tsx:5893-5960 + Android MessageSheets.kt:379-424 parity):
     ///   • the viewer is never a recipient (excluded first);
     ///   • "Seen by" = members whose lastReadAt >= the message's createdAt;
-    ///   • "Delivered to" = the rest.
-    /// A missing or unparseable watermark counts as delivered (never seen) -
-    /// web `Number.isNaN(readMs)` parity.
+    ///   • the rest have no read confirmation (privacy/offline/unread unknown).
+    /// `deliveredTo` retains its legacy API name, but is NOT a device-delivery
+    /// receipt. The native sheets must label it as unconfirmed.
     public struct ReceiptSplit: Equatable, Sendable {
         public let seenBy: [ReceiptMember]
         public let deliveredTo: [ReceiptMember]
@@ -187,6 +187,12 @@ public enum PulseRoomParityLogic {
             }
         }
         return ReceiptSplit(seenBy: seen, deliveredTo: delivered)
+    }
+
+    /// Own-device reads and malformed message dates never prove another person read.
+    public static func peerReadCount(watermarks: [String: Date], viewerId: String?, createdAtIso: String) -> Int {
+        guard let viewerId, !viewerId.isEmpty, let created = PulseFormat.date(createdAtIso) else { return 0 }
+        return watermarks.filter { $0.key != viewerId && $0.value >= created }.count
     }
 
     // R7 - message clustering lives in PulseCluster (file scope below)

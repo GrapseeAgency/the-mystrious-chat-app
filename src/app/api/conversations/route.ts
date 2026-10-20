@@ -1,6 +1,9 @@
 // /api/conversations - list my chats, create DM / group
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { DirectConversationError, openDirectConversation } from '@/lib/direct-conversation'
+import { bearerToken } from '@/lib/session-token'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import {
   buildConversationSummary,
   CONVERSATION_FULL_INCLUDE,
@@ -68,6 +71,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'creatorId is required.' }, { status: 400 })
   }
 
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, creatorId, 'conversation creation')
+    if (denied) return denied
+  }
+
   if (!Array.isArray(body.memberIds)) {
     return NextResponse.json({ error: 'memberIds must be an array of user ids.' }, { status: 400 })
   }
@@ -100,54 +108,14 @@ export async function POST(req: Request) {
       )
     }
 
-    // DM dedupe - find a non-group conversation whose participant set
-    // equals exactly these two users.
-    const candidates = await db.conversation.findMany({
-      where: {
-        isGroup: false,
-        participants: { some: { userId: { in: distinctIds } } },
-      },
-      select: { id: true, participants: { select: { userId: true } } },
-    })
-    const existing = candidates.find((cand) => {
-      const ids = cand.participants.map((p) => p.userId)
-      return ids.length === 2 && ids.includes(distinctIds[0]) && ids.includes(distinctIds[1])
-    })
-
-    if (existing) {
-      const full = await db.conversation.findUnique({
-        where: { id: existing.id },
-        include: CONVERSATION_FULL_INCLUDE,
-      })
-      if (!full) {
-        return NextResponse.json(
-          { error: 'Failed to load existing conversation.' },
-          { status: 500 },
-        )
-      }
-      // R47 - an EXISTING DM stays openable even when blocked (WhatsApp
-      // parity: history visible, composer dead-ended by the send gate).
-      return NextResponse.json({
-        conversation: await buildConversationSummary(full, creatorId),
-      }) // 200 - deduped
-    }
-
-    // R47 - NEW DM with a blocked pair (either direction) is refused at
-    // creation time; the messages POST gate enforces it per-send after.
-    const blockRow = await db.userBlock.findFirst({
-      where: {
-        OR: [
-          { blockerId: distinctIds[0], blockedId: distinctIds[1] },
-          { blockerId: distinctIds[1], blockedId: distinctIds[0] },
-        ],
-      },
-      select: { id: true },
-    })
-    if (blockRow) {
-      return NextResponse.json(
-        { error: "You can't message this account." },
-        { status: 403 },
-      )
+    try {
+      const direct = await openDirectConversation(db, distinctIds)
+      const full = await db.conversation.findUnique({ where: { id: direct.id }, include: CONVERSATION_FULL_INCLUDE })
+      if (!full) return NextResponse.json({ error: 'Conversation is no longer available.' }, { status: 404 })
+      return NextResponse.json({ conversation: await buildConversationSummary(full, creatorId) }, { status: direct.created ? 201 : 200 })
+    } catch (error) {
+      if (error instanceof DirectConversationError) return NextResponse.json({ error: error.message }, { status: error.status })
+      throw error
     }
   } else {
     if (distinctIds.length < 3) {

@@ -1,12 +1,13 @@
 name: Pulse iOS CI
 
 on:
+  workflow_dispatch: {}
   push:
     branches: [main]
     tags: ['v*']
     paths: ['apps/ios/**', 'packages/**', '.github/workflows/ios-ci.yml']
   pull_request:
-    paths: ['apps/ios/**', '.github/workflows/ios-ci.yml']
+    paths: ['apps/ios/**', 'packages/**', '.github/workflows/ios-ci.yml']
 
 jobs:
   build-test:

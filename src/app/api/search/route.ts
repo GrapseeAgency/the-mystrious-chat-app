@@ -7,6 +7,7 @@
 //   → { messages: SearchResultMessage[], total: number }
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { unexpiredMessages } from '@/lib/message-visibility'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 import type { SearchResultMessage } from '@/lib/types'
 
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
 
   // Scan the newest rows once (bounded), filter in Node, keep the best hits.
   const rows = await db.message.findMany({
-    where: { conversationId: { in: convIds }, deletedAt: null },
+    where: { conversationId: { in: convIds }, deletedAt: null, ...unexpiredMessages(new Date()) },
     orderBy: { createdAt: 'desc' },
     take: SCAN_WINDOW,
     include: MESSAGE_FULL_INCLUDE,

@@ -63,6 +63,7 @@ import app.pulse.protocol.WhiteboardPageDto
 import app.pulse.protocol.WhiteboardStrokePostDto
 import app.pulse.ui.PulsePalette
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -140,14 +141,26 @@ fun RedPacketSheet(
 fun GameSheet(
     members: List<Pair<String, String>>, // id → name (viewer excluded by caller)
     onDismiss: () -> Unit,
-    onCreate: (opponentId: String?) -> Unit,
+    onCreate: suspend (opponentId: String?) -> Boolean,
 ) {
+    var pending by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    fun create(opponentId: String?) {
+        if (pending) return
+        pending = true; error = null
+        scope.launch {
+            try {
+                if (gameRequest { onCreate(opponentId) }.getOrNull() != true) error = "Challenge not confirmed. Check the chat before retrying."
+            } finally { pending = false }
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp)) {
             Text("Tic-tac-toe", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text("Open challenges seat the first taker; direct invites lock the O seat.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
-            Button(onClick = { onCreate(null) }, modifier = Modifier.fillMaxWidth()) { Text("Open challenge") }
+            Button(onClick = { create(null) }, enabled = !pending, modifier = Modifier.fillMaxWidth()) { Text("Open challenge") }
             if (members.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 Text("Or invite someone", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -156,7 +169,7 @@ fun GameSheet(
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clickable { onCreate(id) }
+                                .clickable(enabled = !pending) { create(id) }
                                 .padding(vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -170,6 +183,8 @@ fun GameSheet(
                     }
                 }
             }
+            if (pending) CircularProgressIndicator(Modifier.size(18.dp))
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
             Spacer(Modifier.height(20.dp))
         }
     }
@@ -181,8 +196,10 @@ fun GameSheet(
 @Composable
 fun TournamentSheet(
     onDismiss: () -> Unit,
-    onCreate: (name: String) -> Unit,
+    onCreate: suspend (name: String) -> Boolean,
 ) {
+    var pending by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var name by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
@@ -191,6 +208,7 @@ fun TournamentSheet(
             Text("Season runs until someone finishes it. Match wins feed the standings (+25 XP).", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
+                enabled = !pending,
                 value = name, onValueChange = { name = it.take(40) },
                 label = { Text("Season name (1–40)") }, modifier = Modifier.fillMaxWidth(),
             )
@@ -202,10 +220,19 @@ fun TournamentSheet(
             Button(
                 onClick = {
                     if (name.trim().isEmpty()) error = "name must be between 1 and 40 characters."
-                    else onCreate(name.trim())
+                    else if (!pending) {
+                        val sentName = name.trim()
+                        pending = true; error = null
+                        scope.launch {
+                            try {
+                                if (gameRequest { onCreate(sentName) }.getOrNull() != true) error = "Season not confirmed. Check the chat before retrying."
+                            } finally { pending = false }
+                        }
+                    }
                 },
+                enabled = !pending,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Start season") }
+            ) { Text(if (pending) "Starting…" else "Start season") }
             Spacer(Modifier.height(24.dp))
         }
     }

@@ -38,15 +38,15 @@ final class Wave7RoomActions: ObservableObject {
     var cardGameLoad: (String) async -> WireGameDetail? = { _ in nil }
     var cardTournamentLoad: (String) async -> WireTournamentSummary? = { _ in nil }
     var cardGrab: (String) -> Void = { _ in }
-    var cardMove: (String, Int) -> Void = { _, _ in }
-    var cardJoinGame: (String) -> Void = { _ in }
-    var cardJoinTournament: (String) -> Void = { _ in }
-    var cardFinishTournament: (String) -> Void = { _ in }
+    var cardMove: (String, Int) async -> WireGameDetail? = { _, _ in nil }
+    var cardJoinGame: (String) async -> WireGameDetail? = { _ in nil }
+    var cardJoinTournament: (String) async -> Bool = { _ in false }
+    var cardFinishTournament: (String) async -> Bool = { _ in false }
     var cardOpenDetail: (String) -> Void = { _ in }
     // R7 - rematch (web game-tictactoe-card.tsx:213-236): the card hands the
     // opponent id; the room wires conversation.id + api. rematchInFlight
     // disables the card button while the POST /api/games round-trip runs.
-    var cardRematch: (String) -> Void = { _ in }
+    var cardRematch: (String) async -> Bool = { _ in false }
     @Published var rematchInFlight = false
 
     func toast(_ text: String, isError: Bool = false) {
@@ -55,6 +55,34 @@ final class Wave7RoomActions: ObservableObject {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_600_000_000)
             if self.toast == text { self.toast = nil }
+        }
+    }
+
+    @Published private(set) var pendingMutations: Set<String> = []
+    private func finishReminder(api: PulseAPIClient, id: String) {
+        let owner = PulseReminderDelivery.ownerKey(api)
+        PulseReminderDelivery.finish(ownerId: owner, reminderId: id) {
+            PulseReminderNotifications.cancel(reminderId: id, ownerId: owner)
+        }
+    }
+
+    /// Take the per-resource gate synchronously, before spawning a task. Local
+    /// consequences and success copy follow the server verdict, never the tap.
+    @discardableResult
+    func confirmedMutation(key: String, success: String,
+                           operation: @escaping () async throws -> Void,
+                           onSuccess: @escaping () -> Void = {}) -> Task<Void, Never>? {
+        guard pendingMutations.insert(key).inserted else { return nil }
+        return Task { @MainActor in
+            defer { pendingMutations.remove(key) }
+            do {
+                try await operation()
+                try Task.checkCancellation()
+                onSuccess()
+                toast(success)
+            } catch is CancellationError {
+                // An uncertain outcome is not a success. Refresh reconciles it.
+            } catch { toast(describe(error), isError: true) }
         }
     }
 
@@ -78,126 +106,144 @@ final class Wave7RoomActions: ObservableObject {
     }
 
     func grabRedPacket(api: PulseAPIClient, packetId: String) {
+        let key = "packet:\(packetId)"
+        guard pendingMutations.insert(key).inserted else { return }
         Task { @MainActor in
+            defer { pendingMutations.remove(key) }
             do {
+                try Task.checkCancellation()
                 let result = try await api.grabRedPacket(packetId)
-                toast("You grabbed \(result.amount) PC")
-            } catch {
-                toast(describe(error), isError: true)
-            }
+                try Task.checkCancellation()
+                toast(result.alreadyGrabbed == true ? "Already received \(result.amount) PC" : "You grabbed \(result.amount) PC")
+            } catch is CancellationError { }
+            catch { toast(describe(error), isError: true) }
         }
     }
 
     // MARK: games / tournaments
 
-    func createGame(api: PulseAPIClient, conversationId: String, opponentId: String?) {
-        Task { @MainActor in
-            do {
-                let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
-                if let message = result.message { onCarrierMessage?(message) }
-                gameCreateOpen = false
-                toast("Tic-tac-toe challenge sent")
-            } catch {
-                toast(describe(error), isError: true)
+    func createGame(api: PulseAPIClient, conversationId: String, opponentId: String?) async -> Bool {
+        do {
+            try Task.checkCancellation()
+            let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
+            try Task.checkCancellation()
+            guard let message = result.message, let deliver = onCarrierMessage else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Room is no longer ready; retry the same instructions.")
             }
+            deliver(message)
+            try await api.acknowledgeGameCreation(conversationId: conversationId, opponentId: opponentId, receipt: result)
+            try Task.checkCancellation()
+            gameCreateOpen = false
+            toast(result.replayed == true ? "Recovered the previous challenge" : "Tic-tac-toe challenge sent")
+            return true
+        } catch {
+            if !Task.isCancelled { toast("\(describe(error)) Check the chat before retrying.", isError: true) }
+            return false
         }
     }
 
-    func moveGame(api: PulseAPIClient, matchId: String, cell: Int) {
-        Task { @MainActor in
-            do { _ = try await api.gameMove(matchId, cell: cell) }
-            catch { toast(describe(error), isError: true) }
+    func moveGame(api: PulseAPIClient, matchId: String, cell: Int) async -> WireGameDetail? {
+        do {
+            try Task.checkCancellation()
+            let result = try await api.gameMove(matchId, cell: cell)
+            try Task.checkCancellation()
+            return result
+        } catch {
+            if !Task.isCancelled { toast(describe(error), isError: true) }
+            return nil
         }
     }
-
-    func joinGame(api: PulseAPIClient, matchId: String) {
-        Task { @MainActor in
-            do { _ = try await api.joinGame(matchId) }
-            catch { toast(describe(error), isError: true) }
+    func joinGame(api: PulseAPIClient, matchId: String) async -> WireGameDetail? {
+        do {
+            try Task.checkCancellation()
+            let result = try await api.joinGame(matchId)
+            try Task.checkCancellation()
+            return result
+        } catch {
+            if !Task.isCancelled { toast(describe(error), isError: true) }
+            return nil
         }
     }
-
-    /// R7 - rematch (web game-tictactoe-card.tsx:213-236): POST /api/games
-    /// with the finished match's opponent; the fresh challenge message rides
-    /// the carrier-message sink exactly like createGame. Web copy verbatim:
-    /// "Rematch sent - new challenge in the chat."
-    func rematchGame(api: PulseAPIClient, conversationId: String, opponentId: String) {
-        guard !rematchInFlight else { return }
+    func rematchGame(api: PulseAPIClient, conversationId: String, opponentId: String) async -> Bool {
+        guard !rematchInFlight else { return false }
         rematchInFlight = true
-        Task { @MainActor in
-            defer { rematchInFlight = false }
-            do {
-                let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
-                if let message = result.message { onCarrierMessage?(message) }
-                toast("Rematch sent - new challenge in the chat.")
-            } catch {
-                toast(describe(error), isError: true)
+        defer { rematchInFlight = false }
+        do {
+            try Task.checkCancellation()
+            let result = try await api.createGame(conversationId: conversationId, opponentId: opponentId)
+            try Task.checkCancellation()
+            guard let message = result.message, let deliver = onCarrierMessage else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Room is no longer ready; retry the same instructions.")
             }
+            deliver(message)
+            try await api.acknowledgeGameCreation(conversationId: conversationId, opponentId: opponentId, receipt: result)
+            try Task.checkCancellation()
+            toast(result.replayed == true ? "Recovered the previous rematch" : "Rematch sent - new challenge in the chat.")
+            return true
+        } catch {
+            if !Task.isCancelled { toast("\(describe(error)) Check the chat before retrying.", isError: true) }
+            return false
         }
     }
 
-    func createTournament(api: PulseAPIClient, conversationId: String, name: String) {
-        Task { @MainActor in
-            do {
-                let result = try await api.createTournament(conversationId: conversationId, name: name)
-                if let message = result.message { onCarrierMessage?(message) }
-                tournamentCreateOpen = false
-                toast("Tournament \"\(name)\" started")
-            } catch {
-                toast(describe(error), isError: true)
+    func createTournament(api: PulseAPIClient, conversationId: String, name: String) async -> Bool {
+        do {
+            try Task.checkCancellation()
+            let result = try await api.createTournament(conversationId: conversationId, name: name)
+            try Task.checkCancellation()
+            guard let message = result.message, let deliver = onCarrierMessage else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Room is no longer ready; retry the same instructions.")
             }
+            deliver(message)
+            try await api.acknowledgeTournamentCreation(conversationId: conversationId, name: name, receipt: result)
+            try Task.checkCancellation()
+            tournamentCreateOpen = false
+            toast(result.replayed == true ? "Recovered the previous tournament" : "Tournament \"\(name)\" started")
+            return true
+        } catch {
+            if !Task.isCancelled { toast("\(describe(error)) Check the chat before retrying.", isError: true) }
+            return false
         }
     }
 
-    func joinTournament(api: PulseAPIClient, tournamentId: String) {
-        Task { @MainActor in
-            do {
-                _ = try await api.joinTournament(tournamentId)
-                toast("You are in - play tic-tac-toe matches to score points")
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+    func joinTournament(api: PulseAPIClient, tournamentId: String) async -> Bool {
+        await roomMutation(success: "You are in - play tic-tac-toe matches to score points", operation: { _ = try await api.joinTournament(tournamentId) })
     }
-
-    func finishTournament(api: PulseAPIClient, tournamentId: String) {
-        Task { @MainActor in
-            do {
-                _ = try await api.finishTournament(tournamentId)
-                toast("Tournament finished")
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+    func finishTournament(api: PulseAPIClient, tournamentId: String) async -> Bool {
+        await roomMutation(success: "Tournament finished", operation: { _ = try await api.finishTournament(tournamentId) })
     }
 
     // MARK: kanban
 
-    func addCard(api: PulseAPIClient, conversationId: String, title: String, column: String, assigneeId: String?) {
+    private func roomMutation(success: String? = nil, operation: () async throws -> Void,
+                              onSuccess: () -> Void = {}) async -> Bool {
+        do {
+            try Task.checkCancellation()
+            try await operation()
+            try Task.checkCancellation()
+            onSuccess()
+            if let success { toast(success) }
+            return true
+        } catch is CancellationError { return false }
+        catch {
+            if !Task.isCancelled { toast(describe(error), isError: true) }
+            return false
+        }
+    }
+
+    func addCard(api: PulseAPIClient, conversationId: String, title: String, column: String, assigneeId: String?) async -> Bool {
         let messageId = kanbanSourceMessage?.id
-        Task { @MainActor in
-            do {
-                let card = try await api.createKanbanCard(conversationId: conversationId, title: title, column: column, assigneeId: assigneeId, messageId: messageId)
-                kanbanSourceMessage = nil
-                toast("Task \"\(card.title ?? title)\" added to the board")
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+        return await roomMutation(success: "Task added to the board", operation: {
+            _ = try await api.createKanbanCard(conversationId: conversationId, title: title, column: column, assigneeId: assigneeId, messageId: messageId)
+        }, onSuccess: {
+            if self.kanbanSourceMessage?.id == messageId { self.kanbanSourceMessage = nil }
+        })
     }
-
-    func moveCard(api: PulseAPIClient, cardId: String, column: String) {
-        Task { @MainActor in
-            do { _ = try await api.updateKanbanCard(cardId, title: nil, column: column, assigneeId: nil, clearAssignee: false, position: nil) }
-            catch { toast(describe(error), isError: true) }
-        }
+    func moveCard(api: PulseAPIClient, cardId: String, column: String) async -> Bool {
+        await roomMutation(operation: { _ = try await api.updateKanbanCard(cardId, title: nil, column: column, assigneeId: nil, clearAssignee: false, position: nil) })
     }
-
-    func deleteCard(api: PulseAPIClient, cardId: String) {
-        Task { @MainActor in
-            do { try await api.deleteKanbanCard(cardId) }
-            catch { toast(describe(error), isError: true) }
-        }
+    func deleteCard(api: PulseAPIClient, cardId: String) async -> Bool {
+        await roomMutation(operation: { try await api.deleteKanbanCard(cardId) })
     }
 
     // MARK: whiteboard
@@ -223,64 +269,47 @@ final class Wave7RoomActions: ObservableObject {
         }
     }
 
-    func clearBoard(api: PulseAPIClient, conversationId: String) {
-        Task { @MainActor in
-            do { _ = try await api.clearWhiteboard(conversationId: conversationId) }
-            catch { toast(describe(error), isError: true) }
+    func clearBoard(api: PulseAPIClient, conversationId: String) async -> Bool {
+        do {
+            _ = try await api.clearWhiteboard(conversationId: conversationId)
+            toast("Board cleared")
+            return true
+        } catch {
+            toast(describe(error), isError: true)
+            return false
         }
-        toast("Board cleared")
     }
 
     // MARK: events
 
-    func createEvent(api: PulseAPIClient, conversationId: String, title: String, startsAtIso: String, description: String?, location: String?) {
-        Task { @MainActor in
-            do {
-                _ = try await api.createEvent(conversationId: conversationId, title: title, startsAtIso: startsAtIso, description: description, location: location)
-                eventsOpen = false
-                toast("Event scheduled - see you there")
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+    func createEvent(api: PulseAPIClient, conversationId: String, title: String, startsAtIso: String, description: String?, location: String?) async -> Bool {
+        await roomMutation(success: "Event scheduled - see you there", operation: {
+            _ = try await api.createEvent(conversationId: conversationId, title: title, startsAtIso: startsAtIso, description: description, location: location)
+        })
     }
-
-    func rsvp(api: PulseAPIClient, eventId: String, status: String) {
-        Task { @MainActor in
-            do { _ = try await api.rsvpEvent(eventId, status: status) }
-            catch { toast(describe(error), isError: true) }
-        }
+    func rsvp(api: PulseAPIClient, eventId: String, status: String) async -> Bool {
+        await roomMutation(operation: { _ = try await api.rsvpEvent(eventId, status: status) })
     }
-
-    func checkin(api: PulseAPIClient, eventId: String) {
-        Task { @MainActor in
-            do {
-                let result = try await api.checkinEvent(eventId)
-                if result.alreadyCheckedIn == true {
-                    toast("Already checked in.")
-                } else if result.xpAwarded == true {
-                    toast("Checked in - see you there · +15 XP")
-                } else {
-                    toast("Checked in - see you there")
-                }
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+    func checkin(api: PulseAPIClient, eventId: String) async -> Bool {
+        var message = "Checked in - see you there"
+        return await roomMutation(operation: {
+            let result = try await api.checkinEvent(eventId)
+            if result.alreadyCheckedIn == true { message = "Already checked in." }
+            else if result.xpAwarded == true { message += " · +15 XP" }
+        }, onSuccess: { self.toast(message) })
     }
-
-    func deleteEvent(api: PulseAPIClient, eventId: String) {
-        Task { @MainActor in
-            do { try await api.deleteEvent(eventId) }
-            catch { toast(describe(error), isError: true) }
-        }
-        toast("Event deleted.")
+    func deleteEvent(api: PulseAPIClient, eventId: String) async -> Bool {
+        await roomMutation(success: "Event deleted.", operation: { try await api.deleteEvent(eventId) })
     }
 
     // MARK: reminders
 
-    func createReminder(api: PulseAPIClient, conversationId: String, note: String, remindAtIso: String, anchored: WireChatMessage?) {
-        Task { @MainActor in
+    @Published private(set) var reminderCreating = false
+
+    func createReminder(api: PulseAPIClient, conversationId: String, note: String, remindAtIso: String, anchored: WireChatMessage?) async -> Bool {
+        guard !reminderCreating else { return false }
+        reminderCreating = true
+        defer { reminderCreating = false }
             do {
                 let item = try await api.createReminder(
                     conversationId: conversationId,
@@ -288,41 +317,40 @@ final class Wave7RoomActions: ObservableObject {
                     note: note,
                     remindAtIso: remindAtIso,
                 )
-                reminderAnchor = nil
-                remindersOpen = false
                 // Tier 1 - schedule the local fire (offline-capable); the
                 // conversationId rides the userInfo so the tap opens the room.
                 if let iso = item.remindAt {
                     let ms = Self.epochMs(from: iso)
                     if let ms {
                         PulseReminderNotifications.requestAuthorization()
-                        PulseReminderNotifications.schedule(reminderId: item.id, note: item.note ?? note, remindAtEpochMs: ms, conversationId: conversationId)
+                        PulseReminderNotifications.schedule(reminderId: item.id, note: item.note ?? note, remindAtEpochMs: ms, conversationId: conversationId, ownerId: PulseReminderDelivery.ownerKey(api))
                     }
                 }
                 toast("Reminder set")
+                return true
             } catch {
                 toast(describe(error), isError: true)
+                return false
             }
-        }
     }
 
     func resolveReminder(api: PulseAPIClient, id: String) {
-        Task { @MainActor in
-            do { _ = try await api.resolveReminder(id) }
-            catch { toast(describe(error), isError: true) }
-        }
+        confirmedMutation(key: "reminder:\(id)", success: "Reminder marked done", operation: {
+            let result = try await api.resolveReminder(id)
+            guard result.ok == true else { throw URLError(.badServerResponse) }
+        }, onSuccess: { self.finishReminder(api: api, id: id) })
     }
 
     func deleteReminder(api: PulseAPIClient, id: String) {
-        Task { @MainActor in
+        confirmedMutation(key: "reminder:\(id)", success: "Reminder canceled", operation: {
             do { try await api.deleteReminder(id) }
-            catch { toast(describe(error), isError: true) }
-        }
-        PulseReminderNotifications.cancel(reminderId: id)
-        toast("Reminder canceled")
+            catch let error as PulseAPIClient.Failure where error.kind == .notFound {
+                // A lost successful DELETE response is safe to reconcile as absent.
+            }
+        }, onSuccess: { self.finishReminder(api: api, id: id) })
     }
 
-    static func epochMs(from iso: String) -> Int64? {
+    nonisolated static func epochMs(from iso: String) -> Int64? {
         let formats = ["yyyy-MM-dd'T'HH:mm:ss.SSSZ", "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX", "yyyy-MM-dd'T'HH:mm:ssXXXXX"]
         for f in formats {
             let df = DateFormatter()
@@ -504,22 +532,43 @@ struct Wave7RedPacketCreateSheet: View {
 
 // MARK: - Tic-tac-toe (F-RO-07)
 
+@MainActor
 struct Wave7TicTacToeCard: View {
     let matchId: String
     let viewerId: String
     let load: (String) async -> WireGameDetail?
-    let onMove: (Int) -> Void
-    let onJoin: () -> Void
+    let onMove: (Int) async -> WireGameDetail?
+    let onJoin: () async -> WireGameDetail?
     // R7 - rematch (web game-tictactoe-card.tsx:452-476): the hub carries the
     // in-flight spinner/toast and the cardRematch sink the room wires.
     var wave7: Wave7RoomActions? = nil
 
     @State private var detail: WireGameDetail?
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var loadFailed = false
+    @StateObject private var operations = PulseRoomOperations()
+
+    private func refresh() async {
+        guard scenePhase == .active else { return }
+        guard let ticket = operations.beginRead() else { return }
+        let response = await load(matchId)
+        guard operations.accepts(ticket) else { return }
+        if let response { detail = response; loadFailed = false }
+        else { loadFailed = true } // never replace a confirmed board with nil
+    }
+    private func mutate(_ operation: @escaping () async -> WireGameDetail?) {
+        var response: WireGameDetail?
+        operations.run(key: "match", operation: { response = await operation(); return response != nil }, onSuccess: {
+            detail = response; loadFailed = false
+        })
+    }
 
     var body: some View {
         VStack(spacing: 8) {
             Text(headline)
                 .font(.subheadline.weight(.semibold))
+            if loadFailed && detail != nil { Text("Connection interrupted. Last confirmed board shown.").font(.caption).foregroundStyle(.secondary) }
+            if !operations.pending.isEmpty && !finished { ProgressView("Confirming…").font(.caption) }
             board
             HStack {
                 Text("X \(detail?.playerX?.name ?? "Player")")
@@ -533,18 +582,19 @@ struct Wave7TicTacToeCard: View {
                     .foregroundStyle(Color.orange)
             }
             if openSeat {
-                Button("Take the O seat", action: onJoin)
+                Button("Take the O seat") { mutate { await onJoin() } }
                     .buttonStyle(.bordered)
+                    .disabled(!operations.pending.isEmpty || loadFailed)
             }
             // R7 - finished match with the viewer as a player → rematch offer
             // (web game-tictactoe-card.tsx:452-476). Disabled while the POST
             // round-trip runs; the new challenge arrives via the message stream.
             if finished, mySide != nil, let opponentId = rematchOpponentId {
                 Button {
-                    wave7?.cardRematch(opponentId)
+                    operations.run(key: "match", operation: { await wave7?.cardRematch(opponentId) ?? false })
                 } label: {
                     HStack(spacing: 6) {
-                        if wave7?.rematchInFlight == true {
+                        if !operations.pending.isEmpty {
                             ProgressView().controlSize(.small)
                         } else {
                             Image(systemName: "arrow.triangle.2.circlepath")
@@ -558,18 +608,21 @@ struct Wave7TicTacToeCard: View {
                     .overlay(Capsule().strokeBorder(PulseTheme.emerald.opacity(0.30)))
                 }
                 .buttonStyle(PulseButtonStyle())
-                .disabled(wave7?.rematchInFlight == true)
+                .disabled(!operations.pending.isEmpty)
             }
         }
         .padding(12)
         .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 16))
-        .task(id: "\(matchId)-\(detail?.match?.status ?? "")") {
-            // 1.5 s poll while active - web game-tictactoe-card.tsx:33,134.
-            guard detail?.match?.status == "active" || detail == nil else { return }
-            detail = await load(matchId)
-            while detail?.match?.status == "active" && !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                detail = await load(matchId)
+        .onDisappear { operations.stop() }
+        .task(id: operations.settledRevision) {
+            if operations.settledRevision > 0 { await refresh() }
+        }
+        .task(id: "\(matchId):\(scenePhase)") {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await refresh()
+                if !loadFailed, let status = detail?.match?.status, status != "active" { return }
+                do { try await Task.sleep(nanoseconds: 1_500_000_000) } catch { return }
             }
         }
     }
@@ -583,7 +636,7 @@ struct Wave7TicTacToeCard: View {
     }
 
     private var mySide: Character? { PulseWave7Logic.sideOf(match, viewerId) }
-    private var myTurn: Bool { PulseWave7Logic.isMyTurn(match, viewerId) }
+    private var myTurn: Bool { !loadFailed && operations.pending.isEmpty && match.playerOId != nil && PulseWave7Logic.isMyTurn(match, viewerId) }
     private var openSeat: Bool {
         match.status == "active" && match.playerOId == nil && mySide == nil
     }
@@ -601,6 +654,7 @@ struct Wave7TicTacToeCard: View {
     }
 
     private var headline: String {
+        if detail == nil { return loadFailed ? "Game unavailable - retrying…" : "Loading game…" }
         switch match.status {
         case "x_won": return "X wins - \(detail?.playerX?.name ?? "X")"
         case "o_won": return "O wins - \(detail?.playerO?.name ?? "O")"
@@ -625,7 +679,7 @@ struct Wave7TicTacToeCard: View {
                             .frame(width: 56, height: 56)
                             .contentShape(Rectangle())
                             .onTapGesture {
-                                if myTurn && mark == " " && match.status == "active" { onMove(idx) }
+                                if myTurn && mark == " " && match.status == "active" { mutate { await onMove(idx) } }
                             }
                     }
                 }
@@ -652,16 +706,17 @@ struct Wave7TicTacToeCard: View {
     }
 }
 
+@MainActor
 struct Wave7GameCreateSheet: View {
     let members: [(id: String, name: String)]
-    let onCreate: (String?) -> Void
-    @Environment(\.dismiss) private var dismiss
+    let onCreate: (String?) async -> Bool
+    @StateObject private var operations = PulseRoomOperations()
 
     var body: some View {
         NavigationStack {
             List {
                 Button {
-                    onCreate(nil)
+                    operations.run(key: "create", operation: { await onCreate(nil) })
                 } label: {
                     Label("Open challenge", systemImage: "bolt")
                 }
@@ -669,7 +724,7 @@ struct Wave7GameCreateSheet: View {
                     Section("Or invite someone") {
                         ForEach(members, id: \.id) { member in
                             Button {
-                                onCreate(member.id)
+                                operations.run(key: "create", operation: { await onCreate(member.id) })
                             } label: {
                                 Text(member.name)
                             }
@@ -677,24 +732,39 @@ struct Wave7GameCreateSheet: View {
                     }
                 }
             }
+            .disabled(!operations.pending.isEmpty)
+            .overlay { if !operations.pending.isEmpty { ProgressView("Sending challenge…") } }
             .navigationTitle("Tic-tac-toe")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .onDisappear { operations.stop() }
     }
 }
 
 // MARK: - Tournament (F-RO-08)
 
+@MainActor
 struct Wave7TournamentCard: View {
     let tournamentId: String
     let name: String
     let viewerId: String
     let isAdmin: Bool
     let load: (String) async -> WireTournamentSummary?
-    let onJoin: () -> Void
-    let onFinish: () -> Void
+    let onJoin: () async -> Bool
+    let onFinish: () async -> Bool
 
     @State private var tournament: WireTournamentSummary?
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var loadFailed = false
+    @StateObject private var operations = PulseRoomOperations()
+    private func refresh() async {
+        guard scenePhase == .active else { return }
+        guard let ticket = operations.beginRead() else { return }
+        let result = await load(tournamentId)
+        guard operations.accepts(ticket) else { return }
+        if let result { tournament = result; loadFailed = false }
+        else { loadFailed = true }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -706,7 +776,7 @@ struct Wave7TournamentCard: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Spacer()
-                Text(running ? "\(tournament?.playerCount ?? tournament?.entries?.count ?? 0) players" : "finished")
+                Text(tournament == nil ? (loadFailed ? "unavailable" : "loading…") : (running ? "\(tournament?.playerCount ?? tournament?.entries?.count ?? 0) players" : "finished"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -724,21 +794,32 @@ struct Wave7TournamentCard: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            if loadFailed { Text("Could not refresh standings. Retrying…").font(.caption).foregroundStyle(.secondary) }
             HStack(spacing: 8) {
                 if running && !joined {
-                    Button("Join", action: onJoin)
+                    Button("Join") { operations.run(key: "season", operation: onJoin) }
                         .buttonStyle(.borderedProminent)
                 }
                 if running && isAdmin {
-                    Button("Finish season", action: onFinish)
+                    Button("Finish season") { operations.run(key: "season", operation: onFinish) }
                         .buttonStyle(.bordered)
                 }
             }
+            .disabled(!operations.pending.isEmpty || loadFailed)
         }
         .padding(12)
         .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
-        .task(id: tournamentId) {
-            tournament = await load(tournamentId)
+        .onDisappear { operations.stop() }
+        .task(id: operations.settledRevision) {
+            if operations.settledRevision > 0 { await refresh() }
+        }
+        .task(id: "\(tournamentId):\(scenePhase)") {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await refresh()
+                if !loadFailed && tournament?.status == "finished" { return }
+                do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+            }
         }
     }
 
@@ -748,9 +829,10 @@ struct Wave7TournamentCard: View {
     }
 }
 
+@MainActor
 struct Wave7TournamentCreateSheet: View {
-    let onCreate: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
+    let onCreate: (String) async -> Bool
+    @StateObject private var operations = PulseRoomOperations()
     @State private var name = ""
     @State private var error: String?
 
@@ -766,56 +848,78 @@ struct Wave7TournamentCreateSheet: View {
                     Text(error).font(.footnote).foregroundStyle(.red)
                 }
                 Button("Start season") {
-                    let trimmed = name.trimmingCharacters(in: .whitespaces)
-                    if trimmed.isEmpty {
+                    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty || trimmed.utf16.count > 40 {
                         error = "name must be between 1 and 40 characters."
                     } else {
-                        onCreate(trimmed)
+                        error = nil
+                        operations.run(key: "create", operation: { await onCreate(trimmed) })
                     }
                 }
             }
+            .disabled(!operations.pending.isEmpty)
+            .overlay { if !operations.pending.isEmpty { ProgressView("Starting season…") } }
             .navigationTitle("New tournament")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .onDisappear { operations.stop() }
     }
 }
 
 // MARK: - Kanban (F-RO-04)
 
+@MainActor
 struct Wave7KanbanSheet: View {
     let conversationId: String
     let viewerId: String
     let isAdmin: Bool
     let prefillTitle: String?
     let loadBoard: () async -> WireKanbanPage?
-    let onAddCard: (String, String, String?) -> Void
-    let onMoveCard: (String, String) -> Void
-    let onDeleteCard: (String) -> Void
+    let onAddCard: (String, String, String?) async -> Bool
+    let onMoveCard: (String, String) async -> Bool
+    let onDeleteCard: (String) async -> Bool
     @Environment(\.dismiss) private var dismiss
 
+    @StateObject private var operations = PulseRoomOperations()
     @State private var cards: [WireKanbanCard] = []
     @State private var addColumn: String?
     @State private var addTitle = ""
     @State private var ticking = true
 
+    @State private var loaded = false
+    @State private var loadFailed = false
+    private func refresh() async {
+        guard let ticket = operations.beginRead() else { return }
+        let page = await loadBoard()
+        guard operations.accepts(ticket) else { return }
+        if let page { cards = page.cards; loaded = true; loadFailed = false }
+        else { loadFailed = true }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
+                if loadFailed {
+                    Section { Text(loaded ? "Could not refresh. Keeping the last confirmed data; retrying." : "Could not load this room. Retrying.").foregroundStyle(.secondary) }
+                } else if !loaded {
+                    Section { ProgressView("Loading…") }
+                }
                 ForEach(PulseWave7Logic.kanbanColumns, id: \.self) { col in
                     Section {
                         ForEach(cards.filter { $0.column == col }.sorted { ($0.position ?? 0) < ($1.position ?? 0) }, id: \.id) { card in
                             cardRow(card, col: col)
                         }
                         if addColumn == col {
-                            TextField("Task title", text: $addTitle)
+                            TextField("Task title", text: $addTitle).disabled(operations.pending.contains("create"))
                             Button("Add card") {
                                 let trimmed = addTitle.trimmingCharacters(in: .whitespaces)
                                 if !trimmed.isEmpty {
-                                    onAddCard(trimmed, col, nil)
-                                    addTitle = ""
-                                    addColumn = nil
+                                    operations.run(key: "create", operation: { await onAddCard(trimmed, col, nil) }, onSuccess: {
+                                        addTitle = ""; addColumn = nil
+                                    })
                                 }
                             }
+                            .disabled(operations.pending.contains("create"))
                         }
                     } header: {
                         HStack {
@@ -826,6 +930,7 @@ struct Wave7KanbanSheet: View {
                                 addTitle = prefillTitle ?? ""
                             }
                             .font(.caption)
+                            .disabled(operations.pending.contains("create"))
                         }
                     }
                 }
@@ -837,11 +942,15 @@ struct Wave7KanbanSheet: View {
                     Button(ticking ? "Pause" : "Live") { ticking.toggle() }
                 }
             }
+            .onDisappear { operations.stop() }
+            .task(id: operations.settledRevision) {
+                if operations.settledRevision > 0 { await refresh() }
+            }
             .task(id: ticking) {
                 // 1.5 s poll while open (web kanban-sheet.tsx:65), paused by the toggle.
                 while ticking && !Task.isCancelled {
-                    if let page = await loadBoard() { cards = page.cards }
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    await refresh()
+                    do { try await Task.sleep(nanoseconds: 1_500_000_000) } catch { return }
                 }
             }
         }
@@ -869,51 +978,45 @@ struct Wave7KanbanSheet: View {
             }
             Spacer()
             if col != "todo" {
-                Button { onMoveCard(card.id, "todo") } label: { Text("‹").font(.title3) }
+                Button { operations.run(key: card.id, operation: { await onMoveCard(card.id, "todo") }) } label: { Text("‹").font(.title3) }
                     .buttonStyle(.borderless)
             }
             if col != "doing" && col != "done" {
-                Button { onMoveCard(card.id, "doing") } label: { Text("›").font(.title3) }
+                Button { operations.run(key: card.id, operation: { await onMoveCard(card.id, "doing") }) } label: { Text("›").font(.title3) }
                     .buttonStyle(.borderless)
             }
             if col == "doing" {
-                Button { onMoveCard(card.id, "done") } label: { Text("›").font(.title3) }
+                Button { operations.run(key: card.id, operation: { await onMoveCard(card.id, "done") }) } label: { Text("›").font(.title3) }
                     .buttonStyle(.borderless)
             }
             if card.createdById == viewerId || isAdmin {
-                Button { onDeleteCard(card.id) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
+                Button { operations.run(key: card.id, operation: { await onDeleteCard(card.id) }) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
                     .buttonStyle(.borderless)
             }
         }
+        .disabled(operations.pending.contains(card.id))
     }
 }
 
 // MARK: - Whiteboard (F-RO-03)
 
 struct Wave7WhiteboardSheet: View {
-    let conversationId: String
-    let viewerId: String
-    let load: (Int64?) async -> WireWhiteboardPage?
-    /// R1-W2G D44 - async WITH a verdict: the draft store clears a stroke
-    /// only when its server sync confirms (see Wave7RoomActions.postStrokes).
-    let onStrokes: ([WireWhiteboardStrokePost]) async -> Bool
-    let onUndo: () -> Void
-    let onClear: () -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var remoteStrokes: [WireWhiteboardStroke] = []
-    @State private var lastServerTime: Int64 = 0
-    @State private var resetAt: Int64 = 0
-    @State private var localStrokes: [(String, Double, [[Double]])] = []
-    /// R1-W2G D44 - single-flight flush: while a batch POST is in flight,
-    /// fresh strokes (already draft-persisted at draw time) ride the NEXT
-    /// pass instead of racing the in-flight verdict.
-    @State private var flushing = false
+    @StateObject private var board: PulseWhiteboardSession
     @State private var color = "#22c55e"
     @State private var width: Double = 3
     @State private var confirmClear = false
-
     private let colors = ["#22c55e", "#0ea5e9", "#f59e0b", "#ef4444", "#a855f7", "#e2e8f0"]
+
+    init(conversationId: String, viewerId: String, api: PulseAPIClient) {
+        _board = StateObject(wrappedValue: PulseWhiteboardSession(conversationId: conversationId, viewerId: viewerId,
+            load: { try await api.whiteboard(conversationId: conversationId, since: nil) },
+            post: { try await api.postWhiteboardStrokes(conversationId: conversationId, strokes: $0) },
+            undo: {
+                let result = try await api.undoWhiteboardStroke(conversationId: conversationId)
+                guard result.success == true else { throw URLError(.badServerResponse) }
+            },
+            clear: { try await api.clearWhiteboard(conversationId: conversationId) }))
+    }
 
     var body: some View {
         NavigationStack {
@@ -921,116 +1024,46 @@ struct Wave7WhiteboardSheet: View {
                 HStack {
                     Text("Whiteboard").font(.headline)
                     Spacer()
-                    Button("Undo", action: onUndo)
+                    Button("Undo") { board.undoMine() }
+                        .disabled(!board.ready || board.busy || !board.pending.isEmpty)
                     Button(confirmClear ? "Tap again to clear" : "Clear") {
-                        if confirmClear { onClear() } else { confirmClear = true }
+                        guard confirmClear else { confirmClear = true; return }
+                        confirmClear = false
+                        board.clearBoard()
                     }
                     .foregroundStyle(confirmClear ? Color.red : Color.accentColor)
+                    .disabled(!board.ready || board.busy)
                 }
                 .padding(.horizontal, 14)
-
                 HStack(spacing: 8) {
                     ForEach(colors, id: \.self) { c in
-                        Circle()
-                            .fill(Color(hex: c))
-                            .frame(width: 26, height: 26)
+                        Circle().fill(Color(hex: c)).frame(width: 26, height: 26)
                             .overlay(Circle().stroke(Color.primary, lineWidth: color == c ? 3 : 1))
                             .onTapGesture { color = c }
                     }
                     Slider(value: $width, in: 0.5...40)
                 }
                 .padding(.horizontal, 14)
-
-                Wave7WhiteboardCanvas(
-                    remote: remoteStrokes,
-                    local: localStrokes,
-                    color: color,
-                    width: width,
-                    onFinish: { pts in
-                        if pts.count >= 2 {
-                            localStrokes.append((color, width, pts))
-                            // R1-W2G D44 - persist the pending stroke BEFORE
-                            // any sync attempt so a crash/kill mid-draw
-                            // never loses it (web :527-529 draws the pending
-                            // stroke instantly; the native adds the durable
-                            // store the web does not have).
-                            PulseWhiteboardDraft.append(
-                                WireWhiteboardStrokePost(color: color, width: width, points: pts),
-                                conversationId: conversationId,
-                            )
-                            flushPending()
-                        }
-                    },
-                )
-                .aspectRatio(1, contentMode: .fit)
-                .padding(.horizontal, 14)
-
-                Text("Strokes sync live (~1 s). Coordinates are normalized 0..1 on the server.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                Wave7WhiteboardCanvas(remote: board.remote,
+                    local: board.pending.map { ($0.color, $0.width, $0.points) }, color: color, width: width,
+                    onFinish: { board.draw(color: color, width: width, points: $0) })
+                    .id("\(board.ready)-\(board.busy)-\(color)-\(width)")
+                    .allowsHitTesting(board.ready && !board.busy)
+                    .aspectRatio(1, contentMode: .fit).padding(.horizontal, 14)
+                if let error = board.error {
+                    Text(error).font(.caption).foregroundStyle(.red).padding(.horizontal, 14)
+                }
+                if !board.ready { ProgressView("Loading board…") }
+                Text("\(board.pending.count) saved locally, awaiting sync. Clear removes drawings for everyone.")
+                    .font(.caption2).foregroundStyle(.secondary)
                 Spacer()
             }
-            .task {
-                // R1-W2G D44 - restore the unsynced draft FIRST (a crash/kill
-                // mid-draw must not lose strokes), then the full snapshot
-                // drops restored copies the server already has (their first
-                // POST landed before the crash - exact color+width+points).
-                localStrokes = PulseWhiteboardDraft.strokes(conversationId: conversationId)
-                    .map { stroke in (stroke.color, stroke.width, stroke.points) }
-                // Full snapshot, then since-delta poll at 900 ms (web whiteboard-sheet.tsx:66).
-                if let page = await load(nil) {
-                    remoteStrokes = page.strokes ?? []
-                    lastServerTime = page.serverTime ?? 0
-                    resetAt = page.resetAt ?? 0
-                    let kept = PulseWhiteboardDraft.droppingSynced(
-                        PulseWhiteboardDraft.strokes(conversationId: conversationId),
-                        snapshot: remoteStrokes,
-                    )
-                    PulseWhiteboardDraft.replaceAll(conversationId: conversationId, strokes: kept)
-                    localStrokes = kept.map { stroke in (stroke.color, stroke.width, stroke.points) }
-                }
-                flushPending()
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 900_000_000)
-                    if let page = await load(lastServerTime) {
-                        let st = page.serverTime ?? 0
-                        if st > lastServerTime { lastServerTime = st }
-                        if let r = page.resetAt, r > resetAt {
-                            resetAt = r
-                            remoteStrokes = []
-                            localStrokes = []
-                            // R1-W2G D44 - the board was reset server-side;
-                            // the pending draft is gone with it.
-                            PulseWhiteboardDraft.clear(conversationId: conversationId)
-                        }
-                        remoteStrokes.append(contentsOf: page.strokes ?? [])
-                    }
-                }
-            }
-        }
-    }
-
-    /// R1-W2G D44 - the draft store IS the pending queue (web pending
-    /// semantics, whiteboard-sheet.tsx:527-529): batches of ≤ 40 POST, and
-    /// each batch leaves the draft only on the server verdict. A failed
-    /// batch is removed honestly (:497-500) - the strokes never reached the
-    /// server, so the canvas drops them too instead of faking a sync (the
-    /// postStrokes toast says why). The draft is re-read every pass, so
-    /// strokes drawn mid-flight simply ride the next batch.
-    private func flushPending() {
-        guard !flushing else { return }
-        flushing = true
-        Task { @MainActor in
-            defer { flushing = false }
-            while true {
-                let pending = PulseWhiteboardDraft.strokes(conversationId: conversationId)
-                guard !pending.isEmpty else { break }
-                let batch = Array(pending.prefix(40))
-                let synced = await onStrokes(batch)
-                PulseWhiteboardDraft.removeFirst(conversationId: conversationId, count: batch.count)
-                localStrokes = PulseWhiteboardDraft.strokes(conversationId: conversationId)
-                    .map { stroke in (stroke.color, stroke.width, stroke.points) }
-                if !synced { break }
+            .task { await board.run() }
+            .onDisappear { board.stop() }
+            .task(id: confirmClear) {
+                guard confirmClear else { return }
+                do { try await Task.sleep(nanoseconds: 2_600_000_000) } catch { return }
+                confirmClear = false
             }
         }
     }
@@ -1063,6 +1096,11 @@ private struct Wave7WhiteboardCanvas: View {
                 .stroke(Color(hex: color), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
             }
             .contentShape(Rectangle())
+            .onChange(of: drag == nil) { ended in
+                if ended {
+                    DispatchQueue.main.async { if drag == nil { current = [] } }
+                }
+            }
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .updating($drag) { value, state, _ in state = value }
@@ -1070,7 +1108,8 @@ private struct Wave7WhiteboardCanvas: View {
                         let x = Double(value.location.x / geo.size.width)
                         let y = Double(value.location.y / geo.size.height)
                         let clamped = [min(max(x, 0), 1), min(max(y, 0), 1)]
-                        if current.isEmpty { current = [clamped] } else { current.append(clamped) }
+                        if current.count >= 1000 { current = PulseWhiteboardSession.normalizedPoints(current) }
+                        current.append(clamped)
                     }
                     .onEnded { _ in
                         onFinish(current)
@@ -1083,6 +1122,7 @@ private struct Wave7WhiteboardCanvas: View {
     private func canvas(size: CGSize) -> some View {
         Canvas { context, _ in
             func draw(_ pts: [[Double]], _ c: String, _ w: Double) {
+                let pts = PulseWhiteboardSession.normalizedPoints(pts)
                 guard pts.count >= 2 else { return }
                 var path = Path()
                 path.move(to: CGPoint(x: pts[0][0] * size.width, y: pts[0][1] * size.height))
@@ -1115,17 +1155,19 @@ extension Color {
 
 // MARK: - Events (F-RO-05)
 
+@MainActor
 struct Wave7EventsSheet: View {
     let conversationId: String
     let viewerId: String
     let isAdmin: Bool
     let loadEvents: () async -> [WireGroupEvent]?
-    let onCreate: (String, String, String?, String?) -> Void
-    let onRsvp: (String, String) -> Void
-    let onCheckin: (String) -> Void
-    let onDelete: (String) -> Void
+    let onCreate: (String, String, String?, String?) async -> Bool
+    let onRsvp: (String, String) async -> Bool
+    let onCheckin: (String) async -> Bool
+    let onDelete: (String) async -> Bool
     @Environment(\.dismiss) private var dismiss
 
+    @StateObject private var operations = PulseRoomOperations()
     @State private var events: [WireGroupEvent] = []
     @State private var creating = false
     @State private var title = ""
@@ -1133,15 +1175,31 @@ struct Wave7EventsSheet: View {
     @State private var location = ""
     @State private var error: String?
 
+    @State private var loaded = false
+    @State private var loadFailed = false
+    private func refresh() async {
+        guard let ticket = operations.beginRead() else { return }
+        let page = await loadEvents()
+        guard operations.accepts(ticket) else { return }
+        if let page { events = page; loaded = true; loadFailed = false }
+        else { loadFailed = true }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
+                if loadFailed {
+                    Section { Text(loaded ? "Could not refresh. Keeping the last confirmed data; retrying." : "Could not load this room. Retrying.").foregroundStyle(.secondary) }
+                } else if !loaded {
+                    Section { ProgressView("Loading…") }
+                }
                 Section {
                     Button(creating ? "Close" : "+ New event") { creating.toggle() }
+                        .disabled(operations.pending.contains("create"))
                     if creating {
-                        TextField("Event title", text: $title)
-                        TextField("Date (YYYY-MM-DD HH:mm)", text: $dateText)
-                        TextField("Location (optional)", text: $location)
+                        TextField("Event title", text: $title).disabled(operations.pending.contains("create"))
+                        TextField("Date (YYYY-MM-DD HH:mm)", text: $dateText).disabled(operations.pending.contains("create"))
+                        TextField("Location (optional)", text: $location).disabled(operations.pending.contains("create"))
                         if let error {
                             Text(error).font(.footnote).foregroundStyle(.red)
                         }
@@ -1156,12 +1214,15 @@ struct Wave7EventsSheet: View {
                                 return
                             }
                             error = nil
-                            onCreate(trimmed, iso, nil, location.isEmpty ? nil : location)
-                            title = ""; dateText = ""; location = ""; creating = false
+                            let sentLocation = location.isEmpty ? nil : location
+                            operations.run(key: "create", operation: { await onCreate(trimmed, iso, nil, sentLocation) }, onSuccess: {
+                                title = ""; dateText = ""; location = ""; creating = false
+                            })
                         }
+                        .disabled(operations.pending.contains("create"))
                     }
                 }
-                if events.isEmpty {
+                if loaded && events.isEmpty {
                     Section { Text("No events yet - schedule the first one.").foregroundStyle(.secondary) }
                 }
                 ForEach(events, id: \.id) { event in
@@ -1171,7 +1232,7 @@ struct Wave7EventsSheet: View {
                                 .font(.subheadline.weight(.semibold))
                             Spacer()
                             if event.createdById == viewerId || isAdmin {
-                                Button { onDelete(event.id) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
+                                Button { operations.run(key: event.id, operation: { await onDelete(event.id) }) } label: { Image(systemName: "xmark").foregroundStyle(.red) }
                                     .buttonStyle(.borderless)
                             }
                         }
@@ -1183,7 +1244,7 @@ struct Wave7EventsSheet: View {
                             ForEach(PulseWave7Logic.rsvpStatuses, id: \.self) { status in
                                 let selected = event.myStatus == status
                                 Button {
-                                    onRsvp(event.id, status)
+                                    operations.run(key: event.id, operation: { await onRsvp(event.id, status) })
                                 } label: {
                                     Text("\(Self.statusLabel(status)) \(Self.count(event, status))")
                                         .font(.caption)
@@ -1198,18 +1259,23 @@ struct Wave7EventsSheet: View {
                             }
                         }
                         if let my = event.myStatus, my != "no", inWindow(event) {
-                            Button("Check in · +15 XP") { onCheckin(event.id) }
+                            Button("Check in · +15 XP") { operations.run(key: event.id, operation: { await onCheckin(event.id) }) }
                                 .buttonStyle(.borderedProminent)
                         }
                     }
+                    .disabled(operations.pending.contains(event.id))
                 }
             }
             .navigationTitle("Events")
             .navigationBarTitleDisplayMode(.inline)
+            .onDisappear { operations.stop() }
+            .task(id: operations.settledRevision) {
+                if operations.settledRevision > 0 { await refresh() }
+            }
             .task {
                 while !Task.isCancelled {
-                    if let list = await loadEvents() { events = list }
-                    try? await Task.sleep(nanoseconds: 4_000_000_000)
+                    await refresh()
+                    do { try await Task.sleep(nanoseconds: 4_000_000_000) } catch { return }
                 }
             }
         }
@@ -1220,7 +1286,7 @@ struct Wave7EventsSheet: View {
         return PulseWave7Logic.checkinWindowOpen(startsAtEpochMs: ms, nowEpochMs: Int64(Date().timeIntervalSince1970) * 1000)
     }
 
-    static func statusLabel(_ s: String) -> String {
+    nonisolated static func statusLabel(_ s: String) -> String {
         switch s {
         case "going": return "Going"
         case "maybe": return "Maybe"
@@ -1228,7 +1294,7 @@ struct Wave7EventsSheet: View {
         }
     }
 
-    static func count(_ event: WireGroupEvent, _ status: String) -> Int {
+    nonisolated static func count(_ event: WireGroupEvent, _ status: String) -> Int {
         switch status {
         case "going": return event.counts?.going ?? 0
         case "maybe": return event.counts?.maybe ?? 0
@@ -1237,7 +1303,7 @@ struct Wave7EventsSheet: View {
     }
 
     /// "YYYY-MM-DD HH:mm" (local) or ISO → UTC ISO-8601 wire form.
-    static func parseDate(_ text: String) -> String? {
+    nonisolated static func parseDate(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
         if let d = ISO8601DateFormatter().date(from: trimmed) {
@@ -1256,7 +1322,7 @@ struct Wave7EventsSheet: View {
         return nil
     }
 
-    static func formatTime(_ iso: String?) -> String {
+    nonisolated static func formatTime(_ iso: String?) -> String {
         guard let iso, let ms = Wave7RoomActions.epochMs(from: iso) else { return "time TBD" }
         let d = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
         let f = DateFormatter()
@@ -1269,7 +1335,7 @@ struct Wave7EventsSheet: View {
 
 struct Wave7RemindersSheet: View {
     let loadReminders: () async -> [WireReminderItem]?
-    let onCreate: (String, String, WireChatMessage?) -> Void
+    let onCreate: (String, String, WireChatMessage?) async -> Bool
     let onResolve: (String) -> Void
     let onDelete: (String) -> Void
     // R7 - web reminders-sheet.tsx:337-343 parity: rows anchored to a message
@@ -1282,6 +1348,9 @@ struct Wave7RemindersSheet: View {
     @State private var items: [WireReminderItem] = []
     @State private var note = ""
     @State private var whenText = ""
+    @State private var creating = false
+    @State private var loaded = false
+    @State private var loadFailed = false
     @State private var error: String?
 
     var body: some View {
@@ -1310,14 +1379,32 @@ struct Wave7RemindersSheet: View {
                             error = "Note can't be empty."
                         } else {
                             error = nil
-                            onCreate(finalNote, resolvedIso ?? "", anchored)
-                            note = ""; whenText = ""
+                            let submittedNote = note
+                            let submittedWhen = whenText
+                            let submittedAnchor = anchored
+                            let iso = resolvedIso ?? ""
+                            creating = true
+                            Task { @MainActor in
+                                defer { creating = false }
+                                if await onCreate(finalNote, iso, submittedAnchor) {
+                                    if note == submittedNote && whenText == submittedWhen {
+                                        note = ""; whenText = ""
+                                    }
+                                } else {
+                                    error = "Could not set the reminder. Your input has been kept."
+                                }
+                            }
                         }
                     }
+                    .disabled(creating)
                 } footer: {
-                    Text("Fires locally even offline; resolves to the server when online.")
+                    Text("Local alerts require notification permission. Server changes are confirmed when online.")
                 }
-                if items.isEmpty {
+                if loadFailed {
+                    Section { Text("Could not refresh reminders. Showing the last available list.").foregroundStyle(.red) }
+                } else if !loaded {
+                    Section { ProgressView("Loading reminders…") }
+                } else if items.isEmpty {
                     Section { Text("No reminders yet.").foregroundStyle(.secondary) }
                 }
                 ForEach(items, id: \.id) { item in
@@ -1353,8 +1440,11 @@ struct Wave7RemindersSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 while !Task.isCancelled {
-                    if let list = await loadReminders() { items = list }
-                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    let list = await loadReminders()
+                    guard !Task.isCancelled else { break }
+                    if let list { items = list; loaded = true; loadFailed = false }
+                    else { loadFailed = true }
+                    do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { break }
                 }
             }
         }

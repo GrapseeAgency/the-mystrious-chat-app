@@ -1,0 +1,201 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createRequire } from 'node:module'
+import { transferWallet, swapWallet, walletErrorResponse, buyMarketListing, checkinWallet } from '../../src/lib/wallet-contract.ts'
+const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
+async function fixture(run) {
+  const dir = await mkdtemp(join(tmpdir(), 'pulse-wallet-'))
+  const db = new PrismaClient({ datasourceUrl: `file:${join(dir, 'test.sqlite')}` })
+  try {
+    await db.$executeRawUnsafe('CREATE TABLE UserWallet(userId TEXT PRIMARY KEY, coins INTEGER NOT NULL DEFAULT 0, gems INTEGER NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0, lastCheckIn DATETIME)')
+    await db.$executeRawUnsafe('CREATE TABLE WalletLedger(id TEXT PRIMARY KEY, userId TEXT NOT NULL, kind TEXT NOT NULL, asset TEXT NOT NULL, amount INTEGER NOT NULL, note TEXT NOT NULL DEFAULT "", counterpartyId TEXT, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)')
+    await db.$executeRawUnsafe('CREATE TABLE LogEvent(id TEXT PRIMARY KEY, userId TEXT, kind TEXT NOT NULL, message TEXT NOT NULL, meta TEXT, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)')
+    await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261020_wallet_operations.sql', import.meta.url), 'utf8'))
+    await db.$executeRawUnsafe('CREATE TABLE MarketListing(id TEXT PRIMARY KEY, sellerId TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT "", price INTEGER NOT NULL, asset TEXT NOT NULL DEFAULT "PC", status TEXT NOT NULL DEFAULT "open", buyerId TEXT, createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)')
+    await db.marketListing.create({ data: { id: 'item', sellerId: 'b', title: 'Thing', price: 100 } })
+    await db.userWallet.createMany({ data: [{ userId: 'a', coins: 150, gems: 2 }, { userId: 'b', coins: 10 }] })
+    await run(db)
+  } finally { await db.$disconnect(); await rm(dir, { recursive: true, force: true }) }
+}
+const transfer = (db, amount = 100) => transferWallet(db, 'a', 'b', amount, '', 'alice', 'bob')
+
+test('transfer conserves coins with exactly two ledger legs', () => fixture(async db => {
+  await transfer(db)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 50)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'b' } })).coins, 110)
+  assert.equal(await db.walletLedger.count(), 2)
+  assert.equal((await db.walletLedger.aggregate({ _sum: { amount: true } }))._sum.amount, 0)
+}))
+test('rejected debit returns HTTP 402, not a fake 200 wallet, and writes nothing', () => fixture(async db => {
+  let response
+  try { await transfer(db, 200); assert.fail('should reject') } catch (error) { response = walletErrorResponse(error) }
+  assert.equal(response.status, 402)
+  const body = await response.json()
+  assert.ok(body.error); assert.equal(body.wallet, undefined)
+  assert.equal(await db.walletLedger.count(), 0)
+  assert.equal(await db.logEvent.count(), 0)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 150)
+}))
+test('recipient overflow rolls the debit back too', () => fixture(async db => {
+  await db.userWallet.update({ where: { userId: 'b' }, data: { coins: 2147483640 } })
+  await assert.rejects(transfer(db), { status: 422 })
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 150)
+  assert.equal(await db.walletLedger.count(), 0)
+}))
+test('swap commits balances and both ledger legs together', () => fixture(async db => {
+  const result = await swapWallet(db, 'a', 'pc2gem', 100)
+  assert.equal(result.wallet.coins, 50); assert.equal(result.wallet.gems, 3)
+  assert.equal(await db.walletLedger.count(), 2)
+}))
+test('failed swap is HTTP 402 with no balance or ledger mutation', () => fixture(async db => {
+  let response
+  try { await swapWallet(db, 'a', 'gem2pc', 3); assert.fail('should reject') } catch (error) { response = walletErrorResponse(error) }
+  assert.equal(response.status, 402)
+  assert.equal(await db.walletLedger.count(), 0)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).gems, 2)
+}))
+test('unsafe, out-of-range, fractional and off-rate amounts are rejected before mutations', () => fixture(async db => {
+  for (const amount of [NaN, Infinity, 1.1, 0, -1, 2147483648, Number.MAX_SAFE_INTEGER]) {
+    await assert.rejects(swapWallet(db, 'a', 'gem2pc', amount), { status: 400 })
+  }
+  await assert.rejects(swapWallet(db, 'a', 'pc2gem', 101), { status: 400 })
+  await assert.rejects(swapWallet(db, 'a', 'gem2pc', 2147483647), { status: 400 })
+  assert.equal(await db.walletLedger.count(), 0)
+}))
+test('concurrent spends cannot overdraw or leave partial ledger legs', () => fixture(async db => {
+  const results = await Promise.allSettled([transfer(db), transfer(db)])
+  const fulfilled = results.filter(r => r.status === 'fulfilled').length
+  assert.ok(fulfilled <= 1)
+  const wallets = await db.userWallet.findMany()
+  assert.equal(wallets.reduce((sum, row) => sum + row.coins, 0), 160)
+  assert.ok(wallets.every(row => row.coins >= 0))
+  assert.equal(await db.walletLedger.count(), fulfilled * 2)
+}))
+test('unexpected storage errors are not converted to success or insufficient balance', () => {
+  assert.throws(() => walletErrorResponse(new Error('disk failure')), /disk failure/)
+})
+
+test('lost transfer ACK replays the receipt without a second debit', () => fixture(async db => {
+  await db.userWallet.update({ where: { userId: 'a' }, data: { lastCheckIn: new Date('2026-10-20T00:00:00Z') } })
+  const id = 'transfer-00000001'
+  const first = await transferWallet(db, 'a', 'b', 100, '', 'alice', 'bob', id)
+  await db.$executeRawUnsafe(await readFile(new URL('../../prisma/patches/20261020_wallet_operations.sql', import.meta.url), 'utf8'))
+  const replay = await transferWallet(db, 'a', 'b', 100, '', 'alice', 'bob', id)
+  assert.deepEqual(replay, first)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'b' } })).coins, 110)
+  assert.equal(await db.walletLedger.count(), 2)
+  assert.equal(await db.logEvent.count(), 1)
+}))
+test('lost swap ACK is replayable even when the original spend exhausted funds', () => fixture(async db => {
+  const id = 'swap-00000000001'
+  await swapWallet(db, 'a', 'pc2gem', 100, id)
+  await swapWallet(db, 'a', 'pc2gem', 100, id)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 50)
+  assert.equal(await db.walletLedger.count(), 2)
+}))
+test('operation IDs bind instruction and owner, and conflicting reuse cannot spend', () => fixture(async db => {
+  const id = 'transfer-00000002'
+  await transferWallet(db, 'a', 'b', 100, '', 'alice', 'bob', id)
+  await assert.rejects(transferWallet(db, 'a', 'b', 20, '', 'alice', 'bob', id), { status: 409 })
+  await transferWallet(db, 'b', 'a', 10, '', 'bob', 'alice', id)
+  assert.equal(await db.walletLedger.count(), 4)
+}))
+test('receipt storage failure rolls back balance, ledger and log, not just the receipt', () => fixture(async db => {
+  await db.$executeRawUnsafe('CREATE TRIGGER reject_receipt BEFORE INSERT ON WalletOperation BEGIN SELECT RAISE(ABORT, "simulated receipt failure"); END')
+  await assert.rejects(transferWallet(db, 'a', 'b', 100, '', 'alice', 'bob', 'transfer-00000003'))
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 150)
+  assert.equal(await db.walletLedger.count(), 0)
+  assert.equal(await db.logEvent.count(), 0)
+}))
+
+test('concurrent same-ID requests and a later retry produce only one transfer', () => fixture(async db => {
+  const send = () => transferWallet(db, 'a', 'b', 100, '', 'alice', 'bob', 'transfer-00000004')
+  // SQLite can reject contention with BUSY; it must never accept a second spend.
+  await Promise.allSettled([send(), send()])
+  await send()
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 50)
+  assert.equal(await db.walletLedger.count(), 2)
+  assert.equal(await db.logEvent.count(), 1)
+}))
+
+test('purchase retry by its winning buyer never charges again', () => fixture(async db => {
+  await buyMarketListing(db, 'a', 'item')
+  await buyMarketListing(db, 'a', 'item')
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 50)
+  assert.equal(await db.walletLedger.count(), 2)
+  await assert.rejects(buyMarketListing(db, 'other', 'item'), { status: 409 })
+}))
+test('failed purchase releases its claim and rolls back money and logs', () => fixture(async db => {
+  await db.marketListing.update({ where: { id: 'item' }, data: { price: 200 } })
+  await assert.rejects(buyMarketListing(db, 'a', 'item'), { status: 402 })
+  const listing = await db.marketListing.findUnique({ where: { id: 'item' } })
+  assert.equal(listing.status, 'open'); assert.equal(listing.buyerId, null)
+  assert.equal(await db.walletLedger.count(), 0); assert.equal(await db.logEvent.count(), 0)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 150)
+}))
+test('seller overflow cannot consume the listing or buyer funds', () => fixture(async db => {
+  await db.userWallet.update({ where: { userId: 'b' }, data: { coins: 2147483640 } })
+  await assert.rejects(buyMarketListing(db, 'a', 'item'), { status: 422 })
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 150)
+  assert.equal((await db.marketListing.findUnique({ where: { id: 'item' } })).status, 'open')
+}))
+test('competing buyers cannot pay for the same listing', () => fixture(async db => {
+  await db.userWallet.create({ data: { userId: 'c', coins: 150 } })
+  await Promise.allSettled([buyMarketListing(db, 'a', 'item'), buyMarketListing(db, 'c', 'item')])
+  // Resolve an unclaimed listing if SQLite rejected both contenders with BUSY.
+  let listing = await db.marketListing.findUnique({ where: { id: 'item' } })
+  if (listing.status === 'open') await buyMarketListing(db, 'a', 'item')
+  listing = await db.marketListing.findUnique({ where: { id: 'item' } })
+  assert.ok(['a', 'c'].includes(listing.buyerId))
+  await buyMarketListing(db, listing.buyerId, 'item')
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'b' } })).coins, 110)
+  assert.equal(await db.walletLedger.count(), 2)
+  assert.equal((await db.userWallet.aggregate({ _sum: { coins: true } }))._sum.coins, 310)
+}))
+
+const utc = value => () => new Date(value)
+test('daily check-in retry pays once and keeps one ledger/log entry', () => fixture(async db => {
+  const clock = utc('2026-10-20T12:00:00Z')
+  const first = await checkinWallet(db, 'a', clock)
+  assert.equal(first.reward, 25)
+  assert.equal((await checkinWallet(db, 'a', clock)).alreadyCheckedIn, true)
+  assert.equal(await db.walletLedger.count(), 1)
+  assert.equal(await db.logEvent.count(), 1)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 175)
+}))
+test('daily streak uses UTC boundaries, caps the bonus and resets after a missed day', () => fixture(async db => {
+  await checkinWallet(db, 'a', utc('2026-10-19T23:59:59.999Z'))
+  const second = await checkinWallet(db, 'a', utc('2026-10-20T00:00:00Z'))
+  assert.equal(second.streak, 2); assert.equal(second.reward, 27)
+  await db.userWallet.update({ where: { userId: 'a' }, data: { streak: 2147483647 } })
+  const capped = await checkinWallet(db, 'a', utc('2026-10-21T00:00:00Z'))
+  assert.equal(capped.streak, 2147483647); assert.equal(capped.reward, 45)
+  const reset = await checkinWallet(db, 'a', utc('2026-10-23T12:00:00Z'))
+  assert.equal(reset.streak, 1); assert.equal(reset.reward, 25)
+}))
+test('concurrent check-ins and a retry cannot pay a day twice', () => fixture(async db => {
+  const send = () => checkinWallet(db, 'a', utc('2026-10-20T12:00:00Z'))
+  await Promise.allSettled([send(), send()])
+  await send()
+  assert.equal(await db.walletLedger.count(), 1)
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, 175)
+}))
+test('daily reward overflow or ledger failure leaves the day unclaimed', () => fixture(async db => {
+  await db.userWallet.update({ where: { userId: 'a' }, data: { coins: 2147483640 } })
+  await assert.rejects(checkinWallet(db, 'a'), { status: 409 })
+  assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).lastCheckIn, null)
+  await db.userWallet.update({ where: { userId: 'a' }, data: { coins: 150 } })
+  await db.$executeRawUnsafe('CREATE TRIGGER reject_reward BEFORE INSERT ON WalletLedger BEGIN SELECT RAISE(ABORT, "ledger unavailable"); END')
+  await assert.rejects(checkinWallet(db, 'a'))
+  const wallet = await db.userWallet.findUnique({ where: { userId: 'a' } })
+  assert.equal(wallet.coins, 150); assert.equal(wallet.lastCheckIn, null)
+  assert.equal(await db.logEvent.count(), 0)
+}))
+test('clock rollback cannot turn a future claim into another reward', () => fixture(async db => {
+  await checkinWallet(db, 'a', utc('2026-10-21T00:00:00Z'))
+  assert.equal((await checkinWallet(db, 'a', utc('2026-10-20T00:00:00Z'))).alreadyCheckedIn, true)
+  assert.equal(await db.walletLedger.count(), 1)
+}))

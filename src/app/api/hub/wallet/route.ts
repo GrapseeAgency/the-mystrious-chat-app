@@ -59,7 +59,7 @@ export async function GET(req: Request) {
       gems: wallet.gems,
       streak: wallet.streak,
       lastCheckIn: wallet.lastCheckIn ? wallet.lastCheckIn.toISOString() : null,
-      checkedInToday: wallet.lastCheckIn ? dayKey(wallet.lastCheckIn) === dayKey(new Date()) : false,
+      checkedInToday: wallet.lastCheckIn ? dayKey(wallet.lastCheckIn) >= dayKey(new Date()) : false,
     },
     ledger: ledger.map((row) => ({
       id: row.id,

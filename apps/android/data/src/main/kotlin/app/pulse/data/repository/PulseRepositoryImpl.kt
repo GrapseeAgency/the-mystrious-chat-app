@@ -1,5 +1,12 @@
 package app.pulse.data.repository
 
+import app.pulse.domain.sync.withMessageExpiry
+
+import app.pulse.protocol.objectPayloadText
+import kotlinx.coroutines.ensureActive
+
+import androidx.room.withTransaction
+import app.pulse.data.local.PulseDatabase
 import android.content.Context
 import android.util.Log
 import app.pulse.core.result.PulseResult
@@ -164,6 +171,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -199,9 +207,9 @@ private const val STORY_TTL_MS: Long = 24L * 60 * 60 * 1000
  * and cache the returned row. The socket pump turns relay signals into
  * Room upserts + [PulseEvent]s so every screen is live without polling.
  */
-@Singleton
-class PulseRepositoryImpl @Inject constructor(
+class PulseRepositoryImpl constructor(
     private val api: PulseApi,
+    private val database: PulseDatabase,
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val outboxDao: OutboxDao,
@@ -215,6 +223,8 @@ class PulseRepositoryImpl @Inject constructor(
     private val prefsLocalStore: PulsePrefsLocalStore,
     private val sessionTokenStore: SessionTokenStore,
     @ApplicationContext private val context: Context,
+    private val reminderEffects: app.pulse.domain.notify.ReminderEffects = app.pulse.domain.notify.ReminderEffects.None,
+    private val reminderOwner: app.pulse.domain.notify.ReminderOwner? = null,
 ) : PulseRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -239,39 +249,44 @@ class PulseRepositoryImpl @Inject constructor(
     @Volatile override var viewerId: String? = null
         private set
 
+    @Volatile private var attachmentSession = java.util.UUID.randomUUID().toString()
     @Volatile private var pumpStarted = false
 
-    private val flushMutex = Mutex()
+    private val dispatchGate = app.pulse.domain.sync.MessageDispatchGate()
     private var selfHealJob: Job? = null
+
+    override fun stop() {
+        attachmentSession = java.util.UUID.randomUUID().toString()
+        viewerId = null
+        socket.disconnect()
+        scope.coroutineContext.cancelChildren()
+        pumpStarted = false
+        selfHealJob = null
+        onlineIds.value = emptySet()
+        connectedFlow.value = false
+    }
 
     override fun start(userId: String) {
         if (viewerId == userId && socket.isJoined) return
+        if (viewerId != userId) stop()
         viewerId = userId
-        startPump()
-        socket.connect(userId)
-        // Demo companion: every identity (fresh or upgraded install) gets the
-        // on-device Nova room so the chat surface is explorable offline.
-        scope.launch { runCatching { ensureDemoSeeded(userId) } }
-        // Wave 8 - load the persisted session token into the synchronous cache
-        // BEFORE the refresh wave so the Bearer header rides from request one,
-        // then merge the server prefs blob over the local store (server wins).
         scope.launch {
-            runCatching { sessionTokenStore.load() }
-                .onFailure { Log.w(TAG, "token load failed", it) }
-            fetchSettings()
-        }
-        scope.launch { refreshConversations() }
-        // Flush trigger: app start with a pending queue (web pwa-provider parity).
-        scope.launch {
-            runCatching {
-                if (outboxDao.count() > 0) flushOutbox()
-            }.onFailure { Log.w(TAG, "start flush failed", it) }
-        }
-        // Call-log queue rides the same trigger (single-writer rows that
-        // died offline must land as soon as the gateway answers).
-        scope.launch {
-            runCatching { if (callLogDao.queueCount() > 0) flushCallLogQueue() }
-                .onFailure { Log.w(TAG, "start call-log flush failed", it) }
+            // One ordering barrier, shared by UI and cold-process workers.
+            sessionTokenStore.load()
+            if (viewerId != userId || sessionTokenStore.invalidated.value) return@launch
+            startPump()
+            launch {
+                if (reminderOwner != null) runCatching {
+                    val references = database.attachmentDraftDao().references().toSet()
+                    withContext(Dispatchers.IO) { attachmentFiles().prune(references) }
+                }.onFailure { Log.w(TAG, "Attachment cleanup deferred", it) }
+            }
+            socket.connect(userId)
+            launch { runCatching { ensureDemoSeeded(userId) } }
+            launch { fetchSettings() }
+            launch { refreshConversations() }
+            launch { runCatching { if (outboxDao.count() > 0) flushOutbox() } }
+            launch { runCatching { if (callLogDao.queueCount() > 0) flushCallLogQueue() } }
         }
     }
 
@@ -338,14 +353,37 @@ class PulseRepositoryImpl @Inject constructor(
 
     /** Data & Storage - user-initiated drop of one held outbox row (no verdict event). */
     override suspend fun discardOutboxEntry(clientId: String) {
-        outboxDao.deleteByClientId(clientId)
-        messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+        val owner = viewerId ?: return
+        database.withTransaction {
+            val temp = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId) ?: return@withTransaction
+            if (temp.authorId != owner) return@withTransaction
+            outboxDao.deleteByClientId(clientId)
+            messageDao.deleteById(temp.id)
+        }
     }
 
-    /** Data & Storage - drop every held outbox row + its optimistic temp bubble. */
+    override suspend fun retryOutboxEntry(clientId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in to the original account"))
+        return try {
+            if (outboxDao.retryFailed(clientId, owner) == 0) {
+                Result.failure(IllegalStateException("This saved message is no longer available for retry"))
+            } else {
+                scope.launch {
+                    try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Retried message remains queued", error); scheduleSelfHeal() }
+                }
+                Result.success(Unit)
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+    }
+
     override suspend fun clearOutbox() {
-        outboxDao.clearAll()
-        messageDao.deleteAllTempMessages()
+        val owner = viewerId ?: return
+        database.withTransaction {
+            outboxDao.allOwned(owner).forEach { row ->
+                outboxDao.deleteByClientId(row.clientId)
+                messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + row.clientId)
+            }
+        }
     }
 
     /** Data & Storage - drop every composer draft at once. */
@@ -384,9 +422,10 @@ class PulseRepositoryImpl @Inject constructor(
                     is PulseSocketClient.Signal.Joined -> onlineIds.value = signal.onlineUserIds.toSet()
                     is PulseSocketClient.Signal.PresenceSnapshot -> onlineIds.value = signal.onlineUserIds.toSet()
                     is PulseSocketClient.Signal.MessageEnvelope -> onMessageEnvelope(signal)
-                    is PulseSocketClient.Signal.Read -> eventsBus.tryEmit(
-                        PulseEvent.MessageRead(signal.conversationId, signal.userId, signal.lastReadAt),
-                    )
+                    is PulseSocketClient.Signal.Read -> {
+                        eventsBus.tryEmit(PulseEvent.MessageRead(signal.conversationId, signal.userId, signal.lastReadAt))
+                        scheduleConversationsRefresh()
+                    }
                     is PulseSocketClient.Signal.Typing -> eventsBus.tryEmit(
                         PulseEvent.Typing(signal.conversationId, signal.userId, signal.userName, signal.isTyping),
                     )
@@ -551,36 +590,38 @@ class PulseRepositoryImpl @Inject constructor(
      * Every message:* envelope carries the authoritative row - upsert it and
      * fan the event out. message:deleted keeps its tombstone semantics.
      */
+    private val messageCacheMutex = Mutex()
+    private val messageEventClock = java.util.concurrent.atomic.AtomicLong()
+    private val messageEventRevisions = mutableMapOf<String, Long>()
+
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
         val dto = signal.dto ?: return
         val message = dto.toDomain()
+        messageCacheMutex.withLock {
+            messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
+            // Persist tombstones too; an event-only deletion resurrects after restart.
+            messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+        }
         if (signal.event == app.pulse.protocol.SocketEvents.MESSAGE_DELETED) {
             eventsBus.tryEmit(
                 PulseEvent.MessageDeleted(signal.conversationId, message.id),
             )
         } else {
-            messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-            dedupeTempEchoes(message)
             eventsBus.tryEmit(PulseEvent.MessageReceived(signal.conversationId, message))
         }
         scheduleConversationsRefresh()
     }
 
-    /**
-     * Optimistic dedupe (spec §1.2): when a REAL row lands, every still-queued
-     * `local_` echo of the same sender+body that predates it is retired - the
-     * flush engine's own clientId swap stays the primary reconcile path.
-     */
-    private suspend fun dedupeTempEchoes(real: Message) {
-        if (real.body.isBlank() || real.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) return
-        val realAt = PulseTime.epochMs(real.createdAt)
-        if (realAt <= 0L) return
-        val echoes = runCatching {
-            messageDao.tempEchoes(real.conversationId, real.authorId, real.body, real.id)
-        }.getOrDefault(emptyList())
-        val stale = echoes.filter { PulseTime.epochMs(it.createdAt) <= realAt }.map { it.id }
-        if (stale.isNotEmpty()) messageDao.deleteByIds(stale)
-    }
+    /** A late GET must not undo a socket edit/delete, including in its return value. */
+    private suspend fun cacheFetchedMessages(rows: List<Message>, watermark: Long): List<Message> =
+        messageCacheMutex.withLock {
+            val fresh = rows.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
+            messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
+            rows.mapNotNull { row ->
+                if ((messageEventRevisions[row.id] ?: 0L) > watermark) messageDao.byId(row.id)?.toDomain()
+                else row
+            }
+        }
 
     private var refreshScheduled = false
 
@@ -603,10 +644,10 @@ class PulseRepositoryImpl @Inject constructor(
         }
 
     override fun observeMessages(conversationId: String): Flow<List<Message>> =
-        messageDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }
+        messageDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
 
     override fun observeThreadMessages(rootId: String): Flow<List<Message>> =
-        messageDao.observeThread(rootId).map { rows -> rows.map { it.toDomain() } }
+        messageDao.observeThread(rootId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
 
     override fun observeDrafts(): Flow<Map<String, String>> = draftDao.observeAll().map { rows ->
         rows.filter { it.text.isNotBlank() }.associate { it.conversationId to it.text }
@@ -633,34 +674,43 @@ class PulseRepositoryImpl @Inject constructor(
     override suspend fun refreshMessages(conversationId: String, topicId: String?): Result<Unit> =
         refreshMessagesWindow(conversationId, topicId = topicId)
 
+    private val messageRefreshLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+
     private suspend fun refreshMessagesWindow(
         conversationId: String,
         limit: Int = 200,
-        before: String? = null,
         topicId: String? = null,
-    ): Result<Unit> {
-        // R2-C item 2 (D47 delta sync) - a REFRESH (no `before` page cursor,
-        // unfiltered) rides `since=` when the Room cache already holds server
-        // rows for this conversation: only the strictly-newer tail crosses
-        // the wire and merges by upsert. The FIRST load (empty cache) and
-        // paged/topic fetches keep the unchanged full-window behavior.
-        val since = if (before == null && topicId == null) {
-            messageDao.latestServerCreatedAt(conversationId)
-        } else {
-            null
-        }
-        return when (val r = api.messages(conversationId, limit, before, topicId, since)) {
-            is PulseResult.Success -> {
-                messageDao.upsertAll(
-                    r.value.messages.map { dto ->
-                        val domain = dto.toDomain()
-                        MessageEntity.from(domain, reactionsJsonOf(domain))
-                    },
-                )
-                Result.success(Unit)
+    ): Result<Unit> = messageRefreshLocks.getOrPut(conversationId) { Mutex() }.withLock {
+        // Revisit the cached range, not just its newest timestamp: missed edits
+        // and tombstones matter as much as new messages. Never replace pending rows.
+        val from = messageDao.earliestServerCreatedAt(conversationId)
+        var cursor: String? = null
+        val seenCursors = mutableSetOf<String>()
+        do {
+            val watermark = messageEventClock.get()
+            val result = api.messages(conversationId, limit = limit,
+                topicId = if (from == null) topicId else null,
+                syncFrom = if (cursor == null) from else null, syncCursor = cursor)
+            val page = when (result) {
+                is PulseResult.Success -> result.value
+                is PulseResult.Failure -> return@withLock Result.failure(apiExceptionOf(result))
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+            if (from != null && page.syncVersion != 1) {
+                return@withLock Result.failure(IllegalStateException("Gateway needs the paged message-sync update"))
+            }
+            messageCacheMutex.withLock {
+                messageDao.upsertAll(page.messages.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }.map { dto ->
+                    val message = dto.toDomain()
+                    MessageEntity.from(message, reactionsJsonOf(message))
+                })
+            }
+            if (from == null || !page.hasMore) break
+            cursor = page.nextSyncCursor
+            if (cursor == null || !seenCursors.add(cursor)) {
+                return@withLock Result.failure(IllegalStateException("Message sync returned a missing/repeated cursor"))
+            }
+        } while (true)
+        Result.success(Unit)
     }
 
     // users / identity
@@ -908,63 +958,40 @@ class PulseRepositoryImpl @Inject constructor(
         // keystroke-to-send beat, not after the round-trip. The same clientId
         // then either reconciles with the real row, rides the outbox, or is
         // retracted on a definitive failure.
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
             .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         val temp = Message(
             id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
             conversationId = conversationId,
-            authorId = viewerId ?: "",
+            authorId = owner,
             authorName = viewerId ?: "",
             kind = Message.Kind.TEXT,
             body = body,
             createdAt = nowIso,
             replyToId = replyToId,
             threadRootId = parentId,
-            topicId = topicId,
-        )
-        if (!viewerId.isNullOrBlank()) {
-            messageDao.upsertAll(listOf(MessageEntity.from(temp)))
-        }
-        return when (val r = api.sendMessage(
-            conversationId = conversationId,
-            senderId = viewerId ?: "",
-            content = body,
-            replyToId = replyToId,
-            // THREAD REPLY rides `parentId` - NEVER conflated with replyToId (spec §1.1).
-            parentId = parentId,
-            // Wave 2 topic filing (spec §1 row 10): never on thread replies.
             topicId = if (parentId == null) topicId else null,
-        )) {
-            is PulseResult.Success -> {
-                val receipt = r.value.toReceipt()
-                val message = receipt.message
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-                dedupeTempEchoes(message)
-                scheduleConversationsRefresh()
-                Result.success(receipt)
-            }
-            is PulseResult.Failure ->
-                // Network-class failure → the optimistic offline core: the temp
-                // bubble STAYS + an outbox row waits for the flush engine.
-                // 4xx verdicts and non-queueable sends (threads/quotes, spec
-                // §1.2) retract the echo and surface the honest error.
-                if (r.kind == PulseResult.Failure.Kind.NETWORK && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
-                    outboxDao.insert(
-                        OutboxEntity(
-                            conversationId = conversationId,
-                            clientId = clientId,
-                            content = body,
-                            createdAt = nowIso,
-                        ),
-                    )
-                    outboxDao.trimBeyond(MAX_OUTBOX)
-                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
-                    Result.success(SendReceipt(message = temp, streak = null))
-                } else {
-                    messageDao.deleteById(temp.id)
-                    Result.failure(apiExceptionOf(r))
-                }
+        )
+        database.withTransaction {
+            messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+            outboxDao.insert(OutboxEntity(
+                conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
+            ))
+        }
+        return sendPersistedNowOrQueue(temp, clientId) {
+            api.sendMessage(
+                conversationId = conversationId,
+                senderId = owner,
+                content = body,
+                clientId = clientId,
+                replyToId = replyToId,
+                // THREAD REPLY rides `parentId` - NEVER conflated with replyToId (spec §1.1).
+                parentId = parentId,
+                // Wave 2 topic filing (spec §1 row 10): never on thread replies.
+                topicId = if (parentId == null) topicId else null,
+            )
         }
     }
 
@@ -989,71 +1016,122 @@ class PulseRepositoryImpl @Inject constructor(
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
             return demoSend(conversationId, body, replyToId, parentId, topicId)
         }
+        if (kind !in setOf("text", "image", "audio", "file", "sticker", "location")) {
+            return Result.failure(IllegalArgumentException("Unsupported message kind"))
+        }
+        val richPayload = payload?.let {
+            runCatching { PulseJson.parseToJsonElement(it) as? kotlinx.serialization.json.JsonObject }.getOrNull()
+                ?: return Result.failure(IllegalArgumentException("Message payload must be a JSON object"))
+        }
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
         val nowIso = java.time.OffsetDateTime.now()
             .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
         val temp = Message(
             id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
             conversationId = conversationId,
-            authorId = viewerId ?: "",
+            authorId = owner,
             authorName = viewerId ?: "",
             kind = Message.Kind.TEXT,
             body = body,
             createdAt = nowIso,
             replyToId = replyToId,
             threadRootId = parentId,
-            topicId = topicId,
+            topicId = if (parentId == null) topicId else null,
             anon = anon,
             // R3-B item 4 - the optimistic row wears the deterministic alias
             // the server will store (web optimistic-mask parity).
             anonAlias = anonAliasPreview.takeIf { anon },
         )
-        if (!viewerId.isNullOrBlank()) {
-            messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+        database.withTransaction {
+            messageDao.upsertAll(listOf(MessageEntity.from(temp.copy(payload = payload)).copy(kind = if (kind == "audio") "VOICE" else kind.uppercase(java.util.Locale.ROOT))))
+            outboxDao.insert(OutboxEntity(
+                conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
+                kind = kind, wirePayload = payload,
+            ))
         }
-        return when (
-            val r = api.sendMessage(
+        return sendPersistedNowOrQueue(temp.copy(payload = payload, kind = kindOf(kind)), clientId) {
+            api.sendMessage(
                 conversationId = conversationId,
-                senderId = viewerId ?: "",
+                senderId = owner,
                 content = body,
+                clientId = clientId,
                 replyToId = replyToId,
                 parentId = parentId,
                 kind = kind,
                 topicId = if (parentId == null) topicId else null,
                 anon = anon.takeIf { it },
-                payload = payload?.let { raw ->
-                    runCatching { PulseJson.parseToJsonElement(raw) }.getOrNull() as? kotlinx.serialization.json.JsonObject
-                },
+                payload = richPayload,
             )
-        ) {
-            is PulseResult.Success -> {
-                val receipt = r.value.toReceipt()
-                val message = receipt.message
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-                dedupeTempEchoes(message)
-                scheduleConversationsRefresh()
-                Result.success(receipt)
-            }
-            is PulseResult.Failure ->
-                // R3-B item 4 - an INCOGNITO send never queues offline: the
-                // outbox row carries no anon flag, so a flush would post the
-                // message UN-masked. Honest retract instead of a privacy lie.
-                if (r.kind == PulseResult.Failure.Kind.NETWORK && !anon && queueableSend(replyToId, parentId) && !viewerId.isNullOrBlank()) {
-                    outboxDao.insert(
-                        OutboxEntity(
-                            conversationId = conversationId,
-                            clientId = clientId,
-                            content = body,
-                            createdAt = nowIso,
-                        ),
-                    )
-                    outboxDao.trimBeyond(MAX_OUTBOX)
-                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, conversationId))
-                    Result.success(SendReceipt(message = temp, streak = null))
-                } else {
-                    messageDao.deleteById(temp.id)
-                    Result.failure(apiExceptionOf(r))
+        }
+    }
+
+    private suspend fun sendPersistedNowOrQueue(
+        temp: Message,
+        clientId: String,
+        send: suspend () -> PulseResult<app.pulse.protocol.MessageSendEnvelopeDto>,
+    ): Result<SendReceipt> {
+        val immediate = try {
+            dispatchGate.tryImmediate(
+                isHead = {
+                    viewerId == temp.authorId &&
+                        outboxDao.allForOwner(temp.authorId, dispatchGate.blockedConversations().toList()).firstOrNull()?.clientId == clientId
+                },
+                conversationId = temp.conversationId,
+            ) {
+                when (val response = send()) {
+                    is PulseResult.Success -> {
+                        val receipt = response.value.toReceipt()
+                        database.withTransaction {
+                            messageDao.upsertAll(listOf(MessageEntity.from(receipt.message, reactionsJsonOf(receipt.message))))
+                            messageDao.deleteById(temp.id)
+                            outboxDao.deleteByClientId(clientId)
+                        }
+                        scheduleConversationsRefresh()
+                        Result.success(receipt)
+                    }
+                    is PulseResult.Failure -> {
+                        holdMessageRetries(response, temp.conversationId)
+                        if (response.outboxFailureClass() == OutboxFailureClass.DROP) {
+                            dropOutboxEntry(clientId, response.message ?: "Message rejected")
+                            Result.failure(apiExceptionOf(response))
+                        } else {
+                            scheduleSelfHeal()
+                            if (response.outboxFailureClass(messageEndpoint = true) == OutboxFailureClass.ROOM_RETRY) {
+                                scope.launch { runCatching { flushOutbox() }.onFailure { scheduleSelfHeal() } }
+                            }
+                            eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, temp.conversationId))
+                            Result.success(SendReceipt(message = temp, streak = null))
+                        }
+                    }
                 }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            // An unknown response or failed local ACK write is not proof of
+            // rejection. The committed operation must retry under its SAME ID.
+            Log.w(TAG, "Message acknowledgement is unconfirmed; retained for retry", error)
+            null
+        } finally {
+            if (viewerId == temp.authorId) scheduleSelfHeal()
+        }
+        if (immediate != null) return immediate
+        eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, temp.conversationId))
+        // Bytes/metadata are already durable. Never wait for a large upload to
+        // finish before acknowledging that the next text is safely queued.
+        scope.launch {
+            try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) { Log.w(TAG, "Message remains queued", error); scheduleSelfHeal() }
+        }
+        return Result.success(SendReceipt(message = temp, streak = null))
+    }
+
+    private fun holdMessageRetries(failure: PulseResult.Failure, conversationId: String? = null) {
+        if (failure.status == 429 || failure.kind == PulseResult.Failure.Kind.RATE_LIMITED) {
+            val room = conversationId.takeIf { failure.status == 429 && failure.code == "slow_mode" }
+            dispatchGate.holdRetries(failure.retryAfter, room)
         }
     }
 
@@ -1083,10 +1161,99 @@ class PulseRepositoryImpl @Inject constructor(
     // Wave 1 messaging surface (spec §1.1 - every route exists today)
 
     /**
-     * MEDIA send - the online-only leg (spec §1.2: media is NEVER queued).
-     * No optimistic echo: the staged card in the composer is the progress UI;
-     * failures surface on it with a retry, never an outbox row.
+     * Media is saved before upload. Drafts restore without sending; explicit
+     * Send transfers their immutable file reference into the existing outbox.
      */
+    private fun attachmentFiles(): app.pulse.data.local.AttachmentFiles {
+        val owner = checkNotNull(reminderOwner) { "A verified account is required for attachment storage" }
+        val namespace = app.pulse.data.local.AccountStorageKey.namespace(owner.origin, owner.userId)
+        return app.pulse.data.local.AttachmentFiles(File(context.filesDir, "attachments/$namespace"))
+    }
+
+    override fun attachmentSessionKey(): String? = attachmentSession.takeIf { viewerId != null && reminderOwner?.userId == viewerId }
+
+    private fun requireAttachmentSession(key: String): String {
+        val owner = viewerId
+        if (owner == null || reminderOwner?.userId != owner || key != attachmentSession) throw kotlinx.coroutines.CancellationException("Attachment session ended")
+        return owner
+    }
+
+    override suspend fun saveAttachmentDraft(draft: app.pulse.domain.model.AttachmentDraft, sessionKey: String): Result<Unit> = try {
+        requireAttachmentSession(sessionKey)
+        val validated = withContext(Dispatchers.IO) { app.pulse.data.local.AttachmentValidation.validated(draft) }
+        val key = withContext(Dispatchers.IO) { attachmentFiles().put(draft.selectionId, validated.dataUrl) }
+        database.withTransaction {
+            requireAttachmentSession(sessionKey)
+            database.attachmentDraftDao().upsert(app.pulse.data.local.AttachmentDraftEntity.from(validated, key))
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireAttachmentSession(sessionKey)
+        }
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun loadAttachmentDraft(conversationId: String, sessionKey: String): Result<app.pulse.domain.model.AttachmentDraft?> = try {
+        requireAttachmentSession(sessionKey)
+        val saved = database.attachmentDraftDao().get(conversationId)
+        val draft = saved?.let { withContext(Dispatchers.IO) { it.toDomain(attachmentFiles().read(it.fileKey)) } }
+        requireAttachmentSession(sessionKey)
+        Result.success(draft)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun editAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, revision: Long, sessionKey: String): Result<Unit> = try {
+        requireAttachmentSession(sessionKey)
+        require(caption.length <= 2000) { "Caption is too long" }
+        database.attachmentDraftDao().edit(conversationId, selectionId, caption, viewOnce, revision)
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun discardAttachmentDraft(conversationId: String, selectionId: String, sessionKey: String): Result<Unit> = try {
+        requireAttachmentSession(sessionKey)
+        database.attachmentDraftDao().delete(conversationId, selectionId)
+        Result.success(Unit)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
+    override suspend fun queueAttachmentDraft(conversationId: String, selectionId: String, caption: String, viewOnce: Boolean, topicId: String?, sessionKey: String): Result<Message> = try {
+        val owner = requireAttachmentSession(sessionKey)
+        val snapshot = database.attachmentDraftDao().get(conversationId)
+        val prepared = snapshot?.takeIf { it.selectionId == selectionId }?.let { record ->
+            withContext(Dispatchers.IO) {
+                app.pulse.data.local.AttachmentValidation.validated(
+                    record.toDomain(attachmentFiles().read(record.fileKey)).copy(caption = caption, viewOnce = viewOnce))
+            }
+        }
+        val message = database.withTransaction {
+            requireAttachmentSession(sessionKey)
+            val saved = database.attachmentDraftDao().get(conversationId)
+            if (saved?.selectionId != selectionId) {
+                val pending = outboxDao.pendingByClientId(selectionId)
+                val echo = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + selectionId)
+                check(pending?.conversationId == conversationId && echo?.authorId == owner) { "Attachment changed or was already queued; check the chat" }
+                return@withTransaction checkNotNull(echo).toDomain()
+            }
+            val record = checkNotNull(saved)
+            // Hashing/decoding multi-MB files must not hold Room's writer lock.
+            // The immutable reference and metadata must still match that read.
+            check(record.fileKey == snapshot?.fileKey && record.metadataJson == snapshot?.metadataJson) { "Attachment changed while preparing Send" }
+            val draft = checkNotNull(prepared) { "Attachment is no longer ready" }
+            val temp = Message(id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + selectionId,
+                conversationId = conversationId, authorId = owner, authorName = owner, kind = kindOf(draft.kind),
+                body = caption, createdAt = java.time.Instant.now().toString(), durationMs = draft.durationMs,
+                fileName = draft.fileName.takeIf { draft.kind == "file" }, fileSize = draft.fileSize.takeIf { draft.kind == "file" },
+                viewOnce = viewOnce, topicId = topicId)
+            messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+            outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = selectionId,
+                content = caption, kind = draft.kind, createdAt = temp.createdAt, uploadKey = record.fileKey))
+            database.attachmentDraftDao().delete(conversationId, selectionId)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireAttachmentSession(sessionKey)
+            temp
+        }
+        scope.launch {
+            try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Attachment remains queued", error); scheduleSelfHeal() }
+        }
+        Result.success(message)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+
     override suspend fun sendMediaMessage(
         conversationId: String,
         body: String,
@@ -1099,33 +1266,46 @@ class PulseRepositoryImpl @Inject constructor(
         kind: String?,
         viewOnce: Boolean?,
         topicId: String?,
-    ): Result<Message> =
-        when (
-            val r = api.sendMessage(
-                conversationId = conversationId,
-                senderId = viewerId ?: "",
-                content = body,
-                imagePath = imagePath,
-                audioPath = audioPath,
-                durationMs = durationMs,
-                filePath = filePath,
-                fileName = fileName,
-                fileSize = fileSize,
-                kind = kind,
-                viewOnce = viewOnce,
-                topicId = topicId,
-            )
-        ) {
-            is PulseResult.Success -> {
-                // R5-B - media sends ride the same envelope; the streak bump is
-                // not surfaced here (web only toasts on the room-composer path).
-                val message = r.value.messageOrThrow()
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-                scheduleConversationsRefresh()
-                Result.success(message)
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        clientId: String?,
+    ): Result<Message> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
+        val operationId = clientId ?: java.util.UUID.randomUUID().toString()
+        val wireKind = kind ?: when {
+            imagePath != null -> "image"
+            audioPath != null -> "audio"
+            filePath != null -> "file"
+            else -> return Result.failure(IllegalArgumentException("Attachment path is missing"))
         }
+        if (wireKind !in setOf("image", "audio", "file") ||
+            (wireKind == "image" && imagePath.isNullOrBlank()) ||
+            (wireKind == "audio" && (audioPath.isNullOrBlank() || (durationMs != null && durationMs !in 1L..600_000L))) ||
+            (wireKind == "file" && (filePath.isNullOrBlank() || fileName.isNullOrBlank() || fileName.length > 120)) ||
+            (viewOnce == true && wireKind != "image")) {
+            return Result.failure(IllegalArgumentException("Attachment metadata is incomplete or invalid"))
+        }
+        val temp = Message(
+            id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + operationId,
+            conversationId = conversationId, authorId = owner, authorName = owner,
+            kind = kindOf(wireKind), body = body, createdAt = java.time.Instant.now().toString(),
+            imagePath = imagePath, audioPath = audioPath, durationMs = durationMs,
+            filePath = filePath, fileName = fileName, fileSize = fileSize,
+            viewOnce = viewOnce == true, topicId = topicId,
+        )
+        try {
+            database.withTransaction {
+                messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+                outboxDao.insert(OutboxEntity(conversationId = conversationId, clientId = operationId,
+                    content = body, kind = wireKind, createdAt = temp.createdAt))
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(error) }
+        // One account-owned drainer, not an independent screen POST. Its existing
+        // retry envelope reads the exact media metadata from the optimistic row.
+        eventsBus.tryEmit(PulseEvent.OutboxQueued(operationId, conversationId))
+        scope.launch {
+            try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Attachment remains queued", error); scheduleSelfHeal() }
+        }
+        return Result.success(temp)
+    }
 
     /** GET /api/uploads/{file} → bytes written under cacheDir/downloads. */
     override suspend fun downloadMedia(filePath: String): Result<String> = withContext(Dispatchers.IO) {
@@ -1149,10 +1329,6 @@ class PulseRepositoryImpl @Inject constructor(
             messageDao.countsByThread(rootIds).associate { it.rootId to it.cnt }
         }.getOrDefault(emptyMap())
     }
-
-    /** The outbox queues PURE TEXT only - thread/quote sends are online-only. */
-    private fun queueableSend(replyToId: String?, parentId: String?): Boolean =
-        replyToId == null && parentId == null
 
     override suspend fun editMessage(messageId: String, content: String): Result<Message> =
         when (val r = api.editMessage(messageId, viewerId ?: "", content)) {
@@ -1181,17 +1357,18 @@ class PulseRepositoryImpl @Inject constructor(
         }
 
     override suspend fun pinnedMessages(conversationId: String): List<Message> {
+        val watermark = messageEventClock.get()
         val page = when (val r = api.pinnedMessages(conversationId, viewerId ?: "")) {
             is PulseResult.Success -> r.value
             is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
         }
         val rows = page.messages.map { it.toDomain() }
         // Upsert keeps the Room cache (pin glyphs, banners) authoritative.
-        messageDao.upsertAll(rows.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        return rows
+        return cacheFetchedMessages(rows, watermark)
     }
 
     override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
+        val watermark = messageEventClock.get()
         val page = when (val r = api.thread(rootId, viewerId ?: "")) {
             is PulseResult.Success -> r.value
             is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
@@ -1200,30 +1377,34 @@ class PulseRepositoryImpl @Inject constructor(
         val replies = page.replies.map { it.toDomain() } // wire order: createdAt asc
         // Upsert both so observeThread(rootId) rehydrates the sheet offline
         // and realtime reply appends merge with this window.
-        messageDao.upsertAll((listOf(parent) + replies).map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        return parent to replies
+        val merged = cacheFetchedMessages(listOf(parent) + replies, watermark)
+        val currentParent = merged.firstOrNull { it.id == parent.id }
+            ?: throw IllegalStateException("Thread parent is no longer available")
+        return currentParent to merged.filter { it.id != parent.id }
     }
 
     override suspend fun messagesPage(conversationId: String, before: String?, limit: Int): Pair<List<Message>, Boolean> {
-        val page = when (val r = api.messages(conversationId, limit, before)) {
+        val watermark = messageEventClock.get()
+        val anchor = before?.let { messageDao.byId(it)?.takeIf { row -> row.conversationId == conversationId }
+            ?: messageDao.firstAtTimestamp(conversationId, it) }
+        val page = when (val r = api.messages(conversationId, limit, anchor?.createdAt ?: before, beforeId = anchor?.id)) {
             is PulseResult.Success -> r.value
             is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
         }
         val rows = page.messages.map { it.toDomain() } // wire order: asc
         // Pagination merge = plain upserts; loaded window grows in Room.
-        messageDao.upsertAll(rows.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        return rows to page.hasMore
+        return cacheFetchedMessages(rows, watermark) to page.hasMore
     }
 
     override suspend fun searchInConversation(conversationId: String, query: String): List<Message> {
+        val watermark = messageEventClock.get()
         if (query.isBlank()) return emptyList()
         val page = when (val r = api.searchInConversation(conversationId, query)) {
             is PulseResult.Success -> r.value
             is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
         }
         val rows = page.messages.map { it.toDomain() }
-        messageDao.upsertAll(rows.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        return rows
+        return cacheFetchedMessages(rows, watermark)
     }
 
     override suspend fun uploadMedia(dataUrl: String): Result<String> =
@@ -1248,6 +1429,7 @@ class PulseRepositoryImpl @Inject constructor(
      * media stays online-only per spec §1.2.
      */
     override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> {
+        val clientId = java.util.UUID.randomUUID().toString()
         val textOnly = source.kind == Message.Kind.TEXT &&
             source.imagePath == null && source.audioPath == null && source.filePath == null
         return when (
@@ -1255,6 +1437,7 @@ class PulseRepositoryImpl @Inject constructor(
                 conversationId = targetConversationId,
                 senderId = viewerId ?: "",
                 content = source.body,
+                clientId = clientId,
                 imagePath = source.imagePath,
                 audioPath = source.audioPath,
                 durationMs = source.durationMs,
@@ -1278,7 +1461,6 @@ class PulseRepositoryImpl @Inject constructor(
             }
             is PulseResult.Failure -> {
                 if (r.kind == PulseResult.Failure.Kind.NETWORK && textOnly && !viewerId.isNullOrBlank()) {
-                    val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
                     val nowIso = java.time.OffsetDateTime.now()
                         .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
                     val temp = Message(
@@ -1290,7 +1472,7 @@ class PulseRepositoryImpl @Inject constructor(
                         body = source.body,
                         createdAt = nowIso,
                     )
-                    messageDao.upsertAll(listOf(MessageEntity.from(temp)))
+                    messageDao.upsertAll(listOf(MessageEntity.from(temp).copy(payloadJson = source.payload)))
                     outboxDao.insert(
                         OutboxEntity(
                             conversationId = targetConversationId,
@@ -1300,8 +1482,7 @@ class PulseRepositoryImpl @Inject constructor(
                             createdAt = nowIso,
                         ),
                     )
-                    outboxDao.trimBeyond(MAX_OUTBOX)
-                    eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, targetConversationId))
+                                eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, targetConversationId))
                     return Result.success(temp)
                 }
                 Result.failure(apiExceptionOf(r))
@@ -1578,49 +1759,117 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun enqueueOutbox(entry: OutboxEntry): Result<Unit> = try {
         outboxDao.insert(OutboxEntity.from(entry))
-        outboxDao.trimBeyond(MAX_OUTBOX)
         Result.success(Unit)
     } catch (e: Exception) {
         Result.failure(e)
     }
 
-    override fun observeOutbox(): Flow<List<OutboxEntry>> =
-        outboxDao.observeAll().map { rows -> rows.map { it.toEntry() } }
+    override fun observeOutbox(): Flow<List<OutboxEntry>> {
+        val owner = viewerId ?: return kotlinx.coroutines.flow.flowOf(emptyList())
+        return outboxDao.observeOwned(owner).map { rows -> rows.map { it.toEntry() } }
+    }
 
-    override suspend fun outboxPending(): List<OutboxEntry> = outboxDao.all().map { it.toEntry() }
+    override suspend fun outboxPending(): List<OutboxEntry> {
+        val owner = viewerId ?: return emptyList()
+        return outboxDao.allForOwner(owner).map { it.toEntry() }
+    }
+
+    override suspend fun outboxReady(excludingRooms: Set<String>): List<OutboxEntry> {
+        val owner = viewerId ?: return emptyList()
+        return outboxDao.allForOwner(owner, (excludingRooms + dispatchGate.blockedConversations()).toList()).map { it.toEntry() }
+    }
+
+    override suspend fun pendingOutboxCount(): Int = viewerId?.let { outboxDao.pendingCountForOwner(it) } ?: 0
 
     /** ONE POST attempt - classification rides on OutboxDeliveryException. */
-    override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> =
-        when (val r = api.sendMessage(entry.conversationId, viewerId ?: "", entry.content)) {
+    override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> {
+        val current = outboxDao.pendingByClientId(entry.clientId)
+            ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Operation is no longer pending"))
+        val owner = viewerId
+        val stored = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+        if (owner.isNullOrBlank() || sessionTokenStore.cached.isNullOrBlank() ||
+            stored == null || stored.authorId != owner || stored.conversationId != entry.conversationId
+        ) return Result.failure(OutboxDeliveryException(OutboxFailureClass.RETRY, "Sign in to the message's original account to send it"))
+        var temp = checkNotNull(stored)
+        if (current.uploadKey != null) {
+            if (current.kind !in setOf("image", "audio", "file")) return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Saved upload kind is invalid"))
+            val bytes = try { withContext(Dispatchers.IO) { attachmentFiles().read(current.uploadKey) } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, error.message ?: "Saved attachment is unavailable")) }
+            val path = when (val upload = api.uploadMedia(bytes)) {
+                is PulseResult.Success -> upload.value.filePath?.takeIf { it.isNotBlank() }
+                    ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Upload receipt was not confirmed; original attachment is kept"))
+                is PulseResult.Failure -> {
+                    holdMessageRetries(upload)
+                    val classification = upload.outboxFailureClass()
+                    return Result.failure(OutboxDeliveryException(classification, upload.message ?: "Upload was not confirmed"))
+                }
+            }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (viewerId != owner) throw kotlinx.coroutines.CancellationException("Attachment account ended")
+            val uploaded = database.withTransaction {
+                if (outboxDao.pendingByClientId(entry.clientId) == null) return@withTransaction null
+                val original = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+                    ?: return@withTransaction null
+                if (original.authorId != owner || original.conversationId != entry.conversationId) return@withTransaction null
+                val updated = original.copy(imagePath = path.takeIf { current.kind == "image" },
+                    audioPath = path.takeIf { current.kind == "audio" }, filePath = path.takeIf { current.kind == "file" })
+                messageDao.upsertAll(listOf(updated))
+                outboxDao.finishUpload(entry.clientId)
+                updated
+            } ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Attachment was discarded during upload"))
+            temp = uploaded
+            // The durable path has replaced the upload bytes. A cleanup failure
+            // must not turn that successful receipt into a failed send.
+            withContext(Dispatchers.IO) { runCatching { attachmentFiles().remove(current.uploadKey) } }
+        }
+        val queued = temp.toDomain()
+        val payload = try {
+            (entry.wirePayload ?: queued.payload)?.let {
+                PulseJson.parseToJsonElement(it) as? kotlinx.serialization.json.JsonObject
+                    ?: return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Saved message payload is invalid"))
+            }
+        } catch (_: Exception) {
+            return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Saved message payload is damaged"))
+        }
+        // Receipt cleanup suspends; a user may discard the row during it.
+        // Do not start a POST for an intent observed to have been removed.
+        if (outboxDao.pendingByClientId(entry.clientId) == null) {
+            return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Message was discarded before sending"))
+        }
+        return when (val r = api.sendMessage(
+            entry.conversationId, owner, entry.content, clientId = entry.clientId,
+            replyToId = temp.replyToId, parentId = temp.threadRootId,
+            topicId = temp.topicId, kind = entry.kind,
+            anon = queued.anon.takeIf { it }, payload = payload,
+            imagePath = queued.imagePath, audioPath = queued.audioPath, durationMs = queued.durationMs,
+            filePath = queued.filePath, fileName = queued.fileName, fileSize = queued.fileSize,
+            viewOnce = queued.viewOnce.takeIf { it },
+        )) {
             is PulseResult.Success -> Result.success(r.value.messageOrThrow())
             is PulseResult.Failure -> {
-                val classification = when (r.kind) {
-                    PulseResult.Failure.Kind.VALIDATION,
-                    PulseResult.Failure.Kind.FORBIDDEN,
-                    PulseResult.Failure.Kind.NOT_FOUND,
-                    PulseResult.Failure.Kind.AUTH,
-                    -> OutboxFailureClass.DROP
-                    else -> OutboxFailureClass.RETRY
-                }
-                Result.failure(
-                    OutboxDeliveryException(classification, r.message ?: r.kind.name),
-                )
+                holdMessageRetries(r, entry.conversationId)
+                val classification = r.outboxFailureClass(messageEndpoint = true)
+                Result.failure(OutboxDeliveryException(classification, r.message ?: r.kind.name))
             }
         }
+    }
 
     override suspend fun resolveOutboxDelivery(entry: OutboxEntry, real: Message) {
-        messageDao.upsertAll(listOf(MessageEntity.from(real, reactionsJsonOf(real))))
-        messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
-        dedupeTempEchoes(real)
-        outboxDao.deleteByClientId(entry.clientId)
+        database.withTransaction {
+            messageDao.upsertAll(listOf(MessageEntity.from(real, reactionsJsonOf(real))))
+            messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+            outboxDao.deleteByClientId(entry.clientId)
+        }
         scheduleConversationsRefresh()
         eventsBus.tryEmit(PulseEvent.OutboxFlushed(entry.clientId, real))
     }
 
     override suspend fun dropOutboxEntry(clientId: String, reason: String) {
-        outboxDao.deleteByClientId(clientId)
-        messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
-        eventsBus.tryEmit(PulseEvent.OutboxDropped(clientId, reason))
+        // Retain the echo as the full retry/recovery envelope, hidden by the DAO
+        // timeline query. A later canonical delivery can still resolve this row.
+        val message = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+        if (outboxDao.markFailed(clientId, reason) > 0) {
+            eventsBus.tryEmit(PulseEvent.OutboxDropped(clientId, "Saved in Drafts & outbox: $reason", message?.conversationId, message?.threadRootId))
+        }
     }
 
     override suspend fun bumpOutboxAttempts(clientId: String) {
@@ -1632,7 +1881,14 @@ class PulseRepositoryImpl @Inject constructor(
      * self-heal). The drain policy itself is FlushOutboxUseCase - single
      * source of truth, unit-tested at the domain layer.
      */
-    override suspend fun flushOutbox(): FlushReport = flushMutex.withLock {
+    override suspend fun flushOutbox(): FlushReport = dispatchGate.serialized {
+        if (viewerId == null || sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) {
+            return@serialized FlushReport(sent = 0, dropped = 0, pending = pendingOutboxCount())
+        }
+        if (dispatchGate.remainingDelayMillis() > 0L) {
+            scheduleSelfHeal()
+            return@serialized FlushReport(pending = pendingOutboxCount())
+        }
         val report = FlushOutboxUseCase(this).invoke()
         if (report.pending > 0) scheduleSelfHeal()
         report
@@ -1642,7 +1898,9 @@ class PulseRepositoryImpl @Inject constructor(
     private fun scheduleSelfHeal() {
         if (selfHealJob?.isActive == true) return
         selfHealJob = scope.launch {
-            delay(SELF_HEAL_MS)
+            delay(maxOf(SELF_HEAL_MS, dispatchGate.remainingDelayMillis()))
+            // Release the scheduling slot before flush requests its next retry.
+            selfHealJob = null
             runCatching { flushOutbox() }
                 .onFailure { Log.w(TAG, "self-heal flush failed", it) }
         }
@@ -1650,52 +1908,55 @@ class PulseRepositoryImpl @Inject constructor(
 
     // drafts (Wave 0 - web pulse-drafts parity)
 
-    override suspend fun saveDraft(conversationId: String, text: String) {
-        val trimmed = text.take(MAX_DRAFT)
-        if (trimmed.isBlank()) {
-            draftDao.delete(conversationId)
-        } else {
-            draftDao.upsert(
-                DraftEntity(
-                    conversationId = conversationId,
-                    text = trimmed,
-                    updatedAt = java.time.OffsetDateTime.now()
-                        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME),
-                ),
-            )
-        }
-        // Server mirror (web R45 parity): every local mutation also rides the
-        // PATCH /draft route ('' clears) so other devices restore it. Local
-        // still wins; the mirror is fire-and-forget.
-        setServerDraft(conversationId, trimmed)
+    private val draftVersions = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicLong>()
+    private val draftMutex = Mutex()
+    // Finite local journal writes outlive UI/transport teardown; no network work
+    // runs in this scope. Every write remains bound to this account's database.
+    private val draftWriteScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private fun nextDraftVersion(id: String): Long = draftVersions
+        .getOrPut(id) { java.util.concurrent.atomic.AtomicLong() }.incrementAndGet()
+
+    private suspend fun writeLocalDraft(id: String, text: String, version: Long) = draftMutex.withLock {
+        if (draftVersions[id]?.get() != version) return@withLock
+        val value = text.take(MAX_DRAFT)
+        if (value.isBlank()) draftDao.delete(id)
+        else draftDao.upsert(DraftEntity(id, value, java.time.OffsetDateTime.now().toString()))
     }
 
-    override suspend fun clearDraft(conversationId: String) {
-        draftDao.delete(conversationId)
-        setServerDraft(conversationId, "") // web parity: clear paths sync too
+    override fun stageDraft(conversationId: String, text: String) {
+        val version = nextDraftVersion(conversationId)
+        draftWriteScope.launch {
+            try { writeLocalDraft(conversationId, text, version) } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Log.w(TAG, "Local draft could not be saved", error) }
+        }
     }
+
+    override suspend fun saveDraft(conversationId: String, text: String) {
+        writeLocalDraft(conversationId, text, nextDraftVersion(conversationId))
+        setServerDraft(conversationId, text.take(MAX_DRAFT))
+    }
+
+    override suspend fun clearDraft(conversationId: String) = saveDraft(conversationId, "")
 
     override fun observeDraft(conversationId: String): Flow<String?> =
         draftDao.observe(conversationId).map { it?.text }
 
-    override suspend fun markRead(conversationId: String): Result<Unit> {
-        // Demo room is on-device: zero the badge locally, no gateway verdict.
+    override suspend fun markRead(conversationId: String): Result<Unit> = acknowledgeRead(conversationId, null)
+
+    override suspend fun markReadThrough(conversationId: String, messageId: String): Result<Unit> =
+        acknowledgeRead(conversationId, messageId)
+
+    private suspend fun acknowledgeRead(conversationId: String, messageId: String?): Result<Unit> {
         if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
             mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
             return Result.success(Unit)
         }
-        // Optimistic: zero the badge locally, revert if the server refuses.
-        val before = conversationDao.byId(conversationId)?.toDomain()
-        if (before != null) {
-            mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
-        }
-        val result = api.postAction(
-            "/api/conversations/$conversationId/read",
-            PulseApi.jsonOf("userId" to (viewerId ?: "")),
-        ).toResult()
-        if (result.isFailure && before != null) {
-            mutateConversation(conversationId) { before }
-        }
+        val owner = viewerId ?: return Result.failure(IllegalStateException("The account is no longer active"))
+        val result = api.postAction("/api/conversations/$conversationId/read",
+            PulseApi.jsonOf("userId" to owner, "messageId" to messageId)).toResult()
+        // Do not zero newer arrivals or roll an entire stale conversation back
+        // over messages/pins received while the read request was in flight.
+        if (result.isSuccess && viewerId == owner) scheduleConversationsRefresh()
         return result
     }
 
@@ -2525,6 +2786,12 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
+    override suspend fun loadWhiteboardDraft(conversationId: String, ownerId: String): List<WhiteboardStrokePostDto> =
+        prefsLocalStore.whiteboardDraft("account:$ownerId:room:$conversationId")
+
+    override suspend fun updateWhiteboardDraft(conversationId: String, ownerId: String, transform: (List<WhiteboardStrokePostDto>) -> List<WhiteboardStrokePostDto>) =
+        prefsLocalStore.updateWhiteboardDraft("account:$ownerId:room:$conversationId", transform)
+
     override suspend fun whiteboard(conversationId: String, since: Long?): Result<WhiteboardPageDto> =
         when (val r = api.whiteboard(conversationId, viewerId ?: "", since)) {
             is PulseResult.Success -> Result.success(r.value)
@@ -2609,6 +2876,9 @@ class PulseRepositoryImpl @Inject constructor(
                 if (!dueOnly) runCatching {
                     cachePut("reminders:${viewerId ?: "anon"}", PulseJson.encodeToString(RemindersPageDto.serializer(), r.value))
                 }
+                reminderOwner?.let { owner ->
+                    for (item in r.value.items) reminderEffects.schedule(owner, item)
+                }
                 Result.success(r.value)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -2616,21 +2886,42 @@ class PulseRepositoryImpl @Inject constructor(
 
     override suspend fun createReminder(conversationId: String, messageId: String?, note: String?, remindAtIso: String): Result<ReminderItemDto> =
         when (val r = api.createReminder(viewerId ?: "", conversationId, messageId, note, remindAtIso)) {
-            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Success -> {
+                reminderOwner?.let { reminderEffects.schedule(it, r.value) }
+                Result.success(r.value)
+            }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
     override suspend fun resolveReminder(reminderId: String): Result<ReminderResolveDto> =
         when (val r = api.resolveReminder(reminderId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
+            is PulseResult.Success -> {
+                if (!r.value.ok) Result.failure(IllegalStateException("Invalid reminder acknowledgement"))
+                else {
+                    reminderOwner?.let { reminderEffects.finish(it, reminderId) }
+                    Result.success(r.value)
+                }
+            }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
     override suspend fun deleteReminder(reminderId: String): Result<Unit> =
         when (val r = api.deleteReminder(reminderId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Success -> {
+                reminderOwner?.let { reminderEffects.finish(it, reminderId) }
+                Result.success(Unit)
+            }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+
+    override suspend fun acknowledgeReminderDelivery(reminderId: String): Result<ReminderResolveDto> =
+        when (val r = api.resolveReminder(reminderId, viewerId ?: "")) {
+            is PulseResult.Success -> if (r.value.ok) Result.success(r.value)
+                else Result.failure(IllegalStateException("Invalid reminder acknowledgement"))
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+
+    override fun reminderDeliveryOwner(): app.pulse.domain.notify.ReminderOwner? = reminderOwner
 
     // R1-W2A - quick phrases (F-MS-29)
 
@@ -2662,15 +2953,46 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
-    override suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto> =
-        when (val r = api.createGame(viewerId ?: "", conversationId, opponentId)) {
-            is PulseResult.Success -> {
-                r.value.message?.let { upsertMessage(it.toDomain()) }
-                scheduleConversationsRefresh()
-                Result.success(r.value)
+    override suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No room owner"))
+        val opponent = opponentId?.trim()?.takeIf { it.isNotEmpty() }
+        val intent = kotlinx.serialization.json.JsonArray(listOf(owner, "game", conversationId, opponent.orEmpty()).map { kotlinx.serialization.json.JsonPrimitive(it) }).toString()
+        return roomCreation(intent, send = { id -> api.createGame(owner, conversationId, opponent, id) }, carrier = { it.message })
+    }
+
+    /** Persist the retry identity before POST; cache its confirmed carrier before
+     * retiring it. Cancellation/storage failure leaves the same operation retryable. */
+    private suspend fun <T> roomCreation(intent: String, send: suspend (String) -> PulseResult<T>, carrier: (T) -> app.pulse.protocol.ChatMessageDto?): Result<T> {
+        return try {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val id = prefsLocalStore.beginRoomCreation(intent)
+            when (val result = send(id)) {
+                is PulseResult.Success -> {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    val message = requireNotNull(carrier(result.value)) { "Creation message is missing" }
+                    upsertMessage(message.toDomain())
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    prefsLocalStore.finishRoomCreation(intent, id)
+                    scheduleConversationsRefresh()
+                    Result.success(result.value)
+                }
+                is PulseResult.Failure -> {
+                    if (result.status == 410 && result.code == "creation_gone") {
+                        if (result.receiptClientId != id) return Result.failure(IllegalStateException("Unconfirmed removal receipt; the original creation is still pending."))
+                        // Proven delivered but removed: allow a later deliberate new creation.
+                        // Unknown 410s or mismatched receipts must keep the retry identity.
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        prefsLocalStore.finishRoomCreation(intent, id)
+                    }
+                    Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
+                }
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
         }
+    }
 
     override suspend fun games(conversationId: String): Result<GamesPageDto> =
         when (val r = api.games(conversationId)) {
@@ -2696,18 +3018,15 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun createTournament(conversationId: String, name: String): Result<TournamentCreateResultDto> =
-        when (val r = api.createTournament(viewerId ?: "", conversationId, name)) {
-            is PulseResult.Success -> {
-                r.value.message?.let { upsertMessage(it.toDomain()) }
-                scheduleConversationsRefresh()
-                Result.success(r.value)
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun createTournament(conversationId: String, name: String): Result<TournamentCreateResultDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No room owner"))
+        val normalizedName = name.trim()
+        val intent = kotlinx.serialization.json.JsonArray(listOf(owner, "tournament", conversationId, normalizedName).map { kotlinx.serialization.json.JsonPrimitive(it) }).toString()
+        return roomCreation(intent, send = { id -> api.createTournament(owner, conversationId, normalizedName, id) }, carrier = { it.message })
+    }
 
     override suspend fun tournaments(conversationId: String): Result<TournamentsPageDto> =
-        when (val r = api.tournaments(conversationId)) {
+        when (val r = api.tournaments(conversationId, viewerId)) {
             is PulseResult.Success -> Result.success(r.value)
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
@@ -2753,11 +3072,29 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun transferCoins(toUsername: String, amount: Long, note: String?): Result<TransferResultDto> =
-        when (val r = api.transferCoins(viewerId ?: "", toUsername, amount, note)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun transferCoins(toUsername: String, amount: Long, note: String?): Result<TransferResultDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No wallet owner"))
+        val handle = toUsername.trim().removePrefix("@").lowercase(java.util.Locale.ROOT)
+        val normalizedNote = note.orEmpty().trim().take(140)
+        val intent = kotlinx.serialization.json.JsonArray(listOf(owner, "transfer", handle, amount.toString(), normalizedNote).map { kotlinx.serialization.json.JsonPrimitive(it) }).toString()
+        return walletMutation(intent) { id -> api.transferCoins(owner, handle, amount, normalizedNote, id) }
+    }
+
+    private suspend fun <T> walletMutation(intent: String, send: suspend (String) -> PulseResult<T>): Result<T> {
+        return try {
+            val id = prefsLocalStore.beginWalletOperation(intent)
+            when (val result = send(id)) {
+                is PulseResult.Success -> {
+                    prefsLocalStore.finishWalletOperation(intent, id)
+                    Result.success(result.value)
+                }
+                is PulseResult.Failure -> Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
+            }
+        } catch (error: Exception) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            Result.failure(error)
         }
+    }
 
     override suspend fun swapRates(): Result<SwapPageDto> =
         when (val r = api.swapRates()) {
@@ -2765,11 +3102,11 @@ class PulseRepositoryImpl @Inject constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun swap(direction: String, amount: Long): Result<SwapResultDto> =
-        when (val r = api.swap(viewerId ?: "", direction, amount)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun swap(direction: String, amount: Long): Result<SwapResultDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No wallet owner"))
+        val intent = "swap:$owner:$direction:$amount"
+        return walletMutation(intent) { id -> api.swap(owner, direction, amount, id) }
+    }
 
     override suspend fun hubTasks(): Result<HubTasksPageDto> =
         when (val r = api.hubTasks(viewerId ?: "")) {
@@ -3303,7 +3640,7 @@ fun ChatMessageDto.toDomain(): Message = Message(
     topicId = topicId,
     // Wave 7 rich objects ride payload as a RAW JSON STRING (red packet / game /
     // tournament carriers) - cards parse tolerantly via PulseWave7Logic.
-    payload = payload?.toString()?.takeIf { it != "null" && it != "{}" },
+    payload = payload.objectPayloadText(),
     // REM-A - incognito + disappearing (F-MS-17/19): wire carries the anon flag,
     // the deterministic alias, and the purge deadline (ISO → epoch ms).
     anon = anon == true,

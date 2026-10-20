@@ -19,6 +19,7 @@
 // No mocks - every row lands in Prisma/SQLite.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { createRoomObject, MessageOperationError } from '@/lib/message-operation'
 import {
   mapMessage,
   memberIdsOf,
@@ -42,6 +43,7 @@ export interface TournamentListItem {
   game: string
   status: string
   playerCount: number
+  joined: boolean | null
   createdAt: string
 }
 
@@ -76,103 +78,30 @@ export async function POST(req: Request) {
     )
   }
 
-  // Existence + membership up-front → clean 404 / 403 semantics
-  // (same guard shape as POST /api/redpackets).
-  const [conv, participant] = await Promise.all([
-    db.conversation.findUnique({ where: { id: conversationId }, select: { id: true } }),
-    db.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId } },
-      select: { id: true },
-    }),
-  ])
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  try {
+    const receipt = await createRoomObject(db, { kind: 'tournament', userId, conversationId, name, clientId: body.clientId })
+    const [row, message] = await Promise.all([
+      db.tournament.findUnique({ where: { id: receipt.resourceId } }),
+      db.message.findFirst({ where: { id: receipt.messageId, deletedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, include: MESSAGE_FULL_INCLUDE }),
+    ])
+    if (!row || !message) return NextResponse.json({ error: 'The earlier creation was delivered, but is no longer available. Submit again to start a new one.', code: 'creation_gone', clientId: receipt.clientId }, { status: 410 })
+    const mapped = mapMessage(message, userId)
+    // Notification failure is not creation failure. A replay must not re-notify,
+    // mark the room read again, unarchive it again or create another carrier.
+    if (!receipt.replayed) {
+      try {
+        const recipients = (await memberIdsOf(conversationId)).filter(memberId => memberId !== userId)
+        await notifySocket('message:new', recipients, { type: 'message:new', message: mapped, recipientIds: recipients, conversationId })
+      } catch (error) { console.error('[tournaments/create] relay failed after commit', error) }
+    }
+    return NextResponse.json({ tournament: { id: row.id, name: row.name, game: row.game, status: row.status,
+        createdAt: row.createdAt.toISOString(), endsAt: row.endsAt?.toISOString() ?? null }, message: mapped,
+      clientId: receipt.clientId, replayed: receipt.replayed }, { status: receipt.replayed ? 200 : 201 })
+  } catch (error) {
+    if (error instanceof MessageOperationError) return NextResponse.json({ error: error.message, clientId: error.clientId, code: error.code }, { status: error.status })
+    throw error
   }
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-
-  const now = new Date()
-
-  // One atomic transaction: season row → creator entry → carrier
-  // message (kind 'tournament') → list-ordering bumps → devops log.
-  const { tournament, message } = await db.$transaction(async (tx) => {
-    const created = await tx.tournament.create({
-      data: {
-        conversationId,
-        name,
-        game,
-        status: 'running',
-        createdById: userId,
-        createdAt: now,
-      },
-    })
-    // creator auto-joins the standings
-    await tx.tournamentPlayer.create({
-      data: { tournamentId: created.id, userId, joinedAt: now },
-    })
-    const msg = await tx.message.create({
-      data: {
-        conversationId,
-        senderId: userId,
-        content: `Tournament "${name}" started`,
-        kind: 'tournament',
-        payload: JSON.stringify({ tournamentId: created.id, name, game }),
-        createdAt: now,
-      },
-      include: MESSAGE_FULL_INCLUDE,
-    })
-    // keep list ordering / read state / archives in lockstep with sends
-    await tx.conversation.update({ where: { id: conversationId }, data: { updatedAt: now } })
-    await tx.conversationParticipant.update({
-      where: { userId_conversationId: { userId, conversationId } },
-      data: { lastReadAt: now },
-    })
-    await tx.conversationParticipant.updateMany({
-      where: { conversationId, userId: { not: userId }, archivedAt: { not: null } },
-      data: { archivedAt: null },
-    })
-    await tx.logEvent.create({
-      data: {
-        userId,
-        kind: 'tournament',
-        message: `started tournament "${name}" (${game})`,
-        meta: JSON.stringify({ tournamentId: created.id, conversationId, game }),
-      },
-    })
-    return { tournament: created, message: msg }
-  })
-
-  const mapped = mapMessage(message, userId)
-
-  // Realtime relay to every OTHER member (sender appends via the
-  // response - the sheet fires `pulse:external-message` for the
-  // instant local append).
-  const recipients = (await memberIdsOf(conversationId)).filter((memberId) => memberId !== userId)
-  await notifySocket('message:new', recipients, {
-    type: 'message:new',
-    message: mapped,
-    recipientIds: recipients,
-    conversationId,
-  })
-
-  return NextResponse.json(
-    {
-      tournament: {
-        id: tournament.id,
-        name: tournament.name,
-        game: tournament.game,
-        status: tournament.status,
-        createdAt: tournament.createdAt.toISOString(),
-        endsAt: tournament.endsAt ? tournament.endsAt.toISOString() : null,
-      },
-      message: mapped,
-    },
-    { status: 201 },
-  )
 }
 
 /**
@@ -200,12 +129,17 @@ export async function GET(req: Request) {
     include: { _count: { select: { entries: true } } },
   })
 
+  const userId = strField(url.searchParams.get('userId'))
+  const joined = new Set(userId ? (await db.tournamentPlayer.findMany({
+    where: { userId, tournamentId: { in: rows.map(row => row.id) } }, select: { tournamentId: true },
+  })).map(entry => entry.tournamentId) : [])
   const tournaments: TournamentListItem[] = rows.map((row) => ({
     id: row.id,
     name: row.name,
     game: row.game,
     status: row.status,
     playerCount: row._count.entries,
+    joined: userId ? joined.has(row.id) : null,
     createdAt: row.createdAt.toISOString(),
   }))
 

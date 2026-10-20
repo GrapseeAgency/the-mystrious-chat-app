@@ -30,6 +30,7 @@ class FlushOutboxUseCaseTest {
         data class Ok(val realMessageId: String) : Script
         data class Drop(val reason: String) : Script
         data class Retry(val reason: String) : Script
+        data class RoomHold(val reason: String) : Script
     }
 
     private class FakeRepo : PulseRepository {
@@ -145,6 +146,8 @@ class FlushOutboxUseCaseTest {
 
         override fun observeOutbox() = MutableStateFlow(queue.toList())
         override suspend fun outboxPending(): List<OutboxEntry> = queue.toList()
+        override suspend fun outboxReady(excludingRooms: Set<String>): List<OutboxEntry> =
+            queue.filter { it.conversationId !in excludingRooms }.take(50)
 
         override suspend fun attemptOutboxSend(entry: OutboxEntry): Result<Message> {
             deliveryOrder += entry.clientId
@@ -153,6 +156,7 @@ class FlushOutboxUseCaseTest {
                 is Script.Drop -> Result.failure(
                     OutboxDeliveryException(OutboxFailureClass.DROP, script.reason),
                 )
+                is Script.RoomHold -> Result.failure(OutboxDeliveryException(OutboxFailureClass.ROOM_RETRY, script.reason))
                 is Script.Retry -> Result.failure(
                     OutboxDeliveryException(OutboxFailureClass.RETRY, script.reason),
                 )
@@ -211,6 +215,7 @@ class FlushOutboxUseCaseTest {
             kind: String?,
             viewOnce: Boolean?,
             topicId: String?,
+            clientId: String?,
         ) = Result.failure<Message>(UnsupportedOperationException())
         override suspend fun downloadMedia(filePath: String) =
             Result.failure<String>(UnsupportedOperationException())
@@ -457,7 +462,7 @@ class FlushOutboxUseCaseTest {
     }
 
     @Test
-    fun `drops 4xx entries with the reason and stops`() = runTest {
+    fun `retains rejected intent without blocking the next valid send`() = runTest {
         val repo = FakeRepo()
         repo.scripts["bad"] = Script.Drop("message blocked in this chat")
         repo.scripts["next"] = Script.Ok("real-next")
@@ -466,12 +471,12 @@ class FlushOutboxUseCaseTest {
 
         val report = FlushOutboxUseCase(repo)()
 
-        assertEquals(listOf("bad"), repo.deliveryOrder)
+        assertEquals(listOf("bad", "next"), repo.deliveryOrder)
         assertEquals(listOf("bad" to "message blocked in this chat"), repo.dropped)
         assertTrue(repo.bumped.isEmpty())
-        assertEquals(0, report.sent)
+        assertEquals(1, report.sent)
         assertEquals(1, report.dropped)
-        assertEquals(1, report.pending)
+        assertEquals(0, report.pending)
     }
 
     @Test
@@ -494,4 +499,21 @@ class FlushOutboxUseCaseTest {
         val report = FlushOutboxUseCase(repo)()
         assertEquals(FlushReport(sent = 0, dropped = 0, pending = 0), report)
     }
+    @Test fun `a room cooldown cannot hide a healthy room beyond the first fifty entries`() = runTest {
+        val repo = FakeRepo()
+        repeat(75) { index ->
+            repo.enqueueOutbox(entry("slow-$index", "slow"))
+            repo.scripts["slow-$index"] = Script.Ok("real-$index")
+        }
+        repo.scripts["slow-0"] = Script.RoomHold("slow mode")
+        repo.enqueueOutbox(entry("direct", "direct"))
+        repo.scripts["direct"] = Script.Ok("real-direct")
+        val report = FlushOutboxUseCase(repo)()
+        assertEquals(listOf("slow-0", "direct"), repo.deliveryOrder)
+        assertEquals(listOf("slow-0"), repo.bumped)
+        assertEquals(1, report.sent)
+        assertEquals(75, report.pending)
+        assertEquals((0 until 75).map { "slow-$it" }, repo.queue.map { it.clientId })
+    }
+
 }

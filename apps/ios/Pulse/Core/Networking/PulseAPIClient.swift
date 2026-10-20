@@ -20,14 +20,16 @@ public struct PulseAPIClient: Sendable {
         /// REM-B F-MS-20 - slow-mode 429s: seconds the server asked us to
         /// wait (body { error, retryAfter } or the Retry-After header).
         public var retryAfter: Int?
+        public var receiptClientId: String?
 
-        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil, retryAfter: Int? = nil) {
+        public init(kind: Kind, message: String?, code: String? = nil, suggestion: String? = nil, status: Int? = nil, retryAfter: Int? = nil, receiptClientId: String? = nil) {
             self.kind = kind
             self.message = message
             self.code = code
             self.suggestion = suggestion
             self.status = status
             self.retryAfter = retryAfter
+            self.receiptClientId = receiptClientId
         }
     }
 
@@ -41,12 +43,19 @@ public struct PulseAPIClient: Sendable {
     public let authToken: String?
     private let session: URLSession
     private let decoder = JSONDecoder()
+    private let creationOperations: PulseWalletOperations
 
     public init(baseURL: URL, userId: String, authToken: String? = nil, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.userId = userId
         self.authToken = authToken
         self.session = session
+        self.creationOperations = .roomCreations
+    }
+
+    init(baseURL: URL, userId: String, session: URLSession, creationOperations: PulseWalletOperations) {
+        self.baseURL = baseURL; self.userId = userId; self.authToken = nil
+        self.session = session; self.creationOperations = creationOperations
     }
 
     /// Identity-independent client (onboarding: no viewer yet - users routes
@@ -74,7 +83,10 @@ public struct PulseAPIClient: Sendable {
         before: String? = nil,
         query: String? = nil,
         topicId: String? = nil,
-        since: String? = nil
+        since: String? = nil,
+        syncFrom: String? = nil,
+        syncCursor: String? = nil,
+        beforeId: String? = nil
     ) async throws -> WireMessagesPage {
         try await get(Self.messagesPath(
             conversationId: conversationId,
@@ -82,7 +94,7 @@ public struct PulseAPIClient: Sendable {
             before: before,
             query: query,
             topicId: topicId,
-            since: since
+            since: since, syncFrom: syncFrom, syncCursor: syncCursor, beforeId: beforeId
         ))
     }
 
@@ -98,10 +110,13 @@ public struct PulseAPIClient: Sendable {
         before: String?,
         query: String?,
         topicId: String? = nil,
-        since: String? = nil
+        since: String? = nil,
+        syncFrom: String? = nil,
+        syncCursor: String? = nil,
+        beforeId: String? = nil
     ) -> String {
         var path = "/api/conversations/\(conversationId)/messages?limit=\(limit)"
-        if let before { path += "&before=\(before)" }
+        if let before { path += "&before=\(queryEncoded(before))" }
         if let query {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { path += "&q=\(queryEncoded(trimmed))" }
@@ -114,6 +129,9 @@ public struct PulseAPIClient: Sendable {
             let trimmed = since.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { path += "&since=\(queryEncoded(trimmed))" }
         }
+        if let syncFrom { path += "&syncFrom=\(queryEncoded(syncFrom))" }
+        if let syncCursor { path += "&syncCursor=\(queryEncoded(syncCursor))" }
+        if let beforeId { path += "&beforeId=\(queryEncoded(beforeId))" }
         return path
     }
 
@@ -202,6 +220,7 @@ public struct PulseAPIClient: Sendable {
     /// server whitelist is text|image|audio|sticker|location|file).
     public func sendMessage(
         conversationId: String,
+        clientId: String = UUID().uuidString,
         content: String,
         replyToId: String? = nil,
         parentId: String? = nil,
@@ -219,6 +238,7 @@ public struct PulseAPIClient: Sendable {
     ) async throws -> WireChatMessage {
         try await sendMessageWithStreak(
             conversationId: conversationId,
+            clientId: clientId,
             content: content,
             replyToId: replyToId,
             parentId: parentId,
@@ -244,6 +264,7 @@ public struct PulseAPIClient: Sendable {
     /// sendMessage wrapper above.
     public func sendMessageWithStreak(
         conversationId: String,
+        clientId: String = UUID().uuidString,
         content: String,
         replyToId: String? = nil,
         parentId: String? = nil,
@@ -259,7 +280,7 @@ public struct PulseAPIClient: Sendable {
         payload: [String: Any]? = nil,
         anon: Bool? = nil
     ) async throws -> PulseSendResult {
-        var body: [String: Any] = ["senderId": userId, "content": content, "kind": kind ?? "text"]
+        var body: [String: Any] = ["senderId": userId, "clientId": clientId, "content": content, "kind": kind ?? "text"]
         if let replyToId { body["replyToId"] = replyToId }
         if let parentId { body["parentId"] = parentId }
         if let imagePath { body["imagePath"] = imagePath }
@@ -282,9 +303,10 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extractSendResult(from: data)
     }
 
-    public func markRead(conversationId: String) async throws {
-        // N10-b transport fix - POST /read requires { userId } (400 otherwise).
-        try await postEmpty("/api/conversations/\(conversationId)/read", body: ["userId": userId])
+    public func markRead(conversationId: String, messageId: String? = nil) async throws {
+        var body = ["userId": userId]
+        if let messageId { body["messageId"] = messageId }
+        try await postEmpty("/api/conversations/\(conversationId)/read", body: body)
     }
 
     /// N10-b transport fix - PATCH /pin { userId }; the server TOGGLES the pin
@@ -703,15 +725,18 @@ public struct PulseAPIClient: Sendable {
     public func fullHistory(conversationId: String) async -> [WireChatMessage]? {
         var pages: [[WireChatMessage]] = []
         var before: String?
+        var beforeId: String?
         for _ in 0..<24 {
             var path = "/api/conversations/\(conversationId)/messages?limit=500"
             if let before { path += "&before=\(before)" }
+            if let beforeId { path += "&beforeId=\(Self.queryEncoded(beforeId))" }
             guard let page: WireMessagesPage = try? await get(path, as: WireMessagesPage.self),
                   !page.messages.isEmpty else { break }
             pages.append(page.messages)
             if !page.hasMore { break }
             guard let cursor = page.messages.first?.createdAt else { break }
-            before = cursor.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+            before = Self.queryEncoded(cursor)
+            beforeId = page.messages.first?.id
         }
         guard !pages.isEmpty else { return nil }
         return pages.reversed().flatMap { $0 }
@@ -917,7 +942,12 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/redpackets/{id}/grab { userId } - atomic (409s surface verbatim).
     public func grabRedPacket(_ packetId: String) async throws -> WireRedPacketGrabResult {
         let data = try await postRaw("/api/redpackets/\(q(packetId))/grab", body: ["userId": userId])
-        return try envelope(WireRedPacketGrabResult.self, from: data)
+        let result = try envelope(WireRedPacketGrabResult.self, from: data)
+        guard (1...2_147_483_647).contains(result.amount), let grabbed = result.grabbed, let count = result.count,
+              count > 0, grabbed > 0, grabbed <= count else {
+            throw Failure(kind: .server, message: "Red packet payout was not confirmed. Refresh before retrying.")
+        }
+        return result
     }
 
     // MARK: whiteboard
@@ -932,7 +962,10 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/conversations/{id}/whiteboard { requesterId, strokes[] } → { ids, created, serverTime }.
     public func postWhiteboardStrokes(conversationId: String, strokes: [WireWhiteboardStrokePost]) async throws -> WireWhiteboardPostResult {
         let strokeArrays: [[String: Any]] = strokes.map { s in
-            ["color": s.color, "width": s.width, "points": s.points]
+            var row: [String: Any] = ["color": s.color, "width": s.width, "points": s.points]
+            if let id = s.clientId { row["clientId"] = id }
+            if let epoch = s.baseResetAt { row["baseResetAt"] = epoch }
+            return row
         }
         let data = try await postRaw("/api/conversations/\(q(conversationId))/whiteboard", body: ["requesterId": userId, "strokes": strokeArrays])
         return try envelope(WireWhiteboardPostResult.self, from: data)
@@ -1028,7 +1061,20 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/reminders?userId=[&due=1] - due = remindAt ≤ now && firedAt null.
     public func reminders(dueOnly: Bool) async throws -> WireRemindersPage {
-        try await get("/api/reminders?userId=\(q(userId))" + (dueOnly ? "&due=1" : ""))
+        let base = "/api/reminders?userId=\(q(userId))" + (dueOnly ? "&due=1" : "")
+        var cursor: String?
+        var seen = Set<String>()
+        var ids = Set<String>()
+        var items: [WireReminderItem] = []
+        repeat {
+            try Task.checkCancellation()
+            let page: WireRemindersPage = try await get(base + (cursor.map { "&cursor=\(q($0))" } ?? ""))
+            try Task.checkCancellation()
+            items.append(contentsOf: page.items.filter { ids.insert($0.id).inserted })
+            cursor = page.nextCursor
+            if let cursor, !seen.insert(cursor).inserted || seen.count > 1000 { throw URLError(.badServerResponse) }
+        } while cursor != nil
+        return WireRemindersPage(items: items)
     }
 
     /// POST /api/reminders { userId, conversationId, messageId?, note?, remindAt } → { item }.
@@ -1055,36 +1101,110 @@ public struct PulseAPIClient: Sendable {
     // MARK: games
 
     /// POST /api/games { userId, conversationId, game, opponentId? } → { match, message }.
+    private func postRoomCreation(_ path: String, body: [String: Any], intent: [String], id: String) async throws -> Data {
+        do { return try await postRaw(path, body: body) }
+        catch let failure as Failure {
+            if failure.status == 410, failure.code == "creation_gone" {
+                guard failure.receiptClientId == id else {
+                    throw Failure(kind: .server, message: "Unconfirmed removal receipt; the original creation is still pending.")
+                }
+                try await creationOperations.finish(intent, id: id)
+            }
+            throw failure
+        }
+    }
+
+    private func creationIntent(_ kind: String, room: String, argument: String) -> [String] {
+        [PulseWalletOperations.gatewayKey(baseURL), userId, kind, room, argument]
+    }
+
     public func createGame(conversationId: String, opponentId: String?) async throws -> WireGameMatchCreateResult {
-        var body: [String: Any] = ["userId": userId, "conversationId": conversationId, "game": "tictactoe"]
-        if let opponentId { body["opponentId"] = opponentId }
-        let data = try await postRaw("/api/games", body: body)
-        return try envelope(WireGameMatchCreateResult.self, from: data)
+        let opponent = opponentId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedOpponent = opponent?.isEmpty == false ? opponent : nil
+        let intent = creationIntent("game", room: conversationId, argument: normalizedOpponent ?? "")
+        let id = try await creationOperations.begin(intent)
+        var body: [String: Any] = ["userId": userId, "conversationId": conversationId, "game": "tictactoe", "clientId": id]
+        if let normalizedOpponent { body["opponentId"] = normalizedOpponent }
+        let data = try await postRoomCreation("/api/games/create", body: body, intent: intent, id: id)
+        let result = try envelope(WireGameMatchCreateResult.self, from: data)
+        guard result.clientId == id, let match = result.match, !match.id.isEmpty, match.conversationId == conversationId,
+              match.playerXId == userId,
+              (match.playerOId == normalizedOpponent || (result.replayed == true && normalizedOpponent == nil)),
+              let message = result.message, !message.id.isEmpty, message.conversationId == conversationId,
+              message.senderId == userId, message.kind == "game",
+              PulseWave7Logic.gamePayload(message.payload)?.matchId == match.id else {
+            throw Failure(kind: .server, message: "Challenge receipt was not confirmed; retry the same instructions.")
+        }
+        _ = try confirmedGame(WireGameDetail(match: match, playerX: nil, playerO: nil), id: match.id)
+        try Task.checkCancellation()
+        return result // caller must accept the carrier before retiring the intent
+    }
+
+    public func acknowledgeGameCreation(conversationId: String, opponentId: String?, receipt: WireGameMatchCreateResult) async throws {
+        guard let id = receipt.clientId else { throw Failure(kind: .server, message: "Missing creation receipt.") }
+        let intent = creationIntent("game", room: conversationId, argument: (opponentId ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
+        try await creationOperations.finish(intent, id: id)
     }
 
     /// GET /api/games/{id} → { match, playerX, playerO }.
     public func gameDetail(_ matchId: String) async throws -> WireGameDetail {
-        try await get("/api/games/\(q(matchId))")
+        let result: WireGameDetail = try await get("/api/games/\(q(matchId))")
+        return try confirmedGame(result, id: matchId)
     }
 
     /// POST /api/games/{id}/move { userId, cell 0..8 } → { match, playerX, playerO }.
     public func gameMove(_ matchId: String, cell: Int) async throws -> WireGameDetail {
         let data = try await postRaw("/api/games/\(q(matchId))/move", body: ["userId": userId, "cell": cell])
-        return try envelope(WireGameDetail.self, from: data)
+        let result = try confirmedGame(envelope(WireGameDetail.self, from: data), id: matchId)
+        let side: Character? = result.match?.playerXId == userId ? "X" : result.match?.playerOId == userId ? "O" : nil
+        guard (0...8).contains(cell), let side, let board = result.match?.board, Array(board)[cell] == side else {
+            throw Failure(kind: .server, message: "Move was not confirmed; refresh the board.")
+        }
+        return result
     }
 
     /// POST /api/games/{id}/join { userId } - first-come O seat.
     public func joinGame(_ matchId: String) async throws -> WireGameDetail {
         let data = try await postRaw("/api/games/\(q(matchId))/join", body: ["userId": userId])
-        return try envelope(WireGameDetail.self, from: data)
+        let result = try confirmedGame(envelope(WireGameDetail.self, from: data), id: matchId)
+        guard result.match?.playerOId == userId else { throw Failure(kind: .server, message: "Seat was not confirmed; refresh the board.") }
+        return result
+    }
+
+    private func confirmedGame(_ result: WireGameDetail, id: String) throws -> WireGameDetail {
+        guard let match = result.match, match.id == id, let x = match.playerXId, !x.isEmpty,
+              let board = match.board, board.count == 9, board.allSatisfy({ "XO ".contains($0) }),
+              match.moveCount == board.filter({ $0 != " " }).count,
+              let turn = match.turn, ["X", "O"].contains(turn),
+              let status = match.status, ["active", "x_won", "o_won", "draw", "abandoned"].contains(status) else {
+            throw Failure(kind: .server, message: "Invalid game state; refresh before playing.")
+        }
+        return result
     }
 
     // MARK: tournaments
 
     /// POST /api/tournaments { userId, conversationId, name } → { tournament, message }.
     public func createTournament(conversationId: String, name: String) async throws -> WireTournamentCreateResult {
-        let data = try await postRaw("/api/tournaments", body: ["userId": userId, "conversationId": conversationId, "name": name, "game": "tictactoe"])
-        return try envelope(WireTournamentCreateResult.self, from: data)
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let intent = creationIntent("tournament", room: conversationId, argument: name)
+        let id = try await creationOperations.begin(intent)
+        let data = try await postRoomCreation("/api/tournaments/create", body: ["userId": userId, "conversationId": conversationId, "name": name, "game": "tictactoe", "clientId": id], intent: intent, id: id)
+        let result = try envelope(WireTournamentCreateResult.self, from: data)
+        guard result.clientId == id, let season = result.tournament, !season.id.isEmpty, season.name == name,
+              let message = result.message, !message.id.isEmpty, message.kind == "tournament",
+              message.conversationId == conversationId, message.senderId == userId,
+              PulseWave7Logic.tournamentPayload(message.payload)?.tournamentId == season.id else {
+            throw Failure(kind: .server, message: "Season receipt was not confirmed; retry the same instructions.")
+        }
+        try Task.checkCancellation()
+        return result
+    }
+
+    public func acknowledgeTournamentCreation(conversationId: String, name: String, receipt: WireTournamentCreateResult) async throws {
+        guard let id = receipt.clientId else { throw Failure(kind: .server, message: "Missing creation receipt.") }
+        let intent = creationIntent("tournament", room: conversationId, argument: name.trimmingCharacters(in: .whitespacesAndNewlines))
+        try await creationOperations.finish(intent, id: id)
     }
 
     /// GET /api/tournaments/{id} → { tournament } standings (tolerant envelope OR bare).
@@ -1092,21 +1212,33 @@ public struct PulseAPIClient: Sendable {
         var request = URLRequest(url: url("/api/tournaments/\(q(tournamentId))"))
         request.httpMethod = "GET"
         let data = try await send(request)
-        if let page = try? envelope(WireTournamentEnvelope.self, from: data), let t = page.tournament { return t }
-        return try envelope(WireTournamentSummary.self, from: data)
+        let nested = (try? envelope(WireTournamentEnvelope.self, from: data))?.tournament
+        let season = try nested ?? envelope(WireTournamentSummary.self, from: data)
+        guard season.id == tournamentId, let status = season.status, ["running", "finished"].contains(status) else {
+            throw Failure(kind: .server, message: "Invalid tournament state.")
+        }
+        return season
     }
 
     /// PATCH /api/tournaments/{id} { userId, status: 'finished' } - creator/admin, idempotent.
     public func finishTournament(_ tournamentId: String) async throws -> WireTournamentSummary {
         let data = try await patchRaw("/api/tournaments/\(q(tournamentId))", body: ["userId": userId, "status": "finished"])
-        if let page = try? envelope(WireTournamentEnvelope.self, from: data), let t = page.tournament { return t }
-        return try envelope(WireTournamentSummary.self, from: data)
+        let nested = (try? envelope(WireTournamentEnvelope.self, from: data))?.tournament
+        let season = try nested ?? envelope(WireTournamentSummary.self, from: data)
+        guard season.id == tournamentId, season.status == "finished" else {
+            throw Failure(kind: .server, message: "Season closure was not confirmed.")
+        }
+        return season
     }
 
     /// POST /api/tournaments/{id}/join { userId } - idempotent upsert.
     public func joinTournament(_ tournamentId: String) async throws -> WireTournamentJoinResult {
         let data = try await postRaw("/api/tournaments/\(q(tournamentId))/join", body: ["userId": userId])
-        return try envelope(WireTournamentJoinResult.self, from: data)
+        let result = try envelope(WireTournamentJoinResult.self, from: data)
+        guard let entry = result.entry, let id = entry.id, !id.isEmpty, entry.tournamentId == tournamentId, entry.userId == userId else {
+            throw Failure(kind: .server, message: "Season membership was not confirmed.")
+        }
+        return result
     }
 
     // MARK: leaderboard
@@ -1129,15 +1261,34 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/hub/wallet/checkin { userId } - 409 body carries { error, wallet }.
     public func checkinWallet() async throws -> WireCheckinWalletResult {
         let data = try await postRaw("/api/hub/wallet/checkin", body: ["userId": userId])
-        return try envelope(WireCheckinWalletResult.self, from: data)
+        let result = try envelope(WireCheckinWalletResult.self, from: data)
+        try requireWalletAck(result.wallet)
+        guard let reward = result.reward, let streak = result.streak, streak > 0,
+              result.wallet?.streak == streak, result.wallet?.lastCheckIn != nil,
+              reward == 25 + min(streak - 1, 10) * 2 else {
+            throw Failure(kind: .server, message: "Daily reward was not confirmed; refresh the wallet before retrying.")
+        }
+        return result
     }
 
     /// POST /api/hub/wallet/transfer { userId, toUsername, amount, note? } → { wallet, to }.
     public func transferCoins(toUsername: String, amount: Int, note: String?) async throws -> WireTransferResult {
-        var body: [String: Any] = ["userId": userId, "toUsername": toUsername.trimmingCharacters(in: .whitespaces).hasPrefix("@") ? String(toUsername.dropFirst()).lowercased() : toUsername.lowercased(), "amount": amount]
-        if let note, !note.isEmpty { body["note"] = note }
-        let data = try await postRaw("/api/hub/wallet/transfer", body: body)
-        return try envelope(WireTransferResult.self, from: data)
+        let trimmed = toUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        let handle = (trimmed.hasPrefix("@") ? String(trimmed.dropFirst()) : trimmed).lowercased()
+        var body: [String: Any] = ["userId": userId, "toUsername": handle, "amount": amount]
+        let normalizedNote = String((note ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(140))
+        body["note"] = normalizedNote
+        let intent = [PulseWalletOperations.gatewayKey(baseURL), userId, "transfer", handle, String(amount), normalizedNote]
+        let id = try await PulseWalletOperations.shared.begin(intent)
+        body["clientId"] = id
+        let data = try await postRaw("/api/hub/wallet/operations/transfer", body: body)
+        let result = try envelope(WireTransferResult.self, from: data)
+        try requireWalletAck(result.wallet)
+        guard result.clientId == id, let recipient = result.to?.id, !recipient.isEmpty, recipient != userId else {
+            throw Failure(kind: .server, message: "Unconfirmed transfer recipient; refresh the ledger before retrying.")
+        }
+        try await PulseWalletOperations.shared.finish(intent, id: id)
+        return result
     }
 
     /// GET /api/hub/swap → { rates, stats }.
@@ -1147,8 +1298,21 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/hub/swap { userId, direction, amount } → { wallet, note }.
     public func swap(direction: String, amount: Int) async throws -> WireSwapResult {
-        let data = try await postRaw("/api/hub/swap", body: ["userId": userId, "direction": direction, "amount": amount])
-        return try envelope(WireSwapResult.self, from: data)
+        let intent = [PulseWalletOperations.gatewayKey(baseURL), userId, "swap", direction, String(amount)]
+        let id = try await PulseWalletOperations.shared.begin(intent)
+        let data = try await postRaw("/api/hub/wallet/operations/swap", body: ["userId": userId, "direction": direction, "amount": amount, "clientId": id])
+        let result = try envelope(WireSwapResult.self, from: data)
+        try requireWalletAck(result.wallet)
+        guard result.clientId == id else { throw Failure(kind: .server, message: "Unconfirmed swap operation; retry the same instructions.") }
+        try await PulseWalletOperations.shared.finish(intent, id: id)
+        return result
+    }
+
+    private func requireWalletAck(_ wallet: WireWallet?) throws {
+        guard let wallet, wallet.userId == userId, let coins = wallet.coins, let gems = wallet.gems,
+              (0...2_147_483_647).contains(coins), (0...2_147_483_647).contains(gems) else {
+            throw Failure(kind: .server, message: "Unconfirmed wallet outcome; refresh the ledger before retrying.")
+        }
     }
 
     /// GET /api/hub/tasks?userId= → { tasks } ordered doing → todo → done.
@@ -1197,7 +1361,10 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/hub/market/{id}/buy { userId } → { ok, wallet }.
     public func buyListing(_ listingId: String) async throws -> WireMarketBuyResult {
         let data = try await postRaw("/api/hub/market/\(q(listingId))/buy", body: ["userId": userId])
-        return try envelope(WireMarketBuyResult.self, from: data)
+        let result = try envelope(WireMarketBuyResult.self, from: data)
+        guard result.ok == true else { throw Failure(kind: .server, message: "Purchase was not confirmed; refresh the market before retrying.") }
+        try requireWalletAck(result.wallet)
+        return result
     }
 
     /// GET /api/hub/logs?limit=&kind= → { logs } desc.
@@ -1594,20 +1761,21 @@ public struct PulseAPIClient: Sendable {
             var code: String?
             var suggestion: String?
             var retryAfter: Int?
+            var receiptClientId: String?
             if let body = try? decoder.decode(WireErrorBody.self, from: data) {
                 if let error = body.error, !error.isEmpty { message = error }
                 code = body.code
                 suggestion = body.suggestion
                 retryAfter = body.retryAfter
+                receiptClientId = body.clientId
                 if body.code == "username_taken" { kind = .validation }
             }
-            // F-MS-20 - the Retry-After header backs the body field (web
-            // apiJson parity: body number wins, else parse the header).
-            if retryAfter == nil, let raw = http.value(forHTTPHeaderField: "Retry-After"),
-               let seconds = Int(raw), seconds > 0 {
-                retryAfter = seconds
-            }
-            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode, retryAfter: retryAfter)
+            // Respect the stricter positive body/header delay. HTTP dates are
+            // relative to the gateway Date header when available, not a skewed phone clock.
+            retryAfter = [retryAfter.flatMap { $0 > 0 ? min($0, 86_400) : nil },
+                Self.retryAfterSeconds(http.value(forHTTPHeaderField: "Retry-After"), serverDate: http.value(forHTTPHeaderField: "Date"))]
+                .compactMap { $0 }.max()
+            throw Failure(kind: kind, message: message, code: code, suggestion: suggestion, status: http.statusCode, retryAfter: retryAfter, receiptClientId: receiptClientId)
         }
         return data
     }
@@ -1621,6 +1789,18 @@ public struct PulseAPIClient: Sendable {
         guard let token, !token.isEmpty else { return request }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         return request
+    }
+
+    static func retryAfterSeconds(_ header: String?, serverDate: String?, now: Date = Date()) -> Int? {
+        guard let raw = header?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        if let seconds = Int(raw) { return seconds >= 0 ? min(86_400, max(1, seconds)) : nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        guard let deadline = formatter.date(from: raw) else { return nil }
+        let origin = serverDate.flatMap { formatter.date(from: $0) } ?? now
+        return Int(min(86_400, max(1, ceil(deadline.timeIntervalSince(origin)))))
     }
 
     static func kind(for status: Int) -> Failure.Kind {

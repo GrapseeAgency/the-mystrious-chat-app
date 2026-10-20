@@ -433,12 +433,9 @@ private final class PulseCallKitProviderDelegate: NSObject, CXProviderDelegate {
     }
 
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        // CallKit activated the audio session for a reported call - apply
-        // the voice-chat configuration HERE (idempotent with the engine's
-        // own activation; the snapshot/restore pair stays consistent).
-        Task { @MainActor in
-            PulseCallAudioSession.shared.activateForCall()
-        }
+        // Engines acquire audio after permission and ownership checks. This
+        // callback carries no call generation and can arrive after teardown;
+        // it must not acquire/reacquire a session on behalf of a dead call.
     }
 
     func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {

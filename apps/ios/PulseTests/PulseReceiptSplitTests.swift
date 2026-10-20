@@ -105,4 +105,12 @@ final class PulseReceiptSplitTests: XCTestCase {
         let deliveredIds = Set(split.deliveredTo.map(\.id))
         XCTAssertTrue(seenIds.isDisjoint(with: deliveredIds))
     }
+    func testOwnWatermarkCannotProvePeerRead() throws {
+        let at = try XCTUnwrap(PulseFormat.date("2026-10-20T10:00:00.000Z"))
+        XCTAssertEqual(PulseRoomParityLogic.peerReadCount(watermarks: ["me": at], viewerId: "me", createdAtIso: "2026-10-20T09:00:00.000Z"), 0)
+        XCTAssertEqual(PulseRoomParityLogic.peerReadCount(watermarks: ["me": at, "peer": at], viewerId: "me", createdAtIso: "2026-10-20T09:00:00.000Z"), 1)
+        XCTAssertEqual(PulseRoomParityLogic.peerReadCount(watermarks: ["me": at], viewerId: nil, createdAtIso: "2026-10-20T09:00:00.000Z"), 0)
+        XCTAssertEqual(PulseRoomParityLogic.peerReadCount(watermarks: ["peer": at], viewerId: "me", createdAtIso: "broken"), 0)
+    }
+
 }

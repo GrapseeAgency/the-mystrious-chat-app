@@ -1,6 +1,7 @@
 // /api/users/[id]/saved - saved/starred messages library
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { unexpiredMessages } from '@/lib/message-visibility'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -23,7 +24,7 @@ export async function GET(_req: Request, { params }: RouteCtx) {
   }
 
   const rows = await db.savedMessage.findMany({
-    where: { userId },
+    where: { userId, message: { deletedAt: null, ...unexpiredMessages(new Date()), conversation: { participants: { some: { userId } } } } },
     orderBy: { savedAt: 'desc' },
     take: 100,
     include: {

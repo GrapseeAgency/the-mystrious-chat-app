@@ -3,12 +3,11 @@
 // POST → atomic exchange with ledger rows on both legs
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { swapWallet, walletErrorResponse, PC_PER_GEM_SELL, PC_PER_GEM_BUY } from '@/lib/wallet-contract'
 import { safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
 
-const PC_PER_GEM_SELL = 100 // 100 PC buys 1 GEM
-const PC_PER_GEM_BUY = 80 // selling 1 GEM returns 80 PC (spread = the house edge)
 
 /** GET /api/hub/swap → { rates, stats } */
 export async function GET() {
@@ -63,62 +62,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
   }
 
-  await db.userWallet.upsert({ where: { userId }, create: { userId }, update: {} })
-
-  // per-leg asset + amount deltas
-  let coinDelta = 0
-  let gemDelta = 0
-  let note = ''
-  if (direction === 'pc2gem') {
-    if (amount < PC_PER_GEM_SELL) {
-      return NextResponse.json({ error: `Minimum exchange is ${PC_PER_GEM_SELL} PC for 1 GEM.` }, { status: 400 })
-    }
-    if (amount % PC_PER_GEM_SELL !== 0) {
-      return NextResponse.json({ error: `Amount must be a multiple of ${PC_PER_GEM_SELL} PC.` }, { status: 400 })
-    }
-    gemDelta = Math.floor(amount / PC_PER_GEM_SELL)
-    coinDelta = -amount
-    note = `Swapped ${amount} PC → ${gemDelta} GEM`
-  } else {
-    coinDelta = amount * PC_PER_GEM_BUY
-    gemDelta = -amount
-    note = `Swapped ${amount} GEM → ${coinDelta} PC`
-  }
-
-  const wallet = await db
-    .$transaction(async (tx) => {
-      const current = await tx.userWallet.findUniqueOrThrow({ where: { userId } })
-      if (current.coins + coinDelta < 0) {
-        throw new Error('INSUFFICIENT_PC')
-      }
-      if (current.gems + gemDelta < 0) {
-        throw new Error('INSUFFICIENT_GEM')
-      }
-      await tx.walletLedger.createMany({
-        data: [
-          ...(coinDelta !== 0
-            ? [{ userId, kind: 'swap', asset: 'PC', amount: coinDelta, note }]
-            : []),
-          ...(gemDelta !== 0
-            ? [{ userId, kind: 'swap', asset: 'GEM', amount: gemDelta, note }]
-            : []),
-        ],
-      })
-      await tx.logEvent.create({
-        data: { userId, kind: 'swap', message: note.toLowerCase() },
-      })
-      return tx.userWallet.update({
-        where: { userId },
-        data: { coins: { increment: coinDelta }, gems: { increment: gemDelta } },
-      })
-    })
-    .catch((err: unknown) => {
-      if (err instanceof Error && err.message.startsWith('INSUFFICIENT')) {
-        const asset = err.message === 'INSUFFICIENT_PC' ? 'PC' : 'GEM'
-        return NextResponse.json({ error: `Insufficient ${asset} for this swap.` }, { status: 402 })
-      }
-      throw err
-    })
-
-  return NextResponse.json({ wallet, note })
+  try { return NextResponse.json({ ...(await swapWallet(db, userId, direction, amount, typeof body.clientId === 'string' ? body.clientId : undefined)), clientId: body.clientId }) }
+  catch (error) { return walletErrorResponse(error) }
 }

@@ -26,6 +26,8 @@ public final class StoriesSessionModel: ObservableObject {
     @Published public private(set) var viewers: [WireStoryViewer] = []
     @Published public private(set) var viewersLoading = false
 
+    private var viewersGeneration = UUID()
+    private var refreshGeneration = UUID()
     private unowned let session: PulseSession
     private var cacheKey: String { "stories:\(session.viewer?.id ?? "")" }
 
@@ -44,8 +46,14 @@ public final class StoriesSessionModel: ObservableObject {
     /// Pull the feed. quiet=false flips the loading flag (first load).
     public func refresh(quiet: Bool = false) async {
         guard session.viewer != nil else { return }
+        let ticket = UUID()
+        refreshGeneration = ticket
+        let epoch = session.sessionGeneration
+        let api = session.api
         if !quiet { flags.loading = true; flags.lastError = nil }
-        if let page = await session.api.stories() {
+        let response = await api.stories()
+        guard !Task.isCancelled, refreshGeneration == ticket, session.sessionGeneration == epoch else { return }
+        if let page = response {
             let fresh = Self.liveGroups(page.groups ?? [], nowMs: nowMs())
             groups = fresh
             flags.loadedOnce = true
@@ -58,7 +66,7 @@ public final class StoriesSessionModel: ObservableObject {
                 PulseAPIClient.Failure(kind: .network, message: nil)
             )
         }
-        if !quiet { flags.loading = false }
+        flags.loading = false
     }
 
     /// 60s poll while a surface is active (web refetchInterval parity).
@@ -67,7 +75,8 @@ public final class StoriesSessionModel: ObservableObject {
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { break }
+                guard !Task.isCancelled else { break }
                 await self?.refresh(quiet: true)
             }
         }
@@ -128,14 +137,19 @@ public final class StoriesSessionModel: ObservableObject {
 
     /// One fetch - the sheet re-issues it every ≤5s while open.
     public func loadViewers(storyId: String) async {
+        let ticket = UUID()
+        viewersGeneration = ticket
+        let epoch = session.sessionGeneration
+        let api = session.api
         viewersLoading = true
-        if let list = try? await session.api.storyViewers(id: storyId) {
-            viewers = list
-        }
+        let list = try? await api.storyViewers(id: storyId)
+        guard !Task.isCancelled, viewersGeneration == ticket, session.sessionGeneration == epoch else { return }
+        if let list { viewers = list }
         viewersLoading = false
     }
 
     public func resetViewers() {
+        viewersGeneration = UUID()
         viewers = []
         viewersLoading = false
     }

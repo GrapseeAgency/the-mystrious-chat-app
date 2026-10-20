@@ -64,12 +64,14 @@ public final class PulseCallEngine: ObservableObject {
 
     // live media state (cleared on every teardown)
     private var pc: (any PulseCallPeerConnecting)?
-    private let peerBridge: PeerBridge
+    private var peerBridge: PeerBridge?
     private var pendingRemoteIce: [CallIceEnvelope] = []
     private var remoteDescriptionSet = false
     /// True once call:offer actually went out (dismissError logs 'missed'
     /// only for attempts that never reached the relay - web parity).
     private var offerSent = false
+    private var outgoingIntent = UUID()
+    private(set) var outgoingPreparationTask: Task<Void, Never>?
     private var incomingOffer: CallOfferEnvelope?
     /// When the machine reached .ended (auto-reset ≈2.5s, web parity).
     private var endedAt: Date?
@@ -90,8 +92,6 @@ public final class PulseCallEngine: ObservableObject {
         self.media = media
         self.apiProvider = apiProvider
         self.toasts = toasts
-        self.peerBridge = PeerBridge()
-        self.peerBridge.engine = self
 
         // 1s heartbeat: defensive timers + duration ticker + ended auto-reset.
         Timer.publish(every: 1, on: .main, in: .common)
@@ -123,15 +123,19 @@ public final class PulseCallEngine: ObservableObject {
             toasts.show("Finish your current call first")
             return
         }
+        outgoingIntent = UUID()
+        outgoingPreparationTask?.cancel()
+        let intent = outgoingIntent
         guard kind == .video else {
             beginOutgoing(to: peer, conversationId: conversationId, kind: kind)
             return
         }
-        Task { [weak self] in
-            guard let self else { return }
+        outgoingPreparationTask = Task { [weak self] in
+            guard !Task.isCancelled, let self else { return }
             let cameraOk = await self.media.requestCameraPermission() && self.media.canCaptureVideo()
             // Something else (another call) took over while the prompt was up.
-            guard case .idle = self.machine.state else { return }
+            guard !Task.isCancelled, self.outgoingIntent == intent,
+                  case .idle = self.machine.state else { return }
             if PulseGroupCallEngine.active?.isBusy == true { return }
             if !cameraOk {
                 self.toasts.show("Camera unavailable - starting a voice call")
@@ -168,8 +172,14 @@ public final class PulseCallEngine: ObservableObject {
             errorText = Self.micDeniedMessage
             return
         }
-        PulseCallAudioSession.shared.activateForCall()
-        guard let connection = media.makePeerConnection(delegate: peerBridge) else {
+        guard PulseCallAudioSession.shared.activateForCall() else {
+            errorText = "Audio is unavailable or in use. Leave your room or stop recording first."
+            apply(.abortLocal, now: Date())
+            return
+        }
+        let bridge = PeerBridge(engine: self, callId: callId)
+        peerBridge = bridge
+        guard let connection = media.makePeerConnection(delegate: bridge) else {
             errorText = "Could not start the call. Try again."
             apply(.abortLocal, now: Date())
             return
@@ -186,6 +196,7 @@ public final class PulseCallEngine: ObservableObject {
         }
         do {
             let sdp = try await connection.createOffer()
+            guard machine.owns(callId: callId), machine.state == .outgoingRinging else { return }
             try await connection.setLocalDescription(sdp: sdp)
             guard machine.owns(callId: callId), machine.state == .outgoingRinging,
                   let call = machine.call else { return }
@@ -202,6 +213,7 @@ public final class PulseCallEngine: ObservableObject {
                 callerAvatar: viewer.avatar,
             ))
         } catch {
+            guard machine.owns(callId: callId), machine.state == .outgoingRinging else { return }
             // Local SDP/media failure before the offer reached the relay -
             // no emit, no row (web 'Call failed' parity, honest UI only).
             errorText = "Could not start the call. Try again."
@@ -227,8 +239,15 @@ public final class PulseCallEngine: ObservableObject {
             apply(.abortLocal, now: Date())
             return
         }
-        PulseCallAudioSession.shared.activateForCall()
-        guard let connection = media.makePeerConnection(delegate: peerBridge) else {
+        guard PulseCallAudioSession.shared.activateForCall() else {
+            sendReject(for: call)
+            errorText = "Audio is unavailable or in use. Leave your room or stop recording first."
+            apply(.abortLocal, now: Date())
+            return
+        }
+        let bridge = PeerBridge(engine: self, callId: call.callId)
+        peerBridge = bridge
+        guard let connection = media.makePeerConnection(delegate: bridge) else {
             sendReject(for: call)
             apply(.abortLocal, now: Date())
             return
@@ -260,10 +279,13 @@ public final class PulseCallEngine: ObservableObject {
                 }
             }
             try await connection.setRemoteDescription(sdp: offer.sdp, type: "offer")
+            guard machine.owns(callId: call.callId), machine.state == .connecting else { return }
             remoteDescriptionSet = true
             // Early candidates queued while we were ringing drain now.
             await drainPendingIce()
+            guard machine.owns(callId: call.callId), machine.state == .connecting else { return }
             let answerSdp = try await connection.createAnswer()
+            guard machine.owns(callId: call.callId), machine.state == .connecting else { return }
             try await connection.setLocalDescription(sdp: answerSdp)
             guard machine.owns(callId: call.callId), machine.state == .connecting else { return }
             signaling.send(event: "call:answer", payload: CallWire.answerPayload(
@@ -275,6 +297,7 @@ public final class PulseCallEngine: ObservableObject {
                 sdp: answerSdp,
             ))
         } catch {
+            guard machine.owns(callId: call.callId), machine.state == .connecting else { return }
             // Answer pipeline failed → reject so the caller tears down.
             sendReject(for: call)
             apply(.abortLocal, now: Date())
@@ -302,6 +325,9 @@ public final class PulseCallEngine: ObservableObject {
     /// outgoingRinging → cancel+missed row, incomingRinging → reject,
     /// connecting/connected → hangup (+completed row for the caller).
     public func endCall() {
+        outgoingIntent = UUID()
+        outgoingPreparationTask?.cancel()
+        outgoingPreparationTask = nil
         guard machine.state != .idle else { return }
         apply(.hangupRequested, now: Date())
     }
@@ -309,6 +335,9 @@ public final class PulseCallEngine: ObservableObject {
     /// The mic-denied (or SDP-failed) error card's Close - web parity: a
     /// failed OUTGOING attempt still counts as an unanswered call (missed row).
     public func dismissError() {
+        outgoingIntent = UUID()
+        outgoingPreparationTask?.cancel()
+        outgoingPreparationTask = nil
         errorText = nil
         if let call = machine.call, !machine.isTerminal,
            call.direction == .outgoing, !offerSent,
@@ -401,7 +430,7 @@ public final class PulseCallEngine: ObservableObject {
                   machine.call?.direction == .outgoing else { return }
             guard case .outgoingRinging = machine.state else { return } // duplicate answer = no-op
             apply(.answerArrived, now: now)
-            Task { await applyAnswer(answer.sdp) }
+            Task { await applyAnswer(answer.sdp, callId: answer.base.callId) }
 
         case "call:ice":
             guard let ice = CallIceEnvelope.decode(raw) else { return }
@@ -440,13 +469,15 @@ public final class PulseCallEngine: ObservableObject {
         }
     }
 
-    private func applyAnswer(_ sdp: String) async {
-        guard let pc else { return }
+    private func applyAnswer(_ sdp: String, callId: String) async {
+        guard machine.owns(callId: callId), !machine.isTerminal, let pc else { return }
         do {
             try await pc.setRemoteDescription(sdp: sdp, type: "answer")
+            guard machine.owns(callId: callId), !machine.isTerminal else { return }
             remoteDescriptionSet = true
             await drainPendingIce()
         } catch {
+            guard machine.owns(callId: callId), !machine.isTerminal else { return }
             // 'Call failed' - no row, no emit (web parity).
             apply(.abortLocal, now: Date())
         }
@@ -730,10 +761,17 @@ public final class PulseCallEngine: ObservableObject {
     /// actor before touching engine state.
     private final class PeerBridge: PulseCallPeerDelegate {
         weak var engine: PulseCallEngine?
+        let callId: String
+
+        init(engine: PulseCallEngine, callId: String) {
+            self.engine = engine
+            self.callId = callId
+        }
 
         func peerDidProduceLocalCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int32?) {
             Task { @MainActor in
-                self.engine?.handleLocalCandidate(
+                guard let engine = self.engine, engine.machine.owns(callId: self.callId), !engine.machine.isTerminal else { return }
+                engine.handleLocalCandidate(
                     candidate: candidate,
                     sdpMid: sdpMid,
                     sdpMLineIndex: sdpMLineIndex,
@@ -743,13 +781,15 @@ public final class PulseCallEngine: ObservableObject {
 
         func peerConnectionStateDidChange(_ state: PulseCallConnectionState) {
             Task { @MainActor in
-                self.engine?.handleConnectionState(state)
+                guard let engine = self.engine, engine.machine.owns(callId: self.callId), !engine.machine.isTerminal else { return }
+                engine.handleConnectionState(state)
             }
         }
 
         func peerDidReceiveRemoteVideoTrack(_ track: RTCVideoTrack) {
             Task { @MainActor in
-                self.engine?.handleRemoteVideoTrack(track)
+                guard let engine = self.engine, engine.machine.owns(callId: self.callId), !engine.machine.isTerminal else { return }
+                engine.handleRemoteVideoTrack(track)
             }
         }
     }

@@ -1,6 +1,7 @@
 package app.pulse.feature.settings
 
 import android.content.Context
+import coil.imageLoader
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -315,6 +316,7 @@ class SettingsViewModel @Inject constructor(
         val title: String,
         val content: String,
         val attempts: Int,
+        val failureReason: String? = null,
     )
 
     val drafts: StateFlow<List<DraftRow>> =
@@ -333,8 +335,11 @@ class SettingsViewModel @Inject constructor(
                     clientId = entry.clientId,
                     conversationId = entry.conversationId,
                     title = titles[entry.conversationId] ?: "Chat",
-                    content = entry.content,
+                    content = entry.content.ifBlank { when (entry.kind) {
+                        "image" -> "Photo"; "audio" -> "Voice note"; "file" -> "Document"; else -> "Saved message"
+                    } },
                     attempts = entry.attempts,
+                    failureReason = entry.failureReason,
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -347,6 +352,21 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repo.clearAllDrafts() }
     }
 
+    private val _outboxNotice = MutableStateFlow<String?>(null)
+    val outboxNotice: StateFlow<String?> = _outboxNotice.asStateFlow()
+
+    private val retryingOutbox = mutableSetOf<String>()
+    fun retryOutboxEntry(clientId: String) {
+        if (!retryingOutbox.add(clientId)) return
+        viewModelScope.launch {
+            try {
+                repo.retryOutboxEntry(clientId)
+                    .onSuccess { _outboxNotice.value = "Original message queued for retry" }
+                    .onFailure { _outboxNotice.value = it.message ?: "The saved message could not be retried" }
+            } finally { retryingOutbox.remove(clientId) }
+        }
+    }
+
     fun deleteOutboxEntry(clientId: String) {
         viewModelScope.launch { repo.discardOutboxEntry(clientId) }
     }
@@ -357,36 +377,46 @@ class SettingsViewModel @Inject constructor(
 
     // Data & Storage - footprint + cleanup
 
-    data class Footprint(val databaseBytes: Long = 0, val imageCacheBytes: Long = 0) {
-        val totalBytes: Long get() = databaseBytes + imageCacheBytes
+    data class Footprint(val databaseBytes: Long = 0, val imageCacheBytes: Long = 0,
+                         val attachmentBytes: Long = 0, val error: String? = null) {
+        val totalBytes: Long get() = databaseBytes + imageCacheBytes + attachmentBytes
     }
 
     private val _footprint = MutableStateFlow(Footprint())
-
-    /** Measured footprint - DB file(s) via getDatabasePath + the Coil disk cache. */
     val footprint: StateFlow<Footprint> = _footprint.asStateFlow()
+    private val cacheClearInFlight = java.util.concurrent.atomic.AtomicBoolean(false)
 
     fun refreshFootprint() {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) { measureFootprint() }
+    }
+
+    private fun measureFootprint() {
+        try {
             val dbDir = appContext.getDatabasePath("pulse.db").parentFile
             val dbBytes = dbDir?.listFiles()
-                ?.filter { it.name.startsWith("pulse.db") }
+                ?.filter { it.isFile && (it.name.startsWith("pulse.db") || it.name.startsWith("pulse-account-")) }
                 ?.sumOf { it.length() } ?: 0L
-            val cacheBytes = runCatching {
-                appContext.cacheDir.resolve("image_cache").walkBytes()
-            }.getOrDefault(0L)
-            _footprint.value = Footprint(dbBytes, cacheBytes)
+            val cacheBytes = appContext.imageLoader.diskCache?.size ?: 0L
+            val attachmentBytes = appContext.filesDir.resolve("attachments").walkBytes()
+            _footprint.value = Footprint(dbBytes, cacheBytes, attachmentBytes)
+        } catch (_: Exception) {
+            _footprint.value = _footprint.value.copy(error = "Storage usage could not be measured; previous values are kept")
         }
     }
 
-    fun clearImageCache(onCleared: () -> Unit = {}) {
+    fun clearImageCache(onCleared: (Boolean) -> Unit = {}) {
+        if (!cacheClearInFlight.compareAndSet(false, true)) return
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val cacheDir = appContext.cacheDir.resolve("image_cache")
-                cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-            }
-            refreshFootprint()
-            withContext(Dispatchers.Main) { onCleared() }
+            try {
+                val cleared = runCatching {
+                    // Let Coil update its live cache journal. Unlinking its files
+                    // underneath active requests can corrupt that journal.
+                    appContext.imageLoader.memoryCache?.clear()
+                    appContext.imageLoader.diskCache?.clear()
+                }.isSuccess
+                measureFootprint()
+                withContext(Dispatchers.Main) { onCleared(cleared) }
+            } finally { cacheClearInFlight.set(false) }
         }
     }
 

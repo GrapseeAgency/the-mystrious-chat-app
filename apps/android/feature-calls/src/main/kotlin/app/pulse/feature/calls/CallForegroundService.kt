@@ -25,7 +25,7 @@ class CallForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val stop = intent?.getBooleanExtra(EXTRA_STOP, false) ?: false
         if (stop) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            androidx.core.app.ServiceCompat.stopForeground(this, androidx.core.app.ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -41,7 +41,7 @@ class CallForegroundService : Service() {
         } else {
             0
         }
-        startForeground(NOTIFICATION_ID, buildNotification(label), type)
+        androidx.core.app.ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(label), type)
         return START_NOT_STICKY
     }
 

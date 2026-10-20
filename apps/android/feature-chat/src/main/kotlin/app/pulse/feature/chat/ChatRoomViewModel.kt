@@ -82,8 +82,16 @@ data class StagedMedia(
     val error: String? = null,
     /** Wave 2 view-once (IMAGE kind only - wire requires imagePath when true). */
     val viewOnce: Boolean = false,
+    val selectionId: String = java.util.UUID.randomUUID().toString(),
+    val sending: Boolean = false,
+    val durationMs: Long? = null,
+    val intendedTopicId: String? = null,
+    val saved: Boolean = false,
+    val caption: String = "",
+    val revision: Long = 0,
+    val sessionKey: String? = null,
 ) {
-    enum class Kind { IMAGE, FILE }
+    enum class Kind { IMAGE, FILE, AUDIO }
 }
 
 /** A downloaded file the UI must hand to the system (open or share). */
@@ -179,6 +187,7 @@ class ChatRoomViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ── Wave 2 voice recording (spec §1 row 1 + row 11) ─────────────────
+    private val recorderAudioToken = java.util.UUID.randomUUID().toString()
     private var recorder: MediaRecorder? = null
     private var recordFile: File? = null
     private var recordStartedAtMs: Long = 0
@@ -399,20 +408,33 @@ class ChatRoomViewModel @Inject constructor(
     private var flashJob: Job? = null
     private var jumpExpansionJob: Job? = null
 
+    private var attachmentTask: Job? = null
+    private var attachmentEpoch = 0L
+    private var persistedAttachmentId: String? = null
+    private var recordingAttachmentSession: String? = null
+
+    private var composerRevision = 0L
+    private var lastTypingSentAt = 0L
+    private val typingPeers = linkedMapOf<String, String>()
+    private val typingExpiry = mutableMapOf<String, Job>()
+
+    private var readingAnchor: String? = null
+
     init {
+        restoreAttachmentDraft()
         viewModelScope.launch {
             // Wave 0 draft restore: the local draft table wins; when it is
             // empty fall back to the server-mirrored myDraft on the summary.
             val local = runCatching { repo.observeDraft(conversationId).firstOrNull() }.getOrNull()
             if (!local.isNullOrBlank()) {
-                _initialDraft.value = local
+                if (composerRevision == 0L) _initialDraft.value = local
             } else {
                 val server = runCatching {
                     repo.observeConversations()
                         .map { list -> list.firstOrNull { it.id == conversationId }?.myDraft }
                         .firstOrNull { !it.isNullOrBlank() }
                 }.getOrNull()
-                if (!server.isNullOrBlank()) _initialDraft.value = server
+                if (composerRevision == 0L && !server.isNullOrBlank()) _initialDraft.value = server
             }
         }
         viewModelScope.launch {
@@ -424,13 +446,13 @@ class ChatRoomViewModel @Inject constructor(
                 .onFailure { failure ->
                     _state.value = _state.value.copy(loading = false, error = failure.message)
                 }
-            scheduleRead()
             loadPins()
             initialJumpMessageId?.takeIf { it.isNotBlank() }?.let { jumpTo(it) }
         }
         viewModelScope.launch {
             repo.observeConnected().collect { connected ->
                 _state.value = _state.value.copy(connected = connected)
+                if (connected) scheduleRead()
             }
         }
         viewModelScope.launch {
@@ -449,13 +471,19 @@ class ChatRoomViewModel @Inject constructor(
             repo.events().collect { event ->
                 when (event) {
                     is PulseEvent.Typing -> if (event.conversationId == conversationId && event.userId != repo.viewerId) {
-                        _state.value = if (event.isTyping) {
-                            _state.value.copy(partnerTypingName = event.userName.ifBlank { "Someone" })
-                        } else {
-                            _state.value.copy(partnerTypingName = null)
-                        }
+                        typingExpiry.remove(event.userId)?.cancel()
+                        if (event.isTyping) {
+                            typingPeers[event.userId] = event.userName.ifBlank { "Someone" }
+                            typingExpiry[event.userId] = viewModelScope.launch {
+                                delay(4_000)
+                                typingPeers.remove(event.userId)
+                                typingExpiry.remove(event.userId)
+                                _state.value = _state.value.copy(partnerTypingName = typingPeers.values.lastOrNull())
+                            }
+                        } else typingPeers.remove(event.userId)
+                        _state.value = _state.value.copy(partnerTypingName = typingPeers.values.lastOrNull())
                     }
-                    is PulseEvent.MessageRead -> if (event.conversationId == conversationId) {
+                    is PulseEvent.MessageRead -> if (event.conversationId == conversationId && event.userId != repo.viewerId) {
                         val at = PulseTime.parse(event.at)?.toInstant()?.toEpochMilli()
                         if (at != null) {
                             _state.value = _state.value.copy(
@@ -464,7 +492,6 @@ class ChatRoomViewModel @Inject constructor(
                         }
                     }
                     is PulseEvent.MessageReceived -> if (event.conversationId == conversationId) {
-                        scheduleRead()
                         // D29/F-MS-23 - incoming effect payloads fire the
                         // app-wide burst (web triggerEffectFor parity:
                         // confetti→confetti · sparkles→stars · lasers/echo→burst).
@@ -472,7 +499,7 @@ class ChatRoomViewModel @Inject constructor(
                             app.pulse.core.fx.PulseFx.fire(kind)
                         }
                     }
-                    is PulseEvent.OutboxDropped -> notify("Message couldn't be delivered", isError = true)
+                    is PulseEvent.OutboxDropped -> if (event.conversationId == conversationId && event.threadRootId == null) notify(event.reason, isError = true)
                     else -> Unit
                 }
             }
@@ -481,11 +508,24 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── read receipts (spec row 3): debounced 600ms while the room is open ──
 
+
+    fun setReadingAnchor(messageId: String?) {
+        if (readingAnchor == messageId) return
+        readingAnchor = messageId
+        readJob?.cancel()
+        scheduleRead()
+    }
+
     private fun scheduleRead() {
+        val anchor = readingAnchor ?: return
         readJob?.cancel()
         readJob = viewModelScope.launch {
             delay(600)
-            runCatching { repo.markRead(conversationId) }
+            repeat(3) { attempt ->
+                if (readingAnchor != anchor) return@launch
+                if (safelySend { repo.markReadThrough(conversationId, anchor) }.isSuccess) return@launch
+                delay(1_500L * (attempt + 1))
+            }
         }
     }
 
@@ -493,8 +533,15 @@ class ChatRoomViewModel @Inject constructor(
 
     fun onDraftChanged(text: String) {
         if (_state.value.editing != null) return // composer is editing a row, not drafting
+        composerRevision++
+        repo.stageDraft(conversationId, text) // reserve/write locally before the debounce
         val userName = viewerName()
-        if (typingJob?.isActive != true) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (text.isBlank()) {
+            lastTypingSentAt = 0L
+            viewModelScope.launch { repo.setTyping(conversationId, userName, false) }
+        } else if (typingJob?.isActive != true || now - lastTypingSentAt >= 1_500L) {
+            lastTypingSentAt = now
             viewModelScope.launch { repo.setTyping(conversationId, userName, true) }
         }
         typingJob?.cancel()
@@ -533,13 +580,16 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── send / edit ─────────────────────────────────────────────
 
-    fun send(body: String) {
+    fun send(body: String, onRejected: (() -> Unit)? = null) {
         val editing = _state.value.editing
         if (editing != null) {
             sendEdit(editing.id, body)
             return
         }
-        val replyId = _state.value.replyTo?.id
+        val revision = composerRevision
+        val topic = _activeTopicId.value
+        val reply = _state.value.replyTo
+        val replyId = reply?.id
         _state.value = _state.value.copy(replyTo = null)
         // R3-B item 4 - the arming only consumes on a real send in GROUPS
         // (web chat-room.tsx:1670 gates on isGroup). The optimistic echo
@@ -555,7 +605,7 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch {
             // Quote replies DO file to the active topic (only THREAD replies
             // are excluded - the repo drops topicId on parentId sends).
-            sendUseCase(conversationId, body, replyId, topicId = _activeTopicId.value, anon = anonArmed, anonAliasPreview = anonAliasPreview)
+            safelySend { sendUseCase(conversationId, body, replyId, topicId = topic, anon = anonArmed, anonAliasPreview = anonAliasPreview) }
                 .onSuccess { receipt ->
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                         // Network-class failure → queued in the outbox. The
@@ -563,14 +613,14 @@ class ChatRoomViewModel @Inject constructor(
                         // draft and let the pending bubble + banner tell it.
                         // (Incognito sends never reach this branch - the repo
                         // refuses to queue an un-maskable row.)
-                        runCatching { repo.clearDraft(conversationId) }
+                        consumeComposer(revision)
                     } else {
                         // One-shot: web disarms the mask after a successful send
                         // (chat-room.tsx:1747-1750).
                         if (anonArmed) _anonNext.value = false
                         app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
                         repo.setTyping(conversationId, viewerName(), false)
-                        runCatching { repo.clearDraft(conversationId) }
+                        consumeComposer(revision)
                         afterOwnSend(receipt.message)
                         // R31-a parity - the web-verbatim streak nudge (fires
                         // only when THIS send GREW the streak, second-or-later
@@ -580,6 +630,10 @@ class ChatRoomViewModel @Inject constructor(
                 }
                 .onFailure { failure ->
                     _state.value = _state.value.copy(error = failureNotice(failure))
+                    if (composerRevision == revision) {
+                        if (_state.value.replyTo == null) _state.value = _state.value.copy(replyTo = reply)
+                        onRejected?.invoke()
+                    }
                 }
         }
     }
@@ -595,6 +649,8 @@ class ChatRoomViewModel @Inject constructor(
         payload: String? = null,
         anon: Boolean = false,
         onDelivered: ((Message) -> Unit)? = null,
+        onRejected: (() -> Unit)? = null,
+        consumeDraft: Boolean = false,
         /** Send burst kind - effect sends map to their web EFFECT_PARTICLES kind. */
         fxKind: app.pulse.core.fx.PulseFx.BurstKind? = app.pulse.core.fx.PulseFx.BurstKind.BURST,
     ) {
@@ -603,25 +659,28 @@ class ChatRoomViewModel @Inject constructor(
             sendEdit(editing.id, body)
             return
         }
-        val replyId = _state.value.replyTo?.id
+        val revision = composerRevision
+        val topic = _activeTopicId.value
+        val reply = _state.value.replyTo
+        val replyId = reply?.id
         _state.value = _state.value.copy(replyTo = null)
         viewModelScope.launch {
-            repo.sendRichMessage(
+            safelySend { repo.sendRichMessage(
                 conversationId = conversationId,
                 body = body,
                 kind = kind,
                 payload = payload,
                 anon = anon,
                 replyToId = replyId,
-                topicId = _activeTopicId.value,
-            )
+                topicId = topic,
+            ) }
                 .onSuccess { receipt ->
                     if (receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
-                        runCatching { repo.clearDraft(conversationId) }
+                        if (consumeDraft) consumeComposer(revision)
                     } else {
                         fxKind?.let { kind -> app.pulse.core.fx.PulseFx.fire(kind, count = 26) }
                         repo.setTyping(conversationId, viewerName(), false)
-                        runCatching { repo.clearDraft(conversationId) }
+                        if (consumeDraft) consumeComposer(revision)
                         afterOwnSend(receipt.message)
                         onDelivered?.invoke(receipt.message)
                         maybeStreakNudge(receipt.streak)
@@ -629,8 +688,27 @@ class ChatRoomViewModel @Inject constructor(
                 }
                 .onFailure { failure ->
                     _state.value = _state.value.copy(error = failureNotice(failure))
+                    if (composerRevision == revision) {
+                        if (_state.value.replyTo == null) _state.value = _state.value.copy(replyTo = reply)
+                        onRejected?.invoke()
+                    }
                 }
         }
+    }
+
+    private suspend fun <T> safelySend(block: suspend () -> Result<T>): Result<T> {
+        return try {
+            block()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    private fun consumeComposer(revision: Long) {
+        // A response for message A does not own the newer draft B.
+        if (composerRevision == revision) onDraftChanged("")
     }
 
     /**
@@ -761,7 +839,7 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     /** /effects <name> [text] - effect rides the text row's payload blob. */
-    fun sendEffect(effect: String, content: String) {
+    fun sendEffect(effect: String, content: String, onRejected: (() -> Unit)? = null) {
         if (effect !in app.pulse.protocol.PulseWave7Logic.EFFECT_NAMES) return
         val payload = app.pulse.protocol.PulseJson.encodeToString(
             app.pulse.protocol.EffectPayloadDto.serializer(),
@@ -774,6 +852,8 @@ class ChatRoomViewModel @Inject constructor(
             // Own effect sends fire the mapped burst (web parity) - the
             // generic send burst is replaced, not stacked.
             fxKind = PulseEffects.burstKindOf(effect),
+            onRejected = onRejected,
+            consumeDraft = onRejected != null,
         )
     }
 
@@ -918,139 +998,159 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    // ── staged media (spec row 9 - never queued, honest errors) ──
-
-    fun onImagePicked(uri: Uri) {
-        _state.value = _state.value.copy(
-            staged = StagedMedia(kind = StagedMedia.Kind.IMAGE, localUri = uri.toString(), fileName = null, fileSize = null, uploading = true, error = null),
-        )
+    // A saved selection is a draft, not an upload or a send. Only Send transfers
+    // its bytes into the account-owned outbox in one database transaction.
+    private fun restoreAttachmentDraft() {
+        val key = repo.attachmentSessionKey() ?: return
+        val ticket = attachmentEpoch
         viewModelScope.launch {
-            MediaSupport.imageToDataUrl(context, uri)
-                .onSuccess { dataUrl -> uploadStaged(dataUrl, null) }
-                .onFailure { stageFailed(it.message ?: "Couldn't prepare the photo") }
+            repo.loadAttachmentDraft(conversationId, key).onSuccess { draft ->
+                if (draft == null || attachmentEpoch != ticket || _state.value.staged != null || repo.attachmentSessionKey() != key) return@onSuccess
+                val kind = when (draft.kind) { "image" -> StagedMedia.Kind.IMAGE; "audio" -> StagedMedia.Kind.AUDIO; else -> StagedMedia.Kind.FILE }
+                persistedAttachmentId = draft.selectionId
+                _state.value = _state.value.copy(staged = StagedMedia(kind = kind,
+                    localUri = if (kind == StagedMedia.Kind.IMAGE) draft.dataUrl else "",
+                    fileName = draft.fileName, fileSize = draft.fileSize, viewOnce = draft.viewOnce,
+                    selectionId = draft.selectionId, durationMs = draft.durationMs, intendedTopicId = draft.topicId,
+                    saved = true, caption = draft.caption, revision = draft.revision, sessionKey = key))
+            }.onFailure { notify("Saved attachment could not be restored; it has not been discarded", isError = true) }
         }
     }
 
-    fun onDocumentPicked(uri: Uri) {
-        viewModelScope.launch {
-            val prepared = MediaSupport.documentToDataUrl(context, uri)
-            prepared
-                .onSuccess { doc ->
-                    _state.value = _state.value.copy(
-                        staged = StagedMedia(
-                            kind = StagedMedia.Kind.FILE,
-                            localUri = uri.toString(),
-                            fileName = doc.fileName,
-                            fileSize = doc.sizeBytes,
-                            mime = doc.mime,
-                            uploading = true,
-                            error = null,
-                        ),
-                    )
-                    uploadStaged(doc.dataUrl, doc.fileName)
-                }
-                .onFailure { failure ->
-                    notify(failure.message ?: "Couldn't attach the document", isError = true)
-                }
-        }
-    }
+    fun onImagePicked(uri: Uri) = selectAttachment(uri, StagedMedia.Kind.IMAGE)
+    fun onDocumentPicked(uri: Uri) = selectAttachment(uri, StagedMedia.Kind.FILE)
 
-    /** Upload (or re-upload) the staged attachment - one route, both kinds. */
-    private fun uploadStaged(dataUrl: String, fileName: String?) {
-        val staged = _state.value.staged ?: return
-        _state.value = _state.value.copy(staged = staged.copy(uploading = true, error = null))
-        viewModelScope.launch {
-            repo.uploadMedia(dataUrl)
-                .onSuccess { path ->
-                    val current = _state.value.staged ?: return@launch
-                    _state.value = _state.value.copy(
-                        staged = current.copy(uploading = false, uploadedPath = path),
-                    )
-                }
-                .onFailure { stageFailed(it.message ?: "Upload failed") }
-        }
-    }
-
-    private fun stageFailed(message: String) {
-        val current = _state.value.staged ?: return
-        _state.value = _state.value.copy(staged = current.copy(uploading = false, error = message))
-    }
-
-    /** Retry re-runs the upload; an already-uploaded staged card skips it. */
-    fun retryStaged() {
-        val staged = _state.value.staged ?: return
-        if (staged.uploadedPath != null) {
-            _state.value = _state.value.copy(staged = staged.copy(error = null))
+    private fun selectAttachment(uri: Uri, kind: StagedMedia.Kind) {
+        if (_recording.value || _state.value.staged?.kind == StagedMedia.Kind.AUDIO || _state.value.staged?.sending == true) {
+            notify("Finish or discard the current recording first", isError = true)
             return
         }
-        viewModelScope.launch {
-            when (staged.kind) {
-                StagedMedia.Kind.IMAGE -> MediaSupport.imageToDataUrl(context, Uri.parse(staged.localUri))
-                    .onSuccess { dataUrl -> uploadStaged(dataUrl, staged.fileName) }
-                    .onFailure { stageFailed(it.message ?: "Upload failed") }
-                StagedMedia.Kind.FILE -> MediaSupport.documentToDataUrl(context, Uri.parse(staged.localUri))
-                    .onSuccess { doc ->
-                        _state.value = _state.value.copy(
-                            staged = (_state.value.staged ?: staged).copy(
-                                fileName = doc.fileName,
-                                fileSize = doc.sizeBytes,
-                                mime = doc.mime,
-                            ),
-                        )
-                        uploadStaged(doc.dataUrl, doc.fileName)
+        val key = repo.attachmentSessionKey() ?: run { notify("The account store is not ready", isError = true); return }
+        attachmentEpoch++
+        attachmentTask?.cancel()
+        val selected = StagedMedia(kind = kind, localUri = uri.toString(), fileName = null,
+            fileSize = null, uploading = true, sessionKey = key)
+        _state.value = _state.value.copy(staged = selected)
+        prepareAttachment(selected)
+    }
+
+    private fun prepareAttachment(selected: StagedMedia, autoSend: Boolean = false) {
+        val id = selected.selectionId
+        val key = selected.sessionKey ?: run { stageFailed(id, "The original account is no longer available"); return }
+        attachmentTask = viewModelScope.launch {
+            try {
+                val dataUrl = when (selected.kind) {
+                    StagedMedia.Kind.AUDIO -> MediaSupport.audioToDataUrl(context, File(selected.localUri)).getOrThrow()
+                    StagedMedia.Kind.IMAGE -> MediaSupport.imageToDataUrl(context, Uri.parse(selected.localUri)).getOrThrow()
+                    StagedMedia.Kind.FILE -> {
+                        val doc = MediaSupport.documentToDataUrl(context, Uri.parse(selected.localUri)).getOrThrow()
+                        if (!isActive || _state.value.staged?.selectionId != id) return@launch
+                        _state.value = _state.value.copy(staged = _state.value.staged?.copy(fileName = doc.fileName, fileSize = doc.sizeBytes, mime = doc.mime))
+                        doc.dataUrl
                     }
-                    .onFailure { stageFailed(it.message ?: "Upload failed") }
+                }
+                if (!isActive || _state.value.staged?.selectionId != id || repo.attachmentSessionKey() != key) return@launch
+                val current = _state.value.staged ?: return@launch
+                val kind = when (selected.kind) { StagedMedia.Kind.IMAGE -> "image"; StagedMedia.Kind.FILE -> "file"; StagedMedia.Kind.AUDIO -> "audio" }
+                repo.saveAttachmentDraft(app.pulse.domain.model.AttachmentDraft(id, conversationId, kind, dataUrl,
+                    current.fileName, current.fileSize, current.durationMs, current.caption, current.viewOnce,
+                    current.intendedTopicId, current.revision), key).getOrThrow()
+                if (!isActive || _state.value.staged?.selectionId != id || repo.attachmentSessionKey() != key) return@launch
+                persistedAttachmentId = id
+                _state.value = _state.value.copy(staged = _state.value.staged?.copy(uploading = false, saved = true, error = null))
+                _state.value.staged?.let { persistAttachmentEdits(it) }
+                if (selected.kind == StagedMedia.Kind.AUDIO) File(selected.localUri).delete() // The account-private journal owns the bytes now.
+                if (autoSend) sendStaged(_state.value.staged?.caption.orEmpty())
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (isActive) stageFailed(id, error.message ?: "Couldn't save this attachment")
             }
         }
+    }
+
+    private fun stageFailed(selectionId: String, message: String) {
+        val current = _state.value.staged?.takeIf { it.selectionId == selectionId } ?: return
+        _state.value = _state.value.copy(staged = current.copy(uploading = false, sending = false, error = message))
+    }
+
+    private fun persistAttachmentEdits(staged: StagedMedia) {
+        val key = staged.sessionKey ?: return
+        if (!staged.saved) return
+        viewModelScope.launch {
+            repo.editAttachmentDraft(conversationId, staged.selectionId, staged.caption, staged.viewOnce, staged.revision, key)
+                .onFailure { stageFailed(staged.selectionId, "Latest attachment edits could not be saved") }
+        }
+    }
+
+    fun setAttachmentCaption(value: String) {
+        val staged = _state.value.staged?.takeUnless { it.sending } ?: return
+        val updated = staged.copy(caption = value.take(500), revision = staged.revision + 1)
+        _state.value = _state.value.copy(staged = updated)
+        persistAttachmentEdits(updated)
+    }
+
+    fun retryStaged() {
+        val current = _state.value.staged ?: return
+        if (current.uploading || current.sending) return
+        if (current.saved) {
+            _state.value = _state.value.copy(staged = current.copy(error = null))
+            persistAttachmentEdits(current)
+            return
+        }
+        attachmentTask?.cancel()
+        _state.value = _state.value.copy(staged = current.copy(uploading = true, error = null))
+        prepareAttachment(current)
     }
 
     fun cancelStaged() {
-        _state.value = _state.value.copy(staged = null)
+        val current = _state.value.staged?.takeUnless { it.sending } ?: return
+        val key = current.sessionKey ?: return
+        attachmentEpoch++
+        attachmentTask?.cancel(); attachmentTask = null
+        val previous = persistedAttachmentId
+        _state.value = _state.value.copy(staged = current.copy(sending = true))
+        viewModelScope.launch {
+            try {
+                repo.discardAttachmentDraft(conversationId, current.selectionId, key).getOrThrow()
+                if (previous != null && previous != current.selectionId) repo.discardAttachmentDraft(conversationId, previous, key).getOrThrow()
+                if (current.kind == StagedMedia.Kind.AUDIO && current.localUri.isNotEmpty()) File(current.localUri).delete()
+                persistedAttachmentId = null
+                if (_state.value.staged?.selectionId == current.selectionId) _state.value = _state.value.copy(staged = null)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                stageFailed(current.selectionId, "Attachment could not be discarded")
+            }
+        }
     }
 
-    /** Send the staged attachment with its caption (≤500 - UI enforces). */
     fun sendStaged(caption: String) {
         val staged = _state.value.staged ?: return
-        val path = staged.uploadedPath
-        if (path == null) {
-            stageFailed("Still uploading - hold on a second")
+        if (staged.sending) return
+        val key = staged.sessionKey ?: return
+        if (!staged.saved || staged.uploading) {
+            notify("Wait for this attachment to be saved on the device", isError = true)
             return
         }
+        attachmentEpoch++
+        val topicId = if (staged.kind == StagedMedia.Kind.AUDIO) staged.intendedTopicId else _activeTopicId.value
+        _state.value = _state.value.copy(staged = staged.copy(sending = true, error = null))
         viewModelScope.launch {
-            val topicId = _activeTopicId.value
-            val result = when (staged.kind) {
-                StagedMedia.Kind.IMAGE -> repo.sendMediaMessage(
-                    conversationId = conversationId,
-                    body = caption.trim(),
-                    imagePath = path,
-                    // Wire contract: viewOnce===true REQUIRES imagePath - image kind only.
-                    viewOnce = if (staged.viewOnce) true else null,
-                    topicId = topicId,
-                )
-                StagedMedia.Kind.FILE -> repo.sendMediaMessage(
-                    conversationId = conversationId,
-                    body = caption.trim(),
-                    filePath = path,
-                    fileName = staged.fileName ?: path.substringAfterLast('/'),
-                    fileSize = staged.fileSize,
-                    kind = "file",
-                    topicId = topicId,
-                )
-            }
-            result
-                .onSuccess {
+            try {
+                val sent = repo.queueAttachmentDraft(conversationId, staged.selectionId, caption.trim(), staged.viewOnce, topicId, key).getOrThrow()
+                if (_state.value.staged?.selectionId == staged.selectionId) {
+                    persistedAttachmentId = null
                     _state.value = _state.value.copy(staged = null)
-                    app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
-                    afterOwnSend(it)
                 }
-                .onFailure { stageFailed(it.message ?: "Couldn't send - you appear to be offline") }
+                afterOwnSend(sent)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                stageFailed(staged.selectionId, error.message ?: "Attachment could not be queued")
+            }
         }
     }
 
-    /** The staged photo's view-once switch (image only, Wave 2 §1 row 5). */
     fun setStagedViewOnce(value: Boolean) {
-        val staged = _state.value.staged ?: return
-        _state.value = _state.value.copy(staged = staged.copy(viewOnce = value))
+        val staged = _state.value.staged?.takeIf { it.kind == StagedMedia.Kind.IMAGE && !it.sending } ?: return
+        val updated = staged.copy(viewOnce = value, revision = staged.revision + 1)
+        _state.value = _state.value.copy(staged = updated)
+        persistAttachmentEdits(updated)
     }
 
     // ── file download + open/share (FileProvider hand-off) ─────
@@ -1094,14 +1194,26 @@ class ChatRoomViewModel @Inject constructor(
      * [PulseMedia.MAX_VOICE_MS] ceiling is reached mid-hold.
      */
     fun startRecording() {
-        if (_recording.value || _sendingVoice.value) return
+        if (_recording.value || _sendingVoice.value || _state.value.staged != null) return
+        val attachmentKey = repo.attachmentSessionKey() ?: return
+        if (!app.pulse.core.audio.AudioOwnership.shared.acquireExclusive(recorderAudioToken)) {
+            notify("Leave your live room/call or pause playback before recording", isError = true)
+            return
+        }
         val file = File(context.cacheDir, "voice-${java.util.UUID.randomUUID()}.m4a")
-        val mr = MediaRecorder()
+        val mr = try { MediaRecorder() } catch (_: Exception) {
+            app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
+            notify("Microphone unavailable", isError = true)
+            return
+        }
         try {
             mr.setAudioSource(MediaRecorder.AudioSource.MIC)
             mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             mr.setAudioSamplingRate(44100)
+            mr.setAudioChannels(1)
+            // 10 minutes at 32 kbps is ~2.4 MB, below the gateway media cap.
+            mr.setAudioEncodingBitRate(32_000)
             mr.setMaxDuration(600_000)
             // D31 - metering: mr.maxAmplitude reports the raw 0..32767 range
             // while held (the sandbox platform jar omits setMaxAmplitude -
@@ -1111,11 +1223,13 @@ class ChatRoomViewModel @Inject constructor(
             mr.start()
         } catch (t: Throwable) {
             runCatching { mr.release() }
+            app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
             file.delete()
             notify("Couldn't start recording - check microphone access", isError = true)
             return
         }
         recorder = mr
+        recordingAttachmentSession = attachmentKey
         recordFile = file
         recordStartedAtMs = SystemClock.elapsedRealtime()
         _recordMs.value = 0L
@@ -1162,55 +1276,47 @@ class ChatRoomViewModel @Inject constructor(
      */
     fun stopAndSend() {
         if (!_recording.value) return
-        stopRecorderLocked()
         val elapsedMs = if (recordStartedAtMs > 0) SystemClock.elapsedRealtime() - recordStartedAtMs else _recordMs.value
+        val attachmentKey = recordingAttachmentSession
+        val finalized = stopRecorderLocked()
         val file = recordFile
         recordFile = null
         _recording.value = false
         _recordMs.value = 0L
         _recordAmps.value = emptyList()
+        if (!finalized) {
+            file?.delete()
+            notify("Recording could not be finalized. Please record again.", isError = true)
+            return
+        }
         if (elapsedMs < app.pulse.core.media.PulseMedia.MIN_VOICE_MS || file == null) {
             file?.delete()
             notify("Too short - voice note discarded")
             return
         }
         val durationMs = app.pulse.core.media.PulseMedia.voiceDurationMs(elapsedMs)
-        _sendingVoice.value = true
-        viewModelScope.launch {
-            MediaSupport.audioToDataUrl(context, file, mime = "audio/mp4")
-                .onSuccess { dataUrl ->
-                    repo.uploadMedia(dataUrl)
-                        .onSuccess { path ->
-                            repo.sendMediaMessage(
-                                conversationId = conversationId,
-                                body = "",
-                                audioPath = path,
-                                durationMs = durationMs,
-                                kind = "audio",
-                                topicId = _activeTopicId.value,
-                            )
-                                .onSuccess { sent ->
-                                    app.pulse.core.fx.PulseFx.fire(app.pulse.core.fx.PulseFx.BurstKind.BURST, count = 26)
-                                    afterOwnSend(sent)
-                                }
-                                .onFailure { notify(it.message ?: "Couldn't send the voice note", isError = true) }
-                        }
-                        .onFailure { notify("Couldn't upload the voice note", isError = true) }
-                }
-                .onFailure { notify("Couldn't prepare the voice note", isError = true) }
-            _sendingVoice.value = false
-            file.delete()
-        }
+        // Keep the source while an upload is uncertain; expose the same staged
+        // retry/discard controls as a file. Delete only after durable enqueue.
+        val selected = StagedMedia(kind = StagedMedia.Kind.AUDIO, localUri = file.absolutePath,
+            fileName = "Voice note.m4a", fileSize = file.length(), mime = "audio/mp4",
+            uploading = true, durationMs = durationMs, intendedTopicId = _activeTopicId.value,
+            sessionKey = attachmentKey)
+        attachmentEpoch++
+        _state.value = _state.value.copy(staged = selected)
+        prepareAttachment(selected, autoSend = true)
     }
 
-    private fun stopRecorderLocked() {
+    private fun stopRecorderLocked(): Boolean {
+        recordingAttachmentSession = null
         recordTicker?.cancel()
         recordTicker = null
-        val mr = recorder ?: return
+        val mr = recorder ?: return true
         recorder = null
         recordStartedAtMs = 0
-        runCatching { mr.stop() }
+        val finalized = runCatching { mr.stop() }.isSuccess
         runCatching { mr.release() }
+        app.pulse.core.audio.AudioOwnership.shared.release(recorderAudioToken)
+        return finalized
     }
 
     // ── Wave 2: transcription strip (spec §1 row 15) ───────────────────
@@ -1362,16 +1468,10 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    fun createGame(opponentId: String?) {
-        viewModelScope.launch {
-            repo.createGame(conversationId, opponentId)
-                .onSuccess {
-                    gameOpen = false
-                    notify("Tic-tac-toe challenge sent")
-                }
-                .onFailure { notify(it.message ?: "Could not start the game", isError = true) }
-        }
-    }
+    suspend fun createGame(opponentId: String?): Boolean =
+        gameRequest { repo.createGame(conversationId, opponentId).getOrThrow() }
+            .onSuccess { gameOpen = false; notify(if (it.replayed) "Recovered the previous challenge" else "Tic-tac-toe challenge sent") }
+            .onFailure { notify(it.message ?: "Could not start the game", isError = true) }.isSuccess
 
     // ── R7 item 3 - game rematch (web game-tictactoe-card.tsx:213-236) ──
     /**
@@ -1382,28 +1482,20 @@ class ChatRoomViewModel @Inject constructor(
      * analogue of web's GAME_EXTERNAL_MESSAGE_EVENT hand-off). Toast copy
      * verbatim; the card disables itself while the POST is in flight.
      */
-    fun rematch(match: app.pulse.protocol.GameMatchDto) {
-        if (match.status == "active") return
-        val mySide = app.pulse.protocol.PulseWave7Logic.sideOf(match, viewerId) ?: return
+    suspend fun rematch(match: app.pulse.protocol.GameMatchDto): Boolean {
+        if (match.status == "active") return false
+        val mySide = app.pulse.protocol.PulseWave7Logic.sideOf(match, viewerId) ?: return false
         val opponentId = if (mySide == 'X') match.playerOId else match.playerXId
-        if (opponentId.isNullOrBlank()) return
-        viewModelScope.launch {
-            repo.createGame(match.conversationId.ifBlank { conversationId }, opponentId)
-                .onSuccess { notify("Rematch sent - new challenge in the chat.") }
-                .onFailure { notify(it.message ?: "Rematch failed - try again.", isError = true) }
-        }
+        if (opponentId.isNullOrBlank()) return false
+        return gameRequest { repo.createGame(match.conversationId.ifBlank { conversationId }, opponentId).getOrThrow() }
+            .onSuccess { notify(if (it.replayed) "Recovered the previous rematch" else "Rematch sent - new challenge in the chat.") }
+            .onFailure { notify(it.message ?: "Rematch failed - try again.", isError = true) }.isSuccess
     }
 
-    fun createTournament(name: String) {
-        viewModelScope.launch {
-            repo.createTournament(conversationId, name.trim())
-                .onSuccess {
-                    tournamentOpen = false
-                    notify("Tournament \"$name\" started")
-                }
-                .onFailure { notify(it.message ?: "Could not start the tournament", isError = true) }
-        }
-    }
+    suspend fun createTournament(name: String): Boolean =
+        gameRequest { repo.createTournament(conversationId, name.trim()).getOrThrow() }
+            .onSuccess { tournamentOpen = false; notify(if (it.replayed) "Recovered the previous tournament" else "Tournament \"$name\" started") }
+            .onFailure { notify(it.message ?: "Could not start the tournament", isError = true) }.isSuccess
 
     fun createKanbanCard(title: String, column: String, assigneeId: String?) {
         viewModelScope.launch {
@@ -1452,21 +1544,15 @@ class ChatRoomViewModel @Inject constructor(
     // suspend fetchers used by the in-bubble cards (polling parity)
 
     suspend fun gameDetail(matchId: String): GameDetailDto? =
-        runCatching { repo.game(matchId).getOrNull() }.getOrNull()
+        gameRequest { repo.game(matchId).getOrThrow() }.getOrNull()
 
-    fun gameMove(matchId: String, cell: Int) {
-        viewModelScope.launch {
-            repo.gameMove(matchId, cell)
-                .onFailure { notify(it.message ?: "Move rejected", isError = true) }
-        }
-    }
+    suspend fun gameMove(matchId: String, cell: Int): GameDetailDto? =
+        gameRequest { repo.gameMove(matchId, cell).getOrThrow() }
+            .onFailure { notify(it.message ?: "Move rejected", isError = true) }.getOrNull()
 
-    fun joinGame(matchId: String) {
-        viewModelScope.launch {
-            repo.joinGame(matchId)
-                .onFailure { notify(it.message ?: "Could not join", isError = true) }
-        }
-    }
+    suspend fun joinGame(matchId: String): GameDetailDto? =
+        gameRequest { repo.joinGame(matchId).getOrThrow() }
+            .onFailure { notify(it.message ?: "Could not join", isError = true) }.getOrNull()
 
     suspend fun redPacketDetail(packetId: String): RedPacketDetailDto? =
         runCatching { repo.redPacket(packetId).getOrNull() }.getOrNull()
@@ -1475,29 +1561,23 @@ class ChatRoomViewModel @Inject constructor(
     fun grabRedPacket(packetId: String) {
         viewModelScope.launch {
             repo.grabRedPacket(packetId)
-                .onSuccess { notify("You grabbed ${it.amount} PC") }
+                .onSuccess { notify(if (it.alreadyGrabbed) "Already received ${it.amount} PC" else "You grabbed ${it.amount} PC") }
                 .onFailure { notify(it.message ?: "Could not grab the red packet", isError = true) }
         }
     }
 
     suspend fun tournamentDetail(tournamentId: String): TournamentSummaryDto? =
-        runCatching { repo.tournament(tournamentId).getOrNull() }.getOrNull()
+        gameRequest { repo.tournament(tournamentId).getOrThrow() }.getOrNull()
 
-    fun joinTournament(tournamentId: String) {
-        viewModelScope.launch {
-            repo.joinTournament(tournamentId)
-                .onSuccess { notify("You are in - play tic-tac-toe matches to score points") }
-                .onFailure { notify(it.message ?: "Could not join the tournament", isError = true) }
-        }
-    }
+    suspend fun joinTournament(tournamentId: String): Boolean =
+        gameRequest { repo.joinTournament(tournamentId).getOrThrow() }
+            .onSuccess { notify("You are in - play tic-tac-toe matches to score points") }
+            .onFailure { notify(it.message ?: "Could not join the tournament", isError = true) }.isSuccess
 
-    fun finishTournament(tournamentId: String) {
-        viewModelScope.launch {
-            repo.finishTournament(tournamentId)
-                .onSuccess { notify("Tournament finished") }
-                .onFailure { notify(it.message ?: "Could not finish the tournament", isError = true) }
-        }
-    }
+    suspend fun finishTournament(tournamentId: String): Boolean =
+        gameRequest { repo.finishTournament(tournamentId).getOrThrow() }
+            .onSuccess { notify("Tournament finished") }
+            .onFailure { notify(it.message ?: "Could not finish the tournament", isError = true) }.isSuccess
 
     /** Reminder create via the sheet (absolute picker) - relative parse lives in PulseWave7Logic. */
     fun createReminder(note: String, remindAtIso: String, anchoredMessageId: String? = null) {

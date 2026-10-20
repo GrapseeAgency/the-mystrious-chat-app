@@ -6,26 +6,20 @@ import app.pulse.domain.model.OutboxEntry
 import app.pulse.domain.model.OutboxFailureClass
 import app.pulse.domain.repository.PulseRepository
 
-/**
- * Offline outbox drain - the native port of web flushPulseOutbox
- * (src/lib/pulse-outbox.ts): FIFO ≤50, deliver in order, STOP at the first
- * failure so later sends never overtake earlier ones.
- *
- * Per delivery:
- *  - success   → the repository swaps the optimistic `local_<clientId>` row
- *                for the real message row and deletes the outbox row;
- *  - 4xx-class → the entry is dropped permanently (row + temp bubble removed,
- *                PulseEvent.OutboxDropped emitted) and the drain stops;
- *  - network   → attempts++ (entry kept) and the drain stops - the next
- *                trigger (reconnect/foreground/worker/self-heal) retries.
+/** Single writer: FIFO within each room, with bypass only for explicit room cooldowns.
+ * Unknown network/auth/gateway failures still stop the pass. Rejected intents
+ * remain recoverable but no longer hold up later operations.
  */
 class FlushOutboxUseCase(private val repo: PulseRepository) {
 
     suspend operator fun invoke(): FlushReport {
-        val queue = repo.outboxPending().take(MAX_BATCH)
+        val heldRooms = mutableSetOf<String>()
+        val attempted = mutableSetOf<String>()
         var sent = 0
         var dropped = 0
-        for (entry in queue) {
+        while (attempted.size < MAX_BATCH) {
+            val entry = repo.outboxReady(heldRooms).firstOrNull { it.clientId !in attempted } ?: break
+            attempted += entry.clientId
             val outcome = repo.attemptOutboxSend(entry)
             if (outcome.isSuccess) {
                 repo.resolveOutboxDelivery(entry, outcome.getOrThrow())
@@ -37,12 +31,17 @@ class FlushOutboxUseCase(private val repo: PulseRepository) {
             if (classification == OutboxFailureClass.DROP) {
                 repo.dropOutboxEntry(entry.clientId, error.message ?: "Message rejected")
                 dropped += 1
+                continue
             } else {
                 repo.bumpOutboxAttempts(entry.clientId)
             }
-            break // stop-at-first-failure - temporal order is the contract
+            if (classification == OutboxFailureClass.ROOM_RETRY) {
+                heldRooms += entry.conversationId
+                continue
+            }
+            break // Unknown/global failures cannot safely be bypassed.
         }
-        return FlushReport(sent = sent, dropped = dropped, pending = repo.outboxPending().size)
+        return FlushReport(sent = sent, dropped = dropped, pending = repo.pendingOutboxCount())
     }
 
     companion object {

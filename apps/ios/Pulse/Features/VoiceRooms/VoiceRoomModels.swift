@@ -81,10 +81,10 @@ public struct VoiceRoomModel: Equatable, Sendable {
 
     // lifecycle
 
-    public mutating func beginJoin(conversationId: String) {
+    public mutating func beginJoin(conversationId: String, userInitiated: Bool = true) {
         self.conversationId = conversationId
         status = .joining
-        userJoinedVoice = true
+        userJoinedVoice = userInitiated
         errorText = nil
     }
 
@@ -447,6 +447,7 @@ public struct SpaceModel: Equatable, Sendable {
     public var targetY: Double
     public var lastLocalMoveMs: Double?
     public var lastEmitMs: Double?
+    public private(set) var pendingMove = false
     public var reconnectAttempts: Int
     public var errorText: String?
 
@@ -459,6 +460,7 @@ public struct SpaceModel: Equatable, Sendable {
         targetY = 0.5
         lastLocalMoveMs = nil
         lastEmitMs = nil
+        pendingMove = false
         reconnectAttempts = 0
         errorText = nil
     }
@@ -505,6 +507,7 @@ public struct SpaceModel: Equatable, Sendable {
     /// position: a nil x/y (the server returned nothing for us) must not
     /// clobber the cached initial target with the 0.5 decode fallback.
     public mutating func apply(state: WireSpaceState, nowMs: Double) -> ReconcileVerdict {
+        guard joined else { return .keep }
         players = (state.players ?? []).map { player in
             Player(
                 id: player.id,
@@ -517,7 +520,7 @@ public struct SpaceModel: Equatable, Sendable {
         status = joined ? .connected : status
         let idle = lastLocalMoveMs.map { nowMs - $0 >= Self.reconcileIdleMs } ?? true
         let selfRow = (state.players ?? []).first { $0.id == myId }
-        if idle, selfRow?.x != nil, selfRow?.y != nil, let me = selfPlayer, me.x != targetX || me.y != targetY {
+        if idle, !pendingMove, selfRow?.x != nil, selfRow?.y != nil, let me = selfPlayer, me.x != targetX || me.y != targetY {
             targetX = me.x
             targetY = me.y
             return .adopt(x: me.x, y: me.y)
@@ -528,16 +531,22 @@ public struct SpaceModel: Equatable, Sendable {
     /// SP-3 - tap/drag destination: clamp 0..1 client-side, optimistic
     /// target moves instantly, and the emit is throttled to one per 80 ms.
     public mutating func localMove(x: Double, y: Double, nowMs: Double) -> MoveDecision {
+        guard joined else { return .throttle }
         let clampedX = Self.clamp01(x)
         let clampedY = Self.clamp01(y)
         targetX = clampedX
         targetY = clampedY
         lastLocalMoveMs = nowMs
-        if let last = lastEmitMs, nowMs - last < Self.throttleMs {
-            return .throttle
-        }
+        pendingMove = true
+        return flushMove(nowMs: nowMs)
+    }
+
+    public mutating func flushMove(nowMs: Double) -> MoveDecision {
+        guard joined, pendingMove else { return .throttle }
+        if let last = lastEmitMs, nowMs - last < Self.throttleMs { return .throttle }
+        pendingMove = false
         lastEmitMs = nowMs
-        return .emit(x: clampedX, y: clampedY)
+        return .emit(x: targetX, y: targetY)
     }
 
     /// Connection bookkeeping (FIX #5): every transport drop counts; the
@@ -573,6 +582,7 @@ public struct SpaceModel: Equatable, Sendable {
         targetY = 0.5
         lastLocalMoveMs = nil
         lastEmitMs = nil
+        pendingMove = false
         reconnectAttempts = 0
         errorText = nil
     }
@@ -665,4 +675,25 @@ public struct CaptionWindowAccumulator: Equatable, Sendable {
         samples.removeAll()
         busy = false
     }
+}
+
+/// Press starts capture immediately; only a completed short tap may keep it latched.
+/// Release/cancel can STOP, but can never resurrect a revoked transmission.
+struct VoicePttGesturePolicy {
+    init() {}
+    private(set) var startedAtMs: Double?
+    private var beganLatched = false
+    var isPressed: Bool { startedAtMs != nil }
+    mutating func press(nowMs: Double, transmitting: Bool) -> Bool? {
+        guard startedAtMs == nil else { return nil }
+        startedAtMs = nowMs
+        beganLatched = transmitting
+        return !transmitting
+    }
+    mutating func release(nowMs: Double) -> Bool {
+        guard let start = startedAtMs else { return false }
+        startedAtMs = nil
+        return !beganLatched && nowMs - start < 260
+    }
+    mutating func cancel() { startedAtMs = nil }
 }

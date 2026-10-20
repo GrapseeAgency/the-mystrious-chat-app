@@ -39,31 +39,37 @@ final class VoiceRoomAudioSession {
     }
 
     private var saved: Saved?
+    private let ownershipToken = UUID()
+    private var recordingMode = false
     private(set) var isActive = false
 
     /// Snapshot + apply the rooms configuration. Returns false when the
     /// hardware refuses (honest degradation - the room still joins).
-    func activate() -> Bool {
-        guard !isActive else { return true }
+    func activate(recording: Bool = true) -> Bool {
+        guard PulseAudioOwnership.shared.acquire(ownershipToken) else { return false }
+        if isActive && recordingMode == recording { return true }
         let session = AVAudioSession.sharedInstance()
-        saved = Saved(category: session.category, options: session.categoryOptions, mode: session.mode)
+        if saved == nil { saved = Saved(category: session.category, options: session.categoryOptions, mode: session.mode) }
         do {
             try session.setCategory(
-                .playAndRecord,
-                mode: .voiceChat,
-                options: [.allowBluetooth, .defaultToSpeaker],
+                recording ? .playAndRecord : .playback,
+                mode: recording ? .voiceChat : .default,
+                options: recording ? [.allowBluetooth, .defaultToSpeaker] : [],
             )
             try session.setActive(true)
             isActive = true
+            recordingMode = recording
             return true
         } catch {
-            isActive = false
+            deactivate() // roll back a category change even if setActive failed
             return false
         }
     }
 
     /// Restore the pre-room category and let other audio resume.
     func deactivate() {
+        // Never deactivate another audio owner's session if this wrapper never acquired it.
+        guard saved != nil || isActive else { return }
         let session = AVAudioSession.sharedInstance()
         try? session.overrideOutputAudioPort(.none)
         if let saved {
@@ -72,6 +78,7 @@ final class VoiceRoomAudioSession {
         try? session.setActive(false, options: [.notifyOthersOnDeactivation])
         saved = nil
         isActive = false
+        PulseAudioOwnership.shared.release(ownershipToken)
     }
 
     /// Mic permission - the SAME AVAudioSession.requestRecordPermission
@@ -100,7 +107,23 @@ final class VoiceRoomAudioSession {
 /// session model but deliberately NOT @MainActor: the tap runs on a
 /// realtime audio thread, so the gate is lock-guarded and callbacks
 /// fire on that thread (the session model hops to main).
-final class VoiceRoomAudioEngine {
+protocol VoiceRoomAudioDriving: AnyObject {
+    var onChunk: ((VoicePcmChunkOut) -> Void)? { get set }
+    var onSamples: (([Int16]) -> Void)? { get set }
+    var onError: ((String) -> Void)? { get set }
+    func requestMicPermission() async -> Bool
+    func startCapture(micGranted: Bool) -> String?
+    func startPlayback() -> String?
+    func stopMicrophone() -> String?
+    func stopCapture()
+    func resetChunker()
+    func setGate(transmitting: Bool, muted: Bool)
+    func flushPartial()
+    func resetPeer(_ userId: String)
+    func play(userId: String, base64: String, atMs: Double, nowMs: Double)
+}
+
+final class VoiceRoomAudioEngine: VoiceRoomAudioDriving {
     /// Emitted on the audio tap queue - one VoicePcmChunkOut per 250 ms
     /// block (+ the proportional partial flush on release).
     var onChunk: ((VoicePcmChunkOut) -> Void)?
@@ -138,6 +161,7 @@ final class VoiceRoomAudioEngine {
     private var gateMuted = false
     private var chunker = VoicePcmChunker()
     private var captureConfigured = false
+    private var tapGeneration = UUID()
 
     private let playbackLock = NSLock()
     private var peerNodes: [String: AVAudioPlayerNode] = [:]
@@ -152,6 +176,9 @@ final class VoiceRoomAudioEngine {
         guard micGranted else {
             return "Microphone access is off - enable it for Pulse in Settings."
         }
+        // Stop before reconfiguring category/input format; restart via the
+        // playback fallback if activation fails.
+        engine.stop()
         // 2. Session category (saved/restored by the rooms wrapper).
         if !audioSession.activate() {
             return "Audio hardware refused the room session."
@@ -159,26 +186,57 @@ final class VoiceRoomAudioEngine {
         // 3. Graph - input tap → converter → chunker; playback nodes hang
         //    off the main mixer.
         do {
+            engine.stop()
+            resetAllPeers()
             try configureGraphIfNeeded()
             engine.prepare()
             try engine.start()
             return nil
         } catch {
+            stopCapture()
             return "Microphone is busy or unavailable."
         }
     }
 
-    func stopCapture() {
-        engine.stop()
+    /// Listening never installs an input tap and never asks for microphone permission.
+    func startPlayback() -> String? {
+        if engine.isRunning { return nil }
+        guard audioSession.activate(recording: false) else { return "Audio is in use by another session." }
+        do {
+            _ = engine.mainMixerNode
+            engine.prepare()
+            try engine.start()
+            return nil
+        } catch {
+            stopCapture()
+            return "Could not start room playback."
+        }
+    }
+
+    /// Demotion releases the physical input, not just the PTT indicator.
+    func stopMicrophone() -> String? {
         setGate(transmitting: false, muted: false)
+        engine.stop()
+        if captureConfigured { engine.inputNode.removeTap(onBus: 0) }
+        captureConfigured = false
+        converter = nil
+        lock.lock()
+        chunker.discardPartial()
+        lock.unlock()
+        resetAllPeers()
+        return startPlayback()
+    }
+
+    func stopCapture() {
+        setGate(transmitting: false, muted: false)
+        engine.stop()
+        if captureConfigured { engine.inputNode.removeTap(onBus: 0) }
+        captureConfigured = false
+        converter = nil
         lock.lock()
         chunker.reset()
-        captureConfigured = false
         lock.unlock()
-        playbackLock.lock()
-        peerNodes.values.forEach { $0.stop() }
-        peerNodes.removeAll()
-        playbackLock.unlock()
+        resetAllPeers()
         audioSession.deactivate()
     }
 
@@ -208,7 +266,7 @@ final class VoiceRoomAudioEngine {
     }
 
     var captureRunning: Bool {
-        engine.isRunning
+        captureConfigured && engine.isRunning
     }
 
     // capture internals
@@ -228,34 +286,42 @@ final class VoiceRoomAudioEngine {
         }
         self.converter = converter
 
+        let ticket = UUID()
+        lock.lock()
+        tapGeneration = ticket
+        lock.unlock()
+        let chunkCallback = onChunk
+        let samplesCallback = onSamples
         input.installTap(onBus: 0, bufferSize: Self.tapFrames, format: inputFormat) { [weak self] buffer, _ in
-            self?.handleTap(buffer: buffer)
+            self?.handleTap(buffer: buffer, converter: converter, ticket: ticket,
+                chunkCallback: chunkCallback, samplesCallback: samplesCallback)
         }
         captureConfigured = true
     }
 
     /// Runs on the AVAudioEngine tap thread.
-    private func handleTap(buffer: AVAudioPCMBuffer) {
+    private func handleTap(buffer: AVAudioPCMBuffer, converter: AVAudioConverter, ticket: UUID,
+                           chunkCallback: ((VoicePcmChunkOut) -> Void)?, samplesCallback: (([Int16]) -> Void)?) {
         lock.lock()
-        let gateOn = gateTransmitting && !gateMuted
+        let gateOn = gateTransmitting && !gateMuted && tapGeneration == ticket
         lock.unlock()
+        guard gateOn, let samples = convertTo16kMono(buffer, converter: converter), !samples.isEmpty else { return }
 
-        guard gateOn, let samples = convertTo16kMono(buffer), !samples.isEmpty else { return }
-
-        onSamples?(samples)
-
+        // Conversion can overlap a stop/demotion/new graph. Check again before
+        // feeding the sequence buffer, and deliver only to this tap's owner.
         lock.lock()
+        guard gateTransmitting && !gateMuted && tapGeneration == ticket else { lock.unlock(); return }
         let chunks = chunker.feed(samples)
         lock.unlock()
-        chunks.forEach { onChunk?($0) }
+        samplesCallback?(samples)
+        chunks.forEach { chunkCallback?($0) }
     }
 
     /// AVAudioConverter → 16 kHz mono Int16 samples (linear resample
     /// handled by the converter). The input block is passed per
     /// `convert(to:error:withInputFrom:)` call - AVAudioConverter has no
     /// settable inputBlock property.
-    private func convertTo16kMono(_ input: AVAudioPCMBuffer) -> [Int16]? {
-        guard let converter else { return nil }
+    private func convertTo16kMono(_ input: AVAudioPCMBuffer, converter: AVAudioConverter) -> [Int16]? {
         guard input.frameLength > 0 else { return nil }
 
         var collected: [Int16] = []
@@ -295,7 +361,7 @@ final class VoiceRoomAudioEngine {
     /// silent prime + start; future playheads schedule at the exact host
     /// time; the rest chain immediately behind the node's queue.
     func play(userId: String, base64: String, atMs: Double, nowMs: Double) {
-        guard let wireFormat else { return }
+        guard engine.isRunning, let wireFormat else { return }
         guard let samples = Self.decode(base64: base64), !samples.isEmpty else { return } // corrupt → drop silently
         guard let buffer = Self.buffer(samples: samples, format: wireFormat) else { return }
 
@@ -325,7 +391,7 @@ final class VoiceRoomAudioEngine {
         // in the future; otherwise chain right behind the pending buffers.
         let delayMs = atMs - nowMs
         if delayMs > 30 {
-            let hostTime = AVAudioTime.hostTime(forSeconds: delayMs / 1000.0)
+            let hostTime = mach_absolute_time() + AVAudioTime.hostTime(forSeconds: delayMs / 1000.0)
             let time = AVAudioTime(hostTime: hostTime, sampleTime: 0, atRate: 0)
             node.scheduleBuffer(buffer, at: time, options: [])
         } else {

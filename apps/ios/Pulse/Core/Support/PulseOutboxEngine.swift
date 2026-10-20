@@ -7,13 +7,13 @@ import Network
 /// W1-DATA-B - the requirement mirrors PulseAPIClient.sendMessage's FULL
 /// parameter list (Swift witness matching ignores default arguments, so a
 /// defaulted-param method would no longer witness a shorter requirement).
-/// The engine only ever fills the text fields - media/thread sends are
-/// online-only and never queued (spec §1.2). R1-W2B D28 relaxes exactly one
-/// case: FORWARDS (F-MS-10 "queued if offline") queue with their stored
-/// kind + media paths via PulseOutboxForward.
+/// Upload bytes and the eventual message share one durable operation. A known
+/// uploaded path is persisted before sending so a lost message ACK never reuploads.
 public protocol PulseOutboxSending: Sendable {
+    func uploadMedia(dataUrl: String) async throws -> String
     func sendMessage(
         conversationId: String,
+        clientId: String,
         content: String,
         replyToId: String?,
         parentId: String?,
@@ -29,6 +29,51 @@ public protocol PulseOutboxSending: Sendable {
         payload: [String: Any]?,
         anon: Bool?
     ) async throws -> WireChatMessage
+    func sendMessageWithStreak(
+        conversationId: String,
+        clientId: String,
+        content: String,
+        replyToId: String?,
+        parentId: String?,
+        imagePath: String?,
+        audioPath: String?,
+        durationMs: Double?,
+        filePath: String?,
+        fileName: String?,
+        fileSize: Int?,
+        kind: String?,
+        viewOnce: Bool?,
+        topicId: String?,
+        payload: [String: Any]?,
+        anon: Bool?
+    ) async throws -> PulseSendResult
+}
+
+public extension PulseOutboxSending {
+    func sendMessageWithStreak(
+        conversationId: String,
+        clientId: String,
+        content: String,
+        replyToId: String?,
+        parentId: String?,
+        imagePath: String?,
+        audioPath: String?,
+        durationMs: Double?,
+        filePath: String?,
+        fileName: String?,
+        fileSize: Int?,
+        kind: String?,
+        viewOnce: Bool?,
+        topicId: String?,
+        payload: [String: Any]?,
+        anon: Bool?
+    ) async throws -> PulseSendResult {
+        let message = try await sendMessage(conversationId: conversationId, clientId: clientId, content: content,
+            replyToId: replyToId, parentId: parentId, imagePath: imagePath, audioPath: audioPath,
+            durationMs: durationMs, filePath: filePath, fileName: fileName, fileSize: fileSize,
+            kind: kind, viewOnce: viewOnce, topicId: topicId, payload: payload, anon: anon)
+        return PulseSendResult(message: message, streak: nil)
+    }
 }
 
 extension PulseAPIClient: PulseOutboxSending {}
@@ -46,9 +91,18 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
     public var filePath: String?
     public var fileName: String?
     public var fileSize: Int?
+    public var replyToId: String?
+    public var parentId: String?
+    public var topicId: String?
+    public var payload: String?
+    public var anon: Bool?
+    public var viewOnce: Bool?
+    public var uploadDataUrl: String?
 
-    public init(kind: String?, imagePath: String?, audioPath: String?, durationMs: Double?,
-                filePath: String?, fileName: String?, fileSize: Int?) {
+    public init(kind: String? = nil, imagePath: String? = nil, audioPath: String? = nil, durationMs: Double? = nil,
+                filePath: String? = nil, fileName: String? = nil, fileSize: Int? = nil,
+                replyToId: String? = nil, parentId: String? = nil, topicId: String? = nil,
+                payload: String? = nil, anon: Bool? = nil, viewOnce: Bool? = nil, uploadDataUrl: String? = nil) {
         self.kind = kind
         self.imagePath = imagePath
         self.audioPath = audioPath
@@ -56,10 +110,17 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
         self.filePath = filePath
         self.fileName = fileName
         self.fileSize = fileSize
+        self.replyToId = replyToId
+        self.parentId = parentId
+        self.topicId = topicId
+        self.payload = payload
+        self.anon = anon
+        self.viewOnce = viewOnce
+        self.uploadDataUrl = uploadDataUrl
     }
 
-    /// Serialized for the outbox row (nil-safe: a failed encode → nil payload
-    /// → the flush degrades to a plain text send with the forward's content).
+    /// Serialized for the outbox row. Enqueue must reject encoding failure;
+    /// it must never downgrade an attachment to a text-only message.
     public static func encode(_ forward: PulseOutboxForward) -> String? {
         guard let data = try? JSONEncoder().encode(forward) else { return nil }
         return String(data: data, encoding: .utf8)
@@ -72,13 +133,13 @@ public struct PulseOutboxForward: Codable, Equatable, Sendable {
 }
 
 /// Outbox engine - offline sends, mirroring src/lib/pulse-outbox.ts:
-///   • FIFO queue, hard cap 50 (oldest dropped beyond it)
+///   • Per-room FIFO durable queue, bounded drain batches (never evict pending sends)
 ///   • flush drains in order and STOPS at the first network-class failure
 ///     (temporal order - later sends must never overtake earlier ones)
 ///   • success → real row upserted, `local_<clientId>` temp row deleted,
 ///     outbox entry deleted, UI notified
-///   • 4xx (validation/forbidden/404/…) → entry dropped + temp row deleted +
-///     honest toast (retrying could never succeed)
+///   • Permanent 4xx → failed intent + envelope retained, pending echo retracted;
+///     no automatic retry and no overwrite of the user's current draft
 ///   • network failure → attempts++, retried on the next trigger
 /// Triggers: session start with pending entries, socket (re)connect, app
 /// foreground, BGAppRefreshTask, a 60s self-heal timer while entries exist
@@ -92,7 +153,7 @@ public final class PulseOutboxEngine: ObservableObject {
         case dropped(clientId: String, conversationId: String, reason: String)
     }
 
-    /// Web MAX_QUEUE parity.
+    /// Per-pass batch size, NOT a destructive storage limit.
     public static let maxEntries = 50
     /// BGAppRefreshTask identifier (registered in PulseApp, permitted in
     /// project.yml → BGTaskSchedulerPermittedIdentifiers).
@@ -109,11 +170,18 @@ public final class PulseOutboxEngine: ObservableObject {
 
     /// Engine → session pipe (delivered/dropped events feed the UI).
     public var onEvent: ((Event) -> Void)?
+    public var onAcknowledgement: ((PulseSendResult) -> Void)?
 
     private let store: PulseStore
     private let senderProvider: () -> (any PulseOutboxSending)?
     private var healTask: Task<Void, Never>?
+    private var healGeneration = UUID()
+    private var healSleeping = false
     private var working = false
+    private var stopped = false
+    private var retryNotBefore: TimeInterval = 0
+    private var roomRetryNotBefore: [String: TimeInterval] = [:]
+    private let monotonicNow: () -> TimeInterval
     // R1-W2B D41 - NWPathMonitor flush trigger (spec F-OF-04). The monitor
     // lives as long as the engine (its handler only weakly references self,
     // so engine teardown releases it) and its satisfaction EDGE calls the
@@ -122,14 +190,16 @@ public final class PulseOutboxEngine: ObservableObject {
     private var pathMonitorStarted = false
     private var lastPathSatisfied = false
 
-    public init(store: PulseStore, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
+    public init(store: PulseStore, monitorNetwork: Bool = true,
+                monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }, senderProvider: @escaping () -> (any PulseOutboxSending)?) {
         self.store = store
+        self.monotonicNow = monotonicNow
         self.senderProvider = senderProvider
-        pendingCount = store.countOutbox()
+        pendingCount = store.countPendingOutbox()
         if pendingCount > 0 {
             startHealTimer()
         }
-        startPathMonitor()
+        if monitorNetwork { startPathMonitor() }
     }
 
     // The heal task holds `weak self`; after deallocation the loop exits on
@@ -139,63 +209,87 @@ public final class PulseOutboxEngine: ObservableObject {
     // queue management
 
     /// Enqueues one outgoing message (clientId dedupes via UNIQUE).
-    public func append(conversationId: String, clientId: String, content: String, kind: String = "text") {
+    @discardableResult
+    public func append(conversationId: String, clientId: String, content: String, kind: String = "text") -> Bool {
         do {
             try store.appendOutbox(conversationId: conversationId, clientId: clientId, content: content, kind: kind)
-        } catch {
-            // Duplicate clientId (double-tap) - already queued, nothing to do.
-        }
-        trimToLimit()
-        pendingCount = store.countOutbox()
-        startHealTimer()
+        } catch { return false }
+        reloadPending()
+        return true
     }
 
     /// R1-W2B D28 - enqueues one queued FORWARD. `forward` carries the
     /// stored kind + media paths; the flush re-POSTs the exact body.
-    public func appendForward(conversationId: String, clientId: String, content: String, forward: PulseOutboxForward) {
+    @discardableResult
+    public func appendForward(conversationId: String, clientId: String, content: String, forward: PulseOutboxForward) -> Bool {
+        guard let encoded = PulseOutboxForward.encode(forward) else { return false }
         do {
             try store.appendOutbox(
                 conversationId: conversationId,
                 clientId: clientId,
                 content: content,
                 kind: forward.kind ?? "text",
-                payloadJson: PulseOutboxForward.encode(forward),
+                payloadJson: encoded,
             )
-        } catch {
-            // Duplicate clientId - already queued.
-        }
-        trimToLimit()
-        pendingCount = store.countOutbox()
-        startHealTimer()
+        } catch { return false }
+        reloadPending()
+        return true
     }
 
-    /// Web parity: `next.length > MAX_QUEUE ? next.slice(-MAX_QUEUE)`.
-    private func trimToLimit() {
-        guard let entries = try? store.outboxAll(), entries.count > Self.maxEntries else { return }
-        let excess = entries.dropLast(Self.maxEntries)
-        for entry in excess {
-            guard let id = entry.id else { continue }
-            try? store.deleteOutbox(id: id)
-        }
+    /// Stop the account-owned engine before replacing its transport or store.
+    public func stop() {
+        stopped = true
+        stopHealTimer()
+        pathMonitor.cancel()
+        onEvent = nil
+        onAcknowledgement = nil
     }
 
-    /// Total held messages across conversations.
+    /// Only explicit message-endpoint slow_mode failures are room scoped.
+    /// Missing/unknown codes and upload throttles remain global.
+    public func holdRetries(seconds: Int, conversationId: String? = nil) {
+        let deadline = monotonicNow() + TimeInterval(min(86_400, max(1, seconds)))
+        if let conversationId {
+            roomRetryNotBefore[conversationId] = max(roomRetryNotBefore[conversationId] ?? 0, deadline)
+        } else { retryNotBefore = max(retryNotBefore, deadline) }
+        // A short server cooldown must not wait behind the old 60s sweep.
+        if healSleeping { stopHealTimer() }
+        if !stopped { startHealTimer() }
+    }
+
+    private func blockedConversations() -> Set<String> {
+        let now = monotonicNow()
+        roomRetryNotBefore = roomRetryNotBefore.filter { $0.value > now }
+        return Set(roomRetryNotBefore.keys)
+    }
+
+    private var recoveryDelay: TimeInterval {
+        let now = monotonicNow()
+        if retryNotBefore > now { return retryNotBefore - now }
+        return min(60, roomRetryNotBefore.values.filter { $0 > now }.map { $0 - now }.min() ?? 60)
+    }
+
+    public func reloadPending() {
+        pendingCount = store.countPendingOutbox()
+        if pendingCount > 0 && !stopped { startHealTimer() }
+    }
+
     public func count() -> Int {
         pendingCount
     }
 
     // flushing
 
-    /// Drains the queue in FIFO order. Safe to call from every trigger -
+    /// Per-room FIFO; only explicit room cooldowns allow bypass. Safe from every trigger -
     /// re-entrant calls are ignored while a flush is running.
-    public func flush() async {
-        guard !working else { return }
-        guard let sender = senderProvider() else { return }
-        let entries = (try? store.outboxAll()) ?? []
-        guard !entries.isEmpty else {
+    @discardableResult
+    public func flush() async -> Bool {
+        guard !stopped, !working, !Task.isCancelled, monotonicNow() >= retryNotBefore else { return false }
+        guard let sender = senderProvider() else { return false }
+        guard store.countPendingOutbox() > 0 else {
             pendingCount = 0
             stopHealTimer()
-            return
+            return true
         }
 
         working = true
@@ -203,45 +297,94 @@ public final class PulseOutboxEngine: ObservableObject {
         defer {
             working = false
             flushing = false
-            pendingCount = store.countOutbox()
-            if pendingCount == 0 { stopHealTimer() }
+            pendingCount = store.countPendingOutbox()
+            if pendingCount == 0 { stopHealTimer() } else if !stopped { startHealTimer() }
         }
 
-        for entry in entries {
-            if Task.isCancelled { break }
+        for _ in 0..<Self.maxEntries {
+            if Task.isCancelled || stopped { break }
+            let entry: OutboxRow
             do {
+                guard let next = try store.nextPendingOutbox(excludingConversations: blockedConversations()) else { break }
+                entry = next
+            } catch { return false }
+            var postingMessage = false
+            do {
+                guard try store.isPendingOutbox(clientId: entry.clientId) else { continue }
                 // R1-W2B D28 - a forward entry re-POSTs its stored kind +
                 // media paths (web ForwardPayload parity); plain sends keep
                 // the text-only body.
-                let forward = PulseOutboxForward.decode(entry.payloadJson)
-                let real = try await sender.sendMessage(
+                var forward = PulseOutboxForward.decode(entry.payloadJson)
+                if entry.payloadJson != nil && forward == nil { throw CocoaError(.coderReadCorrupt) }
+                if let dataUrl = forward?.uploadDataUrl {
+                    guard var uploaded = forward, ["image", "file", "audio"].contains(uploaded.kind ?? "") else {
+                        throw CocoaError(.coderReadCorrupt)
+                    }
+                    let path = try await sender.uploadMedia(dataUrl: dataUrl)
+                    guard !stopped, !Task.isCancelled else { return false }
+                    guard !path.isEmpty else { throw CocoaError(.coderReadCorrupt) }
+                    switch uploaded.kind {
+                    case "image": uploaded.imagePath = path
+                    case "audio": uploaded.audioPath = path
+                    default: uploaded.filePath = path
+                    }
+                    uploaded.uploadDataUrl = nil
+                    // A user may discard this operation while its upload is in flight.
+                    guard try store.recordOutboxUpload(clientId: entry.clientId, envelope: uploaded) else { continue }
+                    forward = uploaded
+                }
+                postingMessage = true
+                let receipt = try await sender.sendMessageWithStreak(
                     conversationId: entry.conversationId,
+                    clientId: entry.clientId,
                     content: entry.content,
-                    replyToId: nil,
-                    parentId: nil,
+                    replyToId: forward?.replyToId,
+                    parentId: forward?.parentId,
                     imagePath: forward?.imagePath,
                     audioPath: forward?.audioPath,
                     durationMs: forward?.durationMs,
                     filePath: forward?.filePath,
                     fileName: forward?.fileName,
                     fileSize: forward?.fileSize,
-                    kind: forward?.kind,
-                    viewOnce: nil,
-                    topicId: nil,
-                    payload: nil,
-                    anon: nil
+                    kind: forward?.kind ?? entry.kind,
+                    viewOnce: forward?.viewOnce,
+                    topicId: forward?.topicId,
+                    payload: try forward?.payload.map { raw in
+                        guard let data = raw.data(using: .utf8),
+                              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                            throw CocoaError(.coderReadCorrupt)
+                        }
+                        return object
+                    },
+                    anon: forward?.anon
                 )
-                try? store.upsert(messages: [real])
-                try? store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))
-                if let id = entry.id { try? store.deleteOutbox(id: id) }
-                pendingCount = store.countOutbox()
+                guard !stopped, !Task.isCancelled else { return false }
+                let real = receipt.message
+                try store.resolveDelivery(clientId: entry.clientId, message: real)
+                pendingCount = store.countPendingOutbox()
                 onEvent?(.delivered(message: real, conversationId: entry.conversationId, clientId: entry.clientId))
+                onAcknowledgement?(receipt)
             } catch {
-                if Self.isDroppable(error) {
-                    try? store.deleteMessage(id: Self.tempMessageId(clientId: entry.clientId))
-                    if let id = entry.id { try? store.deleteOutbox(id: id) }
-                    pendingCount = store.countOutbox()
-                    onEvent?(.dropped(clientId: entry.clientId, conversationId: entry.conversationId, reason: Self.describe(error)))
+                if Task.isCancelled || stopped { return false }
+                if let failure = error as? PulseAPIClient.Failure,
+                   failure.status == 429 || failure.kind == .rateLimited {
+                    let roomOnly = postingMessage && failure.status == 429 && failure.code == "slow_mode"
+                    holdRetries(seconds: failure.retryAfter ?? 60, conversationId: roomOnly ? entry.conversationId : nil)
+                    if roomOnly {
+                        try? store.bumpOutboxAttempts(id: entry.id ?? 0)
+                        continue
+                    }
+                }
+                let damagedEnvelope = (error as? CocoaError)?.code == .coderReadCorrupt
+                if Self.isDroppable(error) || damagedEnvelope {
+                    let reason = damagedEnvelope ? "Saved message metadata is damaged" : Self.describe(error)
+                    do {
+                        if try store.rejectOutbox(clientId: entry.clientId, reason: reason) {
+                            onEvent?(.dropped(clientId: entry.clientId, conversationId: entry.conversationId,
+                                reason: "Saved in Drafts & outbox: " + reason))
+                        }
+                    } catch { return false } // keep intent if the local state transition failed
+                    pendingCount = store.countPendingOutbox()
                     continue
                 }
                 // Network-class failure - keep the entry, stop the drain so
@@ -250,6 +393,7 @@ public final class PulseOutboxEngine: ObservableObject {
                 break
             }
         }
+        return !Task.isCancelled && !stopped && store.countPendingOutbox() == 0
     }
 
     // self-heal timer
@@ -257,11 +401,19 @@ public final class PulseOutboxEngine: ObservableObject {
     /// 60s sweep while entries exist - recovers from triggers the app missed
     /// (killed mid-flush, missed reconnect, …).
     private func startHealTimer() {
+        guard !stopped else { return }
         guard healTask == nil else { return }
+        let generation = UUID()
+        healGeneration = generation
         healTask = Task { [weak self] in
+            defer { if self?.healGeneration == generation { self?.healTask = nil } }
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: Self.healIntervalNanos)
+                let seconds = self?.recoveryDelay ?? 60
+                self?.healSleeping = true
+                do { try await Task.sleep(nanoseconds: UInt64(max(0.001, seconds) * 1_000_000_000)) }
+                catch { return }
                 guard !Task.isCancelled, let self else { return }
+                self.healSleeping = false
                 await self.flush()
                 if self.pendingCount == 0 { break }
             }
@@ -269,6 +421,8 @@ public final class PulseOutboxEngine: ObservableObject {
     }
 
     private func stopHealTimer() {
+        healSleeping = false
+        healGeneration = UUID()
         healTask?.cancel()
         healTask = nil
     }
@@ -313,10 +467,10 @@ public final class PulseOutboxEngine: ObservableObject {
     /// Everything else (network / 5xx / unknown transport errors) retries.
     public static func isDroppable(_ error: Error) -> Bool {
         guard let failure = error as? PulseAPIClient.Failure else { return false }
-        if let status = failure.status { return (400 ..< 500).contains(status) }
+        if let status = failure.status { return (400 ..< 500).contains(status) && ![401, 408, 425, 429].contains(status) }
         switch failure.kind {
-        case .validation, .forbidden, .notFound, .auth, .rateLimited: return true
-        case .network, .server, .unknown: return false
+        case .validation, .forbidden, .notFound: return true
+        case .auth, .rateLimited, .network, .server, .unknown: return false
         }
     }
 

@@ -231,4 +231,30 @@ class StoryViewerStateMachineTest {
         val g = m.state.value.groups.first()
         assertFalse("half-watched stack must still be unseen (per-author ring semantics)", g.allSeen)
     }
+
+    @Test fun `background and modal pause survive hold release without elapsed jump`() {
+        val m = machine(group("alice", story("a0"), story("a1")))
+        m.on(StoryViewerInput.Tick(100L))
+        m.on(StoryViewerInput.Tick(1_100L))
+        m.on(StoryViewerInput.PlaybackBlocked(true, 1_100L))
+        m.on(StoryViewerInput.HoldStart(1_200L))
+        m.on(StoryViewerInput.HoldEnd(1_500L))
+        m.on(StoryViewerInput.Tick(61_100L))
+        assertTrue(m.state.value.paused)
+        assertEquals(1_000L, m.state.value.elapsedMs)
+        m.on(StoryViewerInput.PlaybackBlocked(false, 61_100L))
+        m.on(StoryViewerInput.Tick(62_100L))
+        assertEquals(2_000L, m.state.value.elapsedMs)
+        assertEquals("a0", m.state.value.current?.story?.id)
+    }
+
+    @Test fun `foreground resume cannot release an active hold`() {
+        val m = machine(group("alice", story("a0")))
+        m.on(StoryViewerInput.HoldStart(10L))
+        m.on(StoryViewerInput.PlaybackBlocked(true, 20L))
+        m.on(StoryViewerInput.PlaybackBlocked(false, 30L))
+        assertTrue(m.state.value.paused)
+        m.on(StoryViewerInput.HoldEnd(40L))
+        assertFalse(m.state.value.paused)
+    }
 }

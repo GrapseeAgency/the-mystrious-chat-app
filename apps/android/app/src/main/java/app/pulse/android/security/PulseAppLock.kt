@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -47,15 +48,19 @@ class PulseAppLock @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** The persisted Settings toggle. */
-    val enabled: StateFlow<Boolean> = prefsStore.appLockEnabled
+    private val policy: StateFlow<Boolean?> = prefsStore.appLockEnabled
+        .map<Boolean, Boolean?> { it }
+        .stateIn(scope, SharingStarted.Eagerly, null)
+
+    val enabled: StateFlow<Boolean> = policy.map { it == true }
         .stateIn(scope, SharingStarted.Eagerly, false)
 
     /** Process-lifetime unlock ("for this session" - resets on process death). */
     private val _unlocked = MutableStateFlow(false)
 
     /** True while the whole UI must sit behind the gate overlay. */
-    val locked: StateFlow<Boolean> = combine(enabled, _unlocked) { on, open -> on && !open }
-        .stateIn(scope, SharingStarted.Eagerly, false)
+    val locked: StateFlow<Boolean> = combine(policy, _unlocked) { on, open -> on == null || (on && !open) }
+        .stateIn(scope, SharingStarted.Eagerly, true)
 
     val unlocked: StateFlow<Boolean> = _unlocked.asStateFlow()
 
@@ -79,9 +84,13 @@ class PulseAppLock @Inject constructor(
     private val _unlockImpossible = MutableStateFlow(false)
     val unlockImpossible: StateFlow<Boolean> = _unlockImpossible.asStateFlow()
 
+    fun onHostStopped() {
+        _unlocked.value = false
+    }
+
     /** Called from MainActivity.onResume - presents the prompt when gated. */
     fun onHostResume(activity: FragmentActivity) {
-        if (!locked.value) return
+        if (policy.value != true || !locked.value) return
         presentPrompt(activity)
     }
 
@@ -91,7 +100,7 @@ class PulseAppLock @Inject constructor(
      * after App lock was enabled (the credential gate cannot be faked open).
      */
     fun presentPrompt(activity: FragmentActivity) {
-        if (!locked.value) return
+        if (policy.value != true || !locked.value) return
         if (System.currentTimeMillis() < _backoffUntilMs.value) return
         val authenticators =
             BiometricManager.Authenticators.BIOMETRIC_WEAK or

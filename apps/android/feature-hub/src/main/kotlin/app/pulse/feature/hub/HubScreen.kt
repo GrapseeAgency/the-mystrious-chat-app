@@ -94,6 +94,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -153,6 +154,30 @@ class HubViewModel @Inject constructor(
     private val repo: PulseRepository,
 ) : ViewModel() {
 
+    private val _walletMutationBusy = MutableStateFlow(false)
+    val walletMutationBusy = _walletMutationBusy.asStateFlow()
+    private var walletReadRevision = 0L
+    private fun walletOwner() = repo.viewerId to repo.reminderDeliveryOwner()
+
+    internal fun <T> mutateWallet(send: suspend () -> Result<T>, receive: (Result<T>) -> Unit): Job? {
+        if (_walletMutationBusy.value) return null
+        _walletMutationBusy.value = true
+        walletReadRevision++ // reads started before this write cannot restore old balances
+        val owner = walletOwner()
+        return viewModelScope.launch {
+            try {
+                if (walletOwner() != owner) return@launch
+                val result = send()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (walletOwner() == owner) receive(result)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (walletOwner() == owner) receive(Result.failure(error))
+            } finally { _walletMutationBusy.value = false }
+        }
+    }
+
     data class WalletUi(
         val loading: Boolean = false,
         val page: WalletPageDto? = null,
@@ -206,19 +231,24 @@ class HubViewModel @Inject constructor(
 
     // ── F-HB-01 wallet ──
     fun loadWallet() {
+        val ticket = ++walletReadRevision
+        val owner = walletOwner()
         viewModelScope.launch {
+            if (ticket != walletReadRevision || walletOwner() != owner) return@launch
             _wallet.value = _wallet.value.copy(loading = true, error = null)
             if (_wallet.value.page == null) {
-                repo.cachedWallet()?.let { cached ->
-                    _wallet.value = WalletUi(loading = true, page = cached, stale = true)
-                }
+                val cached = repo.cachedWallet()
+                if (ticket != walletReadRevision || walletOwner() != owner) return@launch
+                if (cached != null) _wallet.value = WalletUi(loading = true, page = cached, stale = true)
             }
-            repo.wallet().fold(
+            val result = repo.wallet()
+            if (ticket != walletReadRevision || walletOwner() != owner) return@launch
+            result.fold(
                 onSuccess = { page -> _wallet.value = WalletUi(loading = false, page = page, stale = false) },
                 onFailure = { t ->
-                    val msg = t.message ?: "No gateway configured - set your server in Profile → Connection."
                     val hasCache = _wallet.value.page != null
-                    _wallet.value = _wallet.value.copy(loading = false, stale = hasCache, error = if (hasCache) null else msg)
+                    _wallet.value = _wallet.value.copy(loading = false, stale = hasCache,
+                        error = t.message ?: "Wallet unavailable. Retry when connected.")
                 },
             )
         }
@@ -226,8 +256,8 @@ class HubViewModel @Inject constructor(
 
     // ── F-HB-02 check-in (409 body carries {error, wallet}) ──
     fun checkin() {
-        viewModelScope.launch {
-            repo.checkinWallet().fold(
+        mutateWallet(send = { repo.checkinWallet() }) { result ->
+            result.fold(
                 onSuccess = { v ->
                     notify("Checked in - +${v.reward} PC${if (v.streak > 1) " · ${v.streak}-day streak" else ""}")
                     _checkinSuccess.tryEmit(v.reward) // R1-W2H D38 - once per success
@@ -243,14 +273,14 @@ class HubViewModel @Inject constructor(
 
     // ── F-HB-03 transfer ──
     fun transfer(handle: String, amount: Long, note: String?, onDone: (Boolean, String) -> Unit) {
-        viewModelScope.launch {
-            repo.transferCoins(handle, amount, note).fold(
+        mutateWallet(send = { repo.transferCoins(handle, amount, note) }) { result ->
+            result.fold(
                 onSuccess = { v ->
                     notify("Sent $amount PC to @${v.to.username ?: v.to.name}")
                     loadWallet()
                     onDone(true, "")
                 },
-                onFailure = { t -> onDone(false, t.message ?: "Transfer failed") },
+                onFailure = { t -> loadWallet(); onDone(false, t.message ?: "Transfer failed") },
             )
         }
     }
@@ -269,14 +299,14 @@ class HubViewModel @Inject constructor(
     }
 
     fun swap(direction: String, amount: Long, onDone: (Boolean, String) -> Unit) {
-        viewModelScope.launch {
-            repo.swap(direction, amount).fold(
+        mutateWallet(send = { repo.swap(direction, amount) }) { result ->
+            result.fold(
                 onSuccess = { v ->
                     notify(v.note ?: "Swap complete")
                     loadWallet()
                     onDone(true, "")
                 },
-                onFailure = { t -> onDone(false, t.message ?: "Swap failed") },
+                onFailure = { t -> loadWallet(); onDone(false, t.message ?: "Swap failed") },
             )
         }
     }
@@ -345,10 +375,10 @@ class HubViewModel @Inject constructor(
     }
 
     fun buy(listing: MarketListingDto) {
-        viewModelScope.launch {
-            repo.buyListing(listing.id).fold(
+        mutateWallet(send = { repo.buyListing(listing.id) }) { result ->
+            result.fold(
                 onSuccess = { _ -> notify("Bought \"${listing.title}\""); loadWallet(); loadMarket() },
-                onFailure = { t -> notify(t.message ?: "Purchase failed", isError = true) },
+                onFailure = { t -> loadWallet(); notify(t.message ?: "Purchase failed", isError = true) },
             )
         }
     }
@@ -469,6 +499,7 @@ fun HubScreen(
     val context = LocalContext.current
     val catalog = remember { HubCatalogLoader.load(context) }
     val wallet by vm.wallet.collectAsStateWithLifecycle()
+    val monetaryBusy by vm.walletMutationBusy.collectAsStateWithLifecycle()
     val tasks by vm.tasks.collectAsStateWithLifecycle()
     val market by vm.market.collectAsStateWithLifecycle()
     val logs by vm.logs.collectAsStateWithLifecycle()
@@ -549,14 +580,14 @@ fun HubScreen(
                 val checkedIn = page?.wallet?.checkedInToday == true
                 Button(
                     onClick = { vm.checkin() },
-                    enabled = !checkedIn && !wallet.loading,
+                    enabled = !checkedIn && !wallet.loading && !monetaryBusy,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(if (checkedIn) "Checked in today" else "Daily check-in · +25 PC") }
                 page?.wallet?.let { w ->
                     if (!checkedIn && w.streak > 0) {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Next check-in continues your ${w.streak}-day streak (+${minOf(w.streak * 2, 20)} bonus)",
+                            "Next check-in continues your ${w.streak}-day streak (+${minOf(w.streak, 10) * 2} bonus)",
                             color = Color(0x99FFFFFF), fontSize = 11.sp,
                         )
                     }
@@ -746,6 +777,7 @@ private fun LedgerBody(ledger: List<LedgerEntryDto>) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TransferSheet(vm: HubViewModel, onDismiss: () -> Unit) {
+    val monetaryBusy by vm.walletMutationBusy.collectAsStateWithLifecycle()
     var handle by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
@@ -755,17 +787,18 @@ private fun TransferSheet(vm: HubViewModel, onDismiss: () -> Unit) {
             Text("Send PC", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text("Whole PC only - max 100,000 per transfer.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(value = handle, onValueChange = { handle = it.take(24) }, label = { Text("@handle") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(enabled = !monetaryBusy, value = handle, onValueChange = { handle = it.take(24) }, label = { Text("@handle") }, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(6.dp))
-            OutlinedTextField(value = amount, onValueChange = { amount = it.filter(Char::isDigit).take(6) }, label = { Text("Amount PC") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(enabled = !monetaryBusy, value = amount, onValueChange = { amount = it.filter(Char::isDigit).take(6) }, label = { Text("Amount PC") }, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(6.dp))
-            OutlinedTextField(value = note, onValueChange = { note = it.take(140) }, label = { Text("Note (optional)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(enabled = !monetaryBusy, value = note, onValueChange = { note = it.take(140) }, label = { Text("Note (optional)") }, modifier = Modifier.fillMaxWidth())
             error?.let {
                 Spacer(Modifier.height(6.dp))
                 Text(it, color = EmberPalette.Signal, fontSize = 13.sp)
             }
             Spacer(Modifier.height(10.dp))
             Button(
+                enabled = !monetaryBusy,
                 onClick = {
                     val amt = amount.toLongOrNull() ?: 0
                     when {
@@ -787,6 +820,7 @@ private fun TransferSheet(vm: HubViewModel, onDismiss: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwapSheet(vm: HubViewModel, onDismiss: () -> Unit) {
+    val monetaryBusy by vm.walletMutationBusy.collectAsStateWithLifecycle()
     var amount by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { vm.loadSwap() }
@@ -806,7 +840,7 @@ private fun SwapSheet(vm: HubViewModel, onDismiss: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(value = amount, onValueChange = { amount = it.filter(Char::isDigit).take(6) }, label = { Text("Amount PC") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(enabled = !monetaryBusy, value = amount, onValueChange = { amount = it.filter(Char::isDigit).take(6) }, label = { Text("Amount PC") }, modifier = Modifier.fillMaxWidth())
             error?.let {
                 Spacer(Modifier.height(6.dp))
                 Text(it, color = EmberPalette.Signal, fontSize = 13.sp)
@@ -814,6 +848,7 @@ private fun SwapSheet(vm: HubViewModel, onDismiss: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
+                    enabled = !monetaryBusy,
                     onClick = {
                         val amt = amount.toLongOrNull() ?: 0
                         when {
@@ -825,6 +860,7 @@ private fun SwapSheet(vm: HubViewModel, onDismiss: () -> Unit) {
                     modifier = Modifier.weight(1f),
                 ) { Text("PC → GEM") }
                 OutlinedButton(
+                    enabled = !monetaryBusy,
                     onClick = {
                         val amt = amount.toLongOrNull() ?: 0
                         if (amt < 1) error = "Amount must be a positive whole number."

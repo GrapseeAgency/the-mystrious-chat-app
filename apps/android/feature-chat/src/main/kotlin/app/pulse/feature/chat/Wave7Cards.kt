@@ -53,6 +53,9 @@ import app.pulse.protocol.PulseWave7Logic
 import app.pulse.protocol.RedPacketDetailDto
 import app.pulse.protocol.TournamentSummaryDto
 import app.pulse.ui.PulsePalette
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -60,8 +63,8 @@ import kotlinx.coroutines.launch
  * Wave 7 in-bubble rich-object cards (F-RO-02 red packet, F-RO-07 tic-tac-toe,
  * F-RO-08 tournament). Poll transports mirror the web exactly: game card
  * 1500 ms while status == active (game-tictactoe-card.tsx:33), red packet
- * bubble 20 s (redpacket-bubble.tsx:79); tournament never self-polls (web
- * opens fetches standings on expand).
+ * bubble 20 s (redpacket-bubble.tsx:79). Games/tournaments own their requests,
+ * gate writes and reconcile foreground snapshots without discarding known data.
  */
 
 // ── Red packet (F-RO-02) ─────────────────────────────────────────────────
@@ -200,6 +203,20 @@ fun RedPacketDetailSheetBody(
     }
 }
 
+/** Preserve structured cancellation, including callbacks returning after cancellation. */
+internal suspend fun <T> gameRequest(operation: suspend () -> T): Result<T> {
+    currentCoroutineContext().ensureActive()
+    val result: Result<T> = try {
+        Result.success(operation())
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+    currentCoroutineContext().ensureActive()
+    return result
+}
+
 // ── Tic-tac-toe (F-RO-07) ────────────────────────────────────────────────
 
 @Composable
@@ -208,27 +225,71 @@ fun TicTacToeCard(
     viewerId: String,
     initial: GameDetailDto?,
     load: suspend () -> GameDetailDto?,
-    onMove: (Int) -> Unit,
-    onJoin: () -> Unit,
+    onMove: suspend (Int) -> GameDetailDto?,
+    onJoin: suspend () -> GameDetailDto?,
     // R7 item 3 - rematch (web game-tictactoe-card.tsx:213-236 + 452-476):
     // posts a fresh challenge against the ORIGINAL opponent; the new invite
     // message arrives via the normal message stream.
-    onRematch: suspend (GameMatchDto) -> Unit = {},
+    onRematch: suspend (GameMatchDto) -> Boolean = { false },
 ) {
-    var detail by remember(matchId) { mutableStateOf(initial) }
+    if (matchId.isBlank()) { Text("Game link unavailable"); return }
+    androidx.compose.runtime.key(matchId, viewerId) {
+        TicTacToeContent(matchId, viewerId, initial, load, onMove, onJoin, onRematch)
+    }
+}
 
-    // 1500 ms poll while active - web game-tictactoe-card.tsx:33,134.
-    LaunchedEffect(matchId, detail?.match?.status) {
-        while (detail?.match?.status == "active") {
-            delay(1_500)
-            load()?.let { detail = it }
+@Composable
+private fun TicTacToeContent(
+    matchId: String,
+    viewerId: String,
+    initial: GameDetailDto?,
+    load: suspend () -> GameDetailDto?,
+    onMove: suspend (Int) -> GameDetailDto?,
+    onJoin: suspend () -> GameDetailDto?,
+    // R7 item 3 - rematch (web game-tictactoe-card.tsx:213-236 + 452-476):
+    // posts a fresh challenge against the ORIGINAL opponent; the new invite
+    // message arrives via the normal message stream.
+    onRematch: suspend (GameMatchDto) -> Boolean = { false },
+) {
+    var detail by remember { mutableStateOf(initial) }
+    var failed by remember { mutableStateOf(false) }
+    var pending by remember { mutableStateOf(false) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    val gate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    val scope = rememberCoroutineScope()
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    suspend fun refresh() {
+        val ticket = gate.beginRead() ?: return
+        val result = gameRequest { load() }.getOrNull()
+        if (!gate.accepts(ticket)) return
+        if (result != null) { detail = result; failed = false } else { failed = true }
+    }
+    fun mutate(operation: suspend () -> GameDetailDto?) {
+        if (pending) return
+        pending = true; actionError = null; gate.beginWrite()
+        scope.launch {
+            try {
+                val result = gameRequest { operation() }.getOrNull()
+                if (result != null) { detail = result; failed = false }
+                else { actionError = "Action was not confirmed. Refreshing the board." }
+            } finally { pending = false; gate.endWrite() }
+            refresh()
+        }
+    }
+    LaunchedEffect(matchId, lifecycle) {
+        lifecycle.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                refresh()
+                if (!failed && detail != null && detail?.match?.status != "active") break
+                delay(1_500)
+            }
         }
     }
 
     val m = detail?.match ?: GameMatchDto(id = matchId)
     val mySide = PulseWave7Logic.sideOf(m, viewerId)
-    val myTurn = PulseWave7Logic.isMyTurn(m, viewerId)
-    val openSeat = m.status == "active" && m.playerOId == null && mySide == null
+    val myTurn = !pending && !failed && detail != null && PulseWave7Logic.isMyTurn(m, viewerId)
+    val openSeat = detail != null && m.status == "active" && m.playerOId == null && mySide == null
 
     Column(
         Modifier
@@ -239,6 +300,8 @@ fun TicTacToeCard(
     ) {
         Text(
             when {
+                detail == null -> if (failed) "Game unavailable - retrying…" else "Loading game…"
+                pending -> "Confirming…"
                 m.status == "x_won" -> "X wins - ${detail?.playerX?.name ?: "X"}"
                 m.status == "o_won" -> "O wins - ${detail?.playerO?.name ?: "O"}"
                 m.status == "draw" -> "Draw - both +10 XP"
@@ -286,7 +349,7 @@ fun TicTacToeCard(
                                     .weight(1f)
                                     .fillMaxWidth()
                                     .height(56.dp)
-                                    .clickable(enabled = myTurn && mark == ' ' && m.status == "active") { onMove(idx) },
+                                    .clickable(enabled = myTurn && mark == ' ' && m.status == "active") { mutate { onMove(idx) } },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
@@ -328,7 +391,7 @@ fun TicTacToeCard(
         }
         if (openSeat) {
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onJoin, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            OutlinedButton(onClick = { mutate { onJoin() } }, enabled = !pending && !failed, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text("Take the O seat")
             }
         }
@@ -337,8 +400,6 @@ fun TicTacToeCard(
         // bg-emerald-500/10), spinner + disabled while the POST is in flight.
         val finished = m.status != "active"
         if (finished && mySide != null && m.playerOId != null) {
-            var rematching by remember(matchId) { mutableStateOf(false) }
-            val rematchScope = rememberCoroutineScope()
             // R7 item 3 - web rematch() fires haptic(6) before the POST
             // (game-tictactoe-card.tsx:217); the native TextHandleMove tick
             // rides the SAME tap the in-flight disable arms on.
@@ -346,18 +407,16 @@ fun TicTacToeCard(
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = {
-                    if (rematching) return@Button
+                    if (pending) return@Button
                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    rematchScope.launch {
-                        rematching = true
+                    pending = true; actionError = null
+                    scope.launch {
                         try {
-                            onRematch(m)
-                        } finally {
-                            rematching = false
-                        }
+                            if (gameRequest { onRematch(m) }.getOrNull() != true) actionError = "Rematch was not confirmed. Check the chat before retrying."
+                        } finally { pending = false }
                     }
                 },
-                enabled = !rematching,
+                enabled = !pending,
                 shape = RoundedCornerShape(999.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = PulsePalette.Emerald.copy(alpha = 0.10f),
@@ -366,7 +425,7 @@ fun TicTacToeCard(
                 border = androidx.compose.foundation.BorderStroke(1.dp, PulsePalette.Emerald.copy(alpha = 0.30f)),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                if (rematching) {
+                if (pending) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,
@@ -379,6 +438,8 @@ fun TicTacToeCard(
                 Text("Rematch", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
+        if (failed && detail != null) Text("Connection interrupted. Last confirmed board shown.", fontSize = 12.sp)
+        actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
     }
 }
 
@@ -391,18 +452,55 @@ fun TournamentCard(
     viewerId: String,
     isAdmin: Boolean,
     load: suspend () -> TournamentSummaryDto?,
-    onJoin: () -> Unit,
-    onFinish: () -> Unit,
+    onJoin: suspend () -> Boolean,
+    onFinish: suspend () -> Boolean,
 ) {
-    var t by remember(tournamentId) { mutableStateOf<TournamentSummaryDto?>(null) }
-    // R7 item 9 - standings poll every 15s while the card is visible
-    // (web tournament-card.tsx:29 POLL_MS + :76-77 refetchInterval while
-    // running). The LaunchedEffect lives exactly as long as the bubble is
-    // composed, so off-screen tournaments cost nothing.
-    LaunchedEffect(tournamentId) {
-        while (true) {
-            load()?.let { t = it }
-            delay(15_000)
+    if (tournamentId.isBlank()) { Text("Tournament link unavailable"); return }
+    androidx.compose.runtime.key(tournamentId, viewerId) {
+        TournamentContent(tournamentId, name, viewerId, isAdmin, load, onJoin, onFinish)
+    }
+}
+
+@Composable
+private fun TournamentContent(
+    tournamentId: String,
+    name: String,
+    viewerId: String,
+    isAdmin: Boolean,
+    load: suspend () -> TournamentSummaryDto?,
+    onJoin: suspend () -> Boolean,
+    onFinish: suspend () -> Boolean,
+) {
+    var t by remember { mutableStateOf<TournamentSummaryDto?>(null) }
+    var failed by remember { mutableStateOf(false) }
+    var pending by remember { mutableStateOf(false) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    val gate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    val scope = rememberCoroutineScope()
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    suspend fun refresh() {
+        val ticket = gate.beginRead() ?: return
+        val result = gameRequest { load() }.getOrNull()
+        if (!gate.accepts(ticket)) return
+        if (result != null) { t = result; failed = false } else { failed = true }
+    }
+    fun mutate(operation: suspend () -> Boolean) {
+        if (pending) return
+        pending = true; actionError = null; gate.beginWrite()
+        scope.launch {
+            try {
+                if (gameRequest { operation() }.getOrNull() != true) actionError = "Action was not confirmed. Refreshing standings."
+            } finally { pending = false; gate.endWrite() }
+            refresh()
+        }
+    }
+    LaunchedEffect(tournamentId, lifecycle) {
+        lifecycle.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                refresh()
+                if (!failed && t?.status == "finished") break
+                delay(5_000)
+            }
         }
     }
 
@@ -425,7 +523,7 @@ fun TournamentCard(
             Spacer(Modifier.width(8.dp))
             Text(name.ifBlank { "Tournament" }, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                if (running) "${t?.playerCount ?: t?.entries?.size ?: 0} players" else "finished",
+                if (t == null) "Loading…" else if (running) "${t?.playerCount ?: t?.entries?.size ?: 0} players" else "finished",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -435,7 +533,7 @@ fun TournamentCard(
         // podium colors on the top-3 rank (web MEDALS: 1 amber / 2 zinc /
         // 3 orange) and the emerald "· you" marker on the viewer's row.
         val entries = t?.entries.orEmpty()
-        if (entries.isEmpty()) {
+        if (t != null && entries.isEmpty()) {
             Spacer(Modifier.height(6.dp))
             Text(
                 "No players yet - be the first",
@@ -487,12 +585,15 @@ fun TournamentCard(
         Spacer(Modifier.height(8.dp))
         Row {
             if (running && !joined) {
-                Button(onClick = onJoin, modifier = Modifier.weight(1f)) { Text("Join") }
+                Button(onClick = { mutate(onJoin) }, enabled = !pending && !failed, modifier = Modifier.weight(1f)) { Text("Join") }
                 Spacer(Modifier.width(8.dp))
             }
             if (running && isAdmin) {
-                OutlinedButton(onClick = onFinish, modifier = Modifier.weight(1f)) { Text("Finish season") }
+                OutlinedButton(onClick = { mutate(onFinish) }, enabled = !pending && !failed, modifier = Modifier.weight(1f)) { Text("Finish season") }
             }
         }
+        if (pending) CircularProgressIndicator(Modifier.size(18.dp))
+        if (failed) Text("Could not refresh standings. Retrying…", fontSize = 12.sp)
+        actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
     }
 }

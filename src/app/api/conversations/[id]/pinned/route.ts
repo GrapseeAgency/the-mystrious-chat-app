@@ -1,6 +1,7 @@
 // /api/conversations/[id]/pinned - list pinned messages
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { unexpiredMessages } from '@/lib/message-visibility'
 import { mapMessage, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -35,7 +36,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   }
 
   const rows = await db.message.findMany({
-    where: { conversationId: id, pinnedAt: { not: null }, deletedAt: null },
+    where: { conversationId: id, pinnedAt: { not: null }, deletedAt: null, ...unexpiredMessages(new Date()) },
     orderBy: { pinnedAt: 'asc' },
     include: MESSAGE_FULL_INCLUDE,
   })

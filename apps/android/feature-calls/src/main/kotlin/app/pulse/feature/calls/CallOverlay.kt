@@ -24,6 +24,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -61,35 +64,22 @@ fun CallOverlay(vm: CallViewModel) {
 
     val isVideoCall = snapshot.kind == CallKind.VIDEO
 
+    var permissionCallId by remember { mutableStateOf<String?>(null) }
     // RECORD_AUDIO (+ CAMERA for video offers) gate - every call answer
     // passes through here and is honest about denial (no mic ⇒ cannot answer;
     // camera denied ⇒ the engine's audio-only fallback keeps the call alive).
+    fun finishPermission(granted: Boolean) {
+        val requested = permissionCallId
+        permissionCallId = null
+        if (!canApplyCallPermission(requested, vm.snapshot.value)) return
+        if (granted) vm.accept() else vm.decline()
+    }
     val micLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            when (snapshot.state) {
-                CallState.INCOMING_RINGING -> vm.accept()
-                else -> Unit
-            }
-        } else if (snapshot.state == CallState.INCOMING_RINGING) {
-            // Can't answer without a mic - declining is the honest action.
-            vm.decline()
-        }
-    }
-    // Video offers: both permissions in one prompt (voice callers never see
-    // a camera prompt).
+    ) { granted -> finishPermission(granted) }
     val videoAcceptLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { grants ->
-        when {
-            grants[android.Manifest.permission.RECORD_AUDIO] == true &&
-                snapshot.state == CallState.INCOMING_RINGING -> vm.accept()
-            grants[android.Manifest.permission.RECORD_AUDIO] == false &&
-                snapshot.state == CallState.INCOMING_RINGING -> vm.decline()
-            else -> Unit
-        }
-    }
+    ) { grants -> finishPermission(grants[android.Manifest.permission.RECORD_AUDIO] == true) }
 
     Box(
         modifier = Modifier
@@ -164,6 +154,8 @@ fun CallOverlay(vm: CallViewModel) {
                             description = "Accept call",
                             container = Color(0xFFFF9F0A), // EMB-B ember accept
                         ) {
+                            if (permissionCallId != null) return@CallButton
+                            permissionCallId = snapshot.callId
                             if (isVideoCall) {
                                 videoAcceptLauncher.launch(
                                     arrayOf(

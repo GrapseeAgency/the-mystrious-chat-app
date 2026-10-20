@@ -5,6 +5,7 @@
 import path from 'node:path'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
+import { isExpiredMessage, unexpiredMessages, unreadMessages } from '@/lib/message-visibility'
 import { DEFAULT_PREFERENCES, mergePrefs, type PulsePrefs } from '@/lib/prefs-defaults'
 import type {
   AppUser,
@@ -423,21 +424,21 @@ export async function buildConversationSummary(
 ): Promise<ConversationSummary> {
   const myReadAt =
     conv.participants.find((p) => p.userId === viewerId)?.lastReadAt ?? new Date(0)
-  const [unreadCount, streakRow] = await Promise.all([
-    db.message.count({
-      where: {
-        conversationId: conv.id,
-        senderId: { not: viewerId },
-        deletedAt: null,
-        createdAt: { gt: myReadAt },
-      },
-    }),
+  const at = new Date()
+  const preview = conv.messages[0] ?? null
+  const [unreadCount, streakRow, lastRow] = await Promise.all([
+    db.message.count({ where: unreadMessages(conv.id, viewerId, myReadAt, at) }),
     db.conversationStreak.findUnique({
       where: { conversationId_userId: { conversationId: conv.id, userId: viewerId } },
       select: { lastDay: true, count: true, best: true },
     }),
+    // TTL cleanup may not run until someone opens the room. Inbox truth must
+    // not depend on that incidental purge, nor leak an expired preview body.
+    preview && isExpiredMessage(preview, at)
+      ? db.message.findFirst({ where: { conversationId: conv.id, ...unexpiredMessages(at) },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: MESSAGE_FULL_INCLUDE })
+      : Promise.resolve(preview),
   ])
-  const lastRow = conv.messages[0] ?? null
   const mine = conv.participants.find((p) => p.userId === viewerId)
   return {
     id: conv.id,

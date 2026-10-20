@@ -713,6 +713,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
     val prefs by viewModel.pulsePrefs.collectAsStateWithLifecycle()
     val drafts by viewModel.drafts.collectAsStateWithLifecycle()
     val outbox by viewModel.outbox.collectAsStateWithLifecycle()
+    val outboxNotice by viewModel.outboxNotice.collectAsStateWithLifecycle()
     // R14 gap 10 - the default list filter (web settings-screen.tsx:1065-1083
     // "Default list filter" picker): same device key the chats chips write.
     val listFilter by viewModel.chatsListFilter.collectAsStateWithLifecycle()
@@ -738,6 +739,7 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
         )
         Text("Drafts & Outbox", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
         Text("Drafts live on this device; outbox messages flush when Pulse reconnects.", fontSize = 11.5.sp, color = Color.White.copy(alpha = 0.5f))
+        outboxNotice?.let { Text(it, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp)) }
         if (drafts.isEmpty() && outbox.isEmpty()) {
             Text("Nothing queued - all clear.", fontSize = 13.sp, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 12.dp))
         }
@@ -775,7 +777,10 @@ fun ChatSection(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel
                 Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(row.title, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                        Text("${row.content} · attempt ${row.attempts}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), maxLines = 1)
+                        Text("${row.content} · ${row.failureReason ?: "attempt ${row.attempts}"}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f), maxLines = 1)
+                    }
+                    if (row.failureReason != null) {
+                        TextButton(onClick = { viewModel.retryOutboxEntry(row.clientId) }) { Text("Retry") }
                     }
                     IconButton(onClick = { viewModel.deleteOutboxEntry(row.clientId) }) {
                         Icon(PulseIcons.Trash, contentDescription = "Discard queued message", tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
@@ -1307,11 +1312,15 @@ fun DataSection(onBack: () -> Unit, onOpenHub: (() -> Unit)? = null, viewModel: 
                 Text("Footprint · ${formatBytes(footprint.totalBytes)}", fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
                 Text("Database · ${formatBytes(footprint.databaseBytes)}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
                 Text("Image cache · ${formatBytes(footprint.imageCacheBytes)}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                Text("Saved attachments · ${formatBytes(footprint.attachmentBytes)}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+                footprint.error?.let { Text(it, fontSize = 12.sp, color = EmberPalette.Signal) }
             }
         }
         TextButton(onClick = {
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            viewModel.clearImageCache { Toast.makeText(context, "Image cache cleared", Toast.LENGTH_SHORT).show() }
+            viewModel.clearImageCache { success ->
+                Toast.makeText(context, if (success) "Image cache cleared; saved attachments are kept" else "Image cache could not be cleared", Toast.LENGTH_SHORT).show()
+            }
         }) { Text("Clear image cache") }
         Text("App updates", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
         Card(

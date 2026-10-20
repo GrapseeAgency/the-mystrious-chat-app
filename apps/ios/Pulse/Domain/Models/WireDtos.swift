@@ -82,6 +82,7 @@ public struct WireWalletPage: Codable, Sendable {
 /// N3-b - error body with the username-taken contract
 /// (409 { error, code: "username_taken", suggestion }).
 public struct WireErrorBody: Codable, Sendable {
+    public let clientId: String?
     public let error: String?
     public let code: String?
     public let suggestion: String?
@@ -246,6 +247,8 @@ public struct WireMessagesPage: Codable, Sendable {
     public let messages: [WireChatMessage]
     public let hasMore: Bool
     public let total: Int
+    public let syncVersion: Int?
+    public let nextSyncCursor: String?
 }
 
 
@@ -811,7 +814,8 @@ extension WireChatMessage {
             anon: anon, anonAlias: anonAlias,
             viewedAt: viewedAt, viewedBy: viewedBy, transcript: transcript,
             transcribedAt: transcribedAt, topicId: topicId, linkUrl: linkUrl,
-            linkPreview: linkPreview, poll: poll
+            linkPreview: linkPreview, poll: poll, payload: payload, expiresAt: expiresAt,
+            viaAutomation: viaAutomation, translations: translations
         )
     }
 

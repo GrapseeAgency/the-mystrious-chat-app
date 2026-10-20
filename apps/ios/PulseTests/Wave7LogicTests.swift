@@ -95,6 +95,8 @@ final class Wave7LogicTests: XCTestCase {
     func testGameAndTournamentPayloadDecode() {
         XCTAssertEqual(PulseWave7Logic.gamePayload(#"{"matchId":"m1","game":"tictactoe"}"#)?.matchId, "m1")
         XCTAssertNil(PulseWave7Logic.gamePayload(nil))
+        XCTAssertNil(PulseWave7Logic.gamePayload(#"{"matchId":" "}"#))
+        XCTAssertNil(PulseWave7Logic.tournamentPayload(#"{"tournamentId":""}"#))
         XCTAssertEqual(PulseWave7Logic.tournamentPayload(#"{"tournamentId":"t1","name":"Friday","game":"tictactoe"}"#)?.tournamentId, "t1")
     }
 
@@ -134,7 +136,8 @@ final class Wave7LogicTests: XCTestCase {
         let match = makeMatch()
         XCTAssertEqual(PulseWave7Logic.sideOf(match, "u1"), "X")
         XCTAssertNil(PulseWave7Logic.sideOf(match, "u2"))
-        XCTAssertTrue(PulseWave7Logic.isMyTurn(match, "u1"))
+        XCTAssertFalse(PulseWave7Logic.isMyTurn(match, "u1"))
+        XCTAssertTrue(PulseWave7Logic.isMyTurn(makeMatch(playerOId: "u2"), "u1"))
         XCTAssertFalse(PulseWave7Logic.isMyTurn(match, "u2"))
         XCTAssertFalse(PulseWave7Logic.isMyTurn(makeMatch(status: "x_won"), "u1"))
         XCTAssertTrue(PulseWave7Logic.isMyTurn(makeMatch(turn: "O", playerOId: "u2"), "u2"))

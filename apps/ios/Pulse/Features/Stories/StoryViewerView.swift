@@ -13,7 +13,22 @@ struct StoryViewerView: View {
     let startUserId: String?
     let onClose: () -> Void
 
-    @StateObject private var machine = StoryViewerMachine()
+    @StateObject private var machine: StoryViewerMachine
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var viewersStoryId: String?
+    @State private var deleteStoryId: String?
+    @State private var holdTask: Task<Void, Never>?
+
+    init(session: PulseSession, stories: StoriesSessionModel, startUserId: String?, onClose: @escaping () -> Void) {
+        self.session = session
+        self.stories = stories
+        self.startUserId = startUserId
+        self.onClose = onClose
+        _machine = StateObject(wrappedValue: StoryViewerMachine(startUserId: startUserId))
+    }
+
+    private var playbackBlocked: Bool { scenePhase != .active || viewersOpen || confirmDelete }
+    private var playbackNow: Int64 { Int64(ProcessInfo.processInfo.systemUptime * 1000) }
     @State private var viewersOpen = false
     @State private var confirmDelete = false
     /// Vertical drag offset (visual only; the machine owns dismissal truth).
@@ -52,14 +67,35 @@ struct StoryViewerView: View {
             }
         }
         .gesture(viewerGesture)
-        .task {
-            // Playback loop - 30fps wall-clock ticks. The MACHINE no-ops
-            // ticks while paused/dismissed, so a hold never restarts progress
-            // (resume continues from the preserved elapsed).
+        .task(id: playbackBlocked) {
+            machine.setPlaybackBlocked(playbackBlocked, nowMs: playbackNow)
+            guard !playbackBlocked else { return }
+            var lastExpiryCheck: Int64 = 0
             while !Task.isCancelled {
-                machine.tick(nowMs: Int64(Date().timeIntervalSince1970 * 1000))
-                try? await Task.sleep(nanoseconds: 33_000_000)
+                let now = playbackNow
+                if now - lastExpiryCheck >= 1000 {
+                    if stories.flags.loadedOnce || !stories.groups.isEmpty {
+                        machine.groupsUpdated(stories.groups, nowMs: Int64(Date().timeIntervalSince1970 * 1000))
+                    }
+                    lastExpiryCheck = now
+                }
+                machine.tick(nowMs: now)
+                do { try await Task.sleep(nanoseconds: 33_000_000) } catch { break }
             }
+        }
+        .onChange(of: machine.state.current?.id) { _, id in
+            if deleteStoryId != id { confirmDelete = false; deleteStoryId = nil }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active {
+                holdTask?.cancel()
+                holdStarted = false
+                dragging = false
+                dragStart = .distantPast
+                dragY = 0
+                machine.holdEnd(nowMs: playbackNow)
+            }
+            machine.setPlaybackBlocked(playbackBlocked, nowMs: playbackNow)
         }
         .onChange(of: machine.state.pendingMark) { _, mark in
             guard let mark else { return }
@@ -77,7 +113,11 @@ struct StoryViewerView: View {
             machine.groupsUpdated(stories.groups, nowMs: Int64(Date().timeIntervalSince1970 * 1000))
             stories.startPolling()
         }
-        .onDisappear { stories.stopPolling() }
+        .onDisappear {
+            holdTask?.cancel()
+            machine.setPlaybackBlocked(true, nowMs: playbackNow)
+            stories.stopPolling()
+        }
         .sheet(isPresented: $viewersOpen, onDismiss: { stories.resetViewers() }) {
             viewersSheet
         }
@@ -168,7 +208,8 @@ struct StoryViewerView: View {
                         .foregroundStyle(.white)
                     Button {
                         confirmDelete = false
-                        let id = current.id
+                        guard let id = deleteStoryId else { return }
+                        deleteStoryId = nil
                         Task { _ = await stories.deleteStory(id: id) }
                     } label: {
                         Image(systemName: "trash.fill")
@@ -190,6 +231,8 @@ struct StoryViewerView: View {
                         Button {
                             PulseHaptics.tap()
                             confirmDelete = false
+                            viewersStoryId = current.id
+                            stories.resetViewers()
                             viewersOpen = true
                         } label: {
                             ZStack(alignment: .topTrailing) {
@@ -212,6 +255,7 @@ struct StoryViewerView: View {
                         .accessibilityLabel("Viewers, \(current.story.viewCount ?? 0)")
                         Button {
                             PulseHaptics.tap()
+                            deleteStoryId = current.id
                             confirmDelete = true
                         } label: {
                             Image(systemName: "trash")
@@ -266,7 +310,17 @@ struct StoryViewerView: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .onChanged { value in
                 // First frame of the press = hold-detection clock start.
-                if dragStart == .distantPast { dragStart = Date() }
+                guard !playbackBlocked else { return }
+                if dragStart == .distantPast {
+                    dragStart = Date()
+                    holdTask?.cancel()
+                    holdTask = Task { @MainActor in
+                        do { try await Task.sleep(nanoseconds: 240_000_000) } catch { return }
+                        guard !Task.isCancelled, !playbackBlocked else { return }
+                        holdStarted = true
+                        machine.holdStart(nowMs: playbackNow)
+                    }
+                }
                 let heldMs = Int64(Date().timeIntervalSince(dragStart) * 1000)
                 let t = value.translation
 
@@ -276,13 +330,13 @@ struct StoryViewerView: View {
                         dragging = true
                         if !holdStarted {
                             holdStarted = true
-                            machine.holdStart(nowMs: Int64(Date().timeIntervalSince1970 * 1000))
+                            machine.holdStart(nowMs: playbackNow)
                         }
                     } else if heldMs >= StoryViewerMachine.holdThresholdMs {
                         // press-and-hold ≥240ms = pause (web hold timer).
                         if !holdStarted {
                             holdStarted = true
-                            machine.holdStart(nowMs: Int64(Date().timeIntervalSince1970 * 1000))
+                            machine.holdStart(nowMs: playbackNow)
                         }
                     }
                 }
@@ -291,15 +345,21 @@ struct StoryViewerView: View {
                 }
             }
             .onEnded { value in
+                holdTask?.cancel()
+                guard dragStart != .distantPast, !playbackBlocked else {
+                    machine.holdEnd(nowMs: playbackNow)
+                    dragStart = .distantPast
+                    return
+                }
                 let heldMs = Int64(Date().timeIntervalSince(dragStart) * 1000)
                 defer {
                     dragging = false
                     holdStarted = false
-                    dragStart = Date()
+                    dragStart = .distantPast
                     dragY = 0
                 }
                 if dragging {
-                    machine.holdEnd(nowMs: Int64(Date().timeIntervalSince1970 * 1000))
+                    machine.holdEnd(nowMs: playbackNow)
                     let seconds = max(0.001, Double(heldMs) / 1000.0)
                     let velocity = CGFloat(Double(value.translation.height) / seconds)
                     if dragY > StoryViewerMachine.dismissDistancePx || velocity > StoryViewerMachine.dismissVelocityPxPerS {
@@ -307,7 +367,7 @@ struct StoryViewerView: View {
                     }
                     return // a drag release is never a zone tap
                 }
-                machine.holdEnd(nowMs: Int64(Date().timeIntervalSince1970 * 1000))
+                machine.holdEnd(nowMs: playbackNow)
                 if heldMs >= StoryViewerMachine.holdThresholdMs {
                     return // pure pause - release resumes, never a zone tap
                 }
@@ -396,11 +456,11 @@ struct StoryViewerView: View {
         .task(id: viewersOpen) {
             // D7: poll every ≤5s while the sheet is open - the count badge
             // refreshes from each tick.
-            while viewersOpen {
-                if let current = machine.state.current, current.mine {
-                    await stories.loadViewers(storyId: current.id)
+            while viewersOpen && !Task.isCancelled {
+                if let id = viewersStoryId {
+                    await stories.loadViewers(storyId: id)
                 }
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { break }
             }
         }
     }

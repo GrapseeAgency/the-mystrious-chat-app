@@ -302,6 +302,8 @@ private fun StageControls(
     conversationId: String,
     onClose: () -> Unit,
 ) {
+    val microphoneEnabled by vm.microphoneEnabled.collectAsStateWithLifecycle()
+    MicrophonePermissionButton(vm, conversationId, state.canTransmit)
     // Two-tap End confirm with the 2600ms reset (ST-5) - armed state mirrors
     // the machine's window and self-expires.
     var endArmed by remember { mutableStateOf(false) }
@@ -321,7 +323,7 @@ private fun StageControls(
                         .size(72.dp)
                         .clip(CircleShape)
                         .background(PulsePalette.EmeraldDeep)
-                        .then(Modifier.pttHoldGesture(true, vm::pttDown, vm::pttUp))
+                        .then(Modifier.pttHoldGesture(microphoneEnabled && state.connected, vm::pttDown, vm::pttUp, vm::cancelPtt))
                         .semantics {
                             contentDescription = "Push to talk on stage"
                             stateDescription = "Stage microphone"
