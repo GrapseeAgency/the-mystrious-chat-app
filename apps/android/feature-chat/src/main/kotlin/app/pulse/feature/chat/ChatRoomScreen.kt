@@ -675,12 +675,13 @@ fun ChatRoomScreen(
         val outcome = PulseSlash.applySlash(submitted)
         when (outcome) {
             is PulseSlash.Outcome.Send -> {
+                // Clear before invoking: validation can reject synchronously on Main.
+                if (viewModel.state.value.editing == null) draft = "" // edits clear on success
                 viewModel.send(outcome.content, onRejected = restoreRejected)
-                if (state.editing == null) draft = "" // edit path clears on success
             }
             is PulseSlash.Outcome.Effect -> {
+                if (viewModel.state.value.editing == null) draft = ""
                 viewModel.sendEffect(outcome.effect, outcome.content, onRejected = restoreRejected)
-                draft = ""
             }
             else -> runPaletteCommand(
                 PulseSlash.SlashCommand(

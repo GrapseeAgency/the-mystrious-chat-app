@@ -49,6 +49,7 @@ struct ChatRoomView: View {
             session.roomVisible = true
             // Wave 8 - the incoming-attention gate treats THIS room as read.
             session.activeRoomId = conversation.id
+            viewModel?.updateReadBoundary()
             viewModel?.requestRefresh(session: session)
             // 3-d - the group-call engine tracks the OPEN room: this drives
             // the 20s ongoing-call probe + the 'Ongoing group call' banner
@@ -3775,7 +3776,7 @@ final class RoomViewModel: ObservableObject {
     }
     @Published var readSurfaceObscured = false { didSet { updateReadBoundary() } }
 
-    private func updateReadBoundary() {
+    func updateReadBoundary() {
         session?.setVisibleReadBoundary(conversationId: conversationId,
             messageId: isTailVisible && !readSurfaceObscured ? messages.last(where: { !$0.id.hasPrefix("local_") })?.id : nil)
     }

@@ -1705,7 +1705,7 @@ struct MirrorRoomView: View {
             }
         }
         .onChange(of: session.connected) { connected in if connected { refreshRevision &+= 1 } }
-        .onAppear { session.activeRoomId = row.id }
+        .onAppear { session.activeRoomId = row.id; updateReadBoundary() }
         .onDisappear {
             cancelVoiceRecording()
             roomOperations.stop()

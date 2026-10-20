@@ -1144,3 +1144,11 @@ not presented as full server authorization hardening. This does not merge pre-ex
 duplicate DMs, add phone-address-book sync, or reconstruct a crash between text
 queue insertion and composer cleanup. Physical-device visibility, rapid sheet /
 call-overlay transitions and loss-of-network sequences still require exercising.
+
+Follow-up ordering checks: the Android composer clears its submitted UI text
+**before** invoking the send operation, so synchronous validation failures can
+restore it instead of being wiped immediately afterward. Swift room appearance
+re-reports its visible boundary after claiming active-room ownership, covering
+child-before-parent `onAppear` ordering when reopening cached history. The shared
+server changes must be deployed with the new natives; an old `/read` handler
+ignoring `messageId` cannot provide the new boundary guarantee.
