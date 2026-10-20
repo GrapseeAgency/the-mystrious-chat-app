@@ -3,6 +3,7 @@ package app.pulse.data.local
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
+import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.Insert
@@ -877,9 +878,35 @@ interface CallLogDao {
     suspend fun queueCount(): Int
 }
 
+/** A single observed join invalidates on saved markers, message edits/deletes,
+ * and conversation title changes; no N+1 reads of unobserved message rows. */
+data class SavedLibraryRow(
+    @Embedded val message: MessageEntity,
+    val savedStamp: String,
+    val savedConversationName: String?,
+    val savedConversationKind: String?,
+) {
+    fun toDomain() = app.pulse.domain.model.SavedItem(
+        savedAt = app.pulse.core.time.PulseTime.epochMs(savedStamp),
+        conversationId = message.conversationId,
+        conversationName = savedConversationName,
+        isGroup = savedConversationKind?.let { it != "DM" } ?: false,
+        message = message.toDomain(),
+    )
+}
+
 /** Saved-library index (Wave 2) - server cap 100, newest first, no pagination. */
 @Dao
 interface SavedDao {
+    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId WHERE m.deletedAt IS NULL ORDER BY s.savedAt DESC, s.messageId DESC")
+    fun observeLibrary(): Flow<List<SavedLibraryRow>>
+
+    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId WHERE m.deletedAt IS NULL ORDER BY s.savedAt DESC, s.messageId DESC")
+    suspend fun library(): List<SavedLibraryRow>
+
+    @Query("DELETE FROM savedMessages")
+    suspend fun clear()
+
     @Upsert
     suspend fun upsertAll(items: List<SavedMessageEntity>)
 

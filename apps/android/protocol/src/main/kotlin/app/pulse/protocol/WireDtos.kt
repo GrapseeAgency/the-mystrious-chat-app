@@ -97,7 +97,7 @@ data class PinnedPageDto(
 /** POST /api/messages/{id}/save { userId } → { saved } (per-user toggle). */
 @Serializable
 data class SavedToggleDto(
-    val saved: Boolean = false,
+    val saved: Boolean,
 )
 
 // R5-B: POST /api/conversations/[id]/messages response envelope

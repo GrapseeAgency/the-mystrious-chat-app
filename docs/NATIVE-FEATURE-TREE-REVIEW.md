@@ -14,7 +14,7 @@ saved items, navigation, or their interactions. Old comments saying â€œverifiedâ
 - **Repaired in source:** a concrete transition changed; native compilation and acceptance may still be pending.
 - **Executed check:** the exact test layer and result are stated below. SQL checks and syntax parsing are not device tests.
 
-`NATIVE-SOURCE-INVENTORY.csv` enumerates **320 production files: 199 Kotlin and 121 Swift**.
+`NATIVE-SOURCE-INVENTORY.csv` enumerates **321 production files: 200 Kotlin and 121 Swift**.
 It covers all twelve Android modules' `src/main` Kotlin and all Swift beneath
 `apps/ios/Pulse`. This deliberately excludes native tests, generated sources,
 resources/manifests, build scripts, extensions outside Pulse, and the backend.
@@ -1424,3 +1424,52 @@ messages have expired. Device wall-clock trust, unknown offline deletions/read r
 from other devices, notification/exported copies and full cached-media revocation remain
 open. An expired preview clears rather than inventing an older preview from partial local
 history; the next successful server refresh selects the current latest live message.
+
+
+### Saved-library consistency, explicit Unsave, and detached selections (2026-10-20)
+
+The Android saved observer watched only bookmark markers, then read message bodies
+through unobserved one-shot DAO calls. Editing or deleting a saved message did not
+necessarily redraw the library. Mirror fetched once into detached state and stayed on
+Loading forever after failure. Swift's library expired rows on a clock, but did not
+observe message-cache changes; a late library response could overwrite a newer relay
+edit/deletion. Both libraries used a save toggle for Unsave, making response-loss retries
+capable of saving a message again.
+
+- Android now observes one Room join across messages, saved markers and conversation
+  metadata; deleted rows are excluded and a cancellable clock removes expired items
+  offline. Primary and Mirror saved screens render that stream, not stale HTTP-returned
+  copies. Mirror failures stop loading and expose Retry without changing autumn styling.
+  Primary Unsave unwraps repository failures instead of accidentally treating Result.failure
+  as a successful runCatching result.
+- Saved refresh commits message versions and exact marker replacement together on both
+  platforms. Android serializes library fetch/save/remove operations and applies the
+  existing per-message revision fence inside the transaction; local mutation ACKs now
+  advance that fence too. Swift observes the GRDB join, preserves cache rows changed since
+  a fetch began, and fences refresh against bookmark changes. Primary Save updates the
+  local marker immediately after acknowledgement and suppresses duplicate pending taps.
+- DELETE /api/messages/{id}/save is an explicit owner-authenticated removal. Repeating it
+  cannot recreate a bookmark; it also permits cleanup after message deletion or leaving
+  a room. Native Unsave calls DELETE, validates the acknowledgement, and never falls back
+  to the toggle. POST Save rejects already-expired messages. Legacy POST remains a toggle.
+- Primary-room pin/search selections now reconcile current cached content and expire
+  detached snapshots. Android cancelled searches cannot publish after the next query;
+  Swift query/pin responses respect session/message revision fences and retain fresh
+  response content rather than overwriting it with an older loaded-window copy. Missing
+  history alone is not interpreted as deletion. Mirror pin/search sheets and global
+  spotlight results still need their own full lifecycle trace.
+
+Executed: 94 server contracts pass, including repeat-safe owner-scoped removal without
+an extant message; visibility/helper TypeScript checking and changed-native syntax/diff
+checks pass. Added native saved-clock/selection/acknowledgement, observed-join, deletion,
+late-refresh and rollback regressions; native runner execution for this source remains
+pending. Previous b5109bb iOS execution passed. Its Android compile found a duplicate
+Serializable annotation (and the Conversation annotation displaced onto the new expiry
+model); 0ea0fd3 restores one annotation to each class. Parsing alone did not catch that
+compiler error and is not claimed as compilation.
+
+Backend/native co-deployment is required for explicit Unsave; an older server's 405 is
+reported, not retried through a potentially destructive toggle. The saved API remains a
+100-item window. Global search, notification/exported copies, media viewers, and broad
+membership-revocation/cache policy are not established by these repairs. No whole-app
+correctness or completed-feature-tree claim is made.

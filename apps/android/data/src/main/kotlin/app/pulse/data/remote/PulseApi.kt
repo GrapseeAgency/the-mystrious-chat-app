@@ -534,6 +534,12 @@ class PulseApi(
             PulseJson.decodeFromString(SavedToggleDto.serializer(), it)
         }
 
+    /** Explicit Unsave: retrying a lost response cannot recreate the bookmark. */
+    suspend fun unsaveMessage(messageId: String, userId: String): PulseResult<SavedToggleDto> =
+        deleteWithBody("/api/messages/$messageId/save", userId) {
+            PulseJson.decodeFromString(SavedToggleDto.serializer(), it)
+        }
+
     /** GET /api/conversations/{id}/pinned?userId= → { messages } (pinnedAt asc). */
     suspend fun pinnedMessages(conversationId: String, userId: String): PulseResult<PinnedPageDto> =
         get("/api/conversations/$conversationId/pinned?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {

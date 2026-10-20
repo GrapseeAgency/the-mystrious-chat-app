@@ -667,10 +667,11 @@ public final class PulseStore: Sendable {
 
     /// Saved-library sync: upserts every item's message row (full fidelity,
     /// shared writer) AND its savedMessages marker (savedAt ISO from wire).
-    public func upsert(savedItems: [WireSavedItem]) throws {
+    public func upsert(savedItems: [WireSavedItem], replacingSnapshot: Bool = false, preservingMessageIds: Set<String> = []) throws {
         try dbQueue.write { db in
+            if replacingSnapshot { try db.execute(sql: "DELETE FROM savedMessages") }
             for item in savedItems {
-                try Self.writeMessage(item.message, db: db)
+                if !preservingMessageIds.contains(item.message.id) { try Self.writeMessage(item.message, db: db) }
                 try db.execute(
                     sql: """
                     INSERT INTO savedMessages (messageId, conversationId, savedAt)
@@ -702,36 +703,40 @@ public final class PulseStore: Sendable {
     /// Offline read path for the saved library. Missing conversation metadata
     /// remains unknown; the saved message body is still usable without a feed fetch.
     public func cachedSavedItems(now: Date = Date()) throws -> [WireSavedItem] {
-        try dbQueue.read { db in
-            try Row.fetchAll(db, sql: """
-                SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName,
-                       c.kind AS savedConversationKind
-                FROM savedMessages s JOIN message m ON m.id = s.messageId
-                LEFT JOIN conversation c ON c.id = s.conversationId
-                WHERE m.expiresAtEpoch IS NULL OR m.expiresAtEpoch > :now
-                ORDER BY s.savedAt DESC, s.messageId DESC
-                """, arguments: ["now": now.timeIntervalSince1970]).compactMap { row in
-                    guard let message = Self.messageRow(from: row),
-                          let savedAt: String = row["savedStamp"] else { return nil }
-                    let kind: String? = row["savedConversationKind"]
-                    return WireSavedItem(
-                        savedAt: savedAt,
-                        conversation: WireSavedConversation(
-                            id: message.conversationId,
-                            isGroup: kind.map { $0 != "DM" },
-                            name: row["savedConversationName"]
-                        ),
-                        message: message
-                    )
-                }
-        }
+        try dbQueue.read { db in try Self.savedItems(in: db, now: now) }
+    }
+
+    public func observeSavedItems() -> DatabasePublishers.Value<[WireSavedItem]> {
+        ValueObservation.tracking { db in try Self.savedItems(in: db, now: Date()) }.publisher(in: dbQueue)
+    }
+
+    private static func savedItems(in db: Database, now: Date) throws -> [WireSavedItem] {
+        try Row.fetchAll(db, sql: """
+            SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName,
+                   c.kind AS savedConversationKind
+            FROM savedMessages s JOIN message m ON m.id = s.messageId
+            LEFT JOIN conversation c ON c.id = s.conversationId
+            WHERE m.deletedAt IS NULL AND (m.expiresAtEpoch IS NULL OR m.expiresAtEpoch > :now)
+            ORDER BY s.savedAt DESC, s.messageId DESC
+            """, arguments: ["now": now.timeIntervalSince1970]).compactMap { row in
+                guard let message = Self.messageRow(from: row),
+                      let savedAt: String = row["savedStamp"] else { return nil }
+                let kind: String? = row["savedConversationKind"]
+                return WireSavedItem(
+                    savedAt: savedAt,
+                    conversation: WireSavedConversation(
+                        id: message.conversationId,
+                        isGroup: kind.map { $0 != "DM" },
+                        name: row["savedConversationName"]
+                    ),
+                    message: message
+                )
+            }
     }
 
     /// Every currently-saved message id (row-check + dock badge source).
     public func savedIds() throws -> Set<String> {
-        try dbQueue.read { db in
-            Set(try String.fetchAll(db, sql: "SELECT messageId FROM savedMessages"))
-        }
+        Set(try cachedSavedItems().map { $0.message.id })
     }
 
     /// Unsave one message locally (row action "Unsave").

@@ -365,6 +365,14 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireSavedToggle.self, from: data).saved
     }
 
+    /// Explicit removal; a retry must never invoke the save toggle.
+    public func unsaveMessage(id: String, userId: String) async throws {
+        let data = try await deleteRaw("/api/messages/\(id)/save", body: ["userId": userId])
+        guard try decoder.decode(WireSavedToggle.self, from: data).saved == false else {
+            throw Failure(kind: .server, message: "The saved message was not removed. Try again.")
+        }
+    }
+
     /// GET /api/conversations/{id}/pinned?userId= - pins list, pinnedAt asc.
     public func pinnedMessages(conversationId: String, userId: String) async throws -> [WireChatMessage] {
         let page: WirePinnedPage = try await get("/api/conversations/\(conversationId)/pinned?userId=\(userId)")

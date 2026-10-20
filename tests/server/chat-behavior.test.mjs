@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { advanceReadReceipt, receiptRecipients } from '../../src/lib/read-receipt.ts'
-import { unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
+import { removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
 import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { openDirectConversation } from '../../src/lib/direct-conversation.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
@@ -180,4 +180,15 @@ test('offline unread schedule counts only live incoming unread rows and keeps pe
     unreadCount: 2, unreadExpirations: [{ expiresAt: t(40).toISOString(), count: 1 }],
   })
   assert.deepEqual(await unreadSnapshot(db, 'room', 'reader', t(0), t(40)), { unreadCount: 1, unreadExpirations: [] })
+}))
+
+
+test('explicit unsave retries stay removed, affect only the owner, and need no surviving message', () => fixture(async db => {
+  await db.$executeRawUnsafe('CREATE TABLE SavedMessage(id TEXT PRIMARY KEY, userId TEXT, messageId TEXT, savedAt DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(userId,messageId))')
+  await db.$executeRaw`INSERT INTO SavedMessage(id,userId,messageId) VALUES ('a','alice','gone'),('b','bob','gone')`
+  assert.deepEqual(await removeSavedMessage(db, 'alice', 'gone'), { saved: false })
+  assert.deepEqual(await removeSavedMessage(db, 'alice', 'gone'), { saved: false })
+  assert.deepEqual(await removeSavedMessage(db, 'alice', 'never-saved'), { saved: false })
+  assert.equal(await db.savedMessage.count({ where: { userId: 'alice' } }), 0)
+  assert.equal(await db.savedMessage.count({ where: { userId: 'bob' } }), 1)
 }))

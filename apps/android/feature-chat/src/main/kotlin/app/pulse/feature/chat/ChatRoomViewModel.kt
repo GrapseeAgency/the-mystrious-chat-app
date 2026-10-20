@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import kotlinx.coroutines.ensureActive
 import android.content.Context
 import android.media.MediaRecorder
 import android.net.Uri
@@ -405,6 +406,8 @@ class ChatRoomViewModel @Inject constructor(
     private var draftSaveJob: Job? = null
     private var readJob: Job? = null
     private var searchJob: Job? = null
+    private var activeSearchQuery = ""
+    private var pinsJob: Job? = null
     private var flashJob: Job? = null
     private var jumpExpansionJob: Job? = null
 
@@ -421,6 +424,20 @@ class ChatRoomViewModel @Inject constructor(
     private var readingAnchor: String? = null
 
     init {
+        viewModelScope.launch {
+            // This Room stream includes messages cached by pin/search requests,
+            // and emits at TTL deadlines even without any network activity.
+            repo.observeMessages(conversationId).collect { current ->
+                val now = System.currentTimeMillis()
+                _state.value = _state.value.copy(
+                    pins = app.pulse.domain.sync.reconcileMessageSelection(_state.value.pins, current, now) { it.pinnedAt != null },
+                    searchResults = app.pulse.domain.sync.reconcileMessageSelection(_state.value.searchResults, current, now) {
+                        activeSearchQuery.isNotBlank() && it.body.contains(activeSearchQuery, ignoreCase = true)
+                    },
+                )
+            }
+        }
+
         restoreAttachmentDraft()
         viewModelScope.launch {
             // Wave 0 draft restore: the local draft table wins; when it is
@@ -781,9 +798,17 @@ class ChatRoomViewModel @Inject constructor(
     // ── pin / save / delete / forward ───────────────────────────
 
     fun loadPins() {
-        viewModelScope.launch {
-            runCatching { repo.pinnedMessages(conversationId) }
-                .onSuccess { pins -> _state.value = _state.value.copy(pins = pins) }
+        pinsJob?.cancel()
+        pinsJob = viewModelScope.launch {
+            try {
+                val pins = repo.pinnedMessages(conversationId)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                _state.value = _state.value.copy(pins = app.pulse.domain.sync.reconcileMessageSelection(pins, emptyList(), System.currentTimeMillis()) { it.pinnedAt != null })
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                notify("Couldn't refresh pinned messages", isError = true)
+            }
         }
     }
 
@@ -982,6 +1007,7 @@ class ChatRoomViewModel @Inject constructor(
 
     fun setSearchOpen(open: Boolean) {
         searchJob?.cancel()
+        activeSearchQuery = ""
         _state.value = _state.value.copy(
             searchOpen = open,
             searchResults = emptyList(),
@@ -992,6 +1018,7 @@ class ChatRoomViewModel @Inject constructor(
     fun onSearchQueryChanged(query: String) {
         searchJob?.cancel()
         val q = query.trim()
+        activeSearchQuery = q
         if (q.length < 2) {
             _state.value = _state.value.copy(searchResults = emptyList(), searching = false)
             return
@@ -1001,10 +1028,12 @@ class ChatRoomViewModel @Inject constructor(
             delay(250)
             val serverHits = runCatching { repo.searchInConversation(conversationId, q) }
                 .getOrDefault(emptyList())
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (activeSearchQuery != q) return@launch
             val localHits = messages.value.filter { it.body.contains(q, ignoreCase = true) }
             val merged = (serverHits + localHits)
                 .distinctBy { it.id }
-                .filter { !it.isDeleted }
+                .filter { !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > System.currentTimeMillis() } != false) && it.body.contains(q, ignoreCase = true) }
                 .sortedBy { it.createdAt }
             _state.value = _state.value.copy(searchResults = merged, searching = false)
         }

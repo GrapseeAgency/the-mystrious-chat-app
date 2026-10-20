@@ -1,6 +1,8 @@
 // /api/messages/[id]/save - Telegram-style star/save toggle
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { removeSavedMessage } from '@/lib/message-visibility'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import { safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -25,10 +27,13 @@ export async function POST(req: Request, { params }: RouteCtx) {
 
   const message = await db.message.findUnique({
     where: { id },
-    select: { conversationId: true, deletedAt: true },
+    select: { conversationId: true, deletedAt: true, expiresAt: true },
   })
   if (!message) {
     return NextResponse.json({ error: 'Message not found.' }, { status: 404 })
+  }
+  if (message.expiresAt && message.expiresAt <= new Date()) {
+    return NextResponse.json({ error: 'Message expired.' }, { status: 410 })
   }
   if (message.deletedAt) {
     return NextResponse.json({ error: 'Deleted messages cannot be saved.' }, { status: 400 })
@@ -56,4 +61,14 @@ export async function POST(req: Request, { params }: RouteCtx) {
   }
   await db.savedMessage.create({ data: { userId, messageId: id } })
   return NextResponse.json({ saved: true })
+}
+
+/** DELETE is an explicit, idempotent Unsave; never fall back to POST's toggle. */
+export async function DELETE(req: Request, { params }: RouteCtx) {
+  const { id } = await params
+  const body = await safeJson(req)
+  const userId = strField(body.userId)
+  const denied = await requireActionOwner(req, userId, 'saved messages')
+  if (denied) return denied
+  return NextResponse.json(await removeSavedMessage(db, userId, id))
 }

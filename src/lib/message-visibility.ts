@@ -37,3 +37,13 @@ export async function unreadSnapshot(
     }]).sort((a, b) => a.expiresAt.localeCompare(b.expiresAt)),
   }
 }
+
+/** Explicit removal is repeat-safe, including after message deletion or leaving
+ * its conversation. The caller must authenticate ownership of this user ID. */
+export async function removeSavedMessage(
+  db: Pick<import('../../prisma/generated-client').PrismaClient, 'savedMessage'>,
+  userId: string, messageId: string,
+): Promise<{ saved: false }> {
+  await db.savedMessage.deleteMany({ where: { userId, messageId } })
+  return { saved: false }
+}

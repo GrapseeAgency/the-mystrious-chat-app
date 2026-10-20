@@ -4022,6 +4022,8 @@ final class RoomViewModel: ObservableObject {
                     guard convId == self.conversationId else { return }
                     if let message = PulseSession.decodeMessage(from: raw) {
                         let tombstone = message.deletedCopy()
+                        pins.removeAll { $0.id == message.id }
+                        searchResults.removeAll { $0.id == message.id }
                         upsert(tombstone)
                         try? session.store?.upsert(messages: [tombstone])
                     }
@@ -4214,6 +4216,17 @@ final class RoomViewModel: ObservableObject {
     /// Live topic-view hygiene - drops rows that stopped matching the active
     /// filter (e.g. an envelope re-mapped a row's topic). No-op on General.
     private func refilterInPlace() {
+        let current = Dictionary(messages.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let nextPins = pins.map { current[$0.id] ?? $0 }.filter {
+            $0.deletedAt == nil && $0.pinnedAt != nil && PulseRemediationLogic.isAlive($0.expiresAt)
+        }
+        if nextPins != pins { pins = nextPins }
+        let nextSearch = searchResults.map { current[$0.id] ?? $0 }.filter {
+            $0.deletedAt == nil && PulseRemediationLogic.isAlive($0.expiresAt) &&
+                $0.content.localizedCaseInsensitiveContains(activeSearchQuery)
+        }
+
+        if nextSearch != searchResults { searchResults = nextSearch }
         let expired = messages.filter { !PulseRemediationLogic.isAlive($0.expiresAt) }
         if !expired.isEmpty {
             let alive = messages.filter { PulseRemediationLogic.isAlive($0.expiresAt) }
@@ -4513,10 +4526,13 @@ final class RoomViewModel: ObservableObject {
     // ── room search (server q= + local window filter) ───────
 
     private var searchTask: Task<Void, Never>?
+    private var activeSearchQuery = ""
 
     func searchInRoom(_ query: String, session: PulseSession) {
         searchTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespaces)
+        activeSearchQuery = trimmed
+        let epoch = session.sessionGeneration
         guard trimmed.count >= 2 else {
             searchResults = []
             searching = false
@@ -4528,17 +4544,29 @@ final class RoomViewModel: ObservableObject {
             // the GLOBAL chats search keeps its own 250 ms).
             try? await Task.sleep(nanoseconds: 220_000_000)
             guard let self, !Task.isCancelled else { return }
+            let watermark = session.messageRevision
             var hits: [WireChatMessage] = []
             if let page = try? await session.api.messages(conversationId: self.conversationId, limit: 100, before: nil, query: trimmed) {
                 hits = page.messages
             }
-            if Task.isCancelled { return }
+            if Task.isCancelled || epoch != session.sessionGeneration { return }
+            // Refresh existing window rows before it is used to reconcile
+            // detached search selections on the visibility clock.
+            let accepted = hits.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            try? session.store?.upsert(messages: accepted)
+            let byId = Dictionary(accepted.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+            self.messages = self.messages.map { byId[$0.id] ?? $0 }
             // Merge the live loaded window (covers rows newer than the
             // server's scan window and the offline case).
             let local = self.messages.filter { $0.content.lowercased().contains(trimmed.lowercased()) }
             var seenIds = Set<String>()
             var merged: [WireChatMessage] = []
-            for row in hits + local {
+            for candidate in hits + local {
+                let row: WireChatMessage?
+                if session.acceptsSyncMessage(candidate.id, startedAt: watermark) { row = candidate }
+                else { row = try? session.store?.message(id: candidate.id) }
+                guard let row, row.deletedAt == nil, PulseRemediationLogic.isAlive(row.expiresAt),
+                      row.content.localizedCaseInsensitiveContains(trimmed) else { continue }
                 if seenIds.insert(row.id).inserted { merged.append(row) }
             }
             merged.sort { (PulseFormat.date($0.createdAt) ?? .distantPast) < (PulseFormat.date($1.createdAt) ?? .distantPast) }
@@ -4937,11 +4965,27 @@ final class RoomViewModel: ObservableObject {
 
     // ── Wave 1 message actions ─────────────────────────────
 
+    private var pinsGeneration = UUID()
     func loadPins(session: PulseSession) {
         guard let viewer = session.viewer else { return }
+        let ticket = UUID(), epoch = session.sessionGeneration, watermark = session.messageRevision
+        pinsGeneration = ticket
         Task { [weak self] in
             guard let self else { return }
-            self.pins = (try? await session.api.pinnedMessages(conversationId: self.conversationId, userId: viewer.id)) ?? []
+            do {
+                let fresh = try await session.api.pinnedMessages(conversationId: self.conversationId, userId: viewer.id)
+                guard pinsGeneration == ticket, session.sessionGeneration == epoch else { return }
+                let accepted = fresh.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+                try session.store?.upsert(messages: accepted)
+                let byId = Dictionary(accepted.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+                messages = messages.map { byId[$0.id] ?? $0 }
+                pins = fresh.compactMap { row in
+                    session.acceptsSyncMessage(row.id, startedAt: watermark) ? row : (try? session.store?.message(id: row.id))
+                }.filter { $0.deletedAt == nil && $0.pinnedAt != nil && PulseRemediationLogic.isAlive($0.expiresAt) }
+            } catch {
+                guard pinsGeneration == ticket, session.sessionGeneration == epoch else { return }
+                session.toasts.show("Couldn't refresh pinned messages")
+            }
         }
     }
 
@@ -5033,14 +5077,30 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
+    private var savingMessageIds: Set<String> = []
     func toggleSave(_ message: WireChatMessage, session: PulseSession) {
+        guard let viewer = session.viewer, !savingMessageIds.contains(message.id),
+              message.deletedAt == nil, PulseRemediationLogic.isAlive(message.expiresAt) else { return }
+        savingMessageIds.insert(message.id)
+        let epoch = session.sessionGeneration, watermark = session.messageRevision
+        let api = session.api, store = session.store
         PulseHaptics.tap()
         Task { [weak self] in
-            guard let self, let viewer = session.viewer else { return }
+            guard let self else { return }
+            defer { savingMessageIds.remove(message.id) }
             do {
-                let saved = try await session.api.toggleMessageSave(id: message.id, userId: viewer.id)
+                let saved = try await api.toggleMessageSave(id: message.id, userId: viewer.id)
+                guard session.sessionGeneration == epoch else { return }
+                session.noteSavedMutation()
+                if saved {
+                    let item = WireSavedItem(savedAt: PulseOutboxClock.now(),
+                        conversation: WireSavedConversation(id: message.conversationId, isGroup: nil, name: nil), message: message)
+                    let preserve: Set<String> = session.acceptsSyncMessage(message.id, startedAt: watermark) ? [] : [message.id]
+                    try store?.upsert(savedItems: [item], preservingMessageIds: preserve)
+                } else { try store?.deleteSaved(messageId: message.id) }
                 session.toasts.show(saved ? "Saved to your library" : "Removed from your library")
             } catch {
+                guard session.sessionGeneration == epoch else { return }
                 self.errorText = Self.describe(error)
             }
         }

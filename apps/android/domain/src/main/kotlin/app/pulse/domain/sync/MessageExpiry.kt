@@ -21,3 +21,19 @@ fun Flow<List<Message>>.withMessageExpiry(nowMillis: () -> Long = System::curren
             delay((next - now).coerceIn(1L, 30_000L))
         }
     }.distinctUntilChanged()
+
+
+/** Saved libraries expose live messages only, not timeline deletion tombstones. */
+@OptIn(ExperimentalCoroutinesApi::class)
+fun Flow<List<app.pulse.domain.model.SavedItem>>.withSavedMessageExpiry(
+    nowMillis: () -> Long = System::currentTimeMillis,
+): Flow<List<app.pulse.domain.model.SavedItem>> = transformLatest { rows ->
+    var current = rows
+    while (true) {
+        val now = nowMillis()
+        current = current.filter { !it.message.isDeleted && (it.message.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
+        emit(current)
+        val next = current.mapNotNull { it.message.expiresAtEpochMs }.minOrNull() ?: break
+        delay((next - now).coerceIn(1L, 30_000L))
+    }
+}.distinctUntilChanged()

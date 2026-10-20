@@ -1,6 +1,7 @@
 package app.pulse.data.repository
 
 import app.pulse.domain.sync.withConversationExpiry
+import app.pulse.domain.sync.withSavedMessageExpiry
 import app.pulse.domain.sync.withMessageExpiry
 
 import app.pulse.protocol.objectPayloadText
@@ -632,14 +633,17 @@ class PulseRepositoryImpl constructor(
 
     /** A late GET must not undo a socket edit/delete, including in its return value. */
     private suspend fun cacheFetchedMessages(rows: List<Message>, watermark: Long): List<Message> =
-        messageCacheMutex.withLock {
-            val fresh = rows.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
-            messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-            rows.mapNotNull { row ->
-                if ((messageEventRevisions[row.id] ?: 0L) > watermark) messageDao.byId(row.id)?.toDomain()
-                else row
-            }
+        messageCacheMutex.withLock { cacheFetchedMessagesLocked(rows, watermark) }
+
+    /** Caller holds messageCacheMutex; saved snapshot replacement also wraps this in a transaction. */
+    private suspend fun cacheFetchedMessagesLocked(rows: List<Message>, watermark: Long): List<Message> {
+        val fresh = rows.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
+        messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
+        return rows.mapNotNull { row ->
+            if ((messageEventRevisions[row.id] ?: 0L) > watermark) messageDao.byId(row.id)?.toDomain()
+            else row
         }
+    }
 
     private var refreshScheduled = false
 
@@ -1413,7 +1417,7 @@ class PulseRepositoryImpl constructor(
         when (val r = api.editMessage(messageId, viewerId ?: "", content)) {
             is PulseResult.Success -> {
                 val message = r.value.toDomain()
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                upsertMessage(message)
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -1423,17 +1427,26 @@ class PulseRepositoryImpl constructor(
         when (val r = api.toggleMessagePin(messageId, viewerId ?: "")) {
             is PulseResult.Success -> {
                 val message = r.value.toDomain()
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                upsertMessage(message)
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun toggleMessageSave(messageId: String): Result<Boolean> =
+    private val savedOperations = Mutex()
+
+    override suspend fun toggleMessageSave(messageId: String): Result<Boolean> = savedOperations.withLock {
         when (val r = api.toggleMessageSave(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.saved)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Success -> {
+                if (!r.value.saved) savedDao.deleteById(messageId)
+                else messageDao.byId(messageId)?.let { row ->
+                    savedDao.upsertAll(listOf(SavedMessageEntity(messageId, row.conversationId, java.time.OffsetDateTime.now().toString())))
+                }
+                Result.success(r.value.saved)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
     override suspend fun pinnedMessages(conversationId: String): List<Message> {
         val watermark = messageEventClock.get()
@@ -2436,7 +2449,8 @@ class PulseRepositoryImpl constructor(
     )
 
     /** One-row cache write shared by every Wave-2 read-modify-write path. */
-    private suspend fun upsertMessage(m: Message) {
+    private suspend fun upsertMessage(m: Message) = messageCacheMutex.withLock {
+        messageEventRevisions[m.id] = messageEventClock.incrementAndGet()
         messageDao.upsertAll(listOf(MessageEntity.from(m, reactionsJsonOf(m))))
     }
 
@@ -2523,46 +2537,40 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> =
+    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> = savedOperations.withLock {
+        val watermark = messageEventClock.get()
         when (val r = api.savedList(viewerId ?: "")) {
+            is PulseResult.Success -> messageCacheMutex.withLock {
+                database.withTransaction {
+                    // One commit: message versions + exact index, including an empty list.
+                    // An older GET cannot overwrite a socket/local edit or deletion.
+                    cacheFetchedMessagesLocked(r.value.items.map { it.message.toDomain() }, watermark)
+                    savedDao.clear()
+                    savedDao.upsertAll(r.value.items.map { it.toSavedEntity() })
+                    Result.success(savedDao.library().map { it.toDomain() }.filter { savedMessageVisible(it.message) })
+                }
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        }
+    }
+
+    private fun savedMessageVisible(message: Message): Boolean = !message.isDeleted &&
+        (message.expiresAtEpochMs?.let { it > System.currentTimeMillis() } != false)
+
+    override fun observeSavedLibrary(): Flow<List<SavedItem>> = savedDao.observeLibrary()
+        .map { rows -> rows.map { it.toDomain() } }.withSavedMessageExpiry()
+
+    override suspend fun unsaveMessage(messageId: String): Result<Boolean> = savedOperations.withLock {
+        when (val r = api.unsaveMessage(messageId, viewerId ?: "")) {
             is PulseResult.Success -> {
-                val items = r.value.items
-                // 1) the carried message rows into the cache - the library
-                //    renders them offline afterwards (spec §1 row 14).
-                messageDao.upsertAll(
-                    items.map { MessageEntity.from(it.message.toDomain(), reactionsJsonOf(it.message.toDomain())) },
-                )
-                // 2) the savedMessages index rows.
-                val savedRows = items.map { it.toSavedEntity() }
-                savedDao.upsertAll(savedRows)
-                // 3) prune - server truth: rows it no longer lists are gone.
-                val keep = savedRows.map { it.messageId }.toSet()
-                val stale = savedDao.all().filter { it.messageId !in keep }.map { it.messageId }
-                if (stale.isNotEmpty()) savedDao.deleteByIds(stale)
-                Result.success(items.map { it.toSavedItem() })
+                if (r.value.saved) Result.failure(IllegalStateException("Message was not removed from saved"))
+                else {
+                    savedDao.deleteById(messageId)
+                    Result.success(false)
+                }
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
-
-    override fun observeSavedLibrary(): Flow<List<SavedItem>> =
-        savedDao.observeAll().map { rows ->
-            rows.mapNotNull { row ->
-                val entity = messageDao.byId(row.messageId) ?: return@mapNotNull null
-                val conversation = conversationDao.byId(row.conversationId)
-                SavedItem(
-                    savedAt = PulseTime.epochMs(row.savedAt),
-                    conversationId = row.conversationId,
-                    conversationName = conversation?.title,
-                    isGroup = conversation?.kind == "GROUP",
-                    message = entity.toDomain(),
-                )
-            }
-        }
-
-    override suspend fun unsaveMessage(messageId: String): Result<Boolean> {
-        val result = toggleMessageSave(messageId)
-        if (result.getOrNull() == false) savedDao.deleteById(messageId)
-        return result
     }
 
     override suspend fun refreshTopics(conversationId: String): Result<Unit> =
