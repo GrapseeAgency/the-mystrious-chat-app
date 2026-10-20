@@ -177,6 +177,9 @@ data class ConversationMemberDto(
 )
 
 @Serializable
+data class UnreadExpirationDto(val expiresAt: String, val count: Int)
+
+@Serializable
 data class ConversationSummaryDto(
     val id: String,
     val isGroup: Boolean = false,
@@ -190,7 +193,8 @@ data class ConversationSummaryDto(
     val updatedAt: String? = null,
     val members: List<ConversationMemberDto> = emptyList(),
     val lastMessage: ChatMessageDto? = null,
-    val unreadCount: Int = 0,
+    val unreadCount: Int? = null,
+    val unreadExpirations: List<UnreadExpirationDto> = emptyList(),
     val pinnedAt: String? = null,
     val mutedUntil: String? = null,
     val archivedAt: String? = null,

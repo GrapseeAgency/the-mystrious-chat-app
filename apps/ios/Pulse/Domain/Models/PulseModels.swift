@@ -31,14 +31,15 @@ public struct PulseConversation: Codable, Hashable, Sendable {
     public let isPinned: Bool
     public let isMuted: Bool
     public let isArchived: Bool
+    public let wireJson: String?
 
     public init(id: String, kind: Kind, title: String, avatar: String? = nil,
                 lastMessagePreview: String? = nil, lastActivityAt: String? = nil,
-                unreadCount: Int = 0, isPinned: Bool = false, isMuted: Bool = false, isArchived: Bool = false) {
+                unreadCount: Int = 0, isPinned: Bool = false, isMuted: Bool = false, isArchived: Bool = false, wireJson: String? = nil) {
         self.id = id; self.kind = kind; self.title = title; self.avatar = avatar
         self.lastMessagePreview = lastMessagePreview; self.lastActivityAt = lastActivityAt
         self.unreadCount = unreadCount; self.isPinned = isPinned
-        self.isMuted = isMuted; self.isArchived = isArchived
+        self.isMuted = isMuted; self.isArchived = isArchived; self.wireJson = wireJson
     }
 }
 

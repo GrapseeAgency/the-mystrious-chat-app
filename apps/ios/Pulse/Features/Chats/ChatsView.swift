@@ -2603,6 +2603,9 @@ final class ChatsViewModel: ObservableObject {
     var entranceOn = true
 
     private var pollTask: Task<Void, Never>?
+    private var expiryTask: Task<Void, Never>?
+    private var hasLoadedSummary = false
+    private var refreshGeneration: UInt64 = 0
     private var searchDebounceTask: Task<Void, Never>?
     private var observing = false
     private var cancellables: Set<AnyCancellable> = []
@@ -2610,6 +2613,7 @@ final class ChatsViewModel: ObservableObject {
     // ── derived rows ─────────────────────────────────────────
 
     func row(for conv: WireConversationSummary, session: PulseSession) -> ChatRowModel {
+        let conv = conv.removingExpiredSummary()
         let viewerId = session.viewer?.id ?? ""
         let last = conv.lastMessage
         let other = conv.isGroup ? nil : conv.members.first(where: { $0.id != viewerId }) ?? conv.members.first
@@ -2687,7 +2691,7 @@ final class ChatsViewModel: ObservableObject {
     }
 
     var rows: [ChatRowModel] {
-        if summaries.isEmpty && !cachedRows.isEmpty {
+        if !hasLoadedSummary && summaries.isEmpty && !cachedRows.isEmpty {
             return cachedRows
         }
         guard let session = observedSession else {
@@ -2708,7 +2712,7 @@ final class ChatsViewModel: ObservableObject {
     var folderFiltered: [ChatRowModel] {
         let active = activeRows
         switch prefsFilter {
-        case .unread: return active.filter { $0.unreadCount > 0 }
+        case .unread: return active.filter { $0.hasUnread }
         case .groups: return active.filter { $0.isGroup }
         default: return active
         }
@@ -2780,6 +2784,16 @@ final class ChatsViewModel: ObservableObject {
         observe(session: session)
         bindStore(session)
         reloadDrafts(session: session)
+        expireInbox(session: session)
+        if expiryTask == nil {
+            expiryTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+                    guard let self else { return }
+                    self.expireInbox(session: session)
+                }
+            }
+        }
         guard pollTask == nil else { return }
         guard session.viewer != nil else { return }
         Task { await refresh(session: session, force: summaries.isEmpty) }
@@ -2798,6 +2812,19 @@ final class ChatsViewModel: ObservableObject {
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+        expiryTask?.cancel()
+        expiryTask = nil
+    }
+
+    private func expireInbox(session: PulseSession) {
+        let now = Date()
+        let next = summaries.map { $0.removingExpiredSummary(at: now) }
+        if next != summaries { summaries = next }
+        if cachedRows.contains(where: { $0.conv != $0.conv.removingExpiredSummary(at: now) }) {
+            cachedRows = cachedRows.map { row(for: $0.conv.removingExpiredSummary(at: now), session: session) }
+        }
+        let unread = unreadTotal
+        if session.dockUnreadCount != unread { session.dockUnreadCount = unread }
     }
 
     /// Wave 0 - bind the filter to the LIVE prefs object (the old code read a
@@ -2837,7 +2864,7 @@ final class ChatsViewModel: ObservableObject {
             // network answer below stays authoritative (summaries.isEmpty guard).
             .replaceError(with: [])
             .sink { [weak self] rows in
-                guard let self, self.summaries.isEmpty else { return }
+                guard let self, !self.hasLoadedSummary, self.summaries.isEmpty else { return }
                 let session = self.observedSession ?? PulseSession()
                 self.cachedRows = rows.map { row in
                     let summary = WireConversationSummary(cached: row)
@@ -2893,17 +2920,22 @@ final class ChatsViewModel: ObservableObject {
     // ── refresh ──────────────────────────────────────────────
 
     func refresh(session: PulseSession, force: Bool = false) async {
+        refreshGeneration &+= 1
+        let request = refreshGeneration, epoch = session.sessionGeneration
+        let store = session.store
         if force || summaries.isEmpty { phase = phase == .loaded ? phase : .loading }
         do {
             let fresh = try await session.api.conversations()
-            summaries = fresh
+            guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
+            hasLoadedSummary = true
+            summaries = fresh.map { $0.removingExpiredSummary() }
+            cachedRows = []
             phase = .loaded
             entranceOn = false
             session.dockUnreadCount = unreadTotal
-            if let store = session.store {
-                try? store.upsert(conversations: fresh.map { $0.toDomain() })
-            }
+            try? store?.upsert(conversations: fresh.map { $0.toDomain() }, replacingSnapshot: true)
         } catch {
+            guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
             if summaries.isEmpty {
                 phase = .failed(Self.describe(error))
             } else {
@@ -2913,12 +2945,20 @@ final class ChatsViewModel: ObservableObject {
     }
 
     func refreshQuiet(session: PulseSession) async {
+        refreshGeneration &+= 1
+        let request = refreshGeneration, epoch = session.sessionGeneration
+        let store = session.store
         do {
             let fresh = try await session.api.conversations()
-            summaries = fresh
+            guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
+            hasLoadedSummary = true
+            summaries = fresh.map { $0.removingExpiredSummary() }
+            cachedRows = []
             phase = .loaded
             session.dockUnreadCount = unreadTotal
+            try? store?.upsert(conversations: fresh.map { $0.toDomain() }, replacingSnapshot: true)
         } catch {
+            guard request == refreshGeneration, epoch == session.sessionGeneration else { return }
             // Poll failures stay silent - the list keeps its cached rows.
         }
         reloadDrafts(session: session)

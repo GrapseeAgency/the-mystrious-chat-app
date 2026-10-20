@@ -496,11 +496,11 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
     public let createdAt: String?
     public let updatedAt: String?
     public let members: [WireConversationMember]
-    public let lastMessage: WireChatMessage?
-    public let unreadCount: Int?
-    public let pinnedAt: String?
-    public let mutedUntil: String?
-    public let archivedAt: String?
+    public var lastMessage: WireChatMessage?
+    public var unreadCount: Int?
+    public var pinnedAt: String?
+    public var mutedUntil: String?
+    public var archivedAt: String?
     public let ttlSeconds: Int?
     public let broadcastMode: Bool?
     public let isSelf: Bool?
@@ -509,7 +509,7 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
     public let deadStreak: WireStreak?
     public let lostStreak: WireStreak?
     /// N10-b - viewer flagged this row mark-as-unread (nil on older relays).
-    public let myManualUnread: Bool?
+    public var myManualUnread: Bool?
     // REM-B F-GR - conversation-DETAIL-only fields (tolerant: summaries
     // decode nil). inviteCode mirrors serializers.ts L525 (groups only);
     // slowModeSeconds the R44 member-send throttle (0 = off). Defaulted vars
@@ -526,6 +526,7 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
     // the other participant; groups always send false). Absent on list
     // summaries and older relays → nil (not blocked).
     public var dmBlocked: Bool? = nil
+    public var unreadExpirations: [WireUnreadExpiration]? = nil
 
     /// R47 - nil-coalescing helper: the DM dead-end notice flag (web
     /// chat-room.tsx:2293 `detailData?.dmBlocked ?? false` parity).
@@ -551,62 +552,38 @@ public struct WireConversationSummary: Codable, Hashable, Sendable {
 
     /// N10-b - optimistic helper: replaces one field in the summary.
     public func withMutedUntil(_ value: String?) -> WireConversationSummary {
-        WireConversationSummary(
-            id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
-            updatedAt: updatedAt, members: members, lastMessage: lastMessage,
-            unreadCount: unreadCount, pinnedAt: pinnedAt, mutedUntil: value,
-            archivedAt: archivedAt, ttlSeconds: ttlSeconds, broadcastMode: broadcastMode,
-            isSelf: isSelf, myDraft: myDraft, myStreak: myStreak, deadStreak: deadStreak,
-            lostStreak: lostStreak, myManualUnread: myManualUnread,
-        )
+        var copy = self
+        copy.mutedUntil = value
+        return copy
     }
 
     /// N10-b - optimistic helper: flips the manual-unread flag.
     public func withManualUnread(_ value: Bool) -> WireConversationSummary {
-        WireConversationSummary(
-            id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
-            updatedAt: updatedAt, members: members, lastMessage: lastMessage,
-            unreadCount: unreadCount, pinnedAt: pinnedAt, mutedUntil: mutedUntil,
-            archivedAt: archivedAt, ttlSeconds: ttlSeconds, broadcastMode: broadcastMode,
-            isSelf: isSelf, myDraft: myDraft, myStreak: myStreak, deadStreak: deadStreak,
-            lostStreak: lostStreak, myManualUnread: value,
-        )
+        var copy = self
+        copy.myManualUnread = value
+        return copy
     }
 
     /// N10-b - optimistic helper: sets/clears the archived watermark.
     public func withArchived(_ value: String?) -> WireConversationSummary {
-        WireConversationSummary(
-            id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
-            updatedAt: updatedAt, members: members, lastMessage: lastMessage,
-            unreadCount: unreadCount, pinnedAt: pinnedAt, mutedUntil: mutedUntil,
-            archivedAt: value, ttlSeconds: ttlSeconds, broadcastMode: broadcastMode,
-            isSelf: isSelf, myDraft: myDraft, myStreak: myStreak, deadStreak: deadStreak,
-            lostStreak: lostStreak, myManualUnread: myManualUnread,
-        )
+        var copy = self
+        copy.archivedAt = value
+        return copy
     }
 
     /// N10-b - optimistic helper: zeroes the unread count.
     public func withUnreadCount(_ value: Int) -> WireConversationSummary {
-        WireConversationSummary(
-            id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
-            updatedAt: updatedAt, members: members, lastMessage: lastMessage,
-            unreadCount: value, pinnedAt: pinnedAt, mutedUntil: mutedUntil,
-            archivedAt: archivedAt, ttlSeconds: ttlSeconds, broadcastMode: broadcastMode,
-            isSelf: isSelf, myDraft: myDraft, myStreak: myStreak, deadStreak: deadStreak,
-            lostStreak: lostStreak, myManualUnread: myManualUnread,
-        )
+        var copy = self
+        copy.unreadCount = value
+        if value == 0 { copy.unreadExpirations = [] }
+        return copy
     }
 
     /// N10-b - optimistic helper: sets/clears the pinned watermark.
     public func withPinnedAt(_ value: String?) -> WireConversationSummary {
-        WireConversationSummary(
-            id: id, isGroup: isGroup, name: name, photo: photo, createdAt: createdAt,
-            updatedAt: updatedAt, members: members, lastMessage: lastMessage,
-            unreadCount: unreadCount, pinnedAt: value, mutedUntil: mutedUntil,
-            archivedAt: archivedAt, ttlSeconds: ttlSeconds, broadcastMode: broadcastMode,
-            isSelf: isSelf, myDraft: myDraft, myStreak: myStreak, deadStreak: deadStreak,
-            lostStreak: lostStreak, myManualUnread: myManualUnread,
-        )
+        var copy = self
+        copy.pinnedAt = value
+        return copy
     }
 }
 
@@ -717,40 +694,26 @@ public struct WireSearchPage: Codable, Sendable {
 // wire → domain mappers (mirror Android data/repository mappers)
 
 extension WireConversationSummary {
-    /// Cache-restore constructor - rebuilds a display-grade summary from a
-    /// PulseConversation row (Wave 0 offline rehydration: title, preview,
-    /// unread, pin/mute/archive flags). Members/lastMessage are NOT cached;
-    /// bubbles fall back to the domain fields. Replaced on first refresh.
+    /// Restore the complete summary, applying deadlines before display.
+    /// Legacy caches keep navigation metadata but have no trusted preview TTL.
     init(cached: PulseConversation) {
-        // Fabricate a display-grade last message from the cached preview so
-        // offline rows keep their snippet (kind/author are not cached).
-        let cachedMessage = cached.lastMessagePreview.map { preview in
-            WireChatMessage(
-                id: "cached-\(cached.id)",
-                conversationId: cached.id,
-                senderId: "",
-                content: preview,
-                kind: "text",
-                createdAt: cached.lastActivityAt ?? "",
-                editedAt: nil, deletedAt: nil, sender: nil, reactions: nil,
-                replyTo: nil, parentId: nil, imagePath: nil, audioPath: nil,
-                durationMs: nil, filePath: nil, fileName: nil, fileSize: nil,
-                pinnedAt: nil, viewOnce: nil, anon: nil, anonAlias: nil,
-                viewedAt: nil, viewedBy: nil, transcript: nil,
-                transcribedAt: nil, topicId: nil, linkUrl: nil,
-                linkPreview: nil, poll: nil,
-            )
+        if let json = cached.wireJson, let data = json.data(using: .utf8),
+           let summary = try? JSONDecoder().decode(WireConversationSummary.self, from: data) {
+            self = summary.removingExpiredSummary()
+            return
         }
+        // Legacy snippets have no expiry provenance. Keep the room/title, not
+        // a fabricated permanent message or an unverifiable numeric badge.
         self.init(
             id: cached.id,
             isGroup: cached.kind == .GROUP || cached.kind == .CHANNEL,
-            name: cached.kind == .DM ? nil : cached.title,
+            name: cached.title,
             photo: cached.avatar,
             createdAt: nil,
             updatedAt: cached.lastActivityAt,
             members: [],
-            lastMessage: cachedMessage,
-            unreadCount: cached.unreadCount,
+            lastMessage: nil,
+            unreadCount: 0,
             pinnedAt: cached.isPinned ? "cached" : nil,
             mutedUntil: nil,
             archivedAt: cached.isArchived ? "cached" : nil,
@@ -784,6 +747,7 @@ extension WireConversationSummary {
             isPinned: !(pinnedAt ?? "").isEmpty,
             isMuted: !(mutedUntil ?? "").isEmpty,
             isArchived: !(archivedAt ?? "").isEmpty,
+            wireJson: (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) },
         )
     }
 

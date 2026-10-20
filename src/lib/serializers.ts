@@ -5,7 +5,7 @@
 import path from 'node:path'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
-import { isExpiredMessage, unexpiredMessages, unreadMessages } from '@/lib/message-visibility'
+import { unreadSnapshot, isExpiredMessage, unexpiredMessages } from '@/lib/message-visibility'
 import { DEFAULT_PREFERENCES, mergePrefs, type PulsePrefs } from '@/lib/prefs-defaults'
 import type {
   AppUser,
@@ -426,8 +426,8 @@ export async function buildConversationSummary(
     conv.participants.find((p) => p.userId === viewerId)?.lastReadAt ?? new Date(0)
   const at = new Date()
   const preview = conv.messages[0] ?? null
-  const [unreadCount, streakRow, lastRow] = await Promise.all([
-    db.message.count({ where: unreadMessages(conv.id, viewerId, myReadAt, at) }),
+  const [unread, streakRow, lastRow] = await Promise.all([
+    unreadSnapshot(db, conv.id, viewerId, myReadAt, at),
     db.conversationStreak.findUnique({
       where: { conversationId_userId: { conversationId: conv.id, userId: viewerId } },
       select: { lastDay: true, count: true, best: true },
@@ -448,7 +448,7 @@ export async function buildConversationSummary(
     updatedAt: conv.updatedAt.toISOString(),
     members: membersForViewer(conv.participants, viewerId),
     lastMessage: lastRow ? mapMessage(lastRow, viewerId) : null,
-    unreadCount,
+    ...unread,
     myStreak:
       streakRow && isLiveStreakDay(streakRow.lastDay) ? { count: streakRow.count } : null,
     // R33-b additive - derived from the SAME streak row (no extra query):

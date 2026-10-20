@@ -277,7 +277,7 @@ class RoomMigrationTest {
             // Wave 1: the compiled schema is now v5, so the REAL open path is
             // 3 → 4 → 5 - both migrations must be present (v5 columns are
             // additive; every assertion below still holds on the v5 state).
-            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12)
+            .addMigrations(PulseDatabase.MIGRATION_3_4, PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13)
             .allowMainThreadQueries()
             .build()
 
@@ -352,7 +352,7 @@ class RoomMigrationTest {
     fun migration4To5PreservesRowsAndAddsMediaAndMembers() = runBlocking {
         createV4DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12)
+            .addMigrations(PulseDatabase.MIGRATION_4_5, PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13)
             .allowMainThreadQueries()
             .build()
 
@@ -447,7 +447,7 @@ class RoomMigrationTest {
     fun migration5To6PreservesRowsAndAddsDepthColumnsAndTables() = runBlocking {
         createV5DatabaseWithSeedRows()
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
-            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12)
+            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7, PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13)
             .allowMainThreadQueries()
             .build()
 
@@ -637,7 +637,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13,
             )
             .allowMainThreadQueries()
             .build()
@@ -653,7 +653,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13,
             )
             .allowMainThreadQueries()
             .build()
@@ -716,7 +716,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13,
             )
             .allowMainThreadQueries()
             .build()
@@ -752,7 +752,7 @@ class RoomMigrationTest {
                 PulseDatabase.MIGRATION_7_8,
                 PulseDatabase.MIGRATION_8_9,
                 PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13,
             )
             .allowMainThreadQueries()
             .build()
@@ -799,7 +799,7 @@ class RoomMigrationTest {
         db = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
             .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9,
-                PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12)
+                PulseDatabase.MIGRATION_9_10, PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13)
             .build()
         val message = Message(id = "local_failed", conversationId = "recovery-room",
             authorId = "owner", authorName = "Owner", kind = Message.Kind.TEXT,
@@ -824,7 +824,7 @@ class RoomMigrationTest {
         fun open() = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
             .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7,
                 PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10,
-                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12).build()
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13).build()
         db = open()
         val media = app.pulse.domain.model.AttachmentDraft("attachment-selection-0001", "attachment-room", "image",
             "data:image/jpeg;base64,aGVsbG8=", caption = "original")
@@ -864,4 +864,33 @@ class RoomMigrationTest {
         assertEquals("confirmed-upload.jpg", db.messageDao().byId(temp.id)?.imagePath)
     }
 
+
+    @Test fun inboxExpirySurvivesReopenAndEmptySnapshotsPreserveDraftAndOutbox() = runBlocking {
+        createV5DatabaseWithSeedRows()
+        fun open() = Room.databaseBuilder(context, PulseDatabase::class.java, dbName)
+            .addMigrations(PulseDatabase.MIGRATION_5_6, PulseDatabase.MIGRATION_6_7,
+                PulseDatabase.MIGRATION_7_8, PulseDatabase.MIGRATION_8_9, PulseDatabase.MIGRATION_9_10,
+                PulseDatabase.MIGRATION_10_11, PulseDatabase.MIGRATION_11_12, PulseDatabase.MIGRATION_12_13).build()
+        db = open()
+        val legacy = checkNotNull(db.conversationDao().byId("c1"))
+        assertNull(legacy.lastMessagePreview)
+        assertEquals(0, legacy.unreadCount)
+        val deadline = 2_000_000_000_000L
+        val room = app.pulse.domain.model.Conversation("room", app.pulse.domain.model.Conversation.Kind.GROUP, "Group",
+            lastMessagePreview = "expires", unreadCount = 3, lastMessageExpiresAtEpochMs = deadline,
+            unreadExpirations = listOf(app.pulse.domain.model.UnreadExpiration(deadline, 2)))
+        db.conversationDao().upsertAll(listOf(ConversationEntity.from(room),
+            ConversationEntity.from(room.copy(id = app.pulse.domain.model.PulseDemo.CONVERSATION_ID))))
+        db.draftDao().upsert(DraftEntity("room", "unfinished", "now"))
+        db.outboxDao().insert(OutboxEntity(conversationId = "room", clientId = "inbox-test", content = "unsent", createdAt = "now"))
+        db.close(); db = open()
+        val restored = checkNotNull(db.conversationDao().byId("room")).toDomain()
+        assertEquals(room.unreadExpirations, restored.unreadExpirations)
+        assertEquals(deadline, restored.lastMessageExpiresAtEpochMs)
+        db.conversationDao().clearServerSnapshot(app.pulse.domain.model.PulseDemo.CONVERSATION_ID)
+        assertNull(db.conversationDao().byId("room"))
+        assertNotNull(db.conversationDao().byId(app.pulse.domain.model.PulseDemo.CONVERSATION_ID))
+        assertEquals("unfinished", db.draftDao().get("room")?.text)
+        assertNotNull(db.outboxDao().pendingByClientId("inbox-test"))
+    }
 }

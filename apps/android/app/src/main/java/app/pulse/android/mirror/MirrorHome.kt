@@ -238,7 +238,7 @@ internal fun MirrorHome(
     val visible = conversations
         .filter { when (filter) {
             MirrorFilter.All -> true
-            MirrorFilter.Unread -> it.unread > 0
+            MirrorFilter.Unread -> it.unread > 0 || it.manualUnread
             MirrorFilter.Groups -> it.isGroup
         } }
         .filter { activeFolder == null || it.id in activeFolder.conversationIds }

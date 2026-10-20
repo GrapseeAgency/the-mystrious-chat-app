@@ -326,7 +326,7 @@ fun ChatsScreen(
             val ids = folders.firstOrNull { it.id == activeFolderId }?.conversationIds.orEmpty().toSet()
             locallyFiltered.filter { it.id in ids }
         }
-        listFilter == "unread" -> locallyFiltered.filter { it.unreadCount > 0 }
+        listFilter == "unread" -> locallyFiltered.filter { it.unreadCount > 0 || it.myManualUnread }
         listFilter == "groups" -> locallyFiltered.filter { it.isGroupish }
         else -> locallyFiltered
     }

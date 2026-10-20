@@ -14,7 +14,7 @@ saved items, navigation, or their interactions. Old comments saying â€œverifiedâ
 - **Repaired in source:** a concrete transition changed; native compilation and acceptance may still be pending.
 - **Executed check:** the exact test layer and result are stated below. SQL checks and syntax parsing are not device tests.
 
-`NATIVE-SOURCE-INVENTORY.csv` enumerates **318 production files: 198 Kotlin and 120 Swift**.
+`NATIVE-SOURCE-INVENTORY.csv` enumerates **320 production files: 199 Kotlin and 121 Swift**.
 It covers all twelve Android modules' `src/main` Kotlin and all Swift beneath
 `apps/ios/Pulse`. This deliberately excludes native tests, generated sources,
 resources/manifests, build scripts, extensions outside Pulse, and the backend.
@@ -1375,3 +1375,52 @@ Server draft mirroring is best effort; interrupted requests/other devices still 
 server-side revision ordering. Unsaved keystrokes can still be lost on storage failure
 or process death before their journal write commits. Native device/background checks,
 offline inbox summary expiry, and the other open feature-tree boundaries remain work.
+
+
+### Offline inbox expiry and authoritative snapshot replacement (2026-10-20)
+
+The message timeline's TTL filter did not protect the inbox. Android discarded
+`lastMessage.expiresAt` when mapping summaries to Room; Swift rebuilt a permanent
+synthetic message from a cached snippet. A failed poll left those previews and badge
+counts on-screen indefinitely. Counting cached history instead would be wrong: it is
+a bounded/partial window, and the preview need not be an unread message.
+
+- The server now aggregates unread rows by expiry in one query, returning the total
+  and its `unreadExpirations` schedule from the same aggregate. Expired/deleted/own/read
+  rows are excluded. Permanent unread stays in the count but has no deadline bucket.
+- Android persists the preview deadline and unread schedule (Room v13) and applies a
+  clock-driven projection to the shared conversation flow used by both presentations.
+  Expired text, author/file/type decorations disappear; only expired unread buckets
+  subtract from the badge. New Room emissions replace pending timers; stopped collectors
+  cancel them. iOS preserves the complete summary envelope in GRDB v11, projects it on
+  cache restore, and reevaluates both visible inbox presentations independently of network
+  polling. Optimistic pin/mute/archive/manual-unread copies preserve expiry/privacy fields.
+- Old inbox caches have no trustworthy expiry provenance. Migration retires their
+  derived previews/counts, not room identities, messages, drafts, or durable operations.
+  New snapshots restore those derived fields. This may temporarily hide a legacy badge
+  while offline; it does not mark any server messages as read.
+- Android detail endpoints omit inbox-only fields. Opening room info, changing a group
+  photo/name/TTL, or receiving another detail response now merges those fields instead
+  of resetting preview/unread/pin/archive state to DTO defaults. Explicit zero counts
+  on real summaries remain authoritative.
+- Successful complete lists replace cached server-room snapshots atomically, including
+  empty lists; Android's local demo room remains local. Delayed list responses are fenced,
+  and Swift polling now updates the persistent cache too. An empty iOS response no longer
+  falls back to stale cached rooms. Draft/outbox recovery is not deleted with inbox rows.
+- Manual-unread remains independent of numeric unread on both platforms and in both
+  Unread filters. No autumn styling or layout changes were made.
+
+Executed here: 93/93 server contracts, including grouped deadlines and permanent-unread
+retention; standalone TypeScript checking of the visibility/aggregate helper; changed
+native syntax and diff checks. Added native clock/deadline, restart, migration, empty
+snapshot, and detail-merge regressions. Native compilation/execution for this tranche
+still requires the GitHub runners. The preceding draft-handoff Android build and both
+API 30/34 instrumented jobs passed; iOS archived successfully but its test compile found
+three missing async awaits in the new GRDB rollback test, corrected in `633a7e1`.
+
+Limits: exact offline unread decay needs the updated backend's schedule. Older servers
+still provide preview expiry, but native clients do not guess which unrelated unread
+messages have expired. Device wall-clock trust, unknown offline deletions/read receipts
+from other devices, notification/exported copies and full cached-media revocation remain
+open. An expired preview clears rather than inventing an older preview from partial local
+history; the next successful server refresh selects the current latest live message.

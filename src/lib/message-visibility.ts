@@ -19,3 +19,21 @@ export function threadRootAvailable(root: {
   return root !== null && root.conversationId === room && root.deletedAt === null &&
     root.parentId === null && !isExpiredMessage(root, at)
 }
+
+/** One aggregate snapshot supplies BOTH the badge and its offline expiry schedule.
+ * Never derive unread from a client's partial message page or the latest preview.
+ */
+export async function unreadSnapshot(
+  db: Pick<import('../../prisma/generated-client').PrismaClient, 'message'>,
+  room: string, viewer: string, readAt: Date, at: Date,
+): Promise<{ unreadCount: number; unreadExpirations: { expiresAt: string; count: number }[] }> {
+  const groups = await db.message.groupBy({
+    by: ['expiresAt'], where: unreadMessages(room, viewer, readAt, at), _count: { _all: true },
+  })
+  return {
+    unreadCount: groups.reduce((total, group) => total + group._count._all, 0),
+    unreadExpirations: groups.flatMap(group => group.expiresAt === null ? [] : [{
+      expiresAt: group.expiresAt.toISOString(), count: group._count._all,
+    }]).sort((a, b) => a.expiresAt.localeCompare(b.expiresAt)),
+  }
+}

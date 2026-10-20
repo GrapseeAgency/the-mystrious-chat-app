@@ -106,11 +106,16 @@ final class MirrorViewModel: ObservableObject {
     }
 
     private var timer: Timer?
+    private var expiryTimer: Timer?
+    private var inbox: [WireConversationSummary] = []
+    private weak var store: PulseStore?
+    private var refreshRevision: UInt64 = 0
     private var client: PulseAPIClient?
 
 
     /// One conversation summary -> the home row (web chats-row mapping).
     static func buildRow(summary: WireConversationSummary, viewerId: String) -> MirrorRow {
+        let summary = summary.removingExpiredSummary()
         let other = summary.members.first { $0.id != viewerId }
         let last = summary.lastMessage
         let deleted = last?.deletedAt != nil
@@ -126,7 +131,7 @@ final class MirrorViewModel: ObservableObject {
         let authorPrefix: String
         if mine {
             authorPrefix = "You: "
-        } else if summary.isGroup {
+        } else if summary.isGroup && last != nil {
             authorPrefix = (last?.sender?.name ?? "") + ": "
         } else {
             authorPrefix = ""
@@ -154,6 +159,13 @@ final class MirrorViewModel: ObservableObject {
 
     func start(session: PulseSession) {
         client = session.api
+        store = session.store
+        inbox = ((try? store?.cachedConversations()) ?? []).map { WireConversationSummary(cached: $0) }
+        projectInbox()
+        expiryTimer?.invalidate()
+        expiryTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.projectInbox() }
+        }
         timer?.invalidate()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -161,17 +173,33 @@ final class MirrorViewModel: ObservableObject {
         }
     }
 
-    func stop() { timer?.invalidate(); timer = nil }
+    func stop() {
+        timer?.invalidate(); timer = nil
+        expiryTimer?.invalidate(); expiryTimer = nil
+        refreshRevision &+= 1
+    }
+
+    private func projectInbox() {
+        guard let client else { return }
+        inbox = inbox.map { $0.removingExpiredSummary() }
+        let built = inbox.map { Self.buildRow(summary: $0, viewerId: client.userId) }
+        let active = built.filter { !$0.isArchived }, archived = built.filter { $0.isArchived }
+        if rows != active { rows = active }
+        if archivedRows != archived { archivedRows = archived }
+    }
 
     func refresh() {
         guard let client else { return }
+        refreshRevision &+= 1
+        let revision = refreshRevision, store = store
         Task { @MainActor in
             // rows - real summaries, same mapping the web home uses;
             // R64 web parity: the main list EXCLUDES archived chats
             if let page = try? await client.conversations() {
-                let built = page.map { MirrorViewModel.buildRow(summary: $0, viewerId: client.userId) }
-                rows = built.filter { !$0.isArchived }
-                archivedRows = built.filter { $0.isArchived }
+                guard revision == refreshRevision else { return }
+                inbox = page
+                projectInbox()
+                try? store?.upsert(conversations: page.map { $0.toDomain() }, replacingSnapshot: true)
             }
             // profile row (tolerant subset), stats, coins
             if let url = URL(string: PulseEndpoints.gatewayURL.absoluteString + "/api/users/" + client.userId) {
@@ -275,7 +303,7 @@ struct MirrorHomeView: View {
     private var visibleRows: [MirrorViewModel.MirrorRow] {
         let base: [MirrorViewModel.MirrorRow]
         switch chip {
-        case 1: base = model.rows.filter { $0.unread > 0 }
+        case 1: base = model.rows.filter { $0.unread > 0 || $0.manualUnread }
         case 2: base = model.rows.filter { $0.isGroup }
         default: base = model.rows
         }

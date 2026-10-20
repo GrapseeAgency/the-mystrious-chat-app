@@ -50,6 +50,9 @@ data class ConversationMember(
 
 /** A conversation in the chats list - mirrors web `ConversationSummary`. */
 @Serializable
+@Serializable
+data class UnreadExpiration(val expiresAtEpochMs: Long, val count: Int)
+
 data class Conversation(
     val id: String,
     val kind: Kind,
@@ -91,6 +94,8 @@ data class Conversation(
     val otherUserId: String? = null,
     /** Broadcast-only channel (web broadcastMode). */
     val isChannel: Boolean = false,
+    val lastMessageExpiresAtEpochMs: Long? = null,
+    val unreadExpirations: List<UnreadExpiration> = emptyList(),
 ) {
     enum class Kind { DM, GROUP, CHANNEL, SPACE, VOICE, STAGE }
 

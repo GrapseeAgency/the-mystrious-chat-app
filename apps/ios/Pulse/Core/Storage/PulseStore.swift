@@ -240,6 +240,10 @@ public final class PulseStore: Sendable {
             try db.execute(sql: "DELETE FROM message WHERE substr(id, 1, 6) != 'local_'")
             try db.execute(sql: "UPDATE conversation SET lastMessagePreview = NULL")
         }
+        m.registerMigration("v11") { db in
+            try db.alter(table: "conversation") { t in t.add(column: "wireJson", .text) }
+            try db.execute(sql: "UPDATE conversation SET lastMessagePreview = NULL, unreadCount = 0")
+        }
         return m
     }
 
@@ -290,23 +294,24 @@ public final class PulseStore: Sendable {
     }
 
     // conversation cache
-    public func upsert(conversations: [PulseConversation]) throws {
+    public func upsert(conversations: [PulseConversation], replacingSnapshot: Bool = false) throws {
         try dbQueue.write { db in
+            if replacingSnapshot { try db.execute(sql: "DELETE FROM conversation") }
             for c in conversations {
                 try db.execute(
                     sql: """
                     INSERT INTO conversation (id, kind, title, lastMessagePreview, lastActivityAt,
-                                              unreadCount, isPinned, isMuted, isArchived)
-                    VALUES (:id, :kind, :title, :preview, :activity, :unread, :pinned, :muted, :archived)
+                                              unreadCount, isPinned, isMuted, isArchived, wireJson)
+                    VALUES (:id, :kind, :title, :preview, :activity, :unread, :pinned, :muted, :archived, :wire)
                     ON CONFLICT(id) DO UPDATE SET
                       kind=:kind, title=:title, lastMessagePreview=:preview, lastActivityAt=:activity,
-                      unreadCount=:unread, isPinned=:pinned, isMuted=:muted, isArchived=:archived
+                      unreadCount=:unread, isPinned=:pinned, isMuted=:muted, isArchived=:archived, wireJson=:wire
                     """,
                     arguments: [
                         "id": c.id, "kind": String(describing: c.kind), "title": c.title,
                         "preview": c.lastMessagePreview, "activity": c.lastActivityAt,
                         "unread": c.unreadCount, "pinned": c.isPinned, "muted": c.isMuted,
-                        "archived": c.isArchived,
+                        "archived": c.isArchived, "wire": c.wireJson,
                     ],
                 )
             }
@@ -1095,9 +1100,14 @@ struct PulseConversationRow: Codable, FetchableRecord, PersistableRecord, TableR
     var isPinned: Bool
     var isMuted: Bool
     var isArchived: Bool
+    var wireJson: String?
 
     func toDomain() -> PulseConversation {
-        PulseConversation(
+        if let wireJson, let data = wireJson.data(using: .utf8),
+           let summary = try? JSONDecoder().decode(WireConversationSummary.self, from: data) {
+            return summary.removingExpiredSummary().toDomain()
+        }
+        return PulseConversation(
             id: id,
             kind: PulseConversation.Kind(rawValue: kind) ?? .DM,
             title: title,
@@ -1108,6 +1118,7 @@ struct PulseConversationRow: Codable, FetchableRecord, PersistableRecord, TableR
             isPinned: isPinned,
             isMuted: isMuted,
             isArchived: isArchived,
+            wireJson: wireJson,
         )
     }
 }

@@ -85,6 +85,8 @@ data class ConversationEntity(
     val otherUserId: String?,
     val isChannel: Boolean,
     @ColumnInfo(defaultValue = "[]") val membersJson: String = "[]",
+    val lastMessageExpiresAtEpochMs: Long? = null,
+    @ColumnInfo(defaultValue = "'[]'") val unreadExpirationsJson: String = "[]",
 ) {
     fun toDomain() = Conversation(
         id = id,
@@ -118,6 +120,10 @@ data class ConversationEntity(
         mutedUntilEpoch = mutedUntilEpoch,
         otherUserId = otherUserId,
         isChannel = isChannel,
+        lastMessageExpiresAtEpochMs = lastMessageExpiresAtEpochMs,
+        unreadExpirations = runCatching {
+            app.pulse.protocol.PulseJson.decodeFromString(kotlinx.serialization.builtins.ListSerializer(app.pulse.domain.model.UnreadExpiration.serializer()), unreadExpirationsJson)
+        }.getOrDefault(emptyList()),
     )
 
     companion object {
@@ -148,6 +154,8 @@ data class ConversationEntity(
             mutedUntilEpoch = m.mutedUntilEpoch,
             otherUserId = m.otherUserId,
             isChannel = m.isChannel,
+            lastMessageExpiresAtEpochMs = m.lastMessageExpiresAtEpochMs,
+            unreadExpirationsJson = app.pulse.protocol.PulseJson.encodeToString(kotlinx.serialization.builtins.ListSerializer(app.pulse.domain.model.UnreadExpiration.serializer()), m.unreadExpirations),
             membersJson = app.pulse.protocol.PulseJson.encodeToString(
                 kotlinx.serialization.builtins.ListSerializer(ConversationMember.serializer()),
                 m.members,
@@ -616,6 +624,10 @@ data class DraftEntity(
 
 @Dao
 interface ConversationDao {
+    /** Used inside snapshot replacement's transaction; no SQL variable limit for large inboxes. */
+    @Query("DELETE FROM conversations WHERE id != :localId")
+    suspend fun clearServerSnapshot(localId: String)
+
     @Query("SELECT * FROM conversations ORDER BY isPinned DESC, lastActivityAt DESC")
     fun observeAll(): Flow<List<ConversationEntity>>
 
@@ -964,7 +976,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1104,6 +1116,15 @@ abstract class PulseDatabase : RoomDatabase() {
                 // Wave 7 rich-object carriers (red packet / game / tournament) -
                 // the raw payload JSON must survive offline restarts.
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
+            }
+        }
+
+        /** Old preview caches lack expiry provenance; retire only derived inbox data. */
+        val MIGRATION_12_13: Migration = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE conversations ADD COLUMN lastMessageExpiresAtEpochMs INTEGER")
+                db.execSQL("ALTER TABLE conversations ADD COLUMN unreadExpirationsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("UPDATE conversations SET lastMessagePreview = NULL, lastMessageAuthorName = NULL, lastMessageKind = NULL, unreadCount = 0, lastMessageMine = 0, lastMessageDeleted = 0, lastMessageIsReply = 0, lastMessageIsImage = 0, lastMessageIsAudio = 0, lastMessageIsFile = 0, lastMessageFileName = NULL")
             }
         }
 

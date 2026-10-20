@@ -1,5 +1,6 @@
 package app.pulse.data.repository
 
+import app.pulse.domain.sync.withConversationExpiry
 import app.pulse.domain.sync.withMessageExpiry
 
 import app.pulse.protocol.objectPayloadText
@@ -661,7 +662,7 @@ class PulseRepositoryImpl constructor(
                 val conversation = row.toDomain()
                 local[conversation.id]?.let { conversation.copy(myDraft = it) } ?: conversation
             }.filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
-        }
+        }.withConversationExpiry()
 
     override fun observeMessages(conversationId: String): Flow<List<Message>> =
         messageDao.observeFor(conversationId).map { rows -> rows.map { it.toDomain() } }.withMessageExpiry()
@@ -679,12 +680,30 @@ class PulseRepositoryImpl constructor(
 
     override fun events(): Flow<PulseEvent> = eventsBus.asSharedFlow()
 
-    override suspend fun refreshConversations(): Result<Unit> = when (val r = api.conversations(viewerId ?: "")) {
-        is PulseResult.Success -> {
-            conversationDao.upsertAll(r.value.conversations.map { ConversationEntity.from(it.toDomain(viewerId)) })
-            Result.success(Unit)
+    private val inboxRefreshVersion = java.util.concurrent.atomic.AtomicLong()
+
+    private suspend fun cacheConversation(dto: ConversationSummaryDto): Conversation = database.withTransaction {
+        inboxRefreshVersion.incrementAndGet() // pre-mutation list responses cannot erase a created/updated room
+        val previous = conversationDao.byId(dto.id)?.toDomain()
+        dto.toDomain(viewerId, previous).also { conversationDao.upsertAll(listOf(ConversationEntity.from(it))) }
+    }
+
+    override suspend fun refreshConversations(): Result<Unit> {
+        val version = inboxRefreshVersion.incrementAndGet()
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        return when (val r = api.conversations(owner)) {
+            is PulseResult.Success -> {
+                database.withTransaction {
+                    if (version == inboxRefreshVersion.get() && owner == viewerId) {
+                        val rows = r.value.conversations.map { ConversationEntity.from(it.toDomain(owner)) }
+                        conversationDao.clearServerSnapshot(app.pulse.domain.model.PulseDemo.CONVERSATION_ID)
+                        conversationDao.upsertAll(rows)
+                    }
+                }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
-        is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
     }
 
     override suspend fun refreshMessages(conversationId: String, limit: Int): Result<Unit> =
@@ -957,7 +976,7 @@ class PulseRepositoryImpl constructor(
     private suspend fun createConversation(memberIds: List<String>, isGroup: Boolean, name: String?): Result<Conversation> =
         when (val r = api.createConversation(viewerId ?: "", memberIds, isGroup, name)) {
             is PulseResult.Success -> {
-                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                cacheConversation(r.value)
                 Result.success(r.value.toDomain(viewerId))
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -1583,8 +1602,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun conversationDetail(conversationId: String): Result<Conversation> =
         when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
             is PulseResult.Success -> {
-                val conversation = r.value.toDomain(viewerId)
-                conversationDao.upsertAll(listOf(ConversationEntity.from(conversation)))
+                val conversation = cacheConversation(r.value)
                 Result.success(conversation)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -1597,7 +1615,7 @@ class PulseRepositoryImpl constructor(
         when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
             is PulseResult.Success -> {
                 val dto = r.value
-                conversationDao.upsertAll(listOf(ConversationEntity.from(dto.toDomain(viewerId))))
+                cacheConversation(dto)
                 Result.success(
                     GroupMeta(
                         myRole = dto.members.firstOrNull { it.id == viewerId }?.role,
@@ -1635,7 +1653,7 @@ class PulseRepositoryImpl constructor(
     ): Result<Unit> =
         when (val r = api.patchConversation(conversationId, viewerId ?: "", name = name, broadcast = broadcast, screenPrivacy = screenPrivacy)) {
             is PulseResult.Success -> {
-                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                cacheConversation(r.value)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -1661,7 +1679,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit> =
         when (val r = api.patchConversation(conversationId, viewerId ?: "", photo = normalizeUploadPath(photoPath))) {
             is PulseResult.Success -> {
-                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                cacheConversation(r.value)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -1754,7 +1772,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun setMemberRole(conversationId: String, userId: String, promote: Boolean): Result<Unit> =
         when (val r = api.promoteDemote(conversationId, viewerId ?: "", userId, promote)) {
             is PulseResult.Success -> {
-                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                cacheConversation(r.value)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -1785,7 +1803,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun setDisappearingTtl(conversationId: String, ttlSeconds: Int): Result<Int> =
         when (val r = api.setDisappearingTtl(conversationId, viewerId ?: "", ttlSeconds)) {
             is PulseResult.Success -> {
-                conversationDao.upsertAll(listOf(ConversationEntity.from(r.value.toDomain(viewerId))))
+                cacheConversation(r.value)
                 Result.success(r.value.ttlSeconds ?: ttlSeconds)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
@@ -2082,8 +2100,11 @@ class PulseRepositoryImpl constructor(
      * instantly and the server call + refresh reconcile the truth afterwards.
      */
     private suspend fun mutateConversation(id: String, transform: (Conversation) -> Conversation) {
-        val row = conversationDao.byId(id) ?: return
-        conversationDao.upsertAll(listOf(ConversationEntity.from(transform(row.toDomain()))))
+        database.withTransaction {
+            val row = conversationDao.byId(id) ?: return@withTransaction
+            inboxRefreshVersion.incrementAndGet()
+            conversationDao.upsertAll(listOf(ConversationEntity.from(transform(row.toDomain()))))
+        }
     }
 
     override suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit> {
@@ -2169,8 +2190,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun createSelfChat(): Result<Conversation> =
         when (val r = api.createSelfChat(viewerId ?: "")) {
             is PulseResult.Success -> {
-                val conversation = r.value.toDomain(viewerId)
-                conversationDao.upsertAll(listOf(ConversationEntity.from(conversation)))
+                val conversation = cacheConversation(r.value)
                 Result.success(conversation)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -3548,7 +3568,7 @@ class PulseRepositoryImpl constructor(
 
 // wire → domain mappers (kept beside the cache they feed)
 
-fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
+fun ConversationSummaryDto.toDomain(viewerId: String?, previous: Conversation? = null): Conversation {
     val others = members.filter { it.id != viewerId }
     val title = name
         ?: others.firstOrNull()?.name
@@ -3566,7 +3586,7 @@ fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
     val isAudio = !isImage && last?.audioPath != null && collapsed.isEmpty()
     val isFile = !isImage && !isAudio && last?.kind == "file" && last?.filePath != null
     val mutedEpoch = PulseTime.epochMs(mutedUntil)
-    return Conversation(
+    val mapped = Conversation(
         id = id,
         kind = kind,
         title = title,
@@ -3576,7 +3596,12 @@ fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
         lastMessageKind = last?.kind,
         // Web row stamp prefers the last message's time, falling back to updatedAt.
         lastActivityAt = last?.createdAt ?: updatedAt,
-        unreadCount = unreadCount,
+        unreadCount = unreadCount ?: 0,
+        lastMessageExpiresAtEpochMs = PulseTime.epochMs(last?.expiresAt).takeIf { it > 0 },
+        unreadExpirations = unreadExpirations.mapNotNull {
+            val deadline = PulseTime.epochMs(it.expiresAt)
+            if (deadline > 0 && it.count > 0) app.pulse.domain.model.UnreadExpiration(deadline, it.count) else null
+        },
         isPinned = !pinnedAt.isNullOrBlank(),
         // Mute truth = the window is in the future, not merely non-null (spec §7.4).
         isMuted = mutedEpoch > System.currentTimeMillis(),
@@ -3609,6 +3634,27 @@ fun ConversationSummaryDto.toDomain(viewerId: String?): Conversation {
                 role = dto.role,
             )
         },
+    )
+    // Detail endpoints omit lastMessage/unread and viewer pin/archive fields.
+    // Opening room info must not wipe the inbox preview, badge or expiry schedule.
+    if (unreadCount != null || previous == null) return mapped
+    return mapped.copy(
+        lastMessagePreview = previous.lastMessagePreview,
+        lastMessageAuthorName = previous.lastMessageAuthorName,
+        lastMessageKind = previous.lastMessageKind,
+        lastActivityAt = previous.lastActivityAt,
+        unreadCount = previous.unreadCount,
+        unreadExpirations = previous.unreadExpirations,
+        lastMessageExpiresAtEpochMs = previous.lastMessageExpiresAtEpochMs,
+        lastMessageMine = previous.lastMessageMine,
+        lastMessageDeleted = previous.lastMessageDeleted,
+        lastMessageIsReply = previous.lastMessageIsReply,
+        lastMessageIsImage = previous.lastMessageIsImage,
+        lastMessageIsAudio = previous.lastMessageIsAudio,
+        lastMessageIsFile = previous.lastMessageIsFile,
+        lastMessageFileName = previous.lastMessageFileName,
+        isPinned = previous.isPinned, isArchived = previous.isArchived,
+        isMuted = previous.isMuted, mutedUntilEpoch = previous.mutedUntilEpoch,
     )
 }
 
