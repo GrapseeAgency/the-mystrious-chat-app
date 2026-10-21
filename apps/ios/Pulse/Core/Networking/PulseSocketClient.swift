@@ -8,6 +8,7 @@ import SocketIO
 /// packages/protocol/src/contracts.ts (SERVER_EVENTS), re-emits `join` on
 /// every (re)connect (socket.io always fires a fresh `.connect` after a
 /// successful reconnect), and surfaces the connection state as a signal.
+@MainActor
 public final class PulseSocketClient {
     public enum Signal {
         case connectionState(connected: Bool)
@@ -68,7 +69,7 @@ public final class PulseSocketClient {
         manager = SocketManager(
             socketURL: socketURL,
             config: [
-                .log(false), .reconnects(true),
+                .handleQueue(.main), .log(false), .reconnects(true),
                 .reconnectWait(1), .reconnectWaitMax(5),
                 .connectParams(["XTransformPort": "3003"]),
             ],
@@ -79,8 +80,14 @@ public final class PulseSocketClient {
     public var signals: ((Signal) -> Void)?
 
     public func connect(userId: String, token: String? = nil) {
+        // SDK handlers/state must be accessed only on manager.handleQueue.
+        // A second explicit connect must not accumulate duplicate event handlers.
+        if lastUserId == userId, lastToken == token, socket.status == .connected { return }
+        socket.removeAllHandlers()
+        if lastUserId != nil { socket.disconnect() }
         lastUserId = userId
         lastToken = token
+        signals?(.connectionState(connected: false))
 
         socket.on(clientEvent: .connect) { [weak self] _, _ in
             guard let self else { return }
@@ -90,19 +97,16 @@ public final class PulseSocketClient {
             if let payload = self.joinPayload() {
                 self.socket.emit("join", payload)
             }
-            self.signals?(.connectionState(connected: true))
+            // A transport connection is not a joined user room. Wait for joined.
+            self.signals?(.connectionState(connected: false))
         }
         socket.on(clientEvent: .disconnect) { [weak self] _, _ in
             self?.signals?(.connectionState(connected: false))
         }
         socket.on(clientEvent: .reconnect) { [weak self] _, _ in
-            // The transport just dropped and a retry is scheduled (v16 fires
-            // `.reconnect` when the socket ENTERS the reconnecting state).
-            // Emits made while disconnected are buffered and flushed the
-            // moment the reconnect lands - re-joining here restores the user
-            // room even if the .connect handler below were to race.
-            guard let self, let payload = self.joinPayload() else { return }
-            self.socket.emit("join", payload)
+            // v16 emits reconnect while DISCONNECTED; emit() rejects rather than
+            // buffers. The next .connect sends join exactly once.
+            self?.signals?(.connectionState(connected: false))
         }
 
         // Wave 8 - token gate refusal. The relay emits
@@ -112,6 +116,7 @@ public final class PulseSocketClient {
             let obj = data.first as? [String: Any]
             let message = obj?["error"] as? String
                 ?? "Session token is invalid or has been rotated. Log in again."
+            self?.signals?(.connectionState(connected: false))
             self?.signals?(.joinError(message: message))
         }
 
@@ -119,6 +124,7 @@ public final class PulseSocketClient {
             guard let obj = data.first as? [String: Any],
                   let ids = obj["onlineUserIds"] as? [String] else { return }
             self?.signals?(.joined(onlineUserIds: ids))
+            self?.signals?(.connectionState(connected: true))
         }
         socket.on("presence:snapshot") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any],
@@ -284,9 +290,8 @@ public final class PulseSocketClient {
     /// call:ice / call:reject / call:cancel / call:hangup - and, 3-d, the
     /// gcall:* family; the emit path is the same generic funnel). The payload
     /// shape is built by CallWire / GroupCallWire (unit-tested against the
-    /// relay's validation). Emits made while disconnected are buffered by
-    /// socket.io and flushed on the next reconnect (same semantics the join
-    /// re-emit relies on).
+    /// relay's validation). Socket.IO v16 rejects emits while disconnected;
+    /// call owners must not assume signaling is a durable offline queue.
     public func emitCallSignal(event: String, payload: [String: Any]) {
         socket.emit(event, payload)
     }
@@ -295,9 +300,8 @@ public final class PulseSocketClient {
     //
     // All 14 C→S rooms events. Payloads come from VoiceRoomWire (pure,
     // unit-tested in VoiceRoomWireTests - the EXACT shapes the relay
-    // validates). Best-effort like emitTyping: never throws, emits made
-    // while disconnected are buffered by socket.io and flushed on the
-    // next reconnect.
+    // validates). Best-effort like emitTyping: disconnected emits are rejected,
+    // not replayed on reconnect. Room owners rejoin after relay readiness.
 
     public func emitVoiceJoin(conversationId: String, userId: String, name: String, username: String?, color: String?) {
         socket.emit(PulseSocketEvents.voiceJoin.rawValue, VoiceRoomWire.voiceJoin(
@@ -386,6 +390,8 @@ public final class PulseSocketClient {
 
     public func disconnect() {
         lastUserId = nil
+        lastToken = nil
+        signals?(.connectionState(connected: false))
         socket.disconnect()
         socket.removeAllHandlers()
     }

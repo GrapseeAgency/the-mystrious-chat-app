@@ -18,6 +18,7 @@ import Foundation
 ///   2. second participant joins → presence:snapshot contains BOTH ids
 ///   3. typing emitted from the peer → relay arrives
 ///   4. POST /notify → message:new envelope arrives (decode parity asserted)
+@MainActor
 final class SocketRoundTripTests: XCTestCase {
     private let viewerId = "ios-w0-a"
     private let peerId = "peer-b"
@@ -63,13 +64,21 @@ final class SocketRoundTripTests: XCTestCase {
         let notifyArrived = expectation(description: "POST /notify message:new arrived")
 
         let clientA = PulseSocketClient(socketURL: base)
+        let clientB = PulseSocketClient(socketURL: base)
+        defer { clientA.disconnect(); clientB.disconnect() }
+        var acceptedJoin = false
+        var fulfilledJoin = false
         // Explicit `self.x` capture expressions - no ambiguity about whether
         // a bare `[prop]` capture-list shorthand resolves instance properties,
         // and the closure retains only the values (not the test case).
         clientA.signals = { [viewerId = self.viewerId, peerId = self.peerId, conversationId = self.conversationId] signal in
             switch signal {
             case .joined(let ids):
-                if ids.contains(viewerId) { joinedA.fulfill() }
+                acceptedJoin = true
+                if ids.contains(viewerId), !fulfilledJoin { fulfilledJoin = true; joinedA.fulfill() }
+            case .connectionState(let connected):
+                if connected { XCTAssertTrue(acceptedJoin, "Readiness requires accepted join, not just transport") }
+                else { acceptedJoin = false }
             case .presenceSnapshot(let ids):
                 if ids.contains(viewerId) && ids.contains(peerId) { presenceBoth.fulfill() }
             case .typing(let convId, let userId, _, let isTyping):
@@ -91,7 +100,6 @@ final class SocketRoundTripTests: XCTestCase {
         await fulfillment(of: [joinedA], timeout: 30)
 
         // 2. Client B - second participant shows up in presence.
-        let clientB = PulseSocketClient(socketURL: base)
         clientB.connect(userId: peerId)
         await fulfillment(of: [presenceBoth], timeout: 10)
 
@@ -132,7 +140,5 @@ final class SocketRoundTripTests: XCTestCase {
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         await fulfillment(of: [notifyArrived], timeout: 10)
 
-        clientA.disconnect()
-        clientB.disconnect()
     }
 }

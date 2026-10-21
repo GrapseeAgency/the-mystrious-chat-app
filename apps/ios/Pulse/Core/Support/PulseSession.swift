@@ -824,7 +824,8 @@ public final class PulseSession: ObservableObject {
     private func handle(_ signal: PulseSocketClient.Signal) {
         switch signal {
         case .joined(let ids), .presenceSnapshot(let ids):
-            connected = true
+            // Presence broadcasts can precede our own accepted join. Only the
+            // socket's post-ack readiness signal can enable realtime actions.
             onlineUserIds = Set(ids)
         case .joinError(let message):
             // Wave 8 - the relay verified our presented join token and

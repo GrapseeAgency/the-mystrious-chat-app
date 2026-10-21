@@ -13,6 +13,7 @@ import Foundation
 ///   3. B trickles ICE → A receives call:ice (flat candidate triple)
 ///   4. A hangs up → B receives call:hangup with durationSec
 ///   5. Identity gate: a spoofed `from` ≠ joined id is DROPPED by the relay
+@MainActor
 final class CallSignalingRoundTripTests: XCTestCase {
     private let callerId = "ios-w3-caller"
     private let calleeId = "ios-w3-callee"
@@ -52,8 +53,23 @@ final class CallSignalingRoundTripTests: XCTestCase {
 
         let caller = PulseSocketClient(socketURL: base)
         let callee = PulseSocketClient(socketURL: base)
+        defer { caller.disconnect(); callee.disconnect() }
+        let callerJoined = expectation(description: "caller joined")
+        let calleeJoined = expectation(description: "callee joined")
+        var callerReady = false, calleeReady = false
+        var callerJoinedOnce = false, calleeJoinedOnce = false
 
         caller.signals = { [conversationId = self.conversationId] signal in
+            if case .joined = signal {
+                callerReady = true
+                if !callerJoinedOnce { callerJoinedOnce = true; callerJoined.fulfill() }
+                return
+            }
+            if case .connectionState(let connected) = signal {
+                if connected { XCTAssertTrue(callerReady, "Transport must not report relay readiness before join ACK") }
+                else { callerReady = false }
+                return
+            }
             guard case .callSignal(let event, let raw) = signal else { return }
             switch event {
             case "call:answer":
@@ -66,6 +82,16 @@ final class CallSignalingRoundTripTests: XCTestCase {
         }
 
         callee.signals = { [conversationId = self.conversationId, callerId = self.callerId] signal in
+            if case .joined = signal {
+                calleeReady = true
+                if !calleeJoinedOnce { calleeJoinedOnce = true; calleeJoined.fulfill() }
+                return
+            }
+            if case .connectionState(let connected) = signal {
+                if connected { XCTAssertTrue(calleeReady, "Transport must not report relay readiness before join ACK") }
+                else { calleeReady = false }
+                return
+            }
             guard case .callSignal(let event, let raw) = signal else { return }
             switch event {
             case "call:offer":
@@ -84,14 +110,6 @@ final class CallSignalingRoundTripTests: XCTestCase {
             }
         }
 
-        let callerJoined = expectation(description: "caller joined")
-        let calleeJoined = expectation(description: "callee joined")
-        caller.signals = { signal in
-            if case .joined = signal { callerJoined.fulfill() }
-        }
-        callee.signals = { signal in
-            if case .joined = signal { calleeJoined.fulfill() }
-        }
         caller.connect(userId: callerId)
         callee.connect(userId: calleeId)
         // The relay targets `user:<id>` rooms - both parties must have JOINED
@@ -99,38 +117,6 @@ final class CallSignalingRoundTripTests: XCTestCase {
         // 30s: the CI fixture cold-boots + two full handshakes; the warm
         // SocketRoundTripTests run measured 19.8s on the same runner.
         await fulfillment(of: [callerJoined, calleeJoined], timeout: 30)
-
-        // Re-arm the payload observers (signals is a single callback).
-        caller.signals = { [conversationId = self.conversationId] signal in
-            guard case .callSignal(let event, let raw) = signal else { return }
-            switch event {
-            case "call:answer":
-                if (raw["sdp"] as? String)?.isEmpty == false { answerArrived.fulfill() }
-            case "call:ice":
-                if conversationId == (raw["conversationId"] as? String) { iceArrived.fulfill() }
-            default:
-                break
-            }
-        }
-
-        callee.signals = { [conversationId = self.conversationId, callerId = self.callerId] signal in
-            guard case .callSignal(let event, let raw) = signal else { return }
-            switch event {
-            case "call:offer":
-                if raw["sdp"] as? String == "offer-sdp"
-                    && raw["callerName"] as? String == "Caller"
-                    && raw["from"] as? String == callerId
-                    && raw["conversationId"] as? String == conversationId {
-                    offerArrived.fulfill()
-                }
-            case "call:hangup":
-                if (raw["durationSec"] as? Double) == 12 || (raw["durationSec"] as? Int) == 12 {
-                    hangupArrived.fulfill()
-                }
-            default:
-                break
-            }
-        }
 
         // 1. Offer - caller → callee (identity decoration rides along).
         caller.emitCallSignal(
@@ -214,7 +200,5 @@ final class CallSignalingRoundTripTests: XCTestCase {
         )
         await fulfillment(of: [spoofArrived], timeout: 3)
 
-        caller.disconnect()
-        callee.disconnect()
     }
 }

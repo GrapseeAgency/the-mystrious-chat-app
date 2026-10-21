@@ -2038,3 +2038,40 @@ root/room/expiry cases and transaction-client/conflict mapping checks. Full serv
 whole application). Four changed native files syntax-parse; that is not compilation or
 runtime validation. Unbounded thread paging, global membership revocation, exports and
 public media URL authorization remain open. No autumn styling changes.
+
+## 2026-10-21 — realtime readiness is accepted join, not socket transport
+
+Continuing the runtime trace found both native clients publishing connected=true from
+the transport connect callback before the relay's asynchronous user-join validation.
+Actions driven by that flag could run before user-room routing existed. Swift also set
+connected=true from any presence broadcast, even before its own accepted join.
+
+- Android publishes readiness only after a decoded joined acknowledgement; isJoined
+  includes that acknowledgement. Disconnect/error/rejection resets it. Connection
+  replacement and readiness callbacks share a monitor so a retired socket cannot flip
+  the new socket's readiness after its identity check.
+- Swift publishes readiness after joined, not transport/presence. Its Socket.IO wrapper
+  is MainActor-isolated and explicitly uses handleQueue(.main); explicit reconnect setup
+  replaces handlers rather than stacking them. Removed the extra disconnected reconnect
+  join emit; the next transport connect sends join once. No automatic offline signaling
+  replay was invented.
+- Socket.IO v16 source explicitly says the client is not queue-safe and rejects emit
+  unless status==connected. Its option contract requires a serial handleQueue. References:
+  https://github.com/socketio/socket.io-client-swift/blob/v16.1.0/Source/SocketIO/Client/SocketIOClient.swift
+  https://github.com/socketio/socket.io-client-swift/blob/v16.1.0/Source/SocketIO/Client/SocketIOClientOption.swift
+- Swift relay/call round-trip tests now use that actor boundary, assert readiness cannot
+  precede joined, keep one observer rather than replacing it between phases, and always
+  disconnect their clients through defer. No timeout was increased or failure skipped.
+
+Execution evidence: 1ac720f iOS archive passed, but its unit job failed with call-relay
+join/offer timeouts (not the previously corrected storage assertions); another socket
+round-trip was skipped because its health probe did not find the fixture. Full logs could
+not be fetched through the available network hosts. This readiness/queue repair is a
+confirmed source-level defect, not a claim to have proven the cause of those timeouts.
+fa92095's iOS archive has passed; its tests and Android jobs were still in progress at
+last inspection. This tranche's five native files syntax-parse; native execution remains
+required. Server code is unchanged from the 110/110 run in 7d3e4c3. Theme untouched.
+
+Still open: disconnected 1:1 call signaling has no durable replay/ack contract; complete
+reconnect and lifecycle behavior needs further tracing. Large-thread API/cache pagination
+has not yet been repaired. These are not whole-app completion claims.
