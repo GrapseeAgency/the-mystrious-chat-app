@@ -28,3 +28,17 @@ struct PulseThreadValidationFence {
         if isCurrent(rootId, ticket) { tickets.removeValue(forKey: rootId) }
     }
 }
+
+/// A local SQLite cursor includes pending local_ IDs too. It is not a server history cursor.
+struct PulseCachedThreadCursor: Equatable {
+    let roomId: String
+    let rootId: String
+    let createdAt: String
+    let id: String
+}
+
+struct PulseCachedThreadPage {
+    let messages: [WireChatMessage]
+    let cursor: PulseCachedThreadCursor?
+    let hasMore: Bool
+}

@@ -2121,3 +2121,30 @@ Physical camera, microphone, Bluetooth/audio routing and two-device ICE remain u
 Remaining: server acknowledgement/idempotency for call signaling, full reconnect/group
 mesh lifecycle, pending call UX while a DM lookup is running, thread paging, and broader
 media/export revocation. This is not a whole-app or call-stack completion claim.
+
+
+## 2026-10-21 — offline Swift thread history beyond the initial window
+
+ThreadView loaded only the latest 300 saved replies before attempting the network.
+An offline user could neither scroll to older saved replies nor open an older cached
+search/deep-link target. Added scoped SQLite keyset paging over raw (createdAt,id),
+including pending local IDs, without relying on the anchor still existing. The query
+checks the live canonical root, persistent refusal, reply expiry, and failed-echo
+ledger on every page. Removed/undecodable anchors cannot stall cursor advancement.
+
+ThreadView now offers earlier saved replies with stable-ID prepend anchoring, keeps
+an expanded cursor across reconnect loads, and searches subsequent saved pages for
+an offline target with cancellation/session fencing. Cache absence is reported as
+not saved offline, not proof of remote deletion. Denial/pruning clears page state.
+The existing autumn appearance is unchanged. The server still returns an unbounded
+thread snapshot: this repairs offline reachability, not server/API pagination.
+
+Added GRDB regressions for 450 timestamp-tied replies, a deleted page anchor and new
+arrival between pages, pending/failed echoes, foreign room/cursor isolation, and
+root expiry/refusal between reads. Syntax parsing and execution of the actual SQL
+against Python SQLite passed; these are not Swift compilation or device evidence.
+
+Native Actions for the preceding call tranche exposed two Kotlin assertions: the
+pre-offer microphone guard had not actually been applied, and a hangup fixture had
+not dispatched its offer. c1a6811 applies the missing runtime guard and makes that
+fixture explicitly exercise an already-dispatched call. Native rerun pending.
