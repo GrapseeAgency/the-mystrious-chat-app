@@ -14,8 +14,9 @@ enum PulseThreadNavigation {
     /// superseded validation. Only an actual transport failure permits this path.
     static func mayUseOfflineCache(after error: Error) -> Bool {
         if let network = error as? URLError {
-            return [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost,
-                    .cannotConnectToHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff].contains(network.code)
+            let transportCodes: [URLError.Code] = [.notConnectedToInternet, .networkConnectionLost, .timedOut,
+                .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff]
+            return transportCodes.contains(network.code)
         }
         if let failure = error as? PulseAPIClient.Failure { return failure.kind == .network && failure.status == nil }
         return false

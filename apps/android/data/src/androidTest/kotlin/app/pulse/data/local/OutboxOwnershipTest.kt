@@ -115,6 +115,7 @@ class OutboxOwnershipTest {
             db.outboxDao().insert(OutboxEntity.from(OutboxEntry(conversationId = "room", clientId = "failed",
                 content = "Reply", createdAt = root.createdAt)))
             db.outboxDao().markFailed("failed", "rejected")
+            assertEquals(listOf("root"), db.messageDao().cachedThreadTargetRows("room", "root", "local_failed").map { it.id })
             db.messageDao().upsertAll(listOf(MessageEntity.from(reply))) // duplicate relay
             fun counts(rows: List<MessageEntity>) = app.pulse.domain.sync.cachedThreadReplyCounts(rows.map { it.toDomain() })
             assertEquals(mapOf("root" to 1), counts(db.messageDao().observeFor("room").first()))
