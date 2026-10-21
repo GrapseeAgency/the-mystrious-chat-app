@@ -168,6 +168,7 @@ class CallStateMachineTest {
         val sm = machine(clock)
         sm.dispatch(CallEvent.StartOutgoing("c1", peer, CallKind.VOICE, "Alice", "emerald", null))
 
+        sm.dispatch(CallEvent.OfferReady("v=0 offer"))
         clock.advance(CallStateMachine.RING_TIMEOUT_MS - 1_000)
         assertTrue(sm.poll().isEmpty())
         clock.advance(2_000)
@@ -201,15 +202,15 @@ class CallStateMachineTest {
     }
 
     @Test
-    fun `mic denied before offer writes missed with no cancel signal`() {
+    fun `mic denied before offer does not invent a missed call`() {
         val clock = FakeClock()
         val sm = machine(clock)
         sm.dispatch(CallEvent.StartOutgoing("c1", peer, CallKind.VOICE, "Alice", "emerald", null))
         val effects = sm.dispatch(CallEvent.MediaFailed("permission"))
         assertTrue(effects.none { it is CallEffect.SendCancel })
         assertTrue(CallEffect.ReleaseMedia in effects)
-        val row = effects.filterIsInstance<CallEffect.WriteLog>().single().entry
-        assertEquals(CallStatus.MISSED, row.status)
+        assertTrue(effects.none { it is CallEffect.WriteLog })
+        assertNull(sm.snapshot.value.outcome)
         assertEquals(CallStateMachine.MIC_DENIED_MESSAGE, sm.snapshot.value.error)
     }
 
@@ -587,5 +588,71 @@ class CallStateMachineTest {
         assertEquals(CallStatus.COMPLETED, CallLogMapper.statusOf(CallOutcome.COMPLETED))
         assertEquals(CallStatus.MISSED, CallLogMapper.statusOf(CallOutcome.MISSED))
         assertEquals(CallStatus.DECLINED, CallLogMapper.statusOf(CallOutcome.DECLINED))
+    }
+
+    @Test fun `viewer rebind clears old call and new signals carry the new identity`() {
+        val sm = machine(FakeClock())
+        sm.dispatch(CallEvent.StartOutgoing("c1", peer, CallKind.VOICE, "Me", null, null))
+        val old = sm.snapshot.value.callId!!
+        sm.dispatch(CallEvent.Cancel)
+        sm.resetViewer("second")
+        assertEquals(CallState.IDLE, sm.snapshot.value.state)
+        assertTrue(sm.dispatch(CallEvent.AnswerReceived(old, "old-sdp")).isEmpty())
+        sm.dispatch(CallEvent.StartOutgoing("c2", peer, CallKind.VOICE, "Second", null, null))
+        val send = sm.dispatch(CallEvent.OfferReady("new-sdp")).filterIsInstance<CallEffect.SendOffer>().single()
+        assertEquals("second", send.from)
+        assertEquals("c2", send.conversationId)
+        sm.dispatch(CallEvent.Cancel)
+        sm.resetViewer(null)
+        assertTrue(sm.dispatch(CallEvent.StartOutgoing("c1", peer, CallKind.VOICE, "Me", null, null)).isEmpty())
+    }
+
+    @Test fun `cancel or SDP failure before offer releases media without signaling or missed log`() {
+        for (event in listOf(CallEvent.Cancel, CallEvent.PreparationFailed("SDP rejected"))) {
+            val sm = machine(FakeClock())
+            sm.dispatch(CallEvent.StartOutgoing("c1", peer, CallKind.VOICE, "Me", null, null))
+            val effects = sm.dispatch(event)
+            assertEquals(listOf(CallEffect.ReleaseMedia), effects)
+            assertEquals(CallState.ENDED, sm.snapshot.value.state)
+            assertNull(sm.snapshot.value.outcome)
+            assertTrue(sm.dispatch(CallEvent.OfferReady("late-sdp")).isEmpty())
+        }
+    }
+
+    @Test fun `setup timeout before local SDP does not report the peer as unanswered`() {
+        val clock = FakeClock()
+        val sm = machine(clock)
+        sm.dispatch(CallEvent.StartOutgoing("c1", peer, CallKind.VOICE, "Me", null, null))
+        clock.advance(CallStateMachine.RING_TIMEOUT_MS + 1)
+        assertEquals(listOf(CallEffect.ReleaseMedia), sm.poll())
+        assertNull(sm.snapshot.value.outcome)
+        assertEquals("Call setup timed out. Try again.", sm.snapshot.value.error)
+    }
+
+    @Test fun `peer failure and connect timeout always release media exactly once`() {
+        for (timeout in listOf(false, true)) {
+            val clock = FakeClock()
+            val sm = machine(clock)
+            sm.dispatch(CallEvent.StartOutgoing("c1", peer, CallKind.VOICE, "Me", null, null))
+            sm.dispatch(CallEvent.OfferReady("offer"))
+            sm.dispatch(CallEvent.AnswerReceived(sm.snapshot.value.callId!!, "answer"))
+            val effects = if (timeout) { clock.advance(CallStateMachine.CONNECT_TIMEOUT_MS + 1); sm.poll() }
+                else sm.dispatch(CallEvent.PeerFailed)
+            assertEquals(1, effects.count { it == CallEffect.ReleaseMedia })
+            assertEquals(1, effects.filterIsInstance<CallEffect.WriteLog>().size)
+            assertTrue(sm.dispatch(CallEvent.PeerFailed).isEmpty())
+            assertTrue(sm.poll().isEmpty())
+        }
+    }
+
+    @Test fun `callee SDP failure rejects and releases without writing a caller row`() {
+        val sm = machine(FakeClock())
+        sm.dispatch(CallEvent.IncomingOffer("incoming", "room", "peer", CallKind.VOICE, "offer", "Peer", null, null))
+        sm.dispatch(CallEvent.Accept)
+        val effects = sm.dispatch(CallEvent.PreparationFailed("Remote SDP rejected"))
+        assertEquals(1, effects.filterIsInstance<CallEffect.SendReject>().size)
+        assertEquals(1, effects.count { it == CallEffect.ReleaseMedia })
+        assertTrue(effects.none { it is CallEffect.WriteLog })
+        assertEquals("Remote SDP rejected", sm.snapshot.value.error)
     }
 }

@@ -2075,3 +2075,49 @@ required. Server code is unchanged from the 110/110 run in 7d3e4c3. Theme untouc
 Still open: disconnected 1:1 call signaling has no durable replay/ack contract; complete
 reconnect and lifecycle behavior needs further tracing. Large-thread API/cache pagination
 has not yet been repaired. These are not whole-app completion claims.
+
+## 2026-10-21 — call engine binding, stale callbacks and SDP completion
+
+Continued after PR #3 merge, on arena/318a70b4-the-mystrious-chat-app. The checkout
+matched merged main before edits. No theme, sign-in or recovery redesign.
+
+Confirmed Android source defects: CallEngine never bound its private CallStateMachine
+although dispatch/poll return immediately without a viewer; raw WebRTC SDP callbacks
+mutated the machine off-main and lacked a peer/call ownership check; remote SDP was
+marked ready before its completion, local SDP was sent before setLocalDescription
+success; PeerFailed/deadline terminal paths could omit ReleaseMedia.
+
+Repairs:
+- Engine binds/reset-isolates the account owner and captures an account-bound repository
+  for outgoing preparation/signals/log writes. Explicit cancellation, a replacement
+  attempt, incoming call, account change or relay loss invalidates pending DM lookup.
+- All Android SDP/ICE/peer-state/video callbacks hop to main and must own the current
+  peer lease/call/account. Lease invalidation precedes close. Local SDP emits follow
+  successful application; remote ICE drains and answer creation await remote SDP success.
+- Terminal transitions release media once, including timeout and peer failure paths.
+  Cleanup attempts native resource disposals independently so one failure cannot skip
+  audio-focus restoration or foreground-service stop. Setup errors no longer masquerade
+  universally as microphone permission denial.
+- Java Socket.IO queues disconnected emits. Call signals now check joined readiness on
+  its EventThread before emit, preventing an offline call offer from entering that queue.
+  Reference: https://github.com/socketio/socket.io-client-java/blob/socket.io-client-2.1.1/src/main/java/io/socket/client/Socket.java
+- Swift signaling exposes actual joined readiness and local transport-dispatch failure
+  (NOT peer/relay acknowledgement). Offline start, disconnect during camera/mic setup,
+  failed offer/answer dispatch and relay loss terminate/invalidate preparation. Mic denial
+  now ends immediately; closing the error does not fabricate a missed call.
+- Both engines hold early local ICE until their offer/answer has been dispatched and
+  discard that buffer on teardown. Outgoing local failures/cancellation/setup timeout
+  before offer dispatch produce no phantom missed-call row; dispatched-call history
+  policy remains unchanged.
+
+Verification: 110 existing server contracts pass (no server edit in this tranche).
+12 changed/new native files syntax-parse, not compilation or hardware execution. Added
+Kotlin owner-reset, setup-failure, timeout cleanup and stale-work regressions; Swift
+engine regressions cover offline start, camera/mic disconnect ownership, immediate mic
+refusal and no phantom history. Existing microphone/ring test expectations were updated
+only where the runtime contract deliberately changed. Native Actions execution pending.
+Physical camera, microphone, Bluetooth/audio routing and two-device ICE remain unproven.
+
+Remaining: server acknowledgement/idempotency for call signaling, full reconnect/group
+mesh lifecycle, pending call UX while a DM lookup is running, thread paging, and broader
+media/export revocation. This is not a whole-app or call-stack completion claim.

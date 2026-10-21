@@ -428,7 +428,13 @@ class PulseSocketClient(
 
     private fun emitCall(event: String, payload: kotlinx.serialization.json.JsonObject) {
         val sock = socket ?: return
-        sock.emit(event, JSONObject(payload.toString()))
+        // Java Socket.IO otherwise buffers disconnected emits: a canceled offer
+        // could unexpectedly ring the peer on reconnect. Check on its event queue.
+        io.socket.thread.EventThread.exec {
+            activeSocketEvent(sock) {
+                if (isJoined) sock.emit(event, JSONObject(payload.toString()))
+            }
+        }
     }
 
     // R8 Task 3-c - group call (mesh) emission

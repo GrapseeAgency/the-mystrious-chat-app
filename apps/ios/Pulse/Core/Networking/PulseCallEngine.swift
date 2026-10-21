@@ -22,8 +22,10 @@ import WebRTC
 
 @MainActor
 public protocol PulseCallSignalingSending: AnyObject {
-    /// Emits one C→S call:* event (call:offer/answer/ice/reject/cancel/hangup).
-    func send(event: String, payload: [String: Any])
+    var isReady: Bool { get }
+    /// True is local transport dispatch, never proof the peer received it.
+    @discardableResult
+    func send(event: String, payload: [String: Any]) -> Bool
 }
 
 @MainActor
@@ -67,9 +69,10 @@ public final class PulseCallEngine: ObservableObject {
     private var peerBridge: PeerBridge?
     private var pendingRemoteIce: [CallIceEnvelope] = []
     private var remoteDescriptionSet = false
-    /// True once call:offer actually went out (dismissError logs 'missed'
-    /// only for attempts that never reached the relay - web parity).
+    /// True only after local transport dispatch (not proof of relay/peer receipt).
     private var offerSent = false
+    private var localSdpDispatched = false
+    private var pendingLocalCandidates: [[String: Any]] = []
     private var outgoingIntent = UUID()
     private(set) var outgoingPreparationTask: Task<Void, Never>?
     private var incomingOffer: CallOfferEnvelope?
@@ -115,6 +118,7 @@ public final class PulseCallEngine: ObservableObject {
     /// always carries the ACTUAL kind).
     public func startOutgoing(to peer: CallPeer, conversationId: String, kind: CallKind = .voice) {
         guard case .idle = machine.state else { return }
+        guard signaling.isReady else { toasts.show("Connect to realtime before starting a call."); return }
         guard !viewer.id.isEmpty, !peer.id.isEmpty, peer.id != viewer.id, !conversationId.isEmpty else { return }
         // 3-d - cross-engine exclusion (mirror of the group engine's
         // voiceCallBusy gate): a live GROUP call owns the audio session -
@@ -149,6 +153,7 @@ public final class PulseCallEngine: ObservableObject {
     }
 
     private func beginOutgoing(to peer: CallPeer, conversationId: String, kind: CallKind) {
+        guard signaling.isReady else { toasts.show("Connection lost. The call wasn't started."); return }
         let info = CallInfo(
             callId: CallWire.newCallId(),
             conversationId: conversationId,
@@ -170,8 +175,10 @@ public final class PulseCallEngine: ObservableObject {
         guard machine.owns(callId: callId), machine.state == .outgoingRinging else { return }
         guard granted else {
             errorText = Self.micDeniedMessage
+            apply(.abortLocal, now: Date())
             return
         }
+        guard signaling.isReady else { handleSocketDisconnected(); return }
         guard PulseCallAudioSession.shared.activateForCall() else {
             errorText = "Audio is unavailable or in use. Leave your room or stop recording first."
             apply(.abortLocal, now: Date())
@@ -200,8 +207,7 @@ public final class PulseCallEngine: ObservableObject {
             try await connection.setLocalDescription(sdp: sdp)
             guard machine.owns(callId: callId), machine.state == .outgoingRinging,
                   let call = machine.call else { return }
-            offerSent = true
-            signaling.send(event: "call:offer", payload: CallWire.offerPayload(
+            let dispatched = signaling.send(event: "call:offer", payload: CallWire.offerPayload(
                 callId: call.callId,
                 conversationId: call.conversationId,
                 from: viewer.id,
@@ -212,6 +218,9 @@ public final class PulseCallEngine: ObservableObject {
                 callerColor: viewer.color ?? "emerald",
                 callerAvatar: viewer.avatar,
             ))
+            guard dispatched else { handleSocketDisconnected(); return }
+            offerSent = true
+            flushLocalCandidates()
         } catch {
             guard machine.owns(callId: callId), machine.state == .outgoingRinging else { return }
             // Local SDP/media failure before the offer reached the relay -
@@ -225,6 +234,7 @@ public final class PulseCallEngine: ObservableObject {
 
     public func acceptIncoming() {
         guard case .incomingRinging = machine.state, let call = machine.call else { return }
+        guard signaling.isReady else { handleSocketDisconnected(); return }
         apply(.acceptRequested, now: Date())
         Task { await prepareAndSendAnswer(call) }
     }
@@ -232,6 +242,7 @@ public final class PulseCallEngine: ObservableObject {
     private func prepareAndSendAnswer(_ call: CallInfo) async {
         let granted = await media.requestMicPermission()
         guard machine.owns(callId: call.callId), machine.state == .connecting else { return }
+        guard signaling.isReady else { handleSocketDisconnected(); return }
         guard granted else {
             // Callee could not join → reject politely; the caller logs the row.
             sendReject(for: call)
@@ -288,7 +299,7 @@ public final class PulseCallEngine: ObservableObject {
             guard machine.owns(callId: call.callId), machine.state == .connecting else { return }
             try await connection.setLocalDescription(sdp: answerSdp)
             guard machine.owns(callId: call.callId), machine.state == .connecting else { return }
-            signaling.send(event: "call:answer", payload: CallWire.answerPayload(
+            let dispatched = signaling.send(event: "call:answer", payload: CallWire.answerPayload(
                 callId: call.callId,
                 conversationId: call.conversationId,
                 from: viewer.id,
@@ -296,6 +307,7 @@ public final class PulseCallEngine: ObservableObject {
                 kind: call.kind,
                 sdp: answerSdp,
             ))
+            if dispatched { flushLocalCandidates() } else { handleSocketDisconnected() }
         } catch {
             guard machine.owns(callId: call.callId), machine.state == .connecting else { return }
             // Answer pipeline failed → reject so the caller tears down.
@@ -329,32 +341,31 @@ public final class PulseCallEngine: ObservableObject {
         outgoingPreparationTask?.cancel()
         outgoingPreparationTask = nil
         guard machine.state != .idle else { return }
-        apply(.hangupRequested, now: Date())
+        apply(machine.call?.direction == .outgoing && !offerSent ? .abortLocal : .hangupRequested, now: Date())
     }
 
-    /// The mic-denied (or SDP-failed) error card's Close - web parity: a
-    /// failed OUTGOING attempt still counts as an unanswered call (missed row).
+    /// Offers are ephemeral; a disconnected call must not secretly resume on reconnect.
+    public func handleSocketDisconnected() {
+        outgoingIntent = UUID()
+        outgoingPreparationTask?.cancel()
+        outgoingPreparationTask = nil
+        guard machine.state != .idle, !machine.isTerminal else { return }
+        errorText = "Connection lost. Reconnect before calling again."
+        if machine.call?.direction == .outgoing && !offerSent {
+            apply(.abortLocal, now: Date())
+        } else if machine.state == .outgoingRinging || machine.state == .incomingRinging {
+            apply(.cancelReceived(reason: .offline), now: Date())
+        } else { apply(.peerConnectionFailed, now: Date()) }
+    }
+
+    /// A local failure before dispatch did not ring the peer: closing it writes no call log.
     public func dismissError() {
         outgoingIntent = UUID()
         outgoingPreparationTask?.cancel()
         outgoingPreparationTask = nil
         errorText = nil
-        if let call = machine.call, !machine.isTerminal,
-           call.direction == .outgoing, !offerSent,
-           CallLogMapper.shouldCallerWrite(direction: call.direction, peerId: call.peer.id, viewerId: viewer.id) {
-            let body = CallLogMapper.restBody(
-                viewerId: viewer.id,
-                conversationId: call.conversationId,
-                peerId: call.peer.id,
-                kind: call.kind,
-                outcome: .missed,
-                durationSec: 0,
-            )
-            Task { await writeLogRow(body) }
-        }
-        if !machine.isTerminal, machine.state != .idle {
-            apply(.abandon, now: Date())
-        }
+        if machine.isTerminal { apply(.reset, now: Date()) }
+        else if machine.state != .idle { apply(.abandon, now: Date()) }
     }
 
     /// Mute = RTCAudioTrack.isEnabled toggle (web track.enabled parity).
@@ -398,7 +409,7 @@ public final class PulseCallEngine: ObservableObject {
         switch event {
         case "call:offer":
             guard let offer = CallOfferEnvelope.decode(raw) else { return }
-            guard offer.base.from != viewer.id else { return }
+            guard offer.base.from != viewer.id, offer.base.to == viewer.id else { return }
             guard case .idle = machine.state else {
                 // Already ringing/talking → immediate busy-reject; the caller
                 // logs 'declined' (web parity). The machine state is untouched.
@@ -500,16 +511,23 @@ public final class PulseCallEngine: ObservableObject {
 
     func handleLocalCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int32?) {
         guard let call = machine.call, !machine.isTerminal else { return }
-        signaling.send(event: "call:ice", payload: CallWire.icePayload(
-            callId: call.callId,
-            conversationId: call.conversationId,
-            from: viewer.id,
-            to: call.peer.id,
-            kind: call.kind,
-            candidate: candidate,
-            sdpMid: sdpMid,
-            sdpMLineIndex: sdpMLineIndex,
-        ))
+        let payload = CallWire.icePayload(callId: call.callId, conversationId: call.conversationId,
+            from: viewer.id, to: call.peer.id, kind: call.kind, candidate: candidate,
+            sdpMid: sdpMid, sdpMLineIndex: sdpMLineIndex)
+        // Gathering can start before setLocalDescription's completion resumes us.
+        // Relay ICE only AFTER its offer/answer, never before a relay call exists.
+        if !localSdpDispatched {
+            if pendingLocalCandidates.count < 256 { pendingLocalCandidates.append(payload) }
+        } else if !signaling.send(event: "call:ice", payload: payload) { handleSocketDisconnected() }
+    }
+
+    private func flushLocalCandidates() {
+        localSdpDispatched = true
+        let queued = pendingLocalCandidates
+        pendingLocalCandidates.removeAll()
+        for payload in queued {
+            guard signaling.send(event: "call:ice", payload: payload) else { handleSocketDisconnected(); return }
+        }
     }
 
     func handleConnectionState(_ pcState: PulseCallConnectionState) {
@@ -521,10 +539,11 @@ public final class PulseCallEngine: ObservableObject {
             apply(.peerConnectionReady, now: now)
         case .disconnected:
             apply(.peerConnectionDisconnected, now: now)
-        case .failed:
-            apply(.peerConnectionFailed, now: now)
-        case .closed:
-            apply(.hangupReceived, now: now)
+        case .failed, .closed:
+            if machine.state == .outgoingRinging || machine.state == .incomingRinging {
+                errorText = "The call's media connection failed. Try again."
+                endCall()
+            } else { apply(.peerConnectionFailed, now: now) }
         }
     }
 
@@ -540,7 +559,10 @@ public final class PulseCallEngine: ObservableObject {
     func tick() {
         let now = Date()
         if let timeout = machine.checkTimeouts(now: now) {
-            apply(timeout, now: now)
+            if machine.call?.direction == .outgoing && !offerSent {
+                errorText = "Call setup timed out. Try again."
+                apply(.abortLocal, now: now)
+            } else { apply(timeout, now: now) }
         }
         switch machine.state {
         case .connecting, .connected:
@@ -646,6 +668,8 @@ public final class PulseCallEngine: ObservableObject {
     }
 
     private func teardownMedia() {
+        localSdpDispatched = false
+        pendingLocalCandidates.removeAll()
         pc?.close()
         pc = nil
         pendingRemoteIce.removeAll()

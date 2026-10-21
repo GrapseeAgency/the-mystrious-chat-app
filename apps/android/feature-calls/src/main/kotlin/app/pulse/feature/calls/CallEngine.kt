@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
+import app.pulse.domain.call.CallWorkFence
 import app.pulse.domain.call.CallClock
 import app.pulse.domain.call.CallStateMachine.CallEffect
 import app.pulse.domain.call.CallStateMachine.CallEvent
@@ -49,6 +50,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,6 +78,42 @@ class CallEngine @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val machine = CallStateMachine(CallClock { System.currentTimeMillis() })
+    private var callOwner: String? = null
+    private var callRepository: PulseRepository? = null
+    private var relayReady = false
+    private val preparationWork = CallWorkFence()
+    private var preparationTask: Job? = null
+    private val peerWork = CallWorkFence()
+    private var peerTicket: CallWorkFence.Ticket? = null
+
+    private fun cancelPreparation() {
+        preparationWork.invalidate()
+        preparationTask?.cancel()
+        preparationTask = null
+    }
+
+    /** The machine cannot process any action until bound; never reuse another owner's binding. */
+    private fun ensureOwner(): Boolean {
+        val owner = repo.viewerId
+        if (owner == callOwner) return owner != null
+        cancelPreparation()
+        if (callOwner != null) {
+            perform(machine.dispatch(CallEvent.Hangup))
+            releaseMedia()
+        }
+        machine.resetViewer(owner)
+        callOwner = owner
+        callRepository = owner?.let { repo.boundToCurrentAccount() }
+        return owner != null
+    }
+
+    private fun peerIsCurrent(ticket: CallWorkFence.Ticket): Boolean =
+        repo.viewerId == callOwner && peerWork.owns(ticket, callOwner, machine.snapshot.value.callId) &&
+            machine.snapshot.value.state !in setOf(CallState.IDLE, CallState.ENDED)
+
+    private fun onPeer(ticket: CallWorkFence.Ticket, action: () -> Unit) {
+        main.post { if (peerIsCurrent(ticket)) action() }
+    }
 
     private val _speakerOn = MutableStateFlow(false)
     /** UI mirror of the loud-speaker route (source of truth: CallAudioManager). */
@@ -130,6 +168,8 @@ class CallEngine @Inject constructor(
     private var localVideoTrackRef: VideoTrack? = null
     private var remoteVideoTrackRef: VideoTrack? = null
     private val pendingIce = mutableListOf<IceCandidateWire>()
+    private val pendingLocalSignals = mutableListOf<CallSignalOut>()
+    private var localSdpDispatched = false
     private var micReleasedOnError = false
     /** The live incoming call's raw offer SDP - gates the CALLEE's camera attach (m=video check). */
     private var lastOfferSdp: String? = null
@@ -139,17 +179,28 @@ class CallEngine @Inject constructor(
     val snapshot: StateFlow<CallSnapshot> = machine.snapshot
 
     init {
-        audio.onFocusLost = { scope.launch { perform(machine.dispatch(CallEvent.PeerFailed)) } }
+        audio.onFocusLost = { scope.launch { perform(machine.dispatch(CallEvent.PreparationFailed("Call audio was interrupted."))) } }
         // Relay call:* signals → the state machine (offer/answer/ice/…).
         scope.launch {
             repo.events().collect { event ->
                 if (event is PulseEvent.CallSignal) onCallSignal(event)
             }
         }
+        scope.launch {
+            repo.observeConnected().collect { ready ->
+                ensureOwner()
+                relayReady = ready
+                if (!ready) {
+                    cancelPreparation()
+                    perform(machine.dispatch(CallEvent.PreparationFailed("Connection lost. Reconnect before calling again.")))
+                }
+            }
+        }
         // Deadlines + duration tick - 1s cadence (machine drains its own timers).
         ticker = scope.launch {
             while (isActive) {
                 delay(1_000)
+                ensureOwner()
                 perform(machine.poll())
             }
         }
@@ -177,10 +228,19 @@ class CallEngine @Inject constructor(
         callerColor: String? = null,
         kind: CallKind = CallKind.VOICE,
     ) {
-        scope.launch {
-            val conversation = resolveDm(peerId)
+        if (!ensureOwner() || machine.snapshot.value.state != CallState.IDLE) return
+        if (!relayReady) { _videoNotice.value = "Connect to realtime before starting a call."; return }
+        cancelPreparation()
+        val owner = checkNotNull(callOwner)
+        val bound = checkNotNull(callRepository)
+        val ticket = preparationWork.begin(owner)
+        preparationTask = scope.launch {
+            val conversation = try { resolveDm(bound, peerId) } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) { Log.w(TAG, "Could not open call conversation", error); null }
+            if (!preparationWork.owns(ticket, repo.viewerId) || !relayReady || machine.snapshot.value.state != CallState.IDLE) return@launch
             if (conversation == null) {
-                Log.w(TAG, "no DM conversation for peer=$peerId - call aborted")
+                _videoNotice.value = "Couldn't open this conversation. The call wasn't started."
                 return@launch
             }
             val cameraCapable = cameraCapable()
@@ -208,22 +268,36 @@ class CallEngine @Inject constructor(
 
     /** Callee accepted the ring (permission already granted upstream). */
     fun accept() {
+        cancelPreparation()
+        if (!ensureOwner()) return
+        if (!relayReady) {
+            perform(machine.dispatch(CallEvent.PreparationFailed("Connection lost. This call could not be answered.")))
+            return
+        }
         perform(machine.dispatch(CallEvent.Accept))
     }
 
     fun decline() {
+        cancelPreparation()
+        if (!ensureOwner()) return
         perform(machine.dispatch(CallEvent.Decline))
     }
 
     fun cancel() {
+        cancelPreparation()
+        if (!ensureOwner()) return
         perform(machine.dispatch(CallEvent.Cancel))
     }
 
     fun hangup() {
+        cancelPreparation()
+        if (!ensureOwner()) return
         perform(machine.dispatch(CallEvent.Hangup))
     }
 
     fun dismiss() {
+        cancelPreparation()
+        if (!ensureOwner()) return
         perform(machine.dispatch(CallEvent.Dismissed))
     }
 
@@ -267,12 +341,19 @@ class CallEngine @Inject constructor(
     // relay signal intake
 
     private fun onCallSignal(event: PulseEvent.CallSignal) {
+        if (!ensureOwner()) return
         val s = event.signal
+        // Offline/busy refusals echo the caller's original from/to envelope.
+        if (s.to != callOwner && !(s.event == "call:cancel" && s.from == callOwner &&
+                s.callId == machine.snapshot.value.callId)) return
         val callEvent = when (s.event) {
             "call:offer" -> {
                 // Stash the offer SDP for the callee's video decision - only
                 // when this offer actually opens a ring (never mid-call).
-                if (machine.snapshot.value.state == CallState.IDLE) lastOfferSdp = s.sdp
+                if (machine.snapshot.value.state == CallState.IDLE) {
+                    cancelPreparation()
+                    lastOfferSdp = s.sdp
+                }
                 CallEvent.IncomingOffer(
                     callId = s.callId,
                     conversationId = s.conversationId,
@@ -302,17 +383,18 @@ class CallEngine @Inject constructor(
     // effect execution
 
     private fun perform(effects: List<CallEffect>) {
+        val bound = callRepository ?: return
         for (effect in effects) {
             Log.d(TAG, "effect $effect")
             when (effect) {
                 is CallEffect.AcquireMedia -> acquireMedia(effect)
                 is CallEffect.CreateOffer -> createOffer()
-                is CallEffect.ApplyRemoteOffer -> applyRemoteOffer(effect.sdp)
+                is CallEffect.ApplyRemoteOffer -> Unit // CreateAnswer applies it once and awaits success.
                 is CallEffect.CreateAnswer -> createAnswer(effect.remoteSdp)
                 is CallEffect.ApplyRemoteAnswer -> applyRemoteAnswer(effect.sdp)
                 is CallEffect.ApplyRemoteIce -> applyRemoteIce(effect)
                 is CallEffect.SendOffer -> scope.launch {
-                    repo.emitCall(
+                    emitCallSafely(bound,
                         CallSignalOut(
                             event = "call:offer", callId = effect.callId, conversationId = effect.conversationId,
                             from = effect.from, to = effect.to, kind = effect.kind, sdp = effect.sdp,
@@ -321,7 +403,7 @@ class CallEngine @Inject constructor(
                     )
                 }
                 is CallEffect.SendAnswer -> scope.launch {
-                    repo.emitCall(
+                    emitCallSafely(bound,
                         CallSignalOut(
                             event = "call:answer", callId = effect.callId, conversationId = effect.conversationId,
                             from = effect.from, to = effect.to, kind = effect.kind, sdp = effect.sdp,
@@ -329,7 +411,7 @@ class CallEngine @Inject constructor(
                     )
                 }
                 is CallEffect.SendIce -> scope.launch {
-                    repo.emitCall(
+                    emitCallSafely(bound,
                         CallSignalOut(
                             event = "call:ice", callId = effect.callId, conversationId = effect.conversationId,
                             from = effect.from, to = effect.to, kind = effect.kind,
@@ -338,7 +420,7 @@ class CallEngine @Inject constructor(
                     )
                 }
                 is CallEffect.SendReject -> scope.launch {
-                    repo.emitCall(
+                    emitCallSafely(bound,
                         CallSignalOut(
                             event = "call:reject", callId = effect.callId, conversationId = effect.conversationId,
                             from = effect.from, to = effect.to, kind = effect.kind,
@@ -346,7 +428,7 @@ class CallEngine @Inject constructor(
                     )
                 }
                 is CallEffect.SendCancel -> scope.launch {
-                    repo.emitCall(
+                    emitCallSafely(bound,
                         CallSignalOut(
                             event = "call:cancel", callId = effect.callId, conversationId = effect.conversationId,
                             from = effect.from, to = effect.to, kind = effect.kind,
@@ -354,21 +436,44 @@ class CallEngine @Inject constructor(
                     )
                 }
                 is CallEffect.SendHangup -> scope.launch {
-                    repo.emitCall(
+                    emitCallSafely(bound,
                         CallSignalOut(
                             event = "call:hangup", callId = effect.callId, conversationId = effect.conversationId,
                             from = effect.from, to = effect.to, kind = effect.kind, durationSec = effect.durationSec,
                         ),
                     )
                 }
-                is CallEffect.WriteLog -> writeLog(effect.entry)
+                is CallEffect.WriteLog -> writeLog(bound, effect.entry)
                 CallEffect.ReleaseMedia -> releaseMedia()
             }
         }
     }
 
-    private fun writeLog(entry: CallLogEntry) {
-        val me = repo.viewerId ?: return
+    private suspend fun emitCallSafely(bound: PulseRepository, signal: CallSignalOut) {
+        if (signal.event in setOf("call:offer", "call:answer", "call:ice") &&
+            (machine.snapshot.value.callId != signal.callId || machine.snapshot.value.state in setOf(CallState.IDLE, CallState.ENDED))) return
+        if (signal.event == "call:ice" && !localSdpDispatched) {
+            if (pendingLocalSignals.size < 256) pendingLocalSignals += signal
+            return
+        }
+        try {
+            bound.emitCall(signal)
+            if (signal.event == "call:offer" || signal.event == "call:answer") {
+                localSdpDispatched = true
+                val queued = pendingLocalSignals.toList()
+                pendingLocalSignals.clear()
+                for (ice in queued) emitCallSafely(bound, ice)
+            }
+        } catch (cancelled: CancellationException) { throw cancelled } catch (error: Exception) {
+            Log.w(TAG, "Call signal was not dispatched", error)
+            if (machine.snapshot.value.callId == signal.callId && signal.event in setOf("call:offer", "call:answer")) {
+                perform(machine.dispatch(CallEvent.PreparationFailed("Connection lost. The call could not be signaled.")))
+            }
+        }
+    }
+
+    private fun writeLog(bound: PulseRepository, entry: CallLogEntry) {
+        val me = bound.viewerId ?: return
         // Single-writer: the caller stamps its own identity + a startedAt for
         // the instant local row (the server assigns id/startedAt on POST).
         val row = CallLogMapper.terminalRow(
@@ -380,8 +485,8 @@ class CallEngine @Inject constructor(
             durationSec = entry.durationSec,
         ) ?: return
         scope.launch {
-            repo.writeCallLog(row.copy(startedAt = java.time.OffsetDateTime.now().toString()))
-            repo.refreshCallLog() // reconcile server ids + callee-side rows
+            bound.writeCallLog(row.copy(startedAt = java.time.OffsetDateTime.now().toString()))
+            bound.refreshCallLog() // reconcile server ids + callee-side rows
         }
     }
 
@@ -444,14 +549,20 @@ class CallEngine @Inject constructor(
     }
 
     private fun ensurePeerConnection(): PeerConnection? {
+        if (machine.snapshot.value.state in setOf(CallState.IDLE, CallState.ENDED)) return null
         if (pc != null) return pc
+        val owner = callOwner ?: return null
+        val callId = machine.snapshot.value.callId ?: return null
+        if (repo.viewerId != owner) return null
         ensureFactory()
         if (factory == null) return null
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers()).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
-        pc = factory?.createPeerConnection(rtcConfig, PeerObserver())
+        val ticket = peerWork.begin(owner, callId)
+        peerTicket = ticket
+        pc = factory?.createPeerConnection(rtcConfig, PeerObserver(ticket))
         localTrack?.let { track -> pc?.addTrack(track, listOf("pulse-audio")) }
         // The video track (when capture started) rides its own sendrecv
         // m-line - UNIFIED_PLAN associates it with the peer's video m-line.
@@ -467,6 +578,11 @@ class CallEngine @Inject constructor(
      * call-overlay.tsx callee without a camera).
      */
     private fun acquireMedia(effect: CallEffect.AcquireMedia) {
+        if (machine.snapshot.value.state in setOf(CallState.IDLE, CallState.ENDED)) return
+        if (!relayReady) {
+            perform(machine.dispatch(CallEvent.PreparationFailed("Connect to realtime before starting a call.")))
+            return
+        }
         runCatching {
             check(audio.acquire()) { "Audio is unavailable or in use by another live session." }
             ensureFactory()
@@ -510,7 +626,9 @@ class CallEngine @Inject constructor(
         }.onFailure { e ->
             Log.e(TAG, "mic acquisition failed", e)
             micReleasedOnError = true
-            perform(machine.dispatch(CallEvent.MediaFailed(e.message ?: "microphone unavailable")))
+            val denied = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+            perform(machine.dispatch(if (denied) CallEvent.MediaFailed("permission")
+                else CallEvent.PreparationFailed(e.message ?: "Audio could not be started.")))
         }
     }
 
@@ -580,67 +698,43 @@ class CallEngine @Inject constructor(
     }
 
     private fun createOffer() {
-        val connection = ensurePeerConnection()
-        if (connection == null) {
-            runPeerFailure()
-            return
-        }
-        connection.createOffer(
-            observer(
-                onSuccess = { sdp ->
-                    connection.setLocalDescription(SimpleObserver(), SessionDescription(SessionDescription.Type.OFFER, sdp.description))
-                    perform(machine.dispatch(CallEvent.OfferReady(sdp.description)))
-                },
-                onFailure = { runPeerFailure() },
-            ),
-            MediaConstraints(),
-        )
-    }
-
-    private fun applyRemoteOffer(sdp: String) {
-        val connection = ensurePeerConnection() ?: return
-        connection.setRemoteDescription(
-            SimpleObserver(),
-            SessionDescription(SessionDescription.Type.OFFER, sdp),
-        )
-        remoteDescSet = true
-        drainPendingIce()
+        if (machine.snapshot.value.state != CallState.OUTGOING_RINGING) return
+        val connection = ensurePeerConnection() ?: run { runPeerFailure(); return }
+        val ticket = peerTicket ?: return
+        connection.createOffer(observer(ticket, onCreated = { sdp ->
+            connection.setLocalDescription(observer(ticket, onSet = {
+                perform(machine.dispatch(CallEvent.OfferReady(sdp.description)))
+            }), SessionDescription(SessionDescription.Type.OFFER, sdp.description))
+        }), MediaConstraints())
     }
 
     private fun createAnswer(remoteSdp: String) {
-        val connection = ensurePeerConnection()
-        if (connection == null) {
-            runPeerFailure()
-            return
-        }
-        if (!remoteDescSet) {
-            connection.setRemoteDescription(
-                SimpleObserver(),
-                SessionDescription(SessionDescription.Type.OFFER, remoteSdp),
-            )
-            remoteDescSet = true
-            drainPendingIce()
-        }
-        connection.createAnswer(
-            observer(
-                onSuccess = { sdp ->
-                    connection.setLocalDescription(SimpleObserver(), SessionDescription(SessionDescription.Type.ANSWER, sdp.description))
+        if (machine.snapshot.value.state != CallState.INCOMING_RINGING) return
+        val connection = ensurePeerConnection() ?: run { runPeerFailure(); return }
+        val ticket = peerTicket ?: return
+        fun create() {
+            connection.createAnswer(observer(ticket, onCreated = { sdp ->
+                connection.setLocalDescription(observer(ticket, onSet = {
                     perform(machine.dispatch(CallEvent.AnswerReady(sdp.description)))
-                },
-                onFailure = { runPeerFailure() },
-            ),
-            MediaConstraints(),
-        )
+                }), SessionDescription(SessionDescription.Type.ANSWER, sdp.description))
+            }), MediaConstraints())
+        }
+        if (remoteDescSet) create() else {
+            connection.setRemoteDescription(observer(ticket, onSet = {
+                remoteDescSet = true
+                drainPendingIce()
+                create()
+            }), SessionDescription(SessionDescription.Type.OFFER, remoteSdp))
+        }
     }
 
     private fun applyRemoteAnswer(sdp: String) {
         val connection = pc ?: return
-        connection.setRemoteDescription(
-            SimpleObserver(),
-            SessionDescription(SessionDescription.Type.ANSWER, sdp),
-        )
-        remoteDescSet = true
-        drainPendingIce()
+        val ticket = peerTicket ?: return
+        connection.setRemoteDescription(observer(ticket, onSet = {
+            remoteDescSet = true
+            drainPendingIce()
+        }), SessionDescription(SessionDescription.Type.ANSWER, sdp))
     }
 
     private fun applyRemoteIce(effect: CallEffect.ApplyRemoteIce) {
@@ -664,67 +758,67 @@ class CallEngine @Inject constructor(
 
     /** Tear the media leg down (idempotent - the machine releases exactly once). */
     private fun releaseMedia() {
-        runCatching {
-            pc?.close()
-            pc = null
-            // video teardown (real capturer lifecycle)
-            runCatching { videoCapturer?.stopCapture() }
-            videoCapturer = null
-            videoTextureHelper?.dispose()
-            videoTextureHelper = null
-            videoSource?.dispose()
-            videoSource = null
-            localVideoTrackRef = null
-            remoteVideoTrackRef = null
-            _localVideoTrack.value = null
-            _remoteVideoTrack.value = null
-            _videoCaptureActive.value = false
-            _cameraEnabled.value = false
-            _videoNotice.value = null
-            // audio teardown (untouched)
-            runCatching { localTrack?.setEnabled(true) }
-            localTrack = null
-            localSource?.dispose()
-            localSource = null
-            adm?.release()
-            adm = null
-            factory = null // factory owns ADM - rebuilding both next call is the safe lifecycle
-            remoteDescSet = false
-            pendingIce.clear()
-            lastOfferSdp = null
-            micReleasedOnError = false
-            audio.release()
-            CallForegroundService.stop(context)
-            _micMuted.value = false
-            _speakerOn.value = false
-        }
+        // Invalidate BEFORE close: WebRTC may post CLOSED/ICE callbacks during teardown.
+        peerWork.invalidate()
+        peerTicket = null
+        localSdpDispatched = false
+        pendingLocalSignals.clear()
+        val retired = pc
+        pc = null
+        runCatching { retired?.close() }
+        runCatching { retired?.dispose() }
+        runCatching { videoCapturer?.stopCapture() }
+        runCatching { videoCapturer?.dispose() }
+        videoCapturer = null
+        runCatching { videoTextureHelper?.dispose() }
+        videoTextureHelper = null
+        runCatching { localVideoTrackRef?.dispose() }
+        localVideoTrackRef = null
+        runCatching { videoSource?.dispose() }
+        videoSource = null
+        remoteVideoTrackRef = null
+        _localVideoTrack.value = null
+        _remoteVideoTrack.value = null
+        _videoCaptureActive.value = false
+        _cameraEnabled.value = false
+        _videoNotice.value = null
+        runCatching { localTrack?.dispose() }
+        localTrack = null
+        runCatching { localSource?.dispose() }
+        localSource = null
+        runCatching { factory?.dispose() }
+        factory = null
+        runCatching { adm?.release() }
+        adm = null
+        remoteDescSet = false
+        pendingIce.clear()
+        lastOfferSdp = null
+        micReleasedOnError = false
+        // A failed native dispose must never skip microphone focus/service cleanup.
+        runCatching { audio.release() }
+        runCatching { CallForegroundService.stop(context) }
+        _micMuted.value = false
+        _speakerOn.value = false
     }
 
-    private fun runPeerFailure(): PeerConnection? {
-        perform(machine.dispatch(CallEvent.PeerFailed))
-        return null
+    private fun runPeerFailure() {
+        perform(machine.dispatch(CallEvent.PreparationFailed("The call's media negotiation failed. Try again.")))
     }
 
     private fun observer(
-        onSuccess: (SessionDescription) -> Unit,
-        onFailure: (String) -> Unit,
+        ticket: CallWorkFence.Ticket,
+        onCreated: (SessionDescription) -> Unit = {},
+        onSet: () -> Unit = {},
     ): SdpObserver = object : SdpObserver {
-        override fun onCreateSuccess(desc: SessionDescription) = onSuccess(desc)
-        override fun onSetSuccess() = Unit
-        override fun onCreateFailure(error: String?) = onFailure(error ?: "sdp error")
-        override fun onSetFailure(error: String?) = onFailure(error ?: "sdp error")
+        override fun onCreateSuccess(desc: SessionDescription) = onPeer(ticket) { onCreated(desc) }
+        override fun onSetSuccess() = onPeer(ticket, onSet)
+        override fun onCreateFailure(error: String?) = onPeer(ticket) { runPeerFailure() }
+        override fun onSetFailure(error: String?) = onPeer(ticket) { runPeerFailure() }
     }
 
-    private class SimpleObserver : SdpObserver {
-        override fun onCreateSuccess(desc: SessionDescription) = Unit
-        override fun onSetSuccess() = Unit
-        override fun onCreateFailure(error: String?) = Unit
-        override fun onSetFailure(error: String?) = Unit
-    }
-
-    private inner class PeerObserver : PeerConnection.Observer {
+    private inner class PeerObserver(private val ticket: CallWorkFence.Ticket) : PeerConnection.Observer {
         override fun onIceCandidate(candidate: IceCandidate) {
-            main.post {
+            onPeer(ticket) {
                 perform(
                     machine.dispatch(
                         CallEvent.IceProduced(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex),
@@ -736,7 +830,7 @@ class CallEngine @Inject constructor(
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
 
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
-            main.post {
+            onPeer(ticket) {
                 when (state) {
                     PeerConnection.IceConnectionState.CONNECTED ->
                         perform(machine.dispatch(CallEvent.PeerConnected))
@@ -744,7 +838,7 @@ class CallEngine @Inject constructor(
                         perform(machine.dispatch(CallEvent.PeerDisconnected))
                     PeerConnection.IceConnectionState.FAILED,
                     PeerConnection.IceConnectionState.CLOSED,
-                    -> perform(machine.dispatch(CallEvent.PeerFailed))
+                    -> runPeerFailure()
                     else -> Unit
                 }
             }
@@ -752,7 +846,7 @@ class CallEngine @Inject constructor(
 
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
             // UNIFIED_PLAN exposes the richer state - map the same truth.
-            main.post {
+            onPeer(ticket) {
                 when (newState) {
                     PeerConnection.PeerConnectionState.CONNECTED ->
                         perform(machine.dispatch(CallEvent.PeerConnected))
@@ -760,7 +854,7 @@ class CallEngine @Inject constructor(
                         perform(machine.dispatch(CallEvent.PeerDisconnected))
                     PeerConnection.PeerConnectionState.FAILED,
                     PeerConnection.PeerConnectionState.CLOSED,
-                    -> perform(machine.dispatch(CallEvent.PeerFailed))
+                    -> runPeerFailure()
                     else -> Unit
                 }
             }
@@ -781,7 +875,7 @@ class CallEngine @Inject constructor(
          */
         override fun onTrack(transceiver: org.webrtc.RtpTransceiver) {
             val track = transceiver.receiver?.track() as? VideoTrack ?: return
-            main.post { attachRemoteVideo(track) }
+            onPeer(ticket) { attachRemoteVideo(track) }
         }
     }
 
@@ -789,12 +883,12 @@ class CallEngine @Inject constructor(
 
     // DM resolution (caller entry)
 
-    private suspend fun resolveDm(peerId: String): Conversation? {
-        val cached = repo.observeConversations().first().firstOrNull { c ->
+    private suspend fun resolveDm(bound: PulseRepository, peerId: String): Conversation? {
+        val cached = bound.observeConversations().first().firstOrNull { c ->
             c.kind == Conversation.Kind.DM && peerId in c.memberIds
         }
         if (cached != null) return cached
-        return runCatching { repo.createDm(peerId) }.getOrNull()?.getOrNull()
+        return bound.createDm(peerId).getOrNull()
     }
 
     private companion object {

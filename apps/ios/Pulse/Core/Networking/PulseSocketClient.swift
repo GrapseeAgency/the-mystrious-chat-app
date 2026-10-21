@@ -48,6 +48,7 @@ public final class PulseSocketClient {
         case joinError(message: String)
     }
 
+    public private(set) var isJoined = false
     private let manager: SocketManager
     private let socket: SocketIOClient
     /// Last joined identity - re-emitted on every (re)connect.
@@ -87,6 +88,7 @@ public final class PulseSocketClient {
         if lastUserId != nil { socket.disconnect() }
         lastUserId = userId
         lastToken = token
+        isJoined = false
         signals?(.connectionState(connected: false))
 
         socket.on(clientEvent: .connect) { [weak self] _, _ in
@@ -98,14 +100,17 @@ public final class PulseSocketClient {
                 self.socket.emit("join", payload)
             }
             // A transport connection is not a joined user room. Wait for joined.
+            self.isJoined = false
             self.signals?(.connectionState(connected: false))
         }
         socket.on(clientEvent: .disconnect) { [weak self] _, _ in
+            self?.isJoined = false
             self?.signals?(.connectionState(connected: false))
         }
         socket.on(clientEvent: .reconnect) { [weak self] _, _ in
             // v16 emits reconnect while DISCONNECTED; emit() rejects rather than
             // buffers. The next .connect sends join exactly once.
+            self?.isJoined = false
             self?.signals?(.connectionState(connected: false))
         }
 
@@ -116,6 +121,7 @@ public final class PulseSocketClient {
             let obj = data.first as? [String: Any]
             let message = obj?["error"] as? String
                 ?? "Session token is invalid or has been rotated. Log in again."
+            self?.isJoined = false
             self?.signals?(.connectionState(connected: false))
             self?.signals?(.joinError(message: message))
         }
@@ -123,6 +129,7 @@ public final class PulseSocketClient {
         socket.on("joined") { [weak self] data, _ in
             guard let obj = data.first as? [String: Any],
                   let ids = obj["onlineUserIds"] as? [String] else { return }
+            self?.isJoined = true
             self?.signals?(.joined(onlineUserIds: ids))
             self?.signals?(.connectionState(connected: true))
         }
@@ -292,8 +299,12 @@ public final class PulseSocketClient {
     /// shape is built by CallWire / GroupCallWire (unit-tested against the
     /// relay's validation). Socket.IO v16 rejects emits while disconnected;
     /// call owners must not assume signaling is a durable offline queue.
-    public func emitCallSignal(event: String, payload: [String: Any]) {
+    /// True means handed to the connected transport, NOT a relay/peer acknowledgement.
+    @discardableResult
+    public func emitCallSignal(event: String, payload: [String: Any]) -> Bool {
+        guard isJoined, socket.status == .connected else { return false }
         socket.emit(event, payload)
+        return true
     }
 
     // W5-f - voice rooms / stage / space (typed emit helpers)
@@ -391,6 +402,7 @@ public final class PulseSocketClient {
     public func disconnect() {
         lastUserId = nil
         lastToken = nil
+        isJoined = false
         signals?(.connectionState(connected: false))
         socket.disconnect()
         socket.removeAllHandlers()

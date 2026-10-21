@@ -630,8 +630,12 @@ public final class PulseSession: ObservableObject {
     }
 
     /// The engine's signaling sender funnels here (the socket is session-owned).
-    public func emitCallSignal(event: String, payload: [String: Any]) {
-        socket?.emitCallSignal(event: event, payload: payload)
+    public var callSignalingReady: Bool { ready && socket?.isJoined == true }
+
+    @discardableResult
+    public func emitCallSignal(event: String, payload: [String: Any]) -> Bool {
+        guard callSignalingReady else { return false }
+        return socket?.emitCallSignal(event: event, payload: payload) ?? false
     }
 
     // outbox
@@ -847,6 +851,7 @@ public final class PulseSession: ObservableObject {
                 // 3-d - a live mesh is dead once the relay drops us (media
                 // flowing to a socket that stopped routing). Honest teardown
                 // instead of ghosting audio after a suspension.
+                callEngine?.handleSocketDisconnected()
                 groupCallEngine?.handleSocketDisconnected()
             }
             // W5-f - the rooms owner consumes connect/reconnect too (voice
@@ -974,7 +979,10 @@ private final class PulseSessionCallSignaling: PulseCallSignalingSending {
         self.session = session
     }
 
-    func send(event: String, payload: [String: Any]) {
-        session?.emitCallSignal(event: event, payload: payload)
+    var isReady: Bool { session?.callSignalingReady ?? false }
+
+    @discardableResult
+    func send(event: String, payload: [String: Any]) -> Bool {
+        session?.emitCallSignal(event: event, payload: payload) ?? false
     }
 }

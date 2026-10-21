@@ -2971,6 +2971,7 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun emitCall(signal: CallSignalOut) {
+        check(viewerId != null && signal.from == viewerId && socket.isJoined) { "Realtime is not ready for this call." }
         when (signal.event) {
             app.pulse.protocol.SocketEvents.CALL_OFFER -> socket.emitCallOffer(
                 CallOfferDto(

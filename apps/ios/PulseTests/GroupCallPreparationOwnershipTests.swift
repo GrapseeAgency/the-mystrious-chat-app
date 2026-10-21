@@ -5,8 +5,14 @@ import WebRTC
 @MainActor
 final class GroupCallPreparationOwnershipTests: XCTestCase {
     private final class Signals: PulseCallSignalingSending {
+        var isReady = true
         var events: [String] = []
-        func send(event: String, payload: [String: Any]) { events.append(event) }
+        @discardableResult
+        func send(event: String, payload: [String: Any]) -> Bool {
+            guard isReady else { return false }
+            events.append(event)
+            return true
+        }
     }
     private final class Media: PulseGroupCallMediaProviding {
         var requested: (() -> Void)?
