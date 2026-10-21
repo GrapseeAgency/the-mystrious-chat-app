@@ -65,11 +65,11 @@ final class ThreadReplyCountTests: XCTestCase {
             .sink(receiveCompletion: { if case .failure(let error) = $0 { XCTFail("\(error)") } }, receiveValue: { snapshot in
                 switch phase {
                 case 0:
-                    XCTAssertTrue(snapshot.counts.isEmpty()); phase = 1; seeded.fulfill()
+                    XCTAssertTrue(snapshot.counts.isEmpty); phase = 1; seeded.fulfill()
                 case 1:
                     XCTAssertEqual(snapshot.counts, ["root": 1]); phase = 2; inserted.fulfill()
                 case 2:
-                    XCTAssertTrue(snapshot.counts.isEmpty()); phase = 3; deleted.fulfill()
+                    XCTAssertTrue(snapshot.counts.isEmpty); phase = 3; deleted.fulfill()
                 default: XCTFail("Unexpected count mutation")
                 }
             })
