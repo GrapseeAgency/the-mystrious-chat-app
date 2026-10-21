@@ -432,7 +432,8 @@ class PulseSocketClient(
         // could unexpectedly ring the peer on reconnect. Check on its event queue.
         io.socket.thread.EventThread.exec {
             activeSocketEvent(sock) {
-                if (isJoined) sock.emit(event, JSONObject(payload.toString()))
+                if (isJoined) runCatching { sock.emit(event, JSONObject(payload.toString())) }
+                    .onFailure { Log.w(TAG, "emit $event failed", it) }
             }
         }
     }
@@ -471,9 +472,9 @@ class PulseSocketClient(
     // engines re-join on the next connect), never a throw.
 
     private fun emitRoomEvent(event: String, payload: kotlinx.serialization.json.JsonObject) {
-        val sock = socket ?: return
-        runCatching { sock.emit(event, JSONObject(payload.toString())) }
-            .onFailure { Log.w(TAG, "emit $event failed", it) }
+        // Voice PCM/captions and stage/space actions are ephemeral too. Raw
+        // SDK emit would put them in sendBuffer during a disconnect race.
+        emitCall(event, payload)
     }
 
     /** voice:join - registers this socket's seat; re-emitted on reconnect (VR-8). */

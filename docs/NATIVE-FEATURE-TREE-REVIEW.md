@@ -2325,3 +2325,21 @@ is pending. Separately, 0073c3a's iOS simulator build/tests AND unsigned archive
 Still open: the fourteen-page out-of-cache jump limit and efficient server anchor/window
 navigation; removing that cap blindly could download arbitrarily large histories. Full
 thread HTTP responses remain unbounded. No theme or account/sign-in redesign.
+
+
+## 2026-10-21 — live-room packets must not replay after disconnect
+
+Continuing beyond calls found that Android voice/stage/space still used raw SDK emit
+while its comment promised disconnected packets were dropped. Java Socket.IO buffers
+those emits, including voice PCM, transcripts, PTT and moderation/movement actions.
+They now share the EventThread joined-readiness/active-socket gate used for calls. SDK
+emit errors are contained on that event queue. Actor-bearing repository room sends
+also reject a payload whose identity differs from their bound account.
+
+Swift's typed live-room helpers and generic session adapter now share its joined-ready
+call dispatch gate rather than emitting during transport-connected/before-user-joined.
+No durable-room replay is introduced: existing engines explicitly rejoin on readiness.
+These changes preserve the documented best-effort API and the autumn appearance.
+Source parsing/diff checking only for this small follow-up; native/device verification
+is pending. Congested-but-connected media buffering, stage acknowledgment and relay
+conversation/identity authorization remain separate open work, not solved by this gate.

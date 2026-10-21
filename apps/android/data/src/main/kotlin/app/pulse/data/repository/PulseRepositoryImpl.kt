@@ -3102,6 +3102,7 @@ class PulseRepositoryImpl constructor(
     // engines re-join on the next connect); these NEVER throw.
 
     override suspend fun emitVoiceJoin(conversationId: String, user: PulseVoiceUser) {
+        if (user.id != viewerId) return
         socket.emitVoiceJoin(conversationId, user)
     }
 
@@ -3110,34 +3111,42 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun emitVoicePtt(conversationId: String, userId: String, on: Boolean) {
+        if (userId != viewerId) return
         socket.emitVoicePtt(conversationId, userId, on)
     }
 
     override suspend fun emitVoiceChunk(conversationId: String, userId: String, seq: Long, data: String) {
+        if (userId != viewerId) return
         socket.emitVoiceChunk(conversationId, userId, seq, data)
     }
 
     override suspend fun emitVoiceTranscript(conversationId: String, userId: String, text: String) {
+        if (userId != viewerId) return
         socket.emitVoiceTranscript(conversationId, userId, text)
     }
 
     override suspend fun emitStageJoin(conversationId: String, user: PulseVoiceUser, asHost: Boolean) {
+        if (user.id != viewerId) return
         socket.emitStageJoin(conversationId, user, asHost)
     }
 
     override suspend fun emitStageHand(conversationId: String, userId: String, raised: Boolean) {
+        if (userId != viewerId) return
         socket.emitStageHand(conversationId, userId, raised)
     }
 
     override suspend fun emitStageApprove(conversationId: String, byUserId: String, targetUserId: String) {
+        if (byUserId != viewerId) return
         socket.emitStageApprove(conversationId, byUserId, targetUserId)
     }
 
     override suspend fun emitStageMute(conversationId: String, byUserId: String, targetUserId: String) {
+        if (byUserId != viewerId) return
         socket.emitStageMute(conversationId, byUserId, targetUserId)
     }
 
     override suspend fun emitStageEnd(conversationId: String, byUserId: String) {
+        if (byUserId != viewerId) return
         socket.emitStageEnd(conversationId, byUserId)
     }
 
@@ -3146,6 +3155,7 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun emitSpaceJoin(conversationId: String, user: PulseVoiceUser) {
+        if (user.id != viewerId) return
         socket.emitSpaceJoin(conversationId, user)
     }
 
