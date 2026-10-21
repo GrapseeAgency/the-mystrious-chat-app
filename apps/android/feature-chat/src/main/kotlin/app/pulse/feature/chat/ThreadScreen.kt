@@ -148,9 +148,10 @@ class ThreadViewModel @Inject constructor(
                 if (snapshot.revision == currentToken?.revision) {
                     threadDraftToken = currentToken
                     if (snapshot.saveFailed) notify("Couldn't save this draft. Keep this thread open and edit to retry.", isError = true)
-                    if (snapshot.text != null && snapshot.text != _state.value.draft) {
+                    val restoredText = snapshot.text
+                    if (restoredText != null && restoredText != _state.value.draft) {
                         composerRevision++
-                        _state.value = _state.value.copy(draft = snapshot.text)
+                        _state.value = _state.value.copy(draft = restoredText)
                     }
                 }
             }

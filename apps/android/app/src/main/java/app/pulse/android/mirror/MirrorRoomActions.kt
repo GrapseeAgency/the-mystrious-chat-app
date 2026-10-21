@@ -464,8 +464,9 @@ internal fun MirrorThreadSheet(
             if (snapshot.revision == currentToken?.revision) {
                 draftToken = currentToken
                 draftError = if (snapshot.saveFailed) "Couldn't save this draft. Keep this sheet open and edit to retry." else null
-                if (snapshot.text != null && draft.text != snapshot.text) {
-                    composer.update(androidx.compose.ui.text.input.TextFieldValue(snapshot.text), notify = false)
+                val restoredText = snapshot.text
+                if (restoredText != null && draft.text != restoredText) {
+                    composer.update(androidx.compose.ui.text.input.TextFieldValue(restoredText), notify = false)
                 }
             }
         }
