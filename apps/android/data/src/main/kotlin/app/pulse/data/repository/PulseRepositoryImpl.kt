@@ -1499,6 +1499,58 @@ class PulseRepositoryImpl constructor(
         }
     }
 
+    override fun observeFailedThreadReplies(conversationId: String, rootId: String): Flow<List<OutboxEntry>> {
+        val owner = viewerId ?: return kotlinx.coroutines.flow.flowOf(emptyList())
+        return outboxDao.observeFailedThread(owner, conversationId, rootId).map { rows -> rows.map { it.toEntry() } }
+    }
+
+    override suspend fun retryThreadReply(conversationId: String, rootId: String, clientId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Original account is unavailable"))
+        return try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                database.withTransaction {
+                    val root = messageDao.byId(rootId)?.toDomain()
+                    check(app.pulse.domain.sync.threadRootAvailable(root, conversationId, rootId)) { "This thread is unavailable. Your reply is still saved." }
+                    val echo = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+                    check(echo != null && echo.authorId == owner && echo.conversationId == conversationId && echo.threadRootId == rootId) { "This reply does not belong to this thread" }
+                    check(outboxDao.retryFailed(clientId, owner) == 1) { "This reply is no longer awaiting recovery" }
+                }
+                // Keep the original clientId, envelope and upload receipt. Never create another send.
+                scope.launch {
+                    try {
+                        flushOutbox()
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Log.w(TAG, "Thread reply remains queued", error)
+                        scheduleSelfHeal()
+                    }
+                }
+            }
+            Result.success(Unit)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    override suspend fun discardFailedThreadReply(conversationId: String, rootId: String, clientId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Original account is unavailable"))
+        return try {
+            database.withTransaction {
+                // A stale Discard tap must not remove a message already queued for retry.
+                check(outboxDao.discardFailedThread(owner, conversationId, rootId, clientId) == 1) { "This saved reply changed; nothing was discarded" }
+                messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+            }
+            Result.success(Unit)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
     override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
         val watermark = messageEventClock.get()
         val page = when (val r = api.thread(rootId, viewerId ?: "")) {

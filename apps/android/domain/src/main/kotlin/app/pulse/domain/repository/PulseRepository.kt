@@ -488,6 +488,11 @@ interface PulseRepository {
     suspend fun pinnedMessages(conversationId: String): List<Message>
     suspend fun unpinMessage(messageId: String): Result<Unit> = Result.failure(UnsupportedOperationException("Explicit unpin unavailable"))
 
+    /** Own rejected intents remain recoverable even when this thread is unavailable. */
+    fun observeFailedThreadReplies(conversationId: String, rootId: String): Flow<List<OutboxEntry>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    suspend fun retryThreadReply(conversationId: String, rootId: String, clientId: String): Result<Unit> = Result.failure(UnsupportedOperationException("Thread recovery unavailable"))
+    suspend fun discardFailedThreadReply(conversationId: String, rootId: String, clientId: String): Result<Unit> = Result.failure(UnsupportedOperationException("Thread recovery unavailable"))
+
     /** GET /api/messages/{id}/thread?userId= → (parent, replies asc) - also upserts Room. */
     suspend fun loadThread(rootId: String): Pair<Message, List<Message>>
 

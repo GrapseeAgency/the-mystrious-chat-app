@@ -67,4 +67,40 @@ class OutboxOwnershipTest {
         } finally { db.close() }
     }
 
+    @Test fun threadRecoverySeparatesOwnersRootsRoomsAndRejectsStaleDiscard() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
+        try {
+            suspend fun enqueue(id: String, owner: String, room: String, root: String?) {
+                db.outboxDao().insert(OutboxEntity.from(OutboxEntry(conversationId = room, clientId = id,
+                    content = "original $id", wirePayload = "{\"original\":true}", attempts = 3, createdAt = "2026-10-20T00:00:00Z")))
+                db.messageDao().upsertAll(listOf(MessageEntity.from(Message(id = "local_$id", conversationId = room,
+                    authorId = owner, authorName = owner, kind = Message.Kind.TEXT, body = "original $id",
+                    threadRootId = root, createdAt = "2026-10-20T00:00:00Z"))))
+                db.outboxDao().markFailed(id, "rejected")
+            }
+            enqueue("mine", "me", "room", "root")
+            enqueue("foreign", "other", "room", "root")
+            enqueue("other-root", "me", "room", "elsewhere")
+            enqueue("other-room", "me", "elsewhere", "root")
+            enqueue("main", "me", "room", null)
+            val failed = db.outboxDao().observeFailedThread("me", "room", "root").first()
+            assertEquals(listOf("mine"), failed.map { it.clientId })
+            assertEquals(0, db.outboxDao().discardFailedThread("other", "room", "root", "mine"))
+            assertEquals(0, db.outboxDao().discardFailedThread("me", "room", "elsewhere", "mine"))
+            assertEquals(0, db.outboxDao().discardFailedThread("me", "elsewhere", "root", "mine"))
+            assertEquals(1, db.outboxDao().retryFailed("mine", "me"))
+            assertEquals(0, db.outboxDao().discardFailedThread("me", "room", "root", "mine"))
+            assertEquals(emptyList<String>(), db.outboxDao().observeFailedThread("me", "room", "root").first().map { it.clientId })
+            val retried = db.outboxDao().pendingByClientId("mine")!!
+            assertEquals(failed.single().id, retried.id)
+            assertEquals(failed.single().wirePayload, retried.wirePayload)
+            assertEquals("original mine", retried.content)
+            assertEquals(0, retried.attempts)
+            assertEquals("root", db.messageDao().byId("local_mine")!!.threadRootId)
+            // No root row exists: the user's rejected text still permits explicit recovery/discard.
+            assertEquals(1, db.outboxDao().discardFailedThread("me", "room", "elsewhere", "other-root"))
+            assertEquals(4, db.outboxDao().count())
+        } finally { db.close() }
+    }
+
 }

@@ -570,23 +570,40 @@ public final class PulseSession: ObservableObject {
         Task { await outbox.flush() }
     }
 
-    public func retryOutbox(clientId: String) {
-        guard ready, let viewer, let store else { return }
+    @discardableResult
+    public func retryOutbox(clientId: String, conversationId: String? = nil, threadRootId: String? = nil) -> Bool {
+        guard ready, let viewer, let store else { return false }
         do {
-            guard let row = try store.outboxAll().first(where: { $0.clientId == clientId && $0.failureReason != nil }) else { return }
+            guard let row = try store.outboxAll().first(where: { $0.clientId == clientId && $0.failureReason != nil }) else { return false }
+            if let conversationId, row.conversationId != conversationId { return false }
             let envelope = PulseOutboxForward.decode(row.payloadJson)
             if row.payloadJson != nil && envelope == nil { throw CocoaError(.coderReadCorrupt) }
+            if let threadRootId, envelope?.parentId != threadRootId { return false }
             let anonymous = envelope?.anon == true
             var message = TempMessages.make(conversationId: row.conversationId, viewer: viewer, clientId: row.clientId,
                 content: row.content, parentId: envelope?.parentId, anon: anonymous,
                 anonAlias: anonymous ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: row.conversationId) : nil,
                 topicId: envelope?.topicId, attachment: envelope)
             message.payload = envelope?.payload
-            if try store.retryOutbox(clientId: clientId, message: message) {
+            if try store.retryOutbox(clientId: clientId, message: message, threadRootId: threadRootId) {
                 outbox?.reloadPending()
                 flushOutbox()
+                return true
             }
         } catch { toasts.show("The saved message could not be retried. It has not been discarded.") }
+        return false
+    }
+
+    @discardableResult
+    public func discardFailedThreadReply(clientId: String, conversationId: String, rootId: String) -> Bool {
+        guard let store else { return false }
+        do {
+            guard try store.discardFailedThreadReply(clientId: clientId, conversationId: conversationId, rootId: rootId) else { return false }
+            outbox?.reloadPending()
+            outboxEvents.send(.dropped(clientId: clientId, conversationId: conversationId))
+            return true
+        } catch { toasts.show("Couldn't discard this reply. It is still saved.") }
+        return false
     }
 
     public func discardOutbox(clientId: String, conversationId: String) {

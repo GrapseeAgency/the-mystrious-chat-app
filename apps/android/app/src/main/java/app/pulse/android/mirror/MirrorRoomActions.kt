@@ -432,6 +432,11 @@ internal fun MirrorThreadSheet(
     onDismiss: () -> Unit,
 ) {
     val threadRepository = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val recoveryFlow = remember(threadRepository, root.id) { threadRepository.observeFailedThreadReplies(root.conversationId, root.id) }
+    val failedReplies by recoveryFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val clipboard = LocalClipboardManager.current
+    var recoveryBusy by remember(root.id) { mutableStateOf(false) }
+    var discardConfirm by remember(root.id) { mutableStateOf<String?>(null) }
     val replyFlow = remember(threadRepository, root.id) { threadRepository.observeThreadMessages(root.id) }
     val rootFlow = remember(threadRepository, root.id) {
         threadRepository.observeMessages(root.conversationId).map { rows -> rows.firstOrNull { it.id == root.id } }
@@ -514,6 +519,32 @@ internal fun MirrorThreadSheet(
         }
     }
     LaunchedEffect(flashId) { if (flashId != null) { delay(1_700); flashId = null } }
+    discardConfirm?.let { clientId ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { discardConfirm = null },
+            containerColor = MirrorArt.BubbleIn,
+            titleContentColor = MirrorArt.Text,
+            textContentColor = MirrorArt.TextSoft,
+            title = { Text("Discard this failed reply?") },
+            text = { Text("This removes the saved outgoing reply from this device. Your current draft is kept.") },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { discardConfirm = null }) { Text("Cancel", color = MirrorArt.TextSoft) } },
+            confirmButton = { androidx.compose.material3.TextButton(enabled = !recoveryBusy, onClick = {
+                if (!recoveryBusy) {
+                    recoveryBusy = true
+                    discardConfirm = null
+                    scope.launch {
+                        try {
+                            threadRepository.discardFailedThreadReply(root.conversationId, root.id, clientId).getOrThrow()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            error = failure.message ?: "Couldn't discard this saved reply"
+                        } finally { recoveryBusy = false }
+                    }
+                }
+            }) { Text("Discard", color = MirrorArt.Accent) } },
+        )
+    }
     MirrorSheet(title = "Thread", onDismiss = onDismiss) {
         Column(Modifier.heightIn(max = 430.dp)) {
             draftError?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp) }
@@ -538,6 +569,38 @@ internal fun MirrorThreadSheet(
                     if (replies.isEmpty()) item {
                         Text(if (loading) "Loading replies…" else "No replies yet - start the thread", color = MirrorArt.Faint,
                             fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
+                    }
+                }
+            }
+            if (failedReplies.isNotEmpty()) {
+                Text("NOT SENT · SAVED ON THIS DEVICE", color = MirrorArt.Faint, fontSize = 10.sp)
+                LazyColumn(Modifier.heightIn(max = 150.dp)) {
+                    items(failedReplies, key = { "failed-" + it.clientId }) { entry ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                            Text(entry.content.ifBlank { "Saved attachment" }, color = MirrorArt.TextSoft, fontSize = 12.sp, maxLines = 3)
+                            Text(entry.failureReason.orEmpty(), color = MirrorArt.Faint, fontSize = 11.sp, maxLines = 2)
+                            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                Text("Retry original", color = if (available) MirrorArt.Accent else MirrorArt.Faint, fontSize = 12.sp,
+                                    modifier = Modifier.clickable(enabled = available && !recoveryBusy) {
+                                        if (recoveryBusy || denied || !threadRootAvailable(currentRoot, root.conversationId, root.id)) return@clickable
+                                        recoveryBusy = true
+                                        scope.launch {
+                                            try {
+                                                threadRepository.retryThreadReply(root.conversationId, root.id, entry.clientId).getOrThrow()
+                                                error = null
+                                            } catch (cancelled: CancellationException) {
+                                                throw cancelled
+                                            } catch (failure: Exception) {
+                                                error = failure.message ?: "Couldn't retry this saved reply"
+                                            } finally { recoveryBusy = false }
+                                        }
+                                    })
+                                Text("Copy text", color = MirrorArt.Accent, fontSize = 12.sp,
+                                    modifier = Modifier.clickable(enabled = entry.content.isNotEmpty()) { clipboard.setText(AnnotatedString(entry.content)) })
+                                Text("Discard", color = MirrorArt.Accent, fontSize = 12.sp,
+                                    modifier = Modifier.clickable(enabled = !recoveryBusy) { discardConfirm = entry.clientId })
+                            }
+                        }
                     }
                 }
             }

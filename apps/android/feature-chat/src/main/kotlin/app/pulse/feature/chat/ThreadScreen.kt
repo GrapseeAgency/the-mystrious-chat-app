@@ -54,6 +54,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -137,6 +139,28 @@ class ThreadViewModel @Inject constructor(
         if (root == null || root.isDeleted) emptyList() else rows
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val failedReplies = repo.observeFailedThreadReplies(conversationId, rootId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val recoveryActions = mutableSetOf<String>()
+
+    fun recoverReply(clientId: String, discard: Boolean) {
+        if (!discard && (_state.value.unavailable || !threadRootAvailable(parent.value, conversationId, rootId))) return
+        if (!recoveryActions.add(clientId)) return
+        viewModelScope.launch {
+            try {
+                val result = if (discard) repo.discardFailedThreadReply(conversationId, rootId, clientId)
+                    else repo.retryThreadReply(conversationId, rootId, clientId)
+                result.onFailure { notify(it.message ?: "Couldn't update this saved reply", isError = true) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                notify(failure.message ?: "Couldn't update this saved reply", isError = true)
+            } finally {
+                recoveryActions.remove(clientId)
+            }
+        }
+    }
 
     private var composerRevision = 0L
     private var threadDraftToken: app.pulse.domain.model.ComposerDraftToken? = null
@@ -307,6 +331,22 @@ fun ThreadScreen(
     val cachedParent by viewModel.parent.collectAsStateWithLifecycle()
     val cachedReplies by viewModel.replies.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val failedReplies by viewModel.failedReplies.collectAsStateWithLifecycle()
+    var discardConfirm by remember { mutableStateOf<String?>(null) }
+    val clipboard = LocalClipboardManager.current
+    discardConfirm?.let { clientId ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { discardConfirm = null },
+            title = { Text("Discard this failed reply?") },
+            text = { Text("This removes the saved outgoing reply from this device. Your current draft is kept.") },
+            confirmButton = { TextButton(onClick = {
+                viewModel.recoverReply(clientId, discard = true)
+                discardConfirm = null
+            }) { Text("Discard") } },
+            dismissButton = { TextButton(onClick = { discardConfirm = null }) { Text("Cancel") } },
+        )
+    }
+
     // Do not wait for a separate Room/StateFlow emission to hide refused content.
     val parent = cachedParent.takeUnless { state.unavailable }
     val replies = if (state.unavailable) emptyList() else cachedReplies
@@ -466,6 +506,19 @@ fun ThreadScreen(
                             onOpenImage = { lightboxTarget = reply },
                             onOpenFile = { viewModel.openFile(reply, share = false) },
                         )
+                    }
+                }
+                items(failedReplies, key = { "failed-" + it.clientId }) { entry ->
+                    Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                        Text("Not sent · saved on this device", style = MaterialTheme.typography.labelMedium)
+                        Text(entry.content.ifBlank { "Saved attachment" }, style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                        Text(entry.failureReason.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        Row {
+                            TextButton(onClick = { viewModel.recoverReply(entry.clientId, discard = false) },
+                                enabled = !state.unavailable && threadRootAvailable(parent, viewModel.conversationId, viewModel.rootId)) { Text("Retry original") }
+                            TextButton(enabled = entry.content.isNotEmpty(), onClick = { clipboard.setText(AnnotatedString(entry.content)) }) { Text("Copy") }
+                            TextButton(onClick = { discardConfirm = entry.clientId }) { Text("Discard") }
+                        }
                     }
                 }
             }

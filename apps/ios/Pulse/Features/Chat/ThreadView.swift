@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Wave 1 thread surface - the web ThreadSheet outcome natively: parent card
 /// on top, replies asc below, composer that sends `parentId` (spec §1.1 -
@@ -29,6 +30,9 @@ struct ThreadView: View {
     @State private var tailScrollRevision = 0
 
     @State private var errorText: String?
+    @State private var failedReplies: [OutboxRow] = []
+    @State private var recoveryObservation: AnyCancellable?
+    @State private var discardReply: OutboxRow?
     // Wave 2 view-once - threads reuse the same gate/burn bubble; the reveal
     // opens the lightbox right here (the sheet owns its cover).
     @State private var lightbox: MediaLightboxTarget?
@@ -49,6 +53,7 @@ struct ThreadView: View {
                         ScrollView {
                             LazyVStack(spacing: 6) {
                                 threadBody
+                                failedReplyRecovery
                                 Color.clear.frame(height: 4).id("thread-tail")
                                     .background(GeometryReader { tail in
                                         Color.clear.preference(key: ThreadTailPositionKey.self,
@@ -120,7 +125,7 @@ struct ThreadView: View {
                 guard room == conversation.id,
                       replies.contains(where: { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }) else { return }
                 replies.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
-                errorText = "Reply not sent. It is kept in Outbox for recovery."
+                errorText = "Reply not sent. Your original reply is saved below for recovery."
             }
         }
         .task(id: highlightedReplyId) {
@@ -132,7 +137,21 @@ struct ThreadView: View {
             _ = prepareDraft()
             dismiss()
         }
-        .onDisappear { loadGeneration = UUID() }
+        .alert("Discard this failed reply?", isPresented: Binding(get: { discardReply != nil }, set: { if !$0 { discardReply = nil } })) {
+            Button("Cancel", role: .cancel) { discardReply = nil }
+            Button("Discard", role: .destructive) {
+                guard let row = discardReply, draftSession == session.sessionGeneration else { discardReply = nil; return }
+                if !session.discardFailedThreadReply(clientId: row.clientId, conversationId: conversation.id, rootId: root.id) {
+                    errorText = "The saved reply changed or couldn't be discarded. Nothing else was removed."
+                }
+                discardReply = nil
+            }
+        } message: { Text("This removes the saved outgoing reply from this device. It does not erase your current draft.") }
+        .onDisappear {
+            loadGeneration = UUID()
+            recoveryObservation?.cancel()
+            recoveryObservation = nil
+        }
     }
 
     private var anchorCandidate: WireChatMessage? {
@@ -249,6 +268,7 @@ struct ThreadView: View {
 
     private func load() async {
         guard prepareDraft() else { return }
+        observeRecovery()
         let ticket = UUID()
         loadGeneration = ticket
         let epoch = session.sessionGeneration
@@ -343,10 +363,61 @@ struct ThreadView: View {
         replies = PulseTextDelivery.timeline(replies, pending: [message])
     }
 
+    private var retryAllowed: Bool {
+        session.ready && draftSession == session.sessionGeneration && !rootUnavailable &&
+            PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id)
+    }
+
+    @ViewBuilder private var failedReplyRecovery: some View {
+        if !failedReplies.isEmpty {
+            Text("NOT SENT · SAVED ON THIS DEVICE").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            ForEach(failedReplies, id: \.clientId) { row in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(row.content.isEmpty ? "Saved attachment" : row.content).font(.footnote).lineLimit(3)
+                    Text(row.failureReason ?? "Delivery wasn't confirmed").font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Retry original") {
+                            guard retryAllowed else { return }
+                            if session.retryOutbox(clientId: row.clientId, conversationId: conversation.id, threadRootId: root.id) {
+                                if let echo = try? session.store?.message(id: PulseOutboxEngine.tempMessageId(clientId: row.clientId)) { appendReply(echo) }
+                            } else { errorText = "Couldn't retry this saved reply. It has not been discarded." }
+                        }.disabled(!retryAllowed)
+                        Button("Copy text") {
+                            guard draftSession == session.sessionGeneration else { return }
+                            UIPasteboard.general.string = row.content
+                        }.disabled(row.content.isEmpty)
+                        Button("Discard", role: .destructive) { discardReply = row }
+                    }.font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(.regularMaterial))
+                .id("failed-" + row.clientId)
+            }
+        }
+    }
+
+    private func observeRecovery() {
+        guard recoveryObservation == nil, let store = session.store else { return }
+        let epoch = session.sessionGeneration
+        recoveryObservation = store.observeFailedThreadReplies(conversationId: conversation.id, rootId: root.id)
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { completion in
+                guard epoch == session.sessionGeneration else { return }
+                if case .failure = completion { errorText = "Couldn't read saved replies. Reopen this thread to try again." }
+            }, receiveValue: { rows in
+                guard epoch == session.sessionGeneration else { return }
+                failedReplies = rows
+            })
+    }
+
     private func prepareDraft() -> Bool {
         if let epoch = draftSession, epoch != session.sessionGeneration {
             draft = ""
             replies = []
+            failedReplies = []
+            discardReply = nil
+            recoveryObservation?.cancel()
+            recoveryObservation = nil
             rootUnavailable = true
             return false
         }

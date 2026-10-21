@@ -1,6 +1,8 @@
 package app.pulse.data.local
 
 import android.content.Context
+import androidx.room.Room
+import app.pulse.domain.model.Message
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.pulse.core.PulseEndpoints
@@ -79,6 +81,35 @@ class AccountDatabaseIsolationTest {
                 assertEquals("new typing", repo.loadThreadDraft("thread-room", "root-a"))
                 repo.observeDraft(app.pulse.domain.model.threadDraftKey("thread-room", "root-a")).first { it == "new typing" }
                 repo.observeDraft(app.pulse.domain.model.threadDraftKey("thread-room", "root-b")).first { it == "keep other thread" }
+
+                // Real repository recovery: no replacement identity, no draft consumption,
+                // and stale UI actions cannot remove an operation already requeued.
+                val original = repo.observeOutbox().first().single { it.conversationId == "thread-room" && it.content == "reply once" }
+                repo.dropOutboxEntry(original.clientId, "rejected")
+                assertEquals(listOf(original.clientId), repo.observeFailedThreadReplies("thread-room", "root-a").first().map { it.clientId })
+                assertTrue(repo.retryThreadReply("thread-room", "root-a", original.clientId).isFailure) // missing root
+                val recoveryKey = AccountStorageKey.namespace(AccountStorageKey.origin(PulseEndpoints.gatewayHttpUrl), "account-a-$suffix")
+                val recoveryDb = Room.databaseBuilder(context, PulseDatabase::class.java, "pulse-account-$recoveryKey.db").build()
+                try {
+                    val root = Message(id = "root-a", conversationId = "thread-room", authorId = "account-a-$suffix",
+                        authorName = "Sender", kind = Message.Kind.TEXT, body = "Root", createdAt = "2026-10-20T00:00:00Z")
+                    recoveryDb.messageDao().upsertAll(listOf(MessageEntity.from(root), MessageEntity.from(root.copy(id = "root-b"))))
+                    assertTrue(repo.retryThreadReply("thread-room", "root-b", original.clientId).isFailure)
+                    assertTrue(repo.retryThreadReply("other-room", "root-a", original.clientId).isFailure)
+                    assertTrue(repo.retryThreadReply("thread-room", "root-a", original.clientId).isSuccess)
+                    assertTrue(repo.discardFailedThreadReply("thread-room", "root-a", original.clientId).isFailure)
+                    assertEquals(original.id, repo.observeOutbox().first().single { it.clientId == original.clientId }.id)
+                    assertEquals("new typing", repo.loadThreadDraft("thread-room", "root-a"))
+                    repo.dropOutboxEntry(original.clientId, "rejected again")
+                    recoveryDb.messageDao().upsertAll(listOf(MessageEntity.from(root.copy(deletedAt = "2026-10-21T00:00:00Z"))))
+                    assertTrue(repo.retryThreadReply("thread-room", "root-a", original.clientId).isFailure)
+                    recoveryDb.messageDao().upsertAll(listOf(MessageEntity.from(root.copy(expiresAtEpochMs = 1))))
+                    assertTrue(repo.retryThreadReply("thread-room", "root-a", original.clientId).isFailure)
+                    recoveryDb.messageDao().deleteById("root-a")
+                    assertTrue(repo.discardFailedThreadReply("thread-room", "root-a", original.clientId).isSuccess)
+                    assertNull(recoveryDb.messageDao().byId("local_" + original.clientId))
+                    assertEquals("new typing", repo.loadThreadDraft("thread-room", "root-a"))
+                } finally { recoveryDb.close() }
 
                 // Fail the final draft mutation, AFTER the bubble/outbox inserts.
                 // SQLite must roll back all three, retaining the unsent composer.

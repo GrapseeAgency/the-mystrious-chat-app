@@ -793,6 +793,25 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Observe this account's rejected intents, scoped by both room and retained routing envelope.
+    public func observeFailedThreadReplies(conversationId: String, rootId: String) -> DatabasePublishers.Value<[OutboxRow]> {
+        ValueObservation.tracking { db in
+            try OutboxRow.fetchAll(db, sql: "SELECT * FROM outbox WHERE conversationId = ? AND failureReason IS NOT NULL ORDER BY id ASC",
+                arguments: [conversationId]).filter { PulseOutboxForward.decode($0.payloadJson)?.parentId == rootId }
+        }.publisher(in: dbQueue)
+    }
+
+    /// The user confirms discarding a rejected intent, not a subsequently retried send.
+    public func discardFailedThreadReply(clientId: String, conversationId: String, rootId: String) throws -> Bool {
+        try dbQueue.write { db in
+            guard let row = try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE clientId = ? AND conversationId = ? AND failureReason IS NOT NULL",
+                arguments: [clientId, conversationId]), PulseOutboxForward.decode(row.payloadJson)?.parentId == rootId else { return false }
+            try db.execute(sql: "DELETE FROM outbox WHERE clientId = ?", arguments: [clientId])
+            try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
+            return true
+        }
+    }
+
     /// Queue snapshot - FIFO drain order (oldest first).
     public func outboxAll() throws -> [OutboxRow] {
         try dbQueue.read { db in
@@ -852,9 +871,17 @@ public final class PulseStore: Sendable {
     }
 
     /// Explicit retry keeps the original identity and metadata, including upload receipt.
-    public func retryOutbox(clientId: String, message: WireChatMessage) throws -> Bool {
+    public func retryOutbox(clientId: String, message: WireChatMessage, threadRootId: String? = nil) throws -> Bool {
         guard message.id == "local_" + clientId else { throw CocoaError(.coderInvalidValue) }
         return try dbQueue.write { db in
+            if let rootId = threadRootId {
+                guard message.parentId == rootId,
+                      let retained = try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE clientId = ? AND conversationId = ? AND failureReason IS NOT NULL", arguments: [clientId, message.conversationId]),
+                      PulseOutboxForward.decode(retained.payloadJson)?.parentId == rootId,
+                      let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [rootId]),
+                      let root = Self.messageRow(from: row),
+                      PulseRemediationLogic.threadRootAvailable(root, roomId: message.conversationId, rootId: rootId) else { return false }
+            }
             try db.execute(sql: "UPDATE outbox SET failureReason = NULL, attempts = 0 WHERE clientId = ? AND conversationId = ? AND failureReason IS NOT NULL",
                            arguments: [clientId, message.conversationId])
             guard db.changesCount > 0 else { return false }

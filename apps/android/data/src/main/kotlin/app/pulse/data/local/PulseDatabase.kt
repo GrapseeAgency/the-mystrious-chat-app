@@ -725,6 +725,14 @@ data class ThreadCountRow(val rootId: String, val cnt: Int)
 
 @Dao
 interface OutboxDao {
+    @Query("SELECT o.id, o.conversationId, o.clientId, o.content, o.kind, o.createdAt, o.attempts, o.failureReason, o.wirePayload, NULL AS uploadKey FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
+        "WHERE o.conversationId = :room AND m.conversationId = :room AND m.authorId = :owner AND m.threadRootId = :rootId AND o.failureReason IS NOT NULL ORDER BY o.id ASC")
+    fun observeFailedThread(owner: String, room: String, rootId: String): Flow<List<OutboxEntity>>
+
+    @Query("DELETE FROM outbox WHERE clientId = :clientId AND conversationId = :room AND failureReason IS NOT NULL AND " +
+        "EXISTS (SELECT 1 FROM messages m WHERE m.id = 'local_' || outbox.clientId AND m.conversationId = :room AND m.authorId = :owner AND m.threadRootId = :rootId)")
+    suspend fun discardFailedThread(owner: String, room: String, rootId: String, clientId: String): Int
+
     @Query("SELECT * FROM outbox WHERE clientId = :clientId AND failureReason IS NULL")
     suspend fun pendingByClientId(clientId: String): OutboxEntity?
 

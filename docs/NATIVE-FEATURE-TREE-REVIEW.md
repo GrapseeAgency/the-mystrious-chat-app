@@ -1668,3 +1668,43 @@ can still lose the very last keystroke; disk failures are reported rather than c
 as durable. Root deletion/revocation retains recoverable draft text, not permission to
 send. Long-thread pagination, broader revocation/media/export policies and beyond-window
 lookup remain open. This is a targeted runtime repair, not whole-app completion.
+
+
+### Inline failed-thread recovery, preserving the original operation (2026-10-21)
+
+Traced definitive send rejection through durable storage and the actual thread surfaces.
+The optimistic bubble disappeared while its recoverable intent was accessible only in
+Settings. Retyping/reposting could create a second operation; a stale discard could
+also delete an intent that another surface had already retried.
+
+- Primary Android, active Mirror sheet and Swift threads now observe their own failed
+  replies and provide Retry original, Copy text, and an explicit discard confirmation.
+  Actions leave the current composer untouched. Empty attachment captions cannot wipe
+  the clipboard. Existing autumn colors/materials are reused.
+- Android filters by owner, room, root and failed status through the retained hidden
+  optimistic envelope, not rich-payload JSON. Swift filters the account-local outbox
+  by room and decoded routing envelope. Malformed Swift envelopes remain available in
+  Settings rather than being guessed into a thread.
+- Retry reuses the original clientId, queue row, metadata and upload receipt. Root
+  liveness, room/root association and failed status are revalidated inside the storage
+  transaction. Missing/deleted/expired roots cannot be retried inline. Explicit denial
+  also disables the UI action; a locally live root is not proof of server authorization.
+- Discard checks the same scope and failed status atomically with deleting the retained
+  intent/temp bubble. A stale confirmation after Retry cannot delete the queued send.
+  Root unavailability still permits recovering/copying/discarding the user's own intent.
+- Swift reinstates the pending bubble when retry is accepted, cancels observation on
+  dismissal, and fences/clears recovery state at session transitions. Android uses the
+  captured account repository and lifecycle-aware list observation; the router's list
+  reset behavior also covers the added observation API.
+
+Verification: 99/99 unchanged server contracts pass locally. Added real Room DAO and
+repository regressions for scope, missing/deleted/expired roots, original identity,
+unchanged draft and stale discard; added GRDB/Swift observation and mutation regressions
+for the equivalent flows and malformed envelopes. Changed native files pass syntax
+parsing and diff checks; these are not a substitute for native compilation/execution,
+which remains pending for this batch on GitHub. Inventory remains 326 production files.
+
+Limits: this is failed-intent recovery, not full thread pagination or proof of delivery.
+Generic Settings queue controls retain their existing semantics. Revocation across all
+screens, beyond-window navigation and media/export lifetimes remain open. No merge or
+deployment is implied, and no whole-app correctness claim is made.
