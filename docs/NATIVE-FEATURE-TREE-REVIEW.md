@@ -1617,3 +1617,54 @@ here covers its active Mirror counterpart); long-thread pagination; durable thre
 across dismissal/restart; persisted cross-screen membership revocation; media/export
 copies; beyond-window target lookup and server ordering without message versions.
 The autumn palette is retained. No whole-app completion claim is made.
+
+### Device-local thread drafts and atomic send handoff (2026-10-21)
+
+Traced closing/reopening a thread through both native draft stores and the durable send
+transaction. Thread drafts were only view state, unlike main-room composers. Simply
+saving them under the room ID would overwrite the river draft; independently clearing
+a new draft after sending would reintroduce replay/lost-typing races.
+
+- Added a reserved, length-delimited local thread namespace in the existing draft table.
+  It uses the existing account/gateway-isolated database; no destructive migration is
+  needed. Main-room and separate-root drafts remain independent. Thread keys never go
+  to the legacy server draft endpoint. Settings draft managers label them as thread
+  replies and can delete them; existing bulk clear includes them.
+- Extended draft-consumption tokens to bind the parent/root as well as room, account or
+  storage identity, and revision. Both Room and GRDB now consume that specific scoped
+  draft in the same transaction as the optimistic message and outbox operation. A main
+  token cannot consume a thread draft, nor a thread token a different root/main draft.
+  Rich and demo sends share the Android scope guard. Untokened sends still consume no
+  composer draft.
+- Android thread editors journal each change in a finite account-bound writer, retain a
+  front buffer for rapid reopen, and observe revision-tagged draft snapshots. Reads use
+  the same lock as enqueue/clear and re-read storage, not stale Room emission payloads.
+  The editor keeps the token associated with its actual text, rather than capturing a
+  potentially newer other-editor revision at send time. Queue-clears are observed while
+  a network acknowledgement is pending; newer typing survives an older send.
+- Primary and Mirror Android thread editors restore without generating a new write and
+  bind work to the captured account repository. Save failures retain buffered text and
+  show a warning. Primary thread input rejects an over-limit edit instead of allowing a
+  later storage truncation to silently replace the visible text. Local success clearing
+  does not stage a second draft-clear that could erase newer text.
+- Swift threads reuse the journal's synchronous front buffer, off-main writer and owner
+  fence, with their root-specific namespace. Text changes journal immediately; enqueue
+  consumes the draft atomically. Account transitions disable/close the old thread editor.
+  Journal snapshots now carry the storage revision: Settings deletion or a committed
+  send invalidates an older in-memory pending copy before rapid reopen can restore it.
+
+Verification: 99/99 unchanged backend contracts passed locally. Added Kotlin token/key
+unit checks, extended real Room account-isolation/instrumentation coverage for independent
+roots, handoff, newer typing, restart/account return, write-failure rollback and bulk clear;
+added Swift journal/GRDB tests for reopen, root/account guards, rollback, newer typing and
+pending-buffer deletion. Native syntax/diff checks passed; new native compilation and
+execution remain pending on GitHub. Prior 5532442 Android build and iOS tests/archive
+passed; its instrumentation status was still pending when last checked. Inventory stays
+326 production files. Autumn styling is unchanged.
+
+Limits: thread drafts are local, not cross-device synchronized. Ordinary dismissal does
+not cancel finite storage writes, but abrupt process termination before SQLite commits
+can still lose the very last keystroke; disk failures are reported rather than claimed
+as durable. Root deletion/revocation retains recoverable draft text, not permission to
+send. Long-thread pagination, broader revocation/media/export policies and beyond-window
+lookup remain open. This is a targeted runtime repair, not whole-app completion.

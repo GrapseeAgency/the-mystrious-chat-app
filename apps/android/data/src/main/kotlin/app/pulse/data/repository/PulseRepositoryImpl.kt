@@ -175,10 +175,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.CoroutineScope
+import app.pulse.domain.model.threadDraftKey
+import app.pulse.domain.model.isThreadDraftKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.emitAll
 import app.pulse.domain.sync.withSearchHitExpiry
 import kotlinx.coroutines.flow.Flow
@@ -405,6 +408,7 @@ class PulseRepositoryImpl constructor(
                 }
                 revisions.forEach { (room, revision) ->
                     if (draftVersions[room]?.compareAndSet(revision, revision + 1) == true) {
+                        threadDraftBuffers.computeIfPresent(room) { _, buffered -> buffered.takeIf { it.first > revision } }
                         scope.launch { mirrorDraft(room, "", revision + 1) }
                     }
                 }
@@ -858,7 +862,7 @@ class PulseRepositoryImpl constructor(
         if (viewerId.isNullOrBlank()) {
             return Result.failure(IllegalStateException("No identity - complete onboarding first."))
         }
-        if (draftToken != null && (draftToken.ownerId != viewerId || draftToken.conversationId != conversationId)) {
+        if (draftToken != null && !draftToken.owns(conversationId, viewerId, parentId)) {
             return Result.failure(IllegalStateException("The composer account changed; nothing was saved"))
         }
         val mine = Message(
@@ -1011,7 +1015,7 @@ class PulseRepositoryImpl constructor(
         // then either reconciles with the real row, rides the outbox, or is
         // retracted on a definitive failure.
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
-        if (draftToken != null && (draftToken.ownerId != owner || draftToken.conversationId != conversationId)) {
+        if (draftToken != null && !draftToken.owns(conversationId, owner, parentId)) {
             return Result.failure(IllegalStateException("The composer account changed; nothing was queued"))
         }
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
@@ -1080,7 +1084,7 @@ class PulseRepositoryImpl constructor(
                 ?: return Result.failure(IllegalArgumentException("Message payload must be a JSON object"))
         }
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
-        if (draftToken != null && (draftToken.ownerId != owner || draftToken.conversationId != conversationId)) {
+        if (draftToken != null && !draftToken.owns(conversationId, owner, parentId)) {
             return Result.failure(IllegalStateException("The composer account changed; nothing was queued"))
         }
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
@@ -1131,15 +1135,18 @@ class PulseRepositoryImpl constructor(
             // Cancellation after SQLite commit must not skip the in-memory fence:
             // old journal tasks intentionally outlive the composing UI.
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                val counter = token?.let { draftVersions[it.conversationId] }
+                val counter = token?.let { draftVersions[it.storageKey] }
                 val consume = token != null && counter?.get() == token.revision
                 database.withTransaction {
                     write()
-                    if (consume) draftDao.upsert(DraftEntity(checkNotNull(token).conversationId, "", java.time.OffsetDateTime.now().toString()))
+                    if (consume) draftDao.upsert(DraftEntity(checkNotNull(token).storageKey, "", java.time.OffsetDateTime.now().toString()))
                 }
                 if (consume) {
                     val consumed = checkNotNull(token)
-                    if (counter?.compareAndSet(consumed.revision, consumed.revision + 1) == true) {
+                    threadDraftBuffers.computeIfPresent(consumed.storageKey) { _, buffered ->
+                        buffered.takeIf { it.first > consumed.revision }
+                    }
+                    if (counter?.compareAndSet(consumed.revision, consumed.revision + 1) == true && consumed.parentId == null) {
                         scope.launch { mirrorDraft(consumed.conversationId, "", consumed.revision + 1) }
                     }
                 }
@@ -2050,6 +2057,55 @@ class PulseRepositoryImpl constructor(
     // runs in this scope. Every write remains bound to this account's database.
     private val draftWriteScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // Front buffer makes a rapid reopen see the last keystroke before Room commits.
+    private val threadDraftBuffers = draftWrites.threadBuffers
+    private val threadDraftFailures = draftWrites.threadFailures
+
+    override fun stageThreadDraft(conversationId: String, rootId: String, text: String): app.pulse.domain.model.ComposerDraftToken? {
+        val owner = viewerId ?: return null
+        val key = threadDraftKey(conversationId, rootId)
+        val revision = nextDraftVersion(key)
+        val snapshot = revision to text.take(MAX_DRAFT)
+        threadDraftBuffers.compute(key) { _, previous -> if (previous != null && previous.first > revision) previous else snapshot }
+        threadDraftFailures.update { if ((it[key] ?: -1L) <= revision) it - key else it }
+        draftWriteScope.launch {
+            try {
+                writeLocalDraft(key, snapshot.second, revision)
+                threadDraftBuffers.remove(key, snapshot)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(TAG, "Thread draft could not be saved", error)
+                if (draftVersions[key]?.get() == revision) threadDraftFailures.update { it + (key to revision) }
+            }
+        }
+        return app.pulse.domain.model.ComposerDraftToken(conversationId, owner, revision, rootId)
+    }
+
+    override suspend fun loadThreadDraft(conversationId: String, rootId: String): String? = draftMutex.withLock {
+        val key = threadDraftKey(conversationId, rootId)
+        threadDraftBuffers[key]?.second ?: draftDao.get(key)?.text
+    }
+
+    override fun observeThreadDraft(conversationId: String, rootId: String): Flow<app.pulse.domain.model.ThreadDraftSnapshot> {
+        val key = threadDraftKey(conversationId, rootId)
+        return kotlinx.coroutines.flow.combine(draftDao.observe(key), threadDraftFailures) { _, failures ->
+            draftMutex.withLock {
+                val revision = draftVersions[key]?.get() ?: 0L
+                val buffered = threadDraftBuffers[key]
+                // Re-read under the handoff lock: the triggering Room emission may be older.
+                if (buffered != null) app.pulse.domain.model.ThreadDraftSnapshot(buffered.second, buffered.first, failures[key] == buffered.first)
+                else app.pulse.domain.model.ThreadDraftSnapshot(draftDao.get(key)?.text, revision, failures[key] == revision)
+            }
+        }
+    }
+
+    override fun captureThreadDraftToken(conversationId: String, rootId: String): app.pulse.domain.model.ComposerDraftToken? {
+        val owner = viewerId ?: return null
+        val counter = draftVersions.getOrPut(threadDraftKey(conversationId, rootId)) { java.util.concurrent.atomic.AtomicLong() }
+        return app.pulse.domain.model.ComposerDraftToken(conversationId, owner, counter.get(), rootId)
+    }
+
     private fun nextDraftVersion(id: String): Long = draftVersions
         .getOrPut(id) { java.util.concurrent.atomic.AtomicLong() }.incrementAndGet()
 
@@ -2070,6 +2126,7 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun saveDraft(conversationId: String, text: String) {
         val revision = nextDraftVersion(conversationId)
+        threadDraftBuffers.computeIfPresent(conversationId) { _, buffered -> buffered.takeIf { it.first > revision } }
         if (writeLocalDraft(conversationId, text, revision)) mirrorDraft(conversationId, text, revision)
     }
 
@@ -2081,6 +2138,7 @@ class PulseRepositoryImpl constructor(
     }
 
     private suspend fun mirrorDraft(conversationId: String, text: String, revision: Long) = draftServerMutex.withLock {
+        if (isThreadDraftKey(conversationId)) return@withLock // No server thread-draft API exists.
         // Serialize attempted mirrors; skip revisions replaced before the request.
         // This is best effort, not server-side cross-device conflict resolution.
         if (!app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId) && draftVersions[conversationId]?.get() == revision) {

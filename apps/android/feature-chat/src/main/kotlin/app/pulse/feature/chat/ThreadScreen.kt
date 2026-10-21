@@ -96,10 +96,11 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class ThreadViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    private val repo: PulseRepository,
+    repository: PulseRepository,
     /** The ONE active voice player - room + thread share the singleton. */
     val voicePlayer: VoicePlayer,
 ) : ViewModel() {
+    private val repo = repository.boundToCurrentAccount()
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
     val rootId: String = savedStateHandle.get<String>("rootId").orEmpty()
@@ -137,7 +138,23 @@ class ThreadViewModel @Inject constructor(
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private var composerRevision = 0L
+    private var threadDraftToken: app.pulse.domain.model.ComposerDraftToken? = null
+
     init {
+        viewModelScope.launch {
+            repo.observeThreadDraft(conversationId, rootId).collect { snapshot ->
+                val currentToken = repo.captureThreadDraftToken(conversationId, rootId)
+                if (snapshot.revision == currentToken?.revision) {
+                    threadDraftToken = currentToken
+                    if (snapshot.saveFailed) notify("Couldn't save this draft. Keep this thread open and edit to retry.", isError = true)
+                    if (snapshot.text != null && snapshot.text != _state.value.draft) {
+                        composerRevision++
+                        _state.value = _state.value.copy(draft = snapshot.text)
+                    }
+                }
+            }
+        }
         retry()
         viewModelScope.launch {
             repo.observeConnected().collect { connected ->
@@ -156,10 +173,14 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
-    private var composerRevision = 0L
 
     fun changeDraft(value: String) {
+        if (value.length > SendMessageUseCase.MAX_LENGTH) {
+            notify("Replies are limited to ${SendMessageUseCase.MAX_LENGTH} characters", isError = true)
+            return
+        }
         composerRevision++
+        threadDraftToken = repo.stageThreadDraft(conversationId, rootId, value)
         _state.value = _state.value.copy(draft = value)
     }
 
@@ -168,12 +189,13 @@ class ThreadViewModel @Inject constructor(
         val state = _state.value
         if (state.sending || state.unavailable || state.draft.isBlank() || !threadRootAvailable(parent.value, conversationId, rootId)) return
         val revision = composerRevision
+        val token = threadDraftToken ?: return
         _state.value = state.copy(sending = true)
         viewModelScope.launch {
             try {
-                val result = SendMessageUseCase(repo)(conversationId, state.draft, parentId = rootId)
+                val result = SendMessageUseCase(repo)(conversationId, state.draft, parentId = rootId, draftToken = token)
                 result.onSuccess { receipt ->
-                    if (composerRevision == revision) changeDraft("")
+                    if (composerRevision == revision) { composerRevision++; _state.value = _state.value.copy(draft = "") }
                     if (!receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) PulseFx.fire(PulseFx.BurstKind.BURST, count = 26)
                 }.onFailure { failure ->
                     _state.value = _state.value.copy(notice = RoomNotice(failure.message ?: "Reply was not queued; your draft is kept", isError = true))

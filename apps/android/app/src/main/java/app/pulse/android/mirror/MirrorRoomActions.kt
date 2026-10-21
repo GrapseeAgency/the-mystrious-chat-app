@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.map
 import android.content.Context
 import android.location.Location
@@ -430,15 +431,19 @@ internal fun MirrorThreadSheet(
     jumpMessageId: String? = null,
     onDismiss: () -> Unit,
 ) {
-    val replyFlow = remember(repository, root.id) { repository.observeThreadMessages(root.id) }
-    val rootFlow = remember(repository, root.id) {
-        repository.observeMessages(root.conversationId).map { rows -> rows.firstOrNull { it.id == root.id } }
+    val threadRepository = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val replyFlow = remember(threadRepository, root.id) { threadRepository.observeThreadMessages(root.id) }
+    val rootFlow = remember(threadRepository, root.id) {
+        threadRepository.observeMessages(root.conversationId).map { rows -> rows.firstOrNull { it.id == root.id } }
     }
     val cachedReplies by replyFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val currentRoot by rootFlow.collectAsStateWithLifecycle(initialValue = root)
-    val connectedFlow = remember(repository) { repository.observeConnected() }
+    val connectedFlow = remember(threadRepository) { threadRepository.observeConnected() }
     val connected by connectedFlow.collectAsStateWithLifecycle(initialValue = false)
-    val composer = remember(root.id) { RoomComposerDraft() }
+    var draftToken by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.model.ComposerDraftToken?>(null) }
+    val composer = remember(threadRepository, root.id) {
+        RoomComposerDraft { draftToken = threadRepository.stageThreadDraft(root.conversationId, root.id, it) }
+    }
     var draft by composer
     var sending by remember(root.id) { mutableStateOf(false) }
     var loading by remember(root.id) { mutableStateOf(true) }
@@ -446,12 +451,25 @@ internal fun MirrorThreadSheet(
     var fetchedReplies by remember(root.id) { mutableStateOf<List<Message>?>(null) }
     var denied by remember(root.id) { mutableStateOf(false) }
     var error by remember(root.id) { mutableStateOf<String?>(null) }
+    var draftError by remember(root.id) { mutableStateOf<String?>(null) }
     var retry by remember(root.id) { mutableStateOf(0) }
     var now by remember(root.id) { mutableStateOf(System.currentTimeMillis()) }
     var jumpResolved by remember(root.id, jumpMessageId) { mutableStateOf(false) }
     var flashId by remember(root.id) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    LaunchedEffect(threadRepository, root.id) {
+        threadRepository.observeThreadDraft(root.conversationId, root.id).collect { snapshot ->
+            val currentToken = threadRepository.captureThreadDraftToken(root.conversationId, root.id)
+            if (snapshot.revision == currentToken?.revision) {
+                draftToken = currentToken
+                draftError = if (snapshot.saveFailed) "Couldn't save this draft. Keep this sheet open and edit to retry." else null
+                if (snapshot.text != null && draft.text != snapshot.text) {
+                    composer.update(androidx.compose.ui.text.input.TextFieldValue(snapshot.text), notify = false)
+                }
+            }
+        }
+    }
     LaunchedEffect(root.id) {
         while (true) { now = System.currentTimeMillis(); delay(1_000) }
     }
@@ -459,7 +477,7 @@ internal fun MirrorThreadSheet(
         loading = true
         error = null
         try {
-            val (fresh, loadedReplies) = repository.loadThread(root.id)
+            val (fresh, loadedReplies) = threadRepository.loadThread(root.id)
             currentCoroutineContext().ensureActive()
             fetchedReplies = loadedReplies
             if (!threadRootAvailable(fresh, root.conversationId, root.id)) {
@@ -497,12 +515,13 @@ internal fun MirrorThreadSheet(
     LaunchedEffect(flashId) { if (flashId != null) { delay(1_700); flashId = null } }
     MirrorSheet(title = "Thread", onDismiss = onDismiss) {
         Column(Modifier.heightIn(max = 430.dp)) {
+            draftError?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp) }
             error?.let { text ->
                 Text(text, color = MirrorArt.Accent, fontSize = 12.sp,
                     modifier = Modifier.clickable(enabled = !loading) { retry++ }.padding(vertical = 6.dp))
             }
             if (!available) {
-                Text(if (loading) "Loading thread…" else "This thread is unavailable. Your draft is kept while this sheet is open.",
+                Text(if (loading) "Loading thread…" else "This thread is unavailable. Your draft is saved on this device.",
                     color = MirrorArt.Faint, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
             } else {
                 LazyColumn(state = listState, modifier = Modifier.weight(1f, fill = false).heightIn(max = 340.dp)) {
@@ -539,17 +558,19 @@ internal fun MirrorThreadSheet(
                             if (sending || denied || !threadRootAvailable(currentRoot, root.conversationId, root.id)) return@mirrorPressClick
                             val body = draft.text
                             val revision = composer.revision
+                            val token = draftToken
+                            if (token == null) { error = "Draft storage isn't ready. Try again."; return@mirrorPressClick }
                             sending = true
                             scope.launch {
                                 try {
-                                    SendMessageUseCase(repository)(root.conversationId, body, parentId = root.id).getOrThrow()
-                                    composer.clearIfUnchanged(revision)
+                                    SendMessageUseCase(threadRepository)(root.conversationId, body, parentId = root.id, draftToken = token).getOrThrow()
+                                    composer.clearIfUnchanged(revision, notify = false)
                                     error = null
                                 } catch (cancelled: CancellationException) {
                                     throw cancelled
                                 } catch (failure: Exception) {
                                     denied = denied || threadAccessDenied((failure as? PulseApiException)?.status)
-                                    error = "Reply wasn't confirmed. Your text is kept; check Outbox before retrying."
+                                    error = "Reply wasn't confirmed. Check Outbox for recovery before retrying."
                                 } finally { sending = false }
                             }
                         }), contentAlignment = Alignment.Center) {

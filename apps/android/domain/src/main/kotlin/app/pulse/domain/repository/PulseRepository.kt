@@ -453,6 +453,13 @@ interface PulseRepository {
     /** Full drain with the standard policy - every flush trigger funnels here. */
     suspend fun flushOutbox(): FlushReport
 
+    /** Device-local thread composer; never overwrites or mirrors the main-room draft. */
+    fun stageThreadDraft(conversationId: String, rootId: String, text: String): app.pulse.domain.model.ComposerDraftToken? = null
+    suspend fun loadThreadDraft(conversationId: String, rootId: String): String? = null
+    fun observeThreadDraft(conversationId: String, rootId: String): Flow<app.pulse.domain.model.ThreadDraftSnapshot> =
+        kotlinx.coroutines.flow.flowOf(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))
+    fun captureThreadDraftToken(conversationId: String, rootId: String): app.pulse.domain.model.ComposerDraftToken? = null
+
     /** Journal locally without waiting for a server debounce or a composable lifetime. */
     fun stageDraft(conversationId: String, text: String) {}
     /** Persist the composer draft (≤2000 chars; blank clears) and mirror remotely. */

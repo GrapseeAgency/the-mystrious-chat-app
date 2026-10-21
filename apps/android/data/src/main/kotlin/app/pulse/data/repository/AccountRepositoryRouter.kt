@@ -51,6 +51,7 @@ internal class AccountRepositoryRouter(
                                 "observeConnected" -> emit(false)
                                 "observePresence" -> emit(emptySet<String>())
                                 "observeDraft" -> emit(null)
+                                "observeThreadDraft" -> emit(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))
                                 "observeDrafts", "getConvThemes" -> emit(emptyMap<String, Any>())
                                 "getPulsePrefs" -> emit(PulseWave8Logic.mergePrefs(null as String?))
                                 else -> emit(emptyList<Any>())

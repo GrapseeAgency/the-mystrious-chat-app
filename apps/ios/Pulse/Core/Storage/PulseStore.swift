@@ -405,7 +405,7 @@ public final class PulseStore: Sendable {
     func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
                         consumingDraft token: PulseDraftConsumption?) throws -> Bool {
         guard let payload = PulseOutboxForward.encode(envelope) else { throw CocoaError(.coderInvalidValue) }
-        if let token, token.storageIdentity != storageIdentity || token.conversationId != message.conversationId {
+        if let token, token.storageIdentity != storageIdentity || token.conversationId != message.conversationId || token.parentId != message.parentId || token.parentId != envelope.parentId {
             throw CocoaError(.userCancelled)
         }
         let commit: (Bool) throws -> Void = { consume in
@@ -414,11 +414,11 @@ public final class PulseStore: Sendable {
                 try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
                     content: message.content, kind: envelope.kind ?? "text", createdAt: PulseOutboxClock.now(),
                     attempts: 0, payloadJson: payload).insert(db)
-                if consume { try Self.writeDraftSnapshot(db, room: message.conversationId, text: "") }
+                if consume, let token { try Self.writeDraftSnapshot(db, room: token.storageKey, text: "") }
             }
         }
         if let token {
-            return try draftFence.enqueue(token.conversationId, expected: token.revision, action: commit)
+            return try draftFence.enqueue(token.storageKey, expected: token.revision, action: commit)
         }
         try commit(false)
         return false
@@ -914,8 +914,9 @@ public final class PulseStore: Sendable {
     private var draftFence: PulseDraftWriteFence { PulseDraftWriteFence.shared(for: storageIdentity) }
 
     func reserveDraftWrite(conversationId: String) -> UInt64 { draftFence.reserve(conversationId) }
-    func captureDraftConsumption(conversationId: String) -> PulseDraftConsumption {
-        PulseDraftConsumption(storageIdentity: storageIdentity, conversationId: conversationId, revision: draftFence.current(conversationId))
+    func captureDraftConsumption(conversationId: String, parentId: String? = nil) -> PulseDraftConsumption {
+        PulseDraftConsumption(storageIdentity: storageIdentity, conversationId: conversationId,
+            revision: draftFence.current(PulseThreadDraft.key(conversationId, parentId: parentId)), parentId: parentId)
     }
 
     func saveDraftSnapshot(conversationId: String, text: String, expectedRevision: UInt64? = nil) throws {

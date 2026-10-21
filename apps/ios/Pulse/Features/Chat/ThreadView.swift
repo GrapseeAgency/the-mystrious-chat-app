@@ -18,6 +18,9 @@ struct ThreadView: View {
     @State private var replies: [WireChatMessage] = []
     @State private var phase: Phase = .loading
     @State private var draft = ""
+    @State private var draftJournal: PulseDraftJournal?
+    @State private var draftRevision: UInt64 = 0
+    @State private var draftSession: UUID?
     @State private var rootUnavailable = false
     @State private var loadGeneration = UUID()
     @State private var initialJumpResolved = false
@@ -35,7 +38,8 @@ struct ThreadView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var viewerId: String { session.viewer?.id ?? "" }
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !rootUnavailable }
+    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !rootUnavailable &&
+        draftJournal?.isCurrentOwner == true && draftSession == session.sessionGeneration }
 
     var body: some View {
         NavigationStack {
@@ -123,6 +127,10 @@ struct ThreadView: View {
             guard highlightedReplyId != nil else { return }
             do { try await Task.sleep(nanoseconds: 1_700_000_000) } catch { return }
             highlightedReplyId = nil
+        }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            _ = prepareDraft()
+            dismiss()
         }
         .onDisappear { loadGeneration = UUID() }
     }
@@ -240,6 +248,7 @@ struct ThreadView: View {
     // data
 
     private func load() async {
+        guard prepareDraft() else { return }
         let ticket = UUID()
         loadGeneration = ticket
         let epoch = session.sessionGeneration
@@ -334,16 +343,48 @@ struct ThreadView: View {
         replies = PulseTextDelivery.timeline(replies, pending: [message])
     }
 
+    private func prepareDraft() -> Bool {
+        if let epoch = draftSession, epoch != session.sessionGeneration {
+            draft = ""
+            replies = []
+            rootUnavailable = true
+            return false
+        }
+        guard draftJournal == nil else { return true }
+        guard let store = session.store else { return false }
+        let journal = PulseDraftJournal(store: store, conversationId: conversation.id, parentId: root.id)
+        draftSession = session.sessionGeneration
+        draftJournal = journal
+        draft = journal.snapshot ?? ""
+        return true
+    }
+
+    private func editDraft(_ text: String) {
+        guard draftSession == session.sessionGeneration, let journal = draftJournal, journal.isCurrentOwner else { return }
+        draft = text
+        draftRevision &+= 1
+        let revision = draftRevision, epoch = session.sessionGeneration
+        let write = journal.submit(text, revision: revision)
+        Task {
+            do { try await write.value }
+            catch {
+                guard epoch == session.sessionGeneration, draftRevision == revision else { return }
+                errorText = "Couldn't save this draft on the device. Keep this thread open and try again."
+            }
+        }
+    }
+
     // composer
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("Reply in thread", text: $draft, axis: .vertical)
+            TextField("Reply in thread", text: Binding(get: { draft }, set: editDraft), axis: .vertical)
                 .lineLimit(1...5)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
                 .background(Capsule().fill(Color(.secondarySystemBackground)))
                 .focused($composerFocused)
+                .disabled(draftJournal == nil || draftSession != session.sessionGeneration)
 
             Button {
                 sendReply()
@@ -368,7 +409,7 @@ struct ThreadView: View {
         guard canSend, let viewer = session.viewer, let store = session.store, session.ready else { return }
         do {
             let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer,
-                conversationId: conversation.id, content: draft, parentId: root.id)
+                conversationId: conversation.id, content: draft, parentId: root.id, draftJournal: draftJournal)
             appendReply(message)
             initialJumpResolved = true // Sending intentionally returns to the new reply.
             tailScrollRevision += 1
