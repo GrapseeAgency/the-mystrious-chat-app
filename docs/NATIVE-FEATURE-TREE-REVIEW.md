@@ -2224,3 +2224,16 @@ is not yet available. Physical group media and permission UI remain unverified.
 
 Open: relay-side conversation authorization, cross-device admission, nonce/ACK-based
 same-room replay fencing, full native engine execution and actual two-device calls.
+
+## 2026-10-21 — muted group calls still rang online members
+
+The group ring route described mute as suppressing every ring, but sent the realtime
+banner to all other participants BEFORE filtering only the push targets. Both native
+clients could therefore ring an online muted conversation. The route now uses one
+participant/mute snapshot and the same deduplicated eligible recipient set for both
+channels, excluding the caller and skipping delivery entirely when no one is eligible.
+Mute expiry at the boundary restores both channels. No account/auth redesign.
+
+Two focused delivery regressions and all 112 server contracts pass. The shared dispatch
+helper passes strict targeted TypeScript checking. This does not solve relay admission
+authorization, remote push credentials/delivery or idempotency of repeated ring requests.

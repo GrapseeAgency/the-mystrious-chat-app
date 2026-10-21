@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { fanoutPush } from '@/lib/push/transport'
 import { notifySocket, safeJson, strField } from '@/lib/serializers'
+import { dispatchGroupCallRing } from '@/lib/group-call-ringing'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,44 +49,24 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Only members can ring this conversation.' }, { status: 403 })
   }
 
-  const memberIds = conversation.participants.map((p) => p.userId)
-  const recipients = memberIds.filter((memberId) => memberId !== callerId)
-  if (recipients.length === 0) {
-    return NextResponse.json({ ok: true, rang: 0, pushed: 0 })
-  }
-
   const title =
     conversation.isGroup && conversation.name
       ? conversation.name
       : caller.name
 
-  // 1. Realtime ring to everyone still connected.
-  await notifySocket('gcall:ring', recipients, {
-    type: 'gcall:ring',
-    conversationId: id,
-    kind,
-    caller: { id: caller.id, name: caller.name, color: caller.color, avatar: caller.avatar },
-    title,
-  })
-
-  // 2. High-priority push for members whose apps are closed (transport
-  //    skips currently-online users itself; muted members opted out here -
-  //    same watermark semantics as message notifications: mutedUntil > now).
-  const now = new Date()
-  const muted = await db.conversationParticipant.findMany({
-    where: { conversationId: id, mutedUntil: { gt: now } },
-    select: { userId: true },
-  })
-  const mutedIds = new Set(muted.map((row) => row.userId))
-  const pushTargets = recipients.filter((memberId) => !mutedIds.has(memberId))
-  const report = await fanoutPush(pushTargets, {
-    kind: 'gcall',
-    title,
-    body: `${caller.name} started a ${kind === 'video' ? 'video' : 'voice'} call`,
-    conversationId: id,
-    callKind: kind,
-    callerName: caller.name,
-  })
-
-  return NextResponse.json({ ok: true, rang: recipients.length, pushed: report.sent })
+  // Apply the same mute snapshot BEFORE either delivery channel. Previously online
+  // muted members still received a ringing banner even though their push was skipped.
+  const report = await dispatchGroupCallRing(conversation.participants, callerId,
+    recipients => notifySocket('gcall:ring', recipients, {
+      type: 'gcall:ring', conversationId: id, kind,
+      caller: { id: caller.id, name: caller.name, color: caller.color, avatar: caller.avatar },
+      title,
+    }),
+    recipients => fanoutPush(recipients, {
+      kind: 'gcall', title,
+      body: `${caller.name} started a ${kind === 'video' ? 'video' : 'voice'} call`,
+      conversationId: id, callKind: kind, callerName: caller.name,
+    }),
+  )
+  return NextResponse.json({ ok: true, ...report })
 }
