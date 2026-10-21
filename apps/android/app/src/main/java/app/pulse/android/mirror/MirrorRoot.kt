@@ -1,5 +1,7 @@
 package app.pulse.android.mirror
 
+import kotlinx.coroutines.flow.first
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -80,6 +83,9 @@ import kotlinx.coroutines.launch
  */
 internal enum class MirrorTab { Chats, Hub, Contacts, Profile }
 
+private data class MirrorRoomOpenRequest(val id: String, val ticket: Long, val jumpId: String?,
+    val tab: MirrorTab, val previousRoomId: String?, val personal: Boolean = false)
+
 /** One typer in flight - the relay's typing event with a 4s expiry stamp. */
 private data class MirrorTyper(val conversationId: String, val userId: String, val userName: String, val expiresAt: Long)
 
@@ -124,6 +130,9 @@ internal fun MirrorRoot(
     val lifecycleOwner = LocalLifecycleOwner.current
     var tab by rememberSaveable { mutableStateOf(MirrorTab.Chats) }
     var openRoom by remember { mutableStateOf<Conversation?>(null) }
+    var roomOpenRequest by remember(viewerId) { mutableStateOf<MirrorRoomOpenRequest?>(null) }
+    var roomOpenSequence by remember(viewerId) { mutableStateOf(0L) }
+    val navigationContext = androidx.compose.ui.platform.LocalContext.current
     val currentCallRoomCallback by androidx.compose.runtime.rememberUpdatedState(onActiveCallRoomChanged)
     androidx.compose.runtime.DisposableEffect(openRoom?.id) {
         currentCallRoomCallback(openRoom)
@@ -150,7 +159,9 @@ internal fun MirrorRoot(
     LaunchedEffect(pendingRoomId, conversations) {
         val id = pendingRoomId ?: return@LaunchedEffect
         val convo = conversations.firstOrNull { it.id == id } ?: return@LaunchedEffect
+        roomOpenRequest = null
         openRoom = convo
+        pendingJumpId = pendingJumpMessageId
         if (pendingJumpMessageId != null) {
             pendingJumpId = pendingJumpMessageId
             onConsumePendingJumpMessage()
@@ -248,6 +259,7 @@ internal fun MirrorRoot(
     var backExitArmed by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler {
         when {
+            roomOpenRequest != null -> roomOpenRequest = null
             viewingStory != null -> viewingStory = null
             spotlightOpen -> spotlightOpen = false
             profileSavedOpen -> profileSavedOpen = false
@@ -355,8 +367,50 @@ internal fun MirrorRoot(
     val activeConversations = conversations.filter { !it.isArchived && !it.isSelf }
     val archivedConversations = conversations.filter { it.isArchived }
 
-    fun openById(conversationId: String) {
-        conversations.firstOrNull { it.id == conversationId }?.let { openRoom = it }
+    fun openById(conversationId: String, jumpId: String? = null) {
+        roomOpenRequest = null
+        val cached = conversations.firstOrNull { it.id == conversationId }
+        if (cached != null) {
+            pendingJumpId = jumpId
+            openRoom = cached
+        } else {
+            roomOpenSequence++
+            roomOpenRequest = MirrorRoomOpenRequest(conversationId, roomOpenSequence, jumpId, tab, openRoom?.id)
+        }
+    }
+    fun openPersonalChat(peerId: String) {
+        if (peerId.isBlank()) return
+        roomOpenSequence++
+        roomOpenRequest = MirrorRoomOpenRequest(peerId, roomOpenSequence, null, tab, openRoom?.id, personal = true)
+    }
+    LaunchedEffect(roomOpenRequest, repository, viewerId, tab, openRoom?.id) {
+        val request = roomOpenRequest ?: return@LaunchedEffect
+        if (request.tab != tab || request.previousRoomId != openRoom?.id) {
+            roomOpenRequest = null
+            return@LaunchedEffect
+        }
+        val api = repository.boundToCurrentAccount()
+        val owner = viewerId
+        if (owner == null || api.viewerId != owner) { roomOpenRequest = null; return@LaunchedEffect }
+        try {
+            // Read the repository snapshot, not the possibly older Compose list.
+            val cached = api.observeConversations().first()
+            val conversation = if (request.personal) {
+                app.pulse.domain.sync.resolvePersonalConversation(owner, request.id, cached, api::createSelfChat, api::createDm)
+            } else app.pulse.domain.sync.resolveConversationForOpen(request.id, cached, api::conversationDetail)
+            if (roomOpenRequest == request && api.viewerId == owner && tab == request.tab &&
+                openRoom?.id == request.previousRoomId) {
+                pendingJumpId = request.jumpId
+                openRoom = conversation
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            if (roomOpenRequest == request && api.viewerId == owner) {
+                android.widget.Toast.makeText(navigationContext,
+                    "Couldn't open this chat. Reconnect and try again.", android.widget.Toast.LENGTH_LONG).show()
+            }
+        } finally { if (roomOpenRequest == request) roomOpenRequest = null }
     }
 
     // art-scene ::before breathe: opacity 1 -> 0.86 -> 1 over 7s (globals.css)
@@ -450,8 +504,7 @@ internal fun MirrorRoot(
                             repository = repository,
                             // R76 - hits anchor the room at the message (web jumpToMessage)
                             onOpenConversationId = { conversationId, jumpId ->
-                                if (jumpId != null) pendingJumpId = jumpId
-                                openById(conversationId)
+                                openById(conversationId, jumpId)
                             },
                             filter = filter,
                             onFilter = {
@@ -546,6 +599,7 @@ internal fun MirrorRoot(
                     // and mentions sub-pages ride the same contract (web dock slots
                     // navigate away from every hash sub-page).
                     onTab = {
+                        roomOpenRequest = null
                         tab = it
                         callsOpen = false
                         channelsOpen = false
@@ -596,23 +650,7 @@ internal fun MirrorRoot(
                         onContacts = { tab = MirrorTab.Contacts },
                         onCalls = { callsOpen = true },
                         onArchived = { archivedOpen = true },
-                        onNoteToSelf = {
-                            // web handleSelfPress: open the existing self chat or create it
-                            val self = conversations.firstOrNull { it.isSelf }
-                            if (self != null) {
-                                openRoom = self
-                            } else {
-                                val id = viewerId.orEmpty()
-                                if (id.isNotBlank()) {
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        repository.createDm(id).onSuccess { created ->
-                                            runCatching { repository.refreshConversations() }
-                                            kotlinx.coroutines.withContext(Dispatchers.Main) { openRoom = created }
-                                        }
-                                    }
-                                }
-                            }
-                        },
+                        onNoteToSelf = { viewerId?.let { openPersonalChat(it) } },
                         onMentions = { mentionsOpen = true },
                         onChannels = { channelsOpen = true },
                         onFolders = { foldersOpen = true },
@@ -895,21 +933,11 @@ internal fun MirrorRoot(
                 // (spotlight.tsx:396 onOpenConversation(convId, null, hit.id))
                 onOpenMessage = { conversationId, messageId ->
                     spotlightOpen = false
-                    pendingJumpId = messageId
-                    openById(conversationId)
+                    openById(conversationId, messageId)
                 },
                 onOpenDm = { userId ->
-                    // web onOpenDm (main-shell.tsx:377): open or lazily create the 1:1
                     spotlightOpen = false
-                    val id = viewerId.orEmpty()
-                    if (id.isNotBlank()) {
-                        CoroutineScope(Dispatchers.IO).launch {
-                            repository.createDm(userId).onSuccess { created ->
-                                runCatching { repository.refreshConversations() }
-                                kotlinx.coroutines.withContext(Dispatchers.Main) { openRoom = created }
-                            }
-                        }
-                    }
+                    openPersonalChat(userId)
                 },
                 onNewChat = {
                     spotlightOpen = false
@@ -922,6 +950,11 @@ internal fun MirrorRoot(
                 },
                 onDismiss = { spotlightOpen = false },
             )
+        }
+        if (roomOpenRequest != null) {
+            Text("Opening chat…", color = MirrorArt.TextSoft, fontSize = 13.sp,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(12.dp)
+                    .background(MirrorArt.BubbleIn, RoundedCornerShape(12.dp)).padding(12.dp))
         }
     }
 }

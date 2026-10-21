@@ -105,6 +105,13 @@ internal fun MirrorNewChatSheet(
     onDismiss: () -> Unit,
     onOpened: (String) -> Unit,
 ) {
+    val actionRepository = repository.boundToCurrentAccount()
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var directoryError by remember { mutableStateOf<String?>(null) }
+    var directoryRetry by remember { mutableStateOf(0) }
+    var directoryLoading by remember { mutableStateOf(false) }
+    var directoryTicket by remember { mutableStateOf(0L) }
+    var actionError by remember { mutableStateOf<String?>(null) }
     var users by remember { mutableStateOf<List<User>>(emptyList()) }
     var query by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf<String?>(null) }
@@ -116,12 +123,21 @@ internal fun MirrorNewChatSheet(
     var channelDesc by remember { mutableStateOf("") }
     var channelError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        users = repository.users("").getOrDefault(emptyList())
-    }
-    LaunchedEffect(query) {
-        delay(250)
-        users = repository.users(query).getOrDefault(emptyList())
+    LaunchedEffect(actionRepository, query, directoryRetry) {
+        directoryTicket++
+        val ticket = directoryTicket
+        directoryLoading = true
+        directoryError = null
+        try {
+            delay(250)
+            app.pulse.domain.sync.confirmedAction({ actionRepository.users(query) }) { loaded ->
+                if (ticket == directoryTicket) users = loaded.filter { it.id != actionRepository.viewerId }
+            }.getOrThrow()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            if (ticket == directoryTicket) directoryError = "People couldn't be loaded. Tap to retry."
+        } finally { if (ticket == directoryTicket) directoryLoading = false }
     }
 
     MirrorSheet(title = if (mode == "dm") "New chat" else "New channel", onDismiss = onDismiss) {
@@ -137,7 +153,7 @@ internal fun MirrorNewChatSheet(
                         .clip(CircleShape)
                         .background(if (mode == value) MirrorArt.ChipActive else MirrorArt.White7)
                         .border(1.dp, if (mode == value) MirrorArt.Hairline else Color.Transparent, CircleShape)
-                        .mirrorPressClick(onClick = { mode = value })
+                        .mirrorPressClick(onClick = { if (busy == null) mode = value })
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                 ) {
                     Text(
@@ -202,22 +218,18 @@ internal fun MirrorNewChatSheet(
                                 channelError = "Give the channel a name"
                             } else {
                                 busy = "channel"
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    val outcome = runCatching {
-                                        val channel = repository.createChannel(
-                                            channelName.trim(),
-                                            channelDesc.trim().ifBlank { null },
-                                            null,
-                                        ).getOrThrow()
-                                        // the creator auto-subscribes server-side; refresh the directory
-                                        runCatching { repository.channels(mineOnly = false) }
-                                        channel
-                                    }
-                                    CoroutineScope(Dispatchers.Main).launch {
-                                        busy = null
-                                        outcome.onSuccess { channel -> onOpened(channel.id) }
-                                            .onFailure { channelError = "Could not create the channel" }
-                                    }
+                                val name = channelName.trim()
+                                val description = channelDesc.trim().ifBlank { null }
+                                actionScope.launch {
+                                    try {
+                                        app.pulse.domain.sync.confirmedAction({ actionRepository.createChannel(name, description, null) }) {
+                                            onOpened(it.id)
+                                        }.getOrThrow()
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                        throw cancelled
+                                    } catch (failure: Exception) {
+                                        channelError = failure.message ?: "Couldn't confirm channel creation. Check Channels before retrying."
+                                    } finally { busy = null }
                                 }
                             }
                         })
@@ -257,7 +269,11 @@ internal fun MirrorNewChatSheet(
             }
         }
         Spacer(Modifier.height(8.dp))
-        if (users.isEmpty()) {
+        if (directoryLoading) Text("Loading people…", color = MirrorArt.TextSoft, fontSize = 12.sp)
+        directoryError?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp,
+            modifier = Modifier.clickable { directoryRetry++ }.padding(8.dp)) }
+        actionError?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp, modifier = Modifier.padding(8.dp)) }
+        if (users.isEmpty() && !directoryLoading && directoryError == null) {
             MirrorEmptyState("No people found", "Invite someone to Pulse and they will appear here.")
         }
         Column(
@@ -273,10 +289,15 @@ internal fun MirrorNewChatSheet(
                             .clip(RoundedCornerShape(14.dp))
                             .clickable(enabled = busy == null) {
                                 busy = user.id
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    val convo = repository.createDm(user.id).getOrNull()
-                                    busy = null
-                                    if (convo != null) onOpened(convo.id)
+                                actionError = null
+                                actionScope.launch {
+                                    try {
+                                        app.pulse.domain.sync.confirmedAction({ actionRepository.createDm(user.id) }) { onOpened(it.id) }.getOrThrow()
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                        throw cancelled
+                                    } catch (failure: Exception) {
+                                        actionError = failure.message ?: "Couldn't open this chat. Try again."
+                                    } finally { busy = null }
                                 }
                             }
                             .padding(horizontal = 4.dp, vertical = 8.dp),

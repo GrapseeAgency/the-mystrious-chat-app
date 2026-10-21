@@ -158,6 +158,7 @@ final class MirrorViewModel: ObservableObject {
     }
 
     func start(session: PulseSession) {
+        if client?.userId != session.api.userId { profile = nil; stats = nil; coins = 0 }
         client = session.api
         store = session.store
         inbox = ((try? store?.cachedConversations()) ?? []).map { WireConversationSummary(cached: $0) }
@@ -188,6 +189,20 @@ final class MirrorViewModel: ObservableObject {
         if archivedRows != archived { archivedRows = archived }
     }
 
+    func cachedDirectConversation(viewerId: String, peerId: String) -> WireConversationSummary? {
+        guard client?.userId == viewerId else { return nil }
+        return PulseConversationNavigation.directConversation(in: inbox, viewerId: viewerId, peerId: peerId)
+    }
+
+    func acceptCreatedConversation(_ conversation: WireConversationSummary, viewerId: String) {
+        guard client?.userId == viewerId else { return }
+        refreshRevision &+= 1
+        inbox.removeAll { $0.id == conversation.id }
+        inbox.insert(conversation, at: 0)
+        projectInbox()
+        try? store?.upsert(conversations: [conversation.toDomain()])
+    }
+
     func refresh() {
         guard let client else { return }
         refreshRevision &+= 1
@@ -201,6 +216,7 @@ final class MirrorViewModel: ObservableObject {
                 projectInbox()
                 try? store?.upsert(conversations: page.map { $0.toDomain() }, replacingSnapshot: true)
             }
+            guard !Task.isCancelled, revision == refreshRevision else { return }
             // profile row (tolerant subset), stats, coins
             if let url = URL(string: PulseEndpoints.gatewayURL.absoluteString + "/api/users/" + client.userId) {
                 var req = URLRequest(url: url)
@@ -209,14 +225,23 @@ final class MirrorViewModel: ObservableObject {
                     req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
                 }
                 if let (data, _) = try? await URLSession.shared.data(for: req) {
+                    guard !Task.isCancelled, revision == refreshRevision else { return }
                     let root = try? JSONDecoder().decode(MirrorEnvelope<MirrorProfileRow>.self, from: data)
                     if let unwrapped = root?.user {
                         profile = unwrapped
                     }
                 }
             }
-            if let s = try? await client.userStats(client.userId) { stats = s }
-            if let w = try? await client.wallet() { coins = w.coins ?? 0 }
+            guard !Task.isCancelled, revision == refreshRevision else { return }
+            if let s = try? await client.userStats(client.userId) {
+                guard !Task.isCancelled, revision == refreshRevision else { return }
+                stats = s
+            }
+            guard !Task.isCancelled, revision == refreshRevision else { return }
+            if let w = try? await client.wallet() {
+                guard !Task.isCancelled, revision == refreshRevision else { return }
+                coins = w.coins ?? 0
+            }
         }
     }
 }
@@ -497,6 +522,8 @@ struct MirrorHomeSheetView: View {
     @State private var groupName = ""
     @State private var picked: Set<String> = []
     @State private var busy = false
+    @State private var creationError: String?
+    @State private var creationTask: Task<Void, Never>?
 
     private var filteredUsers: [WireUser] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -515,6 +542,8 @@ struct MirrorHomeSheetView: View {
                     .clipShape(Capsule())
                     .padding(.bottom, 8)
             }
+            if let creationError { MirrorPanelHint(creationError) }
+            if busy && sheet != .newGroup { MirrorPanelHint("Opening chat…") }
             if sheet == .archived {
                 MirrorPanelScroll {
                     if model.archivedRows.isEmpty {
@@ -581,6 +610,9 @@ struct MirrorHomeSheetView: View {
                 }
             }
         }
+        .disabled(busy)
+        .onDisappear { creationTask?.cancel() }
+        .onChange(of: session.sessionGeneration) { _, _ in creationTask?.cancel(); dismiss() }
         .task(id: directoryRevision) {
             let epoch = session.sessionGeneration
             do {
@@ -609,36 +641,49 @@ struct MirrorHomeSheetView: View {
     }
 
     private func openOrCreateDM(with user: WireUser) {
-        guard !busy else { return }
-        busy = true
-        Task {
-            if let existing = model.rows.first(where: { !$0.isGroup && $0.title == user.name }) {
-                onOpenRow(existing)
-            } else {
-                _ = try? await session.api.createConversation(memberIds: [user.id], isGroup: false)
-                model.refresh()
-                if let created = model.rows.first(where: { !$0.isGroup && $0.title == user.name }) {
-                    onOpenRow(created)
-                } else {
-                    onDismissSheet()
-                }
-            }
+        guard !busy, let viewer = session.viewer else { return }
+        if let existing = model.cachedDirectConversation(viewerId: viewer.id, peerId: user.id) {
+            onOpenRow(MirrorViewModel.buildRow(summary: existing, viewerId: viewer.id))
+            return
         }
+        createConversation(memberIds: [user.id], isGroup: false, name: nil)
     }
 
     private func createGroup() {
-        busy = true
-        Task {
-            _ = try? await session.api.createConversation(
-                memberIds: Array(picked), isGroup: true,
-                name: groupName.trimmingCharacters(in: .whitespaces)
-            )
-            model.refresh()
-            onDismissSheet()
-        }
+        guard canCreateGroup else { return }
+        createConversation(memberIds: Array(picked), isGroup: true,
+            name: groupName.trimmingCharacters(in: .whitespaces))
     }
 
-    private func onDismissSheet() { busy = false; dismiss() }
+    private func createConversation(memberIds: [String], isGroup: Bool, name: String?) {
+        guard !busy, let viewer = session.viewer else { return }
+        let client = session.api, epoch = session.sessionGeneration
+        busy = true
+        creationError = nil
+        creationTask = Task { @MainActor in
+            defer {
+                busy = false
+                if session.sessionGeneration == epoch { session.noteInboxChanged(); model.refresh() }
+            }
+            do {
+                let created = try await client.createConversation(memberIds: memberIds, isGroup: isGroup, name: name)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                let expected = Set(memberIds + [viewer.id])
+                guard !created.id.isEmpty, created.isGroup == isGroup, created.isSelf != true,
+                      created.members.count == expected.count, Set(created.members.map(\.id)) == expected else {
+                    creationError = "The returned chat didn't match your selection. Refresh Chats before retrying."
+                    return
+                }
+                model.acceptCreatedConversation(created, viewerId: viewer.id)
+                // Open the returned identity directly; refresh() is asynchronous.
+                onOpenRow(MirrorViewModel.buildRow(summary: created, viewerId: viewer.id))
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                creationError = isGroup ? "Couldn't confirm group creation. Check Chats before retrying."
+                    : "Couldn't open this chat. Reconnect and try again."
+            }
+        }
+    }
 }
 
 /// Row long-press options - the web ChatOptionsSheet rows, real API calls.

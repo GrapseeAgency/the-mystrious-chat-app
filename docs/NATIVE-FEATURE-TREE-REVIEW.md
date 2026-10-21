@@ -2453,3 +2453,38 @@ transport cases and Kotlin confirmed-action refusal/cancellation/apply regressio
 Native compilation/execution for these changes is pending; syntax checks are not device
 proof. Open work still includes disconnected read-intent persistence, gap-aware history,
 and broader inbox/action/contact paths, not whole-app completion.
+
+
+## 2026-10-22 — identity-bound chat opening and concurrent Note to Self creation
+
+Android's mounted New Chat sheet previously raced two directory requests, represented
+network failures as an empty directory, detached create jobs from the sheet, and could
+silently fail to open a just-created chat before the Compose list received its row.
+The sheet now has one debounced directory load with explicit loading/error/retry and
+composition-owned, confirmed create actions. Root navigation resolves the exact ID from
+the repository snapshot or detail endpoint, applies message-jump metadata with that room,
+and rejects superseded/tab-changed/canceled requests. Note to Self previously called the
+regular two-member DM endpoint with the viewer's own ID; it now uses the dedicated self
+endpoint. Spotlight personal-chat opening uses the same owned, exact-member gate.
+
+Server Note to Self lookup and creation were separate statements, allowing simultaneous
+requests/devices to create duplicate private notebooks. The lookup/create now shares a
+Serializable transaction with bounded conflict retry and a retryable 409 on exhaustion.
+Only a non-group, self-flagged, exactly-one-owner row qualifies; malformed shared rows
+are not reused as private notebooks or ordinary DMs. Supplied credentials are checked
+against the requested owner; legacy tokenless authorization is not redesigned here.
+Existing historical duplicates are not merged or deleted.
+
+Swift Mirror's duplicate-name DM selection and asynchronous-refresh creation race are
+replaced with exact member identity and direct navigation using the returned summary.
+Creation is client/epoch/cancellation-bound with visible errors; stale profile/stats/
+wallet completions cannot cross a refresh revision. **Mounting caveat:** RootView mounts
+ChatsView and ContactsView, and no MirrorRootView call site was found in Pulse. These
+Mirror changes alone do not repair the primary Swift Contacts/New Chat surfaces.
+
+Full server suite: 128/128 passed; strict TypeScript checks of the touched helper pass.
+Seven changed/new native files syntax-parse; Kotlin navigation and Swift identity cases
+were added but have not been compiled/executed yet. These checks are not device proof.
+Inventory regenerated separately; autumn styling unchanged. Still open: primary Swift
+contact actions, cold external deep links missing from the inbox, group/channel creation
+lost-acknowledgement ambiguity, durable offline receipts, and history-window pagination.

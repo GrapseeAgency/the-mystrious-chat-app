@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import { advanceReadReceipt, receiptRecipients } from '../../src/lib/read-receipt.ts'
 import { inboxMessagesWhere, visibleInboxPreview, threadRepliesWhere, removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
 import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
-import { openDirectConversation } from '../../src/lib/direct-conversation.ts'
+import { openDirectConversation, openSelfConversation } from '../../src/lib/direct-conversation.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 const t = n => new Date(`2026-10-20T00:00:${String(n).padStart(2, '0')}.000Z`)
 async function fixture(run) {
@@ -303,4 +303,38 @@ test('inbox preview skips hidden-root replies and carries the earlier lifetime w
   assert.equal(visibleInboxPreview(initial.raw, 'other', t(22)), null)
   assert.equal(visibleInboxPreview({ ...initial.raw, parent: null }, 'room', t(22)), null)
   assert.equal(visibleInboxPreview({ ...initial.raw, parent: { ...initial.raw.parent, parentId: 'nested' } }, 'room', t(22)), null)
+}))
+
+
+test('simultaneous Note to Self requests converge without creating a one-member DM', () => fixture(async db => {
+  await db.$executeRawUnsafe("CREATE TABLE User(id TEXT PRIMARY KEY)")
+  await db.$executeRawUnsafe("INSERT INTO User VALUES ('me'),('other')")
+  const attempts = await Promise.allSettled([openSelfConversation(db, 'me'), openSelfConversation(db, 'me')])
+  const successful = attempts.filter(result => result.status === 'fulfilled').map(result => result.value)
+  assert.ok(successful.length > 0)
+  for (const result of attempts) if (result.status === 'rejected') assert.equal(result.reason.status, 409)
+  const reopened = await openSelfConversation(db, 'me')
+  for (const result of successful) assert.equal(result.id, reopened.id)
+  assert.equal(reopened.created, false)
+  assert.equal(await db.conversation.count(), 1)
+  const row = await db.conversation.findUnique({ where: { id: reopened.id },
+    select: { isSelf: true, isGroup: true, participants: { select: { userId: true } } } })
+  assert.deepEqual(row, { isSelf: true, isGroup: false, participants: [{ userId: 'me' }] })
+  assert.notEqual((await openSelfConversation(db, 'other')).id, reopened.id)
+  await assert.rejects(openSelfConversation(db, 'missing'), { status: 404 })
+  assert.equal(await db.conversation.count(), 2)
+}))
+
+test('a malformed shared self-flagged chat is never selected as a private notebook', () => fixture(async db => {
+  await db.$executeRawUnsafe("CREATE TABLE User(id TEXT PRIMARY KEY)")
+  await db.$executeRawUnsafe("INSERT INTO User VALUES ('me'),('other')")
+  await db.$executeRaw`INSERT INTO Conversation(id,isSelf,isGroup,updatedAt) VALUES ('shared',true,false,${t(0)})`
+  await db.$executeRawUnsafe("INSERT INTO ConversationParticipant(id,userId,conversationId) VALUES ('me-shared','me','shared'),('other-shared','other','shared')")
+  const notebook = await openSelfConversation(db, 'me')
+  assert.notEqual(notebook.id, 'shared')
+  assert.equal(notebook.created, true)
+  assert.equal((await openSelfConversation(db, 'me')).id, notebook.id)
+  const direct = await openDirectConversation(db, ['me', 'other'])
+  assert.notEqual(direct.id, 'shared')
+  assert.notEqual(direct.id, notebook.id)
 }))

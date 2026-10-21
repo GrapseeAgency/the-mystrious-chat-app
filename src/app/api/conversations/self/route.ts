@@ -20,11 +20,11 @@ import {
   safeJson,
   strField,
 } from '@/lib/serializers'
-import type { ConversationSummary } from '@/lib/types'
+import { DirectConversationError, openSelfConversation } from '@/lib/direct-conversation'
+import { bearerToken } from '@/lib/session-token'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 
 export const dynamic = 'force-dynamic'
-
-const SELF_CHAT_NAME = 'Note to self'
 
 /**
  * POST /api/conversations/self { userId }
@@ -38,51 +38,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
-  if (!user) {
-    return NextResponse.json({ error: 'User not found.' }, { status: 404 })
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, userId, 'Note to Self')
+    if (denied) return denied
   }
-
-  // Idempotency: resolve an existing isSelf chat owned by exactly
-  // this user (single-participant, self-flagged rows only).
-  const candidates = await db.conversation.findMany({
-    where: {
-      isSelf: true,
-      participants: { some: { userId } },
-    },
-    include: CONVERSATION_FULL_INCLUDE,
-    orderBy: { createdAt: 'asc' },
-  })
-  const existing = candidates.find(
-    (conv) => conv.participants.length === 1 && conv.participants[0].userId === userId,
-  )
-  if (existing) {
-    return NextResponse.json({
-      conversation: await buildConversationSummary(existing, userId),
+  try {
+    const opened = await openSelfConversation(db, userId)
+    const full = await db.conversation.findFirst({
+      where: { id: opened.id, isSelf: true, isGroup: false,
+        participants: { some: { userId }, every: { userId } } },
+      include: CONVERSATION_FULL_INCLUDE,
     })
+    if (!full) return NextResponse.json({ error: 'Note to Self is no longer available.' }, { status: 404 })
+    return NextResponse.json({ conversation: await buildConversationSummary(full, userId) },
+      { status: opened.created ? 201 : 200 })
+  } catch (error) {
+    if (error instanceof DirectConversationError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
-
-  const created = await db.conversation.create({
-    data: {
-      isGroup: false,
-      isSelf: true,
-      name: SELF_CHAT_NAME,
-      participants: { create: { userId } },
-    },
-    select: { id: true },
-  })
-
-  const full = await db.conversation.findUnique({
-    where: { id: created.id },
-    include: CONVERSATION_FULL_INCLUDE,
-  })
-  if (!full) {
-    return NextResponse.json(
-      { error: 'Failed to load the Note to Self chat.' },
-      { status: 500 },
-    )
-  }
-
-  const summary: ConversationSummary = await buildConversationSummary(full, userId)
-  return NextResponse.json({ conversation: summary }, { status: 201 })
 }
