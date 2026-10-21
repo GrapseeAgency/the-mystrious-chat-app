@@ -13,6 +13,4 @@ internal fun threadAuthorLabel(message: Message): String =
 
 /** One parent row precedes replies. A missing/expired/deleted target is not index zero. */
 internal fun threadJumpIndex(replies: List<Message>, root: Message, target: String, now: Long): Int? =
-    replies.indexOfFirst { it.id == target && it.conversationId == root.conversationId && it.threadRootId == root.id &&
-        !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
-        .takeIf { it >= 0 }?.plus(1)
+    app.pulse.domain.sync.threadReplyTargetIndex(replies, root, target, now)?.plus(1)

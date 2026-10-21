@@ -103,4 +103,21 @@ final class TimelineRecoveryTests: XCTestCase {
         XCTAssertEqual(switched.map(\.id), ["other"])
     }
 
+    func testColdJumpCanSeedWithoutMistakingDefaultHasMoreForExhaustion() {
+        var history = PulseHistoryWindow()
+        XCTAssertFalse(history.hasMore)
+        XCTAssertTrue(history.canExpandForJump)
+        let initialRefresh = history.revision
+        history.invalidateSeed() // jump supersedes initial refresh
+        XCTAssertTrue(history.canExpandForJump)
+        let cursor = PulseHistoryCursor(createdAt: "2026-10-19T00:00:00Z", id: "a")
+        history.record(cursor: cursor, hasMore: true)
+        XCTAssertFalse(history.seed(cursor: nil, hasMore: false, ifUnchanged: initialRefresh))
+        XCTAssertTrue(history.canExpandForJump)
+        history.record(cursor: cursor, hasMore: false)
+        XCTAssertFalse(history.canExpandForJump) // a real exhausted boundary stops recursion
+        history.record(cursor: nil, hasMore: false)
+        XCTAssertTrue(history.canExpandForJump) // explicit retry after an empty load can fetch latest
+    }
+
 }

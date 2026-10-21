@@ -1841,3 +1841,38 @@ with same-timestamp ordering conservatively using the composite cursor. Legacy u
 aggregate APIs remain separate. Large-thread pagination, exact primary-Android reply
 navigation, cold Swift jumps and broader revocation/media-copy behavior remain open.
 Autumn styling is unchanged. No merge/deployment or whole-app correctness claim.
+
+### Cold history jumps and exact thread targets (2026-10-21)
+
+- Swift no longer treats the initial `hasMore=false` and absent cursor as proof that
+  history is exhausted. An explicit jump without a boundary requests a latest page,
+  then advances through raw composite cursors under the existing request/session fence.
+  A known terminal boundary still stops scanning. Empty initial loads can be retried.
+- Primary Android's feature-chat handoff now carries root ID, exact reply ID and request
+  revision rather than losing the target at the root-only callback. Consumption is
+  request-owned. ThreadScreen accepts the target directly or from saved-state arguments,
+  waits for its confirmed reply to reach the rendered model, rechecks after a frame, and
+  scrolls/highlights that reply with the parent-header offset. Pending jumps suppress
+  automatic tail following; sending explicitly supersedes a suspended jump. Corrected
+  ordinary tail following's missing parent-header offset as well.
+- Mirror's active room search/jump path now loads and validates the live root AND selected
+  reply before opening the sheet. A cached parent no longer bypasses that check. The
+  shared target-index predicate rejects missing, foreign, deleted, expired and wrong-root
+  replies, including when the parent itself has become unavailable. It never substitutes
+  the first reply for a missing target.
+- Both Kotlin and Swift root-availability gates reject optimistic `local_` root IDs.
+  Reply/send/retry paths cannot use a pending parent as though it had a server identity;
+  drafts remain kept while that root is unavailable.
+
+Verification: five new native regressions (two Swift, two domain Kotlin, one Mirror Kotlin)
+cover cold/terminal history boundaries, reply identity, parent lifetime and pending roots.
+13 changed native files pass syntax checks; 99/99 existing server contracts pass locally.
+Native compilation and UI/device execution for these changes are still pending.
+
+Scope: MainActivity currently mounts MirrorRoot; the primary feature-chat callback fix is
+module wiring, not a claim that a separate primary navigation graph is shipping. Any host
+of ChatRoomScreen must forward the new optional reply ID into ThreadScreen. Explicit
+Mirror thread search jumps now require a successful availability request; ordinary offline
+thread/draft handling is unchanged. Full-thread loading and the fourteen-page room jump
+limit remain; this does not add thread pagination or persist revocation across navigation.
+No autumn palette/bubble redesign and no merge/deployment implied.

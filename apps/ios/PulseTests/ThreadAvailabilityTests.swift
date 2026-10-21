@@ -26,4 +26,9 @@ final class ThreadAvailabilityTests: XCTestCase {
         let retained = try XCTUnwrap(store.message(id: "root", now: .distantPast))
         XCTAssertFalse(PulseRemediationLogic.threadRootAvailable(retained, roomId: "room", rootId: "root"))
     }
+    func testPendingEchoCannotBecomeAThreadRootBeforeAcknowledgement() throws {
+        XCTAssertFalse(PulseRemediationLogic.threadRootAvailable(try root(["id": "local_pending"]),
+            roomId: "room", rootId: "local_pending"))
+    }
+
 }

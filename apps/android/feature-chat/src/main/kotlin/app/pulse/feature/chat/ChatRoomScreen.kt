@@ -171,7 +171,8 @@ fun ChatRoomScreen(
     /** Global-search / notification jump - room scrolls + flashes on arrival. */
     jumpMessageId: String? = null,
     onBack: () -> Unit,
-    onOpenThread: (conversationId: String, rootId: String) -> Unit,
+    /** The navigator must pass jumpMessageId into ThreadScreen (or its saved-state argument). */
+    onOpenThread: (conversationId: String, rootId: String, jumpMessageId: String?) -> Unit,
     viewModel: ChatRoomViewModel = hiltViewModel(),
     // Wave 5 voice rooms (authorized shared plumbing only - the same
     // MainActivity-level trigger idiom the calls surface uses):
@@ -200,7 +201,7 @@ fun ChatRoomScreen(
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val replyCounts by viewModel.replyCounts.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val threadJumpRoot by viewModel.threadJumpRoot.collectAsStateWithLifecycle()
+    val threadJump by viewModel.threadJump.collectAsStateWithLifecycle()
     val topics by viewModel.topics.collectAsStateWithLifecycle()
     val activeTopicId by viewModel.activeTopicId.collectAsStateWithLifecycle()
     val recording by viewModel.recording.collectAsStateWithLifecycle()
@@ -461,10 +462,10 @@ fun ChatRoomScreen(
         }
     }
 
-    LaunchedEffect(threadJumpRoot) {
-        val root = threadJumpRoot ?: return@LaunchedEffect
-        viewModel.consumeThreadJump()
-        onOpenThread(conversationId, root)
+    LaunchedEffect(threadJump) {
+        val request = threadJump ?: return@LaunchedEffect
+        onOpenThread(conversationId, request.rootId, request.replyId)
+        viewModel.consumeThreadJump(request)
     }
 
     // The flash ring also scrolls the bubble into view (search/pins/quotes).
@@ -905,7 +906,7 @@ fun ChatRoomScreen(
                                 onQuoteClick = { quoteId -> viewModel.jumpTo(quoteId) },
                                 onOpenImage = { lightboxTarget = message },
                                 onOpenFile = { viewModel.openFile(message, share = false) },
-                                onOpenThread = { onOpenThread(conversationId, message.id) },
+                                onOpenThread = { onOpenThread(conversationId, message.id, null) },
                                 // D27 - long-press a reaction chip → who-reacted sheet.
                                 onWhoReacted = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                                     { emoji -> whoReactedFor = message to emoji }
@@ -2144,7 +2145,7 @@ fun ChatRoomScreen(
             },
             onReplyInThread = {
                 actionTarget = null
-                onOpenThread(conversationId, target.id)
+                onOpenThread(conversationId, target.id, null)
             },
             onEdit = {
                 viewModel.beginEdit(target)

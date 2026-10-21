@@ -403,9 +403,12 @@ class ChatRoomViewModel @Inject constructor(
         .map { rows -> app.pulse.domain.sync.cachedThreadReplyCounts(rows) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    private val _threadJumpRoot = MutableStateFlow<String?>(null)
-    val threadJumpRoot: StateFlow<String?> = _threadJumpRoot.asStateFlow()
-    fun consumeThreadJump() { _threadJumpRoot.value = null }
+    data class ThreadJumpRequest(val rootId: String, val replyId: String, val revision: Long)
+    private val _threadJump = MutableStateFlow<ThreadJumpRequest?>(null)
+    val threadJump: StateFlow<ThreadJumpRequest?> = _threadJump.asStateFlow()
+    fun consumeThreadJump(request: ThreadJumpRequest) {
+        if (_threadJump.value == request) _threadJump.value = null
+    }
 
     private var typingJob: Job? = null
     private var draftSaveJob: Job? = null
@@ -970,7 +973,7 @@ class ChatRoomViewModel @Inject constructor(
     fun jumpTo(messageId: String) {
         if (messageId.isBlank()) return
         cancelHistory()
-        _threadJumpRoot.value = null
+        _threadJump.value = null
         _activeTopicId.value = null
         val ticket = historyRevision
         _state.value = _state.value.copy(loadingOlder = true)
@@ -996,10 +999,13 @@ class ChatRoomViewModel @Inject constructor(
                     val rootId = target.threadRootId
                     if (rootId == null) flash(target.id)
                     else {
-                        val (root, _) = repo.loadThread(rootId)
+                        val (root, replies) = repo.loadThread(rootId)
                         kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                        if (root.conversationId != conversationId || root.isDeleted) throw IllegalStateException("Thread unavailable")
-                        _threadJumpRoot.value = root.id
+                        if (!app.pulse.domain.sync.threadRootAvailable(root, conversationId, rootId) ||
+                            app.pulse.domain.sync.threadReplyTargetIndex(replies, root, target.id) == null) {
+                            throw IllegalStateException("Reply unavailable")
+                        }
+                        _threadJump.value = ThreadJumpRequest(root.id, target.id, ticket)
                     }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -1446,7 +1452,7 @@ class ChatRoomViewModel @Inject constructor(
      */
     fun setActiveTopic(topicId: String?) {
         cancelHistory()
-        _threadJumpRoot.value = null
+        _threadJump.value = null
         _activeTopicId.value = topicId
         if (topicId != null) {
             viewModelScope.launch { runCatching { repo.refreshMessages(conversationId, topicId) } }

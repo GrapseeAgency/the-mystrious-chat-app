@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,6 +86,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -106,6 +109,7 @@ class ThreadViewModel @Inject constructor(
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
     val rootId: String = savedStateHandle.get<String>("rootId").orEmpty()
+    val initialJumpMessageId: String? = savedStateHandle.get<String>("jumpMessageId")
 
     data class UiState(
         val loading: Boolean = false,
@@ -117,6 +121,7 @@ class ThreadViewModel @Inject constructor(
         val notice: RoomNotice? = null,
         val downloadingFileId: String? = null,
         val openedFile: FileReady? = null,
+        val loadedReplyIds: Set<String>? = null,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -238,10 +243,14 @@ class ThreadViewModel @Inject constructor(
         _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {
             try {
-                val (root, _) = repo.loadThread(rootId)
+                val (root, loadedReplies) = repo.loadThread(rootId)
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (!threadRootAvailable(root, conversationId, rootId)) throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
-                _state.value = _state.value.copy(loading = false, unavailable = false, error = null)
+                val now = System.currentTimeMillis()
+                val liveIds = loadedReplies.filter { it.conversationId == conversationId && it.threadRootId == rootId &&
+                    !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
+                    .mapTo(mutableSetOf()) { it.id }
+                _state.value = _state.value.copy(loading = false, unavailable = false, error = null, loadedReplyIds = liveIds)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -327,6 +336,7 @@ fun ThreadScreen(
     viewerId: String?,
     onBack: () -> Unit,
     viewModel: ThreadViewModel = hiltViewModel(),
+    jumpMessageId: String? = viewModel.initialJumpMessageId,
 ) {
     val cachedParent by viewModel.parent.collectAsStateWithLifecycle()
     val cachedReplies by viewModel.replies.collectAsStateWithLifecycle()
@@ -361,7 +371,43 @@ fun ThreadScreen(
 
     val draft = state.draft
     var lightboxTarget by remember { mutableStateOf<Message?>(null) }
-    var anchoredToLatest by remember { mutableStateOf(false) }
+    var anchoredToLatest by remember(viewModel.rootId) { mutableStateOf(false) }
+    var jumpResolved by remember(viewModel.rootId, jumpMessageId) { mutableStateOf(false) }
+    var flashId by remember(viewModel.rootId, jumpMessageId) { mutableStateOf<String?>(null) }
+    val latestThread by rememberUpdatedState(parent to replies)
+
+    // Navigation carries the reply ID all the way into the rendered thread.
+    // Wait for Room -> Compose propagation, not merely the HTTP response.
+    LaunchedEffect(jumpMessageId, jumpResolved, state.loadedReplyIds, state.unavailable, state.loading) {
+        val target = jumpMessageId ?: return@LaunchedEffect
+        val confirmed = state.loadedReplyIds ?: return@LaunchedEffect
+        if (jumpResolved || state.unavailable || state.loading) return@LaunchedEffect
+        anchoredToLatest = true
+        if (target !in confirmed) {
+            viewModel.notify("That reply is no longer available in this thread.", isError = true)
+            jumpResolved = true
+            return@LaunchedEffect
+        }
+        val rendered = kotlinx.coroutines.withTimeoutOrNull(3_000) {
+            androidx.compose.runtime.snapshotFlow {
+                val (root, rows) = latestThread
+                root?.let { app.pulse.domain.sync.threadReplyTargetIndex(rows, it, target) }
+            }.first { it != null }
+        }
+        if (rendered != null) {
+            androidx.compose.runtime.withFrameNanos { }
+            val (root, rows) = latestThread
+            val index = root?.let { app.pulse.domain.sync.threadReplyTargetIndex(rows, it, target) }
+            if (index != null) {
+                listState.scrollToItem(index + 1) // parent header is item zero
+                flashId = target
+            } else viewModel.notify("That reply is no longer available.", isError = true)
+        } else viewModel.notify("Couldn't display that reply. Try opening it again.", isError = true)
+        jumpResolved = true
+    }
+    LaunchedEffect(flashId) {
+        if (flashId != null) { kotlinx.coroutines.delay(1_700); flashId = null }
+    }
 
     LaunchedEffect(parent, replies) {
         val target = lightboxTarget
@@ -373,12 +419,12 @@ fun ThreadScreen(
 
     // Stick to the newest reply as the thread grows (realtime appends);
     // the first non-empty emission jumps straight to the end.
-    LaunchedEffect(replies.size) {
-        if (replies.isEmpty()) return@LaunchedEffect
-        val lastVisible = listState.firstVisibleItemIndex + listState.layoutInfo.visibleItemsInfo.size
+    LaunchedEffect(replies.lastOrNull()?.id) {
+        if (replies.isEmpty() || (jumpMessageId != null && !jumpResolved)) return@LaunchedEffect
+        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         val nearBottom = lastVisible >= replies.size - 1
         if (!anchoredToLatest || nearBottom) {
-            listState.scrollToItem(replies.lastIndex.coerceAtLeast(0))
+            listState.scrollToItem(replies.size) // include the parent header
             anchoredToLatest = true
         }
     }
@@ -489,7 +535,8 @@ fun ThreadScreen(
                 }
                 items(replies, key = { it.id }) { reply ->
                     Column(
-                        Modifier.fillMaxWidth(),
+                        Modifier.fillMaxWidth().then(if (flashId == reply.id)
+                            Modifier.border(2.dp, PulsePalette.Amber, RoundedCornerShape(16.dp)) else Modifier),
                         horizontalAlignment = if (reply.authorId == viewerId) Alignment.End else Alignment.Start,
                     ) {
                         ThreadContentBubble(
@@ -590,6 +637,9 @@ fun ThreadScreen(
                     onClick = {
                         if (!canSend) return@IconButton
                         viewModel.send()
+                        jumpResolved = true // an explicit send supersedes a suspended search jump
+                        anchoredToLatest = false
+                        flashId = null
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     },
                     modifier = Modifier

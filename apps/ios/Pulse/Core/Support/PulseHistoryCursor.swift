@@ -25,6 +25,10 @@ struct PulseHistoryWindow {
     private(set) var hasMore = false
     private(set) var revision: UInt64 = 0
 
+    // No cursor means no proven history boundary: an explicit jump may fetch
+    // the latest page, including after an empty/offline initial load.
+    var canExpandForJump: Bool { cursor == nil || hasMore }
+
     mutating func invalidateSeed() { revision &+= 1 }
 
     mutating func record(cursor: PulseHistoryCursor?, hasMore: Bool) {

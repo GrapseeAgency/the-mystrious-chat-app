@@ -774,9 +774,16 @@ internal fun MirrorRoom(
             }
             val parentId = targetRow.threadRootId
             if (parentId != null) {
-                val root = fresh.firstOrNull { it.id == parentId } ?: repository.loadThread(parentId).first
+                // A cached parent is not current permission or proof that the
+                // selected reply still belongs to a live thread.
+                val (root, loadedReplies) = repository.loadThread(parentId)
                 ensureActive()
                 if (!roomActionsLive.get()) return@LaunchedEffect
+                if (!app.pulse.domain.sync.threadRootAvailable(root, groupId, parentId) ||
+                    app.pulse.domain.sync.threadReplyTargetIndex(loadedReplies, root, target) == null) {
+                    sendError = "That reply is no longer available in this thread."
+                    return@LaunchedEffect
+                }
                 threadJumpId = target
                 threadFor = root
                 return@LaunchedEffect

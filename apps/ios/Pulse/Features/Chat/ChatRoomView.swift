@@ -4444,21 +4444,22 @@ final class RoomViewModel: ObservableObject {
             session.toasts.show("Couldn't reach that message in this chat's history")
             return
         }
-        guard hasMore, let oldest = historyCursor ?? PulseHistoryCursor.oldest(messages) else {
+        guard historyWindow.canExpandForJump else {
             session.toasts.show("Couldn't reach that message in this chat's history")
             return
         }
+        let oldest = historyCursor // nil intentionally requests a latest page for a cold jump
         historyWindow.invalidateSeed()
         loadingOlder = true
         defer { if historyGeneration == ticket { loadingOlder = false } }
         do {
             let page = try await client.messages(conversationId: conversationId, limit: 40,
-                before: oldest.createdAt, query: nil, topicId: topic, beforeId: oldest.id)
+                before: oldest?.createdAt, query: nil, topicId: topic, beforeId: oldest?.id)
             try Task.checkCancellation()
             guard session.sessionGeneration == epoch, historyGeneration == ticket,
                   activeTopicId == topic else { return }
             let next = PulseHistoryCursor.oldest(page.messages)
-            if let next {
+            if let next, let oldest {
                 guard next.precedes(oldest) else {
                     session.toasts.show("History returned a repeated page")
                     return

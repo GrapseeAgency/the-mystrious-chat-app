@@ -64,4 +64,28 @@ class HistoryThreadSafetyTest {
         assertTrue(MessageHistoryCursor("0", raw.first().createdAt).precedes(page.nextCursor!!))
     }
 
+    @Test fun `reply jump carries the exact target and never falls back to index zero`() {
+        val root = row("root")
+        val first = row("a").copy(threadRootId = "root")
+        val target = row("target").copy(threadRootId = "root")
+        assertEquals(1, threadReplyTargetIndex(listOf(first, target), root, target.id, 1000))
+        assertEquals(0, threadReplyTargetIndex(listOf(target), root, target.id, 1000))
+        assertNull(threadReplyTargetIndex(listOf(first), root, target.id, 1000))
+        for (bad in listOf(target.copy(deletedAt = "now"), target.copy(expiresAtEpochMs = 1000),
+            target.copy(conversationId = "other"), target.copy(threadRootId = "other"))) {
+            assertNull(threadReplyTargetIndex(listOf(first, bad), root, target.id, 1000))
+        }
+        for (badRoot in listOf(root.copy(deletedAt = "now"), root.copy(expiresAtEpochMs = 1000),
+            root.copy(threadRootId = "nested"))) {
+            assertNull(threadReplyTargetIndex(listOf(target), badRoot, target.id, 1000))
+        }
+        assertEquals(0, threadReplyTargetIndex(listOf(target.copy(expiresAtEpochMs = 1001)), root, target.id, 1000))
+    }
+
+    @Test fun `pending echo cannot become a thread root before acknowledgement`() {
+        val pending = row("local_pending")
+        assertFalse(threadRootAvailable(pending, "room", pending.id, 1000))
+        assertNull(threadReplyTargetIndex(listOf(row("reply").copy(threadRootId = pending.id)), pending, "reply", 1000))
+    }
+
 }

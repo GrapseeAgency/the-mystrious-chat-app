@@ -28,4 +28,11 @@ class ThreadPresentationTest {
         }
         assertEquals(1, threadJumpIndex(listOf(replies[1].copy(expiresAtEpochMs = 1001)), root, "target", 1000))
     }
+    @Test fun unavailableParentCannotAnchorAnOtherwiseLiveReply() {
+        val root = row("root")
+        val replies = listOf(row("target", "root"))
+        assertNull(threadJumpIndex(replies, root.copy(deletedAt = "now"), "target", 1000))
+        assertNull(threadJumpIndex(replies, root.copy(expiresAtEpochMs = 1000), "target", 1000))
+    }
+
 }
