@@ -15,6 +15,10 @@ struct AddContactView: View {
     @State private var errorText: String?
     @State private var query = ""
     @State private var pendingDm: String?
+    @State private var openingTask: Task<Void, Never>?
+    @State private var directoryRetry = 0
+    @State private var directoryTicket = UUID()
+    @State private var directoryOwner: UUID?
 
     private var others: [WireUser] {
         users.filter { $0.id != session.viewer?.id }
@@ -35,7 +39,10 @@ struct AddContactView: View {
             if loading && users.isEmpty {
                 ProgressView("Loading people…")
             } else if let error = errorText, users.isEmpty {
-                ContentUnavailableCompat(title: "People unavailable", systemImage: "wifi.exclamationmark", note: error)
+                VStack {
+                    ContentUnavailableCompat(title: "People unavailable", systemImage: "wifi.exclamationmark", note: error)
+                    Button("Retry") { directoryRetry += 1 }
+                }
             } else {
                 list
             }
@@ -44,7 +51,9 @@ struct AddContactView: View {
         .navigationTitle("Add contact")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search name or @handle")
-        .task { await load() }
+        .task(id: "\(session.sessionGeneration)-\(directoryRetry)") { await load() }
+        .onDisappear { openingTask?.cancel() }
+        .onChange(of: session.sessionGeneration) { _, _ in openingTask?.cancel() }
     }
 
     private var list: some View {
@@ -94,78 +103,80 @@ struct AddContactView: View {
     }
 
     private func row(_ person: WireUser) -> some View {
-        Button {
-            PulseHaptics.tap()
-            onOpenUser(person)
-        } label: {
-            HStack(spacing: 12) {
-                PulseAvatar(
-                    name: person.name,
-                    color: PulseTheme.color(named: person.color),
-                    photoURL: PulseTheme.photoURL(person.avatar),
-                    online: session.isOnline(person.id),
-                    size: 44,
-                )
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(person.name)
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(PulseTheme.titleOnPanel)
-                        if person.verified == true {
-                            Image(systemName: "checkmark.seal.fill")
-                                .font(.caption)
-                                .foregroundStyle(PulseTheme.emerald)
+        // Separate buttons: nesting Message inside the profile button could
+        // dispatch both destinations for one tap.
+        HStack(spacing: 12) {
+            Button {
+                openingTask?.cancel()
+                PulseHaptics.tap()
+                onOpenUser(person)
+            } label: {
+                HStack(spacing: 12) {
+                    PulseAvatar(name: person.name, color: PulseTheme.color(named: person.color),
+                        photoURL: PulseTheme.photoURL(person.avatar), online: session.isOnline(person.id), size: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(person.name).font(.body.weight(.medium)).foregroundStyle(PulseTheme.titleOnPanel)
+                            if person.verified == true {
+                                Image(systemName: "checkmark.seal.fill").font(.caption).foregroundStyle(PulseTheme.emerald)
+                            }
+                        }
+                        if let handle = person.username {
+                            Text("@\(handle)").font(.system(size: 12, design: .monospaced)).foregroundStyle(PulseTheme.textTertiary)
                         }
                     }
-                    if let handle = person.username {
-                        Text("@\(handle)")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(PulseTheme.textTertiary)
-                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer()
-                Button {
-                    Task { await startDm(person) }
-                } label: {
-                    if pendingDm == person.id {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Message", systemImage: "bubble.left.fill")
-                            .font(.footnote.weight(.semibold))
-                    }
-                }
-                .buttonStyle(.bordered)
-                .tint(PulseTheme.emerald)
-                .disabled(pendingDm != nil)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens \(person.name)'s profile")
+            Button { startDm(person) } label: {
+                if pendingDm == person.id { ProgressView().controlSize(.small) }
+                else { Label("Message", systemImage: "bubble.left.fill").font(.footnote.weight(.semibold)) }
+            }
+            .buttonStyle(.bordered)
+            .tint(PulseTheme.emerald)
+            .disabled(pendingDm != nil)
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Opens \(person.name)'s profile")
     }
 
     private func load() async {
+        let api = session.api, epoch = session.sessionGeneration, ticket = UUID()
+        directoryTicket = ticket
+        if directoryOwner != epoch { directoryOwner = epoch; users = []; errorText = nil }
         loading = users.isEmpty
-        defer { loading = false }
+        defer { if directoryTicket == ticket { loading = false } }
         do {
-            users = try await session.api.users()
+            let fresh = try await api.users()
+            guard !Task.isCancelled, session.sessionGeneration == epoch, directoryTicket == ticket else { return }
+            users = fresh
             errorText = nil
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, directoryTicket == ticket else { return }
             if users.isEmpty { errorText = ChatsViewModel.describe(error) }
         }
     }
 
-    /// Message → DM create-or-dedupe (server folds the pair) → open the room.
-    private func startDm(_ person: WireUser) async {
-        guard pendingDm == nil else { return }
+    private func startDm(_ person: WireUser) {
+        guard pendingDm == nil, let viewer = session.viewer else { return }
+        let api = session.api, epoch = session.sessionGeneration
         pendingDm = person.id
-        defer { pendingDm = nil }
-        do {
-            let conv = try await session.api.createConversation(memberIds: [person.id], isGroup: false)
-            PulseHaptics.success()
-            session.noteInboxChanged()
-            onOpenRoom(conv)
-        } catch {
-            session.toasts.show(ChatsViewModel.describe(error))
+        openingTask = Task { @MainActor in
+            defer { pendingDm = nil }
+            do {
+                let conv = try await PulseConversationNavigation.create(viewerId: viewer.id,
+                    memberIds: [person.id], isGroup: false) {
+                    try await api.createConversation(memberIds: [person.id], isGroup: false)
+                }
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                PulseHaptics.success()
+                session.noteInboxChanged()
+                onOpenRoom(conv)
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                session.toasts.show(ChatsViewModel.describe(error))
+            }
         }
     }
 }

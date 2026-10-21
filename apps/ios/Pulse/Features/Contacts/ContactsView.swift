@@ -76,6 +76,7 @@ struct ContactsView: View {
                     initial: viewModel.users.first(where: { $0.id == route.userId }),
                     userId: route.userId,
                     session: session,
+                    onOpenRoom: onOpenRoom,
                 )
             }
             // Wave 6 deep links - the session hands a user id over (same

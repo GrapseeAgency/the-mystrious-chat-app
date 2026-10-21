@@ -2543,3 +2543,31 @@ Swift files syntax-parse; native compilation/execution for this change is pendin
 The earlier f2930bb iOS archive succeeded; simulator tests and Android were still running
 at the last check, and those results do not validate this later change. Autumn unchanged.
 Profile/Add Contact asynchronous opening and broader navigation arbitration remain open.
+
+
+## 2026-10-22 — profile and Add Contact navigation stays with its screen
+
+Following Contacts through to UserPage exposed another dead-end: Message and Rooms in
+Common only set the session's room handoff, but RootView mounts exactly one tab and no
+Chats receiver exists while Contacts is visible. UserPage now forwards the resolved room
+through Contacts' RootView callback, which switches tabs and hands over the same summary.
+Message work is explicitly owned/canceled by the profile view, checks session/peer after
+awaiting, and validates returned membership through the shared navigation helper. New
+message attempts cannot orphan the previous task handle; opening another room, reporting
+or blocking supersedes pending messaging.
+
+Add Contact nested its Message button inside its profile button. Those are now sibling
+controls with distinct targets. DM creation is owned, identity-validated, cancellation/
+account-fenced, and the directory has an explicit retry/latest-load gate. Dismissing the
+sheet or choosing a profile cannot later redirect the user through its old DM task.
+
+Profile data reads capture one client/peer/session and check ownership after each await;
+failed block-state reads retain known state rather than asserting unblocked. Block/unblock
+uses the captured client, applies the confirmed desired state before optional refresh,
+and invalidates pre-action block reads so stale profile loading cannot undo confirmation.
+View-owned block work also stops updating a replaced profile/session.
+
+Three Swift files syntax-parse; these paths use the previously added native navigation
+regressions, but there is no new native execution/device claim. c12b4f6 iOS archive passed
+at the last check; simulator tests were still running. No autumn palette changes. Root
+external-deep-link arbitration and other feature-tree lifecycle work remain unresolved.
