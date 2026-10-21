@@ -46,4 +46,20 @@ class ConversationNavigationTest {
         assertTrue(job.isCancelled)
         assertFalse(opened)
     }
+    @Test fun `cancelled navigation cannot start a detail fetch or personal creation`() = runTest {
+        for (personal in listOf(false, true)) {
+            var dispatched = false
+            val job = launch {
+                currentCoroutineContext().cancel()
+                if (personal) resolvePersonalConversation("me", "peer", emptyList(),
+                    createSelf = { dispatched = true; Result.success(row("self")) },
+                    createDirect = { dispatched = true; Result.success(row("dm")) })
+                else resolveConversationForOpen("room", emptyList()) { dispatched = true; Result.success(row("room")) }
+            }
+            job.join()
+            assertTrue(job.isCancelled)
+            assertFalse(dispatched)
+        }
+    }
+
 }

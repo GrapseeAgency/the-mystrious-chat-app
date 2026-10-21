@@ -11,6 +11,7 @@ suspend fun resolveConversationForOpen(
     cached: List<Conversation>,
     load: suspend (String) -> Result<Conversation>,
 ): Conversation {
+    currentCoroutineContext().ensureActive()
     require(id.isNotBlank()) { "A conversation is required" }
     val result = cached.firstOrNull { it.id == id } ?: load(id).getOrThrow()
     currentCoroutineContext().ensureActive()
@@ -26,6 +27,7 @@ suspend fun resolvePersonalConversation(
     createSelf: suspend () -> Result<Conversation>,
     createDirect: suspend (String) -> Result<Conversation>,
 ): Conversation {
+    currentCoroutineContext().ensureActive()
     require(owner.isNotBlank() && peer.isNotBlank()) { "A chat identity is required" }
     val self = owner == peer
     val expected = setOf(owner, peer)

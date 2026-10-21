@@ -34,4 +34,15 @@ class ConfirmedActionTest {
         val result = runCatching { confirmedAction({ Result.success(Unit) }) { error("storage unavailable") } }
         assertTrue(result.isFailure)
     }
+    @Test fun `already cancelled caller never starts the mutation`() = runTest {
+        var dispatched = false
+        val job = launch {
+            currentCoroutineContext().cancel()
+            confirmedAction({ dispatched = true; Result.success(Unit) }) { error("Must not apply") }
+        }
+        job.join()
+        assertTrue(job.isCancelled)
+        assertFalse(dispatched)
+    }
+
 }

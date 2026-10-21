@@ -2600,3 +2600,16 @@ is pending; 83eb07e iOS archive passed, not device acceptance. No server change 
 restyling. This resolves room selection, not arbitrary message-window pagination: the
 14-page message jump limit, offline receipt persistence, lost group-creation ACKs, and
 other feature trees remain open.
+
+
+### Follow-through — capture Android ownership before scheduling, refuse pre-canceled work
+
+The queued root request now stores the bound repository and viewer at enqueue time,
+not when the LaunchedEffect eventually begins. It checks that viewer again before
+publishing success/error. MainActivity already keys the subtree by viewer/gateway;
+this additionally closes the late-start ownership window rather than relying solely
+on disposal timing. Both native navigation helpers and the confirmed-action helper
+check cancellation before invoking an adapter, as well as afterward: a caller already
+canceled must not begin a mutation just because that adapter completes synchronously.
+Added Kotlin no-dispatch-after-cancel cases. Five Kotlin files syntax-parse; native
+execution is pending. This does not undo a mutation already committed by the server.
