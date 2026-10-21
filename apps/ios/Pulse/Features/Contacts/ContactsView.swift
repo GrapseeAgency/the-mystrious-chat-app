@@ -23,7 +23,10 @@ struct ContactsView: View {
     @State private var railDragging = false
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack(path: Binding(get: { path }, set: { next in
+            if next.count != path.count { session.noteRoomNavigationIntent() }
+            path = next
+        })) {
             Group {
                 if viewModel.loading && viewModel.users.isEmpty {
                     ProgressView("Loading contacts…")
@@ -52,6 +55,7 @@ struct ContactsView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 2) {
                         Button {
+                            session.noteRoomNavigationIntent()
                             viewModel.cancelOpening()
                             addContactOpen = true
                         } label: {
@@ -59,6 +63,7 @@ struct ContactsView: View {
                         }
                         .accessibilityLabel("Add contact")
                         Button {
+                            session.noteRoomNavigationIntent()
                             viewModel.cancelOpening()
                             callsHistoryOpen = true
                         } label: {
@@ -84,6 +89,7 @@ struct ContactsView: View {
             .onReceive(session.$pendingUserRoute) { route in
                 guard let route else { return }
                 session.consumePendingUserRoute()
+                session.noteRoomNavigationIntent()
                 viewModel.cancelOpening()
                 path.append(route)
             }
@@ -108,6 +114,7 @@ struct ContactsView: View {
         .sheet(isPresented: $addContactOpen) {
             NavigationStack {
                 AddContactView(session: session) { user in
+                    session.noteRoomNavigationIntent()
                     addContactOpen = false
                     path.append(UserRoute(userId: user.id, name: user.name))
                 } onOpenRoom: { conversation in
@@ -295,6 +302,7 @@ struct ContactsView: View {
             onOpenProfile: {
                 // Wave 6 - rows push the FULL user page (stats,
                 // block/unblock, report, safety). Chat stays a button.
+                session.noteRoomNavigationIntent()
                 viewModel.cancelOpening()
                 path.append(UserRoute(userId: user.id, name: user.name))
             },
@@ -322,12 +330,14 @@ struct ContactsView: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
+                session.noteRoomNavigationIntent()
                 viewModel.cancelOpening()
                 Task { await viewModel.block(user, session: session) }
             } label: {
                 Label("Block", systemImage: "hand.raised.fill")
             }
             Button {
+                session.noteRoomNavigationIntent()
                 viewModel.cancelOpening()
                 reportTarget = user
             } label: {
@@ -489,7 +499,8 @@ final class ContactsViewModel: ObservableObject {
             return
         }
         openingRevision &+= 1
-        let revision = openingRevision
+        session.noteRoomNavigationIntent()
+        let revision = openingRevision, navigation = session.roomNavigationGeneration
         openingPeerId = user.id
         PulseHaptics.tap()
         openingTask = Task { @MainActor [weak self] in
@@ -502,7 +513,8 @@ final class ContactsViewModel: ObservableObject {
                     memberIds: [user.id], isGroup: false) {
                     try await api.createConversation(memberIds: [user.id], isGroup: false)
                 }
-                guard !Task.isCancelled, openingRevision == revision, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, openingRevision == revision, session.sessionGeneration == epoch,
+                      session.roomNavigationGeneration == navigation else { return }
                 session.noteInboxChanged()
                 if let kind {
                     let peer = CallPeer(id: user.id, name: user.name, color: user.color, avatar: user.avatar)
@@ -512,7 +524,8 @@ final class ContactsViewModel: ObservableObject {
                     onOpenRoom(conversation)
                 }
             } catch {
-                guard !Task.isCancelled, openingRevision == revision, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, openingRevision == revision, session.sessionGeneration == epoch,
+                      session.roomNavigationGeneration == navigation else { return }
                 PulseHaptics.warning()
                 session.toasts.show(ChatsViewModel.describe(error))
             }

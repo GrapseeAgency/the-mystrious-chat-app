@@ -356,7 +356,8 @@ struct NewChatSheet: View {
 
     private func create(memberIds: [String], isGroup: Bool, name: String?) {
         guard !creating, let viewer = session.viewer else { return }
-        let api = session.api, epoch = session.sessionGeneration
+        session.noteRoomNavigationIntent()
+        let api = session.api, epoch = session.sessionGeneration, navigation = session.roomNavigationGeneration
         creating = true
         creationError = nil
         creationTask = Task { @MainActor in
@@ -370,10 +371,12 @@ struct NewChatSheet: View {
                     memberIds: memberIds, isGroup: isGroup) {
                     try await api.createConversation(memberIds: memberIds, isGroup: isGroup, name: name)
                 }
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, session.sessionGeneration == epoch,
+                      session.roomNavigationGeneration == navigation else { return }
                 onCreated(conv)
             } catch {
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, session.sessionGeneration == epoch,
+                      session.roomNavigationGeneration == navigation else { return }
                 creationError = isGroup ? "Couldn't confirm group creation. Check Chats before retrying."
                     : ChatsViewModel.describe(error)
             }

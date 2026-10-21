@@ -55,4 +55,20 @@ enum PulseConversationNavigation {
         return created
     }
 
+
+    static func conversation(id: String, cached: [WireConversationSummary],
+                             request: () async throws -> WireConversationSummary) async throws -> WireConversationSummary {
+        try Task.checkCancellation()
+        guard !id.isEmpty else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "A conversation is required.")
+        }
+        if let saved = cached.first(where: { $0.id == id }) { return saved }
+        let loaded = try await request()
+        try Task.checkCancellation()
+        guard loaded.id == id else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "The returned chat didn't match this link.")
+        }
+        return loaded
+    }
+
 }

@@ -94,4 +94,60 @@ final class ConversationNavigationTests: XCTestCase {
         }
     }
 
+
+    func testLinkedRoomUsesExactOfflineIdentityAndDetailFallback() async throws {
+        let wrong = try row("same-title", members: ["me", "other"])
+        let target = try row("target", members: ["me", "peer"])
+        let cached = try await PulseConversationNavigation.conversation(id: "target", cached: [wrong, target]) {
+            XCTFail("An exact cached room should not require a second network request")
+            throw URLError(.notConnectedToInternet)
+        }
+        XCTAssertEqual(cached.id, target.id)
+        let fetched = try await PulseConversationNavigation.conversation(id: "target", cached: [wrong]) { target }
+        XCTAssertEqual(fetched.id, target.id)
+        do {
+            _ = try await PulseConversationNavigation.conversation(id: "target", cached: []) { wrong }
+            XCTFail("A different room must never satisfy a link")
+        } catch let failure as PulseAPIClient.Failure { XCTAssertEqual(failure.kind, .validation) }
+    }
+
+
+    func testNavigationIntentIsSeparateFromRoomVisibilityRestoration() throws {
+        let session = PulseSession()
+        let initial = session.roomNavigationGeneration
+        session.activeRoomId = "existing-room"
+        session.activeRoomId = nil
+        XCTAssertEqual(session.roomNavigationGeneration, initial)
+        session.noteRoomNavigationIntent()
+        let next = session.roomNavigationGeneration
+        XCTAssertNotEqual(initial, next)
+        session.activeRoomId = "existing-room"
+        XCTAssertEqual(session.roomNavigationGeneration, next)
+        let target = try row("target", members: ["me", "peer"])
+        session.requestOpenRoom(target, jumpMessageId: "message")
+        XCTAssertNotEqual(session.roomNavigationGeneration, next)
+        XCTAssertEqual(session.pendingOpenRoom?.id, target.id)
+        XCTAssertEqual(session.pendingJumpMessageId, "message")
+    }
+
+    func testCanceledLinkAndNotebookRequestsIgnoreLateSuccess() async throws {
+        for notebook in [false, true] {
+            let response = try row("target", members: notebook ? ["me"] : ["me", "peer"], isSelf: notebook)
+            let attempt = Task {
+                let transport: () async throws -> WireConversationSummary = {
+                    withUnsafeCurrentTask { $0?.cancel() }
+                    return response
+                }
+                if notebook {
+                    return try await PulseConversationNavigation.openSelf(viewerId: "me", cached: [], request: transport)
+                }
+                return try await PulseConversationNavigation.conversation(id: "target", cached: [], request: transport)
+            }
+            do {
+                _ = try await attempt.value
+                XCTFail("A canceled request cannot produce a navigation result")
+            } catch { XCTAssertTrue(error is CancellationError) }
+        }
+    }
+
 }

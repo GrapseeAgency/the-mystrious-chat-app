@@ -56,6 +56,8 @@ struct RootView: View {
     // R14 5-b - the ?login= handoff (web /?login=Name parity): the deep
     // link's display-name prefill + auto-lookup target for OnboardingView.
     @State private var pendingLoginName: String?
+    @State private var linkedRoomTask: Task<Void, Never>?
+    @State private var linkedRoomTicket: UUID?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var systemScheme
@@ -198,6 +200,11 @@ struct RootView: View {
         // R2-D - the shared linked-room bridge: reminder-notification taps
         // (delegate) AND calls-history row taps land here and follow the
         // exact pulse://room path (fetch detail → Chats tab → open room).
+        .onDisappear { cancelLinkedRoom() }
+        .onChange(of: session.sessionGeneration) { _, _ in cancelLinkedRoom() }
+        .onChange(of: newChatOpen || settingsOpen || storiesOpen || callsOpen || savedLibraryOpen || pendingInvite != nil) { _, presented in
+            if presented { session.noteRoomNavigationIntent(); cancelLinkedRoom() }
+        }
         .onReceive(session.$pendingLinkedRoomId) { pending in
             guard let conversationId = pending else { return }
             session.pendingLinkedRoomId = nil
@@ -471,6 +478,8 @@ struct RootView: View {
     }
 
     private func switchTab(_ target: PulseTab) {
+        session.noteRoomNavigationIntent()
+        cancelLinkedRoom()
         guard target != tab else { return }
         navDirection = target.rawValue > tab.rawValue ? 1 : -1
         tab = target
@@ -614,13 +623,41 @@ struct RootView: View {
         }
     }
 
+    private func cancelLinkedRoom() {
+        linkedRoomTicket = nil
+        linkedRoomTask?.cancel()
+        linkedRoomTask = nil
+    }
+
     private func openLinkedRoom(_ conversationId: String) {
-        Task {
-            if let conversation = try? await session.api.conversationDetail(id: conversationId, userId: session.api.userId) {
+        guard session.viewer != nil, !conversationId.isEmpty else { return }
+        cancelLinkedRoom()
+        session.noteRoomNavigationIntent()
+        // An explicit incoming navigation supersedes the old root sheet.
+        newChatOpen = false; settingsOpen = false; storiesOpen = false
+        callsOpen = false; savedLibraryOpen = false; pendingInvite = nil
+        let api = session.api, epoch = session.sessionGeneration, ticket = UUID()
+        let originTab = tab, navigation = session.roomNavigationGeneration
+        let cached = ((try? session.store?.cachedConversations()) ?? []).map { WireConversationSummary(cached: $0) }
+        linkedRoomTicket = ticket
+        linkedRoomTask = Task { @MainActor in
+            defer {
+                if linkedRoomTicket == ticket { linkedRoomTicket = nil; linkedRoomTask = nil }
+            }
+            do {
+                let conversation = try await PulseConversationNavigation.conversation(id: conversationId, cached: cached) {
+                    try await api.conversationDetail(id: conversationId, userId: api.userId)
+                }
+                guard !Task.isCancelled, linkedRoomTicket == ticket, session.sessionGeneration == epoch,
+                      tab == originTab, session.roomNavigationGeneration == navigation else { return }
+                linkedRoomTicket = nil
+                linkedRoomTask = nil
                 switchTab(.chats)
                 session.requestOpenRoom(conversation)
-            } else {
-                session.toasts.show("That chat isn't available right now")
+            } catch {
+                guard !Task.isCancelled, linkedRoomTicket == ticket, session.sessionGeneration == epoch,
+                      tab == originTab, session.roomNavigationGeneration == navigation else { return }
+                session.toasts.show("That chat isn't available right now. Reconnect and try the link again.")
             }
         }
     }

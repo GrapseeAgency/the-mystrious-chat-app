@@ -295,11 +295,13 @@ struct UserPageView: View {
             if !isViewer {
                 Button {
                     guard messageTask == nil, blockTask == nil else { return }
-                    let epoch = session.sessionGeneration
+                    session.noteRoomNavigationIntent()
+                    let epoch = session.sessionGeneration, navigation = session.roomNavigationGeneration
                     messageTask = Task { @MainActor in
                         defer { messageTask = nil }
+                        guard session.roomNavigationGeneration == navigation else { return }
                         if let conversation = await model.message(), !Task.isCancelled,
-                           session.sessionGeneration == epoch {
+                           session.sessionGeneration == epoch, session.roomNavigationGeneration == navigation {
                             onOpenRoom(conversation)
                         }
                     }
@@ -321,6 +323,7 @@ struct UserPageView: View {
                 HStack(spacing: 8) {
                     Button {
                         guard blockTask == nil else { return }
+                        session.noteRoomNavigationIntent()
                         messageTask?.cancel()
                         blockTask = Task { @MainActor in
                             defer { blockTask = nil }
@@ -341,6 +344,7 @@ struct UserPageView: View {
                     .tint(PulseTheme.rose500)
 
                     Button {
+                        session.noteRoomNavigationIntent()
                         messageTask?.cancel()
                         PulseHaptics.tap()
                         withAnimation(.pulse(.pulseSoft, reduceMotion: PulseMotion.reduceMotion)) { model.reportOpen.toggle() }

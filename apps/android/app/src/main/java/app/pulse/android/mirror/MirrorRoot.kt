@@ -149,24 +149,9 @@ internal fun MirrorRoot(
     // R76 - launcher tab shortcuts switch tabs cold or warm, then self-consume.
     LaunchedEffect(tabRequest) {
         val request = tabRequest ?: return@LaunchedEffect
+        roomOpenRequest = null
         tab = request
         onConsumeTabRequest()
-    }
-    // R76 - pulse://room deep links open the conversation once the live cache
-    // knows it (a cold link races the first REST load - the effect re-runs on
-    // every cache emission until the id resolves), then self-consume. A jump
-    // payload rides along and anchors the room at the message.
-    LaunchedEffect(pendingRoomId, conversations) {
-        val id = pendingRoomId ?: return@LaunchedEffect
-        val convo = conversations.firstOrNull { it.id == id } ?: return@LaunchedEffect
-        roomOpenRequest = null
-        openRoom = convo
-        pendingJumpId = pendingJumpMessageId
-        if (pendingJumpMessageId != null) {
-            pendingJumpId = pendingJumpMessageId
-            onConsumePendingJumpMessage()
-        }
-        onConsumePendingRoom()
     }
     var stories by remember { mutableStateOf<List<StoryGroup>>(emptyList()) }
     var folders by remember { mutableStateOf<List<MirrorFolderChip>>(emptyList()) }
@@ -383,8 +368,19 @@ internal fun MirrorRoot(
         roomOpenSequence++
         roomOpenRequest = MirrorRoomOpenRequest(peerId, roomOpenSequence, null, tab, openRoom?.id, personal = true)
     }
-    LaunchedEffect(roomOpenRequest, repository, viewerId, tab, openRoom?.id) {
-        val request = roomOpenRequest ?: return@LaunchedEffect
+    // Cold links may target a conversation outside the inbox's current page.
+    // Enqueue the same exact-ID resolver used by in-app navigation; consuming
+    // the launcher payload must not cancel the separately owned open request.
+    LaunchedEffect(pendingRoomId, pendingJumpMessageId, viewerId) {
+        val id = pendingRoomId ?: return@LaunchedEffect
+        if (viewerId.isNullOrBlank()) return@LaunchedEffect
+        openById(id, pendingJumpMessageId)
+        onConsumePendingRoom()
+        onConsumePendingJumpMessage()
+    }
+    val openingRequest = roomOpenRequest
+    LaunchedEffect(openingRequest, repository, viewerId, tab, openRoom?.id) {
+        val request = openingRequest ?: return@LaunchedEffect
         if (request.tab != tab || request.previousRoomId != openRoom?.id) {
             roomOpenRequest = null
             return@LaunchedEffect

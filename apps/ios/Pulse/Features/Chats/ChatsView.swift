@@ -100,7 +100,10 @@ struct ChatsView: View {
     @State private var spotlightCheckinPending = false
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack(path: Binding(get: { path }, set: { next in
+            if next.count != path.count { session.noteRoomNavigationIntent() }
+            path = next
+        })) {
             ZStack(alignment: .top) {
                 // PULSE EMBER (EMB-I): the warm sunset ground sits under the
                 // whole tab. The scheme pins dark on the CONTENT subtree
@@ -238,6 +241,7 @@ struct ChatsView: View {
     }
 
     private func openRoom(_ conv: WireConversationSummary, jumpMessageId: String? = nil) {
+        session.noteRoomNavigationIntent()
         selfOpenTask?.cancel()
         // R2-D ITEM 8 - a room opened from search makes its query a recent
         // (web pushRecent on chat/message activation parity).
@@ -393,10 +397,12 @@ struct ChatsView: View {
                     creating: viewModel.selfCreating,
                     onPress: {
                         selfOpenTask?.cancel()
-                        let epoch = session.sessionGeneration
+                        session.noteRoomNavigationIntent()
+                        let epoch = session.sessionGeneration, navigation = session.roomNavigationGeneration
                         selfOpenTask = Task { @MainActor in
+                            guard session.roomNavigationGeneration == navigation else { return }
                             if let conv = await viewModel.pressSelf(session: session), !Task.isCancelled,
-                               session.sessionGeneration == epoch {
+                               session.sessionGeneration == epoch, session.roomNavigationGeneration == navigation {
                                 openRoom(conv)
                             }
                         }

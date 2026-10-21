@@ -42,6 +42,14 @@ public final class PulseSession: ObservableObject {
     /// Chats tab's NavigationStack (the dock lives above the shell, the stack
     /// lives inside ChatsView - this is the bridge, same pattern as search).
     @Published public private(set) var pendingOpenRoom: WireConversationSummary?
+    /// User navigation intent, distinct from room visibility during foreground/
+    /// sheet transitions. Async link resolution must not displace a newer intent.
+    public private(set) var roomNavigationGeneration = UUID()
+
+    public func noteRoomNavigationIntent() {
+        roomNavigationGeneration = UUID()
+    }
+
     /// Wave 2 saved library - jump-to-message handoff consumed by ChatsView
     /// together with pendingOpenRoom (the SAME path search hits already use).
     @Published public private(set) var pendingJumpMessageId: String?
@@ -841,6 +849,7 @@ public final class PulseSession: ObservableObject {
     /// Wave 2 - `jumpMessageId` rides along so the room scrolls to + flashes
     /// that message (saved-library "open original", spec §1 row 14).
     public func requestOpenRoom(_ conversation: WireConversationSummary, jumpMessageId: String? = nil) {
+        noteRoomNavigationIntent()
         pendingJumpMessageId = jumpMessageId
         pendingOpenRoom = conversation
     }

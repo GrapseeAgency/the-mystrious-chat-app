@@ -160,7 +160,8 @@ struct AddContactView: View {
 
     private func startDm(_ person: WireUser) {
         guard pendingDm == nil, let viewer = session.viewer else { return }
-        let api = session.api, epoch = session.sessionGeneration
+        session.noteRoomNavigationIntent()
+        let api = session.api, epoch = session.sessionGeneration, navigation = session.roomNavigationGeneration
         pendingDm = person.id
         openingTask = Task { @MainActor in
             defer { pendingDm = nil }
@@ -169,12 +170,14 @@ struct AddContactView: View {
                     memberIds: [person.id], isGroup: false) {
                     try await api.createConversation(memberIds: [person.id], isGroup: false)
                 }
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, session.sessionGeneration == epoch,
+                      session.roomNavigationGeneration == navigation else { return }
                 PulseHaptics.success()
                 session.noteInboxChanged()
                 onOpenRoom(conv)
             } catch {
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, session.sessionGeneration == epoch,
+                      session.roomNavigationGeneration == navigation else { return }
                 session.toasts.show(ChatsViewModel.describe(error))
             }
         }

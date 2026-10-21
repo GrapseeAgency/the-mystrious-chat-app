@@ -2571,3 +2571,32 @@ Three Swift files syntax-parse; these paths use the previously added native navi
 regressions, but there is no new native execution/device claim. c12b4f6 iOS archive passed
 at the last check; simulator tests were still running. No autumn palette changes. Root
 external-deep-link arbitration and other feature-tree lifecycle work remain unresolved.
+
+
+## 2026-10-22 — cold room links resolve outside the inbox and respect newer intent
+
+Android's external pending-room effect only waited for a matching inbox row, so a cold
+link outside the current summary page could remain pending indefinitely. It now enqueues
+the same owned exact-ID repository/detail resolver as manual navigation and binds the
+jump target to that request. The Compose resolver captures the immutable effect-key
+request, rather than reading a newer mutable request when an older keyed effect starts;
+otherwise an effect restart could cancel/clear a request it did not actually own. Launcher
+tab requests supersede pending opens even when requesting the already-selected tab.
+
+Swift root links now use exact-ID offline summaries first, then detail fallback. They
+capture client/session/tab and a unique task ticket; later links cancel earlier work,
+and changing tab or navigation intent prevents a late success/error from replacing the
+new destination. Accepted external navigation dismisses the old root sheet. A shared
+navigation generation is advanced by primary chat/contact/composer/profile intents and
+back-stack changes. It is deliberately separate from activeRoomId: room visibility can
+change during foreground/sheet restoration without representing a new user destination.
+The primary asynchronous create/open paths check this generation before navigating, so
+an older pending creation also cannot override a newer link.
+
+Added Swift exact-ID cache/detail/refusal, canceled-link/notebook, and navigation-intent
+versus visibility regressions; Android reuses the existing exact-ID resolver regressions.
+Ten native source/test files syntax-parse. Native compilation/execution for this tranche
+is pending; 83eb07e iOS archive passed, not device acceptance. No server change or autumn
+restyling. This resolves room selection, not arbitrary message-window pagination: the
+14-page message jump limit, offline receipt persistence, lost group-creation ACKs, and
+other feature trees remain open.
