@@ -461,6 +461,7 @@ internal fun MirrorRoom(
     var actionFor by remember { mutableStateOf<Message?>(null) }
     var forwardFor by remember { mutableStateOf<Message?>(null) }
     var threadFor by remember { mutableStateOf<Message?>(null) }
+    var threadJumpId by remember { mutableStateOf<String?>(null) }
     var infoFor by remember { mutableStateOf<Message?>(null) }
     var pollOpen by remember { mutableStateOf(false) }
     var stickerOpen by remember { mutableStateOf(false) }
@@ -756,7 +757,7 @@ internal fun MirrorRoom(
             val root = fresh.firstOrNull { it.id == parentId }
                 ?: runCatching { repository.loadThread(parentId).first }.getOrNull()
             ensureActive()
-            if (root != null) threadFor = root else sendError = "Couldn't load this message's thread"
+            if (root != null) { threadJumpId = target; threadFor = root } else sendError = "Couldn't load this message's thread"
             onJumpConsumed()
             return@LaunchedEffect
         }
@@ -2582,7 +2583,7 @@ internal fun MirrorRoom(
                 editing = target
                 draftValue = TextFieldValue(target.body)
             },
-            onThread = { threadFor = target },
+            onThread = { threadJumpId = null; threadFor = target },
             onForward = { forwardFor = target },
             onRemind = { remindersOpen = true },
             onInfo = { infoFor = target },
@@ -2600,14 +2601,17 @@ internal fun MirrorRoom(
         )
     }
     threadFor?.let { root ->
-        MirrorThreadSheet(
-            repository = repository,
-            root = root,
-            viewerId = viewerId,
-            viewerName = viewerName,
-            memberNames = memberNames,
-            onDismiss = { threadFor = null },
-        )
+        androidx.compose.runtime.key(root.id, repository, viewerId) {
+            MirrorThreadSheet(
+                repository = repository,
+                root = root,
+                viewerId = viewerId,
+                viewerName = viewerName,
+                memberNames = memberNames,
+                jumpMessageId = threadJumpId,
+                onDismiss = { threadFor = null; threadJumpId = null },
+            )
+        }
     }
     if (pollOpen) {
         MirrorPollBuilderSheet(

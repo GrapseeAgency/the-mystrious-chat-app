@@ -10,6 +10,7 @@ struct ThreadView: View {
     let conversation: WireConversationSummary
     let root: WireChatMessage
     @ObservedObject var session: PulseSession
+    var initialJumpMessageId: String? = nil
 
     enum Phase: Equatable { case loading, loaded, failed(String) }
 
@@ -19,6 +20,11 @@ struct ThreadView: View {
     @State private var draft = ""
     @State private var rootUnavailable = false
     @State private var loadGeneration = UUID()
+    @State private var initialJumpResolved = false
+    @State private var highlightedReplyId: String?
+    @State private var nearTail = true
+    @State private var tailScrollRevision = 0
+
     @State private var errorText: String?
     // Wave 2 view-once - threads reuse the same gate/burn bubble; the reveal
     // opens the lightbox right here (the sheet owns its cover).
@@ -35,19 +41,40 @@ struct ThreadView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 6) {
-                            threadBody
-                            Color.clear.frame(height: 4).id("thread-tail")
+                    GeometryReader { viewport in
+                        ScrollView {
+                            LazyVStack(spacing: 6) {
+                                threadBody
+                                Color.clear.frame(height: 4).id("thread-tail")
+                                    .background(GeometryReader { tail in
+                                        Color.clear.preference(key: ThreadTailPositionKey.self,
+                                            value: tail.frame(in: .named("thread-viewport")).maxY)
+                                    })
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                    }
-                    .defaultScrollAnchor(.bottom)
-                    .onChange(of: replies.count) { _, _ in
-                        withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
-                            proxy.scrollTo("thread-tail", anchor: .bottom)
+                        .coordinateSpace(name: "thread-viewport")
+                        .defaultScrollAnchor(.bottom)
+                        .onPreferenceChange(ThreadTailPositionKey.self) { tailY in
+                            nearTail = tailY >= 0 && tailY <= viewport.size.height + 80
                         }
+                        .task(id: anchorCandidate?.id) {
+                            guard let id = anchorCandidate?.id else { return }
+                            await Task.yield() // Let the lazy reply row's stable ID enter the layout.
+                            guard !Task.isCancelled, anchorCandidate?.id == id else { return }
+                            proxy.scrollTo(id, anchor: .center)
+                            highlightedReplyId = id
+                            initialJumpResolved = true
+                        }
+                        .onChange(of: replies.last?.id) { _, _ in
+                            guard PulseThreadNavigation.shouldFollowTail(nearTail: nearTail,
+                                pendingTarget: initialJumpMessageId != nil && !initialJumpResolved) else { return }
+                            withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
+                                proxy.scrollTo("thread-tail", anchor: .bottom)
+                            }
+                        }
+                        .onChange(of: tailScrollRevision) { _, _ in proxy.scrollTo("thread-tail", anchor: .bottom) }
                     }
                 }
                 if let error = errorText {
@@ -72,7 +99,11 @@ struct ThreadView: View {
         .fullScreenCover(item: $lightbox) { target in
             MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt)
         }
-        .task(id: session.connected) { await load() }
+        .task(id: ThreadLoadKey(connected: session.connected, target: initialJumpMessageId)) { await load() }
+        .onChange(of: initialJumpMessageId) { _, _ in
+            initialJumpResolved = false
+            highlightedReplyId = nil
+        }
         .onReceive(session.signals) { handle(signal: $0) }
         .onReceive(session.messageVisibilityClock) { now in pruneExpired(now: now) }
         .onReceive(session.outboxEvents) { event in
@@ -88,7 +119,17 @@ struct ThreadView: View {
                 errorText = "Reply not sent. It is kept in Outbox for recovery."
             }
         }
+        .task(id: highlightedReplyId) {
+            guard highlightedReplyId != nil else { return }
+            do { try await Task.sleep(nanoseconds: 1_700_000_000) } catch { return }
+            highlightedReplyId = nil
+        }
         .onDisappear { loadGeneration = UUID() }
+    }
+
+    private var anchorCandidate: WireChatMessage? {
+        guard !rootUnavailable, !initialJumpResolved, let id = initialJumpMessageId else { return nil }
+        return PulseThreadNavigation.target(in: replies, roomId: conversation.id, rootId: root.id, targetId: id)
     }
 
     // content
@@ -154,6 +195,9 @@ struct ThreadView: View {
                         // R3-A item 7 - thread bubbles format + mention-chip too.
                         memberNames: conversation.members.map(\.name),
                     )
+                    .id(reply.id)
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(
+                        highlightedReplyId == reply.id ? PulseTheme.color(named: "orange") : Color.clear, lineWidth: 2))
                 }
             }
         }
@@ -226,6 +270,11 @@ struct ThreadView: View {
             errorText = nil
             rootUnavailable = false
             pruneExpired()
+            if let target = initialJumpMessageId, !initialJumpResolved,
+               PulseThreadNavigation.target(in: replies, roomId: conversation.id, rootId: root.id, targetId: target) == nil {
+                errorText = "That reply is no longer available in this thread."
+                initialJumpResolved = true
+            }
         } catch {
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
             if let failure = error as? PulseAPIClient.Failure, [403, 404, 410].contains(failure.status ?? 0) {
@@ -321,6 +370,8 @@ struct ThreadView: View {
             let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer,
                 conversationId: conversation.id, content: draft, parentId: root.id)
             appendReply(message)
+            initialJumpResolved = true // Sending intentionally returns to the new reply.
+            tailScrollRevision += 1
             draft = ""
             errorText = nil
             session.outbox?.reloadPending()
@@ -343,4 +394,16 @@ struct ThreadView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
     }
+}
+
+
+private struct ThreadTailPositionKey: PreferenceKey {
+    static let defaultValue: CGFloat = .infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+
+private struct ThreadLoadKey: Hashable {
+    let connected: Bool
+    let target: String?
 }

@@ -1,5 +1,19 @@
 package app.pulse.android.mirror
 
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.pulse.domain.model.PulseApiException
+import app.pulse.domain.sync.threadRootAvailable
+import app.pulse.domain.sync.threadAccessDenied
+import app.pulse.domain.usecase.SendMessageUseCase
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.map
 import android.content.Context
 import android.location.Location
 import android.location.LocationManager
@@ -413,122 +427,152 @@ internal fun MirrorThreadSheet(
     viewerId: String,
     viewerName: String,
     memberNames: List<String>,
+    jumpMessageId: String? = null,
     onDismiss: () -> Unit,
 ) {
-    val replies by repository.observeThreadMessages(root.id).collectAsState(initial = emptyList())
-    var draft by remember { mutableStateOf("") }
-    var sending by remember { mutableStateOf(false) }
-    LaunchedEffect(root.id) {
-        runCatching { repository.loadThread(root.id) }
+    val replyFlow = remember(repository, root.id) { repository.observeThreadMessages(root.id) }
+    val rootFlow = remember(repository, root.id) {
+        repository.observeMessages(root.conversationId).map { rows -> rows.firstOrNull { it.id == root.id } }
     }
+    val cachedReplies by replyFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val currentRoot by rootFlow.collectAsStateWithLifecycle(initialValue = root)
+    val connectedFlow = remember(repository) { repository.observeConnected() }
+    val connected by connectedFlow.collectAsStateWithLifecycle(initialValue = false)
+    val composer = remember(root.id) { RoomComposerDraft() }
+    var draft by composer
+    var sending by remember(root.id) { mutableStateOf(false) }
+    var loading by remember(root.id) { mutableStateOf(true) }
+    var validated by remember(root.id) { mutableStateOf(false) }
+    var fetchedReplies by remember(root.id) { mutableStateOf<List<Message>?>(null) }
+    var denied by remember(root.id) { mutableStateOf(false) }
+    var error by remember(root.id) { mutableStateOf<String?>(null) }
+    var retry by remember(root.id) { mutableStateOf(0) }
+    var now by remember(root.id) { mutableStateOf(System.currentTimeMillis()) }
+    var jumpResolved by remember(root.id, jumpMessageId) { mutableStateOf(false) }
+    var flashId by remember(root.id) { mutableStateOf<String?>(null) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(root.id) {
+        while (true) { now = System.currentTimeMillis(); delay(1_000) }
+    }
+    LaunchedEffect(root.id, connected, retry) {
+        loading = true
+        error = null
+        try {
+            val (fresh, loadedReplies) = repository.loadThread(root.id)
+            currentCoroutineContext().ensureActive()
+            fetchedReplies = loadedReplies
+            if (!threadRootAvailable(fresh, root.conversationId, root.id)) {
+                denied = true
+                error = "This thread is no longer available."
+            } else {
+                denied = false
+                validated = true
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            denied = denied || threadAccessDenied((failure as? PulseApiException)?.status)
+            error = "Couldn't load this thread. Tap to retry."
+        } finally { loading = false }
+    }
+    val available = !denied && threadRootAvailable(currentRoot, root.conversationId, root.id, now)
+    val replies = if (available) cachedReplies.filter { it.conversationId == root.conversationId &&
+        it.threadRootId == root.id && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) } else emptyList()
+    LaunchedEffect(jumpMessageId, replies, available, loading, fetchedReplies) {
+        if (jumpResolved || jumpMessageId == null || !available) return@LaunchedEffect
+        val index = threadJumpIndex(replies, root, jumpMessageId, System.currentTimeMillis())
+        if (index != null) {
+            androidx.compose.runtime.withFrameNanos { }
+            listState.scrollToItem(index)
+            flashId = jumpMessageId
+            jumpResolved = true
+        } else if (validated && !loading && (fetchedReplies?.let {
+                threadJumpIndex(it, root, jumpMessageId, System.currentTimeMillis())
+            } == null || cachedReplies.any { it.id == jumpMessageId && it.isDeleted })) {
+            error = "That reply is no longer available in this thread."
+            jumpResolved = true
+        }
+    }
+    LaunchedEffect(flashId) { if (flashId != null) { delay(1_700); flashId = null } }
     MirrorSheet(title = "Thread", onDismiss = onDismiss) {
         Column(Modifier.heightIn(max = 430.dp)) {
-            MirrorSheetScroll {
-                // parent bubble (incoming style)
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 4.dp),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    Column(
-                        Modifier
-                            .widthIn(max = 250.dp)
-                            .mirrorBubbleShape(mine = true, deleted = root.deletedAt != null)
-                            .mirrorBubbleBackground(mine = true, deleted = root.deletedAt != null)
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                    ) {
-                        Text(root.authorName, color = MirrorArt.Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            root.body.ifBlank { "(media)" },
-                            color = MirrorArt.Ink,
-                            fontSize = 13.sp,
-                            lineHeight = 17.sp,
-                        )
+            error?.let { text ->
+                Text(text, color = MirrorArt.Accent, fontSize = 12.sp,
+                    modifier = Modifier.clickable(enabled = !loading) { retry++ }.padding(vertical = 6.dp))
+            }
+            if (!available) {
+                Text(if (loading) "Loading thread…" else "This thread is unavailable. Your draft is kept while this sheet is open.",
+                    color = MirrorArt.Faint, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
+            } else {
+                LazyColumn(state = listState, modifier = Modifier.weight(1f, fill = false).heightIn(max = 340.dp)) {
+                    item(key = "thread-parent") {
+                        currentRoot?.let { parent -> MirrorThreadTextBubble(parent, parent.authorId == viewerId) }
                     }
-                }
-                for (reply in replies) {
-                    val mine = reply.authorId == viewerId
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp),
-                        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
-                    ) {
-                        Column(
-                            Modifier
-                                .widthIn(max = 250.dp)
-                                .mirrorBubbleShape(mine = mine, deleted = reply.deletedAt != null)
-                                .mirrorBubbleBackground(mine = mine, deleted = reply.deletedAt != null)
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                        ) {
-                            Text(reply.authorName, color = if (mine) MirrorArt.Ink else MirrorArt.TextSoft, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Text(
-                                reply.body.ifBlank { "(media)" },
-                                color = if (mine) MirrorArt.Ink else MirrorArt.Text,
-                                fontSize = 13.sp,
-                                lineHeight = 17.sp,
-                            )
+                    items(replies, key = { it.id }) { reply ->
+                        Box(Modifier.fillMaxWidth().then(if (flashId == reply.id)
+                            Modifier.border(1.dp, MirrorArt.Accent, androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) else Modifier)) {
+                            MirrorThreadTextBubble(reply, reply.authorId == viewerId)
                         }
                     }
-                }
-                if (replies.isEmpty()) {
-                    Text(
-                        "No replies yet - start the thread",
-                        color = MirrorArt.Faint,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(vertical = 10.dp),
-                    )
+                    if (replies.isEmpty()) item {
+                        Text(if (loading) "Loading replies…" else "No replies yet - start the thread", color = MirrorArt.Faint,
+                            fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp))
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
-            // thread reply composer - parentId rides the wire (spec 1.1)
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(CircleShape)
-                    .background(MirrorArt.White7)
-                    .border(1.dp, MirrorArt.Hairline, CircleShape)
-                    .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
-                    .imePadding(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Row(Modifier.fillMaxWidth().clip(CircleShape).background(MirrorArt.White7)
+                .border(1.dp, MirrorArt.Hairline, CircleShape)
+                .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp).imePadding(),
+                verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.foundation.text.BasicTextField(
                     value = draft,
-                    onValueChange = { if (it.length <= 2000) draft = it },
+                    onValueChange = { if (it.text.length <= SendMessageUseCase.MAX_LENGTH) draft = it },
                     textStyle = androidx.compose.ui.text.TextStyle(color = MirrorArt.Text, fontSize = 14.sp),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(MirrorArt.Accent),
-                    modifier = Modifier.weight(1f),
-                    maxLines = 3,
+                    modifier = Modifier.weight(1f), maxLines = 3,
                 )
-                if (draft.isNotBlank()) {
-                    Box(
-                        Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MirrorArt.Accent)
-                            .mirrorPressClick(enabled = !sending, onClick = {
-                                sending = true
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    val result = runCatching {
-                                        repository.sendMessage(
-                                            conversationId = root.conversationId,
-                                            body = draft,
-                                            parentId = root.id,
-                                        ).getOrThrow()
-                                    }
-                                    CoroutineScope(Dispatchers.Main).launch {
-                                        sending = false
-                                        result.onSuccess { draft = "" }
-                                    }
-                                }
-                            }),
-                        contentAlignment = Alignment.Center,
-                    ) {
+                if (draft.text.isNotBlank()) {
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(MirrorArt.Accent)
+                        .mirrorPressClick(enabled = !sending && available, onClick = {
+                            if (sending || denied || !threadRootAvailable(currentRoot, root.conversationId, root.id)) return@mirrorPressClick
+                            val body = draft.text
+                            val revision = composer.revision
+                            sending = true
+                            scope.launch {
+                                try {
+                                    SendMessageUseCase(repository)(root.conversationId, body, parentId = root.id).getOrThrow()
+                                    composer.clearIfUnchanged(revision)
+                                    error = null
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (failure: Exception) {
+                                    denied = denied || threadAccessDenied((failure as? PulseApiException)?.status)
+                                    error = "Reply wasn't confirmed. Your text is kept; check Outbox before retrying."
+                                } finally { sending = false }
+                            }
+                        }), contentAlignment = Alignment.Center) {
                         MirrorLucideIcon("LSendHorizontal", tint = Color(0xFF20150C), modifier = Modifier.size(16.dp))
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MirrorThreadTextBubble(message: Message, mine: Boolean) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+        Column(Modifier.widthIn(max = 250.dp)
+            .mirrorBubbleShape(mine = mine, deleted = message.isDeleted)
+            .mirrorBubbleBackground(mine = mine, deleted = message.isDeleted)
+            .padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(threadAuthorLabel(message), color = if (mine) MirrorArt.Ink else MirrorArt.TextSoft,
+                fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(threadMessageLabel(message), color = if (mine) MirrorArt.Ink else MirrorArt.Text,
+                fontSize = 13.sp, lineHeight = 17.sp)
         }
     }
 }

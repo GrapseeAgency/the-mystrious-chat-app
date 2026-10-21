@@ -1571,3 +1571,49 @@ at 14 pages), thread pagination, Mirror parity for the new stable composite curs
 authoritative revocation persisted across navigation/restart, media/export copies and
 server message-version ordering. These are bounded runtime repairs, not whole-app
 completion or a blanket offline authorization guarantee.
+
+### Mirror thread sending and exact reply anchoring (2026-10-21)
+
+Followed the actual autumn Mirror thread sheet separately from the primary Android
+thread view. It still used a frozen root, swallowed load failures, rendered raw body/
+author fields, and launched detached send callbacks that cleared whatever draft existed
+when an older send finished. Primary-screen fixes did not cover this implementation.
+
+- Mirror now observes the current root and replies through lifecycle-aware streams,
+  applies expiry on a clock, masks content immediately after an explicit thread denial,
+  and exposes load/send failures and Retry. Reconnection refreshes validation. Transport
+  failure alone does not revoke otherwise-live offline cache. Composer send admission
+  rechecks the root at tap time, rather than relying on the last rendered enabled state.
+- Mirror sends use the shared text send use case in a sheet-owned coroutine. The body
+  and composer revision are captured before suspension; acknowledgement clears only
+  that revision, including correct A→B→A handling. The existing RoomComposerDraft kernel
+  and its regressions are reused. Opening another root/account disposes the old sheet
+  scope. Failed sends keep text; draft persistence across sheet dismissal is NOT added.
+- Mirror text bubbles render deletion/view-once placeholders and anonymous aliases,
+  rather than exposing retained captions or the real sender name. This is text-preview
+  protection, not a completed media-consumption/revocation design.
+- Mirror search jumps retain the reply ID in addition to its root. A lazy, keyed reply
+  list scrolls to that reply with a short existing-accent outline. It accounts for the
+  parent row and does not interpret a missing target as row zero. An authoritative load
+  containing the target waits for the Room emission instead of prematurely reporting
+  a missing reply. Deleted/expired/wrong-thread targets are rejected.
+- Swift retains the reply ID through root validation and sheet presentation, gives each
+  reply a stable scroll ID, and anchors/highlights the selected reply after layout. A
+  newer target resets navigation without destroying the composer. Known missing/expired
+  targets report unavailability instead of silently opening an unrelated position.
+- Swift tail following now checks the visible tail geometry and pending jump intent.
+  Incoming replies do not yank a user away from older content; explicitly sending returns
+  to the tail. A missing lazy tail reports infinity, not zero (zero would falsely imply
+  that the reader was at the bottom).
+
+Verification: preceding e0f506f Android build + API30/API34 instrumentation and iOS tests/
+archive all passed. For this new source: 99/99 unchanged backend contracts pass, changed
+native syntax/diff checks pass, and new Kotlin presentation/index and Swift navigation/
+scroll-policy regressions are added. Native compilation/device execution for this new
+batch remains pending on GitHub; parser success is not compilation. Inventory: 326 files.
+
+Still open: primary Android navigation callback carries only a root (exact-reply work
+here covers its active Mirror counterpart); long-thread pagination; durable thread drafts
+across dismissal/restart; persisted cross-screen membership revocation; media/export
+copies; beyond-window target lookup and server ordering without message versions.
+The autumn palette is retained. No whole-app completion claim is made.

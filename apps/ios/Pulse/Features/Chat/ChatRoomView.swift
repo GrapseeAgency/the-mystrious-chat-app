@@ -331,6 +331,7 @@ private struct RoomContent: View {
     // Wave 1 surfaces - threads, forward, info, pins, lightbox, QuickLook,
     // room search, and the media attach flow (photo picker + document).
     @State private var threadRoot: WireChatMessage?
+    @State private var threadJumpMessageId: String?
     @State private var forwardSource: WireChatMessage?
     @State private var infoTarget: WireChatMessage?
     @State private var pinsOpen = false
@@ -961,12 +962,13 @@ private struct RoomContent: View {
         }
         .onChange(of: viewModel.jumpThreadRoot) { _, root in
             if let root {
+                threadJumpMessageId = viewModel.jumpThreadReplyId
                 threadRoot = root
                 viewModel.consumeThreadJump()
             }
         }
-        .sheet(item: $threadRoot) { root in
-            ThreadView(conversation: conversation, root: root, session: session)
+        .sheet(item: $threadRoot, onDismiss: { threadJumpMessageId = nil }) { root in
+            ThreadView(conversation: conversation, root: root, session: session, initialJumpMessageId: threadJumpMessageId)
         }
     }
 
@@ -1545,7 +1547,7 @@ private struct RoomContent: View {
                             clusterTighten: prefs.density == .cozy ? 4 : 1,
                             onOpenImage: { openLightbox($0) },
                             onOpenFile: { openFile($0) },
-                            onOpenThread: { threadRoot = $0 },
+                            onOpenThread: { threadJumpMessageId = nil; threadRoot = $0 },
                             onForward: { forwardSource = $0 },
                             onInfo: { infoTarget = $0 },
                             onViewOnce: { message in
@@ -3725,7 +3727,8 @@ final class RoomViewModel: ObservableObject {
     @Published private(set) var jumpRequestRevision: UInt64 = 0
     @Published private(set) var jumpTargetId: String?
     @Published private(set) var jumpThreadRoot: WireChatMessage?
-    func consumeThreadJump() { jumpThreadRoot = nil }
+    private(set) var jumpThreadReplyId: String?
+    func consumeThreadJump() { jumpThreadRoot = nil; jumpThreadReplyId = nil }
     @Published private(set) var searchResults: [WireChatMessage] = []
     @Published private(set) var searching = false
     @Published var editingTarget: WireChatMessage?
@@ -4354,6 +4357,13 @@ final class RoomViewModel: ObservableObject {
                 session.toasts.show("This thread is no longer available")
                 return
             }
+            let currentReply = fresh.first(where: { $0.id == target.id }) ?? (try? session.store?.message(id: target.id))
+            guard page.replies.contains(where: { $0.id == target.id }), let currentReply,
+                  PulseThreadNavigation.target(in: [currentReply], roomId: conversationId, rootId: rootId, targetId: target.id) != nil else {
+                session.toasts.show("This reply is no longer available")
+                return
+            }
+            jumpThreadReplyId = target.id
             jumpThreadRoot = root
         } catch {
             guard !Task.isCancelled, ticket == historyGeneration, epoch == session.sessionGeneration else { return }
