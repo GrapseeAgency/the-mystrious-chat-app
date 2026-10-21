@@ -71,4 +71,27 @@ final class ConversationNavigationTests: XCTestCase {
         } catch let error as PulseAPIClient.Failure { XCTAssertEqual(error.status, 403) }
     }
 
+
+    func testNotebookOpensReturnedIdentityAndCachedOfflineCopyWithoutInboxRefresh() async throws {
+        let notebook = try row("notebook", members: ["me"], isSelf: true)
+        let created = try await PulseConversationNavigation.openSelf(viewerId: "me", cached: []) { notebook }
+        XCTAssertEqual(created.id, notebook.id)
+        let cached = try await PulseConversationNavigation.openSelf(viewerId: "me", cached: [notebook]) {
+            XCTFail("An identity-validated offline notebook must not require the network")
+            throw URLError(.notConnectedToInternet)
+        }
+        XCTAssertEqual(cached.id, notebook.id)
+        let wrong = try [row("other-owner", members: ["other"], isSelf: true),
+            row("shared", members: ["me", "other"], isSelf: true),
+            row("not-self", members: ["me"]),
+            row("group", members: ["me"], group: true, isSelf: true)]
+        for response in wrong {
+            XCTAssertNil(PulseConversationNavigation.selfConversation(in: [response], viewerId: "me"))
+            do {
+                _ = try await PulseConversationNavigation.openSelf(viewerId: "me", cached: []) { response }
+                XCTFail("A foreign/shared chat must not open as a private notebook")
+            } catch let failure as PulseAPIClient.Failure { XCTAssertEqual(failure.kind, .validation) }
+        }
+    }
+
 }

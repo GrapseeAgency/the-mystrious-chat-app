@@ -31,4 +31,28 @@ enum PulseConversationNavigation {
         return created
     }
 
+
+    static func selfConversation(in rows: [WireConversationSummary], viewerId: String) -> WireConversationSummary? {
+        guard !viewerId.isEmpty else { return nil }
+        return rows.first {
+            !$0.id.isEmpty && !$0.isGroup && $0.isSelf == true &&
+                $0.members.count == 1 && $0.members.first?.id == viewerId
+        }
+    }
+
+    static func openSelf(viewerId: String, cached: [WireConversationSummary],
+                         request: () async throws -> WireConversationSummary) async throws -> WireConversationSummary {
+        try Task.checkCancellation()
+        guard !viewerId.isEmpty else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "A notebook owner is required.")
+        }
+        if let saved = selfConversation(in: cached, viewerId: viewerId) { return saved }
+        let created = try await request()
+        try Task.checkCancellation()
+        guard selfConversation(in: [created], viewerId: viewerId) != nil else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "The returned notebook didn't match your account.")
+        }
+        return created
+    }
+
 }

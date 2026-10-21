@@ -2518,3 +2518,28 @@ surfaces. Five touched Swift files syntax-parse; native compilation/execution re
 pending. No new server behavior in this tranche (128 server cases passed on f2930bb).
 Autumn styling retained. User-profile message actions, Note to Self's refresh-dependent
 Swift opening and cold root deep links still need their own follow-through.
+
+
+## 2026-10-22 — primary Swift Note to Self opens without a second network prerequisite
+
+The mounted ChatsView previously discarded the confirmed self-create summary, awaited
+an independent inbox refresh, then set a flag consumed by a change callback. A failed
+refresh (or the callback firing before the flag) left an existing notebook unopened.
+It now returns and opens the identity-validated create response directly, retains and
+persists the confirmation independently of the full inbox, and reconciles afterward.
+A full refresh clears that temporary confirmation without replacing other offline rows
+with a one-item inbox snapshot.
+
+The Note to Self lookup accepts only a self-flagged, non-group, one-member row owned by
+the current viewer. It also checks complete wire summaries in the existing offline row
+cache, so a saved notebook can open without the create endpoint. Old cache rows lacking
+membership/self provenance do not fabricate a private notebook. Shared/foreign/self-
+misflagged responses are refused. The opening task is canceled on leaving the tab,
+account change, opening another room or the chat/call composer; response and callback
+both check ownership/cancellation. The obsolete open-on-next-refresh flag is removed.
+
+Added Swift cached-offline/returned-response and malformed-notebook regressions. Three
+Swift files syntax-parse; native compilation/execution for this change is pending.
+The earlier f2930bb iOS archive succeeded; simulator tests and Android were still running
+at the last check, and those results do not validate this later change. Autumn unchanged.
+Profile/Add Contact asynchronous opening and broader navigation arbitration remain open.
