@@ -41,4 +41,27 @@ class HistoryThreadSafetyTest {
         for (code in listOf(403, 404, 410)) assertTrue(threadAccessDenied(code))
         for (code in listOf(null, 429, 500, 503)) assertFalse(threadAccessDenied(code))
     }
+    @Test fun `live deletion filtering cannot erase the raw page boundary`() {
+        val raw = listOf(row("a"), row("b"))
+        val page = MessageHistoryPage.fromResponse(raw, merged = emptyList(), hasMore = true)
+        assertTrue(page.messages.isEmpty())
+        assertTrue(page.hasMore)
+        assertEquals(MessageHistoryCursor("a", raw.first().createdAt), page.nextCursor)
+        assertTrue(page.nextCursor!!.precedes(MessageHistoryCursor("c", raw.first().createdAt)))
+        val exhausted = MessageHistoryPage.fromResponse(emptyList(), emptyList(), hasMore = false)
+        assertNull(exhausted.nextCursor)
+        assertFalse(exhausted.hasMore)
+    }
+
+    @Test fun `raw cursor remains paired with its timestamp when cache rows are replaced`() {
+        val raw = listOf(row("a"), row("b"))
+        val merged = listOf(row("b").copy(deletedAt = "now"))
+        val page = MessageHistoryPage.fromResponse(raw, merged, hasMore = true)
+        assertEquals(merged, page.messages)
+        assertEquals("a", page.nextCursor?.id)
+        assertEquals(raw.first().createdAt, page.nextCursor?.createdAt)
+        // A cache purge needs no ID lookup: the next request still has the timestamp.
+        assertTrue(MessageHistoryCursor("0", raw.first().createdAt).precedes(page.nextCursor!!))
+    }
+
 }

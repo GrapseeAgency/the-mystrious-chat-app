@@ -1580,14 +1580,22 @@ class PulseRepositoryImpl constructor(
     override suspend fun messagesBefore(conversationId: String, beforeId: String, beforeCreatedAt: String, limit: Int): Pair<List<Message>, Boolean> =
         fetchMessagePage(conversationId, beforeCreatedAt, beforeId, limit)
 
+    override suspend fun historyPage(conversationId: String, before: app.pulse.domain.sync.MessageHistoryCursor?, limit: Int): app.pulse.domain.sync.MessageHistoryPage =
+        fetchHistoryPage(conversationId, before?.createdAt, before?.id, limit)
+
     private suspend fun fetchMessagePage(conversationId: String, before: String?, beforeId: String?, limit: Int): Pair<List<Message>, Boolean> {
+        val page = fetchHistoryPage(conversationId, before, beforeId, limit)
+        return page.messages to page.hasMore
+    }
+
+    private suspend fun fetchHistoryPage(conversationId: String, before: String?, beforeId: String?, limit: Int): app.pulse.domain.sync.MessageHistoryPage {
         val watermark = messageEventClock.get()
         val page = when (val r = api.messages(conversationId, limit, before, beforeId = beforeId)) {
             is PulseResult.Success -> r.value
             is PulseResult.Failure -> throw apiExceptionOf(r)
         }
-        val rows = page.messages.map { it.toDomain() }
-        return cacheFetchedMessages(rows, watermark) to page.hasMore
+        val raw = page.messages.map { it.toDomain() }
+        return app.pulse.domain.sync.MessageHistoryPage.fromResponse(raw, cacheFetchedMessages(raw, watermark), page.hasMore)
     }
 
     override suspend fun searchInConversation(conversationId: String, query: String): List<Message> {

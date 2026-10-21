@@ -915,11 +915,11 @@ class ChatRoomViewModel @Inject constructor(
         _state.value = _state.value.copy(loading = true, error = null)
         historyJob = viewModelScope.launch {
             try {
-                val (rows, more) = repo.messagesPage(conversationId, before = null, limit = 200)
+                val page = repo.historyPage(conversationId, before = null, limit = 200)
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (historyRevision != ticket) return@launch
-                historyCursor = MessageHistoryCursor.oldest(rows)
-                _state.value = _state.value.copy(loading = false, hasMore = more)
+                historyCursor = page.nextCursor
+                _state.value = _state.value.copy(loading = false, hasMore = page.hasMore)
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -930,15 +930,16 @@ class ChatRoomViewModel @Inject constructor(
 
     /** A raw page cursor survives pages containing only replies or other topics. */
     private suspend fun earlierPage(): List<Message> {
-        val cursor = historyCursor ?: MessageHistoryCursor.oldest(repo.observeMessages(conversationId).first())
-            ?: return emptyList<Message>().also { _state.value = _state.value.copy(hasMore = false) }
-        val (rows, more) = repo.messagesBefore(conversationId, beforeId = cursor.id, beforeCreatedAt = cursor.createdAt, limit = PAGE_SIZE)
+        // A sparse pin/search cache is not a consumed page. Start at the latest
+        // response if no server boundary has been established yet.
+        val cursor = historyCursor
+        val page = repo.historyPage(conversationId, before = cursor, limit = PAGE_SIZE)
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        val next = MessageHistoryCursor.oldest(rows)
-        if (next != null && !next.precedes(cursor)) throw IllegalStateException("History returned a repeated page")
+        val next = page.nextCursor
+        if (next != null && cursor != null && !next.precedes(cursor)) throw IllegalStateException("History returned a repeated page")
         historyCursor = next ?: cursor
-        _state.value = _state.value.copy(hasMore = more && rows.isNotEmpty())
-        return rows
+        _state.value = _state.value.copy(hasMore = page.hasMore && next != null)
+        return page.messages
     }
 
     fun loadOlder() {
@@ -975,6 +976,12 @@ class ChatRoomViewModel @Inject constructor(
             try {
                 var target = repo.observeMessages(conversationId).first().firstOrNull { it.id == messageId }
                 var rounds = 0
+                // A cold jump can cancel the initial load. It must seed a page
+                // rather than interpreting the initial hasMore=false as exhaustion.
+                if (target == null && historyCursor == null) {
+                    target = earlierPage().firstOrNull { it.id == messageId }
+                    rounds++
+                }
                 while (target == null && _state.value.hasMore && rounds < JUMP_MAX_ROUNDS) {
                     val page = earlierPage()
                     target = page.firstOrNull { it.id == messageId }

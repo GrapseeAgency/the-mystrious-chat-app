@@ -17,3 +17,26 @@ struct PulseHistoryCursor: Equatable {
         return left == right ? id < other.id : left < right
     }
 }
+
+/// A late latest-page response must not rewind a page consumed by the reader.
+/// Cursor and exhaustion are one state; even an empty page advances the revision.
+struct PulseHistoryWindow {
+    private(set) var cursor: PulseHistoryCursor?
+    private(set) var hasMore = false
+    private(set) var revision: UInt64 = 0
+
+    mutating func invalidateSeed() { revision &+= 1 }
+
+    mutating func record(cursor: PulseHistoryCursor?, hasMore: Bool) {
+        self.cursor = cursor
+        self.hasMore = hasMore
+        invalidateSeed()
+    }
+
+    @discardableResult
+    mutating func seed(cursor: PulseHistoryCursor?, hasMore: Bool, ifUnchanged ticket: UInt64) -> Bool {
+        guard revision == ticket else { return false }
+        record(cursor: cursor, hasMore: hasMore)
+        return true
+    }
+}

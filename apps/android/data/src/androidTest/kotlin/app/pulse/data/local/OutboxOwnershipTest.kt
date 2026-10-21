@@ -99,7 +99,8 @@ class OutboxOwnershipTest {
             assertEquals("root", db.messageDao().byId("local_mine")!!.threadRootId)
             // No root row exists: the user's rejected text still permits explicit recovery/discard.
             assertEquals(1, db.outboxDao().discardFailedThread("me", "room", "elsewhere", "other-root"))
-            assertEquals(4, db.outboxDao().count())
+            assertEquals(1, db.outboxDao().count()) // count() is pending-only
+            assertEquals(4, db.outboxDao().all().size)
         } finally { db.close() }
     }
 

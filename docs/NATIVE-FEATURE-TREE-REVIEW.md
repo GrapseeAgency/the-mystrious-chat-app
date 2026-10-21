@@ -1708,3 +1708,53 @@ Limits: this is failed-intent recovery, not full thread pagination or proof of d
 Generic Settings queue controls retain their existing semantics. Revocation across all
 screens, beyond-window navigation and media/export lifetimes remain open. No merge or
 deployment is implied, and no whole-app correctness claim is made.
+
+
+### Preserve raw history boundaries and reject stale refresh seeds (2026-10-21)
+
+Traced “load earlier”, cold/search/quote jumps and topic changes through the actual
+Mirror room, primary Android ViewModel, Swift room model and message-page endpoint.
+The Android cache reconciler correctly drops an HTTP row after a newer deletion, but
+callers then incorrectly derived pagination from those filtered rows. An entire dropped
+page looked like end-of-history. Mirror also retained just an ID, which stopped being a
+valid paging anchor once that local row was purged. Swift latest-page responses could
+reset a history boundary established by a newer action.
+
+- Added an Android history-page result that keeps the raw response's timestamp/ID cursor
+  separate from reconciled display rows. Both native Android room paths consume it;
+  legacy page APIs remain compatible. Hidden/deleted/reconciled-away rows still advance
+  the boundary without resurrecting their message content. Stable composite cursors go
+  to the existing backend `before`/`beforeId` contract without a local anchor lookup.
+- Mirror no longer assumes the oldest arbitrary pin/search cache row proves contiguous
+  history. A new paging scan starts with the latest server page, keeps raw progress and
+  skips duplicate/hidden-only pages in bounded batches. A jump cannot rewind a farther
+  manual history boundary. Primary Android cold jumps can seed history even if they
+  superseded the initial load before it established `hasMore`.
+- Mirror jumps no longer poll an empty cache or swallow coroutine cancellation. The
+  target must enter the current Compose entry model before index-based scrolling, with
+  the history-control row accounted for. Deleted/expired targets produce an unavailable
+  notice; a superseded task cannot consume a newer jump. Explicit thread target IDs stay
+  intact. Network/display failures retain an actionable error rather than a false jump.
+- Swift now keeps cursor, exhaustion and revision together. Page starts/commits, empty
+  terminal pages and topic/jump resets invalidate older latest-page seeds. A general
+  refresh cannot seed a topic's boundary. Topic reload merges the bounded cache into
+  already-expanded history instead of truncating it; selecting a topic refilters the
+  display immediately. Automatic topic healing uses the same cancel/reset/reload path.
+  Topic refresh captures its store/client/session epoch across suspension.
+- Corrected the previous outbox DAO regression's final assertion: `count()` counts only
+  pending sends, not all stored failed intent. It now verifies one pending and four total
+  stored rows separately; no production queue semantics were changed to satisfy it.
+
+Verification: 99/99 unchanged server contracts pass locally. Added Kotlin raw-boundary
+regressions (including a fully reconciled-away page), Swift stale-seed/empty-terminal/
+A→B→A regressions and expanded-history retention coverage. Changed native files pass
+syntax and diff checks; native build/device execution for this new batch is pending.
+Previous 54f76de Android build and Swift tests/archive passed; Android instrumentation
+reported the added outbox test, whose incorrect pending-vs-total assertion is corrected
+here. No claim that parser checks prove native runtime behavior.
+
+Limits: scans remain bounded (five pages per manual batch, fourteen per jump); a very
+old uncached target can still require further history. Legacy all-replies thread loading,
+primary Android's root-only navigation callback, cross-screen revocation and media-copy
+lifetimes are still open. A fresh Mirror scan can revisit already-cached pages rather
+than skipping an unproven gap. Autumn styling is unchanged; no merge/deployment implied.

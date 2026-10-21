@@ -507,6 +507,13 @@ interface PulseRepository {
         messagesPage(conversationId, beforeId, limit)
 
 
+    /** Cursor comes from the raw response, independently of rows retained after live-event reconciliation. */
+    suspend fun historyPage(conversationId: String, before: app.pulse.domain.sync.MessageHistoryCursor?, limit: Int = 40): app.pulse.domain.sync.MessageHistoryPage {
+        val (rows, more) = if (before == null) messagesPage(conversationId, null, limit)
+            else messagesBefore(conversationId, before.id, before.createdAt, limit)
+        return app.pulse.domain.sync.MessageHistoryPage.fromResponse(rows, rows, more)
+    }
+
     /** GET /api/conversations/{id}/messages?limit=100&q= - in-conversation search (hits upserted). */
     suspend fun searchInConversation(conversationId: String, query: String): List<Message>
 
