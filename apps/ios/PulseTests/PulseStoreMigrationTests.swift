@@ -346,12 +346,11 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(PulseStore.reactions(fromJson: "not json"), [])
     }
 
-    func testUpsertOverwritesV3ColumnsOnConflict() throws {
+    func testUpsertRedactsTombstoneWhileUpdatingV3Metadata() throws {
         let store = try PulseStore()
         // First write: pinned, reacted, thread reply.
         try store.upsert(messages: [makeV3Message(id: "t-r1", conversationId: "c1", parentId: "t-root", createdAt: "2026-09-07T13:00:00.000Z")])
-        // Second write - an edit/unpin/unreact tombstone-swap arrives as a
-        // fresh row for the same id; the upsert must overwrite ALL columns.
+        // Mutable metadata updates, but deleted body/media must be redacted.
         let before = makeV3Message(id: "t-r1", conversationId: "c1", parentId: "t-root", createdAt: "2026-09-07T13:00:00.000Z")
         let edited = WireChatMessage(
             id: before.id, conversationId: before.conversationId, senderId: before.senderId,
@@ -369,13 +368,13 @@ final class PulseStoreMigrationTests: XCTestCase {
         let rows = try store.messages(conversationId: "c1")
         XCTAssertEqual(rows.count, 1)
         let row = try XCTUnwrap(rows.first)
-        XCTAssertEqual(row.content, "edited body")
+        XCTAssertEqual(row.content, "")
         XCTAssertEqual(row.editedAt, "2026-09-07T15:00:00.000Z")
         XCTAssertEqual(row.deletedAt, "2026-09-07T15:30:00.000Z")
         XCTAssertNil(row.parentId)
         XCTAssertNil(row.pinnedAt)
         XCTAssertEqual(row.reactions, []) // v10 preserves the exact authoritative empty array
-        XCTAssertEqual(row, edited)
+        XCTAssertEqual(row, edited.deletedCopy())
         XCTAssertNil(row.imagePath)
     }
 
@@ -454,18 +453,19 @@ final class PulseStoreMigrationTests: XCTestCase {
         XCTAssertEqual(voiced.transcribedAt, "2026-09-08T12:05:00.000Z")
     }
 
-    func testUpsertOverwritesV4ColumnsOnConflict() throws {
+    func testUpsertUpdatesV4MetadataWithoutReopeningConsumedMedia() throws {
         let store = try PulseStore()
         try store.upsert(messages: [makeV4Message(id: "m1", conversationId: "c1", createdAt: "2026-09-08T12:00:00.000Z")])
-        // A plain follow-up row for the same id must clear the Wave 2
-        // columns (envelope rows are authoritative - spec §0).
+        // Mutable fields can clear; a delayed plain row cannot clear a burn stamp.
         let cleared = makeMessage(id: "m1", conversationId: "c1")
         try store.upsert(messages: [cleared])
 
         let row = try XCTUnwrap(try store.messages(conversationId: "c1").first)
         XCTAssertNil(row.poll)
         XCTAssertNil(row.linkPreview)
-        XCTAssertNil(row.viewedAt)
+        XCTAssertEqual(row.viewedAt, "2026-09-08T12:01:00.000Z")
+        XCTAssertEqual(row.viewedBy, "u9")
+        XCTAssertEqual(row.viewOnce, true)
         XCTAssertNil(row.transcript)
         XCTAssertNil(row.topicId)
     }
