@@ -258,9 +258,13 @@ class ThreadViewModel @Inject constructor(
             } catch (failure: Exception) {
                 val denied = threadAccessDenied((failure as? PulseApiException)?.status)
                 val offlineTarget = if (initialJumpMessageId != null && app.pulse.domain.sync.mayUseOfflineThread(failure)) {
-                    try { repo.cachedThreadTarget(conversationId, rootId, initialJumpMessageId)?.second?.id }
-                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                    catch (_: Exception) { null }
+                    try {
+                        repo.cachedThreadTarget(conversationId, rootId, initialJumpMessageId)?.second?.id
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (cacheFailure: Exception) {
+                        null
+                    }
                 } else null
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 _state.value = _state.value.copy(loading = false, error = failure.message, offlineJumpId = offlineTarget,
