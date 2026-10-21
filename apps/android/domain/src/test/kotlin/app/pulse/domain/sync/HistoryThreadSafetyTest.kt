@@ -8,6 +8,41 @@ class HistoryThreadSafetyTest {
     private fun row(id: String) = Message(id = id, conversationId = "room", authorId = "peer", authorName = "Peer",
         kind = Message.Kind.TEXT, body = id, createdAt = "2026-10-21T00:00:00Z")
 
+    @Test fun `offline jump consults cache only after transport failure`() = kotlinx.coroutines.test.runTest {
+        val root = row("root")
+        val reply = row("reply").copy(threadRootId = "root")
+        var failure: RuntimeException? = null
+        var cacheReads = 0
+        var saved: Pair<Message, Message>? = root to reply
+        val type = app.pulse.domain.repository.PulseRepository::class.java
+        val repo = java.lang.reflect.Proxy.newProxyInstance(type.classLoader, arrayOf(type)) { _, method, args ->
+            when (method.name) {
+                "loadThread" -> { failure?.let { throw it }; root to listOf(reply) }
+                "cachedThreadTarget" -> {
+                    assertEquals(listOf("room", "root", "reply"), args!!.take(3))
+                    cacheReads++; saved
+                }
+                else -> error("Unexpected repository call: ${method.name}")
+            }
+        } as app.pulse.domain.repository.PulseRepository
+        assertEquals(root to listOf(reply), resolveThreadJump(repo, "room", "root", "reply"))
+        assertEquals(0, cacheReads)
+        failure = app.pulse.domain.model.PulseApiException("NETWORK", "offline")
+        assertEquals(root to listOf(reply), resolveThreadJump(repo, "room", "root", "reply"))
+        assertEquals(1, cacheReads)
+        saved = null
+        val absent = runCatching { resolveThreadJump(repo, "room", "root", "reply") }.exceptionOrNull()
+        assertSame(failure, absent)
+        assertEquals(2, cacheReads)
+        for (error in listOf(app.pulse.domain.model.PulseApiException("FORBIDDEN", "refused", 403),
+                app.pulse.domain.model.PulseApiException("NETWORK", "superseded", 409),
+                kotlinx.coroutines.CancellationException("left room"))) {
+            failure = error
+            assertSame(error, runCatching { resolveThreadJump(repo, "room", "root", "reply") }.exceptionOrNull())
+        }
+        assertEquals(2, cacheReads)
+    }
+
     @Test fun `raw cursor crosses hidden replies and topic rows with tied timestamps`() {
         val cursor = MessageHistoryCursor.oldest(listOf(row("c")))!!
         val hidden = listOf(row("b").copy(threadRootId = "root"), row("a").copy(topicId = "other"), row("local_pending"))

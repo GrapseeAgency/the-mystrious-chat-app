@@ -2343,3 +2343,21 @@ These changes preserve the documented best-effort API and the autumn appearance.
 Source parsing/diff checking only for this small follow-up; native/device verification
 is pending. Congested-but-connected media buffering, stage acknowledgment and relay
 conversation/identity authorization remain separate open work, not solved by this gate.
+
+
+### Offline jump follow-through: legacy Android thread route
+
+The active Mirror sheet already anchors a cached reply from its observed rows, but
+ThreadScreen waited for a successful HTTP reply-ID list before attempting any anchor.
+Its ViewModel now records an exact offline target only after transport failure and an
+account/denial-checked cache lookup; the renderer waits for that target's Room propagation.
+A single cached target is kept separate from the full server reply inventory, so it
+cannot falsely establish absence/deletion of a different target. Cancellation/refusal
+still cannot unlock this route. Added repository-path JVM regressions for online,
+transport cache hit/miss, refusal, superseded validation and cancellation; execution pending.
+
+Follow-up traced but not repaired here: thread surfaces do not currently submit visible
+reply read boundaries, although server unread counting includes replies. Fixing this
+requires explicit read-surface ownership so the obscured room cannot overwrite the
+thread's boundary, plus lifecycle/dwell/lock gating in both Android thread surfaces.
+Do not call thread Seen/unread complete based on room-only receipt repairs.
