@@ -199,4 +199,26 @@ final class ThreadReplyCountTests: XCTestCase {
         XCTAssertNil(refused.cursor)
         XCTAssertNotNil(try store.message(id: "a", now: now))
     }
+
+    func testOfflineJumpReadsExactLiveRootAndReplyAndCannotBypassDenial() throws {
+        let store = try PulseStore(), now = Date(timeIntervalSince1970: 1000)
+        try store.upsert(messages: [row("root", expires: now.addingTimeInterval(1)),
+                                   row("reply", parent: "root"), row("foreign", room: "other", parent: "root")])
+        XCTAssertEqual(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "reply", now: now)?.reply.id, "reply")
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "foreign", now: now))
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "other", rootId: "root", targetId: "reply", now: now))
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "reply", now: now.addingTimeInterval(1)))
+        try store.denyThread(rootId: "root")
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "reply", now: now))
+    }
+
+    func testOfflineJumpDoesNotNavigateDeletedOrFailedLocalReplies() throws {
+        let store = try PulseStore()
+        try store.upsert(messages: [row("root"), row("deleted", parent: "root").deletedCopy()])
+        try store.appendOutbox(conversationId: "room", clientId: "failed", content: "saved")
+        try store.rejectOutbox(clientId: "failed", reason: "refused")
+        try store.upsert(messages: [row("local_failed", parent: "root")])
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "deleted"))
+        XCTAssertNil(try store.cachedThreadTarget(roomId: "room", rootId: "root", targetId: "local_failed"))
+    }
 }

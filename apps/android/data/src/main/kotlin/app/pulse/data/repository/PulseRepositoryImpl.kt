@@ -1577,6 +1577,16 @@ class PulseRepositoryImpl constructor(
     private suspend fun threadIsDenied(rootId: String): Boolean = rootId in deniedThreads.value ||
         wave7Dao.get(app.pulse.domain.sync.threadDenialKey(rootId)) != null
 
+    override suspend fun cachedThreadTarget(roomId: String, rootId: String, targetId: String): Pair<Message, Message>? =
+        messageCacheMutex.withLock {
+            database.withTransaction {
+                if (viewerId == null || threadIsDenied(rootId)) return@withTransaction null
+                val rows = messageDao.cachedThreadTargetRows(roomId, rootId, targetId).map { it.toDomain() }
+                app.pulse.domain.sync.cachedThreadTarget(rows.firstOrNull { it.id == rootId },
+                    rows.firstOrNull { it.id == targetId }, roomId, rootId, targetId, denied = false)
+            }
+        }
+
     override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
         val ticket = messageCacheMutex.withLock { threadValidationFence.begin(rootId) }
         val watermark = messageEventClock.get()

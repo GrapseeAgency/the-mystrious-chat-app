@@ -40,4 +40,15 @@ final class ThreadNavigationTests: XCTestCase {
         XCTAssertFalse(fence.isCurrent("root", current))
         XCTAssertTrue(fence.isCurrent("other", other))
     }
+
+    func testOfflineNavigationOnlyFallsBackForTransportFailure() {
+        XCTAssertTrue(PulseThreadNavigation.mayUseOfflineCache(after: URLError(.notConnectedToInternet)))
+        XCTAssertTrue(PulseThreadNavigation.mayUseOfflineCache(after: PulseAPIClient.Failure(kind: .network, message: nil)))
+        XCTAssertFalse(PulseThreadNavigation.mayUseOfflineCache(after: URLError(.cancelled)))
+        XCTAssertFalse(PulseThreadNavigation.mayUseOfflineCache(after: URLError(.userAuthenticationRequired)))
+        XCTAssertFalse(PulseThreadNavigation.mayUseOfflineCache(after: CancellationError()))
+        for status in [401, 403, 404, 409, 410, 429, 500] {
+            XCTAssertFalse(PulseThreadNavigation.mayUseOfflineCache(after: PulseAPIClient.Failure(kind: .network, message: nil, status: status)))
+        }
+    }
 }

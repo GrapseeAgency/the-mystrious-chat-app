@@ -496,6 +496,9 @@ interface PulseRepository {
     /** GET /api/messages/{id}/thread?userId= → (parent, replies asc) - also upserts Room. */
     suspend fun loadThread(rootId: String): Pair<Message, List<Message>>
 
+    /** Exact offline navigation target, never permission revalidation or a complete thread snapshot. */
+    suspend fun cachedThreadTarget(roomId: String, rootId: String, targetId: String): Pair<Message, Message>? = null
+
     /** Explicit refusal survives reopening; transport failures never clear it. */
     fun observeThreadAccessDenied(rootId: String): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
 

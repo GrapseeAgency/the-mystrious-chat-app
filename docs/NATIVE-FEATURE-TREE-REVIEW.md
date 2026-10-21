@@ -2299,3 +2299,29 @@ Added a narrowly scoped relay dependency install and relay/helper path triggers.
 initial 6bf6279 server-contract run failed; it is not a runtime or native pass claim.
 GitHub log download returned EOF and its annotation was tail-truncated; the fresh-job
 dependency omission is directly visible in the workflow. A rerun must confirm the fix.
+
+
+## 2026-10-21 — offline reply links reach their saved thread
+
+After fixing Swift thread paging, tracing the entry path found that both native room
+jump handlers still required a successful thread HTTP request before opening ANY cached
+reply. Thus older offline thread pages existed but a saved reply link could not reach
+its thread at all. Added exact root/reply cache reads guarded by account-scoped storage,
+root/reply identity and lifetime, persistent/in-memory refusal and failed-echo exclusion.
+The read does not clear denial or pretend to be a complete/validated server snapshot.
+
+Room jump handling falls back ONLY for transport failure, not HTTP access refusal,
+superseded validation, decode failure or cancellation. Swift opens the existing cached
+thread sheet; both the active Android Mirror path and ChatRoomViewModel use the same
+transport-only resolution helper. Existing caller cancellation/session fences remain.
+
+Added pure policy/visibility regressions, Swift SQLite target regressions, and Room
+query assertions across denial/reopen. Thirteen native files syntax-parse and the actual
+Swift SQL executes correctly for scope/failed-echo/refusal cases. New native execution
+is pending. Separately, 0073c3a's iOS simulator build/tests AND unsigned archive succeeded;
+090779b's Android and iOS workflows succeeded. The server workflow dependency correction
+81a1ead now passes (real relay tests included). These are not physical-device proof.
+
+Still open: the fourteen-page out-of-cache jump limit and efficient server anchor/window
+navigation; removing that cap blindly could download arbitrarily large histories. Full
+thread HTTP responses remain unbounded. No theme or account/sign-in redesign.

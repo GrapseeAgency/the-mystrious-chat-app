@@ -104,4 +104,28 @@ class HistoryThreadSafetyTest {
         assertTrue(fence.isCurrent("other", other))
         assertEquals("thread-access-denied:v1|root", threadDenialKey("root"))
     }
+
+    @Test fun `offline target requires live exact root and reply without refusal`() {
+        val root = row("root")
+        val reply = row("reply").copy(threadRootId = "root")
+        assertEquals(root to reply, cachedThreadTarget(root, reply, "room", "root", "reply", false, 1000))
+        assertNull(cachedThreadTarget(root, reply, "room", "root", "reply", true, 1000))
+        for (invalid in listOf(null, root.copy(deletedAt = "now"), root.copy(expiresAtEpochMs = 1000),
+            root.copy(threadRootId = "nested"), root.copy(conversationId = "other"), root.copy(id = "local_root"))) {
+            assertNull(cachedThreadTarget(invalid, reply, "room", "root", "reply", false, 1000))
+        }
+        for (invalid in listOf(null, reply.copy(deletedAt = "now"), reply.copy(expiresAtEpochMs = 1000),
+            reply.copy(threadRootId = "another"), reply.copy(conversationId = "other"))) {
+            assertNull(cachedThreadTarget(root, invalid, "room", "root", "reply", false, 1000))
+        }
+    }
+
+    @Test fun `offline navigation never turns HTTP refusal or cancellation into cache permission`() {
+        assertTrue(mayUseOfflineThread(app.pulse.domain.model.PulseApiException("NETWORK", "offline")))
+        assertFalse(mayUseOfflineThread(kotlinx.coroutines.CancellationException()))
+        for (status in listOf(401, 403, 404, 409, 410, 429, 500)) {
+            assertFalse(mayUseOfflineThread(app.pulse.domain.model.PulseApiException("NETWORK", "failure", status)))
+        }
+        assertFalse(mayUseOfflineThread(IllegalStateException("decode failed")))
+    }
 }

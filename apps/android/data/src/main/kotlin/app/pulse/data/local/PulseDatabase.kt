@@ -650,6 +650,12 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || messages.threadRootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 
+    /** The repository validates root/reply structure and lifetime in the same transaction. */
+    @Query("SELECT * FROM messages WHERE conversationId = :roomId AND id IN (:rootId, :targetId) " +
+        "AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) " +
+        "AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)")
+    suspend fun cachedThreadTargetRows(roomId: String, rootId: String, targetId: String): List<MessageEntity>
+
     /** Thread screen rehydration - replies asc from the Room cache. */
     @Query("SELECT * FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeThread(rootId: String): Flow<List<MessageEntity>>

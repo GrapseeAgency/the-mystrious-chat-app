@@ -810,7 +810,7 @@ internal fun MirrorRoom(
             if (parentId != null) {
                 // A cached parent is not current permission or proof that the
                 // selected reply still belongs to a live thread.
-                val (root, loadedReplies) = repository.loadThread(parentId)
+                val (root, loadedReplies) = app.pulse.domain.sync.resolveThreadJump(repository, groupId, parentId, target)
                 ensureActive()
                 if (!roomActionsLive.get()) return@LaunchedEffect
                 if (!app.pulse.domain.sync.threadRootAvailable(root, groupId, parentId) ||

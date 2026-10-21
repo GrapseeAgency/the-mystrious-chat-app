@@ -4439,6 +4439,12 @@ final class RoomViewModel: ObservableObject {
             jumpThreadRoot = root
         } catch {
             guard !Task.isCancelled, ticket == historyGeneration, epoch == session.sessionGeneration else { return }
+            if PulseThreadNavigation.mayUseOfflineCache(after: error), !session.threadAccessDenied(rootId: rootId),
+               let saved = try? session.store?.cachedThreadTarget(roomId: conversationId, rootId: rootId, targetId: target.id) {
+                jumpThreadReplyId = saved.reply.id
+                jumpThreadRoot = saved.parent
+                return
+            }
             session.toasts.show("Couldn't open this message's thread. Try again.")
         }
     }

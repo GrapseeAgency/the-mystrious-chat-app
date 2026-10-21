@@ -1003,7 +1003,7 @@ class ChatRoomViewModel @Inject constructor(
                     val rootId = target.threadRootId
                     if (rootId == null) flash(target.id)
                     else {
-                        val (root, replies) = repo.loadThread(rootId)
+                        val (root, replies) = app.pulse.domain.sync.resolveThreadJump(repo, conversationId, rootId, target.id)
                         kotlinx.coroutines.currentCoroutineContext().ensureActive()
                         if (!app.pulse.domain.sync.threadRootAvailable(root, conversationId, rootId) ||
                             app.pulse.domain.sync.threadReplyTargetIndex(replies, root, target.id) == null) {

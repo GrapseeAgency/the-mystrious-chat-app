@@ -535,6 +535,26 @@ public final class PulseStore: Sendable {
         return rows.compactMap(Self.messageRow(from:))
     }
 
+    /// Resolve an offline reply and its root from one read snapshot. A cached
+    /// reply alone never proves its parent is still displayable.
+    func cachedThreadTarget(roomId: String, rootId: String, targetId: String, now: Date = Date()) throws
+        -> (parent: WireChatMessage, reply: WireChatMessage)? {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT m.* FROM message m
+                WHERE m.conversationId = :room AND m.id IN (:root, :target)
+                  AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || :root)
+                  AND NOT EXISTS (SELECT 1 FROM outbox o WHERE m.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)
+                """, arguments: ["room": roomId, "root": rootId, "target": targetId])
+            let messages = rows.compactMap(Self.messageRow(from:))
+            guard let parent = messages.first(where: { $0.id == rootId }),
+                  PulseRemediationLogic.threadRootAvailable(parent, roomId: roomId, rootId: rootId, now: now),
+                  let reply = PulseThreadNavigation.target(in: messages, roomId: roomId, rootId: rootId, targetId: targetId, now: now)
+            else { return nil }
+            return (parent, reply)
+        }
+    }
+
     /// Keyset pages keep offline history reachable beyond the initial 300-row window.
     /// Cursor comes from raw rows (including local echoes), so tombstones, failed decode
     /// or a subsequently removed anchor cannot stall paging or skip timestamp ties.

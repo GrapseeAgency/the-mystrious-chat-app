@@ -38,3 +38,25 @@ class ThreadValidationFence {
     fun isCurrent(rootId: String, ticket: String): Boolean = tickets[rootId] == ticket
     fun finish(rootId: String, ticket: String) { tickets.remove(rootId, ticket) }
 }
+
+
+fun mayUseOfflineThread(error: Exception): Boolean =
+    error is app.pulse.domain.model.PulseApiException && error.kind == "NETWORK" && error.status == null
+
+fun cachedThreadTarget(root: Message?, reply: Message?, roomId: String, rootId: String, targetId: String,
+    denied: Boolean, now: Long = System.currentTimeMillis()): Pair<Message, Message>? {
+    if (denied || !threadRootAvailable(root, roomId, rootId, now) || root == null || reply == null) return null
+    return if (threadReplyTargetIndex(listOf(reply), root, targetId, now) != null) root to reply else null
+}
+
+/** A transport outage can open saved history; HTTP refusal/cancellation can never fall back. */
+suspend fun resolveThreadJump(repo: app.pulse.domain.repository.PulseRepository, roomId: String, rootId: String,
+    targetId: String): Pair<Message, List<Message>> = try {
+    repo.loadThread(rootId)
+} catch (cancelled: kotlinx.coroutines.CancellationException) {
+    throw cancelled
+} catch (error: Exception) {
+    if (!mayUseOfflineThread(error)) throw error
+    val saved = repo.cachedThreadTarget(roomId, rootId, targetId) ?: throw error
+    saved.first to listOf(saved.second)
+}
