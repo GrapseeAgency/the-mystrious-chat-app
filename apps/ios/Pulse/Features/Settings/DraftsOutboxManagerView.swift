@@ -257,7 +257,8 @@ struct DraftsOutboxManagerView: View {
     }
 
     private func name(for conversationId: String) -> String {
-        conversationNames[conversationId] ?? "Conversation"
+        if PulseThreadDraft.isThread(conversationId) { return "Thread reply" }
+        return conversationNames[conversationId] ?? "Conversation"
     }
 
     private func stamp(_ iso: String) -> String? {

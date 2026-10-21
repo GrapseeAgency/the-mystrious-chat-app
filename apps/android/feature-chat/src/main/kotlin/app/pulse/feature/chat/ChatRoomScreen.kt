@@ -171,7 +171,8 @@ fun ChatRoomScreen(
     /** Global-search / notification jump - room scrolls + flashes on arrival. */
     jumpMessageId: String? = null,
     onBack: () -> Unit,
-    onOpenThread: (conversationId: String, rootId: String) -> Unit,
+    /** The navigator must pass jumpMessageId into ThreadScreen (or its saved-state argument). */
+    onOpenThread: (conversationId: String, rootId: String, jumpMessageId: String?) -> Unit,
     viewModel: ChatRoomViewModel = hiltViewModel(),
     // Wave 5 voice rooms (authorized shared plumbing only - the same
     // MainActivity-level trigger idiom the calls surface uses):
@@ -200,7 +201,7 @@ fun ChatRoomScreen(
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val replyCounts by viewModel.replyCounts.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val jumpTarget by viewModel.jumpTarget.collectAsStateWithLifecycle()
+    val threadJump by viewModel.threadJump.collectAsStateWithLifecycle()
     val topics by viewModel.topics.collectAsStateWithLifecycle()
     val activeTopicId by viewModel.activeTopicId.collectAsStateWithLifecycle()
     val recording by viewModel.recording.collectAsStateWithLifecycle()
@@ -262,6 +263,11 @@ fun ChatRoomScreen(
     var infoTarget by remember { mutableStateOf<Message?>(null) }
     var deleteTarget by remember { mutableStateOf<Message?>(null) }
     var lightboxTarget by remember { mutableStateOf<Message?>(null) }
+    var openingViewOnce by remember(conversationId, viewerId) { mutableStateOf(false) }
+    LaunchedEffect(messages, lightboxTarget?.id) {
+        val shown = lightboxTarget
+        if (shown != null && messages.none { it.id == shown.id && !it.isDeleted }) lightboxTarget = null
+    }
     var pinsOpen by remember { mutableStateOf(false) }
     var attachOpen by remember { mutableStateOf(false) }
     // R4-B item 2 - the attach sheet's Effects submenu state (web
@@ -271,8 +277,7 @@ fun ChatRoomScreen(
     var pollBuilderOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var wasEditing by remember { mutableStateOf(false) }
-    var expandedFor by remember { mutableStateOf<String?>(null) }
-    var scrolledFlash by remember { mutableStateOf<String?>(null) }
+    var scrolledFlash by remember(state.flashRevision) { mutableStateOf<String?>(null) }
     // R1-W2A - reaction picker / who-reacted / stickers / slash help /
     // schedule / quick-phrases hosts (D27, F-MS-24, F-MS-22, F-MS-29).
     var reactionPickerTarget by remember { mutableStateOf<Message?>(null) }
@@ -411,6 +416,17 @@ fun ChatRoomScreen(
         }
     }
     val lifecycleOwner = LocalLifecycleOwner.current
+    fun openViewOnce(target: Message) {
+        if (openingViewOnce || lightboxTarget != null) return
+        openingViewOnce = true
+        listScope.launch {
+            try {
+                viewModel.consumeViewOnce(target, viewerId)?.let {
+                    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) lightboxTarget = it
+                }
+            } finally { openingViewOnce = false }
+        }
+    }
     DisposableEffect(lifecycleOwner, screenPrivacyOn) {
         val obs = LifecycleEventObserver { _, event ->
             when (event) {
@@ -431,14 +447,19 @@ fun ChatRoomScreen(
     val readObscured = actionTarget != null || forwardTarget != null || infoTarget != null || deleteTarget != null ||
         lightboxTarget != null || pinsOpen || attachOpen || pollBuilderOpen || reactionPickerTarget != null ||
         whoReactedFor != null || stickerOpen || scheduleOpen || scheduledOpen || helpOpen || locationOpen || themeOpen || state.searchOpen
-    LaunchedEffect(lifecycleOwner, rowsReversed, pipFocusedId, privacyHidden, readObscured) {
+    val readRows = rememberUpdatedState(rowsReversed)
+    val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
+    LaunchedEffect(lifecycleOwner, viewModel, conversation?.id, pipFocusedId, privacyHidden, readObscured, minimumReadPixels) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
                 snapshotFlow {
-                    val visible = listState.layoutInfo.visibleItemsInfo.map { it.key }.toSet()
+                    val layout = listState.layoutInfo
+                    val visible = layout.visibleItemsInfo.filter {
+                        app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)
+                    }.map { it.key }.toSet()
                     if (privacyHidden || readObscured || (pipFocusedId != null && pipFocusedId != conversation?.id)) null
-                    else rowsReversed.filterIsInstance<TimelineRow.Msg>().firstOrNull {
-                        it.key in visible && !it.message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)
+                    else readRows.value.filterIsInstance<TimelineRow.Msg>().firstOrNull {
+                        it.key in visible && !it.message.isDeleted && !it.message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)
                     }?.message?.id
                 }.collect { viewModel.setReadingAnchor(it) }
             } finally { viewModel.setReadingAnchor(null) }
@@ -457,21 +478,14 @@ fun ChatRoomScreen(
         }
     }
 
-    // Jump resolution: in-window targets are already flashing (VM flash());
-    // out-of-window targets expand the window (bounded ≤14 before= rounds).
-    LaunchedEffect(jumpTarget, rows) {
-        val target = jumpTarget ?: return@LaunchedEffect
-        if (rows.any { it is TimelineRow.Msg && it.message.id == target }) {
-            viewModel.consumeJumpTarget()
-            viewModel.flash(target)
-        } else if (expandedFor != target) {
-            expandedFor = target
-            viewModel.expandForJump(target)
-        }
+    LaunchedEffect(threadJump) {
+        val request = threadJump ?: return@LaunchedEffect
+        onOpenThread(conversationId, request.rootId, request.replyId)
+        viewModel.consumeThreadJump(request)
     }
 
     // The flash ring also scrolls the bubble into view (search/pins/quotes).
-    LaunchedEffect(state.flashMessageId, rows) {
+    LaunchedEffect(state.flashRevision, state.flashMessageId, rows) {
         val id = state.flashMessageId ?: return@LaunchedEffect
         if (scrolledFlash == id) return@LaunchedEffect
         val index = rowsReversed.indexOfFirst { it is TimelineRow.Msg && it.message.id == id }
@@ -893,9 +907,7 @@ fun ChatRoomScreen(
                                 onTournamentJoin = { id -> viewModel.joinTournament(id) },
                                 onTournamentFinish = { id -> viewModel.finishTournament(id) },
                                 onConsumeViewOnce = { target ->
-                                    // Reveal is instant - the POST is fire-and-forget (web parity).
-                                    viewModel.consumeViewOnce(target)
-                                    lightboxTarget = target
+                                    openViewOnce(target)
                                 },
                                 onLongPress = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                                     {
@@ -908,7 +920,7 @@ fun ChatRoomScreen(
                                 onQuoteClick = { quoteId -> viewModel.jumpTo(quoteId) },
                                 onOpenImage = { lightboxTarget = message },
                                 onOpenFile = { viewModel.openFile(message, share = false) },
-                                onOpenThread = { onOpenThread(conversationId, message.id) },
+                                onOpenThread = { onOpenThread(conversationId, message.id, null) },
                                 // D27 - long-press a reaction chip → who-reacted sheet.
                                 onWhoReacted = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                                     { emoji -> whoReactedFor = message to emoji }
@@ -956,6 +968,14 @@ fun ChatRoomScreen(
                                         if (row.head) Modifier.padding(top = clusterHeadGap) else Modifier,
                                     ),
                             )
+                        }
+                    }
+                }
+                if (state.hasMore) {
+                    item(key = "history-earlier") {
+                        TextButton(onClick = viewModel::loadOlder, enabled = !state.loading && !state.loadingOlder,
+                            modifier = Modifier.fillMaxWidth()) {
+                            Text(if (state.loadingOlder) "Loading earlier messages…" else "Load earlier messages")
                         }
                     }
                 }
@@ -2139,15 +2159,17 @@ fun ChatRoomScreen(
             },
             onReplyInThread = {
                 actionTarget = null
-                onOpenThread(conversationId, target.id)
+                onOpenThread(conversationId, target.id, null)
             },
             onEdit = {
                 viewModel.beginEdit(target)
                 actionTarget = null
             },
             onCopy = {
-                clipboard.setText(AnnotatedString(target.body))
-                viewModel.notify("Copied to clipboard")
+                if (!target.viewOnce || target.authorId == viewerId) {
+                    clipboard.setText(AnnotatedString(target.body))
+                    viewModel.notify("Copied to clipboard")
+                } else viewModel.notify("View-once content can't be copied", isError = true)
                 actionTarget = null
             },
             onTogglePin = {
@@ -2159,7 +2181,8 @@ fun ChatRoomScreen(
                 actionTarget = null
             },
             onForward = {
-                forwardTarget = target
+                if (!target.viewOnce) forwardTarget = target
+                else viewModel.notify("View-once content can't be forwarded", isError = true)
                 actionTarget = null
             },
             onShare = target.filePath?.takeIf { it.isNotBlank() }?.let {

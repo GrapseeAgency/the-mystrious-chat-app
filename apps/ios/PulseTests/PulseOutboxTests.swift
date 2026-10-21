@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 @testable import Pulse
 
 /// Wave 0 - outbox engine semantics, mirroring src/lib/pulse-outbox.ts:
@@ -490,6 +491,68 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(store.countOutbox(), 0)
     }
 
+    func testKnownThreadRefusalStopsUploadAndPostWithoutBlockingOtherMessages() async throws {
+        let store = try PulseStore()
+        let envelope = PulseOutboxForward(kind: "file", fileName: "notes.pdf", parentId: "root",
+            uploadDataUrl: "data:application/pdf;base64,JVBERg==")
+        try store.appendOutbox(conversationId: "room", clientId: "held", content: "held", kind: "file",
+            payloadJson: PulseOutboxForward.encode(envelope))
+        try store.appendOutbox(conversationId: "room", clientId: "next", content: "next")
+        try store.denyThread(rootId: "root")
+        let sender = StubSender(behaviors: [:]), engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        await engine.flush()
+        XCTAssertEqual(sender.uploadCount, 0)
+        XCTAssertEqual(sender.operationIds, ["next"])
+        let retained = try XCTUnwrap(store.outboxAll().first)
+        XCTAssertEqual(retained.clientId, "held")
+        XCTAssertNotNil(retained.failureReason)
+        XCTAssertEqual(PulseOutboxForward.decode(retained.payloadJson), envelope)
+        XCTAssertEqual(store.countPendingOutbox(), 0)
+    }
+
+    func testSessionOnlyRefusalAlsoBlocksBackgroundDrain() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "room", clientId: "held", content: "held",
+            payloadJson: PulseOutboxForward.encode(PulseOutboxForward(kind: "text", parentId: "root")))
+        let sender = StubSender(behaviors: [:]), engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        engine.additionalThreadAccessDenied = { $0 == "root" }
+        await engine.flush()
+        XCTAssertTrue(sender.operationIds.isEmpty)
+        XCTAssertNotNil(try store.outboxAll().first?.failureReason)
+    }
+
+    func testThreadRefusalDuringUploadKeepsReceiptAndRequiresExplicitRetry() async throws {
+        let store = try PulseStore()
+        let root = OutboxFixtures.makeMessage(id: "root", conversationId: "room", content: "root")
+        try store.upsert(messages: [root])
+        let envelope = PulseOutboxForward(kind: "file", fileName: "notes.pdf", parentId: "root",
+            uploadDataUrl: "data:application/pdf;base64,JVBERg==")
+        let echo = TempMessages.make(conversationId: "room", viewer: PulseViewer(id: "me", name: "Me"),
+            clientId: "held", content: "held", parentId: "root", attachment: envelope)
+        try store.enqueueMessage(echo, clientId: "held", envelope: envelope)
+        let sender = StubSender(behaviors: [:]), engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        sender.beforeUploadReturn = { try store.denyThread(rootId: "root") }
+        await engine.flush()
+        XCTAssertEqual(sender.uploadCount, 1)
+        XCTAssertTrue(sender.operationIds.isEmpty)
+        let retained = try XCTUnwrap(store.outboxAll().first)
+        let uploaded = try XCTUnwrap(PulseOutboxForward.decode(retained.payloadJson))
+        XCTAssertNotNil(retained.failureReason)
+        XCTAssertNil(uploaded.uploadDataUrl)
+        XCTAssertEqual(uploaded.filePath, "uploaded-file.pdf")
+        _ = try store.acceptThreadSnapshot(rootId: "root", roomId: "room", messages: [root])
+        await engine.flush() // revalidation alone does not auto-send a previously refused operation
+        XCTAssertTrue(sender.operationIds.isEmpty)
+        XCTAssertTrue(try store.retryOutbox(clientId: "held", message: echo))
+        await engine.flush()
+        XCTAssertEqual(sender.uploadCount, 1)
+        XCTAssertEqual(sender.operationIds, ["held"])
+        XCTAssertEqual(store.countOutbox(), 0)
+    }
+
     func testUnknownUploadKeepsBytesAndDiscardDuringUploadDoesNotSend() async throws {
         let store = try PulseStore()
         _ = try PulseAttachmentDelivery.enqueue(store: store, viewer: PulseViewer(id: "me", name: "Me"),
@@ -602,12 +665,77 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertNil(PulseAPIClient.retryAfterSeconds("-3", serverDate: nil))
     }
 
+    func testThreadRetryKeepsIdentityEnvelopeAndDraftAndStaleDiscardCannotDeleteQueuedSend() throws {
+        let store = try PulseStore()
+        let viewer = PulseViewer(id: "viewer-1", name: "Viewer")
+        try store.upsert(messages: [OutboxFixtures.makeMessage(id: "root", conversationId: "room", content: "root")])
+        let envelope = PulseOutboxForward(kind: "text", replyToId: "quoted", parentId: "root", topicId: "topic")
+        let message = TempMessages.make(conversationId: "room", viewer: viewer, clientId: "recover", content: "original", parentId: "root", topicId: "topic", attachment: envelope)
+        try store.enqueueMessage(message, clientId: "recover", envelope: envelope)
+        try store.rejectOutbox(clientId: "recover", reason: "forbidden")
+        let retained = try XCTUnwrap(store.outboxAll().first)
+        let draftKey = PulseThreadDraft.key("room", parentId: "root")
+        try store.saveDraft(conversationId: draftKey, text: "newer typing")
+        XCTAssertFalse(try store.discardFailedThreadReply(clientId: "recover", conversationId: "other", rootId: "root"))
+        XCTAssertFalse(try store.discardFailedThreadReply(clientId: "recover", conversationId: "room", rootId: "other"))
+        XCTAssertFalse(try store.retryOutbox(clientId: "recover", message: message, threadRootId: "other"))
+        XCTAssertTrue(try store.retryOutbox(clientId: "recover", message: message, threadRootId: "root"))
+        XCTAssertFalse(try store.discardFailedThreadReply(clientId: "recover", conversationId: "room", rootId: "root"))
+        XCTAssertFalse(try store.retryOutbox(clientId: "recover", message: message, threadRootId: "root"))
+        let retried = try XCTUnwrap(store.outboxAll().first)
+        XCTAssertEqual(retried.id, retained.id)
+        XCTAssertEqual(retried.clientId, retained.clientId)
+        XCTAssertEqual(retried.payloadJson, retained.payloadJson)
+        XCTAssertNil(retried.failureReason)
+        XCTAssertEqual(try store.message(id: "local_recover")?.parentId, "root")
+        XCTAssertEqual(store.draftSnapshot(conversationId: draftKey), "newer typing")
+    }
+
+    func testUnavailableRootCannotRetryButOwnRejectedTextRemainsDiscardable() throws {
+        let store = try PulseStore()
+        let message = TempMessages.make(conversationId: "room", viewer: PulseViewer(id: "viewer-1", name: "Viewer"),
+            clientId: "recover", content: "original", parentId: "root")
+        try store.enqueueMessage(message, clientId: "recover", envelope: PulseOutboxForward(kind: "text", parentId: "root"))
+        try store.rejectOutbox(clientId: "recover", reason: "forbidden")
+        XCTAssertFalse(try store.retryOutbox(clientId: "recover", message: message, threadRootId: "root"))
+        var root = OutboxFixtures.makeMessage(id: "root", conversationId: "room", content: "root", deletedAt: PulseOutboxClock.now())
+        try store.upsert(messages: [root])
+        XCTAssertFalse(try store.retryOutbox(clientId: "recover", message: message, threadRootId: "root"))
+        root = OutboxFixtures.makeMessage(id: "root", conversationId: "room", content: "root")
+        root.expiresAt = "2000-01-01T00:00:00Z"
+        try store.upsert(messages: [root])
+        XCTAssertFalse(try store.retryOutbox(clientId: "recover", message: message, threadRootId: "root"))
+        let otherAccount = try PulseStore()
+        XCTAssertFalse(try otherAccount.discardFailedThreadReply(clientId: "recover", conversationId: "room", rootId: "root"))
+        XCTAssertTrue(try store.discardFailedThreadReply(clientId: "recover", conversationId: "room", rootId: "root"))
+        XCTAssertEqual(store.countOutbox(), 0)
+    }
+
+    func testFailedThreadObservationFiltersRoomRootPendingAndMalformedEnvelope() async throws {
+        let store = try PulseStore()
+        for (id, room, root) in [("mine", "room", "root"), ("pending", "room", "root"), ("other-root", "room", "other"), ("other-room", "other", "root")] {
+            try store.appendOutbox(conversationId: room, clientId: id, content: id,
+                payloadJson: PulseOutboxForward.encode(PulseOutboxForward(kind: "text", parentId: root)))
+            if id != "pending" { try store.rejectOutbox(clientId: id, reason: "rejected") }
+        }
+        try store.appendOutbox(conversationId: "room", clientId: "broken", content: "recover in Settings", payloadJson: "not JSON")
+        try store.rejectOutbox(clientId: "broken", reason: "invalid")
+        let observed = expectation(description: "Only this thread's rejected reply is observed")
+        let observation = store.observeFailedThreadReplies(conversationId: "room", rootId: "root").prefix(1)
+            .sink(receiveCompletion: { if case .failure(let error) = $0 { XCTFail("\(error)") } }, receiveValue: { rows in
+                XCTAssertEqual(rows.map(\.clientId), ["mine"])
+                observed.fulfill()
+            })
+        await fulfillment(of: [observed], timeout: 3)
+        observation.cancel()
+    }
+
 }
 
 /// Shared fixture builder - WireChatMessage's memberwise init is internal,
 /// which @testable exposes to both test classes here.
 enum OutboxFixtures {
-    static func makeMessage(id: String, conversationId: String, content: String) -> WireChatMessage {
+    static func makeMessage(id: String, conversationId: String, content: String, deletedAt: String? = nil) -> WireChatMessage {
         WireChatMessage(
             id: id,
             conversationId: conversationId,
@@ -616,7 +744,7 @@ enum OutboxFixtures {
             kind: "text",
             createdAt: PulseOutboxClock.now(),
             editedAt: nil,
-            deletedAt: nil,
+            deletedAt: deletedAt,
             sender: WireSender(id: "viewer-1", name: "Viewer", username: nil, color: nil, avatar: nil),
             reactions: nil,
             replyTo: nil,

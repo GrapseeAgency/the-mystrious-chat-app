@@ -54,4 +54,16 @@ struct PulseDraftConsumption {
     let storageIdentity: String
     let conversationId: String
     let revision: UInt64
+    var parentId: String? = nil
+    var storageKey: String { PulseThreadDraft.key(conversationId, parentId: parentId) }
+}
+
+
+/// Separate local namespace in the existing draft table. Lengths avoid delimiter collisions.
+enum PulseThreadDraft {
+    static func key(_ room: String, parentId: String?) -> String {
+        guard let parentId else { return room }
+        return "thread-draft:v1|\(room.utf16.count):\(room)|\(parentId.utf16.count):\(parentId)"
+    }
+    static func isThread(_ key: String) -> Bool { key.hasPrefix("thread-draft:v1|") }
 }

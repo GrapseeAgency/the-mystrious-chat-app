@@ -404,14 +404,14 @@ class PulseApi(
 
     // reactions
     /** POST /api/messages/{id}/react { userId, emoji } - server toggles. */
-    suspend fun react(messageId: String, userId: String, emoji: String): PulseResult<Unit> =
+    suspend fun react(messageId: String, userId: String, emoji: String): PulseResult<ChatMessageDto> =
         post(
             "/api/messages/$messageId/react",
             buildJsonObject {
                 put("userId", userId)
                 put("emoji", emoji)
             },
-        )
+        ) { messageOf(it) }
 
     // users / identity
     /** GET /api/users → { users: [...] } (identity picker + contacts). */
@@ -743,8 +743,10 @@ class PulseApi(
         }
 
     /** POST /api/messages/{id}/viewed {userId} → { message } (idempotent burn stamp). */
-    suspend fun markViewed(messageId: String, userId: String): PulseResult<ChatMessageDto> =
-        post("/api/messages/$messageId/viewed", jsonOf("userId" to userId)) { messageOf(it) }
+    suspend fun markViewed(messageId: String, userId: String): PulseResult<app.pulse.protocol.ViewOnceReceiptDto> =
+        post("/api/messages/$messageId/viewed", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(app.pulse.protocol.ViewOnceReceiptDto.serializer(), it)
+        }
 
     /**
      * R1-W2F - POST /api/messages/{id}/translate {userId, lang?} → { message }.

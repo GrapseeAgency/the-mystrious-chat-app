@@ -62,4 +62,62 @@ final class TimelineRecoveryTests: XCTestCase {
         XCTAssertNil(PulseHistoryCursor.oldest([try row("local_pending")]))
     }
 
+    func testDelayedRefreshCannotRewindPagingOrReopenExhaustedHistory() {
+        var history = PulseHistoryWindow()
+        let newer = PulseHistoryCursor(createdAt: "2026-10-20T00:00:00Z", id: "newer")
+        let older = PulseHistoryCursor(createdAt: "2026-10-19T00:00:00Z", id: "older")
+        history.record(cursor: newer, hasMore: true)
+        let refresh = history.revision
+        history.invalidateSeed() // the reader started loading older before refresh returned
+        XCTAssertFalse(history.seed(cursor: newer, hasMore: false, ifUnchanged: refresh))
+        history.record(cursor: older, hasMore: true)
+        XCTAssertFalse(history.seed(cursor: newer, hasMore: false, ifUnchanged: refresh))
+        XCTAssertEqual(history.cursor, older)
+        XCTAssertTrue(history.hasMore)
+        let laterRefresh = history.revision
+        history.record(cursor: older, hasMore: false) // empty terminal page: same cursor, new verdict
+        XCTAssertFalse(history.seed(cursor: newer, hasMore: true, ifUnchanged: laterRefresh))
+        XCTAssertEqual(history.cursor, older)
+        XCTAssertFalse(history.hasMore)
+    }
+
+    func testTopicResetInvalidatesOldSeedEvenAfterReturningToSameEmptyState() {
+        var history = PulseHistoryWindow()
+        let first = history.revision
+        history.record(cursor: nil, hasMore: false) // select another topic
+        history.record(cursor: nil, hasMore: false) // back to General (A -> B -> A)
+        let cursor = PulseHistoryCursor(createdAt: "2026-10-19T00:00:00Z", id: "a")
+        XCTAssertFalse(history.seed(cursor: cursor, hasMore: true, ifUnchanged: first))
+        XCTAssertTrue(history.seed(cursor: cursor, hasMore: true, ifUnchanged: history.revision))
+        XCTAssertEqual(history.cursor, cursor)
+    }
+
+    func testTopicReloadMergesCacheWithoutTruncatingAlreadyExpandedHistory() throws {
+        let expanded = try (0..<400).map { try row("message-\($0)", topic: "topic") }
+        let cachedTail = Array(expanded.suffix(300))
+        let retained = PulseTimelineMerge.merge(expanded, incoming: cachedTail, topicId: "topic")
+        let result = PulseTimelineMerge.merge(retained, incoming: [try row("latest", topic: "topic")], topicId: "topic")
+        XCTAssertEqual(result.count, 401)
+        XCTAssertTrue(result.contains { $0.id == "message-0" })
+        let switched = PulseTimelineMerge.merge(result, incoming: [try row("other", topic: "other")], topicId: "other")
+        XCTAssertEqual(switched.map(\.id), ["other"])
+    }
+
+    func testColdJumpCanSeedWithoutMistakingDefaultHasMoreForExhaustion() {
+        var history = PulseHistoryWindow()
+        XCTAssertFalse(history.hasMore)
+        XCTAssertTrue(history.canExpandForJump)
+        let initialRefresh = history.revision
+        history.invalidateSeed() // jump supersedes initial refresh
+        XCTAssertTrue(history.canExpandForJump)
+        let cursor = PulseHistoryCursor(createdAt: "2026-10-19T00:00:00Z", id: "a")
+        history.record(cursor: cursor, hasMore: true)
+        XCTAssertFalse(history.seed(cursor: nil, hasMore: false, ifUnchanged: initialRefresh))
+        XCTAssertTrue(history.canExpandForJump)
+        history.record(cursor: cursor, hasMore: false)
+        XCTAssertFalse(history.canExpandForJump) // a real exhausted boundary stops recursion
+        history.record(cursor: nil, hasMore: false)
+        XCTAssertTrue(history.canExpandForJump) // explicit retry after an empty load can fetch latest
+    }
+
 }

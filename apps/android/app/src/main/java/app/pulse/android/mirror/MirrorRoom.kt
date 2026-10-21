@@ -1,5 +1,8 @@
 package app.pulse.android.mirror
 
+import app.pulse.domain.sync.MessageHistoryCursor
+import kotlinx.coroutines.isActive
+
 import app.pulse.domain.sync.reconcileMessageSelection
 import android.content.Context
 import android.graphics.Bitmap
@@ -407,7 +410,6 @@ internal fun MirrorRoom(
     jumpMessageId: String? = null,
     onJumpConsumed: () -> Unit = {},
     onBack: () -> Unit,
-    onToggleReaction: (String, String) -> Unit,
     onAddPhrase: (String) -> Unit,
     onDeletePhrase: (String) -> Unit,
     onTyping: (Boolean) -> Unit,
@@ -436,6 +438,8 @@ internal fun MirrorRoom(
         }
     }
     var draftValue by composerDraft
+    var viewOnceGrant by remember(groupId, viewerId) { mutableStateOf<Message?>(null) }
+    var openingViewOnce by remember(groupId, viewerId) { mutableStateOf(false) }
     val roomActionsLive = remember(groupId) { java.util.concurrent.atomic.AtomicBoolean(true) }
     DisposableEffect(roomActionsLive) { onDispose { roomActionsLive.set(false) } }
     var composerFocused by remember { mutableStateOf(false) }
@@ -461,6 +465,7 @@ internal fun MirrorRoom(
     var actionFor by remember { mutableStateOf<Message?>(null) }
     var forwardFor by remember { mutableStateOf<Message?>(null) }
     var threadFor by remember { mutableStateOf<Message?>(null) }
+    var threadJumpId by remember { mutableStateOf<String?>(null) }
     var infoFor by remember { mutableStateOf<Message?>(null) }
     var pollOpen by remember { mutableStateOf(false) }
     var stickerOpen by remember { mutableStateOf(false) }
@@ -656,14 +661,25 @@ internal fun MirrorRoom(
     }
     val visibleMessages = remember(messages, activeTopicId, timelineNow) { visibleRoomMessages(messages, activeTopicId, timelineNow) }
     val entries = remember(visibleMessages) { buildRoomEntries(visibleMessages) }
-    LaunchedEffect(groupId, readingEnabled, roomPanelOpen, actionFor, forwardFor, threadFor, infoFor, visibleMessages) {
+    val latestEntries = androidx.compose.runtime.rememberUpdatedState(entries)
+    val readObscured = roomPanelOpen || actionFor != null || forwardFor != null || threadFor != null || infoFor != null ||
+        menuOpen || trayOpen || roomSearchOpen || pinnedOpen || phraseManagerOpen || pollOpen || stickerOpen ||
+        locationOpen || captionFor != null || remindersOpen || scheduledOpen || recapOpen || eventsOpen ||
+        kanbanOpen || whiteboardOpen || tournamentOpen || redPacketOpen || trayEffectsOpen || slashHelpOpen ||
+        safetyOpen || scheduleOpen || viewOnceGrant != null
+    val readRows = androidx.compose.runtime.rememberUpdatedState(visibleMessages)
+    val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
+    LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, minimumReadPixels, readerLifecycle) {
         readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            if (!readingEnabled || roomPanelOpen || actionFor != null || forwardFor != null || threadFor != null || infoFor != null) return@repeatOnLifecycle
+            if (!readingEnabled || readObscured) return@repeatOnLifecycle
             app.pulse.android.notify.IncomingAttention.activeReadingRoom = groupId
             try {
                 androidx.compose.runtime.snapshotFlow {
-                    val visible = listState.layoutInfo.visibleItemsInfo.map { it.key }.toSet()
-                    visibleMessages.lastOrNull { it.id in visible && !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) }?.id
+                    val layout = listState.layoutInfo
+                    val visible = layout.visibleItemsInfo.filter {
+                        app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)
+                    }.map { it.key }.toSet()
+                    readRows.value.lastOrNull { it.id in visible && !it.isDeleted && !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) }?.id
                 }.collectLatest { id ->
                     if (id != null) {
                         delay(600)
@@ -679,9 +695,42 @@ internal fun MirrorRoom(
         }
     }
     val historyScope = rememberCoroutineScope()
+    fun openViewOnce(message: Message) {
+        if (openingViewOnce || viewOnceGrant != null) return
+        openingViewOnce = true
+        historyScope.launch {
+            try {
+                repository.consumeViewOnce(message.id).onSuccess {
+                    if (roomActionsLive.get() && readerLifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) viewOnceGrant = it
+                }.onFailure {
+                    if (roomActionsLive.get()) sendError = it.message ?: "Couldn't open this photo"
+                }
+            } finally { openingViewOnce = false }
+        }
+    }
+    LaunchedEffect(messages, viewOnceGrant?.id) {
+        val granted = viewOnceGrant
+        if (granted != null && messages.none { it.id == granted.id && !it.isDeleted }) viewOnceGrant = null
+    }
+    viewOnceGrant?.let { granted ->
+        app.pulse.feature.chat.ImageLightbox(message = granted, onDismiss = { viewOnceGrant = null })
+    }
+    fun toggleReaction(messageId: String, emoji: String) {
+        historyScope.launch {
+            try {
+                repository.react(messageId, emoji).onFailure {
+                    if (roomActionsLive.get()) sendError = it.message ?: "Couldn't update reaction"
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (roomActionsLive.get()) sendError = "Couldn't update reaction. Try again."
+            }
+        }
+    }
     var loadingHistory by remember(groupId) { mutableStateOf(false) }
     var historyHasMore by remember(groupId) { mutableStateOf(true) }
-    var historyCursor by remember(groupId) { mutableStateOf<String?>(null) }
+    var historyCursor by remember(groupId) { mutableStateOf<MessageHistoryCursor?>(null) }
     val historyRequestEpoch = remember(groupId) { java.util.concurrent.atomic.AtomicLong() }
     fun loadEarlierMessages() {
         if (loadingHistory || !historyHasMore || jumpMessageId != null) return
@@ -691,25 +740,28 @@ internal fun MirrorRoom(
         historyScope.launch {
             try {
                 val rows = repository.observeMessages(groupId).first()
-                var cursor = historyCursor ?: oldestRoomMessage(rows)?.id
+                // Search/thread caches may contain isolated older rows. Only a
+                // consumed response proves a contiguous history boundary.
+                var cursor = historyCursor
                 val known = rows.map { it.id }.toSet()
                 repeat(5) {
                     ensureActive()
-                    val (page, more) = repository.messagesPage(groupId, cursor, 60)
+                    val page = repository.historyPage(groupId, cursor, 60)
                     ensureActive()
                     if (!roomActionsLive.get() || historyRequestEpoch.get() != requestEpoch) return@launch
-                    val next = oldestRoomMessage(page)?.id
+                    val next = page.nextCursor
                     if (next == null) { historyHasMore = false; return@launch }
-                    if (next == cursor) { sendError = "History returned a repeated page"; return@launch }
+                    val previous = cursor
+                    if (previous != null && !next.precedes(previous)) { sendError = "History returned a repeated page"; return@launch }
                     historyCursor = next
                     cursor = next
-                    historyHasMore = more
-                    if (!more || visibleRoomMessages(page, topic).any { it.id !in known }) return@launch
+                    historyHasMore = page.hasMore
+                    if (!page.hasMore || visibleRoomMessages(page.messages, topic).any { it.id !in known }) return@launch
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                if (roomActionsLive.get()) sendError = "Couldn't load earlier messages. Try again."
+                if (roomActionsLive.get() && historyRequestEpoch.get() == requestEpoch) sendError = "Couldn't load earlier messages. Try again."
             } finally { if (historyRequestEpoch.get() == requestEpoch) loadingHistory = false }
         }
     }
@@ -723,53 +775,78 @@ internal fun MirrorRoom(
         val target = jumpMessageId ?: return@LaunchedEffect
         historyRequestEpoch.incrementAndGet() // supersede an earlier manual page request
         loadingHistory = false
+        jumpFlashId = null
         activeTopicId = null // a search/quote jump must not remain hidden by a topic
-        // cold-open race: wait for the open-triggered refresh to seed the cache
-        var seed = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
-        var waited = 0
-        while (seed.isEmpty() && waited < 40) {
-            delay(150)
-            seed = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
-            waited++
-        }
-        // page back (web caps at 14 pages of 60)
-        var paged = 0
-        var rawCursor: String? = null
-        while (paged < 14) {
-            val current = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
-            if (current.any { it.id == target }) break
-            val cursor = rawCursor ?: oldestRoomMessage(current)?.id ?: break
-            val page = runCatching {
-                repository.messagesPage(groupId, cursor, 60)
-            }.getOrNull() ?: break
-            val next = oldestRoomMessage(page.first)?.id ?: break
-            if (next == cursor) break
-            rawCursor = next
-            historyCursor = next
-            if (!page.second) break
-            paged++
-        }
-        val fresh = runCatching { repository.observeMessages(groupId).first() }.getOrDefault(emptyList())
-        val targetRow = fresh.firstOrNull { it.id == target }
-        val parentId = targetRow?.threadRootId
-        if (parentId != null) {
-            val root = fresh.firstOrNull { it.id == parentId }
-                ?: runCatching { repository.loadThread(parentId).first }.getOrNull()
-            ensureActive()
-            if (root != null) threadFor = root else sendError = "Couldn't load this message's thread"
-            onJumpConsumed()
-            return@LaunchedEffect
-        }
-        val idx = buildRoomEntries(visibleRoomMessages(fresh, null)).indexOfFirst { it is RoomEntry.Msg && it.message.id == target }
-        if (idx >= 0) {
-            listState.animateScrollToItem((idx + 1).coerceAtLeast(0))
+        try {
+            var rawCursor: MessageHistoryCursor? = null
+            // A cold cache can request the latest page directly, without a polling race
+            // against refresh. Every subsequent request carries both timestamp and ID.
+            for (round in 0 until 14) {
+                ensureActive()
+                val current = repository.observeMessages(groupId).first()
+                if (current.any { it.id == target }) break
+                val cursor = rawCursor
+                val page = repository.historyPage(groupId, cursor, 60)
+                ensureActive()
+                if (!roomActionsLive.get()) return@LaunchedEffect
+                val next = page.nextCursor
+                if (next == null) { historyHasMore = false; break }
+                if (cursor != null && !next.precedes(cursor)) throw IllegalStateException("History returned a repeated page")
+                rawCursor = next
+                val previousBoundary = historyCursor
+                if (previousBoundary == null || next.precedes(previousBoundary)) {
+                    historyCursor = next
+                    historyHasMore = page.hasMore
+                }
+                if (!page.hasMore) break
+            }
+            val fresh = repository.observeMessages(groupId).first()
+            val targetRow = fresh.firstOrNull { it.id == target }
+            if (targetRow == null || targetRow.isDeleted || targetRow.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
+                sendError = "That message is unavailable or outside the loaded history"
+                return@LaunchedEffect
+            }
+            val parentId = targetRow.threadRootId
+            if (parentId != null) {
+                // A cached parent is not current permission or proof that the
+                // selected reply still belongs to a live thread.
+                val (root, loadedReplies) = repository.loadThread(parentId)
+                ensureActive()
+                if (!roomActionsLive.get()) return@LaunchedEffect
+                if (!app.pulse.domain.sync.threadRootAvailable(root, groupId, parentId) ||
+                    app.pulse.domain.sync.threadReplyTargetIndex(loadedReplies, root, target) == null) {
+                    sendError = "That reply is no longer available in this thread."
+                    return@LaunchedEffect
+                }
+                threadJumpId = target
+                threadFor = root
+                return@LaunchedEffect
+            }
+            // Room has committed, but Compose may still display the previous entries.
+            // Wait for the target in the rendered model before converting its ID to an index.
+            val rendered = kotlinx.coroutines.withTimeoutOrNull(3_000) {
+                androidx.compose.runtime.snapshotFlow { latestEntries.value }.first { rows ->
+                    rows.any { it is RoomEntry.Msg && it.message.id == target }
+                }
+            }
+            if (rendered == null) {
+                sendError = "Couldn't display that message. Try opening it again."
+                return@LaunchedEffect
+            }
+            androidx.compose.runtime.withFrameNanos { }
+            val idx = latestEntries.value.indexOfFirst { it is RoomEntry.Msg && it.message.id == target && !it.message.isDeleted }
+            if (idx < 0) { sendError = "That message is no longer available"; return@LaunchedEffect }
+            listState.animateScrollToItem(idx + 1) // history-control is the first list item
             jumpFlashId = target
             delay(1700)
             jumpFlashId = null
-        } else {
-            sendError = "Couldn't reach that message in the available history"
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            if (roomActionsLive.get()) sendError = "Couldn't open that message. Try again."
+        } finally {
+            if (kotlinx.coroutines.currentCoroutineContext().isActive && roomActionsLive.get()) onJumpConsumed()
         }
-        onJumpConsumed()
     }
     // R64 - the web typing label: DM = "typing…", groups roll names
     // (chat-room.tsx typerLabel verbatim) and it WINS over the subtitle.
@@ -1612,6 +1689,7 @@ internal fun MirrorRoom(
                             showReadBy = showReadBy,
                             animateIn = isNewest && entry.message.deletedAt == null,
                             onOpenMenu = { actionFor = entry.message },
+                            onViewOnce = { openViewOnce(entry.message) },
                             onVote = { optionId ->
                                 entry.message.poll?.let { poll ->
                                     CoroutineScope(Dispatchers.IO).launch {
@@ -1619,10 +1697,10 @@ internal fun MirrorRoom(
                                     }
                                 }
                             },
-                            onToggleReaction = onToggleReaction,
+                            onToggleReaction = ::toggleReaction,
                             // R74 - swipe-to-reply + effect origin registration
                             onReply = {
-                                replyTo = entry.message
+                                replyTo = if (entry.message.viewOnce) entry.message.copy(body = "View-once message", imagePath = null) else entry.message
                             },
                             registerRect = { rect -> bubbleRects[entry.message.id] = rect },
                             repository = repository,
@@ -2573,7 +2651,8 @@ internal fun MirrorRoom(
             viewerId = viewerId,
             members = members,
             repository = repository,
-            onReply = { replyTo = target },
+            onReaction = { emoji -> toggleReaction(target.id, emoji) },
+            onReply = { replyTo = if (target.viewOnce) target.copy(body = "View-once message", imagePath = null) else target },
             onEdit = {
                 if (editing == null) {
                     draftBeforeEdit = draftValue
@@ -2582,7 +2661,7 @@ internal fun MirrorRoom(
                 editing = target
                 draftValue = TextFieldValue(target.body)
             },
-            onThread = { threadFor = target },
+            onThread = { threadJumpId = null; threadFor = target },
             onForward = { forwardFor = target },
             onRemind = { remindersOpen = true },
             onInfo = { infoFor = target },
@@ -2600,14 +2679,17 @@ internal fun MirrorRoom(
         )
     }
     threadFor?.let { root ->
-        MirrorThreadSheet(
-            repository = repository,
-            root = root,
-            viewerId = viewerId,
-            viewerName = viewerName,
-            memberNames = memberNames,
-            onDismiss = { threadFor = null },
-        )
+        androidx.compose.runtime.key(root.id, repository, viewerId) {
+            MirrorThreadSheet(
+                repository = repository,
+                root = root,
+                viewerId = viewerId,
+                viewerName = viewerName,
+                memberNames = memberNames,
+                jumpMessageId = threadJumpId,
+                onDismiss = { threadFor = null; threadJumpId = null },
+            )
+        }
     }
     if (pollOpen) {
         MirrorPollBuilderSheet(
@@ -3392,6 +3474,7 @@ private fun MirrorBubbleRow(
     showReadBy: Boolean,
     animateIn: Boolean,
     onOpenMenu: () -> Unit,
+    onViewOnce: () -> Unit,
     onVote: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
     // R74 - swipe-to-reply trigger + the effect-origin registration
@@ -3612,6 +3695,11 @@ private fun MirrorBubbleRow(
                         // poll tallies, stamps, location pins, voice waveform
                         // players, document cards, images, plain text.
                         when {
+                            message.viewOnce && !mine -> {
+                                Text(if (message.viewedAt != null) "Photo opened" else "View-once photo · Tap to open",
+                                    color = MirrorArt.TextSoft, fontSize = 13.sp,
+                                    modifier = Modifier.padding(12.dp).clickable(enabled = message.viewedAt == null, onClick = onViewOnce))
+                            }
                             // R74 - self-contained cards (web plainChrome branch)
                             redPacketInfo != null -> {
                                 MirrorRedPacketBubble(

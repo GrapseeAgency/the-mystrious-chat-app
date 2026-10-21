@@ -55,47 +55,7 @@ final class PulseRoomParityTests: XCTestCase {
         try JSONDecoder().decode(T.self, from: Data(json.utf8))
     }
 
-    // R26 - the missed-count machine (chat-room.tsx:1594-1612)
-
-    func testMissedStepGrowsBadgeWhileAway() {
-        let step = PulseRoomParityLogic.missedStep(
-            previousMissed: 3, previousLastSeenLen: 10, newLen: 13, tailVisible: false,
-        )
-        XCTAssertEqual(step.missed, 6)
-        XCTAssertEqual(step.lastSeenLen, 13)
-        XCTAssertTrue(step.arrived)
-        XCTAssertFalse(step.reset)
-    }
-
-    func testMissedStepResetsAtTheTail() {
-        let step = PulseRoomParityLogic.missedStep(
-            previousMissed: 9, previousLastSeenLen: 4, newLen: 7, tailVisible: true,
-        )
-        XCTAssertEqual(step.missed, 0)
-        XCTAssertEqual(step.lastSeenLen, 7)
-        XCTAssertFalse(step.arrived)
-        XCTAssertTrue(step.reset)
-    }
-
-    func testMissedStepResetsOnShrink() {
-        // Fewer rows than last seen = room switch / cache reset.
-        let step = PulseRoomParityLogic.missedStep(
-            previousMissed: 9, previousLastSeenLen: 40, newLen: 12, tailVisible: false,
-        )
-        XCTAssertEqual(step.missed, 0)
-        XCTAssertEqual(step.lastSeenLen, 12)
-        XCTAssertTrue(step.reset)
-    }
-
-    func testMissedStepNoopWhenLengthUnchanged() {
-        let step = PulseRoomParityLogic.missedStep(
-            previousMissed: 2, previousLastSeenLen: 12, newLen: 12, tailVisible: false,
-        )
-        XCTAssertEqual(step.missed, 2)
-        XCTAssertEqual(step.lastSeenLen, 12)
-        XCTAssertFalse(step.arrived)
-        XCTAssertFalse(step.reset)
-    }
+    // Arrival identity/visibility regressions live in MissedMessagesTests.
 
     func testMissedBadgeCapsAtNinetyNinePlus() {
         XCTAssertEqual(PulseRoomParityLogic.missedBadgeText(1), "1")

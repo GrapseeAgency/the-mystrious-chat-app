@@ -1,5 +1,10 @@
 package app.pulse.feature.chat
 
+import app.pulse.domain.model.PulseApiException
+import app.pulse.domain.sync.threadRootAvailable
+import app.pulse.domain.sync.threadAccessDenied
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.distinctUntilChanged
 import app.pulse.ui.PulseIcons
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -7,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +56,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -77,6 +86,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -91,16 +101,19 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class ThreadViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    private val repo: PulseRepository,
+    repository: PulseRepository,
     /** The ONE active voice player - room + thread share the singleton. */
     val voicePlayer: VoicePlayer,
 ) : ViewModel() {
+    private val repo = repository.boundToCurrentAccount()
 
     val conversationId: String = savedStateHandle.get<String>("conversationId").orEmpty()
     val rootId: String = savedStateHandle.get<String>("rootId").orEmpty()
+    val initialJumpMessageId: String? = savedStateHandle.get<String>("jumpMessageId")
 
     data class UiState(
         val loading: Boolean = false,
+        val unavailable: Boolean = false,
         val draft: String = "",
         val sending: Boolean = false,
         val error: String? = null,
@@ -108,14 +121,17 @@ class ThreadViewModel @Inject constructor(
         val notice: RoomNotice? = null,
         val downloadingFileId: String? = null,
         val openedFile: FileReady? = null,
+        val loadedReplyIds: Set<String>? = null,
     )
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     /** The thread root - rehydrated from Room, refreshed by loadThread. */
-    val parent: StateFlow<Message?> = repo.observeMessages(conversationId)
-        .map { rows -> rows.firstOrNull { it.id == rootId } }
+    val parent: StateFlow<Message?> = combine(repo.observeMessages(conversationId),
+        _state.map { it.unavailable }.distinctUntilChanged(), repo.observeThreadAccessDenied(rootId)) { rows, denied, persistedDenial ->
+            if (denied || persistedDenial) null else rows.firstOrNull { threadRootAvailable(it, conversationId, rootId) }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** R3-B item 2 - the room summary; its roster drives @mention highlight. */
@@ -129,18 +145,51 @@ class ThreadViewModel @Inject constructor(
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val failedReplies = repo.observeFailedThreadReplies(conversationId, rootId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val recoveryActions = mutableSetOf<String>()
+
+    fun recoverReply(clientId: String, discard: Boolean) {
+        if (!discard && (_state.value.unavailable || !threadRootAvailable(parent.value, conversationId, rootId))) return
+        if (!recoveryActions.add(clientId)) return
+        viewModelScope.launch {
+            try {
+                val result = if (discard) repo.discardFailedThreadReply(conversationId, rootId, clientId)
+                    else repo.retryThreadReply(conversationId, rootId, clientId)
+                result.onFailure { notify(it.message ?: "Couldn't update this saved reply", isError = true) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                notify(failure.message ?: "Couldn't update this saved reply", isError = true)
+            } finally {
+                recoveryActions.remove(clientId)
+            }
+        }
+    }
+
+    private var composerRevision = 0L
+    private var threadDraftToken: app.pulse.domain.model.ComposerDraftToken? = null
+
     init {
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true)
-            runCatching { repo.loadThread(rootId) }
-                .onSuccess { _state.value = _state.value.copy(loading = false) }
-                .onFailure { failure ->
-                    _state.value = _state.value.copy(loading = false, error = failure.message)
+            repo.observeThreadDraft(conversationId, rootId).collect { snapshot ->
+                val currentToken = repo.captureThreadDraftToken(conversationId, rootId)
+                if (snapshot.revision == currentToken?.revision) {
+                    threadDraftToken = currentToken
+                    if (snapshot.saveFailed) notify("Couldn't save this draft. Keep this thread open and edit to retry.", isError = true)
+                    val restoredText = snapshot.text
+                    if (restoredText != null && restoredText != _state.value.draft) {
+                        composerRevision++
+                        _state.value = _state.value.copy(draft = restoredText)
+                    }
                 }
+            }
         }
+        retry()
         viewModelScope.launch {
             repo.observeConnected().collect { connected ->
                 _state.value = _state.value.copy(connected = connected)
+                if (connected) retry()
             }
         }
         viewModelScope.launch {
@@ -154,24 +203,29 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
-    private var composerRevision = 0L
 
     fun changeDraft(value: String) {
+        if (value.length > SendMessageUseCase.MAX_LENGTH) {
+            notify("Replies are limited to ${SendMessageUseCase.MAX_LENGTH} characters", isError = true)
+            return
+        }
         composerRevision++
+        threadDraftToken = repo.stageThreadDraft(conversationId, rootId, value)
         _state.value = _state.value.copy(draft = value)
     }
 
     /** Clear only the submitted revision, after persistence/acknowledgement. */
     fun send() {
         val state = _state.value
-        if (state.sending || state.draft.isBlank() || parent.value?.isDeleted != false) return
+        if (state.sending || state.unavailable || state.draft.isBlank() || !threadRootAvailable(parent.value, conversationId, rootId)) return
         val revision = composerRevision
+        val token = threadDraftToken ?: return
         _state.value = state.copy(sending = true)
         viewModelScope.launch {
             try {
-                val result = SendMessageUseCase(repo)(conversationId, state.draft, parentId = rootId)
+                val result = SendMessageUseCase(repo)(conversationId, state.draft, parentId = rootId, draftToken = token)
                 result.onSuccess { receipt ->
-                    if (composerRevision == revision) changeDraft("")
+                    if (composerRevision == revision) { composerRevision++; _state.value = _state.value.copy(draft = "") }
                     if (!receipt.message.id.startsWith(TEMP_MESSAGE_PREFIX)) PulseFx.fire(PulseFx.BurstKind.BURST, count = 26)
                 }.onFailure { failure ->
                     _state.value = _state.value.copy(notice = RoomNotice(failure.message ?: "Reply was not queued; your draft is kept", isError = true))
@@ -185,11 +239,26 @@ class ThreadViewModel @Inject constructor(
     }
 
     fun retry() {
+        if (_state.value.loading) return
+        _state.value = _state.value.copy(loading = true, error = null)
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            runCatching { repo.loadThread(rootId) }
-                .onSuccess { _state.value = _state.value.copy(loading = false) }
-                .onFailure { _state.value = _state.value.copy(loading = false, error = it.message) }
+            try {
+                val (root, loadedReplies) = repo.loadThread(rootId)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!threadRootAvailable(root, conversationId, rootId)) throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
+                val now = System.currentTimeMillis()
+                val liveIds = loadedReplies.filter { it.conversationId == conversationId && it.threadRootId == rootId &&
+                    !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
+                    .mapTo(mutableSetOf()) { it.id }
+                _state.value = _state.value.copy(loading = false, unavailable = false, error = null, loadedReplyIds = liveIds)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                val denied = threadAccessDenied((failure as? PulseApiException)?.status)
+                _state.value = _state.value.copy(loading = false, error = failure.message,
+                    unavailable = _state.value.unavailable || denied,
+                    openedFile = if (denied) null else _state.value.openedFile)
+            }
         }
     }
 
@@ -205,11 +274,19 @@ class ThreadViewModel @Inject constructor(
 
     fun openFile(message: Message, share: Boolean) {
         val path = message.filePath ?: return
+        if (_state.value.unavailable || !threadRootAvailable(parent.value, conversationId, rootId) || message.isDeleted ||
+            (message.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) return
         if (_state.value.downloadingFileId != null) return
         _state.value = _state.value.copy(downloadingFileId = message.id)
         viewModelScope.launch {
             repo.downloadMedia(path)
                 .onSuccess { absolutePath ->
+                    val current = if (message.id == rootId) parent.value else replies.value.firstOrNull { it.id == message.id }
+                    if (_state.value.unavailable || !threadRootAvailable(parent.value, conversationId, rootId) || current == null || current.isDeleted ||
+                        (current.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+                        _state.value = _state.value.copy(downloadingFileId = null)
+                        return@onSuccess
+                    }
                     _state.value = _state.value.copy(
                         downloadingFileId = null,
                         openedFile = FileReady(
@@ -230,9 +307,12 @@ class ThreadViewModel @Inject constructor(
         if (_state.value.openedFile != null) _state.value = _state.value.copy(openedFile = null)
     }
 
-    /** Wave 2 view-once - fire-and-forget POST /viewed (reveal is instant). */
-    fun consumeViewOnce(message: Message) {
-        viewModelScope.launch { repo.markMessageViewed(message.id) }
+    /** Render only after this request receives a one-time grant. */
+    suspend fun consumeViewOnce(message: Message): Message? {
+        if (message.conversationId != conversationId) return null
+        val granted = repo.consumeViewOnce(message.id)
+            .onFailure { notify(it.message ?: "Couldn't open this photo", isError = true) }.getOrNull()
+        return granted.takeIf { !_state.value.unavailable && threadRootAvailable(parent.value, conversationId, rootId) }
     }
 
     /** Wave 2 transcript pill (thread parity with the room strip). */
@@ -259,10 +339,32 @@ fun ThreadScreen(
     viewerId: String?,
     onBack: () -> Unit,
     viewModel: ThreadViewModel = hiltViewModel(),
+    jumpMessageId: String? = viewModel.initialJumpMessageId,
 ) {
-    val parent by viewModel.parent.collectAsStateWithLifecycle()
-    val replies by viewModel.replies.collectAsStateWithLifecycle()
+    val cachedParent by viewModel.parent.collectAsStateWithLifecycle()
+    val cachedReplies by viewModel.replies.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val failedReplies by viewModel.failedReplies.collectAsStateWithLifecycle()
+    var discardConfirm by remember { mutableStateOf<String?>(null) }
+    val revealScope = androidx.compose.runtime.rememberCoroutineScope()
+    val revealLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val clipboard = LocalClipboardManager.current
+    discardConfirm?.let { clientId ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { discardConfirm = null },
+            title = { Text("Discard this failed reply?") },
+            text = { Text("This removes the saved outgoing reply from this device. Your current draft is kept.") },
+            confirmButton = { TextButton(onClick = {
+                viewModel.recoverReply(clientId, discard = true)
+                discardConfirm = null
+            }) { Text("Discard") } },
+            dismissButton = { TextButton(onClick = { discardConfirm = null }) { Text("Cancel") } },
+        )
+    }
+
+    // Do not wait for a separate Room/StateFlow emission to hide refused content.
+    val parent = cachedParent.takeUnless { state.unavailable }
+    val replies = if (state.unavailable) emptyList() else cachedReplies
     // R3-B item 2 - the roster that drives @mention highlight in bubbles.
     val conversation by viewModel.conversation.collectAsStateWithLifecycle()
     val memberNames = conversation?.memberNames.orEmpty()
@@ -274,9 +376,57 @@ fun ThreadScreen(
 
     val draft = state.draft
     var lightboxTarget by remember { mutableStateOf<Message?>(null) }
-    var anchoredToLatest by remember { mutableStateOf(false) }
+    var openingViewOnce by remember(viewModel.rootId) { mutableStateOf(false) }
+    fun openViewOnce(target: Message) {
+        if (openingViewOnce || lightboxTarget != null) return
+        openingViewOnce = true
+        revealScope.launch {
+            try {
+                viewModel.consumeViewOnce(target)?.let {
+                    if (revealLifecycle.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) lightboxTarget = it
+                }
+            } finally { openingViewOnce = false }
+        }
+    }
+    var anchoredToLatest by remember(viewModel.rootId) { mutableStateOf(false) }
+    var jumpResolved by remember(viewModel.rootId, jumpMessageId) { mutableStateOf(false) }
+    var flashId by remember(viewModel.rootId, jumpMessageId) { mutableStateOf<String?>(null) }
+    val latestThread by rememberUpdatedState(parent to replies)
 
-    LaunchedEffect(parent, replies) {
+    // Navigation carries the reply ID all the way into the rendered thread.
+    // Wait for Room -> Compose propagation, not merely the HTTP response.
+    LaunchedEffect(jumpMessageId, jumpResolved, state.loadedReplyIds, state.unavailable, state.loading) {
+        val target = jumpMessageId ?: return@LaunchedEffect
+        val confirmed = state.loadedReplyIds ?: return@LaunchedEffect
+        if (jumpResolved || state.unavailable || state.loading) return@LaunchedEffect
+        anchoredToLatest = true
+        if (target !in confirmed) {
+            viewModel.notify("That reply is no longer available in this thread.", isError = true)
+            jumpResolved = true
+            return@LaunchedEffect
+        }
+        val rendered = kotlinx.coroutines.withTimeoutOrNull(3_000) {
+            androidx.compose.runtime.snapshotFlow {
+                val (root, rows) = latestThread
+                root?.let { app.pulse.domain.sync.threadReplyTargetIndex(rows, it, target) }
+            }.first { it != null }
+        }
+        if (rendered != null) {
+            androidx.compose.runtime.withFrameNanos { }
+            val (root, rows) = latestThread
+            val index = root?.let { app.pulse.domain.sync.threadReplyTargetIndex(rows, it, target) }
+            if (index != null) {
+                listState.scrollToItem(index + 1) // parent header is item zero
+                flashId = target
+            } else viewModel.notify("That reply is no longer available.", isError = true)
+        } else viewModel.notify("Couldn't display that reply. Try opening it again.", isError = true)
+        jumpResolved = true
+    }
+    LaunchedEffect(flashId) {
+        if (flashId != null) { kotlinx.coroutines.delay(1_700); flashId = null }
+    }
+
+    LaunchedEffect(parent, replies, lightboxTarget?.id) {
         val target = lightboxTarget
         if (target != null && (parent == null || parent?.isDeleted == true ||
                 (parent?.id != target.id && replies.none { it.id == target.id && !it.isDeleted }))) {
@@ -286,12 +436,12 @@ fun ThreadScreen(
 
     // Stick to the newest reply as the thread grows (realtime appends);
     // the first non-empty emission jumps straight to the end.
-    LaunchedEffect(replies.size) {
-        if (replies.isEmpty()) return@LaunchedEffect
-        val lastVisible = listState.firstVisibleItemIndex + listState.layoutInfo.visibleItemsInfo.size
+    LaunchedEffect(replies.lastOrNull()?.id) {
+        if (replies.isEmpty() || (jumpMessageId != null && !jumpResolved)) return@LaunchedEffect
+        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         val nearBottom = lastVisible >= replies.size - 1
         if (!anchoredToLatest || nearBottom) {
-            listState.scrollToItem(replies.lastIndex.coerceAtLeast(0))
+            listState.scrollToItem(replies.size) // include the parent header
             anchoredToLatest = true
         }
     }
@@ -390,8 +540,7 @@ fun ThreadScreen(
                                 voicePlayer = viewModel.voicePlayer,
                                 memberNames = memberNames,
                                 onConsumeViewOnce = { target ->
-                                    viewModel.consumeViewOnce(target)
-                                    lightboxTarget = target
+                                    openViewOnce(target)
                                 },
                                 onTranscribe = viewModel::transcribeVoice,
                                 onOpenImage = { lightboxTarget = root },
@@ -402,7 +551,8 @@ fun ThreadScreen(
                 }
                 items(replies, key = { it.id }) { reply ->
                     Column(
-                        Modifier.fillMaxWidth(),
+                        Modifier.fillMaxWidth().then(if (flashId == reply.id)
+                            Modifier.border(2.dp, PulsePalette.Amber, RoundedCornerShape(16.dp)) else Modifier),
                         horizontalAlignment = if (reply.authorId == viewerId) Alignment.End else Alignment.Start,
                     ) {
                         ThreadContentBubble(
@@ -412,13 +562,25 @@ fun ThreadScreen(
                             voicePlayer = viewModel.voicePlayer,
                             memberNames = memberNames,
                             onConsumeViewOnce = { target ->
-                                viewModel.consumeViewOnce(target)
-                                lightboxTarget = target
+                                openViewOnce(target)
                             },
                             onTranscribe = viewModel::transcribeVoice,
                             onOpenImage = { lightboxTarget = reply },
                             onOpenFile = { viewModel.openFile(reply, share = false) },
                         )
+                    }
+                }
+                items(failedReplies, key = { "failed-" + it.clientId }) { entry ->
+                    Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                        Text("Not sent · saved on this device", style = MaterialTheme.typography.labelMedium)
+                        Text(entry.content.ifBlank { "Saved attachment" }, style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                        Text(entry.failureReason.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        Row {
+                            TextButton(onClick = { viewModel.recoverReply(entry.clientId, discard = false) },
+                                enabled = !state.unavailable && threadRootAvailable(parent, viewModel.conversationId, viewModel.rootId)) { Text("Retry original") }
+                            TextButton(enabled = entry.content.isNotEmpty(), onClick = { clipboard.setText(AnnotatedString(entry.content)) }) { Text("Copy") }
+                            TextButton(onClick = { discardConfirm = entry.clientId }) { Text("Discard") }
+                        }
                     }
                 }
             }
@@ -442,7 +604,7 @@ fun ThreadScreen(
             }
 
             // Durable replies survive the connection dropping.
-            androidx.compose.animation.AnimatedVisibility(visible = state.connected == false) {
+            androidx.compose.animation.AnimatedVisibility(visible = state.connected == false && !state.unavailable && parent != null) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
                     modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
@@ -485,11 +647,14 @@ fun ThreadScreen(
                     },
                 )
                 Spacer(Modifier.width(6.dp))
-                val canSend = draft.isNotBlank() && !state.sending && parent?.isDeleted == false
+                val canSend = draft.isNotBlank() && !state.sending && !state.unavailable && threadRootAvailable(parent, viewModel.conversationId, viewModel.rootId)
                 IconButton(
                     onClick = {
                         if (!canSend) return@IconButton
                         viewModel.send()
+                        jumpResolved = true // an explicit send supersedes a suspended search jump
+                        anchoredToLatest = false
+                        flashId = null
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     },
                     modifier = Modifier

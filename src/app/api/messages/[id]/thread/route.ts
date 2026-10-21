@@ -1,7 +1,7 @@
 // /api/messages/[id]/thread - Slack/Zulip-style thread reader
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { threadRootAvailable, unexpiredMessages } from '@/lib/message-visibility'
+import { readThreadSnapshot, ThreadReadError } from '@/lib/message-visibility'
 import {
   mapMessage,
   MESSAGE_FULL_INCLUDE,
@@ -27,37 +27,14 @@ export async function GET(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId query parameter is required.' }, { status: 400 })
   }
 
-  const root = await db.message.findUnique({
-    where: { id },
-    include: MESSAGE_FULL_INCLUDE,
-  })
-  if (!root) {
-    return NextResponse.json({ error: 'Message not found.' }, { status: 404 })
-  }
-
-  const participant = await db.conversationParticipant.findUnique({
-    where: { userId_conversationId: { userId, conversationId: root.conversationId } },
-    select: { id: true },
-  })
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
+  try {
+    const page = await readThreadSnapshot(db, id, userId,
+      (tx, rootId) => tx.message.findUnique({ where: { id: rootId }, include: MESSAGE_FULL_INCLUDE }),
+      (tx, where) => tx.message.findMany({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], include: MESSAGE_FULL_INCLUDE }),
     )
+    return NextResponse.json({ parent: mapMessage(page.parent, userId), replies: page.replies.map(message => mapMessage(message, userId)) })
+  } catch (error) {
+    if (error instanceof ThreadReadError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
-
-  const now = new Date()
-  if (!threadRootAvailable(root, root.conversationId, now)) {
-    return NextResponse.json({ error: 'This thread is no longer available.' }, { status: 410 })
-  }
-  const replies = await db.message.findMany({
-    where: { parentId: id, ...unexpiredMessages(now) },
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    include: MESSAGE_FULL_INCLUDE,
-  })
-
-  return NextResponse.json({
-    parent: mapMessage(root, userId),
-    replies: replies.map((m) => mapMessage(m, userId)),
-  })
 }

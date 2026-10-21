@@ -84,17 +84,15 @@ public final class PulseSession: ObservableObject {
     @Published public var activeRoomId: String? {
         didSet {
             if oldValue != activeRoomId {
-                visibleReadMessageId = nil
-                lastReadAcknowledged = nil
+                readGate.reset()
+                readFailureCount = 0
                 readReceiptTask?.cancel()
             }
         }
     }
-    private var visibleReadMessageId: String?
-    private var lastReadAcknowledged: String?
+    private var readGate = PulseReadReceiptGate()
     private var readFailureCount = 0
     private var readReceiptTask: Task<Void, Never>?
-    private var readsInFlight: Set<String> = []
     /// Wave 8 - weak handoff to the RootView-owned PulsePrefs (incoming
     /// attention gating + the settings PATCH funnel + quiet-gate refresh).
     public private(set) weak var prefs: PulsePrefs?
@@ -114,7 +112,15 @@ public final class PulseSession: ObservableObject {
     /// Outbox deliver/drop events (queued-bubble swap in the open room).
     public let outboxEvents = PassthroughSubject<PulseOutboxEvent, Never>()
 
-    @Published public private(set) var ready = false
+    @Published public private(set) var ready = false {
+        didSet {
+            guard oldValue != ready else { return }
+            readReceiptTask?.cancel()
+            readFailureCount = 0
+            readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
+            if ready && isForeground { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
+        }
+    }
     @Published public private(set) var startupError: String?
     @Published public private(set) var isForeground = false
     public private(set) var messageRevision: UInt64 = 0
@@ -124,6 +130,94 @@ public final class PulseSession: ObservableObject {
 
     public func acceptsSyncMessage(_ id: String, startedAt revision: UInt64) -> Bool {
         (messageRevisions[id] ?? 0) <= revision
+    }
+
+    private var threadValidationFence = PulseThreadValidationFence()
+    private var deniedThreadRoots: Set<String> = []
+
+    public func threadAccessDenied(rootId: String) -> Bool {
+        deniedThreadRoots.contains(rootId) || ((try? store?.threadAccessDenied(rootId: rootId)) ?? true)
+    }
+
+    /// Only the newest validation may change persistent access state.
+    public func validatedThread(rootId: String, roomId: String) async throws -> WireThreadPage {
+        guard let store, let viewer, ready else { throw CancellationError() }
+        let ticket = threadValidationFence.begin(rootId), epoch = sessionGeneration, client = api, revision = messageRevision
+        defer { threadValidationFence.finish(rootId, ticket) }
+        do {
+            let page = try await client.thread(rootId: rootId, userId: viewer.id)
+            try Task.checkCancellation()
+            guard epoch == sessionGeneration else { throw CancellationError() }
+            guard threadValidationFence.isCurrent(rootId, ticket) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "A newer thread check superseded this one. Try again.", status: 409)
+            }
+            guard page.parent.id == rootId, page.parent.conversationId == roomId, page.parent.parentId == nil else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Unexpected thread response.", status: 409)
+            }
+            let eligible = ([page.parent] + page.replies).filter { acceptsSyncMessage($0.id, startedAt: revision) }
+            let saved = try store.acceptThreadSnapshot(rootId: rootId, roomId: roomId, messages: eligible)
+            deniedThreadRoots.remove(rootId)
+            messageVisibilityClock.send(Date())
+            // Rows rejected by the revision fence may still be live in newer storage.
+            let replies = page.replies.compactMap { incoming -> WireChatMessage? in
+                guard incoming.parentId == rootId, incoming.conversationId == roomId else { return nil }
+                return try? store.message(id: incoming.id)
+            }
+            return WireThreadPage(parent: saved.parent, replies: replies)
+        } catch {
+            let unavailable = error is PulseStore.ThreadAccessError
+            if epoch == sessionGeneration, threadValidationFence.isCurrent(rootId, ticket),
+               unavailable || [403, 404, 410].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
+                deniedThreadRoots.insert(rootId)
+                try? store.denyThread(rootId: rootId) // memory still blocks this session if disk is unwritable
+                messageVisibilityClock.send(Date())
+            }
+            if unavailable { throw PulseAPIClient.Failure(kind: .notFound, message: "This thread is no longer available.", status: 410) }
+            throw error
+        }
+    }
+
+    private var viewOnceActions: Set<String> = []
+
+    /// A tap is not permission to reveal. Only this request's successful consumption is.
+    public func consumeViewOnce(_ requested: WireChatMessage) async -> WireChatMessage? {
+        guard let viewer, let store, ready, isForeground, activeRoomId == requested.conversationId,
+              PulseViewOnceAccess.canRequest(requested, viewerId: viewer.id),
+              viewOnceActions.insert(requested.id).inserted else { return nil }
+        if let rootId = requested.parentId, threadAccessDenied(rootId: rootId) {
+            viewOnceActions.remove(requested.id)
+            toasts.show("Reopen this thread to check access before opening the photo.")
+            return nil
+        }
+        let epoch = sessionGeneration, client = api
+        defer { viewOnceActions.remove(requested.id) }
+        do {
+            let receipt = try await client.markViewed(messageId: requested.id, userId: viewer.id)
+            try Task.checkCancellation()
+            guard sessionGeneration == epoch else { return nil }
+            guard receipt.message.id == requested.id, receipt.message.conversationId == requested.conversationId else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Unexpected photo acknowledgement.")
+            }
+            let retained = try store.mergeMessages([receipt.message]).first ?? receipt.message
+            noteMessageRevision(retained.id)
+            messageVisibilityClock.send(Date())
+            let rootLive: Bool
+            if let rootId = retained.parentId, let root = try store.message(id: rootId) {
+                rootLive = !threadAccessDenied(rootId: rootId) && PulseRemediationLogic.threadRootAvailable(root, roomId: retained.conversationId, rootId: rootId)
+            } else { rootLive = retained.parentId == nil }
+            guard rootLive, PulseViewOnceAccess.granted(receipt.consumed, requested: requested, returned: retained, viewerId: viewer.id) else {
+                toasts.show("One-time access wasn't granted. The photo may already have been opened.")
+                return nil
+            }
+            guard isForeground, activeRoomId == requested.conversationId else { return nil }
+            return retained
+        } catch is CancellationError {
+            return nil
+        } catch {
+            guard sessionGeneration == epoch else { return nil }
+            toasts.show("Couldn't confirm one-time access. The photo wasn't opened here.")
+            return nil
+        }
     }
 
     public func recordMessageMutation(_ message: WireChatMessage) throws {
@@ -152,54 +246,62 @@ public final class PulseSession: ObservableObject {
     public let messageVisibilityClock = PassthroughSubject<Date, Never>()
 
     public func setForeground(_ active: Bool) {
+        let changed = isForeground != active
         isForeground = active
+        if changed {
+            readReceiptTask?.cancel()
+            readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
+        }
         if active {
             messageVisibilityClock.send(Date())
-            readFailureCount = 0
-            Task { await markReadIfVisible(conversationId: activeRoomId) }
-        } else { readReceiptTask?.cancel() }
+            if changed {
+                readFailureCount = 0
+                scheduleVisibleRead(after: PulseReadReceiptGate.dwell)
+            }
+        }
     }
 
     public func setVisibleReadBoundary(conversationId: String, messageId: String?) {
         guard activeRoomId == conversationId else { return }
-        guard visibleReadMessageId != messageId else { return }
-        visibleReadMessageId = messageId
+        guard readGate.setBoundary(roomId: conversationId, messageId: messageId,
+            now: ProcessInfo.processInfo.systemUptime) else { return }
         readFailureCount = 0
         readReceiptTask?.cancel()
-        guard messageId != nil else { return }
-        let epoch = generation
+        if messageId != nil && isForeground { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
+    }
+
+    private func scheduleVisibleRead(after delay: TimeInterval) {
+        guard let boundary = readGate.boundary else { return }
+        let epoch = generation, revision = readGate.revision
+        readReceiptTask?.cancel()
         readReceiptTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: 600_000_000) } catch { return }
-            guard let self, self.generation == epoch else { return }
-            await self.markReadIfVisible(conversationId: conversationId)
+            do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
+            guard let self, self.generation == epoch, self.readGate.revision == revision else { return }
+            await self.markReadIfVisible(conversationId: boundary.roomId)
         }
     }
 
     public func markReadIfVisible(conversationId: String?) async {
         guard let conversationId, ready, isForeground,
-              activeRoomId == conversationId, !PulseAppLock.shared.needsLock,
-              let messageId = visibleReadMessageId, messageId != lastReadAcknowledged,
-              !readsInFlight.contains(messageId) else { return }
+              activeRoomId == conversationId, !PulseAppLock.shared.needsLock, readFailureCount < 4,
+              let request = readGate.begin(roomId: conversationId, now: ProcessInfo.processInfo.systemUptime) else { return }
         let client = api
         let epoch = generation
-        readsInFlight.insert(messageId)
-        defer { readsInFlight.remove(messageId) }
         do {
-            try await client.markRead(conversationId: conversationId, messageId: messageId)
+            try await client.markRead(conversationId: conversationId, messageId: request.boundary.messageId)
             guard generation == epoch else { return }
-            lastReadAcknowledged = messageId
-            readFailureCount = 0
+            if readGate.finish(request, succeeded: true) { readFailureCount = 0 }
+            // An older visible boundary can still have been accepted by the server;
+            // refresh the inbox, but never let its completion acknowledge the new screen.
             noteInboxChanged()
         } catch {
-            guard !Task.isCancelled, generation == epoch, isForeground,
-                  visibleReadMessageId == messageId, readFailureCount < 3 else { return }
+            guard generation == epoch, readGate.finish(request, succeeded: false),
+                  !Task.isCancelled, isForeground, activeRoomId == conversationId else { return }
             readFailureCount += 1
-            let wait = UInt64(readFailureCount) * 1_500_000_000
-            readReceiptTask = Task { [weak self] in
-                do { try await Task.sleep(nanoseconds: wait) } catch { return }
-                guard let self, self.generation == epoch else { return }
-                await self.markReadIfVisible(conversationId: conversationId)
-            }
+            guard readFailureCount < 4 else { return }
+            let wait = Double(readFailureCount) * 1.5
+            readGate.deferAttempt(until: ProcessInfo.processInfo.systemUptime + wait)
+            scheduleVisibleRead(after: wait)
         }
     }
 
@@ -302,6 +404,8 @@ public final class PulseSession: ObservableObject {
         viewer = nil
         store = nil
         messageRevisions.removeAll()
+        threadValidationFence = PulseThreadValidationFence()
+        deniedThreadRoots.removeAll()
         pendingOpenRoom = nil
         pendingJumpMessageId = nil
         pendingLinkedRoomId = nil
@@ -536,6 +640,9 @@ public final class PulseSession: ObservableObject {
         guard let store, let viewer else { return }
         let client = api
         let engine = PulseOutboxEngine(store: store) { client }
+        engine.additionalThreadAccessDenied = { [weak self] rootId in
+            self?.threadAccessDenied(rootId: rootId) ?? true
+        }
         engine.onAcknowledgement = { [weak self] receipt in
             if let line = PulseStreakVerdict.toastLine(count: receipt.streak?.count, continued: receipt.streak?.continued) {
                 self?.toasts.show(line)
@@ -570,23 +677,44 @@ public final class PulseSession: ObservableObject {
         Task { await outbox.flush() }
     }
 
-    public func retryOutbox(clientId: String) {
-        guard ready, let viewer, let store else { return }
+    @discardableResult
+    public func retryOutbox(clientId: String, conversationId: String? = nil, threadRootId: String? = nil) -> Bool {
+        guard ready, let viewer, let store else { return false }
         do {
-            guard let row = try store.outboxAll().first(where: { $0.clientId == clientId && $0.failureReason != nil }) else { return }
+            guard let row = try store.outboxAll().first(where: { $0.clientId == clientId && $0.failureReason != nil }) else { return false }
+            if let conversationId, row.conversationId != conversationId { return false }
             let envelope = PulseOutboxForward.decode(row.payloadJson)
             if row.payloadJson != nil && envelope == nil { throw CocoaError(.coderReadCorrupt) }
+            if let threadRootId, envelope?.parentId != threadRootId { return false }
+            if let rootId = envelope?.parentId, threadAccessDenied(rootId: rootId) {
+                toasts.show("Reopen this thread to check access. Your saved reply is kept.")
+                return false
+            }
             let anonymous = envelope?.anon == true
             var message = TempMessages.make(conversationId: row.conversationId, viewer: viewer, clientId: row.clientId,
                 content: row.content, parentId: envelope?.parentId, anon: anonymous,
                 anonAlias: anonymous ? PulseRemediationLogic.anonAlias(viewerId: viewer.id, conversationId: row.conversationId) : nil,
                 topicId: envelope?.topicId, attachment: envelope)
             message.payload = envelope?.payload
-            if try store.retryOutbox(clientId: clientId, message: message) {
+            if try store.retryOutbox(clientId: clientId, message: message, threadRootId: threadRootId) {
                 outbox?.reloadPending()
                 flushOutbox()
+                return true
             }
         } catch { toasts.show("The saved message could not be retried. It has not been discarded.") }
+        return false
+    }
+
+    @discardableResult
+    public func discardFailedThreadReply(clientId: String, conversationId: String, rootId: String) -> Bool {
+        guard let store else { return false }
+        do {
+            guard try store.discardFailedThreadReply(clientId: clientId, conversationId: conversationId, rootId: rootId) else { return false }
+            outbox?.reloadPending()
+            outboxEvents.send(.dropped(clientId: clientId, conversationId: conversationId))
+            return true
+        } catch { toasts.show("Couldn't discard this reply. It is still saved.") }
+        return false
     }
 
     public func discardOutbox(clientId: String, conversationId: String) {
@@ -696,7 +824,8 @@ public final class PulseSession: ObservableObject {
     private func handle(_ signal: PulseSocketClient.Signal) {
         switch signal {
         case .joined(let ids), .presenceSnapshot(let ids):
-            connected = true
+            // Presence broadcasts can precede our own accepted join. Only the
+            // socket's post-ack readiness signal can enable realtime actions.
             onlineUserIds = Set(ids)
         case .joinError(let message):
             // Wave 8 - the relay verified our presented join token and
@@ -708,7 +837,9 @@ public final class PulseSession: ObservableObject {
             connected = isOn
             // Flush trigger: socket connect / reconnect.
             if isOn {
-                Task { await markReadIfVisible(conversationId: activeRoomId) }
+                readFailureCount = 0
+                readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
+                scheduleVisibleRead(after: PulseReadReceiptGate.dwell)
                 flushOutbox()
                 // W3-b - same trigger for the queued single-writer call rows.
                 callEngine?.flushCallLogQueueOnReconnect()

@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Wave 1 thread surface - the web ThreadSheet outcome natively: parent card
 /// on top, replies asc below, composer that sends `parentId` (spec §1.1 -
@@ -10,6 +11,7 @@ struct ThreadView: View {
     let conversation: WireConversationSummary
     let root: WireChatMessage
     @ObservedObject var session: PulseSession
+    var initialJumpMessageId: String? = nil
 
     enum Phase: Equatable { case loading, loaded, failed(String) }
 
@@ -17,36 +19,72 @@ struct ThreadView: View {
     @State private var replies: [WireChatMessage] = []
     @State private var phase: Phase = .loading
     @State private var draft = ""
+    @State private var draftJournal: PulseDraftJournal?
+    @State private var draftRevision: UInt64 = 0
+    @State private var draftSession: UUID?
     @State private var rootUnavailable = false
     @State private var loadGeneration = UUID()
+    @State private var initialJumpResolved = false
+    @State private var highlightedReplyId: String?
+    @State private var nearTail = true
+    @State private var tailScrollRevision = 0
+
     @State private var errorText: String?
+    @State private var failedReplies: [OutboxRow] = []
+    @State private var recoveryObservation: AnyCancellable?
+    @State private var discardReply: OutboxRow?
     // Wave 2 view-once - threads reuse the same gate/burn bubble; the reveal
     // opens the lightbox right here (the sheet owns its cover).
     @State private var lightbox: MediaLightboxTarget?
+    @State private var lightboxMessageId: String?
+    @State private var viewOnceTask: Task<Void, Never>?
     @FocusState private var composerFocused: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var viewerId: String { session.viewer?.id ?? "" }
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !rootUnavailable }
+    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !rootUnavailable &&
+        draftJournal?.isCurrentOwner == true && draftSession == session.sessionGeneration }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 6) {
-                            threadBody
-                            Color.clear.frame(height: 4).id("thread-tail")
+                    GeometryReader { viewport in
+                        ScrollView {
+                            LazyVStack(spacing: 6) {
+                                threadBody
+                                failedReplyRecovery
+                                Color.clear.frame(height: 4).id("thread-tail")
+                                    .background(GeometryReader { tail in
+                                        Color.clear.preference(key: ThreadTailPositionKey.self,
+                                            value: tail.frame(in: .named("thread-viewport")).maxY)
+                                    })
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                    }
-                    .defaultScrollAnchor(.bottom)
-                    .onChange(of: replies.count) { _, _ in
-                        withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
-                            proxy.scrollTo("thread-tail", anchor: .bottom)
+                        .coordinateSpace(name: "thread-viewport")
+                        .defaultScrollAnchor(.bottom)
+                        .onPreferenceChange(ThreadTailPositionKey.self) { tailY in
+                            nearTail = tailY >= 0 && tailY <= viewport.size.height + 80
                         }
+                        .task(id: anchorCandidate?.id) {
+                            guard let id = anchorCandidate?.id else { return }
+                            await Task.yield() // Let the lazy reply row's stable ID enter the layout.
+                            guard !Task.isCancelled, anchorCandidate?.id == id else { return }
+                            proxy.scrollTo(id, anchor: .center)
+                            highlightedReplyId = id
+                            initialJumpResolved = true
+                        }
+                        .onChange(of: replies.last?.id) { _, _ in
+                            guard PulseThreadNavigation.shouldFollowTail(nearTail: nearTail,
+                                pendingTarget: initialJumpMessageId != nil && !initialJumpResolved) else { return }
+                            withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
+                                proxy.scrollTo("thread-tail", anchor: .bottom)
+                            }
+                        }
+                        .onChange(of: tailScrollRevision) { _, _ in proxy.scrollTo("thread-tail", anchor: .bottom) }
                     }
                 }
                 if let error = errorText {
@@ -69,9 +107,13 @@ struct ThreadView: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .fullScreenCover(item: $lightbox) { target in
-            MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt)
+            MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt, singleUse: target.singleUse)
         }
-        .task(id: session.connected) { await load() }
+        .task(id: ThreadLoadKey(connected: session.connected, target: initialJumpMessageId)) { await load() }
+        .onChange(of: initialJumpMessageId) { _, _ in
+            initialJumpResolved = false
+            highlightedReplyId = nil
+        }
         .onReceive(session.signals) { handle(signal: $0) }
         .onReceive(session.messageVisibilityClock) { now in pruneExpired(now: now) }
         .onReceive(session.outboxEvents) { event in
@@ -84,10 +126,39 @@ struct ThreadView: View {
                 guard room == conversation.id,
                       replies.contains(where: { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }) else { return }
                 replies.removeAll { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) }
-                errorText = "Reply not sent. It is kept in Outbox for recovery."
+                errorText = "Reply not sent. Your original reply is saved below for recovery."
             }
         }
-        .onDisappear { loadGeneration = UUID() }
+        .task(id: highlightedReplyId) {
+            guard highlightedReplyId != nil else { return }
+            do { try await Task.sleep(nanoseconds: 1_700_000_000) } catch { return }
+            highlightedReplyId = nil
+        }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            _ = prepareDraft()
+            dismiss()
+        }
+        .alert("Discard this failed reply?", isPresented: Binding(get: { discardReply != nil }, set: { if !$0 { discardReply = nil } })) {
+            Button("Cancel", role: .cancel) { discardReply = nil }
+            Button("Discard", role: .destructive) {
+                guard let row = discardReply, draftSession == session.sessionGeneration else { discardReply = nil; return }
+                if !session.discardFailedThreadReply(clientId: row.clientId, conversationId: conversation.id, rootId: root.id) {
+                    errorText = "The saved reply changed or couldn't be discarded. Nothing else was removed."
+                }
+                discardReply = nil
+            }
+        } message: { Text("This removes the saved outgoing reply from this device. It does not erase your current draft.") }
+        .onDisappear {
+            viewOnceTask?.cancel()
+            loadGeneration = UUID()
+            recoveryObservation?.cancel()
+            recoveryObservation = nil
+        }
+    }
+
+    private var anchorCandidate: WireChatMessage? {
+        guard !rootUnavailable, !initialJumpResolved, let id = initialJumpMessageId else { return nil }
+        return PulseThreadNavigation.target(in: replies, roomId: conversation.id, rootId: root.id, targetId: id)
     }
 
     // content
@@ -153,34 +224,25 @@ struct ThreadView: View {
                         // R3-A item 7 - thread bubbles format + mention-chip too.
                         memberNames: conversation.members.map(\.name),
                     )
+                    .id(reply.id)
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(
+                        highlightedReplyId == reply.id ? PulseTheme.color(named: "orange") : Color.clear, lineWidth: 2))
                 }
             }
         }
     }
 
-    /// Wave 2 view-once in threads - instant reveal (web parity), then the
-    /// idempotent burn stamp; the relayed envelope reconciles the rest.
     private func revealViewOnce(_ message: WireChatMessage) {
-        guard message.viewOnce == true,
-              message.senderId != viewerId,
-              message.viewedAt == nil,
-              let url = PulseMediaOpener.url(for: message) else { return }
-        lightbox = MediaLightboxTarget(url: url, caption: message.content, expiresAt: message.expiresAt)
-        guard let viewer = session.viewer else { return }
-        let api = session.api
-        let store = session.store
-        let epoch = session.sessionGeneration
-        Task {
-            if let fresh = try? await api.markViewed(messageId: message.id, userId: viewer.id) {
-                guard session.sessionGeneration == epoch, !Task.isCancelled else { return }
-                try? store?.upsert(messages: [fresh])
-                if let index = replies.firstIndex(where: { $0.id == fresh.id }) {
-                    replies[index] = fresh
-                }
-                if parent?.id == fresh.id {
-                    parent = fresh
-                }
-            }
+        guard !rootUnavailable, message.conversationId == conversation.id,
+              message.id == root.id || message.parentId == root.id else { return }
+        guard viewOnceTask == nil, lightbox == nil else { return }
+        viewOnceTask = Task {
+            defer { viewOnceTask = nil }
+            guard let granted = await session.consumeViewOnce(message), !Task.isCancelled, !rootUnavailable,
+                  let url = PulseMediaOpener.url(for: granted) else { return }
+            lightboxMessageId = granted.id
+            lightbox = MediaLightboxTarget(url: url, caption: granted.content, expiresAt: granted.expiresAt, singleUse: true)
+            if granted.id == root.id { parent = granted } else { appendReply(granted) }
         }
     }
 
@@ -192,31 +254,43 @@ struct ThreadView: View {
     // data
 
     private func load() async {
+        guard prepareDraft() else { return }
+        observeRecovery()
         let ticket = UUID()
         loadGeneration = ticket
         let epoch = session.sessionGeneration
-        let api = session.api
         let store = session.store
+        rootUnavailable = session.threadAccessDenied(rootId: root.id)
+        // The sheet's input is a snapshot; a cached tombstone/edit is newer.
+        if let cachedRoot = try? store?.message(id: root.id, now: .distantPast) { parent = cachedRoot }
         if let cached = try? store?.messages(threadRootId: root.id) {
             replies = PulseTextDelivery.timeline(replies, pending: cached)
         }
         phase = .loaded
         pruneExpired()
-        guard (parent ?? root).deletedAt == nil,
-              PulseRemediationLogic.isAlive((parent ?? root).expiresAt) else { return }
+        guard PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else { return }
         let revision = session.messageRevision
         do {
-            let page = try await api.thread(rootId: root.id, userId: viewerId)
+            let page = try await session.validatedThread(rootId: root.id, roomId: conversation.id)
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
             // A slower HTTP snapshot must not undo a newer edit/deletion relay.
-            let fresh = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
-            try store?.upsert(messages: fresh)
-            if let current = fresh.first(where: { $0.id == root.id }) { parent = current }
+            let eligible = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
+            let fresh = try store?.mergeMessages(eligible) ?? eligible
+            parent = fresh.first(where: { $0.id == root.id }) ?? (try? store?.message(id: root.id, now: .distantPast)) ?? parent
+            guard PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else {
+                pruneExpired()
+                return
+            }
             replies = PulseTextDelivery.timeline(replies, pending: fresh.filter { $0.parentId == root.id })
             phase = .loaded
             errorText = nil
             rootUnavailable = false
             pruneExpired()
+            if let target = initialJumpMessageId, !initialJumpResolved,
+               PulseThreadNavigation.target(in: replies, roomId: conversation.id, rootId: root.id, targetId: target) == nil {
+                errorText = "That reply is no longer available in this thread."
+                initialJumpResolved = true
+            }
         } catch {
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
             if let failure = error as? PulseAPIClient.Failure, [403, 404, 410].contains(failure.status ?? 0) {
@@ -230,12 +304,20 @@ struct ThreadView: View {
     }
 
     private func pruneExpired(now: Date = Date()) {
+        if let cachedRoot = try? session.store?.message(id: root.id, now: .distantPast) { parent = cachedRoot }
         let parentMessage = parent ?? root
-        if parentMessage.deletedAt != nil || !PulseRemediationLogic.isAlive(parentMessage.expiresAt, now: now) {
+        if session.threadAccessDenied(rootId: root.id) || !PulseRemediationLogic.threadRootAvailable(parentMessage, roomId: conversation.id, rootId: root.id, now: now) {
             rootUnavailable = true
             replies = []
             lightbox = nil
         } else {
+            if let selected = lightboxMessageId {
+                let current = selected == parentMessage.id ? parentMessage : replies.first(where: { $0.id == selected })
+                if current == nil || current?.deletedAt != nil || !PulseRemediationLogic.isAlive(current?.expiresAt, now: now) {
+                    lightbox = nil
+                    lightboxMessageId = nil
+                }
+            }
             let visible = replies.filter { PulseRemediationLogic.isAlive($0.expiresAt, now: now) }
             if visible.count != replies.count {
                 replies = visible
@@ -257,9 +339,10 @@ struct ThreadView: View {
         default: return
         }
         guard room == conversation.id, message.id == root.id || message.parentId == root.id else { return }
-        if message.id == root.id { parent = message }
-        else { appendReply(message) }
-        try? session.store?.upsert(messages: [message])
+        let committed = try? session.store?.mergeMessages([message])
+        let canonical = committed?.first ?? message
+        if canonical.id == root.id { parent = PulseMessageMerge.merge(parent, incoming: canonical) }
+        else { appendReply(canonical) }
         pruneExpired()
     }
 
@@ -268,16 +351,99 @@ struct ThreadView: View {
         replies = PulseTextDelivery.timeline(replies, pending: [message])
     }
 
+    private var retryAllowed: Bool {
+        session.ready && draftSession == session.sessionGeneration && !rootUnavailable &&
+            PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id)
+    }
+
+    @ViewBuilder private var failedReplyRecovery: some View {
+        if !failedReplies.isEmpty {
+            Text("NOT SENT · SAVED ON THIS DEVICE").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            ForEach(failedReplies, id: \.clientId) { row in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(row.content.isEmpty ? "Saved attachment" : row.content).font(.footnote).lineLimit(3)
+                    Text(row.failureReason ?? "Delivery wasn't confirmed").font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Retry original") {
+                            guard retryAllowed else { return }
+                            if session.retryOutbox(clientId: row.clientId, conversationId: conversation.id, threadRootId: root.id) {
+                                if let echo = try? session.store?.message(id: PulseOutboxEngine.tempMessageId(clientId: row.clientId)) { appendReply(echo) }
+                            } else { errorText = "Couldn't retry this saved reply. It has not been discarded." }
+                        }.disabled(!retryAllowed)
+                        Button("Copy text") {
+                            guard draftSession == session.sessionGeneration else { return }
+                            UIPasteboard.general.string = row.content
+                        }.disabled(row.content.isEmpty)
+                        Button("Discard", role: .destructive) { discardReply = row }
+                    }.font(.caption.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(.regularMaterial))
+                .id("failed-" + row.clientId)
+            }
+        }
+    }
+
+    private func observeRecovery() {
+        guard recoveryObservation == nil, let store = session.store else { return }
+        let epoch = session.sessionGeneration
+        recoveryObservation = store.observeFailedThreadReplies(conversationId: conversation.id, rootId: root.id)
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { completion in
+                guard epoch == session.sessionGeneration else { return }
+                if case .failure = completion { errorText = "Couldn't read saved replies. Reopen this thread to try again." }
+            }, receiveValue: { rows in
+                guard epoch == session.sessionGeneration else { return }
+                failedReplies = rows
+            })
+    }
+
+    private func prepareDraft() -> Bool {
+        if let epoch = draftSession, epoch != session.sessionGeneration {
+            draft = ""
+            replies = []
+            failedReplies = []
+            discardReply = nil
+            recoveryObservation?.cancel()
+            recoveryObservation = nil
+            rootUnavailable = true
+            return false
+        }
+        guard draftJournal == nil else { return true }
+        guard let store = session.store else { return false }
+        let journal = PulseDraftJournal(store: store, conversationId: conversation.id, parentId: root.id)
+        draftSession = session.sessionGeneration
+        draftJournal = journal
+        draft = journal.snapshot ?? ""
+        return true
+    }
+
+    private func editDraft(_ text: String) {
+        guard draftSession == session.sessionGeneration, let journal = draftJournal, journal.isCurrentOwner else { return }
+        draft = text
+        draftRevision &+= 1
+        let revision = draftRevision, epoch = session.sessionGeneration
+        let write = journal.submit(text, revision: revision)
+        Task {
+            do { try await write.value }
+            catch {
+                guard epoch == session.sessionGeneration, draftRevision == revision else { return }
+                errorText = "Couldn't save this draft on the device. Keep this thread open and try again."
+            }
+        }
+    }
+
     // composer
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("Reply in thread", text: $draft, axis: .vertical)
+            TextField("Reply in thread", text: Binding(get: { draft }, set: editDraft), axis: .vertical)
                 .lineLimit(1...5)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
                 .background(Capsule().fill(Color(.secondarySystemBackground)))
                 .focused($composerFocused)
+                .disabled(draftJournal == nil || draftSession != session.sessionGeneration)
 
             Button {
                 sendReply()
@@ -302,8 +468,10 @@ struct ThreadView: View {
         guard canSend, let viewer = session.viewer, let store = session.store, session.ready else { return }
         do {
             let message = try PulseTextDelivery.enqueue(store: store, viewer: viewer,
-                conversationId: conversation.id, content: draft, parentId: root.id)
+                conversationId: conversation.id, content: draft, parentId: root.id, draftJournal: draftJournal)
             appendReply(message)
+            initialJumpResolved = true // Sending intentionally returns to the new reply.
+            tailScrollRevision += 1
             draft = ""
             errorText = nil
             session.outbox?.reloadPending()
@@ -326,4 +494,16 @@ struct ThreadView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
     }
+}
+
+
+private struct ThreadTailPositionKey: PreferenceKey {
+    static let defaultValue: CGFloat = .infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+
+private struct ThreadLoadKey: Hashable {
+    let connected: Bool
+    let target: String?
 }

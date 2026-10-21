@@ -293,6 +293,45 @@ public final class PulseStore: Sendable {
         }
     }
 
+    // Account-scoped access refusals use a reserved metadata namespace, not message tombstones.
+    static func threadDenialKey(_ rootId: String) -> String { "thread-access-denied:v1|" + rootId }
+
+    public struct ThreadAccessError: LocalizedError {
+        public var errorDescription: String? { "This thread is unavailable. Your draft and saved replies are kept." }
+    }
+
+    private static func threadIsDenied(_ db: Database, rootId: String) throws -> Bool {
+        try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM wave7Cache WHERE key = ?)",
+            arguments: [threadDenialKey(rootId)]) ?? false
+    }
+
+    public func threadAccessDenied(rootId: String) throws -> Bool {
+        try dbQueue.read { try Self.threadIsDenied($0, rootId: rootId) }
+    }
+
+    public func denyThread(rootId: String) throws {
+        try saveWave7Cache(key: Self.threadDenialKey(rootId), json: "denied", updatedAt: Int64(Date().timeIntervalSince1970 * 1000))
+    }
+
+    /// A valid refreshed parent and its rows commit with removal of the refusal.
+    /// Ordinary message upserts can never clear a denial.
+    public func acceptThreadSnapshot(rootId: String, roomId: String, messages: [WireChatMessage]) throws -> WireThreadPage {
+        try dbQueue.write { db in
+            var replies: [WireChatMessage] = []
+            for message in messages where message.conversationId == roomId && (message.id == rootId || message.parentId == rootId) {
+                let saved = try Self.writeMessage(message, db: db)
+                if saved.parentId == rootId { replies.append(saved) }
+            }
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [rootId]),
+                  let parent = Self.messageRow(from: row),
+                  PulseRemediationLogic.threadRootAvailable(parent, roomId: roomId, rootId: rootId) else {
+                throw ThreadAccessError()
+            }
+            try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [Self.threadDenialKey(rootId)])
+            return WireThreadPage(parent: parent, replies: replies)
+        }
+    }
+
     // conversation cache
     public func upsert(conversations: [PulseConversation], replacingSnapshot: Bool = false) throws {
         try dbQueue.write { db in
@@ -335,10 +374,13 @@ public final class PulseStore: Sendable {
 
     // message cache (N3-b - room offline-first seed; v3/v4 full fidelity)
     public func upsert(messages: [WireChatMessage]) throws {
+        _ = try mergeMessages(messages)
+    }
+
+    /// Return the same privacy-preserving rows that committed, not stale HTTP inputs.
+    public func mergeMessages(_ messages: [WireChatMessage]) throws -> [WireChatMessage] {
         try dbQueue.write { db in
-            for m in messages {
-                try Self.writeMessage(m, db: db)
-            }
+            try messages.map { try Self.writeMessage($0, db: db) }
         }
     }
 
@@ -346,7 +388,13 @@ public final class PulseStore: Sendable {
     /// a fresh envelope row is AUTHORITATIVE - spec §0 - so every column,
     /// v1 through v4, lands in both the INSERT and the conflict SET clause).
     /// Shared by the bulk cache upsert and the saved-library sync.
-    private static func writeMessage(_ m: WireChatMessage, db: Database) throws {
+    @discardableResult
+    private static func writeMessage(_ incoming: WireChatMessage, db: Database) throws -> WireChatMessage {
+        let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [incoming.id])
+        let current = row.flatMap { Self.messageRow(from: $0) }
+        var m = PulseMessageMerge.merge(current, incoming: incoming)
+        if let deleted: String = row?["deletedAt"], !deleted.isEmpty { m = m.deletedCopy() }
+        if let viewed: String = row?["viewedAt"] { m.viewedAt = viewed; m.viewOnce = true }
         try db.execute(
             sql: """
             INSERT INTO message (id, conversationId, authorId, authorName, kind, body,
@@ -394,6 +442,7 @@ public final class PulseStore: Sendable {
                 "expiresAtEpoch": m.expiresAt.flatMap { PulseFormat.date($0)?.timeIntervalSince1970 },
             ],
         )
+        return m
     }
 
     /// Persist operation and optimistic bubble before any network I/O.
@@ -405,20 +454,21 @@ public final class PulseStore: Sendable {
     func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
                         consumingDraft token: PulseDraftConsumption?) throws -> Bool {
         guard let payload = PulseOutboxForward.encode(envelope) else { throw CocoaError(.coderInvalidValue) }
-        if let token, token.storageIdentity != storageIdentity || token.conversationId != message.conversationId {
+        if let token, token.storageIdentity != storageIdentity || token.conversationId != message.conversationId || token.parentId != message.parentId || token.parentId != envelope.parentId {
             throw CocoaError(.userCancelled)
         }
         let commit: (Bool) throws -> Void = { consume in
             try self.dbQueue.write { db in
+                if let root = envelope.parentId, try Self.threadIsDenied(db, rootId: root) { throw ThreadAccessError() }
                 try Self.writeMessage(message, db: db)
                 try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
                     content: message.content, kind: envelope.kind ?? "text", createdAt: PulseOutboxClock.now(),
                     attempts: 0, payloadJson: payload).insert(db)
-                if consume { try Self.writeDraftSnapshot(db, room: message.conversationId, text: "") }
+                if consume, let token { try Self.writeDraftSnapshot(db, room: token.storageKey, text: "") }
             }
         }
         if let token {
-            return try draftFence.enqueue(token.conversationId, expected: token.revision, action: commit)
+            return try draftFence.enqueue(token.storageKey, expected: token.revision, action: commit)
         }
         try commit(false)
         return false
@@ -452,7 +502,7 @@ public final class PulseStore: Sendable {
         let rows = try dbQueue.read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM (SELECT * FROM message WHERE conversationId = :cid AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
+                sql: "SELECT * FROM (SELECT * FROM message WHERE conversationId = :cid AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || message.parentId) AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
                 arguments: ["cid": conversationId, "limit": limit, "now": now.timeIntervalSince1970],
             )
         }
@@ -478,7 +528,7 @@ public final class PulseStore: Sendable {
         let rows = try dbQueue.read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM (SELECT * FROM message WHERE parentId = :root AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
+                sql: "SELECT * FROM (SELECT * FROM message WHERE parentId = :root AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || :root) AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
                 arguments: ["root": threadRootId, "limit": limit, "now": now.timeIntervalSince1970],
             )
         }
@@ -492,7 +542,7 @@ public final class PulseStore: Sendable {
             var counts: [String: Int] = [:]
             let rows = try Row.fetchAll(
                 db,
-                sql: "SELECT parentId, COUNT(*) AS replyCount FROM message WHERE parentId IS NOT NULL AND deletedAt IS NULL AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) GROUP BY parentId",
+                sql: "SELECT parentId, COUNT(*) AS replyCount FROM message WHERE parentId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || message.parentId) AND deletedAt IS NULL AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) GROUP BY parentId",
                 arguments: ["now": now.timeIntervalSince1970],
             )
             for row in rows {
@@ -505,12 +555,49 @@ public final class PulseStore: Sendable {
         }
     }
 
+    func observeThreadReplyCounts(conversationId: String) -> DatabasePublishers.Value<ThreadReplyCountSnapshot> {
+        ValueObservation.tracking { db in
+            try Self.threadReplyCountSnapshot(db, conversationId: conversationId, now: Date())
+        }.publisher(in: dbQueue)
+    }
+
+    func threadReplyCountSnapshot(conversationId: String, now: Date = Date()) throws -> ThreadReplyCountSnapshot {
+        try dbQueue.read { try Self.threadReplyCountSnapshot($0, conversationId: conversationId, now: now) }
+    }
+
+    private static func threadReplyCountSnapshot(_ db: Database, conversationId: String, now: Date) throws -> ThreadReplyCountSnapshot {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT reply.parentId, COUNT(*) AS replyCount,
+                   MIN(reply.expiresAtEpoch) AS replyExpiry, root.expiresAtEpoch AS rootExpiry
+            FROM message reply JOIN message root ON root.id = reply.parentId AND root.conversationId = reply.conversationId
+            WHERE reply.conversationId = :room AND root.parentId IS NULL AND substr(root.id, 1, 6) != 'local_'
+              AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || root.id)
+              AND root.deletedAt IS NULL AND (root.expiresAtEpoch IS NULL OR root.expiresAtEpoch > :now)
+              AND reply.deletedAt IS NULL AND (reply.expiresAtEpoch IS NULL OR reply.expiresAtEpoch > :now)
+              AND NOT EXISTS (SELECT 1 FROM outbox o WHERE reply.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)
+            GROUP BY reply.parentId, root.expiresAtEpoch
+            """, arguments: ["room": conversationId, "now": now.timeIntervalSince1970])
+        var snapshot = ThreadReplyCountSnapshot()
+        for row in rows {
+            let root: String = row["parentId"]
+            let count: Int = row["replyCount"]
+            snapshot.counts[root] = count
+            let replyExpiry: Double? = row["replyExpiry"], rootExpiry: Double? = row["rootExpiry"]
+            if let earliest = [replyExpiry, rootExpiry].compactMap({ $0 }).min() {
+                let deadline = Date(timeIntervalSince1970: earliest)
+                snapshot.nextExpiry = min(snapshot.nextExpiry ?? deadline, deadline)
+            }
+        }
+        return snapshot
+    }
+
     /// Full authoritative envelope for new rows; column fallback only for
     /// legacy local operations preserved by the privacy-cache migration.
     private static func messageRow(from row: Row) -> WireChatMessage? {
         if let wire: String = row["wireJson"] {
             // Corrupt full envelopes must not fall back to missing privacy flags.
-            return try? JSONDecoder().decode(WireChatMessage.self, from: Data(wire.utf8))
+            return (try? JSONDecoder().decode(WireChatMessage.self, from: Data(wire.utf8)))
+                .map { PulseMessageMerge.merge(nil, incoming: $0) }
         }
         guard let id: String = row["id"],
               let conversationId: String = row["conversationId"],
@@ -537,7 +624,7 @@ public final class PulseStore: Sendable {
         let topicId: String? = row["topicId"]
         let decodedPoll = Self.poll(fromJson: row["pollJson"])
         let decodedLinkPreview = Self.linkPreview(fromJson: row["linkPreviewJson"])
-        return WireChatMessage(
+        return PulseMessageMerge.merge(nil, incoming: WireChatMessage(
             id: id, conversationId: conversationId, senderId: authorId,
             content: body, kind: kind, createdAt: createdAt,
             editedAt: editedAt, deletedAt: deletedAt,
@@ -553,7 +640,7 @@ public final class PulseStore: Sendable {
             linkPreview: decodedLinkPreview, poll: decodedPoll,
             payload: row["payloadJson"],
             translations: Self.translations(fromJson: row["translationsJson"]),
-        )
+        ))
     }
 
     // reactionsJson codec (v3 cache column ⇄ grouped wire reactions)
@@ -793,6 +880,25 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Observe this account's rejected intents, scoped by both room and retained routing envelope.
+    public func observeFailedThreadReplies(conversationId: String, rootId: String) -> DatabasePublishers.Value<[OutboxRow]> {
+        ValueObservation.tracking { db in
+            try OutboxRow.fetchAll(db, sql: "SELECT * FROM outbox WHERE conversationId = ? AND failureReason IS NOT NULL ORDER BY id ASC",
+                arguments: [conversationId]).filter { PulseOutboxForward.decode($0.payloadJson)?.parentId == rootId }
+        }.publisher(in: dbQueue)
+    }
+
+    /// The user confirms discarding a rejected intent, not a subsequently retried send.
+    public func discardFailedThreadReply(clientId: String, conversationId: String, rootId: String) throws -> Bool {
+        try dbQueue.write { db in
+            guard let row = try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE clientId = ? AND conversationId = ? AND failureReason IS NOT NULL",
+                arguments: [clientId, conversationId]), PulseOutboxForward.decode(row.payloadJson)?.parentId == rootId else { return false }
+            try db.execute(sql: "DELETE FROM outbox WHERE clientId = ?", arguments: [clientId])
+            try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + clientId])
+            return true
+        }
+    }
+
     /// Queue snapshot - FIFO drain order (oldest first).
     public func outboxAll() throws -> [OutboxRow] {
         try dbQueue.read { db in
@@ -852,9 +958,18 @@ public final class PulseStore: Sendable {
     }
 
     /// Explicit retry keeps the original identity and metadata, including upload receipt.
-    public func retryOutbox(clientId: String, message: WireChatMessage) throws -> Bool {
+    public func retryOutbox(clientId: String, message: WireChatMessage, threadRootId: String? = nil) throws -> Bool {
         guard message.id == "local_" + clientId else { throw CocoaError(.coderInvalidValue) }
+        if let threadRootId, message.parentId != threadRootId { return false }
         return try dbQueue.write { db in
+            if let rootId = message.parentId {
+                guard try !Self.threadIsDenied(db, rootId: rootId), message.parentId == rootId,
+                      let retained = try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE clientId = ? AND conversationId = ? AND failureReason IS NOT NULL", arguments: [clientId, message.conversationId]),
+                      PulseOutboxForward.decode(retained.payloadJson)?.parentId == rootId,
+                      let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [rootId]),
+                      let root = Self.messageRow(from: row),
+                      PulseRemediationLogic.threadRootAvailable(root, roomId: message.conversationId, rootId: rootId) else { return false }
+            }
             try db.execute(sql: "UPDATE outbox SET failureReason = NULL, attempts = 0 WHERE clientId = ? AND conversationId = ? AND failureReason IS NOT NULL",
                            arguments: [clientId, message.conversationId])
             guard db.changesCount > 0 else { return false }
@@ -914,8 +1029,9 @@ public final class PulseStore: Sendable {
     private var draftFence: PulseDraftWriteFence { PulseDraftWriteFence.shared(for: storageIdentity) }
 
     func reserveDraftWrite(conversationId: String) -> UInt64 { draftFence.reserve(conversationId) }
-    func captureDraftConsumption(conversationId: String) -> PulseDraftConsumption {
-        PulseDraftConsumption(storageIdentity: storageIdentity, conversationId: conversationId, revision: draftFence.current(conversationId))
+    func captureDraftConsumption(conversationId: String, parentId: String? = nil) -> PulseDraftConsumption {
+        PulseDraftConsumption(storageIdentity: storageIdentity, conversationId: conversationId,
+            revision: draftFence.current(PulseThreadDraft.key(conversationId, parentId: parentId)), parentId: parentId)
     }
 
     func saveDraftSnapshot(conversationId: String, text: String, expectedRevision: UInt64? = nil) throws {
@@ -1284,4 +1400,10 @@ enum PulseOutboxClock {
     static func now() -> String {
         formatter.string(from: Date())
     }
+}
+
+/// The visibility clock re-queries only when a relevant cached root/reply expires.
+struct ThreadReplyCountSnapshot: Equatable {
+    var counts: [String: Int] = [:]
+    var nextExpiry: Date?
 }

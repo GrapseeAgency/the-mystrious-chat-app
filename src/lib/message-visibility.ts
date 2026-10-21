@@ -20,6 +20,11 @@ export function threadRootAvailable(root: {
     root.parentId === null && !isExpiredMessage(root, at)
 }
 
+/** A malformed cross-room parent link must not bypass the root's membership check. */
+export function threadRepliesWhere(rootId: string, roomId: string, at: Date): Prisma.MessageWhereInput {
+  return { parentId: rootId, conversationId: roomId, ...unexpiredMessages(at) }
+}
+
 /** One aggregate snapshot supplies BOTH the badge and its offline expiry schedule.
  * Never derive unread from a client's partial message page or the latest preview.
  */
@@ -46,4 +51,51 @@ export async function removeSavedMessage(
 ): Promise<{ saved: false }> {
   await db.savedMessage.deleteMany({ where: { userId, messageId } })
   return { saved: false }
+}
+
+export class ThreadReadError extends Error {
+  constructor(public readonly status: number, message: string) { super(message) }
+}
+
+type ThreadRootRecord = {
+  id: string; conversationId: string; deletedAt: Date | null; parentId: string | null; expiresAt: Date | null
+}
+
+/** Membership, root lifetime and replies must belong to ONE database snapshot.
+ * Separate reads can otherwise return cached root permissions alongside replies
+ * read after removal/deletion. The callbacks only select the route's wire fields.
+ */
+export async function readThreadSnapshot<Root extends ThreadRootRecord, Reply extends { expiresAt: Date | null }>(
+  db: import('../../prisma/generated-client').PrismaClient, rootId: string, viewerId: string,
+  readRoot: (tx: Prisma.TransactionClient, id: string) => Promise<Root | null>,
+  readReplies: (tx: Prisma.TransactionClient, where: Prisma.MessageWhereInput) => Promise<Reply[]>,
+  clock: () => Date = () => new Date(),
+): Promise<{ parent: Root; replies: Reply[] }> {
+  try {
+    return await db.$transaction(async tx => {
+      const root = await readRoot(tx, rootId)
+      if (!root || root.id !== rootId) throw new ThreadReadError(404, 'Message not found.')
+      const participant = await tx.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId: viewerId, conversationId: root.conversationId } }, select: { id: true },
+      })
+      if (!participant) throw new ThreadReadError(403, 'You are not a participant of this conversation.')
+      const now = clock()
+      if (!threadRootAvailable(root, root.conversationId, now)) {
+        throw new ThreadReadError(410, 'This thread is no longer available.')
+      }
+      const replies = await readReplies(tx, threadRepliesWhere(rootId, root.conversationId, now))
+      const deliveredAt = clock()
+      if (!threadRootAvailable(root, root.conversationId, deliveredAt)) {
+        throw new ThreadReadError(410, 'This thread is no longer available.')
+      }
+      return { parent: root, replies: replies.filter(message => !isExpiredMessage(message, deliveredAt)) }
+    }, { isolationLevel: 'Serializable' })
+  } catch (error) {
+    if (['P1008', 'P2028', 'P2034'].includes((error as { code?: string })?.code ?? '')) {
+      // Busy/conflicting reads are not evidence of lost access: native denial ledgers
+      // must not turn an operational retry into a durable 403/404/410 refusal.
+      throw new ThreadReadError(409, 'This thread changed or is busy. Try again.')
+    }
+    throw error
+  }
 }

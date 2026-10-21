@@ -84,7 +84,7 @@ class PulseSocketClient(
     private val allowEndpointFallback: Boolean = true,
 ) {
     sealed interface Signal {
-        /** Realtime transport state - true on connect, false on disconnect/error. */
+        /** Relay readiness - true only after joined acknowledgement, false on disconnect/error. */
         data class Connection(val connected: Boolean) : Signal
         data class Joined(val onlineUserIds: List<String>) : Signal
         data class PresenceSnapshot(val onlineUserIds: List<String>) : Signal
@@ -178,6 +178,7 @@ class PulseSocketClient(
     @Volatile private var socket: Socket? = null
 
     @Volatile private var joinedUserId: String? = null
+    @Volatile private var joinAcknowledged = false
 
     /**
      * Effective relay base - the injected default wins when set, but a live
@@ -186,6 +187,7 @@ class PulseSocketClient(
      */
     private fun effectiveBase(): String = socketUrl.ifBlank { if (allowEndpointFallback) PulseEndpoints.socketUrl else "" }
 
+    @Synchronized
     fun connect(userId: String) {
         val sameViewer = joinedUserId == userId
         if (!sameViewer) disconnectSocket()
@@ -214,35 +216,53 @@ class PulseSocketClient(
         // EVENT_CONNECT fires on every (re)connection - the join re-emission is
         // what restores the user room after a network blip.
         sock.on(Socket.EVENT_CONNECT) {
-            _signals.tryEmit(Signal.Connection(true))
-            joinedUserId?.let { id ->
-                // Wave 8 - the join payload carries the session token when one
-                // exists; a PRESENT token is verified server-side (invalid →
-                // join:error + disconnect). Token-less joins stay accepted
-                // during the web-migration window.
-                val payload = JSONObject().put("userId", id)
-                tokenProvider()?.let { payload.put("token", it) }
-                sock.emit(SocketEvents.JOIN, payload)
+            activeSocketEvent(sock) {
+                joinAcknowledged = false
+                _signals.tryEmit(Signal.Connection(false))
+                joinedUserId?.let { id ->
+                    val payload = JSONObject().put("userId", id)
+                    tokenProvider()?.let { payload.put("token", it) }
+                    sock.emit(SocketEvents.JOIN, payload)
+                }
             }
         }
-        sock.on(Socket.EVENT_DISCONNECT) { _signals.tryEmit(Signal.Connection(false)) }
-        sock.on(Socket.EVENT_CONNECT_ERROR) {
-            Log.w(TAG, "connect error: ${it.firstOrNull()}")
-            _signals.tryEmit(Signal.Connection(false))
+        sock.on(Socket.EVENT_DISCONNECT) {
+            activeSocketEvent(sock) {
+                joinAcknowledged = false
+                _signals.tryEmit(Signal.Connection(false))
+            }
+        }
+        sock.on(Socket.EVENT_CONNECT_ERROR) { args ->
+            activeSocketEvent(sock) {
+                joinAcknowledged = false
+                Log.w(TAG, "connect error: ${args.firstOrNull()}")
+                _signals.tryEmit(Signal.Connection(false))
+            }
         }
 
         sock.on(SocketEvents.JOINED) { args ->
-            decode<JoinedAck>(args)?.let { _signals.tryEmit(Signal.Joined(it.onlineUserIds)) }
+            activeSocketEvent(sock) {
+                if (joinedUserId != userId) return@activeSocketEvent
+                decode<JoinedAck>(args)?.let {
+                    joinAcknowledged = true
+                    _signals.tryEmit(Signal.Joined(it.onlineUserIds))
+                    _signals.tryEmit(Signal.Connection(true))
+                }
+            }
         }
         sock.on(SocketEvents.JOIN_ERROR) { args ->
-            val raw = args.firstOrNull()?.toString().orEmpty()
-            val message = runCatching {
-                val obj = org.json.JSONObject(raw)
-                obj.optString("error").takeIf { it.isNotEmpty() }
-            }.getOrNull() ?: raw.ifBlank { null }
-            Log.w(TAG, "join rejected: $message")
-            _signals.tryEmit(Signal.SessionRejected(message ?: "Session token is invalid or has been rotated. Log in again."))
-            onAuthInvalid(message)
+            activeSocketEvent(sock) {
+                joinAcknowledged = false
+                _signals.tryEmit(Signal.Connection(false))
+                val raw = args.firstOrNull()?.toString().orEmpty()
+                val message = runCatching {
+                    val obj = org.json.JSONObject(raw)
+                    obj.optString("error").takeIf { it.isNotEmpty() }
+                }.getOrNull() ?: raw.ifBlank { null }
+                Log.w(TAG, "join rejected: $message")
+                _signals.tryEmit(Signal.SessionRejected(message ?: "Session token is invalid or has been rotated. Log in again."))
+                onAuthInvalid(message)
+            }
         }
         sock.on(SocketEvents.PRESENCE_SNAPSHOT) { args ->
             decode<PresenceSnapshotPayload>(args)?.let { _signals.tryEmit(Signal.PresenceSnapshot(it.onlineUserIds)) }
@@ -514,12 +534,21 @@ class PulseSocketClient(
         PulseJson.parseToJsonElement(raw.toString())
     }.getOrNull()
 
+    @Synchronized
     fun disconnect() {
         disconnectSocket()
         joinedUserId = null
     }
 
+    /** Retired transport callbacks cannot flip the new connection's readiness. */
+    @Synchronized
+    private fun activeSocketEvent(source: Socket, action: () -> Unit) {
+        if (socket === source) action()
+    }
+
     private fun disconnectSocket() {
+        joinAcknowledged = false
+        _signals.tryEmit(Signal.Connection(false))
         socket?.let {
             it.off()
             it.disconnect()
@@ -527,7 +556,7 @@ class PulseSocketClient(
         socket = null
     }
 
-    val isJoined: Boolean get() = joinedUserId != null && socket?.connected() == true
+    val isJoined: Boolean get() = joinAcknowledged && joinedUserId != null && socket?.connected() == true
 
     private companion object {
         const val TAG = "PulseSocket"

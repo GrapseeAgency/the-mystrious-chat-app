@@ -323,7 +323,7 @@ class SettingsViewModel @Inject constructor(
         combine(repo.observeDrafts(), repo.observeConversations()) { drafts, conversations ->
             val titles = conversations.associate { it.id to it.title }
             drafts.filterValues { it.isNotBlank() }.map { (conversationId, text) ->
-                DraftRow(conversationId, titles[conversationId] ?: "Chat", text)
+                DraftRow(conversationId, if (app.pulse.domain.model.isThreadDraftKey(conversationId)) "Thread reply" else titles[conversationId] ?: "Chat", text)
             }.sortedBy { it.title.lowercase() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

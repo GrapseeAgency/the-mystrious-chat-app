@@ -82,6 +82,13 @@ public enum PulseRemediationLogic {
         return expires > now
     }
 
+    public static func threadRootAvailable(_ root: WireChatMessage, roomId: String, rootId: String, now: Date = Date()) -> Bool {
+        guard !root.id.hasPrefix("local_"), root.id == rootId, root.conversationId == roomId,
+              root.parentId == nil, root.deletedAt == nil else { return false }
+        if let expires = root.expiresAt { return PulseFormat.date(expires).map { $0 > now } ?? false }
+        return true
+    }
+
     public static func isVisiblePreview(_ message: WireChatMessage, now: Date = Date()) -> Bool {
         guard message.deletedAt == nil, message.viewOnce != true else { return false }
         if let expires = message.expiresAt { return PulseFormat.date(expires).map { $0 > now } ?? false }

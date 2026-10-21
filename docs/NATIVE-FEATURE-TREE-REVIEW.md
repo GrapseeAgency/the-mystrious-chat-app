@@ -1520,3 +1520,558 @@ notification copies; legacy Pin toggle replay; bounded global search (newest 1,2
 known-mutated snapshot instead of discovering a newly matching edit automatically.
 Explicit Unpin requires backend/native co-deployment; older servers fail visibly. This
 entry records targeted repairs, not whole-app or feature-tree completion.
+
+### Older-history navigation and thread availability (2026-10-21)
+
+Traced primary Kotlin/Swift search/pin/quote jumps into older pages and thread
+read/send surfaces, plus the backend thread reader. Autumn styling is unchanged;
+Android adds a normal themed “Load earlier messages” action for sparse history.
+
+- Android primary history now retains a composite `(createdAt, id)` cursor from
+  raw pages. Hidden replies and other-topic rows advance it, timestamp ties do not
+  collapse into one boundary, and anchor deletion from cache cannot turn a message
+  ID into a malformed timestamp query. Paging no longer depends on Room having
+  emitted a newly fetched page to the UI before the next request starts.
+- Manual history, retries and jumps share cancellable ownership. New jumps/topic
+  changes cancel the previous task; cancellation is rethrown rather than published
+  as an error or allowed to clear a newer operation's loading state. A repeated page
+  is detected. Sparse ranges have a bounded five-page batch plus a manual continuation.
+- Both primary chat screens distinguish a thread reply from a river message and
+  open its validated root instead of repeatedly searching the filtered main timeline.
+  Swift clears a conflicting topic filter before jumping. Repeating a jump to the
+  same message issues another scroll request on both platforms; it is not swallowed
+  by a remembered message ID. This opens the correct thread but does **not yet**
+  guarantee scrolling/highlighting the exact reply inside a long thread.
+- Android preserves typed HTTP status for thread failures. Explicit 403/404/410
+  denial hides cached parent/replies and disables sending until a successful retry;
+  network/500 errors alone are not interpreted as revocation. Reconnection retries
+  thread validation. Cached content is masked immediately, not after a separate
+  Room emission, and a refused/expired thread cannot hand off a pending file download.
+- Swift rehydrates and rechecks the cached root rather than trusting the sheet's
+  original snapshot. Deleted/expired/nested/foreign roots are unavailable, including
+  an expired cache row hidden by ordinary message reads. Thread lightboxes close on
+  known deletion/expiry of their selected message. Android uses the same root shape
+  and deadline checks for reply admission.
+- Backend thread replies are explicitly scoped to the authorized root's conversation,
+  not just its parent ID. Root/reply deadlines are checked again before response
+  construction so a slow read does not knowingly deliver already-expired content.
+
+Executed locally: 99/99 server contracts, including actual SQLite cross-room reply
+exclusion; standalone TypeScript checking of message-visibility; native source syntax
+and diff checks. Added Kotlin raw-cursor/timestamp-tie/root-denial regressions and Swift
+cached-expired-root/availability regressions. Native compiler/device checks require the
+GitHub runners and are not replaced by parser success. Inventory: 324 production files.
+
+Official reference consulted: Kotlin kotlinx.coroutines `docs/topics/coroutines-cancellation.md`
+(cancellation exceptions must be rethrown; structured child cancellation), retrieved
+from https://github.com/Kotlin/kotlinx.coroutines via GitHub API.
+
+Remaining: exact thread-reply anchoring, beyond-window target lookup (jumps still cap
+at 14 pages), thread pagination, Mirror parity for the new stable composite cursor,
+authoritative revocation persisted across navigation/restart, media/export copies and
+server message-version ordering. These are bounded runtime repairs, not whole-app
+completion or a blanket offline authorization guarantee.
+
+### Mirror thread sending and exact reply anchoring (2026-10-21)
+
+Followed the actual autumn Mirror thread sheet separately from the primary Android
+thread view. It still used a frozen root, swallowed load failures, rendered raw body/
+author fields, and launched detached send callbacks that cleared whatever draft existed
+when an older send finished. Primary-screen fixes did not cover this implementation.
+
+- Mirror now observes the current root and replies through lifecycle-aware streams,
+  applies expiry on a clock, masks content immediately after an explicit thread denial,
+  and exposes load/send failures and Retry. Reconnection refreshes validation. Transport
+  failure alone does not revoke otherwise-live offline cache. Composer send admission
+  rechecks the root at tap time, rather than relying on the last rendered enabled state.
+- Mirror sends use the shared text send use case in a sheet-owned coroutine. The body
+  and composer revision are captured before suspension; acknowledgement clears only
+  that revision, including correct A→B→A handling. The existing RoomComposerDraft kernel
+  and its regressions are reused. Opening another root/account disposes the old sheet
+  scope. Failed sends keep text; draft persistence across sheet dismissal is NOT added.
+- Mirror text bubbles render deletion/view-once placeholders and anonymous aliases,
+  rather than exposing retained captions or the real sender name. This is text-preview
+  protection, not a completed media-consumption/revocation design.
+- Mirror search jumps retain the reply ID in addition to its root. A lazy, keyed reply
+  list scrolls to that reply with a short existing-accent outline. It accounts for the
+  parent row and does not interpret a missing target as row zero. An authoritative load
+  containing the target waits for the Room emission instead of prematurely reporting
+  a missing reply. Deleted/expired/wrong-thread targets are rejected.
+- Swift retains the reply ID through root validation and sheet presentation, gives each
+  reply a stable scroll ID, and anchors/highlights the selected reply after layout. A
+  newer target resets navigation without destroying the composer. Known missing/expired
+  targets report unavailability instead of silently opening an unrelated position.
+- Swift tail following now checks the visible tail geometry and pending jump intent.
+  Incoming replies do not yank a user away from older content; explicitly sending returns
+  to the tail. A missing lazy tail reports infinity, not zero (zero would falsely imply
+  that the reader was at the bottom).
+
+Verification: preceding e0f506f Android build + API30/API34 instrumentation and iOS tests/
+archive all passed. For this new source: 99/99 unchanged backend contracts pass, changed
+native syntax/diff checks pass, and new Kotlin presentation/index and Swift navigation/
+scroll-policy regressions are added. Native compilation/device execution for this new
+batch remains pending on GitHub; parser success is not compilation. Inventory: 326 files.
+
+Still open: primary Android navigation callback carries only a root (exact-reply work
+here covers its active Mirror counterpart); long-thread pagination; durable thread drafts
+across dismissal/restart; persisted cross-screen membership revocation; media/export
+copies; beyond-window target lookup and server ordering without message versions.
+The autumn palette is retained. No whole-app completion claim is made.
+
+### Device-local thread drafts and atomic send handoff (2026-10-21)
+
+Traced closing/reopening a thread through both native draft stores and the durable send
+transaction. Thread drafts were only view state, unlike main-room composers. Simply
+saving them under the room ID would overwrite the river draft; independently clearing
+a new draft after sending would reintroduce replay/lost-typing races.
+
+- Added a reserved, length-delimited local thread namespace in the existing draft table.
+  It uses the existing account/gateway-isolated database; no destructive migration is
+  needed. Main-room and separate-root drafts remain independent. Thread keys never go
+  to the legacy server draft endpoint. Settings draft managers label them as thread
+  replies and can delete them; existing bulk clear includes them.
+- Extended draft-consumption tokens to bind the parent/root as well as room, account or
+  storage identity, and revision. Both Room and GRDB now consume that specific scoped
+  draft in the same transaction as the optimistic message and outbox operation. A main
+  token cannot consume a thread draft, nor a thread token a different root/main draft.
+  Rich and demo sends share the Android scope guard. Untokened sends still consume no
+  composer draft.
+- Android thread editors journal each change in a finite account-bound writer, retain a
+  front buffer for rapid reopen, and observe revision-tagged draft snapshots. Reads use
+  the same lock as enqueue/clear and re-read storage, not stale Room emission payloads.
+  The editor keeps the token associated with its actual text, rather than capturing a
+  potentially newer other-editor revision at send time. Queue-clears are observed while
+  a network acknowledgement is pending; newer typing survives an older send.
+- Primary and Mirror Android thread editors restore without generating a new write and
+  bind work to the captured account repository. Save failures retain buffered text and
+  show a warning. Primary thread input rejects an over-limit edit instead of allowing a
+  later storage truncation to silently replace the visible text. Local success clearing
+  does not stage a second draft-clear that could erase newer text.
+- Swift threads reuse the journal's synchronous front buffer, off-main writer and owner
+  fence, with their root-specific namespace. Text changes journal immediately; enqueue
+  consumes the draft atomically. Account transitions disable/close the old thread editor.
+  Journal snapshots now carry the storage revision: Settings deletion or a committed
+  send invalidates an older in-memory pending copy before rapid reopen can restore it.
+
+Verification: 99/99 unchanged backend contracts passed locally. Added Kotlin token/key
+unit checks, extended real Room account-isolation/instrumentation coverage for independent
+roots, handoff, newer typing, restart/account return, write-failure rollback and bulk clear;
+added Swift journal/GRDB tests for reopen, root/account guards, rollback, newer typing and
+pending-buffer deletion. Native syntax/diff checks passed; new native compilation and
+execution remain pending on GitHub. Prior 5532442 Android build and iOS tests/archive
+passed; its instrumentation status was still pending when last checked. Inventory stays
+326 production files. Autumn styling is unchanged.
+
+Limits: thread drafts are local, not cross-device synchronized. Ordinary dismissal does
+not cancel finite storage writes, but abrupt process termination before SQLite commits
+can still lose the very last keystroke; disk failures are reported rather than claimed
+as durable. Root deletion/revocation retains recoverable draft text, not permission to
+send. Long-thread pagination, broader revocation/media/export policies and beyond-window
+lookup remain open. This is a targeted runtime repair, not whole-app completion.
+
+
+### Inline failed-thread recovery, preserving the original operation (2026-10-21)
+
+Traced definitive send rejection through durable storage and the actual thread surfaces.
+The optimistic bubble disappeared while its recoverable intent was accessible only in
+Settings. Retyping/reposting could create a second operation; a stale discard could
+also delete an intent that another surface had already retried.
+
+- Primary Android, active Mirror sheet and Swift threads now observe their own failed
+  replies and provide Retry original, Copy text, and an explicit discard confirmation.
+  Actions leave the current composer untouched. Empty attachment captions cannot wipe
+  the clipboard. Existing autumn colors/materials are reused.
+- Android filters by owner, room, root and failed status through the retained hidden
+  optimistic envelope, not rich-payload JSON. Swift filters the account-local outbox
+  by room and decoded routing envelope. Malformed Swift envelopes remain available in
+  Settings rather than being guessed into a thread.
+- Retry reuses the original clientId, queue row, metadata and upload receipt. Root
+  liveness, room/root association and failed status are revalidated inside the storage
+  transaction. Missing/deleted/expired roots cannot be retried inline. Explicit denial
+  also disables the UI action; a locally live root is not proof of server authorization.
+- Discard checks the same scope and failed status atomically with deleting the retained
+  intent/temp bubble. A stale confirmation after Retry cannot delete the queued send.
+  Root unavailability still permits recovering/copying/discarding the user's own intent.
+- Swift reinstates the pending bubble when retry is accepted, cancels observation on
+  dismissal, and fences/clears recovery state at session transitions. Android uses the
+  captured account repository and lifecycle-aware list observation; the router's list
+  reset behavior also covers the added observation API.
+
+Verification: 99/99 unchanged server contracts pass locally. Added real Room DAO and
+repository regressions for scope, missing/deleted/expired roots, original identity,
+unchanged draft and stale discard; added GRDB/Swift observation and mutation regressions
+for the equivalent flows and malformed envelopes. Changed native files pass syntax
+parsing and diff checks; these are not a substitute for native compilation/execution,
+which remains pending for this batch on GitHub. Inventory remains 326 production files.
+
+Limits: this is failed-intent recovery, not full thread pagination or proof of delivery.
+Generic Settings queue controls retain their existing semantics. Revocation across all
+screens, beyond-window navigation and media/export lifetimes remain open. No merge or
+deployment is implied, and no whole-app correctness claim is made.
+
+
+### Preserve raw history boundaries and reject stale refresh seeds (2026-10-21)
+
+Traced “load earlier”, cold/search/quote jumps and topic changes through the actual
+Mirror room, primary Android ViewModel, Swift room model and message-page endpoint.
+The Android cache reconciler correctly drops an HTTP row after a newer deletion, but
+callers then incorrectly derived pagination from those filtered rows. An entire dropped
+page looked like end-of-history. Mirror also retained just an ID, which stopped being a
+valid paging anchor once that local row was purged. Swift latest-page responses could
+reset a history boundary established by a newer action.
+
+- Added an Android history-page result that keeps the raw response's timestamp/ID cursor
+  separate from reconciled display rows. Both native Android room paths consume it;
+  legacy page APIs remain compatible. Hidden/deleted/reconciled-away rows still advance
+  the boundary without resurrecting their message content. Stable composite cursors go
+  to the existing backend `before`/`beforeId` contract without a local anchor lookup.
+- Mirror no longer assumes the oldest arbitrary pin/search cache row proves contiguous
+  history. A new paging scan starts with the latest server page, keeps raw progress and
+  skips duplicate/hidden-only pages in bounded batches. A jump cannot rewind a farther
+  manual history boundary. Primary Android cold jumps can seed history even if they
+  superseded the initial load before it established `hasMore`.
+- Mirror jumps no longer poll an empty cache or swallow coroutine cancellation. The
+  target must enter the current Compose entry model before index-based scrolling, with
+  the history-control row accounted for. Deleted/expired targets produce an unavailable
+  notice; a superseded task cannot consume a newer jump. Explicit thread target IDs stay
+  intact. Network/display failures retain an actionable error rather than a false jump.
+- Swift now keeps cursor, exhaustion and revision together. Page starts/commits, empty
+  terminal pages and topic/jump resets invalidate older latest-page seeds. A general
+  refresh cannot seed a topic's boundary. Topic reload merges the bounded cache into
+  already-expanded history instead of truncating it; selecting a topic refilters the
+  display immediately. Automatic topic healing uses the same cancel/reset/reload path.
+  Topic refresh captures its store/client/session epoch across suspension.
+- Corrected the previous outbox DAO regression's final assertion: `count()` counts only
+  pending sends, not all stored failed intent. It now verifies one pending and four total
+  stored rows separately; no production queue semantics were changed to satisfy it.
+
+Verification: 99/99 unchanged server contracts pass locally. Added Kotlin raw-boundary
+regressions (including a fully reconciled-away page), Swift stale-seed/empty-terminal/
+A→B→A regressions and expanded-history retention coverage. Changed native files pass
+syntax and diff checks; native build/device execution for this new batch is pending.
+Previous 54f76de Android build and Swift tests/archive passed; Android instrumentation
+reported the added outbox test, whose incorrect pending-vs-total assertion is corrected
+here. No claim that parser checks prove native runtime behavior.
+
+Limits: scans remain bounded (five pages per manual batch, fourteen per jump); a very
+old uncached target can still require further history. Legacy all-replies thread loading,
+primary Android's root-only navigation callback, cross-screen revocation and media-copy
+lifetimes are still open. A fresh Mirror scan can revisit already-cached pages rather
+than skipping an unproven gap. Autumn styling is unchanged; no merge/deployment implied.
+
+
+### Seen requires a visible, unobscured row and an owned acknowledgement (2026-10-21)
+
+Traced read acknowledgements from primary Android/Mirror list layout and Swift lazy
+views through their schedulers to the existing server watermark transaction. Found
+Swift's lazy tail `onAppear` being treated as viewport visibility; a new cached tail
+could be acknowledged before its row was displayed. Refresh/reconnect calls also
+bypassed the intended dwell. Mirror suspended reads for only a few of its sheets, while
+both Android lists restarted their read debounce on unrelated message-list emissions.
+
+- Swift now measures row and tail frames in the actual scroll viewport. Read boundaries
+  come from the newest eligible measured row, including when reading older history,
+  not from the newest cached row or creation of a prefetched tail. A row needs a 44-point
+  visible slice (or its full height if shorter). Tail following also uses measured
+  geometry rather than lazy appearance. Missing/zero viewport geometry is not visible.
+- Both Android surfaces use the matching density-scaled overlap rule against actual
+  layout viewport offsets. Pending and deleted rows do not anchor Seen. Latest rows are
+  sampled through Compose state, so an unchanged visible boundary does not restart its
+  600ms wait just because an off-screen message or unrelated row changed.
+- Mirror's read/attention gate now includes its search, pins, composer/media, scheduling,
+  reminders, collaboration, safety and other room-owned covering surfaces. Primary
+  Android retains its existing modal/privacy/lifecycle gates. Swift includes photo/file
+  pickers, staged media, inactive scenes and privacy veil, with initial gating applied.
+- Swift enforces the 600ms monotonic dwell at network admission, so independent refresh
+  triggers cannot bypass it. Foreground/readiness/reconnect resume with a fresh dwell;
+  retry backoff cannot be bypassed by refresh either. Retries are bounded and rearmed by
+  a changed visible boundary or an explicit resume/reconnect. An unchanged acknowledged
+  boundary is not repeatedly posted.
+- Each Swift read attempt carries a boundary revision and unique request identity.
+  Responses from an old room, an A→B→A visit, or an interrupted visibility period cannot
+  acknowledge/release a replacement request or poison its retry state. Room ViewModels
+  also bind visibility callbacks to the session generation captured at creation. A real
+  accepted older receipt can refresh the inbox without claiming the current row was read.
+
+Verification: 99/99 unchanged backend contracts pass locally. Added Kotlin overlap tests
+(including clipping, content padding, density, invalid dimensions and integer overflow)
+and Swift geometry/dwell/backoff/request-ownership regressions. Native syntax/diff checks
+pass; compilation and native execution for this new batch remain pending on GitHub.
+Official AndroidX LazyListItemInfo source was checked: item offset/size are container-axis
+pixels, matching the viewport overlap calculation. No palette or bubble redesign.
+
+Limits: this acknowledges a displayed boundary, not proof that a human read every word.
+A continuously changing boundary can conservatively delay its acknowledgement. Existing
+server timestamp-only read semantics, per-thread/topic unread granularity, timestamp ties,
+all system/context-menu overlay lifecycles, and historical missed-message badge accounting
+still require further work. Server monotonic receipts and privacy fanout remain unchanged;
+this does not claim complete Seen/unread correctness or whole-app completion.
+
+### Arrival identity and reactive cached thread counts (2026-10-21)
+
+Corrected two separate local UI accounting paths; these are not changes to server unread totals.
+
+- Swift's jump badge now tracks distinct eligible peer arrivals, rather than changes in
+  rendered list length. Loading older history, snapshots, own sends, replayed relay events,
+  and unrelated deletion cannot invent arrivals or erase unrelated pending IDs. Deletes,
+  expiry and topic changes reconcile individual pending IDs. Catch-up classification uses
+  a captured canonical tail and topic revision; initial history discovery is not an arrival.
+- Tapping Jump no longer clears its badge before scrolling succeeds. Clearing requires an
+  unobscured foreground/current-room tail AND measured visibility of the latest live
+  canonical row, so yesterday's geometry cannot clear a just-appended message. Removed
+  the unused length-delta helper/tests rather than retaining a second contradictory policy.
+- Swift reply chips observe a room-scoped GRDB aggregation over live same-room roots and
+  replies, excluding deleted/expired rows and retained failed echoes. Duplicate events do
+  not increment counts. Root and reply expiry deadlines requery through the visibility
+  clock even without database writes; queued snapshots crossing a deadline are rechecked.
+- Primary Android derives reply chips from raw expiry-aware room rows, not the filtered
+  main-river StateFlow (which suppresses reply-only changes). The main river, selection
+  reconciliation and counts share one upstream query/decoding/expiry subscription.
+
+Verification: 99/99 existing server contracts pass; production reply-count SQL separately
+checked with SQLite for room isolation, failed/deleted rows and root/reply deadlines.
+Added seven Swift and three Android regressions covering arrival identity, catch-up/replay,
+root/reply lifetime, GRDB observation and retained failed echoes. Syntax/diff checks pass;
+these new native tests have not yet compiled/run. The previous ef6b1d1 build, Swift tests
+and Android API 30/34 instrumentation passed, which is not verification of this new batch.
+
+Limits: reply chips describe cached replies, not authoritative totals for unloaded history.
+The local jump badge is not a server unread counter; catch-up requires a known baseline,
+with same-timestamp ordering conservatively using the composite cursor. Legacy unused
+aggregate APIs remain separate. Large-thread pagination, exact primary-Android reply
+navigation, cold Swift jumps and broader revocation/media-copy behavior remain open.
+Autumn styling is unchanged. No merge/deployment or whole-app correctness claim.
+
+### Cold history jumps and exact thread targets (2026-10-21)
+
+- Swift no longer treats the initial `hasMore=false` and absent cursor as proof that
+  history is exhausted. An explicit jump without a boundary requests a latest page,
+  then advances through raw composite cursors under the existing request/session fence.
+  A known terminal boundary still stops scanning. Empty initial loads can be retried.
+- Primary Android's feature-chat handoff now carries root ID, exact reply ID and request
+  revision rather than losing the target at the root-only callback. Consumption is
+  request-owned. ThreadScreen accepts the target directly or from saved-state arguments,
+  waits for its confirmed reply to reach the rendered model, rechecks after a frame, and
+  scrolls/highlights that reply with the parent-header offset. Pending jumps suppress
+  automatic tail following; sending explicitly supersedes a suspended jump. Corrected
+  ordinary tail following's missing parent-header offset as well.
+- Mirror's active room search/jump path now loads and validates the live root AND selected
+  reply before opening the sheet. A cached parent no longer bypasses that check. The
+  shared target-index predicate rejects missing, foreign, deleted, expired and wrong-root
+  replies, including when the parent itself has become unavailable. It never substitutes
+  the first reply for a missing target.
+- Both Kotlin and Swift root-availability gates reject optimistic `local_` root IDs.
+  Reply/send/retry paths cannot use a pending parent as though it had a server identity;
+  drafts remain kept while that root is unavailable.
+
+Verification: five new native regressions (two Swift, two domain Kotlin, one Mirror Kotlin)
+cover cold/terminal history boundaries, reply identity, parent lifetime and pending roots.
+13 changed native files pass syntax checks; 99/99 existing server contracts pass locally.
+Native compilation and UI/device execution for these changes are still pending.
+
+Scope: MainActivity currently mounts MirrorRoot; the primary feature-chat callback fix is
+module wiring, not a claim that a separate primary navigation graph is shipping. Any host
+of ChatRoomScreen must forward the new optional reply ID into ThreadScreen. Explicit
+Mirror thread search jumps now require a successful availability request; ordinary offline
+thread/draft handling is unchanged. Full-thread loading and the fourteen-page room jump
+limit remain; this does not add thread pagination or persist revocation across navigation.
+No autumn palette/bubble redesign and no merge/deployment implied.
+
+### Transactional message actions and monotonic cached privacy state (2026-10-21)
+
+While tracing thread lifetime, found message action races: edit/delete read permissions
+separately from writes, repeat-delete returned a tombstone before checking the requester,
+view-once consumers could overwrite the first consumer, and native full-row acknowledgements
+could restore content after a newer tombstone. Android reaction failures left optimistic
+chips behind and successful reactions relied on a later bounded room refresh.
+
+- Edit/delete/react/viewed routes now share a serializable transaction for membership,
+  owner checks where required, message/root lifetime, the write and response snapshot.
+  Repeat-delete is checked for ownership/membership too. Delete clears pin state; deleted
+  or expired rows and unavailable thread parents reject new edits/reactions/consumption.
+  Contention reports 409, not an automatic toggle replay. View-once's first consumer is a
+  conditional write; the additive `consumed` response distinguishes a new consumption.
+- Mutation fanout includes the actor's other devices. Relays retain neutral poll metadata;
+  the direct response remains viewer-aware. Existing transport identity migration is
+  unchanged: this is not an authentication overhaul.
+- Shared serialization redacts body, attachments, rich payload, quotes, translations and
+  preview/poll content from tombstones. Quoted deleted/expired parents expose no original
+  body, and view-once quotes expose a placeholder rather than their caption.
+- Room's transactional message upsert and GRDB's shared write path preserve deletion,
+  consumption, view-once flags, earliest expiry and newer edit stamps across late rows.
+  Tombstones retain identity/routing/deadlines but not media/body payload. Cache reads
+  normalize old tombstones too. Pending send/draft intent is not discarded by this policy.
+- Swift river/thread merges apply the same rules. Network ingestion returns committed
+  canonical rows rather than feeding raw stale HTTP inputs back into the UI. Android
+  fetched rows and socket fanout likewise use the actual retained cache state.
+- Android reactions apply the returned server row, serialize one in-flight action per
+  message, retain existing state on failure and no longer depend on a bounded refetch.
+  Primary and active Mirror surface failures. Mirror reactions use room-owned coroutines
+  rather than detached IO launches. Swift reactions are persisted, session-fenced and
+  gated per message instead of updating only the in-memory river.
+
+Verification: 106/106 server contracts pass locally, including seven new transaction,
+concurrent-consumer and disclosure regressions. New pure TypeScript helpers pass strict
+standalone type checking. Added three Kotlin merge tests, one real Room DAO test and four
+Swift merge/storage tests; native parsing passes, but new native compilation/device tests
+remain pending. Previous 83f99d5 Android build and iOS archive passed; its iOS test compile
+failed because two assertions called dictionary `isEmpty` as a function. Corrected that
+mistake separately in 20510c0; no claim that the earlier tests passed.
+
+Limits: these are monotonic known-row fields, not a total server revision for reactions,
+pins or equal-timestamp edits. Cache purge is not a durable tombstone/revocation ledger.
+Existing view-once UIs still reveal before consumption acknowledgement; the atomic server
+stamp alone does NOT make that flow safe. Public media lifetime, full-thread pagination,
+revocation across navigation and legacy credential migration remain open. No autumn
+palette changes; backend changes require deployment with the native work.
+
+### View-once reveal requires this request's grant (2026-10-21)
+
+Followed the consumption stamp into the actual renderers. Swift and primary Android
+opened the image before the POST completed, so rejection/offline failure still revealed
+it. Mirror's main image renderer did not gate view-once at all; its thread used only a
+placeholder without an opening action. These were separate from the server stamp race.
+
+- Native consumption now requires `consumed=true` from this request, matching message,
+  room, author and thread scope, a live image and a confirmed consumer. A cached viewed
+  stamp, replay acknowledgement, malformed response or legacy missing flag is NOT a
+  reveal grant. The authoritative burn is still cached when a replay is refused.
+- Kotlin repository and Swift session own per-message in-flight gates. Account/room,
+  cancellation, foreground and parent-availability checks prevent a late response from
+  opening unavailable content. Swift double taps do not cancel/reconsume the first tap.
+- Primary Android and Swift room/thread viewers await the result instead of opening
+  optimistically. Mirror gates incoming view-once images before constructing AsyncImage,
+  hides their captions, and provides explicit grant-based opening in both river and thread.
+  Failures are surfaced without revealing the image. Mirror's granted viewer blocks Seen.
+- The shared Android lightbox uses a secure dialog for view-once, disables Coil memory/
+  disk caching for that request, and closes on stop or expiry. Swift uses a dedicated
+  ephemeral URLSession with no shared URL cache, drops view-local decoded data on close,
+  hides content/closes on inactive scene or detected screen recording. Live deletion/root
+  invalidation closes selected media through the owning surfaces. This does not promise
+  that iOS can prevent screenshots.
+- Native forwarding rejects view-once, deleted and expired sources. Recipient copy paths
+  are blocked for view-once captions; quote composer previews use a placeholder. This
+  does not remove already-copied/exported material or redesign the autumn surfaces.
+
+Verification: 106/106 server contracts remain green locally. Added two Kotlin gate tests,
+three Swift gate/receipt tests and one Kotlin protocol receipt test; 23 changed/new native
+files pass syntax parsing, not native execution. Fixed the newly added MessageMergeTests
+actor annotation: 9d4d2bf iOS production archive passed, but test compilation reported its
+call to MainActor-isolated timeline from a nonisolated test. The test class now explicitly
+uses MainActor. Latest native build/device execution is still required.
+
+Deployment/order: deploy the 9d4d2bf server receipt before these apps. Older servers do not
+return a grant flag; new clients deliberately refuse to reveal rather than silently
+falling back. A lost acknowledgement, cancellation or image-download failure after a
+successful consume can spend the one-time grant without displaying it; there is no
+invented reopen permission or automatic consumption retry.
+
+Remaining privacy boundary: media URLs are still public-style cached upload URLs, not
+per-view signed capabilities. Server media authorization/lifetime, prior image caches,
+other-device screenshots, historical quote copies and full cross-navigation revocation
+need further work. Large-thread pagination remains open. Nothing here is a claim of
+complete view-once secrecy, whole-app correctness, merge or deployment.
+
+
+## 2026-10-21 — thread refusal survives offline reopening
+
+Broken path: a thread GET returned 403/404/410, the sheet hid replies, then navigation
+recreated its view-local flag. An offline reopen could display the same cached replies
+and enable a new send or a retry. This repair keeps an account/gateway-scoped refusal
+in existing KV storage; it is not a destructive message deletion or a schema migration.
+
+- Both Android thread surfaces observe persisted refusal before presenting their parent.
+  Room reply/room observations exclude denied replies, including after process restart;
+  cache clearing preserves the reserved metadata namespace. Swift thread reads/counts
+  exclude denied replies and ThreadView consults the shared session/store decision.
+- Only a fresh, identity-checked, live canonical parent can clear the refusal. Parent/reply
+  cache writes and metadata removal commit together. Ordinary message refreshes and
+  transport failures do not clear it. Swift thread-sheet and search-jump requests share
+  this validation path. No backend deployment is needed specifically for this ledger.
+- Per-root request fences reject superseded responses; starting another request and
+  applying a result are serialized with Android's cache mutex / Swift's MainActor.
+  An already received Android denial persists even if navigation cancels its caller.
+- Composer queue insertion, explicit thread and generic recovery retry, forwarding and
+  reply-photo grant opening respect known refusal. Drafts, failed outgoing identity,
+  envelope and upload receipts are retained. Revalidation remains available.
+- In-memory denial protects this process if persistence fails; disk failure cannot promise
+  refusal survives restart. Raw single-message lookup remains available to reconciliation
+  and recovery. This is not global cache/media erasure or comprehensive export revocation.
+
+Verification: 106/106 existing server contracts pass locally (no server change in this
+tranche); 17 changed native files syntax-parse. Added Room disk-reopen/cache-clear/account
+isolation coverage; Swift reopen/isolation/invalid-root rollback/blocked enqueue and
+retry coverage; Kotlin and Swift superseded-ticket regressions. These tests still need
+native execution on the pushed revision, not merely parser success. bb619bd Android
+build/API30/API34 passed; its iOS archive and simulator compile passed but storage tests
+had obsolete deletion/consumption expectations. 1ac720f updates those expectations;
+its additional viewOnce assertion matches the merge rule for a stored viewedAt stamp.
+The latest observed 1ac720f iOS archive passed; other native jobs were still pending.
+
+Remaining: unbounded thread API and Swift's 300-row cached thread window; full lifecycle,
+exports/notifications and historical media URL revocation; broader room membership
+revocation. Autumn UI tokens/layout are unchanged. This is not whole-app completion.
+
+## 2026-10-21 — queued-thread dispatch and consistent server reads
+
+Follow-through from the refusal ledger found an existing queued send could bypass the
+new composer/retry guard. Android immediate dispatch/background drain and Swift's outbox
+now check refusal before upload and again before message POST. A denial arriving during
+upload retains the completed receipt but holds the original operation as failed; a fresh
+thread validation alone does not auto-send that failed operation. Explicit retry keeps
+its clientId and avoids another upload. Other queued messages can continue. Swift's live
+engine also receives the session's in-memory fallback denial if disk persistence failed.
+Three Swift engine regressions exercise pre-upload refusal, in-memory-only refusal and
+mid-upload refusal/revalidation/explicit retry; Android uses its existing retained-failure
+DROP classification rather than deleting queued content. Actual native execution pending.
+
+The thread server endpoint previously fetched root, participant and replies separately.
+It now reads all three in one Serializable transaction, with expiry rechecked after
+reply selection. Removed members/deleted, nested or expired roots cannot produce an
+accepted snapshot; busy/conflicting reads map to 409, not a persistent access refusal.
+Tombstones and viewer-aware serialization remain intact. The wire shape is unchanged;
+this server change requires deployment separately from the native source changes.
+
+Verification: four new thread-read contracts pass, including real SQLite membership/
+root/room/expiry cases and transaction-client/conflict mapping checks. Full server suite
+110/110 passes. Strict TypeScript checking passes for message-visibility.ts (not the
+whole application). Four changed native files syntax-parse; that is not compilation or
+runtime validation. Unbounded thread paging, global membership revocation, exports and
+public media URL authorization remain open. No autumn styling changes.
+
+## 2026-10-21 — realtime readiness is accepted join, not socket transport
+
+Continuing the runtime trace found both native clients publishing connected=true from
+the transport connect callback before the relay's asynchronous user-join validation.
+Actions driven by that flag could run before user-room routing existed. Swift also set
+connected=true from any presence broadcast, even before its own accepted join.
+
+- Android publishes readiness only after a decoded joined acknowledgement; isJoined
+  includes that acknowledgement. Disconnect/error/rejection resets it. Connection
+  replacement and readiness callbacks share a monitor so a retired socket cannot flip
+  the new socket's readiness after its identity check.
+- Swift publishes readiness after joined, not transport/presence. Its Socket.IO wrapper
+  is MainActor-isolated and explicitly uses handleQueue(.main); explicit reconnect setup
+  replaces handlers rather than stacking them. Removed the extra disconnected reconnect
+  join emit; the next transport connect sends join once. No automatic offline signaling
+  replay was invented.
+- Socket.IO v16 source explicitly says the client is not queue-safe and rejects emit
+  unless status==connected. Its option contract requires a serial handleQueue. References:
+  https://github.com/socketio/socket.io-client-swift/blob/v16.1.0/Source/SocketIO/Client/SocketIOClient.swift
+  https://github.com/socketio/socket.io-client-swift/blob/v16.1.0/Source/SocketIO/Client/SocketIOClientOption.swift
+- Swift relay/call round-trip tests now use that actor boundary, assert readiness cannot
+  precede joined, keep one observer rather than replacing it between phases, and always
+  disconnect their clients through defer. No timeout was increased or failure skipped.
+
+Execution evidence: 1ac720f iOS archive passed, but its unit job failed with call-relay
+join/offer timeouts (not the previously corrected storage assertions); another socket
+round-trip was skipped because its health probe did not find the fixture. Full logs could
+not be fetched through the available network hosts. This readiness/queue repair is a
+confirmed source-level defect, not a claim to have proven the cause of those timeouts.
+fa92095's iOS archive has passed; its tests and Android jobs were still in progress at
+last inspection. This tranche's five native files syntax-parse; native execution remains
+required. Server code is unchanged from the 110/110 run in 7d3e4c3. Theme untouched.
+
+Still open: disconnected 1:1 call signaling has no durable replay/ack contract; complete
+reconnect and lifecycle behavior needs further tracing. Large-thread API/cache pagination
+has not yet been repaired. These are not whole-app completion claims.

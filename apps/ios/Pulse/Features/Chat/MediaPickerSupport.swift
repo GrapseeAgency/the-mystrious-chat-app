@@ -92,6 +92,7 @@ struct MediaLightboxTarget: Identifiable {
     let url: URL
     let caption: String
     var expiresAt: String? = nil
+    var singleUse = false
 }
 
 struct QuickLookTarget: Identifiable {
@@ -159,6 +160,10 @@ struct MediaLightboxView: View {
     let caption: String
     var expiresAt: String? = nil
 
+    var singleUse = false
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var captureActive = UIScreen.main.isCaptured
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var zoom: CGFloat = 1
@@ -171,12 +176,15 @@ struct MediaLightboxView: View {
                 Spacer(minLength: 0)
                 if let url {
                     ScrollView([.horizontal, .vertical]) {
-                        AsyncImage(url: url) { phase in
-                            if let image = phase.image {
-                                image.resizable().scaledToFit()
+                        Group {
+                            if singleUse {
+                                if scenePhase == .active && !captureActive { SingleUsePhoto(url: url) }
                             } else {
-                                ProgressView().tint(.white)
-                                    .frame(width: 240, height: 240)
+                                AsyncImage(url: url) { phase in
+                                    if let image = phase.image { image.resizable().scaledToFit() }
+                                    else if phase.error != nil { Text("Photo unavailable").foregroundStyle(.white) }
+                                    else { ProgressView().tint(.white).frame(width: 240, height: 240) }
+                                }
                             }
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -198,7 +206,7 @@ struct MediaLightboxView: View {
                         .padding(.horizontal, 24)
                         .padding(.bottom, 12)
                 }
-            }
+            }.opacity(singleUse && (scenePhase != .active || captureActive) ? 0 : 1)
         }
         .overlay(alignment: .topTrailing) {
             Button {
@@ -216,6 +224,12 @@ struct MediaLightboxView: View {
             .padding(.top, 8)
             .accessibilityLabel("Close")
         }
+        .onChange(of: scenePhase) { _, phase in if singleUse && phase != .active { dismiss() } }
+        .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in
+            captureActive = UIScreen.main.isCaptured
+            if singleUse && captureActive { dismiss() }
+        }
+        .onAppear { if singleUse && captureActive { dismiss() } }
         .task(id: expiresAt) {
             guard let stamp = expiresAt, let deadline = PulseFormat.date(stamp) else { return }
             while !Task.isCancelled {
@@ -255,5 +269,34 @@ struct MediaLightboxView: View {
             zoom = 1
             pinchBase = 1
         }
+    }
+}
+
+/// No shared URL/image cache for a granted one-time photo. The bytes live only in this view.
+private struct SingleUsePhoto: View {
+    let url: URL
+    @State private var image: UIImage?
+    @State private var failed = false
+    var body: some View {
+        Group {
+            if let image { Image(uiImage: image).resizable().scaledToFit() }
+            else if failed { Text("Photo couldn't load. One-time access was already consumed.").foregroundStyle(.white) }
+            else { ProgressView().tint(.white).frame(width: 240, height: 240) }
+        }
+        .task(id: url) {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.urlCache = nil
+            let client = URLSession(configuration: configuration)
+            defer { client.invalidateAndCancel() }
+            do {
+                let (data, response) = try await client.data(for: URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+                try Task.checkCancellation()
+                guard (response as? HTTPURLResponse)?.statusCode == 200, let decoded = UIImage(data: data) else {
+                    failed = true; return
+                }
+                image = decoded
+            } catch { if !Task.isCancelled { failed = true } }
+        }
+        .onDisappear { image = nil }
     }
 }

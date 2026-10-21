@@ -453,6 +453,13 @@ interface PulseRepository {
     /** Full drain with the standard policy - every flush trigger funnels here. */
     suspend fun flushOutbox(): FlushReport
 
+    /** Device-local thread composer; never overwrites or mirrors the main-room draft. */
+    fun stageThreadDraft(conversationId: String, rootId: String, text: String): app.pulse.domain.model.ComposerDraftToken? = null
+    suspend fun loadThreadDraft(conversationId: String, rootId: String): String? = null
+    fun observeThreadDraft(conversationId: String, rootId: String): Flow<app.pulse.domain.model.ThreadDraftSnapshot> =
+        kotlinx.coroutines.flow.flowOf(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))
+    fun captureThreadDraftToken(conversationId: String, rootId: String): app.pulse.domain.model.ComposerDraftToken? = null
+
     /** Journal locally without waiting for a server debounce or a composable lifetime. */
     fun stageDraft(conversationId: String, text: String) {}
     /** Persist the composer draft (≤2000 chars; blank clears) and mirror remotely. */
@@ -481,14 +488,34 @@ interface PulseRepository {
     suspend fun pinnedMessages(conversationId: String): List<Message>
     suspend fun unpinMessage(messageId: String): Result<Unit> = Result.failure(UnsupportedOperationException("Explicit unpin unavailable"))
 
+    /** Own rejected intents remain recoverable even when this thread is unavailable. */
+    fun observeFailedThreadReplies(conversationId: String, rootId: String): Flow<List<OutboxEntry>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    suspend fun retryThreadReply(conversationId: String, rootId: String, clientId: String): Result<Unit> = Result.failure(UnsupportedOperationException("Thread recovery unavailable"))
+    suspend fun discardFailedThreadReply(conversationId: String, rootId: String, clientId: String): Result<Unit> = Result.failure(UnsupportedOperationException("Thread recovery unavailable"))
+
     /** GET /api/messages/{id}/thread?userId= → (parent, replies asc) - also upserts Room. */
     suspend fun loadThread(rootId: String): Pair<Message, List<Message>>
+
+    /** Explicit refusal survives reopening; transport failures never clear it. */
+    fun observeThreadAccessDenied(rootId: String): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
 
     /**
      * GET /api/conversations/{id}/messages?limit=&before= → (rows asc, hasMore).
      * Older page of the timeline; rows are upserted into Room (pagination merge).
      */
     suspend fun messagesPage(conversationId: String, before: String?, limit: Int = 40): Pair<List<Message>, Boolean>
+
+    /** Stable composite cursor: still works if the cached anchor expires or is purged. */
+    suspend fun messagesBefore(conversationId: String, beforeId: String, beforeCreatedAt: String, limit: Int = 40): Pair<List<Message>, Boolean> =
+        messagesPage(conversationId, beforeId, limit)
+
+
+    /** Cursor comes from the raw response, independently of rows retained after live-event reconciliation. */
+    suspend fun historyPage(conversationId: String, before: app.pulse.domain.sync.MessageHistoryCursor?, limit: Int = 40): app.pulse.domain.sync.MessageHistoryPage {
+        val (rows, more) = if (before == null) messagesPage(conversationId, null, limit)
+            else messagesBefore(conversationId, before.id, before.createdAt, limit)
+        return app.pulse.domain.sync.MessageHistoryPage.fromResponse(rows, rows, more)
+    }
 
     /** GET /api/conversations/{id}/messages?limit=100&q= - in-conversation search (hits upserted). */
     suspend fun searchInConversation(conversationId: String, query: String): List<Message>
@@ -656,10 +683,14 @@ interface PulseRepository {
     /**
      * POST /api/messages/{id}/viewed {userId} - consume a view-once photo.
      * The returned authoritative row is upserted (viewedAt stamp); other
-     * members learn it via the message:viewed relay. Failures are logged
-     * only - the gate tap can be retried.
+     * members learn it via the message:viewed relay. Legacy bookkeeping only;
+     * reveal callers must use consumeViewOnce and require its successful grant.
      */
     suspend fun markMessageViewed(messageId: String)
+
+    /** Only a newly granted server consumption permits rendering the returned photo. */
+    suspend fun consumeViewOnce(messageId: String): Result<Message> =
+        Result.failure(IllegalStateException("One-time access is not supported by this gateway."))
 
     /** POST /api/conversations/{id}/poll {senderId, question, options[]} → fresh poll row (upserted). */
     suspend fun createPoll(conversationId: String, question: String, options: List<String>): Result<Message>

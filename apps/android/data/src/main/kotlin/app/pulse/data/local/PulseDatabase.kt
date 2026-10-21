@@ -224,7 +224,7 @@ data class MessageEntity(
         // REM-A - reserved pulse:* keys ride payloadJson (schema v9 frozen);
         // pop them back out so the domain payload stays the clean wire blob.
         val (payloadClean, anon, anonAlias, expiresAt) = payloadPulseKeys(payloadJson)
-        return Message(
+        return app.pulse.domain.sync.mergeMessageState(null, Message(
             id = id, conversationId = conversationId, authorId = authorId,
             authorName = authorName, kind = Message.Kind.valueOf(kind), body = body,
             createdAt = createdAt, editedAt = editedAt, deletedAt = deletedAt,
@@ -251,7 +251,7 @@ data class MessageEntity(
             anon = anon,
             anonAlias = anonAlias,
             expiresAtEpochMs = expiresAt,
-        )
+        ))
     }
 
     companion object {
@@ -647,14 +647,14 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND pinnedAt IS NOT NULL ORDER BY pinnedAt ASC, id ASC")
     suspend fun pinned(conversationId: String): List<MessageEntity>
 
-    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || messages.threadRootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 
     /** Thread screen rehydration - replies asc from the Room cache. */
-    @Query("SELECT * FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
+    @Query("SELECT * FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeThread(rootId: String): Flow<List<MessageEntity>>
 
-    @Query("SELECT COUNT(*) FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)")
+    @Query("SELECT COUNT(*) FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)")
     suspend fun countByThread(rootId: String): Int
 
     /**
@@ -682,8 +682,29 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE id = :id")
     suspend fun byId(id: String): MessageEntity?
 
+    @Query("SELECT * FROM messages WHERE id IN (:ids)")
+    suspend fun byIds(ids: List<String>): List<MessageEntity>
+
+    /** All writers, including pending-delivery handoff, share monotonic privacy state. */
+    @androidx.room.Transaction
+    suspend fun upsertAll(items: List<MessageEntity>) {
+        if (items.isEmpty()) return
+        val current = items.map { it.id }.distinct().chunked(400).flatMap { byIds(it) }.associateBy { it.id }.toMutableMap()
+        val merged = items.map { incoming ->
+            val old = current[incoming.id]
+            val candidate = incoming.toDomain()
+            val safe = app.pulse.domain.sync.mergeMessageState(old?.toDomain(), candidate)
+            val row = if (safe == candidate && !safe.isDeleted) incoming.copy(viewOnce = safe.viewOnce) else MessageEntity.from(safe,
+                if (safe.isDeleted) null else if (safe.reactions == candidate.reactions) incoming.reactionsJson else old?.reactionsJson)
+            current[row.id] = row
+            row
+        }
+        replaceMerged(merged)
+    }
+
+    /** Implementation primitive. Call upsertAll so terminal state is never bypassed. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertAll(items: List<MessageEntity>)
+    suspend fun replaceMerged(items: List<MessageEntity>)
 
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun deleteById(id: String)
@@ -725,6 +746,14 @@ data class ThreadCountRow(val rootId: String, val cnt: Int)
 
 @Dao
 interface OutboxDao {
+    @Query("SELECT o.id, o.conversationId, o.clientId, o.content, o.kind, o.createdAt, o.attempts, o.failureReason, o.wirePayload, NULL AS uploadKey FROM outbox o JOIN messages m ON m.id = 'local_' || o.clientId " +
+        "WHERE o.conversationId = :room AND m.conversationId = :room AND m.authorId = :owner AND m.threadRootId = :rootId AND o.failureReason IS NOT NULL ORDER BY o.id ASC")
+    fun observeFailedThread(owner: String, room: String, rootId: String): Flow<List<OutboxEntity>>
+
+    @Query("DELETE FROM outbox WHERE clientId = :clientId AND conversationId = :room AND failureReason IS NOT NULL AND " +
+        "EXISTS (SELECT 1 FROM messages m WHERE m.id = 'local_' || outbox.clientId AND m.conversationId = :room AND m.authorId = :owner AND m.threadRootId = :rootId)")
+    suspend fun discardFailedThread(owner: String, room: String, rootId: String, clientId: String): Int
+
     @Query("SELECT * FROM outbox WHERE clientId = :clientId AND failureReason IS NULL")
     suspend fun pendingByClientId(clientId: String): OutboxEntity?
 
@@ -985,10 +1014,14 @@ interface Wave7Dao {
     @Query("SELECT * FROM wave7_cache WHERE `key` = :key")
     suspend fun get(key: String): Wave7CacheEntity?
 
+    @Query("SELECT * FROM wave7_cache WHERE `key` = :key")
+    fun observe(key: String): Flow<Wave7CacheEntity?>
+
     @Query("DELETE FROM wave7_cache WHERE `key` = :key")
     suspend fun delete(key: String)
 
-    @Query("DELETE FROM wave7_cache")
+    // Access refusals are durable metadata, not disposable feature snapshots.
+    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|'")
     suspend fun clearAll()
 }
 

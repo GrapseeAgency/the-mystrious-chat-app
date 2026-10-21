@@ -1,0 +1,30 @@
+import Foundation
+
+/// Navigation selects a live reply in this exact thread, not an index in partial history.
+enum PulseThreadNavigation {
+    static func target(in rows: [WireChatMessage], roomId: String, rootId: String, targetId: String, now: Date = Date()) -> WireChatMessage? {
+        rows.first {
+            guard $0.id == targetId, $0.conversationId == roomId, $0.parentId == rootId, $0.deletedAt == nil else { return false }
+            if let expires = $0.expiresAt { return PulseFormat.date(expires).map { $0 > now } ?? false }
+            return true
+        }
+    }
+
+    static func shouldFollowTail(nearTail: Bool, pendingTarget: Bool) -> Bool {
+        nearTail && !pendingTarget
+    }
+}
+
+/// MainActor owns this value in PulseSession. A superseded completion changes no access state.
+struct PulseThreadValidationFence {
+    private var tickets: [String: UUID] = [:]
+    mutating func begin(_ rootId: String) -> UUID {
+        let ticket = UUID()
+        tickets[rootId] = ticket
+        return ticket
+    }
+    func isCurrent(_ rootId: String, _ ticket: UUID) -> Bool { tickets[rootId] == ticket }
+    mutating func finish(_ rootId: String, _ ticket: UUID) {
+        if isCurrent(rootId, ticket) { tickets.removeValue(forKey: rootId) }
+    }
+}

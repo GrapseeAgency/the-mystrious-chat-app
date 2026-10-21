@@ -4,7 +4,7 @@ import Foundation
 enum PulseTimelineMerge {
     static func merge(_ existing: [WireChatMessage], incoming: [WireChatMessage], topicId: String?) -> [WireChatMessage] {
         var rows = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { _, newest in newest })
-        for row in incoming { rows[row.id] = row }
+        for row in incoming { rows[row.id] = PulseMessageMerge.merge(rows[row.id], incoming: row) }
         return rows.values.filter { row in
             row.parentId == nil && PulseRemediationLogic.isAlive(row.expiresAt) &&
                 (topicId == nil || row.topicId == topicId)

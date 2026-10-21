@@ -1,5 +1,7 @@
 package app.pulse.feature.chat
 
+import app.pulse.domain.sync.MessageHistoryCursor
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ensureActive
 import android.content.Context
 import android.media.MediaRecorder
@@ -52,6 +54,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -164,6 +167,7 @@ class ChatRoomViewModel @Inject constructor(
         val connected: Boolean? = null,
         val notice: RoomNotice? = null,
         val flashMessageId: String? = null,
+        val flashRevision: Long = 0,
         val searchOpen: Boolean = false,
         val searchResults: List<Message> = emptyList(),
         val searching: Boolean = false,
@@ -217,10 +221,14 @@ class ChatRoomViewModel @Inject constructor(
     private val _transcribingIds = MutableStateFlow<Set<String>>(emptySet())
     val transcribingIds: StateFlow<Set<String>> = _transcribingIds.asStateFlow()
 
+    /** Share one raw Room/expiry stream before filtering the main river. */
+    private val roomRows = repo.observeMessages(conversationId)
+        .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
     /** MAIN RIVER - thread replies (threadRootId != null) live on the ThreadScreen only. */
     val messages: StateFlow<List<Message>> =
         combine(
-            repo.observeMessages(conversationId),
+            roomRows,
             _activeTopicId,
         ) { rows, topicId ->
             // Topic views (Wave 2 §1 row 9): null = General = WHOLE room
@@ -390,17 +398,17 @@ class ChatRoomViewModel @Inject constructor(
     val conversations: StateFlow<List<Conversation>> = repo.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** "N replies ↳" chip counts - one batched Room query per river change, live. */
-    val replyCounts: StateFlow<Map<String, Int>> = messages
-        .map { rows ->
-            val parents = rows.filter { !it.id.startsWith(TEMP_MESSAGE_PREFIX) }.map { it.id }
-            repo.threadReplyCounts(parents)
-        }
+    /** Observe raw room rows: a reply-only change may leave the main river identical. */
+    val replyCounts: StateFlow<Map<String, Int>> = roomRows
+        .map { rows -> app.pulse.domain.sync.cachedThreadReplyCounts(rows) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
-    /** Jump target awaiting enough of the window to be loaded (search/pin/quote/global). */
-    private val _jumpTarget = MutableStateFlow<String?>(null)
-    val jumpTarget: StateFlow<String?> = _jumpTarget.asStateFlow()
+    data class ThreadJumpRequest(val rootId: String, val replyId: String, val revision: Long)
+    private val _threadJump = MutableStateFlow<ThreadJumpRequest?>(null)
+    val threadJump: StateFlow<ThreadJumpRequest?> = _threadJump.asStateFlow()
+    fun consumeThreadJump(request: ThreadJumpRequest) {
+        if (_threadJump.value == request) _threadJump.value = null
+    }
 
     private var typingJob: Job? = null
     private var draftSaveJob: Job? = null
@@ -409,7 +417,16 @@ class ChatRoomViewModel @Inject constructor(
     private var activeSearchQuery = ""
     private var pinsJob: Job? = null
     private var flashJob: Job? = null
-    private var jumpExpansionJob: Job? = null
+    private var historyJob: Job? = null
+    private var historyRevision = 0L
+    private var historyCursor: MessageHistoryCursor? = null
+
+    private fun cancelHistory() {
+        historyRevision++
+        historyJob?.cancel()
+        historyJob = null
+        _state.value = _state.value.copy(loading = false, loadingOlder = false)
+    }
 
     private var attachmentTask: Job? = null
     private var attachmentEpoch = 0L
@@ -427,7 +444,7 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch {
             // This Room stream includes messages cached by pin/search requests,
             // and emits at TTL deadlines even without any network activity.
-            repo.observeMessages(conversationId).collect { current ->
+            roomRows.collect { current ->
                 val now = System.currentTimeMillis()
                 _state.value = _state.value.copy(
                     pins = app.pulse.domain.sync.reconcileMessageSelection(_state.value.pins, current, now) { it.pinnedAt != null },
@@ -454,17 +471,12 @@ class ChatRoomViewModel @Inject constructor(
                 if (composerRevision == 0L && !server.isNullOrBlank()) _initialDraft.value = server
             }
         }
+        retry()
+        val initialHistoryTicket = historyRevision
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true)
-            runCatching { repo.messagesPage(conversationId, before = null, limit = 200) }
-                .onSuccess { (_, hasMore) ->
-                    _state.value = _state.value.copy(loading = false, hasMore = hasMore)
-                }
-                .onFailure { failure ->
-                    _state.value = _state.value.copy(loading = false, error = failure.message)
-                }
+            state.first { !it.loading }
             loadPins()
-            initialJumpMessageId?.takeIf { it.isNotBlank() }?.let { jumpTo(it) }
+            if (historyRevision == initialHistoryTicket) initialJumpMessageId?.takeIf { it.isNotBlank() }?.let { jumpTo(it) }
         }
         viewModelScope.launch {
             repo.observeConnected().collect { connected ->
@@ -585,7 +597,9 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     fun setReplyTo(message: Message?) {
-        _state.value = _state.value.copy(replyTo = message)
+        _state.value = _state.value.copy(replyTo = message?.let {
+            if (it.viewOnce) it.copy(body = "View-once message", imagePath = null) else it
+        })
     }
 
     fun notify(text: String, isError: Boolean = false) {
@@ -868,7 +882,9 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     fun react(messageId: String, emoji: String) {
-        viewModelScope.launch { repo.react(messageId, emoji) }
+        viewModelScope.launch {
+            repo.react(messageId, emoji).onFailure { notify(it.message ?: "Couldn't update reaction", isError = true) }
+        }
     }
 
     // ── R1-W2A - F-MS-24 sticker send + F-MS-23 effect send ──────────
@@ -903,106 +919,113 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     fun retry() {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            runCatching { repo.messagesPage(conversationId, before = null, limit = 200) }
-                .onSuccess { (_, hasMore) -> _state.value = _state.value.copy(loading = false, hasMore = hasMore) }
-                .onFailure { _state.value = _state.value.copy(loading = false, error = it.message) }
+        cancelHistory()
+        val ticket = historyRevision
+        _state.value = _state.value.copy(loading = true, error = null)
+        historyJob = viewModelScope.launch {
+            try {
+                val page = repo.historyPage(conversationId, before = null, limit = 200)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (historyRevision != ticket) return@launch
+                historyCursor = page.nextCursor
+                _state.value = _state.value.copy(loading = false, hasMore = page.hasMore)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                if (historyRevision == ticket) _state.value = _state.value.copy(loading = false, error = failure.message)
+            }
         }
     }
 
-    // ── pagination (spec row 2): before= cursor pages of 40 ────
-
-    /** Oldest REAL row (temps are echoes, never cursors). */
-    private fun oldestLoaded(): Message? = messages.value.firstOrNull { !it.id.startsWith(TEMP_MESSAGE_PREFIX) }
+    /** A raw page cursor survives pages containing only replies or other topics. */
+    private suspend fun earlierPage(): List<Message> {
+        // A sparse pin/search cache is not a consumed page. Start at the latest
+        // response if no server boundary has been established yet.
+        val cursor = historyCursor
+        val page = repo.historyPage(conversationId, before = cursor, limit = PAGE_SIZE)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val next = page.nextCursor
+        if (next != null && cursor != null && !next.precedes(cursor)) throw IllegalStateException("History returned a repeated page")
+        historyCursor = next ?: cursor
+        _state.value = _state.value.copy(hasMore = page.hasMore && next != null)
+        return page.messages
+    }
 
     fun loadOlder() {
-        val current = _state.value
-        if (current.loadingOlder || !current.hasMore) return
-        val cursor = oldestLoaded()?.createdAt ?: return
-        viewModelScope.launch {
-            _state.value = _state.value.copy(loadingOlder = true)
-            runCatching { repo.messagesPage(conversationId, before = cursor, limit = PAGE_SIZE) }
-                .onSuccess { (rows, more) ->
-                    _state.value = _state.value.copy(
-                        loadingOlder = false,
-                        hasMore = more && rows.isNotEmpty(),
-                    )
+        if (_state.value.loading || _state.value.loadingOlder || !_state.value.hasMore) return
+        val ticket = historyRevision
+        _state.value = _state.value.copy(loadingOlder = true)
+        historyJob = viewModelScope.launch {
+            try {
+                repeat(5) {
+                    val rows = earlierPage()
+                    if (!_state.value.hasMore || rows.any { it.threadRootId == null &&
+                            (_activeTopicId.value == null || it.topicId == _activeTopicId.value) &&
+                            (it.expiresAtEpochMs?.let { expiry -> expiry > System.currentTimeMillis() } != false) }) return@launch
                 }
-                .onFailure {
-                    _state.value = _state.value.copy(
-                        loadingOlder = false,
-                        notice = RoomNotice("Couldn't load older messages", isError = true),
-                    )
-                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (historyRevision == ticket) notify("Couldn't load older messages. Try again.", isError = true)
+            } finally {
+                if (historyRevision == ticket) _state.value = _state.value.copy(loadingOlder = false)
+            }
         }
     }
 
-    // ── jump + flash (search / pins / quotes / global hits) ────
-
+    // A jump owns its paging task. UI recompositions must not restart it.
     fun jumpTo(messageId: String) {
         if (messageId.isBlank()) return
-        if (messages.value.any { it.id == messageId }) {
-            flash(messageId)
-        } else {
-            _jumpTarget.value = messageId
-        }
-    }
-
-    fun consumeJumpTarget() {
-        _jumpTarget.value = null
-    }
-
-    /**
-     * Bounded window expansion (web parity ≤14 rounds): page older until the
-     * jump target surfaces or the history is honestly exhausted. Cancel-and-
-     * replace: a new target (or a racing loadOlder) never strands the gate.
-     */
-    fun expandForJump(messageId: String) {
-        // Jump surfaces (search/pins/quotes/saved) are whole-room - a topic
-        // filter would hide the target. Fall back to General first.
+        cancelHistory()
+        _threadJump.value = null
         _activeTopicId.value = null
-        jumpExpansionJob?.cancel()
-        jumpExpansionJob = viewModelScope.launch {
-            var found = false
+        val ticket = historyRevision
+        _state.value = _state.value.copy(loadingOlder = true)
+        historyJob = viewModelScope.launch {
             try {
+                var target = repo.observeMessages(conversationId).first().firstOrNull { it.id == messageId }
                 var rounds = 0
-                while (rounds < JUMP_MAX_ROUNDS && _state.value.hasMore) {
-                    if (messages.value.any { it.id == messageId }) {
-                        found = true
-                        break
-                    }
-                    val cursor = oldestLoaded()?.createdAt ?: break
-                    _state.value = _state.value.copy(loadingOlder = true)
-                    val pageResult = runCatching { repo.messagesPage(conversationId, before = cursor, limit = PAGE_SIZE) }
-                    if (pageResult.isFailure) {
-                        _state.value = _state.value.copy(loadingOlder = false)
-                        break
-                    }
-                    val (rows, more) = pageResult.getOrThrow()
-                    _state.value = _state.value.copy(loadingOlder = false, hasMore = more && rows.isNotEmpty())
-                    if (messages.value.any { it.id == messageId }) {
-                        found = true
-                        break
-                    }
-                    rounds += 1
+                // A cold jump can cancel the initial load. It must seed a page
+                // rather than interpreting the initial hasMore=false as exhaustion.
+                if (target == null && historyCursor == null) {
+                    target = earlierPage().firstOrNull { it.id == messageId }
+                    rounds++
                 }
+                while (target == null && _state.value.hasMore && rounds < JUMP_MAX_ROUNDS) {
+                    val page = earlierPage()
+                    target = page.firstOrNull { it.id == messageId }
+                    rounds++
+                }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (target == null || target.isDeleted || (target.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+                    notify("Couldn't reach that message in this chat's history", isError = true)
+                } else {
+                    val rootId = target.threadRootId
+                    if (rootId == null) flash(target.id)
+                    else {
+                        val (root, replies) = repo.loadThread(rootId)
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        if (!app.pulse.domain.sync.threadRootAvailable(root, conversationId, rootId) ||
+                            app.pulse.domain.sync.threadReplyTargetIndex(replies, root, target.id) == null) {
+                            throw IllegalStateException("Reply unavailable")
+                        }
+                        _threadJump.value = ThreadJumpRequest(root.id, target.id, ticket)
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (historyRevision == ticket) notify("Couldn't open that message. Try again.", isError = true)
             } finally {
-                _state.value = _state.value.copy(loadingOlder = false)
+                if (historyRevision == ticket) _state.value = _state.value.copy(loadingOlder = false)
             }
-            if (found) {
-                flash(messageId)
-            } else {
-                notify("Couldn't reach that message in this chat's history", isError = true)
-            }
-            _jumpTarget.value = null
         }
     }
 
     /** Amber ring pulse on one bubble (~1.5s), then it fades and clears. */
     fun flash(messageId: String) {
         flashJob?.cancel()
-        _state.value = _state.value.copy(flashMessageId = messageId)
+        _state.value = _state.value.copy(flashMessageId = messageId, flashRevision = _state.value.flashRevision + 1)
         flashJob = viewModelScope.launch {
             delay(1_600)
             if (_state.value.flashMessageId == messageId) {
@@ -1385,9 +1408,13 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── Wave 2: view-once consumption (spec §1 rows 6/7) ───────────────
 
-    /** Fire-and-forget POST /viewed - the lightbox opens WITHOUT waiting on it. */
-    fun consumeViewOnce(message: Message) {
-        viewModelScope.launch { repo.markMessageViewed(message.id) }
+    /** Render only after this request receives a one-time grant. */
+    suspend fun consumeViewOnce(message: Message, expectedViewerId: String?): Message? {
+        val bound = repo.boundToCurrentAccount()
+        if (expectedViewerId == null || bound.viewerId != expectedViewerId || message.conversationId != conversationId) return null
+        val granted = bound.consumeViewOnce(message.id)
+            .onFailure { notify(it.message ?: "Couldn't open this photo", isError = true) }.getOrNull()
+        return granted.takeIf { bound.viewerId == expectedViewerId && repo.viewerId == expectedViewerId }
     }
 
     // ── Wave 2: polls (spec §1 rows 2/3/4) ─────────────────────────────
@@ -1432,6 +1459,8 @@ class ChatRoomViewModel @Inject constructor(
      * via the Room flow - improvement over the web 3.5s cache poll).
      */
     fun setActiveTopic(topicId: String?) {
+        cancelHistory()
+        _threadJump.value = null
         _activeTopicId.value = topicId
         if (topicId != null) {
             viewModelScope.launch { runCatching { repo.refreshMessages(conversationId, topicId) } }

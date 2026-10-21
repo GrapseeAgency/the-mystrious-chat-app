@@ -175,10 +175,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.CoroutineScope
+import app.pulse.domain.model.threadDraftKey
+import app.pulse.domain.model.isThreadDraftKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.emitAll
 import app.pulse.domain.sync.withSearchHitExpiry
 import kotlinx.coroutines.flow.Flow
@@ -188,6 +191,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -369,7 +373,17 @@ class PulseRepositoryImpl constructor(
     override suspend fun retryOutboxEntry(clientId: String): Result<Unit> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in to the original account"))
         return try {
-            if (outboxDao.retryFailed(clientId, owner) == 0) {
+            val retried = database.withTransaction {
+                val echo = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+                echo?.threadRootId?.let { rootId ->
+                    check(!threadIsDenied(rootId) && app.pulse.domain.sync.threadRootAvailable(
+                        messageDao.byId(rootId)?.toDomain(), echo.conversationId, rootId)) {
+                        "Reopen this thread to check access. Your saved reply is kept."
+                    }
+                }
+                outboxDao.retryFailed(clientId, owner)
+            }
+            if (retried == 0) {
                 Result.failure(IllegalStateException("This saved message is no longer available for retry"))
             } else {
                 scope.launch {
@@ -405,6 +419,7 @@ class PulseRepositoryImpl constructor(
                 }
                 revisions.forEach { (room, revision) ->
                     if (draftVersions[room]?.compareAndSet(revision, revision + 1) == true) {
+                        threadDraftBuffers.computeIfPresent(room) { _, buffered -> buffered.takeIf { it.first > revision } }
                         scope.launch { mirrorDraft(room, "", revision + 1) }
                     }
                 }
@@ -618,12 +633,13 @@ class PulseRepositoryImpl constructor(
 
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
         val dto = signal.dto ?: return
-        val message = dto.toDomain()
-        messageCacheMutex.withLock {
+        val message = messageCacheMutex.withLock {
+            val message = dto.toDomain()
             messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
             // Persist tombstones too; an event-only deletion resurrects after restart.
             messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
             messageCacheChanges.value = messageEventClock.get()
+            checkNotNull(messageDao.byId(message.id)).toDomain()
         }
         if (signal.event == app.pulse.protocol.SocketEvents.MESSAGE_DELETED) {
             eventsBus.tryEmit(
@@ -643,10 +659,8 @@ class PulseRepositoryImpl constructor(
     private suspend fun cacheFetchedMessagesLocked(rows: List<Message>, watermark: Long): List<Message> {
         val fresh = rows.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
         messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        return rows.mapNotNull { row ->
-            if ((messageEventRevisions[row.id] ?: 0L) > watermark) messageDao.byId(row.id)?.toDomain()
-            else row
-        }
+        val stored = rows.map { it.id }.distinct().chunked(400).flatMap { messageDao.byIds(it) }.associateBy { it.id }
+        return rows.mapNotNull { stored[it.id]?.toDomain() }
     }
 
     private var refreshScheduled = false
@@ -858,7 +872,7 @@ class PulseRepositoryImpl constructor(
         if (viewerId.isNullOrBlank()) {
             return Result.failure(IllegalStateException("No identity - complete onboarding first."))
         }
-        if (draftToken != null && (draftToken.ownerId != viewerId || draftToken.conversationId != conversationId)) {
+        if (draftToken != null && !draftToken.owns(conversationId, viewerId, parentId)) {
             return Result.failure(IllegalStateException("The composer account changed; nothing was saved"))
         }
         val mine = Message(
@@ -1011,7 +1025,7 @@ class PulseRepositoryImpl constructor(
         // then either reconciles with the real row, rides the outbox, or is
         // retracted on a definitive failure.
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
-        if (draftToken != null && (draftToken.ownerId != owner || draftToken.conversationId != conversationId)) {
+        if (draftToken != null && !draftToken.owns(conversationId, owner, parentId)) {
             return Result.failure(IllegalStateException("The composer account changed; nothing was queued"))
         }
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
@@ -1030,6 +1044,7 @@ class PulseRepositoryImpl constructor(
             topicId = if (parentId == null) topicId else null,
         )
         persistComposerSend(draftToken) {
+            check(parentId == null || !threadIsDenied(parentId)) { "This thread is unavailable. Your draft is still saved." }
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
             outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
@@ -1080,7 +1095,7 @@ class PulseRepositoryImpl constructor(
                 ?: return Result.failure(IllegalArgumentException("Message payload must be a JSON object"))
         }
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in before sending"))
-        if (draftToken != null && (draftToken.ownerId != owner || draftToken.conversationId != conversationId)) {
+        if (draftToken != null && !draftToken.owns(conversationId, owner, parentId)) {
             return Result.failure(IllegalStateException("The composer account changed; nothing was queued"))
         }
         val clientId = java.util.UUID.randomUUID().toString().replace("-", "")
@@ -1103,6 +1118,7 @@ class PulseRepositoryImpl constructor(
             anonAlias = anonAliasPreview.takeIf { anon },
         )
         persistComposerSend(draftToken) {
+            check(parentId == null || !threadIsDenied(parentId)) { "This thread is unavailable. Your draft is still saved." }
             messageDao.upsertAll(listOf(MessageEntity.from(temp.copy(payload = payload)).copy(kind = if (kind == "audio") "VOICE" else kind.uppercase(java.util.Locale.ROOT))))
             outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
@@ -1131,15 +1147,18 @@ class PulseRepositoryImpl constructor(
             // Cancellation after SQLite commit must not skip the in-memory fence:
             // old journal tasks intentionally outlive the composing UI.
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                val counter = token?.let { draftVersions[it.conversationId] }
+                val counter = token?.let { draftVersions[it.storageKey] }
                 val consume = token != null && counter?.get() == token.revision
                 database.withTransaction {
                     write()
-                    if (consume) draftDao.upsert(DraftEntity(checkNotNull(token).conversationId, "", java.time.OffsetDateTime.now().toString()))
+                    if (consume) draftDao.upsert(DraftEntity(checkNotNull(token).storageKey, "", java.time.OffsetDateTime.now().toString()))
                 }
                 if (consume) {
                     val consumed = checkNotNull(token)
-                    if (counter?.compareAndSet(consumed.revision, consumed.revision + 1) == true) {
+                    threadDraftBuffers.computeIfPresent(consumed.storageKey) { _, buffered ->
+                        buffered.takeIf { it.first > consumed.revision }
+                    }
+                    if (counter?.compareAndSet(consumed.revision, consumed.revision + 1) == true && consumed.parentId == null) {
                         scope.launch { mirrorDraft(consumed.conversationId, "", consumed.revision + 1) }
                     }
                 }
@@ -1166,6 +1185,11 @@ class PulseRepositoryImpl constructor(
                 },
                 conversationId = temp.conversationId,
             ) {
+                if (temp.threadRootId?.let { threadIsDenied(it) } == true) {
+                    val reason = "Thread access was refused. Reopen the thread before retrying this saved reply."
+                    dropOutboxEntry(clientId, reason)
+                    return@tryImmediate Result.failure<SendReceipt>(IllegalStateException(reason))
+                }
                 when (val response = send()) {
                     is PulseResult.Success -> {
                         val receipt = response.value.toReceipt()
@@ -1420,8 +1444,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun editMessage(messageId: String, content: String): Result<Message> =
         when (val r = api.editMessage(messageId, viewerId ?: "", content)) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
-                upsertMessage(message)
+                val message = upsertMessage(r.value.toDomain())
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -1430,8 +1453,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun toggleMessagePin(messageId: String): Result<Message> =
         when (val r = api.toggleMessagePin(messageId, viewerId ?: "")) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
-                upsertMessage(message)
+                val message = upsertMessage(r.value.toDomain())
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -1492,33 +1514,148 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
-        val watermark = messageEventClock.get()
-        val page = when (val r = api.thread(rootId, viewerId ?: "")) {
-            is PulseResult.Success -> r.value
-            is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+    override fun observeFailedThreadReplies(conversationId: String, rootId: String): Flow<List<OutboxEntry>> {
+        val owner = viewerId ?: return kotlinx.coroutines.flow.flowOf(emptyList())
+        return outboxDao.observeFailedThread(owner, conversationId, rootId).map { rows -> rows.map { it.toEntry() } }
+    }
+
+    override suspend fun retryThreadReply(conversationId: String, rootId: String, clientId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Original account is unavailable"))
+        return try {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                database.withTransaction {
+                    check(!threadIsDenied(rootId)) { "This thread is unavailable. Your reply is still saved." }
+                    val root = messageDao.byId(rootId)?.toDomain()
+                    check(app.pulse.domain.sync.threadRootAvailable(root, conversationId, rootId)) { "This thread is unavailable. Your reply is still saved." }
+                    val echo = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+                    check(echo != null && echo.authorId == owner && echo.conversationId == conversationId && echo.threadRootId == rootId) { "This reply does not belong to this thread" }
+                    check(outboxDao.retryFailed(clientId, owner) == 1) { "This reply is no longer awaiting recovery" }
+                }
+                // Keep the original clientId, envelope and upload receipt. Never create another send.
+                scope.launch {
+                    try {
+                        flushOutbox()
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Log.w(TAG, "Thread reply remains queued", error)
+                        scheduleSelfHeal()
+                    }
+                }
+            }
+            Result.success(Unit)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
         }
-        val parent = page.parent?.toDomain() ?: throw IllegalStateException("thread parent missing")
-        val replies = page.replies.map { it.toDomain() } // wire order: createdAt asc
-        // Upsert both so observeThread(rootId) rehydrates the sheet offline
-        // and realtime reply appends merge with this window.
-        val merged = cacheFetchedMessages(listOf(parent) + replies, watermark)
-        val currentParent = merged.firstOrNull { it.id == parent.id }
-            ?: throw IllegalStateException("Thread parent is no longer available")
-        return currentParent to merged.filter { it.id != parent.id }
+    }
+
+    override suspend fun discardFailedThreadReply(conversationId: String, rootId: String, clientId: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("Original account is unavailable"))
+        return try {
+            database.withTransaction {
+                // A stale Discard tap must not remove a message already queued for retry.
+                check(outboxDao.discardFailedThread(owner, conversationId, rootId, clientId) == 1) { "This saved reply changed; nothing was discarded" }
+                messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+            }
+            Result.success(Unit)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+    }
+
+    private val threadValidationFence = app.pulse.domain.sync.ThreadValidationFence()
+    private val deniedThreads = MutableStateFlow<Set<String>>(emptySet())
+
+    override fun observeThreadAccessDenied(rootId: String): Flow<Boolean> = kotlinx.coroutines.flow.combine(
+        wave7Dao.observe(app.pulse.domain.sync.threadDenialKey(rootId)), deniedThreads,
+    ) { persisted, memory -> persisted != null || rootId in memory }.distinctUntilChanged()
+
+    private suspend fun threadIsDenied(rootId: String): Boolean = rootId in deniedThreads.value ||
+        wave7Dao.get(app.pulse.domain.sync.threadDenialKey(rootId)) != null
+
+    override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
+        val ticket = messageCacheMutex.withLock { threadValidationFence.begin(rootId) }
+        val watermark = messageEventClock.get()
+        try {
+            val page = when (val r = api.thread(rootId, viewerId ?: "")) {
+                is PulseResult.Success -> r.value
+                is PulseResult.Failure -> throw apiExceptionOf(r)
+            }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            return messageCacheMutex.withLock {
+                if (!threadValidationFence.isCurrent(rootId, ticket)) throw PulseApiException("CONFLICT", "A newer thread check superseded this one. Try again.", 409)
+                val parent = page.parent?.toDomain() ?: throw IllegalStateException("Thread parent missing")
+                if (parent.id != rootId || parent.threadRootId != null) throw IllegalStateException("Unexpected thread parent")
+                val known = messageDao.byId(rootId)
+                check(known == null || known.conversationId == parent.conversationId) { "Unexpected thread room" }
+                val accepted = database.withTransaction {
+                    val raw = listOf(parent) + page.replies.map { it.toDomain() }.filter {
+                        it.threadRootId == rootId && it.conversationId == parent.conversationId
+                    }
+                    val merged = cacheFetchedMessagesLocked(raw, watermark)
+                    val currentParent = merged.firstOrNull { it.id == rootId }
+                    if (!app.pulse.domain.sync.threadRootAvailable(currentParent, parent.conversationId, rootId)) {
+                        throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
+                    }
+                    wave7Dao.delete(app.pulse.domain.sync.threadDenialKey(rootId))
+                    checkNotNull(currentParent) to merged.filter { it.threadRootId == rootId }
+                }
+                deniedThreads.value = deniedThreads.value - rootId
+                accepted
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (app.pulse.domain.sync.threadAccessDenied((error as? PulseApiException)?.status)) {
+                // Navigation cancellation must not forget an explicit refusal already received.
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    messageCacheMutex.withLock {
+                        if (threadValidationFence.isCurrent(rootId, ticket)) {
+                            deniedThreads.value = deniedThreads.value + rootId
+                            try {
+                                wave7Dao.upsert(Wave7CacheEntity(app.pulse.domain.sync.threadDenialKey(rootId), "denied", System.currentTimeMillis()))
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (storage: Exception) {
+                                Log.w(TAG, "Thread refusal could not be persisted", storage)
+                            }
+                        }
+                    }
+                }
+            }
+            throw error
+        } finally { threadValidationFence.finish(rootId, ticket) }
     }
 
     override suspend fun messagesPage(conversationId: String, before: String?, limit: Int): Pair<List<Message>, Boolean> {
-        val watermark = messageEventClock.get()
         val anchor = before?.let { messageDao.byId(it)?.takeIf { row -> row.conversationId == conversationId }
             ?: messageDao.firstAtTimestamp(conversationId, it) }
-        val page = when (val r = api.messages(conversationId, limit, anchor?.createdAt ?: before, beforeId = anchor?.id)) {
+        return fetchMessagePage(conversationId, anchor?.createdAt ?: before, anchor?.id, limit)
+    }
+
+    override suspend fun messagesBefore(conversationId: String, beforeId: String, beforeCreatedAt: String, limit: Int): Pair<List<Message>, Boolean> =
+        fetchMessagePage(conversationId, beforeCreatedAt, beforeId, limit)
+
+    override suspend fun historyPage(conversationId: String, before: app.pulse.domain.sync.MessageHistoryCursor?, limit: Int): app.pulse.domain.sync.MessageHistoryPage =
+        fetchHistoryPage(conversationId, before?.createdAt, before?.id, limit)
+
+    private suspend fun fetchMessagePage(conversationId: String, before: String?, beforeId: String?, limit: Int): Pair<List<Message>, Boolean> {
+        val page = fetchHistoryPage(conversationId, before, beforeId, limit)
+        return page.messages to page.hasMore
+    }
+
+    private suspend fun fetchHistoryPage(conversationId: String, before: String?, beforeId: String?, limit: Int): app.pulse.domain.sync.MessageHistoryPage {
+        val watermark = messageEventClock.get()
+        val page = when (val r = api.messages(conversationId, limit, before, beforeId = beforeId)) {
             is PulseResult.Success -> r.value
-            is PulseResult.Failure -> throw IllegalStateException("${r.kind}: ${r.message}")
+            is PulseResult.Failure -> throw apiExceptionOf(r)
         }
-        val rows = page.messages.map { it.toDomain() } // wire order: asc
-        // Pagination merge = plain upserts; loaded window grows in Room.
-        return cacheFetchedMessages(rows, watermark) to page.hasMore
+        val raw = page.messages.map { it.toDomain() }
+        return app.pulse.domain.sync.MessageHistoryPage.fromResponse(raw, cacheFetchedMessages(raw, watermark), page.hasMore)
     }
 
     override suspend fun searchInConversation(conversationId: String, query: String): List<Message> {
@@ -1554,6 +1691,18 @@ class PulseRepositoryImpl constructor(
      * media stays online-only per spec §1.2.
      */
     override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> {
+        try {
+            if (source.threadRootId?.let { threadIsDenied(it) } == true) {
+                return Result.failure(IllegalStateException("This thread is unavailable. Nothing was forwarded."))
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            return Result.failure(error)
+        }
+        if (source.viewOnce || source.isDeleted || source.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
+            return Result.failure(IllegalStateException("This message can't be forwarded."))
+        }
         val clientId = java.util.UUID.randomUUID().toString()
         val textOnly = source.kind == Message.Kind.TEXT &&
             source.imagePath == null && source.audioPath == null && source.filePath == null
@@ -1915,6 +2064,10 @@ class PulseRepositoryImpl constructor(
             stored == null || stored.authorId != owner || stored.conversationId != entry.conversationId
         ) return Result.failure(OutboxDeliveryException(OutboxFailureClass.RETRY, "Sign in to the message's original account to send it"))
         var temp = checkNotNull(stored)
+        if (temp.threadRootId?.let { threadIsDenied(it) } == true) {
+            return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP,
+                "Thread access was refused. Reopen the thread before retrying this saved reply."))
+        }
         if (current.uploadKey != null) {
             if (current.kind !in setOf("image", "audio", "file")) return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Saved upload kind is invalid"))
             val bytes = try { withContext(Dispatchers.IO) { attachmentFiles().read(current.uploadKey) } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, error.message ?: "Saved attachment is unavailable")) }
@@ -1958,6 +2111,11 @@ class PulseRepositoryImpl constructor(
         // Do not start a POST for an intent observed to have been removed.
         if (outboxDao.pendingByClientId(entry.clientId) == null) {
             return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Message was discarded before sending"))
+        }
+        // Access can be revoked while an attachment upload/receipt write is suspended.
+        if (temp.threadRootId?.let { threadIsDenied(it) } == true) {
+            return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP,
+                "Thread access was refused. The uploaded receipt and saved reply are kept for explicit retry."))
         }
         return when (val r = api.sendMessage(
             entry.conversationId, owner, entry.content, clientId = entry.clientId,
@@ -2040,6 +2198,55 @@ class PulseRepositoryImpl constructor(
     // runs in this scope. Every write remains bound to this account's database.
     private val draftWriteScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    // Front buffer makes a rapid reopen see the last keystroke before Room commits.
+    private val threadDraftBuffers = draftWrites.threadBuffers
+    private val threadDraftFailures = draftWrites.threadFailures
+
+    override fun stageThreadDraft(conversationId: String, rootId: String, text: String): app.pulse.domain.model.ComposerDraftToken? {
+        val owner = viewerId ?: return null
+        val key = threadDraftKey(conversationId, rootId)
+        val revision = nextDraftVersion(key)
+        val snapshot = revision to text.take(MAX_DRAFT)
+        threadDraftBuffers.compute(key) { _, previous -> if (previous != null && previous.first > revision) previous else snapshot }
+        threadDraftFailures.update { if ((it[key] ?: -1L) <= revision) it - key else it }
+        draftWriteScope.launch {
+            try {
+                writeLocalDraft(key, snapshot.second, revision)
+                threadDraftBuffers.remove(key, snapshot)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(TAG, "Thread draft could not be saved", error)
+                if (draftVersions[key]?.get() == revision) threadDraftFailures.update { it + (key to revision) }
+            }
+        }
+        return app.pulse.domain.model.ComposerDraftToken(conversationId, owner, revision, rootId)
+    }
+
+    override suspend fun loadThreadDraft(conversationId: String, rootId: String): String? = draftMutex.withLock {
+        val key = threadDraftKey(conversationId, rootId)
+        threadDraftBuffers[key]?.second ?: draftDao.get(key)?.text
+    }
+
+    override fun observeThreadDraft(conversationId: String, rootId: String): Flow<app.pulse.domain.model.ThreadDraftSnapshot> {
+        val key = threadDraftKey(conversationId, rootId)
+        return kotlinx.coroutines.flow.combine(draftDao.observe(key), threadDraftFailures) { _, failures ->
+            draftMutex.withLock {
+                val revision = draftVersions[key]?.get() ?: 0L
+                val buffered = threadDraftBuffers[key]
+                // Re-read under the handoff lock: the triggering Room emission may be older.
+                if (buffered != null) app.pulse.domain.model.ThreadDraftSnapshot(buffered.second, buffered.first, failures[key] == buffered.first)
+                else app.pulse.domain.model.ThreadDraftSnapshot(draftDao.get(key)?.text, revision, failures[key] == revision)
+            }
+        }
+    }
+
+    override fun captureThreadDraftToken(conversationId: String, rootId: String): app.pulse.domain.model.ComposerDraftToken? {
+        val owner = viewerId ?: return null
+        val counter = draftVersions.getOrPut(threadDraftKey(conversationId, rootId)) { java.util.concurrent.atomic.AtomicLong() }
+        return app.pulse.domain.model.ComposerDraftToken(conversationId, owner, counter.get(), rootId)
+    }
+
     private fun nextDraftVersion(id: String): Long = draftVersions
         .getOrPut(id) { java.util.concurrent.atomic.AtomicLong() }.incrementAndGet()
 
@@ -2060,6 +2267,7 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun saveDraft(conversationId: String, text: String) {
         val revision = nextDraftVersion(conversationId)
+        threadDraftBuffers.computeIfPresent(conversationId) { _, buffered -> buffered.takeIf { it.first > revision } }
         if (writeLocalDraft(conversationId, text, revision)) mirrorDraft(conversationId, text, revision)
     }
 
@@ -2071,6 +2279,7 @@ class PulseRepositoryImpl constructor(
     }
 
     private suspend fun mirrorDraft(conversationId: String, text: String, revision: Long) = draftServerMutex.withLock {
+        if (isThreadDraftKey(conversationId)) return@withLock // No server thread-draft API exists.
         // Serialize attempted mirrors; skip revisions replaced before the request.
         // This is best effort, not server-side cross-device conflict resolution.
         if (!app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId) && draftVersions[conversationId]?.get() == revision) {
@@ -2113,32 +2322,26 @@ class PulseRepositoryImpl constructor(
         socket.emitTyping(recipients = recipients, conversationId, viewerId ?: "", userName = userName, isTyping = typing)
     }
 
+    private val reactionActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     override suspend fun react(messageId: String, emoji: String): Result<Unit> {
-        // Optimistic local toggle (viewer-scoped), then server truth via refetch.
-        val row = messageDao.byId(messageId)
-        if (row != null && viewerId != null) {
-            val me = viewerId!!
-            val current = row.toDomain()
-            val mine = current.reactions.filter { it.userId == me }
-            val hadSame = mine.any { it.emoji == emoji }
-            val updated = if (hadSame) {
-                current.reactions.filterNot { it.userId == me && it.emoji == emoji }
-            } else {
-                current.reactions + Reaction(emoji, me)
+        if (!reactionActions.add(messageId)) return Result.failure(IllegalStateException("A reaction is still updating."))
+        try {
+            val current = messageDao.byId(messageId)?.toDomain()
+            if (current != null && (current.isDeleted || current.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+                return Result.failure(IllegalStateException("This message is no longer available."))
             }
-            messageDao.upsertAll(
-                listOf(MessageEntity.from(current.copy(reactions = updated), reactionsJsonOf(current.copy(reactions = updated)))),
-            )
-        }
-        val result = api.react(messageId, viewerId ?: "", emoji)
-        if (result is PulseResult.Success && row != null) {
-            scope.launch {
-                delay(500)
-                runCatching { refreshMessages(row.conversationId) }
-                    .onFailure { Log.w(TAG, "react refetch failed", it) }
+            // Do not leave an invented optimistic chip after rejection/offline failure.
+            // Apply the returned row; an old message may be outside any room refresh page.
+            return when (val result = api.react(messageId, viewerId ?: "", emoji)) {
+                is PulseResult.Success -> { upsertMessage(result.value.toDomain()); Result.success(Unit) }
+                is PulseResult.Failure -> Result.failure(apiExceptionOf(result))
             }
-        }
-        return result.toResult()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            return Result.failure(error)
+        } finally { reactionActions.remove(messageId) }
     }
 
     /**
@@ -2501,6 +2704,7 @@ class PulseRepositoryImpl constructor(
         messageEventRevisions[m.id] = messageEventClock.incrementAndGet()
         messageDao.upsertAll(listOf(MessageEntity.from(m, reactionsJsonOf(m))))
         messageCacheChanges.value = messageEventClock.get()
+        checkNotNull(messageDao.byId(m.id)).toDomain()
     }
 
     // Wave 2 messaging depth (spec §0/§1 - routes verified live)
@@ -2539,11 +2743,46 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
+    private val viewOnceActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     override suspend fun markMessageViewed(messageId: String) {
-        when (val r = api.markViewed(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> upsertMessage(r.value.toDomain())
-            is PulseResult.Failure -> Log.w(TAG, "markViewed failed: ${r.kind}: ${r.message}")
-        }
+        consumeViewOnce(messageId).onFailure { Log.w(TAG, "One-time access wasn't granted") }
+    }
+
+    override suspend fun consumeViewOnce(messageId: String): Result<Message> {
+        if (!viewOnceActions.add(messageId)) return Result.failure(IllegalStateException("This photo is already opening."))
+        try {
+            val owner = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
+            val requested = messageDao.byId(messageId)?.toDomain()
+                ?: return Result.failure(IllegalStateException("This photo is unavailable."))
+            if (requested.threadRootId?.let { threadIsDenied(it) } == true) {
+                return Result.failure(IllegalStateException("Reopen this thread to check access before opening the photo."))
+            }
+            if (!app.pulse.domain.sync.canRequestViewOnce(requested, owner)) {
+                return Result.failure(IllegalStateException("This photo is no longer available to open."))
+            }
+            return when (val response = api.markViewed(messageId, owner)) {
+                is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+                is PulseResult.Success -> {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    check(viewerId == owner) { "The account changed." }
+                    val returned = response.value.message.toDomain()
+                    check(returned.id == messageId && returned.conversationId == requested.conversationId) { "Unexpected photo acknowledgement." }
+                    val retained = upsertMessage(returned)
+                    val parentId = retained.threadRootId
+                    val rootLive = parentId == null || (!threadIsDenied(parentId) && app.pulse.domain.sync.threadRootAvailable(
+                        messageDao.byId(parentId)?.toDomain(), retained.conversationId, parentId))
+                    if (rootLive && (response.value.message.viewedBy as? kotlinx.serialization.json.JsonPrimitive)?.content == owner &&
+                        app.pulse.domain.sync.acceptsViewOnceGrant(response.value.consumed, requested, retained, owner)) {
+                        Result.success(retained)
+                    } else Result.failure(IllegalStateException("One-time access wasn't granted. The photo may already have been opened."))
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            return Result.failure(error)
+        } finally { viewOnceActions.remove(messageId) }
     }
 
     override suspend fun createPoll(conversationId: String, question: String, options: List<String>): Result<Message> =
@@ -2560,8 +2799,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun votePoll(pollId: String, optionId: String): Result<Message> =
         when (val r = api.votePoll(pollId, viewerId ?: "", optionId)) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
-                upsertMessage(message)
+                val message = upsertMessage(r.value.toDomain())
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -2570,8 +2808,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun closePoll(pollId: String): Result<Message> =
         when (val r = api.closePoll(pollId, viewerId ?: "")) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
-                upsertMessage(message)
+                val message = upsertMessage(r.value.toDomain())
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
