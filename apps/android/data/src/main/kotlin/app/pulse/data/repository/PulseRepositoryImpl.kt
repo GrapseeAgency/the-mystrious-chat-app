@@ -3015,6 +3015,8 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun emitGroupCall(signal: app.pulse.domain.model.GroupCallSignalOut) {
+        val sender = if (signal.event == app.pulse.protocol.GroupCallEvents.JOIN) signal.user?.id else signal.from
+        check(viewerId != null && sender == viewerId && socket.isJoined) { "Realtime is not ready for this group call." }
         when (signal.event) {
             app.pulse.protocol.GroupCallEvents.JOIN -> socket.emitGroupCallJoin(
                 signal.conversationId,

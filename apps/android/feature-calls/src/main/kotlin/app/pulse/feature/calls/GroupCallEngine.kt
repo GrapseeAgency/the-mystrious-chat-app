@@ -20,6 +20,7 @@ import app.pulse.protocol.GroupCallMesh
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -88,6 +89,7 @@ class GroupCallEngine @Inject constructor(
         val caller: GroupCallMember,
         val kind: CallKind,
         val title: String,
+        val receivedAtMs: Long = System.currentTimeMillis(),
     )
 
     /** Immutable UI snapshot - the single thing the group call overlay renders. */
@@ -156,8 +158,27 @@ class GroupCallEngine @Inject constructor(
     @Volatile private var joinIntent: Boolean = false
     @Volatile private var pendingRing: Ring? = null
     @Volatile private var currentCallId: String = ""
-    @Volatile private var relayConnected: Boolean = PulseEndpoints.isConfigured
+    @Volatile private var relayConnected: Boolean = false
     private var probeJob: Job? = null
+    private var generation = 0L
+    private var probeRevision = 0L
+    private var joinTask: Job? = null
+    private var ringTask: Job? = null
+    private var callRepository: PulseRepository? = null
+    private var ringAfterAdmission = false
+    private var joinSentAtMs = 0L
+    private var ownsForegroundService = false
+    private val peerObservers = HashMap<String, GroupPeerObserver>()
+    private val negotiating = HashSet<String>()
+    private val localSdpSent = HashSet<String>()
+    private val pendingLocalIce = HashMap<String, MutableList<GroupCallSignalOut>>()
+
+    private fun ownsCall(ticket: Long): Boolean = generation == ticket && meId.isNotBlank() &&
+        repo.viewerId == meId && callRepository?.viewerId == meId &&
+        phase in setOf(UiPhase.JOINING, UiPhase.ACTIVE)
+
+    private fun ownsPeer(ticket: Long, peerId: String, pc: PeerConnection): Boolean =
+        ownsCall(ticket) && peers[peerId] === pc
 
     // WebRTC handles
     private var factory: PeerConnectionFactory? = null
@@ -174,6 +195,9 @@ class GroupCallEngine @Inject constructor(
     private val audio = CallAudioManager(context)
 
     private var started = false
+    val openConversationId: String get() = activeConversationId
+
+    init { oneToOne.groupCallBusy = { phase == UiPhase.JOINING || phase == UiPhase.ACTIVE } }
 
     // lifecycle
 
@@ -212,6 +236,9 @@ class GroupCallEngine @Inject constructor(
 
     /** The shell tells the engine which conversation is OPEN (room open/close). */
     fun setActiveConversation(conversationId: String?, title: String? = null) {
+        if (activeConversationId == conversationId.orEmpty()) { activeTitle = title.orEmpty(); return }
+        probeRevision++
+        _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false, ongoingMembers = emptyList())
         activeConversationId = conversationId.orEmpty()
         activeTitle = title.orEmpty()
         probeJob?.cancel()
@@ -229,7 +256,18 @@ class GroupCallEngine @Inject constructor(
     }
 
     fun setIdentity(id: String?, name: String?, color: String?) {
-        meId = id.orEmpty()
+        val next = id.orEmpty()
+        if (meId != next) {
+            teardownMedia()
+            probeRevision++
+            probeJob?.cancel()
+            activeConversationId = ""
+            activeTitle = ""
+            pendingRing = null
+            phase = UiPhase.IDLE
+            _snapshot.value = Snapshot(meId = next)
+        }
+        meId = next
         meName = name?.takeIf { it.isNotBlank() } ?: "Pulse user"
         meColor = color?.takeIf { it.isNotBlank() } ?: "emerald"
         _snapshot.value = _snapshot.value.copy(meId = meId)
@@ -243,8 +281,17 @@ class GroupCallEngine @Inject constructor(
      */
     private suspend fun probeOngoing(conversationId: String) {
         if (phase != UiPhase.IDLE || joinedConvId != null) return
-        val probe = runCatching { repo.probeGroupCallState(conversationId) }.getOrNull()?.getOrNull() ?: return
-        if (phase != UiPhase.IDLE || joinedConvId != null) return
+        val owner = meId
+        val revision = probeRevision
+        val target = repo.boundToCurrentAccount()
+        if (target.viewerId != owner || owner.isBlank()) return
+        val probe = try {
+            target.probeGroupCallState(conversationId).getOrNull()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) { null } ?: return
+        if (phase != UiPhase.IDLE || joinedConvId != null || activeConversationId != conversationId ||
+            meId != owner || repo.viewerId != owner || probeRevision != revision) return
         val roster = probe.members.filter { it.id.isNotBlank() }
         when {
             roster.isEmpty() ->
@@ -261,6 +308,14 @@ class GroupCallEngine @Inject constructor(
     }
 
     private fun tick() {
+        if (pendingRing?.let { System.currentTimeMillis() - it.receivedAtMs >= 45_000 } == true) dismissRing()
+        // Keep the shell's desired identity during bootstrap; adopting a temporary
+        // null repository owner here would strand calls until the profile changes.
+        if (meId.isNotBlank() && repo.viewerId != meId) { onTransportLost(); return }
+        if (phase == UiPhase.JOINING && joinSentAtMs > 0 && System.currentTimeMillis() - joinSentAtMs >= 30_000) {
+            leaveCall()
+            _snapshot.value = _snapshot.value.copy(summary = "Call could not connect. Try again.")
+        }
         val now = _snapshot.value
         if (now.phase != UiPhase.ACTIVE || joinedAtMs <= 0) return
         val elapsed = (System.currentTimeMillis() - joinedAtMs) / 1000
@@ -307,16 +362,10 @@ class GroupCallEngine @Inject constructor(
         val conv = joinedConvId
         val currentPhase = phase
         if (currentPhase != UiPhase.JOINING && currentPhase != UiPhase.ACTIVE) return
-        if (conv != null) {
-            scope.launch {
-                emitSignal(
-                    GroupCallSignalOut(
-                        event = GroupCallEvents.LEAVE,
-                        conversationId = conv,
-                        from = meId,
-                    ),
-                )
-            }
+        val target = callRepository
+        if (conv != null && target != null) {
+            val signal = GroupCallSignalOut(event = GroupCallEvents.LEAVE, conversationId = conv, from = meId)
+            scope.launch { runCatching { target.emitGroupCall(signal) } }
         }
         val elapsedSec = if (joinedAtMs > 0) (System.currentTimeMillis() - joinedAtMs) / 1000 else 0
         teardownMedia()
@@ -328,11 +377,13 @@ class GroupCallEngine @Inject constructor(
     }
 
     fun dismissError() {
+        if (phase == UiPhase.JOINING || phase == UiPhase.ACTIVE) return
         phase = UiPhase.IDLE
         _snapshot.value = _snapshot.value.copy(error = null, phase = UiPhase.IDLE)
     }
 
     fun dismissSummary() {
+        if (phase == UiPhase.JOINING || phase == UiPhase.ACTIVE) return
         phase = UiPhase.IDLE
         _snapshot.value = _snapshot.value.copy(summary = null, phase = UiPhase.IDLE)
     }
@@ -376,10 +427,15 @@ class GroupCallEngine @Inject constructor(
             _notices.tryEmit("Finish the current call first")
             return
         }
-        if (!relayConnected) {
+        if (!relayConnected || repo.viewerId != meId) {
             _notices.tryEmit("You are offline - calls need a connection")
             return
         }
+        val target = repo.boundToCurrentAccount()
+        if (target.viewerId != meId) return
+        callRepository = target
+        val ticket = ++generation
+        probeRevision++
         joinIntent = true
         kind = wanted
         phase = UiPhase.JOINING
@@ -396,33 +452,26 @@ class GroupCallEngine @Inject constructor(
             micEnabled = true,
         )
         pendingRing = null
-        scope.launch {
+        joinTask = scope.launch {
             try {
+                if (!ownsCall(ticket) || !relayConnected) return@launch
                 acquireMedia(wanted)
+                if (!ownsCall(ticket) || !relayConnected) { onTransportLost(); return@launch }
                 joinedConvId = targetConvId
-                emitSignal(
-                    GroupCallSignalOut(
-                        event = GroupCallEvents.JOIN,
-                        conversationId = targetConvId,
-                        kind = kind,
-                        user = GroupCallMember(id = meId, name = meName, color = meColor, avatar = null),
-                    ),
-                )
-                if (ringOthers) {
-                    runCatching { repo.postGroupCallRing(targetConvId, kind) }
-                        .onFailure { _notices.tryEmit("Could not ring other members") }
-                }
-            } catch (e: Throwable) {
-                Log.w(TAG, "group media acquisition failed", e)
-                joinIntent = false
-                joinedConvId = null
-                audio.release()
-                CallForegroundService.stop(context)
+                ringAfterAdmission = ringOthers
+                joinSentAtMs = System.currentTimeMillis()
+                emitSignal(GroupCallSignalOut(event = GroupCallEvents.JOIN, conversationId = targetConvId,
+                    kind = kind, user = GroupCallMember(id = meId, name = meName, color = meColor, avatar = null)))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                if (!ownsCall(ticket)) return@launch
+                Log.w(TAG, "group call setup failed", e)
+                teardownMedia()
                 phase = UiPhase.IDLE
-                _snapshot.value = _snapshot.value.copy(
-                    phase = UiPhase.IDLE,
-                    error = GroupCallMesh.MIC_DENIED_ERROR,
-                )
+                _snapshot.value = _snapshot.value.copy(phase = UiPhase.IDLE,
+                    error = if (e is SecurityException) GroupCallMesh.MIC_DENIED_ERROR
+                        else "Could not start the call. Check your connection and audio, then try again.")
             }
         }
     }
@@ -433,6 +482,9 @@ class GroupCallEngine @Inject constructor(
      * (web toast 'Camera unavailable - joining as a voice call').
      */
     private fun acquireMedia(wanted: CallKind) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            throw SecurityException("Microphone permission denied")
+        }
         check(audio.acquire()) { "Audio is unavailable or in use by another live session." }
         ensureFactory()
         if (localAudioTrack == null) {
@@ -441,8 +493,8 @@ class GroupCallEngine @Inject constructor(
                 mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
             }
             val source = factory?.createAudioSource(constraints) ?: error("no audio source")
-            val track = factory?.createAudioTrack("pulse-group-mic", source) ?: error("no audio track")
             localAudioSource = source
+            val track = factory?.createAudioTrack("pulse-group-mic", source) ?: error("no audio track")
             localAudioTrack = track
         }
         runCatching { localAudioTrack?.setEnabled(true) }
@@ -459,12 +511,14 @@ class GroupCallEngine @Inject constructor(
         // existing foreground-service idiom, shared with the 1:1 engine).
         CallForegroundService.ensureChannel(context)
         val label = _snapshot.value.title.ifBlank { "Group call" }
+        ownsForegroundService = true
         CallForegroundService.start(context, label, video = kind == CallKind.VIDEO && localVideoTrackRef != null)
     }
 
     // signaling intake (web handleGroupCallEvent verbatim)
 
     private fun onGroupCallSignal(s: GroupCallSignalData) {
+        if (meId.isBlank() || repo.viewerId != meId) return
         when (s.event) {
             GroupCallEvents.RING -> {
                 val convId = s.conversationId
@@ -481,7 +535,7 @@ class GroupCallEngine @Inject constructor(
                     title = s.title.orEmpty(),
                 )
                 // Only ring when idle - a participant never sees their own ring.
-                val idle = phase == UiPhase.IDLE && joinedConvId == null
+                val idle = phase == UiPhase.IDLE && joinedConvId == null && oneToOne.snapshot.value.state == CallState.IDLE
                 if (GroupCallMesh.shouldShowRing(sessionIdle = idle, fromSelf = ring.caller.id == meId)) {
                     pendingRing = ring
                     _snapshot.value = _snapshot.value.copy(ring = ring)
@@ -497,6 +551,14 @@ class GroupCallEngine @Inject constructor(
                 if (!memberPath && !outsiderPath) return
                 val roster = s.members.filter { it.id.isNotBlank() }
                 val iAmMember = roster.any { it.id == meId }
+                if (memberPath && (s.callId.isBlank() || (currentCallId.isNotBlank() && s.callId != currentCallId))) return
+                if (memberPath && !iAmMember) {
+                    teardownMedia()
+                    phase = UiPhase.ENDED
+                    _snapshot.value = _snapshot.value.copy(phase = phase, summary = "You are no longer in this call")
+                    return
+                }
+                probeRevision++
                 if (memberPath && GroupCallMesh.shouldSyncRoster(iAmMember)) {
                     _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false)
                     applyRoster(roster, convId, s.callId)
@@ -507,10 +569,12 @@ class GroupCallEngine @Inject constructor(
                     )
                 ) {
                     _snapshot.value = _snapshot.value.copy(
-                        ongoingElsewhere = true,
+                        ongoingElsewhere = roster.isNotEmpty(),
                         ongoingMembers = roster,
                         ongoingKind = s.kind,
                     )
+                } else if (outsiderPath && phase == UiPhase.IDLE) {
+                    _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false, ongoingMembers = emptyList())
                 }
             }
 
@@ -519,16 +583,18 @@ class GroupCallEngine @Inject constructor(
             GroupCallEvents.ICE -> handleIce(s)
 
             GroupCallEvents.ENDED -> {
-                if (joinedConvId != null) {
+                if (matchesGroupCall(s, joinedConvId, currentCallId)) {
                     teardownMedia()
                     phase = UiPhase.ENDED
                     _snapshot.value = _snapshot.value.copy(phase = UiPhase.ENDED, summary = "Call ended")
                 }
-                _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false, ongoingMembers = emptyList())
+                if (s.conversationId == activeConversationId) {
+                    _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false, ongoingMembers = emptyList())
+                }
             }
 
             GroupCallEvents.FULL -> {
-                if (joinIntent) {
+                if (joinIntent && phase == UiPhase.JOINING && joinedConvId != null && s.conversationId == joinedConvId) {
                     teardownMedia()
                     phase = UiPhase.IDLE
                     _snapshot.value = _snapshot.value.copy(phase = UiPhase.IDLE)
@@ -560,32 +626,66 @@ class GroupCallEngine @Inject constructor(
             _snapshot.value = _snapshot.value.copy(phase = UiPhase.ACTIVE)
         }
         if (callId.isNotBlank()) currentCallId = callId
-
+        joinSentAtMs = 0L
+        if (ringAfterAdmission) {
+            ringAfterAdmission = false
+            val ticket = generation
+            val target = callRepository
+            val resolved = kind
+            ringTask = scope.launch {
+                if (!ownsCall(ticket) || target == null) return@launch
+                try {
+                    target.postGroupCallRing(rosterConvId, resolved).getOrThrow()
+                } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { if (ownsCall(ticket)) _notices.tryEmit("Could not ring other members") }
+            }
+        }
+        val ticket = generation
         for (peerId in plan.offerToPeerIds) {
-            scope.launch { createOfferTo(peerId, rosterConvId) }
+            scope.launch { createOfferTo(peerId, rosterConvId, ticket) }
         }
     }
 
-    private suspend fun createOfferTo(peerId: String, rosterConvId: String) {
-        try {
-            val pc = ensurePeerConnection(peerId)
-            val offer = createSdp(pc, isOffer = true)
-            pc.setLocalDescription(SimpleObserver(), SessionDescription(SessionDescription.Type.OFFER, offer))
-            emitSignal(
-                GroupCallSignalOut(
-                    event = GroupCallEvents.OFFER,
-                    conversationId = rosterConvId,
-                    callId = currentCallId,
-                    from = meId,
-                    to = peerId,
-                    kind = kind,
-                    sdp = offer,
-                ),
-            )
-        } catch (e: Throwable) {
-            Log.e(TAG, "offer create failed: ${e.message}")
+    private suspend fun createOfferTo(peerId: String, rosterConvId: String, ticket: Long) {
+        if (!ownsCall(ticket) || joinedConvId != rosterConvId || peerId in negotiating || peerId in localSdpSent) return
+        if (_snapshot.value.members.none { it.id == peerId }) return
+        val pc = runCatching { ensurePeerConnection(peerId) }.getOrElse {
+            _notices.tryEmit("Could not connect to a call member. Leave and rejoin to retry."); return
         }
+        negotiating.add(peerId)
+        try {
+            val offer = createSdp(pc, isOffer = true)
+            if (!ownsPeer(ticket, peerId, pc)) return
+            setSdp(pc, SessionDescription.Type.OFFER, offer, local = true)
+            if (!ownsPeer(ticket, peerId, pc)) return
+            emitSignal(GroupCallSignalOut(event = GroupCallEvents.OFFER, conversationId = rosterConvId,
+                callId = currentCallId, from = meId, to = peerId, kind = kind, sdp = offer))
+            if (!ownsPeer(ticket, peerId, pc)) return
+            flushLocalIce(peerId, pc, ticket)
+        } catch (cancelled: CancellationException) { throw cancelled } catch (e: Exception) { failPeer(ticket, peerId, pc, e) } finally { if (ownsPeer(ticket, peerId, pc)) negotiating.remove(peerId) }
     }
+
+    private fun failPeer(ticket: Long, peerId: String, pc: PeerConnection, error: Exception) {
+        if (!ownsPeer(ticket, peerId, pc)) return
+        Log.w(TAG, "group peer setup failed", error)
+        closePeer(peerId)
+        _notices.tryEmit("Could not connect to a call member. Leave and rejoin to retry.")
+    }
+
+    private suspend fun setSdp(pc: PeerConnection, type: SessionDescription.Type, sdp: String, local: Boolean): Unit =
+        suspendCancellableCoroutine { continuation ->
+            val observer = object : SdpObserver {
+                override fun onCreateSuccess(desc: SessionDescription) = Unit
+                override fun onCreateFailure(error: String?) = Unit
+                override fun onSetSuccess() {
+                    if (continuation.isActive) continuation.resumeWith(Result.success(Unit))
+                }
+                override fun onSetFailure(error: String?) {
+                    if (continuation.isActive) continuation.resumeWith(Result.failure(IllegalStateException(error ?: "SDP failed")))
+                }
+            }
+            val description = SessionDescription(type, sdp)
+            if (local) pc.setLocalDescription(observer, description) else pc.setRemoteDescription(observer, description)
+        }
 
     /** createOffer/createAnswer bridged to a suspend point. */
     private suspend fun createSdp(pc: PeerConnection, isOffer: Boolean): String =
@@ -605,62 +705,75 @@ class GroupCallEngine @Inject constructor(
             if (isOffer) pc.createOffer(observer, MediaConstraints()) else pc.createAnswer(observer, MediaConstraints())
         }
 
+    private fun acceptsPeerSignal(signal: GroupCallSignalData): Boolean =
+        matchesGroupPeerSignal(signal, joinedConvId, currentCallId, meId, _snapshot.value.members.map { it.id })
+
     private fun handleOffer(s: GroupCallSignalData) {
-        val joined = joinedConvId ?: return
         val from = s.from
         val sdp = s.sdp
-        if (from.isBlank() || from == meId || s.conversationId != joined || sdp.isNullOrBlank()) return
+        if (!acceptsPeerSignal(s) || !GroupCallMesh.shouldOffer(from, meId) || sdp.isNullOrBlank()) return
+        val ticket = generation
         scope.launch {
+            if (!ownsCall(ticket) || from in negotiating || peerRemoteDescSet[from] == true) return@launch
+            val pc = runCatching { ensurePeerConnection(from) }.getOrElse {
+                _notices.tryEmit("Could not connect to a call member. Leave and rejoin to retry."); return@launch
+            }
+            negotiating.add(from)
             try {
-                val pc = ensurePeerConnection(from)
-                pc.setRemoteDescription(SimpleObserver(), SessionDescription(SessionDescription.Type.OFFER, sdp))
+                setSdp(pc, SessionDescription.Type.OFFER, sdp, local = false)
+                if (!ownsPeer(ticket, from, pc)) return@launch
                 peerRemoteDescSet[from] = true
                 drainPendingIce(from, pc)
                 val answer = createSdp(pc, isOffer = false)
-                pc.setLocalDescription(SimpleObserver(), SessionDescription(SessionDescription.Type.ANSWER, answer))
-                emitSignal(
-                    GroupCallSignalOut(
-                        event = GroupCallEvents.ANSWER,
-                        conversationId = s.conversationId,
-                        callId = s.callId.ifBlank { currentCallId },
-                        from = meId,
-                        to = from,
-                        sdp = answer,
-                    ),
-                )
-            } catch (e: Throwable) {
-                Log.e(TAG, "offer apply failed: ${e.message}")
-            }
+                if (!ownsPeer(ticket, from, pc)) return@launch
+                setSdp(pc, SessionDescription.Type.ANSWER, answer, local = true)
+                if (!ownsPeer(ticket, from, pc)) return@launch
+                emitSignal(GroupCallSignalOut(event = GroupCallEvents.ANSWER, conversationId = s.conversationId,
+                    callId = s.callId, from = meId, to = from, sdp = answer))
+                if (!ownsPeer(ticket, from, pc)) return@launch
+                flushLocalIce(from, pc, ticket)
+            } catch (cancelled: CancellationException) { throw cancelled } catch (e: Exception) { failPeer(ticket, from, pc, e) } finally { if (ownsPeer(ticket, from, pc)) negotiating.remove(from) }
         }
     }
 
     private fun handleAnswer(s: GroupCallSignalData) {
         val from = s.from
         val sdp = s.sdp
-        if (from.isBlank() || from == meId || sdp.isNullOrBlank()) return
+        if (!acceptsPeerSignal(s) || !GroupCallMesh.shouldOffer(meId, from) || sdp.isNullOrBlank()) return
         val pc = peers[from] ?: return
+        val ticket = generation
         scope.launch {
+            if (!ownsPeer(ticket, from, pc) || from in negotiating || from !in localSdpSent || peerRemoteDescSet[from] == true) return@launch
+            negotiating.add(from)
             try {
-                pc.setRemoteDescription(SimpleObserver(), SessionDescription(SessionDescription.Type.ANSWER, sdp))
+                setSdp(pc, SessionDescription.Type.ANSWER, sdp, local = false)
+                if (!ownsPeer(ticket, from, pc)) return@launch
                 peerRemoteDescSet[from] = true
                 drainPendingIce(from, pc)
-            } catch (e: Throwable) {
-                Log.e(TAG, "answer apply failed: ${e.message}")
-            }
+            } catch (cancelled: CancellationException) { throw cancelled } catch (e: Exception) { failPeer(ticket, from, pc, e) } finally { if (ownsPeer(ticket, from, pc)) negotiating.remove(from) }
         }
     }
 
     private fun handleIce(s: GroupCallSignalData) {
         val from = s.from
         val candidate = s.candidate
-        if (from.isBlank() || from == meId || candidate.isNullOrBlank()) return
+        if (!acceptsPeerSignal(s) || candidate.isNullOrBlank()) return
         val pc = peers[from]
-        val remoteSet = peerRemoteDescSet[from] == true
-        if (pc != null && GroupCallMesh.applyIceNow(pcExists = true, remoteDescriptionSet = remoteSet)) {
+        if (pc != null && peerRemoteDescSet[from] == true) {
             runCatching { pc.addIceCandidate(IceCandidate(s.sdpMid, s.sdpMLineIndex ?: 0, candidate)) }
             return
         }
-        pendingIce.getOrPut(from) { mutableListOf() }.add(IceCandidateWire(candidate, s.sdpMid, s.sdpMLineIndex ?: 0))
+        val pending = pendingIce.getOrPut(from) { mutableListOf() }
+        if (pending.size < 256) pending.add(IceCandidateWire(candidate, s.sdpMid, s.sdpMLineIndex ?: 0))
+    }
+
+    private suspend fun flushLocalIce(peerId: String, pc: PeerConnection, ticket: Long) {
+        localSdpSent.add(peerId)
+        val queued = pendingLocalIce.remove(peerId).orEmpty()
+        for (signal in queued) {
+            if (!ownsPeer(ticket, peerId, pc)) return
+            emitSignal(signal)
+        }
     }
 
     private fun drainPendingIce(peerId: String, pc: PeerConnection) {
@@ -677,7 +790,9 @@ class GroupCallEngine @Inject constructor(
      * (leaveGroupCall fires on socket disconnect server-side). Honest end.
      */
     private fun onTransportLost() {
-        if (joinedConvId == null) return
+        dismissRing()
+        probeRevision++
+        _snapshot.value = _snapshot.value.copy(ongoingElsewhere = false, ongoingMembers = emptyList())
         if (phase == UiPhase.JOINING || phase == UiPhase.ACTIVE) {
             teardownMedia()
             phase = UiPhase.ENDED
@@ -696,6 +811,7 @@ class GroupCallEngine @Inject constructor(
     // peer connections
 
     private fun ensurePeerConnection(peerId: String): PeerConnection {
+        check(ownsCall(generation) && joinedConvId != null && _snapshot.value.members.any { it.id == peerId }) { "Peer is no longer in this call" }
         peers[peerId]?.let { return it }
         ensureFactory()
         val factoryNow = factory ?: error("no peer connection factory")
@@ -703,14 +819,16 @@ class GroupCallEngine @Inject constructor(
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
-        val conv = joinedConvId ?: activeConversationId
-        val pc = factoryNow.createPeerConnection(rtcConfig, GroupPeerObserver(peerId, conv))
+        val observer = GroupPeerObserver(peerId, checkNotNull(joinedConvId), generation)
+        val pc = factoryNow.createPeerConnection(rtcConfig, observer)
             ?: error("peer connection creation failed for $peerId")
-        // ONE local media flow feeds every peer (web addTrack loop parity).
-        localAudioTrack?.let { track -> pc.addTrack(track, listOf("pulse-group-audio")) }
-        localVideoTrackRef?.let { track -> pc.addTrack(track, listOf("pulse-group-video")) }
         peers[peerId] = pc
+        peerObservers[peerId] = observer
         peerRemoteDescSet[peerId] = false
+        try {
+            localAudioTrack?.let { pc.addTrack(it, listOf("pulse-group-audio")) }
+            localVideoTrackRef?.let { pc.addTrack(it, listOf("pulse-group-video")) }
+        } catch (error: Exception) { closePeer(peerId); throw error }
         return pc
     }
 
@@ -788,85 +906,97 @@ class GroupCallEngine @Inject constructor(
         }
         val capturer = createCapturer() ?: return false
         return try {
+            videoCapturer = capturer
             val source = factoryNow.createVideoSource(capturer.isScreencast)
+            videoSource = source
             val helper = SurfaceTextureHelper.create("pulse-group-video", eglBaseContext)
+            videoTextureHelper = helper
             capturer.initialize(helper, context, source.capturerObserver)
             capturer.startCapture(CallVideoPolicy.VIDEO_WIDTH, CallVideoPolicy.VIDEO_HEIGHT, CallVideoPolicy.VIDEO_FPS)
             val track = factoryNow.createVideoTrack("pulse-group-video0", source)
-            track.setEnabled(true)
-            videoCapturer = capturer
-            videoSource = source
-            videoTextureHelper = helper
             localVideoTrackRef = track
+            track.setEnabled(true)
             _localVideoTrack.value = track
             true
         } catch (e: Throwable) {
             Log.e(TAG, "camera attach failed", e)
-            runCatching { capturer.dispose() }
+            releaseVideo()
             false
         }
     }
 
     private fun closePeer(peerId: String) {
+        peerObservers.remove(peerId)
         peers.remove(peerId)?.let { pc ->
             runCatching { pc.close() }
+            runCatching { pc.dispose() }
         }
         peerRemoteDescSet.remove(peerId)
         pendingIce.remove(peerId)
+        pendingLocalIce.remove(peerId)
+        localSdpSent.remove(peerId)
+        negotiating.remove(peerId)
         _remoteVideoTracks.value = _remoteVideoTracks.value - peerId
     }
 
-    /**
-     * Full media teardown (web teardownMedia verbatim): close every peer,
-     * stop the local tracks, release the capturer/factory, reset the session
-     * mirrors. Idempotent.
-     */
+    private fun releaseVideo() {
+        runCatching { videoCapturer?.stopCapture() }
+        runCatching { videoCapturer?.dispose() }
+        videoCapturer = null
+        runCatching { localVideoTrackRef?.dispose() }
+        localVideoTrackRef = null
+        _localVideoTrack.value = null
+        runCatching { videoSource?.dispose() }
+        videoSource = null
+        runCatching { videoTextureHelper?.dispose() }
+        videoTextureHelper = null
+    }
+
+    /** Invalidate first; each native release is independent so one failure cannot retain the mic. */
     private fun teardownMedia() {
-        runCatching {
-            val stalePeers = LinkedHashMap(peers)
-            peers.clear()
-            for (pc in stalePeers.values) {
-                runCatching { pc.close() }
-            }
-            peerRemoteDescSet.clear()
-            pendingIce.clear()
-            _remoteVideoTracks.value = emptyMap()
-
-            runCatching { videoCapturer?.stopCapture() }
-            videoCapturer = null
-            videoTextureHelper?.dispose()
-            videoTextureHelper = null
-            videoSource?.dispose()
-            videoSource = null
-            localVideoTrackRef = null
-            _localVideoTrack.value = null
-
-            runCatching { localAudioTrack?.setEnabled(true) }
-            localAudioTrack = null
-            localAudioSource?.dispose()
-            localAudioSource = null
-            adm?.release()
-            adm = null
-            factory = null
-
-            joinedConvId = null
-            joinedAtMs = 0
-            joinIntent = false
-            currentCallId = ""
-            audio.release()
-            CallForegroundService.stop(context)
-            _snapshot.value = _snapshot.value.copy(
-                members = emptyList(),
-                durationSec = 0,
-                micEnabled = true,
-                cameraEnabled = true,
-            )
+        generation++
+        probeRevision++
+        joinTask?.cancel()
+        ringTask?.cancel()
+        joinTask = null
+        ringTask = null
+        peerObservers.clear()
+        peers.keys.toList().forEach(::closePeer)
+        peerRemoteDescSet.clear()
+        pendingIce.clear()
+        pendingLocalIce.clear()
+        localSdpSent.clear()
+        negotiating.clear()
+        _remoteVideoTracks.value = emptyMap()
+        releaseVideo()
+        runCatching { localAudioTrack?.setEnabled(false) }
+        runCatching { localAudioTrack?.dispose() }
+        localAudioTrack = null
+        runCatching { localAudioSource?.dispose() }
+        localAudioSource = null
+        runCatching { factory?.dispose() }
+        factory = null
+        runCatching { adm?.release() }
+        adm = null
+        joinedConvId = null
+        joinedAtMs = 0
+        joinSentAtMs = 0
+        joinIntent = false
+        ringAfterAdmission = false
+        currentCallId = ""
+        callRepository = null
+        runCatching { audio.release() }
+        if (ownsForegroundService) {
+            ownsForegroundService = false
+            runCatching { CallForegroundService.stop(context) }
         }
+        _snapshot.value = _snapshot.value.copy(members = emptyList(), durationSec = 0,
+            micEnabled = true, cameraEnabled = true)
     }
 
     private suspend fun emitSignal(signal: GroupCallSignalOut) {
-        runCatching { repo.emitGroupCall(signal) }
-            .onFailure { Log.w(TAG, "emit ${signal.event} failed", it) }
+        check(ownsCall(generation) && relayConnected) { "Group call is no longer connected" }
+        checkNotNull(callRepository).emitGroupCall(signal)
     }
 
     // peer observer (per remote member)
@@ -874,37 +1004,39 @@ class GroupCallEngine @Inject constructor(
     private inner class GroupPeerObserver(
         private val peerId: String,
         private val conversationId: String,
+        private val ticket: Long,
     ) : PeerConnection.Observer {
+        private fun current(): Boolean = ownsCall(ticket) && peerObservers[peerId] === this
+        private fun onCurrent(action: () -> Unit) { main.post { if (current()) action() } }
         override fun onIceCandidate(candidate: IceCandidate) {
-            main.post {
-                scope.launch {
-                    emitSignal(
-                        GroupCallSignalOut(
-                            event = GroupCallEvents.ICE,
-                            conversationId = conversationId,
-                            callId = currentCallId,
-                            from = meId,
-                            to = peerId,
-                            kind = kind,
-                            candidate = candidate.sdp,
-                            sdpMid = candidate.sdpMid,
-                            sdpMLineIndex = candidate.sdpMLineIndex,
-                        ),
-                    )
+            onCurrent {
+                val signal = GroupCallSignalOut(event = GroupCallEvents.ICE, conversationId = conversationId,
+                    callId = currentCallId, from = meId, to = peerId, kind = kind, candidate = candidate.sdp,
+                    sdpMid = candidate.sdpMid, sdpMLineIndex = candidate.sdpMLineIndex)
+                if (peerId !in localSdpSent) {
+                    val queued = pendingLocalIce.getOrPut(peerId) { mutableListOf() }
+                    if (queued.size < 256) queued.add(signal)
+                } else scope.launch {
+                    if (!current()) return@launch
+                    try { emitSignal(signal) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { if (current()) onTransportLost() }
                 }
             }
         }
 
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) = Unit
-        override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) = Unit
+        override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
+            if (newState == PeerConnection.PeerConnectionState.FAILED || newState == PeerConnection.PeerConnectionState.CLOSED) {
+                onCurrent { closePeer(peerId) }
+            }
+        }
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
         override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
         override fun onRemoveStream(stream: org.webrtc.MediaStream) {
             // Peer gone - drop their tile's video source.
-            main.post { _remoteVideoTracks.value = _remoteVideoTracks.value - peerId }
+            onCurrent { _remoteVideoTracks.value = _remoteVideoTracks.value - peerId }
         }
         override fun onDataChannel(channel: org.webrtc.DataChannel) = Unit
         override fun onRenegotiationNeeded() = Unit
@@ -912,15 +1044,8 @@ class GroupCallEngine @Inject constructor(
         /** UNIFIED_PLAN remote video intake - audio goes through the ADM path. */
         override fun onTrack(transceiver: org.webrtc.RtpTransceiver) {
             val track = transceiver.receiver?.track() as? VideoTrack ?: return
-            main.post { _remoteVideoTracks.value = _remoteVideoTracks.value + (peerId to track) }
+            onCurrent { _remoteVideoTracks.value = _remoteVideoTracks.value + (peerId to track) }
         }
-    }
-
-    private class SimpleObserver : SdpObserver {
-        override fun onCreateSuccess(desc: SessionDescription) = Unit
-        override fun onSetSuccess() = Unit
-        override fun onCreateFailure(error: String?) = Unit
-        override fun onSetFailure(error: String?) = Unit
     }
 
     private data class IceCandidateWire(val candidate: String, val sdpMid: String?, val sdpMLineIndex: Int)

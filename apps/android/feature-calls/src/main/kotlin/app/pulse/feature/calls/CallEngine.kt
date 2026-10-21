@@ -81,6 +81,7 @@ class CallEngine @Inject constructor(
     private var callOwner: String? = null
     private var callRepository: PulseRepository? = null
     private var relayReady = false
+    internal var groupCallBusy: () -> Boolean = { false }
     private val preparationWork = CallWorkFence()
     private var preparationTask: Job? = null
     private val peerWork = CallWorkFence()
@@ -229,6 +230,7 @@ class CallEngine @Inject constructor(
         kind: CallKind = CallKind.VOICE,
     ) {
         if (!ensureOwner() || machine.snapshot.value.state != CallState.IDLE) return
+        if (groupCallBusy()) { _videoNotice.value = "Finish your group call first."; return }
         if (!relayReady) { _videoNotice.value = "Connect to realtime before starting a call."; return }
         cancelPreparation()
         val owner = checkNotNull(callOwner)
@@ -238,7 +240,7 @@ class CallEngine @Inject constructor(
             val conversation = try { resolveDm(bound, peerId) } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) { Log.w(TAG, "Could not open call conversation", error); null }
-            if (!preparationWork.owns(ticket, repo.viewerId) || !relayReady || machine.snapshot.value.state != CallState.IDLE) return@launch
+            if (!preparationWork.owns(ticket, repo.viewerId) || !relayReady || groupCallBusy() || machine.snapshot.value.state != CallState.IDLE) return@launch
             if (conversation == null) {
                 _videoNotice.value = "Couldn't open this conversation. The call wasn't started."
                 return@launch
@@ -348,6 +350,13 @@ class CallEngine @Inject constructor(
                 s.callId == machine.snapshot.value.callId)) return
         val callEvent = when (s.event) {
             "call:offer" -> {
+                if (groupCallBusy()) {
+                    val bound = callRepository ?: return
+                    val reject = CallSignalOut(event = "call:reject", callId = s.callId, conversationId = s.conversationId,
+                        from = checkNotNull(callOwner), to = s.from, kind = s.kind)
+                    scope.launch { emitCallSafely(bound, reject) }
+                    return
+                }
                 // Stash the offer SDP for the callee's video decision - only
                 // when this offer actually opens a ring (never mid-call).
                 if (machine.snapshot.value.state == CallState.IDLE) {

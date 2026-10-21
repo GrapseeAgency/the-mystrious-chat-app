@@ -7,6 +7,7 @@ final class ThreadReplyCountTests: XCTestCase {
     private func row(_ id: String, room: String = "room", parent: String? = nil, expires: Date? = nil) throws -> WireChatMessage {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(
             OutboxFixtures.makeMessage(id: id, conversationId: room, content: id))) as? [String: Any])
+        object["createdAt"] = "2026-10-21T00:00:00.000Z" // deterministic timestamp ties, not wall-clock luck
         object["parentId"] = parent
         object["expiresAt"] = expires.map { ISO8601DateFormatter().string(from: $0) }
         return try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: object))

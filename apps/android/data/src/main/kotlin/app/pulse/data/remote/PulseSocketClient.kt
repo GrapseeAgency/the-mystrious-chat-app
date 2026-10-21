@@ -443,27 +443,27 @@ class PulseSocketClient(
 
     /** gcall:join - creates/joins the conversation's ONE live group call. */
     fun emitGroupCallJoin(conversationId: String, kind: String, user: GroupCallMemberDto) {
-        emitRoomEvent(GroupCallEvents.JOIN, groupCallJoinPayload(conversationId, kind, user))
+        emitCall(GroupCallEvents.JOIN, groupCallJoinPayload(conversationId, kind, user))
     }
 
     /** gcall:offer - joiner → existing member (targeted relay). */
     fun emitGroupCallOffer(payload: GroupCallOfferDto) {
-        emitRoomEvent(GroupCallEvents.OFFER, payload.toJsonObject())
+        emitCall(GroupCallEvents.OFFER, payload.toJsonObject())
     }
 
     /** gcall:answer - the targeted peer answers. */
     fun emitGroupCallAnswer(payload: GroupCallAnswerDto) {
-        emitRoomEvent(GroupCallEvents.ANSWER, payload.toJsonObject())
+        emitCall(GroupCallEvents.ANSWER, payload.toJsonObject())
     }
 
     /** gcall:ice - flat candidate triple, targeted relay. */
     fun emitGroupCallIce(payload: GroupCallIceDto) {
-        emitRoomEvent(GroupCallEvents.ICE, payload.toJsonObject())
+        emitCall(GroupCallEvents.ICE, payload.toJsonObject())
     }
 
     /** gcall:leave - explicit exit (roster rebroadcast; last member ends the call). */
     fun emitGroupCallLeave(conversationId: String, from: String) {
-        emitRoomEvent(GroupCallEvents.LEAVE, groupCallLeavePayload(conversationId, from))
+        emitCall(GroupCallEvents.LEAVE, groupCallLeavePayload(conversationId, from))
     }
 
     // Wave-5 voice/stage/space emission (wire-perfect payloads)

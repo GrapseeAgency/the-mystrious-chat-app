@@ -2183,3 +2183,44 @@ Limits: the protocol still has no client join-attempt nonce/acknowledged SDP tra
 so this does not prove same-room pre-admission replay impossible. Physical multi-peer
 ICE/media, Bluetooth, Android group engine parity, cross-device admission ownership,
 relay membership authorization and network reconnection need further work.
+
+
+## 2026-10-21 — Android group-call ownership, SDP and actual entry paths
+
+The Android group engine had parallel defects: mutable-account repository dispatch,
+no owner reset, ignored SDP completion, unfenced old peer callbacks, room/call-unscoped
+answer/ICE/ended events, and cleanup that enabled the mic before dropping references.
+A failing disposal could skip subsequent cleanup. Group emits still used Java
+Socket.IO's disconnected send buffer despite disconnect ending the local call.
+
+Repairs:
+- Capture an account-bound call repository; account changes invalidate setup, peers,
+  rings and probe results. Main-thread peer bridges require their exact registered
+  observer and call generation. SDP steps await native completion and recheck exact
+  peer identity. Duplicate negotiations are gated; early ICE is bounded/ordered.
+- Scope targeted signals to admitted room/call, viewer and roster; stale ended/full
+  events cannot terminate an unrelated call. Member removal ends media. Ring API work
+  waits for admission and unacknowledged joins time out. Group signaling uses the same
+  EventThread readiness gate as 1:1, not disconnected SDK buffering.
+- Native releases run independently; mic is disabled and audio/video tracks, peers,
+  capturer, sources, helper, factory and ADM are disposed. Partial camera failure also
+  releases acquired resources. An idle group teardown cannot stop the 1:1 foreground
+  service. Cross-engine exclusion now also applies from 1:1 toward group calls.
+
+Tracing the ACTIVE Mirror shell—not a retired scaffold—found additional dead wiring:
+GroupCallViewModel.setIdentity had no caller, GroupCallBanner had no mount, the ongoing
+probe learned about rooms only on a start-call tap, group notices had no collector,
+and outgoing toolbar calls never requested microphone/camera permission. Wired those
+paths, including room close, and guarded delayed permission results by current owner,
+room/ring and idle state. Incoming rings expire locally and clear on disconnect. Reused
+the existing banner, whose Emerald token is already autumn orange; no theme redesign.
+
+Validation: nine changed/new Kotlin files syntax-parse; added pure signal-ownership
+regressions for stale call, foreign room/recipient, self/nonmember sender and missing
+admission. All 110 existing server contracts pass (no relay edit in this tranche). Swift thread fixtures now force timestamp ties instead of using wall-clock
+creation times. 0073c3a's iOS unsigned device archive succeeded; simulator compilation
+also reached unit tests. Native execution for these uncommitted-at-review Android edits
+is not yet available. Physical group media and permission UI remain unverified.
+
+Open: relay-side conversation authorization, cross-device admission, nonce/ACK-based
+same-room replay fencing, full native engine execution and actual two-device calls.

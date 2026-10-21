@@ -98,6 +98,7 @@ internal fun MirrorRoot(
     repository: PulseRepository,
     readingEnabled: Boolean = true,
     onStartCall: ((Conversation, video: Boolean) -> Unit)? = null,
+    onActiveCallRoomChanged: (Conversation?) -> Unit = {},
     onOpenLiveRoom: (String, app.pulse.feature.voice.VoiceRoomsEngine.RoomKind) -> Unit,
     // R76 - external entry points (the retired shells owned them): launcher
     // tab shortcuts land here as tab requests; pulse://room deep links as
@@ -123,6 +124,11 @@ internal fun MirrorRoot(
     val lifecycleOwner = LocalLifecycleOwner.current
     var tab by rememberSaveable { mutableStateOf(MirrorTab.Chats) }
     var openRoom by remember { mutableStateOf<Conversation?>(null) }
+    val currentCallRoomCallback by androidx.compose.runtime.rememberUpdatedState(onActiveCallRoomChanged)
+    androidx.compose.runtime.DisposableEffect(openRoom?.id) {
+        currentCallRoomCallback(openRoom)
+        onDispose { currentCallRoomCallback(null) }
+    }
     // R73 - keeps the room composed while the close slide-out plays
     // (openRoom flips null immediately; the exit animation needs the convo).
     var roomShown by remember { mutableStateOf<Conversation?>(null) }

@@ -588,6 +588,32 @@ fun PulseRoot(
                 }
                 LaunchedEffect(viewerId, viewerName, storedBase) {
                     roomsVm.setIdentity(viewerId, viewerName, null)
+                    groupCallVm.setIdentity(viewerId, viewerName, null)
+                }
+                var activeCallRoomId by remember { mutableStateOf<String?>(null) }
+                var pendingCallPermission by remember { mutableStateOf<Pair<app.pulse.domain.model.Conversation, Boolean>?>(null) }
+                val callPermissions = rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+                ) { grants ->
+                    val pending = pendingCallPermission
+                    pendingCallPermission = null
+                    if (pending != null && repository.viewerId == viewerId && pending.first.id == activeCallRoomId) {
+                        if (grants[android.Manifest.permission.RECORD_AUDIO] == true) {
+                            val (convo, video) = pending
+                            val kind = if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE
+                            if (convo.isGroupish) {
+                                groupCallVm.startCall(kind, convo.title)
+                            } else {
+                                val peer = convo.members.firstOrNull { it.id != viewerId.orEmpty() }
+                                callVm.startOutgoing(peerId = peer?.id ?: convo.otherUserId.orEmpty(), name = convo.title,
+                                    color = convo.accentColor, avatar = convo.avatar,
+                                    callerName = viewerName.orEmpty().ifBlank { "You" }, kind = kind)
+                            }
+                        } else android.widget.Toast.makeText(noteContext, "Microphone permission is needed to call.", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+                LaunchedEffect(groupCallVm) {
+                    groupCallVm.notices.collect { android.widget.Toast.makeText(noteContext, it, android.widget.Toast.LENGTH_SHORT).show() }
                 }
                 androidx.compose.runtime.DisposableEffect(viewerId, storedBase) {
                     onDispose {
@@ -608,24 +634,15 @@ fun PulseRoot(
                     session = session,
                     readingEnabled = !appLock.locked.collectAsStateWithLifecycle().value && liveSurface == null,
                     repository = repository,
+                    onActiveCallRoomChanged = { convo ->
+                        activeCallRoomId = convo?.id
+                        groupCallVm.setActiveConversation(convo?.takeIf { it.isGroupish }?.id, convo?.title)
+                    },
                     onStartCall = { convo, video ->
-                        val viewer = viewerName.orEmpty().ifBlank { "You" }
-                        if (convo.isGroupish) {
-                            groupCallVm.setActiveConversation(convo.id, convo.title)
-                            groupCallVm.startCall(
-                                if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE,
-                                convo.title,
-                            )
-                        } else {
-                            val peer = convo.members.firstOrNull { it.id != viewerId.orEmpty() }
-                            callVm.startOutgoing(
-                                peerId = peer?.id ?: convo.otherUserId.orEmpty(),
-                                name = convo.title,
-                                color = convo.accentColor,
-                                avatar = convo.avatar,
-                                callerName = viewer,
-                                kind = if (video) app.pulse.domain.model.CallKind.VIDEO else app.pulse.domain.model.CallKind.VOICE,
-                            )
+                        if (pendingCallPermission == null) {
+                            pendingCallPermission = convo to video
+                            callPermissions.launch(if (video) arrayOf(android.Manifest.permission.RECORD_AUDIO, android.Manifest.permission.CAMERA)
+                                else arrayOf(android.Manifest.permission.RECORD_AUDIO))
                         }
                     },
                     tabRequest = pendingTab,
@@ -639,6 +656,7 @@ fun PulseRoot(
                     shortcutAction = pendingAction,
                     onConsumeShortcutAction = { pendingAction = null },
                 )
+                app.pulse.feature.calls.GroupCallBanner(groupCallVm, Modifier.statusBarsPadding())
                 VoiceRoomsOverlay(roomsVm)
                 CallOverlay(callVm)
                 GroupCallOverlay(groupCallVm)
