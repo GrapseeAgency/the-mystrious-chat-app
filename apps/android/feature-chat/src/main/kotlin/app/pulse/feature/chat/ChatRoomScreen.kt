@@ -430,14 +430,19 @@ fun ChatRoomScreen(
     val readObscured = actionTarget != null || forwardTarget != null || infoTarget != null || deleteTarget != null ||
         lightboxTarget != null || pinsOpen || attachOpen || pollBuilderOpen || reactionPickerTarget != null ||
         whoReactedFor != null || stickerOpen || scheduleOpen || scheduledOpen || helpOpen || locationOpen || themeOpen || state.searchOpen
-    LaunchedEffect(lifecycleOwner, rowsReversed, pipFocusedId, privacyHidden, readObscured) {
+    val readRows = rememberUpdatedState(rowsReversed)
+    val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
+    LaunchedEffect(lifecycleOwner, viewModel, conversation?.id, pipFocusedId, privacyHidden, readObscured, minimumReadPixels) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
                 snapshotFlow {
-                    val visible = listState.layoutInfo.visibleItemsInfo.map { it.key }.toSet()
+                    val layout = listState.layoutInfo
+                    val visible = layout.visibleItemsInfo.filter {
+                        app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)
+                    }.map { it.key }.toSet()
                     if (privacyHidden || readObscured || (pipFocusedId != null && pipFocusedId != conversation?.id)) null
-                    else rowsReversed.filterIsInstance<TimelineRow.Msg>().firstOrNull {
-                        it.key in visible && !it.message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)
+                    else readRows.value.filterIsInstance<TimelineRow.Msg>().firstOrNull {
+                        it.key in visible && !it.message.isDeleted && !it.message.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)
                     }?.message?.id
                 }.collect { viewModel.setReadingAnchor(it) }
             } finally { viewModel.setReadingAnchor(null) }

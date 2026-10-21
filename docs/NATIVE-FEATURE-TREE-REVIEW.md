@@ -1758,3 +1758,51 @@ old uncached target can still require further history. Legacy all-replies thread
 primary Android's root-only navigation callback, cross-screen revocation and media-copy
 lifetimes are still open. A fresh Mirror scan can revisit already-cached pages rather
 than skipping an unproven gap. Autumn styling is unchanged; no merge/deployment implied.
+
+
+### Seen requires a visible, unobscured row and an owned acknowledgement (2026-10-21)
+
+Traced read acknowledgements from primary Android/Mirror list layout and Swift lazy
+views through their schedulers to the existing server watermark transaction. Found
+Swift's lazy tail `onAppear` being treated as viewport visibility; a new cached tail
+could be acknowledged before its row was displayed. Refresh/reconnect calls also
+bypassed the intended dwell. Mirror suspended reads for only a few of its sheets, while
+both Android lists restarted their read debounce on unrelated message-list emissions.
+
+- Swift now measures row and tail frames in the actual scroll viewport. Read boundaries
+  come from the newest eligible measured row, including when reading older history,
+  not from the newest cached row or creation of a prefetched tail. A row needs a 44-point
+  visible slice (or its full height if shorter). Tail following also uses measured
+  geometry rather than lazy appearance. Missing/zero viewport geometry is not visible.
+- Both Android surfaces use the matching density-scaled overlap rule against actual
+  layout viewport offsets. Pending and deleted rows do not anchor Seen. Latest rows are
+  sampled through Compose state, so an unchanged visible boundary does not restart its
+  600ms wait just because an off-screen message or unrelated row changed.
+- Mirror's read/attention gate now includes its search, pins, composer/media, scheduling,
+  reminders, collaboration, safety and other room-owned covering surfaces. Primary
+  Android retains its existing modal/privacy/lifecycle gates. Swift includes photo/file
+  pickers, staged media, inactive scenes and privacy veil, with initial gating applied.
+- Swift enforces the 600ms monotonic dwell at network admission, so independent refresh
+  triggers cannot bypass it. Foreground/readiness/reconnect resume with a fresh dwell;
+  retry backoff cannot be bypassed by refresh either. Retries are bounded and rearmed by
+  a changed visible boundary or an explicit resume/reconnect. An unchanged acknowledged
+  boundary is not repeatedly posted.
+- Each Swift read attempt carries a boundary revision and unique request identity.
+  Responses from an old room, an A→B→A visit, or an interrupted visibility period cannot
+  acknowledge/release a replacement request or poison its retry state. Room ViewModels
+  also bind visibility callbacks to the session generation captured at creation. A real
+  accepted older receipt can refresh the inbox without claiming the current row was read.
+
+Verification: 99/99 unchanged backend contracts pass locally. Added Kotlin overlap tests
+(including clipping, content padding, density, invalid dimensions and integer overflow)
+and Swift geometry/dwell/backoff/request-ownership regressions. Native syntax/diff checks
+pass; compilation and native execution for this new batch remain pending on GitHub.
+Official AndroidX LazyListItemInfo source was checked: item offset/size are container-axis
+pixels, matching the viewport overlap calculation. No palette or bubble redesign.
+
+Limits: this acknowledges a displayed boundary, not proof that a human read every word.
+A continuously changing boundary can conservatively delay its acknowledgement. Existing
+server timestamp-only read semantics, per-thread/topic unread granularity, timestamp ties,
+all system/context-menu overlay lifecycles, and historical missed-message badge accounting
+still require further work. Server monotonic receipts and privacy fanout remain unchanged;
+this does not claim complete Seen/unread correctness or whole-app completion.

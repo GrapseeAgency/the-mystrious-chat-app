@@ -61,7 +61,7 @@ struct ChatRoomView: View {
         }
         .onDisappear {
             session.roomVisible = false
-            viewModel?.isTailVisible = false
+            viewModel?.updateReadViewport(visibleIDs: [], tailVisible: false)
             if session.activeRoomId == conversation.id {
                 session.activeRoomId = nil
             }
@@ -395,12 +395,13 @@ private struct RoomContent: View {
     private var readSurfaceObscured: Bool {
         let messageSurface = threadRoot != nil || forwardSource != nil || infoTarget != nil ||
             lightbox != nil || quicklook != nil || reactionTarget != nil || whoReactedOpen
-        let roomSurface = pinsOpen || searchOpen || showFileImporter || showCamera || pollBuilderOpen ||
+        let roomSurface = pinsOpen || searchOpen || showFileImporter || showPhotoPicker || showCamera || pollBuilderOpen ||
             safetyOpen || dmInfoOpen || groupInfoOpen || scheduleOpen || scheduledManagerOpen ||
             stickerOpen || locationOpen || themeOpen || phrasesOpen || leaderboardOpen
         let collaboration = wave7.redPacketCreateOpen || wave7.gameCreateOpen || wave7.tournamentCreateOpen ||
             wave7.kanbanOpen || wave7.whiteboardOpen || wave7.eventsOpen || wave7.remindersOpen
-        return messageSurface || roomSurface || collaboration
+        return messageSurface || roomSurface || collaboration || viewModel.staged != nil ||
+            scenePhase != .active || veilEngaged
     }
 
     /// F-CH-04 - broadcast composer lock: broadcastMode on + the viewer is
@@ -917,7 +918,7 @@ private struct RoomContent: View {
 
     private var chatBodyStyled1: some View {
         chatBodyStyled0
-        .onChange(of: readSurfaceObscured) { _, hidden in viewModel.readSurfaceObscured = hidden }
+        .onChange(of: readSurfaceObscured, initial: true) { _, hidden in viewModel.readSurfaceObscured = hidden }
         .sheet(isPresented: $safetyOpen) {
             if let partner = dmPartner {
                 SafetySheetView(session: session, peer: partner)
@@ -1514,113 +1515,121 @@ private struct RoomContent: View {
             anonAliases: viewModel.messages.map(\.anonAlias),
         )
         return ScrollViewReader { proxy in
-            ScrollView {
-                // Wave 8 - prefs density: cozy keeps the Wave-0 rhythm,
-                // compact tightens the river (web chat-room density parity).
-                LazyVStack(spacing: prefs.density.rowSpacing) {
-                    if viewModel.hasMore {
-                        Button(viewModel.loadingOlder ? "Loading earlier messages…" : "Load earlier messages") {
-                            viewModel.loadOlder(session: session)
-                        }.disabled(viewModel.loadingOlder)
-                    }
-                    if viewModel.messages.isEmpty && viewModel.phase == .loading {
-                        ProgressView("Loading messages…")
-                            .padding(.top, 40)
-                    }
-                    ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
-                        // Type-check split: each row is its own view (Wave 1
-                        // row carries media/thread/flash wiring).
-                        RoomMessageRow(
-                            index: index,
-                            previous: index == 0 ? nil : viewModel.messages[index - 1],
-                            message: message,
-                            session: session,
-                            conversation: conversation,
-                            viewModel: viewModel,
-                            colorOf: colorOf,
-                            bubbleRadius: prefs.bubbleRadius,
-                            showUnreadDivider: (unreadDividerIndex ?? -1) == index,
-                            // R7 - this row's web buildItems cluster verdict
-                            // + the density-scaled gap tighten for non-head
-                            // rows (web mt-0.5/mt-px parity).
-                            cluster: clusterFlags[index],
-                            clusterTighten: prefs.density == .cozy ? 4 : 1,
-                            onOpenImage: { openLightbox($0) },
-                            onOpenFile: { openFile($0) },
-                            onOpenThread: { threadJumpMessageId = nil; threadRoot = $0 },
-                            onForward: { forwardSource = $0 },
-                            onInfo: { infoTarget = $0 },
-                            onViewOnce: { message in
-                                // Instant reveal first (web parity), burn after.
-                                openLightbox(message)
-                                viewModel.revealViewOnce(message, session: session)
-                            },
-                            wave7: wave7,
-                            memberNames: memberNames,
-                            onWhoReacted: { message, emoji in
-                                // R3-A item 4 - chip tap → the who-reacted roster.
-                                whoReactedMessage = message
-                                whoReactedEmoji = emoji
-                                whoReactedOpen = true
-                            },
-                        )
-                    }
-                    if viewModel.loadingOlder && !viewModel.messages.isEmpty {
-                        ProgressView()
-                            .padding(.vertical, 6)
-                    }
-                    if !viewModel.typers.isEmpty {
-                        HStack(spacing: 6) {
-                            TypingDotsView()
-                            Text(typersText)
-                                .font(.footnote)
-                                .foregroundStyle(PulseTheme.emberGlowTop)
+            GeometryReader { viewport in
+                ScrollView {
+                    // Wave 8 - prefs density: cozy keeps the Wave-0 rhythm,
+                    // compact tightens the river (web chat-room density parity).
+                    LazyVStack(spacing: prefs.density.rowSpacing) {
+                        if viewModel.hasMore {
+                            Button(viewModel.loadingOlder ? "Loading earlier messages…" : "Load earlier messages") {
+                                viewModel.loadOlder(session: session)
+                            }.disabled(viewModel.loadingOlder)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
+                        if viewModel.messages.isEmpty && viewModel.phase == .loading {
+                            ProgressView("Loading messages…")
+                                .padding(.top, 40)
+                        }
+                        ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { index, message in
+                            // Type-check split: each row is its own view (Wave 1
+                            // row carries media/thread/flash wiring).
+                            RoomMessageRow(
+                                index: index,
+                                previous: index == 0 ? nil : viewModel.messages[index - 1],
+                                message: message,
+                                session: session,
+                                conversation: conversation,
+                                viewModel: viewModel,
+                                colorOf: colorOf,
+                                bubbleRadius: prefs.bubbleRadius,
+                                showUnreadDivider: (unreadDividerIndex ?? -1) == index,
+                                // R7 - this row's web buildItems cluster verdict
+                                // + the density-scaled gap tighten for non-head
+                                // rows (web mt-0.5/mt-px parity).
+                                cluster: clusterFlags[index],
+                                clusterTighten: prefs.density == .cozy ? 4 : 1,
+                                onOpenImage: { openLightbox($0) },
+                                onOpenFile: { openFile($0) },
+                                onOpenThread: { threadJumpMessageId = nil; threadRoot = $0 },
+                                onForward: { forwardSource = $0 },
+                                onInfo: { infoTarget = $0 },
+                                onViewOnce: { message in
+                                    // Instant reveal first (web parity), burn after.
+                                    openLightbox(message)
+                                    viewModel.revealViewOnce(message, session: session)
+                                },
+                                wave7: wave7,
+                                memberNames: memberNames,
+                                onWhoReacted: { message, emoji in
+                                    // R3-A item 4 - chip tap → the who-reacted roster.
+                                    whoReactedMessage = message
+                                    whoReactedEmoji = emoji
+                                    whoReactedOpen = true
+                                },
+                            )
+                            .background(GeometryReader { geometry in
+                                Color.clear.preference(key: PulseRoomViewportKey.self,
+                                    value: PulseRoomViewport(messages: [message.id: geometry.frame(in: .named("room-viewport"))]))
+                            })
+                        }
+                        if viewModel.loadingOlder && !viewModel.messages.isEmpty {
+                            ProgressView()
+                                .padding(.vertical, 6)
+                        }
+                        if !viewModel.typers.isEmpty {
+                            HStack(spacing: 6) {
+                                TypingDotsView()
+                                Text(typersText)
+                                    .font(.footnote)
+                                    .foregroundStyle(PulseTheme.emberGlowTop)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                        }
+                        Color.clear.frame(height: 4).id("tail")
+                            .background(GeometryReader { geometry in
+                                Color.clear.preference(key: PulseRoomViewportKey.self,
+                                    value: PulseRoomViewport(tail: geometry.frame(in: .named("room-viewport"))))
+                            })
                     }
-                    Color.clear.frame(height: 4).id("tail")
-                        .onAppear {
-                            // R26 - the tail sentinel doubles as the native
-                            // nearBottomRef: visible = the viewer sits at the
-                            // bottom (didSet resets the missed badge).
-                            viewModel.isTailVisible = true
-                        }
-                        .onDisappear {
-                            viewModel.isTailVisible = false
-                        }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-            }
-            .defaultScrollAnchor(.bottom)
-            .onChange(of: viewModel.messages.last?.id) { _, _ in
-                viewModel.noteRiverChanged()
-            }
-            .onChange(of: viewModel.messages.count) { _, _ in
-                // R26 - the missed-badge machine + tail-id pill arming run
-                // on every river change; the auto-scroll only fires while
-                // the viewer sits at the bottom (web nearBottomRef parity -
-                // reading history is never yanked to the tail).
-                viewModel.noteRiverChanged()
-                if viewModel.isTailVisible {
-                    withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
-                        proxy.scrollTo("tail", anchor: .bottom)
+                .coordinateSpace(name: "room-viewport")
+                .onPreferenceChange(PulseRoomViewportKey.self) { layout in
+                    viewModel.updateReadViewport(
+                        visibleIDs: PulseReadViewport.visibleIDs(layout.messages, height: viewport.size.height),
+                        tailVisible: PulseReadViewport.tailVisible(layout.tail, height: viewport.size.height))
+                }
+                .onDisappear { viewModel.updateReadViewport(visibleIDs: [], tailVisible: false) }
+                .defaultScrollAnchor(.bottom)
+                .onChange(of: viewModel.messages.last?.id) { _, _ in
+                    viewModel.noteRiverChanged()
+                }
+                .onChange(of: viewModel.messages.count) { _, _ in
+                    // R26 - the missed-badge machine + tail-id pill arming run
+                    // on every river change; the auto-scroll only fires while
+                    // the viewer sits at the bottom (web nearBottomRef parity -
+                    // reading history is never yanked to the tail).
+                    viewModel.noteRiverChanged()
+                    if viewModel.isTailVisible {
+                        withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
+                            proxy.scrollTo("tail", anchor: .bottom)
+                        }
                     }
                 }
-            }
-            .onChange(of: viewModel.jumpRequestRevision) { _, _ in
-                guard let target = viewModel.jumpTargetId else { return }
-                proxy.scrollTo(target, anchor: .center)
-            }
-            .onAppear {
-                proxy.scrollTo("tail", anchor: .bottom)
-            }
-            // R26 - Telegram-style jump-to-latest pill (web chat-room
-            // :4527-4568 parity): armed on off-screen arrivals, badge shows
-            // the missed count, tap lands on the tail.
-            .overlay(alignment: .bottom) {
-                jumpPill(proxy: proxy)
+                .onChange(of: viewModel.jumpRequestRevision) { _, _ in
+                    guard let target = viewModel.jumpTargetId else { return }
+                    proxy.scrollTo(target, anchor: .center)
+                }
+                .onAppear {
+                    proxy.scrollTo("tail", anchor: .bottom)
+                }
+                // R26 - Telegram-style jump-to-latest pill (web chat-room
+                // :4527-4568 parity): armed on off-screen arrivals, badge shows
+                // the missed count, tap lands on the tail.
+                .overlay(alignment: .bottom) {
+                    jumpPill(proxy: proxy)
+                }
             }
         }
     }
@@ -3796,9 +3805,22 @@ final class RoomViewModel: ObservableObject {
     }
     @Published var readSurfaceObscured = false { didSet { updateReadBoundary() } }
 
+    private var visibleReadIDs: Set<String> = []
+
+    func updateReadViewport(visibleIDs: Set<String>, tailVisible: Bool) {
+        let changed = visibleReadIDs != visibleIDs
+        visibleReadIDs = visibleIDs
+        if isTailVisible != tailVisible { isTailVisible = tailVisible }
+        else if changed { updateReadBoundary() }
+    }
+
     func updateReadBoundary() {
-        session?.setVisibleReadBoundary(conversationId: conversationId,
-            messageId: isTailVisible && !readSurfaceObscured ? messages.last(where: { !$0.id.hasPrefix("local_") })?.id : nil)
+        guard let session, session.sessionGeneration == readSessionGeneration else { return }
+        let boundary = readSurfaceObscured ? nil : messages.last {
+            visibleReadIDs.contains($0.id) && !$0.id.hasPrefix("local_") && $0.deletedAt == nil &&
+                PulseRemediationLogic.isAlive($0.expiresAt)
+        }?.id
+        session.setVisibleReadBoundary(conversationId: conversationId, messageId: boundary)
     }
 
     /// Web showJump - armed when a new tail lands while scrolled away,
@@ -3838,6 +3860,7 @@ final class RoomViewModel: ObservableObject {
     }
 
     private let conversationId: String
+    private let readSessionGeneration: UUID
     private let isGroupRoom: Bool
     private weak var session: PulseSession?
     private var cancellables: Set<AnyCancellable> = []
@@ -3933,6 +3956,7 @@ final class RoomViewModel: ObservableObject {
 
     init(conversation: WireConversationSummary, session: PulseSession, initialJumpMessageId: String? = nil) {
         self.conversationId = conversation.id
+        self.readSessionGeneration = session.sessionGeneration
         self.draftJournal = session.store.map { PulseDraftJournal(store: $0, conversationId: conversation.id) }
         self.session = session
         self.isGroupRoom = conversation.isGroup

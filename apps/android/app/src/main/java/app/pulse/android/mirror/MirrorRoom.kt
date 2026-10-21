@@ -661,14 +661,24 @@ internal fun MirrorRoom(
     val visibleMessages = remember(messages, activeTopicId, timelineNow) { visibleRoomMessages(messages, activeTopicId, timelineNow) }
     val entries = remember(visibleMessages) { buildRoomEntries(visibleMessages) }
     val latestEntries = androidx.compose.runtime.rememberUpdatedState(entries)
-    LaunchedEffect(groupId, readingEnabled, roomPanelOpen, actionFor, forwardFor, threadFor, infoFor, visibleMessages) {
+    val readObscured = roomPanelOpen || actionFor != null || forwardFor != null || threadFor != null || infoFor != null ||
+        menuOpen || trayOpen || roomSearchOpen || pinnedOpen || phraseManagerOpen || pollOpen || stickerOpen ||
+        locationOpen || captionFor != null || remindersOpen || scheduledOpen || recapOpen || eventsOpen ||
+        kanbanOpen || whiteboardOpen || tournamentOpen || redPacketOpen || trayEffectsOpen || slashHelpOpen ||
+        safetyOpen || scheduleOpen
+    val readRows = androidx.compose.runtime.rememberUpdatedState(visibleMessages)
+    val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
+    LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, minimumReadPixels, readerLifecycle) {
         readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            if (!readingEnabled || roomPanelOpen || actionFor != null || forwardFor != null || threadFor != null || infoFor != null) return@repeatOnLifecycle
+            if (!readingEnabled || readObscured) return@repeatOnLifecycle
             app.pulse.android.notify.IncomingAttention.activeReadingRoom = groupId
             try {
                 androidx.compose.runtime.snapshotFlow {
-                    val visible = listState.layoutInfo.visibleItemsInfo.map { it.key }.toSet()
-                    visibleMessages.lastOrNull { it.id in visible && !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) }?.id
+                    val layout = listState.layoutInfo
+                    val visible = layout.visibleItemsInfo.filter {
+                        app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)
+                    }.map { it.key }.toSet()
+                    readRows.value.lastOrNull { it.id in visible && !it.isDeleted && !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) }?.id
                 }.collectLatest { id ->
                     if (id != null) {
                         delay(600)

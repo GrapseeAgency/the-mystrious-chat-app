@@ -84,17 +84,15 @@ public final class PulseSession: ObservableObject {
     @Published public var activeRoomId: String? {
         didSet {
             if oldValue != activeRoomId {
-                visibleReadMessageId = nil
-                lastReadAcknowledged = nil
+                readGate.reset()
+                readFailureCount = 0
                 readReceiptTask?.cancel()
             }
         }
     }
-    private var visibleReadMessageId: String?
-    private var lastReadAcknowledged: String?
+    private var readGate = PulseReadReceiptGate()
     private var readFailureCount = 0
     private var readReceiptTask: Task<Void, Never>?
-    private var readsInFlight: Set<String> = []
     /// Wave 8 - weak handoff to the RootView-owned PulsePrefs (incoming
     /// attention gating + the settings PATCH funnel + quiet-gate refresh).
     public private(set) weak var prefs: PulsePrefs?
@@ -114,7 +112,15 @@ public final class PulseSession: ObservableObject {
     /// Outbox deliver/drop events (queued-bubble swap in the open room).
     public let outboxEvents = PassthroughSubject<PulseOutboxEvent, Never>()
 
-    @Published public private(set) var ready = false
+    @Published public private(set) var ready = false {
+        didSet {
+            guard oldValue != ready else { return }
+            readReceiptTask?.cancel()
+            readFailureCount = 0
+            readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
+            if ready && isForeground { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
+        }
+    }
     @Published public private(set) var startupError: String?
     @Published public private(set) var isForeground = false
     public private(set) var messageRevision: UInt64 = 0
@@ -152,54 +158,62 @@ public final class PulseSession: ObservableObject {
     public let messageVisibilityClock = PassthroughSubject<Date, Never>()
 
     public func setForeground(_ active: Bool) {
+        let changed = isForeground != active
         isForeground = active
+        if changed {
+            readReceiptTask?.cancel()
+            readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
+        }
         if active {
             messageVisibilityClock.send(Date())
-            readFailureCount = 0
-            Task { await markReadIfVisible(conversationId: activeRoomId) }
-        } else { readReceiptTask?.cancel() }
+            if changed {
+                readFailureCount = 0
+                scheduleVisibleRead(after: PulseReadReceiptGate.dwell)
+            }
+        }
     }
 
     public func setVisibleReadBoundary(conversationId: String, messageId: String?) {
         guard activeRoomId == conversationId else { return }
-        guard visibleReadMessageId != messageId else { return }
-        visibleReadMessageId = messageId
+        guard readGate.setBoundary(roomId: conversationId, messageId: messageId,
+            now: ProcessInfo.processInfo.systemUptime) else { return }
         readFailureCount = 0
         readReceiptTask?.cancel()
-        guard messageId != nil else { return }
-        let epoch = generation
+        if messageId != nil && isForeground { scheduleVisibleRead(after: PulseReadReceiptGate.dwell) }
+    }
+
+    private func scheduleVisibleRead(after delay: TimeInterval) {
+        guard let boundary = readGate.boundary else { return }
+        let epoch = generation, revision = readGate.revision
+        readReceiptTask?.cancel()
         readReceiptTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: 600_000_000) } catch { return }
-            guard let self, self.generation == epoch else { return }
-            await self.markReadIfVisible(conversationId: conversationId)
+            do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
+            guard let self, self.generation == epoch, self.readGate.revision == revision else { return }
+            await self.markReadIfVisible(conversationId: boundary.roomId)
         }
     }
 
     public func markReadIfVisible(conversationId: String?) async {
         guard let conversationId, ready, isForeground,
-              activeRoomId == conversationId, !PulseAppLock.shared.needsLock,
-              let messageId = visibleReadMessageId, messageId != lastReadAcknowledged,
-              !readsInFlight.contains(messageId) else { return }
+              activeRoomId == conversationId, !PulseAppLock.shared.needsLock, readFailureCount < 4,
+              let request = readGate.begin(roomId: conversationId, now: ProcessInfo.processInfo.systemUptime) else { return }
         let client = api
         let epoch = generation
-        readsInFlight.insert(messageId)
-        defer { readsInFlight.remove(messageId) }
         do {
-            try await client.markRead(conversationId: conversationId, messageId: messageId)
+            try await client.markRead(conversationId: conversationId, messageId: request.boundary.messageId)
             guard generation == epoch else { return }
-            lastReadAcknowledged = messageId
-            readFailureCount = 0
+            if readGate.finish(request, succeeded: true) { readFailureCount = 0 }
+            // An older visible boundary can still have been accepted by the server;
+            // refresh the inbox, but never let its completion acknowledge the new screen.
             noteInboxChanged()
         } catch {
-            guard !Task.isCancelled, generation == epoch, isForeground,
-                  visibleReadMessageId == messageId, readFailureCount < 3 else { return }
+            guard generation == epoch, readGate.finish(request, succeeded: false),
+                  !Task.isCancelled, isForeground, activeRoomId == conversationId else { return }
             readFailureCount += 1
-            let wait = UInt64(readFailureCount) * 1_500_000_000
-            readReceiptTask = Task { [weak self] in
-                do { try await Task.sleep(nanoseconds: wait) } catch { return }
-                guard let self, self.generation == epoch else { return }
-                await self.markReadIfVisible(conversationId: conversationId)
-            }
+            guard readFailureCount < 4 else { return }
+            let wait = Double(readFailureCount) * 1.5
+            readGate.deferAttempt(until: ProcessInfo.processInfo.systemUptime + wait)
+            scheduleVisibleRead(after: wait)
         }
     }
 
@@ -725,7 +739,9 @@ public final class PulseSession: ObservableObject {
             connected = isOn
             // Flush trigger: socket connect / reconnect.
             if isOn {
-                Task { await markReadIfVisible(conversationId: activeRoomId) }
+                readFailureCount = 0
+                readGate.restartDwell(now: ProcessInfo.processInfo.systemUptime)
+                scheduleVisibleRead(after: PulseReadReceiptGate.dwell)
                 flushOutbox()
                 // W3-b - same trigger for the queued single-writer call rows.
                 callEngine?.flushCallLogQueueOnReconnect()
