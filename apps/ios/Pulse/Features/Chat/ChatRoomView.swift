@@ -1647,7 +1647,6 @@ private struct RoomContent: View {
         if viewModel.showJumpPill {
             Button {
                 PulseHaptics.tap()
-                viewModel.jumpToLatest()
                 withAnimation(.pulse(.pulseSoft, reduceMotion: reduceMotion)) {
                     proxy.scrollTo("tail", anchor: .bottom)
                 }
@@ -3706,7 +3705,9 @@ final class RoomViewModel: ObservableObject {
         var previewData: Data? = nil
     }
 
-    @Published private(set) var messages: [WireChatMessage] = []
+    @Published private(set) var messages: [WireChatMessage] = [] {
+        didSet { noteRiverChanged() }
+    }
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var errorText: String?
     @Published private(set) var typers: [Typer] = []
@@ -3732,6 +3733,7 @@ final class RoomViewModel: ObservableObject {
     var hasMore: Bool { historyWindow.hasMore }
     @Published private(set) var loadingOlder = false
     @Published private(set) var replyCounts: [String: Int] = [:]
+    private var nextReplyCountExpiry: Date?
     @Published private(set) var pins: [WireChatMessage] = []
     @Published private(set) var flashMessageId: String?
     @Published private(set) var jumpRequestRevision: UInt64 = 0
@@ -3786,24 +3788,15 @@ final class RoomViewModel: ObservableObject {
     /// MY lastReadAt from the route-carried summary when the row showed an
     /// unread badge, else nil - nil means the divider never places.
     private let unreadAnchorMs: Double?
-    /// R26 - off-screen arrivals badge on the jump-to-latest pill (the web
-    /// missedCountRef machine chat-room.tsx:1594-1612; the pure step lives
-    /// in PulseRoomParityLogic.missedStep).
+    /// Count distinct incoming arrivals, never changes in rendered history length.
     @Published private(set) var missedCount = 0
-    private var lastSeenLen = 0
-    private var lastTailId: String?
-    /// The tail sentinel row is on-screen - the viewer sits at the bottom
-    /// (the native nearBottomRef). Reaching the bottom resets the badge.
+    private var missedMessages = PulseMissedMessages()
+    private var missedScopeRevision: UInt64 = 0
+    /// Measured tail visibility owns badge clearing; tapping Jump alone does not.
     @Published var isTailVisible = false {
-        didSet {
-            updateReadBoundary()
-            guard oldValue != isTailVisible, isTailVisible else { return }
-            missedCount = 0
-            lastSeenLen = messages.count
-            showJumpPill = false
-        }
+        didSet { if oldValue != isTailVisible { noteRiverChanged() } }
     }
-    @Published var readSurfaceObscured = false { didSet { updateReadBoundary() } }
+    @Published var readSurfaceObscured = false { didSet { noteRiverChanged() } }
 
     private var visibleReadIDs: Set<String> = []
 
@@ -3811,7 +3804,7 @@ final class RoomViewModel: ObservableObject {
         let changed = visibleReadIDs != visibleIDs
         visibleReadIDs = visibleIDs
         if isTailVisible != tailVisible { isTailVisible = tailVisible }
-        else if changed { updateReadBoundary() }
+        else if changed { noteRiverChanged() }
     }
 
     func updateReadBoundary() {
@@ -4033,6 +4026,25 @@ final class RoomViewModel: ObservableObject {
     func observe(session: PulseSession) {
         self.session = session
         cancellables.removeAll()
+        if let store = session.store {
+            let epoch = session.sessionGeneration
+            store.observeThreadReplyCounts(conversationId: conversationId)
+                .receive(on: DispatchQueue.main)
+                .removeDuplicates()
+                .sink(receiveCompletion: { [weak self] completion in
+                    guard let self, epoch == session.sessionGeneration else { return }
+                    if case .failure = completion { self.errorText = self.errorText ?? "Couldn't update cached reply counts." }
+                }, receiveValue: { [weak self] snapshot in
+                    guard let self, epoch == session.sessionGeneration else { return }
+                    if let deadline = snapshot.nextExpiry, deadline <= Date() {
+                        self.seedReplyCounts(store: store) // delivery to the main queue may cross an expiry
+                    } else {
+                        self.replyCounts = snapshot.counts
+                        self.nextReplyCountExpiry = snapshot.nextExpiry
+                    }
+                })
+                .store(in: &cancellables)
+        }
         session.signals
             .receive(on: DispatchQueue.main)
             .sink { [weak self] signal in
@@ -4043,13 +4055,11 @@ final class RoomViewModel: ObservableObject {
                           let message = PulseSession.decodeMessage(from: raw) else { return }
                     try? session.store?.upsert(messages: [message])
                     if message.parentId != nil {
-                        // Thread reply - river keeps it out; the parent's
-                        // "N replies" chip bumps live (web threadCounts parity).
-                        let root = message.parentId ?? ""
-                        replyCounts[root, default: 0] += 1
+                        // Counts come from storage, so duplicate relay deliveries
+                        // and later deletion/expiry cannot inflate the reply chip.
                         if message.senderId == session.viewer?.id { return }
                     }
-                    upsert(message)
+                    upsert(message, countsAsArrival: true)
                     // REM-B F-MS-23 - effect-flagged rows burst full-screen.
                     fireIncomingEffectIfAny(message, viewerId: session.viewer?.id, session: session)
                     if message.senderId != session.viewer?.id {
@@ -4134,7 +4144,13 @@ final class RoomViewModel: ObservableObject {
             .store(in: &cancellables)
 
         session.messageVisibilityClock
-            .sink { [weak self] _ in self?.refilterInPlace() }
+            .sink { [weak self] now in
+                guard let self, session.sessionGeneration == self.readSessionGeneration else { return }
+                self.refilterInPlace()
+                if let deadline = self.nextReplyCountExpiry, deadline <= now, let store = session.store {
+                    self.seedReplyCounts(store: store)
+                }
+            }
             .store(in: &cancellables)
 
         // Typer expiry sweep - keeps the dots honest without server stop events.
@@ -4177,6 +4193,7 @@ final class RoomViewModel: ObservableObject {
         guard session.ready, session.isForeground else { return }
         let boundaryTicket = historyWindow.revision
         let historyTopic = activeTopicId
+        let arrivalScope = missedScopeRevision
         let epoch = session.sessionGeneration
         let ticket = UUID()
         refreshGeneration = ticket
@@ -4184,8 +4201,9 @@ final class RoomViewModel: ObservableObject {
         let store = session.store
         if messages.isEmpty, let store {
             messages = riverRows(from: (try? store.messages(conversationId: conversationId)) ?? [])
-            seedReplyCounts(store: store)
         }
+        if let store { seedReplyCounts(store: store) }
+        let catchUpBoundary = PulseMissedMessages.latestBoundary(messages)
         let cachedRows = (try? store?.messages(conversationId: conversationId)) ?? messages
         let real = cachedRows.filter { !$0.id.hasPrefix("local_") }
         let from = real.min {
@@ -4211,6 +4229,10 @@ final class RoomViewModel: ObservableObject {
                 }
                 let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
                 try store?.upsert(messages: fresh)
+                if from != nil, let catchUpBoundary, arrivalScope == missedScopeRevision, historyTopic == activeTopicId {
+                    missedMessages.receive(fresh, roomId: conversationId, viewerId: session.viewer?.id,
+                        topicId: activeTopicId, after: catchUpBoundary)
+                }
                 messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: activeTopicId)
                 noteRiverChanged()
                 if from == nil {
@@ -4284,8 +4306,9 @@ final class RoomViewModel: ObservableObject {
     }
 
     private func seedReplyCounts(store: PulseStore) {
-        if let counts = try? store.threadReplyCounts() {
-            replyCounts = counts
+        if let snapshot = try? store.threadReplyCountSnapshot(conversationId: conversationId) {
+            replyCounts = snapshot.counts
+            nextReplyCountExpiry = snapshot.nextExpiry
         }
     }
 
@@ -4354,6 +4377,7 @@ final class RoomViewModel: ObservableObject {
             if activeTopicId != nil {
                 riverReloadTask?.cancel()
                 activeTopicId = nil
+                resetMissedScope()
                 historyWindow.record(cursor: nil, hasMore: false)
                 await reloadRiver(session: session)
             }
@@ -4473,44 +4497,30 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    // ── R2-B - jump-pill missed machine + unread divider anchor ──
+    // ── jump-pill arrivals (separate from server unread totals) ──
 
-    /// R26 - fed on EVERY river length change by the view (the web effects
-    /// on messages.data + lastMessageId, chat-room.tsx:1543-1612): the badge
-    /// grows while away, resets at the bottom, and the pill arms only when a
-    /// NEW tail lands while the viewer is scrolled away. History prepends
-    /// (load older) grow the badge silently without arming the pill - the
-    /// web's exact behavior (the pill show is tail-id driven).
     func noteRiverChanged() {
         updateReadBoundary()
-        let newLen = messages.count
-        if isTailVisible {
-            missedCount = 0
-            lastSeenLen = newLen
-        } else if newLen > lastSeenLen {
-            missedCount += newLen - lastSeenLen
-            lastSeenLen = newLen
-        } else if newLen < lastSeenLen {
-            // room switch / cache reset - badge drops
-            lastSeenLen = newLen
-            missedCount = 0
-        }
-        let tailId = messages.last?.id
-        if tailId != lastTailId {
-            let isArrival = lastTailId != nil
-            lastTailId = tailId
-            if isArrival, !isTailVisible {
-                showJumpPill = true
-                PulseHaptics.tap()
-            }
-        }
+        guard let session, session.sessionGeneration == readSessionGeneration else { return }
+        // An append can arrive before geometry updates. The old tail flag alone
+        // must not clear an arrival whose new row has never entered the viewport.
+        let latest = messages.last { !$0.id.hasPrefix("local_") && $0.deletedAt == nil && PulseRemediationLogic.isAlive($0.expiresAt) }
+        let readingTail = isTailVisible && !readSurfaceObscured && session.isForeground &&
+            session.activeRoomId == conversationId && latest.map { visibleReadIDs.contains($0.id) } == true
+        missedMessages.reconcile(messages, roomId: conversationId, viewerId: session.viewer?.id,
+            topicId: activeTopicId, readingTail: readingTail)
+        let count = missedMessages.count
+        if count > missedCount { PulseHaptics.tap() }
+        if missedCount != count { missedCount = count }
+        if showJumpPill != (count > 0) { showJumpPill = count > 0 }
     }
 
-    /// Pill tap - drop the badge, land on the tail (web jump button parity).
-    func jumpToLatest() {
-        showJumpPill = false
+    private func resetMissedScope() {
+        missedScopeRevision &+= 1
+        missedMessages.reset()
         missedCount = 0
-        lastSeenLen = messages.count
+        showJumpPill = false
+        noteRiverChanged() // seed already-visible IDs before a suspended topic reload
     }
 
     /// R30-c - the index the unread divider row sits BEFORE (web
@@ -4676,7 +4686,10 @@ final class RoomViewModel: ObservableObject {
         await refresh(session: session)
     }
 
-    func upsert(_ message: WireChatMessage) {
+    func upsert(_ message: WireChatMessage, countsAsArrival: Bool = false) {
+        if countsAsArrival, let session, session.sessionGeneration == readSessionGeneration {
+            missedMessages.receive([message], roomId: conversationId, viewerId: session.viewer?.id, topicId: activeTopicId)
+        }
         messages = PulseTimelineMerge.merge(messages, incoming: [message], topicId: activeTopicId)
     }
 
@@ -5682,6 +5695,7 @@ final class RoomViewModel: ObservableObject {
         cancelHistory()
         historyWindow.record(cursor: nil, hasMore: false)
         activeTopicId = id
+        resetMissedScope()
         // Do not leave another topic visible while the new request is suspended.
         let cached = (try? session.store?.messages(conversationId: conversationId)) ?? []
         messages = PulseTimelineMerge.merge(messages, incoming: cached, topicId: id)

@@ -3,7 +3,6 @@ import Foundation
 // R2-B - pure room-parity logic ports (no transport, no UI):
 //   • unreadAnchorMs       - web chats-tab.tsx:431-435 tap-time freeze
 //   • unreadDividerIndex   - web chat-room.tsx:1395-1420 anchor placement
-//   • MissedStep           - web chat-room.tsx:1594-1612 missed-count machine
 //   • automationValid / webhookNameValid - server validation mirrors
 //   • recapGate            - web requestRecap ≥5 live messages gate
 // No Date()/Date.now inside: every "now" arrives as a parameter so the
@@ -42,46 +41,8 @@ public enum PulseRoomParityLogic {
         return nil
     }
 
-    // R26 - off-screen arrivals → jump-pill missed badge
-
-    /// One step of the web missed-count machine (chat-room.tsx:1594-1612),
-    /// extracted pure. Semantics verbatim:
-    ///   • at the bottom (tailVisible) → badge resets, watermark advances;
-    ///   • more rows than last seen while away → missed grows by the delta;
-    ///   • fewer rows (room switch / cache reset) → everything resets;
-    ///   • same length → no-op.
-    public struct MissedStep: Equatable {
-        public let missed: Int
-        public let lastSeenLen: Int
-        /// True when fresh rows landed while the viewer was away - the
-        /// caller flips the pill on (and haptics) from this flag alone.
-        public let arrived: Bool
-        /// True when the badge/watermark were reset - the caller drops the pill.
-        public let reset: Bool
-    }
-
-    public static func missedStep(
-        previousMissed: Int,
-        previousLastSeenLen: Int,
-        newLen: Int,
-        tailVisible: Bool,
-    ) -> MissedStep {
-        if tailVisible {
-            return MissedStep(missed: 0, lastSeenLen: newLen, arrived: false, reset: true)
-        }
-        if newLen > previousLastSeenLen {
-            return MissedStep(
-                missed: previousMissed + (newLen - previousLastSeenLen),
-                lastSeenLen: newLen,
-                arrived: true,
-                reset: false,
-            )
-        }
-        if newLen < previousLastSeenLen {
-            return MissedStep(missed: 0, lastSeenLen: newLen, arrived: false, reset: true)
-        }
-        return MissedStep(missed: previousMissed, lastSeenLen: previousLastSeenLen, arrived: false, reset: false)
-    }
+    // Arrival tracking lives in PulseMissedMessages. Rendered row-count deltas
+    // cannot distinguish older history, edits, deletions and actual arrivals.
 
     /// The pill badge caps at 99 with a "99+" suffix (web parity).
     public static func missedBadgeText(_ missed: Int) -> String {

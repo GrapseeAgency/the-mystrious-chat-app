@@ -104,4 +104,24 @@ class OutboxOwnershipTest {
         } finally { db.close() }
     }
 
+    @Test fun replyChipCountsExcludeRetainedFailedEchoesAndReplayDoesNotInflate() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
+        try {
+            val root = Message(id = "root", conversationId = "room", authorId = "me", authorName = "Me",
+                kind = Message.Kind.TEXT, body = "Root", createdAt = "2026-10-20T00:00:00Z")
+            val reply = root.copy(id = "reply", threadRootId = "root")
+            val failed = reply.copy(id = "local_failed")
+            db.messageDao().upsertAll(listOf(root, reply, failed).map { MessageEntity.from(it) })
+            db.outboxDao().insert(OutboxEntity.from(OutboxEntry(conversationId = "room", clientId = "failed",
+                content = "Reply", createdAt = root.createdAt)))
+            db.outboxDao().markFailed("failed", "rejected")
+            db.messageDao().upsertAll(listOf(MessageEntity.from(reply))) // duplicate relay
+            fun counts(rows: List<MessageEntity>) = app.pulse.domain.sync.cachedThreadReplyCounts(rows.map { it.toDomain() })
+            assertEquals(mapOf("root" to 1), counts(db.messageDao().observeFor("room").first()))
+            db.messageDao().upsertAll(listOf(MessageEntity.from(reply.copy(deletedAt = "2026-10-21T00:00:00Z"))))
+            assertEquals(emptyMap<String, Int>(), counts(db.messageDao().observeFor("room").first()))
+            assertEquals(1, db.outboxDao().all().size) // recovery intent was not deleted to fix the badge
+        } finally { db.close() }
+    }
+
 }

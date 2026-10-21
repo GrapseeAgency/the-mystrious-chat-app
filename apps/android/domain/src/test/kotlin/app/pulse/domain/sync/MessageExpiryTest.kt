@@ -5,6 +5,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -62,4 +63,43 @@ class MessageExpiryTest {
         assertTrue(visible.isEmpty())
         reader.cancelAndJoin()
     }
+    @Test fun `reply-only changes and offline expiry update counts with an unchanged river`() = runTest {
+        val root = row("root", 2000)
+        val reply = row("reply", 1000).copy(threadRootId = "root")
+        val source = MutableStateFlow(listOf(root))
+        var counts = emptyMap<String, Int>()
+        val reader = backgroundScope.launch {
+            source.withMessageExpiry { testScheduler.currentTime }
+                .map { cachedThreadReplyCounts(it, testScheduler.currentTime) }
+                .collect { counts = it }
+        }
+        runCurrent()
+        assertTrue(counts.isEmpty())
+        source.value = listOf(root, reply)
+        runCurrent()
+        assertEquals(mapOf("root" to 1), counts)
+        source.value = listOf(root, reply.copy(deletedAt = "now"))
+        runCurrent()
+        assertTrue(counts.isEmpty())
+        source.value = listOf(root, reply)
+        runCurrent(); advanceTimeBy(1000); runCurrent()
+        assertTrue(counts.isEmpty()) // no database write at this deadline
+        source.value = listOf(root, reply.copy(expiresAtEpochMs = null))
+        runCurrent()
+        assertEquals(mapOf("root" to 1), counts)
+        advanceTimeBy(1000); runCurrent()
+        assertTrue(counts.isEmpty()) // expired root cannot retain a reply chip
+        reader.cancelAndJoin()
+    }
+
+    @Test fun `reply counts exclude foreign roots nested roots tombstones and expired rows`() {
+        val root = row("root")
+        val reply = row("reply").copy(threadRootId = "root")
+        val bad = listOf(reply.copy(id = "foreign", conversationId = "other"),
+            reply.copy(id = "deleted", deletedAt = "now"), reply.copy(id = "expired", expiresAtEpochMs = 10),
+            reply.copy(id = "orphan", threadRootId = "missing"), reply.copy(id = "nested", threadRootId = "reply"))
+        assertEquals(mapOf("root" to 1), cachedThreadReplyCounts(listOf(root, reply) + bad, now = 10))
+        assertTrue(cachedThreadReplyCounts(listOf(root.copy(deletedAt = "now"), reply), now = 10).isEmpty())
+    }
+
 }

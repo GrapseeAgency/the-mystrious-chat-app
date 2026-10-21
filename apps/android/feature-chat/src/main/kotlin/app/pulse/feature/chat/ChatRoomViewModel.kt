@@ -54,6 +54,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -220,10 +221,14 @@ class ChatRoomViewModel @Inject constructor(
     private val _transcribingIds = MutableStateFlow<Set<String>>(emptySet())
     val transcribingIds: StateFlow<Set<String>> = _transcribingIds.asStateFlow()
 
+    /** Share one raw Room/expiry stream before filtering the main river. */
+    private val roomRows = repo.observeMessages(conversationId)
+        .shareIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), replay = 1)
+
     /** MAIN RIVER - thread replies (threadRootId != null) live on the ThreadScreen only. */
     val messages: StateFlow<List<Message>> =
         combine(
-            repo.observeMessages(conversationId),
+            roomRows,
             _activeTopicId,
         ) { rows, topicId ->
             // Topic views (Wave 2 §1 row 9): null = General = WHOLE room
@@ -393,12 +398,9 @@ class ChatRoomViewModel @Inject constructor(
     val conversations: StateFlow<List<Conversation>> = repo.observeConversations()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** "N replies ↳" chip counts - one batched Room query per river change, live. */
-    val replyCounts: StateFlow<Map<String, Int>> = messages
-        .map { rows ->
-            val parents = rows.filter { !it.id.startsWith(TEMP_MESSAGE_PREFIX) }.map { it.id }
-            repo.threadReplyCounts(parents)
-        }
+    /** Observe raw room rows: a reply-only change may leave the main river identical. */
+    val replyCounts: StateFlow<Map<String, Int>> = roomRows
+        .map { rows -> app.pulse.domain.sync.cachedThreadReplyCounts(rows) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     private val _threadJumpRoot = MutableStateFlow<String?>(null)
@@ -439,7 +441,7 @@ class ChatRoomViewModel @Inject constructor(
         viewModelScope.launch {
             // This Room stream includes messages cached by pin/search requests,
             // and emits at TTL deadlines even without any network activity.
-            repo.observeMessages(conversationId).collect { current ->
+            roomRows.collect { current ->
                 val now = System.currentTimeMillis()
                 _state.value = _state.value.copy(
                     pins = app.pulse.domain.sync.reconcileMessageSelection(_state.value.pins, current, now) { it.pinnedAt != null },

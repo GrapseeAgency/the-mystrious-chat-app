@@ -1806,3 +1806,38 @@ server timestamp-only read semantics, per-thread/topic unread granularity, times
 all system/context-menu overlay lifecycles, and historical missed-message badge accounting
 still require further work. Server monotonic receipts and privacy fanout remain unchanged;
 this does not claim complete Seen/unread correctness or whole-app completion.
+
+### Arrival identity and reactive cached thread counts (2026-10-21)
+
+Corrected two separate local UI accounting paths; these are not changes to server unread totals.
+
+- Swift's jump badge now tracks distinct eligible peer arrivals, rather than changes in
+  rendered list length. Loading older history, snapshots, own sends, replayed relay events,
+  and unrelated deletion cannot invent arrivals or erase unrelated pending IDs. Deletes,
+  expiry and topic changes reconcile individual pending IDs. Catch-up classification uses
+  a captured canonical tail and topic revision; initial history discovery is not an arrival.
+- Tapping Jump no longer clears its badge before scrolling succeeds. Clearing requires an
+  unobscured foreground/current-room tail AND measured visibility of the latest live
+  canonical row, so yesterday's geometry cannot clear a just-appended message. Removed
+  the unused length-delta helper/tests rather than retaining a second contradictory policy.
+- Swift reply chips observe a room-scoped GRDB aggregation over live same-room roots and
+  replies, excluding deleted/expired rows and retained failed echoes. Duplicate events do
+  not increment counts. Root and reply expiry deadlines requery through the visibility
+  clock even without database writes; queued snapshots crossing a deadline are rechecked.
+- Primary Android derives reply chips from raw expiry-aware room rows, not the filtered
+  main-river StateFlow (which suppresses reply-only changes). The main river, selection
+  reconciliation and counts share one upstream query/decoding/expiry subscription.
+
+Verification: 99/99 existing server contracts pass; production reply-count SQL separately
+checked with SQLite for room isolation, failed/deleted rows and root/reply deadlines.
+Added seven Swift and three Android regressions covering arrival identity, catch-up/replay,
+root/reply lifetime, GRDB observation and retained failed echoes. Syntax/diff checks pass;
+these new native tests have not yet compiled/run. The previous ef6b1d1 build, Swift tests
+and Android API 30/34 instrumentation passed, which is not verification of this new batch.
+
+Limits: reply chips describe cached replies, not authoritative totals for unloaded history.
+The local jump badge is not a server unread counter; catch-up requires a known baseline,
+with same-timestamp ordering conservatively using the composite cursor. Legacy unused
+aggregate APIs remain separate. Large-thread pagination, exact primary-Android reply
+navigation, cold Swift jumps and broader revocation/media-copy behavior remain open.
+Autumn styling is unchanged. No merge/deployment or whole-app correctness claim.

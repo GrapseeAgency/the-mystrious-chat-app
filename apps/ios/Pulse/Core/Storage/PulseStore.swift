@@ -505,6 +505,41 @@ public final class PulseStore: Sendable {
         }
     }
 
+    func observeThreadReplyCounts(conversationId: String) -> DatabasePublishers.Value<ThreadReplyCountSnapshot> {
+        ValueObservation.tracking { db in
+            try Self.threadReplyCountSnapshot(db, conversationId: conversationId, now: Date())
+        }.publisher(in: dbQueue)
+    }
+
+    func threadReplyCountSnapshot(conversationId: String, now: Date = Date()) throws -> ThreadReplyCountSnapshot {
+        try dbQueue.read { try Self.threadReplyCountSnapshot($0, conversationId: conversationId, now: now) }
+    }
+
+    private static func threadReplyCountSnapshot(_ db: Database, conversationId: String, now: Date) throws -> ThreadReplyCountSnapshot {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT reply.parentId, COUNT(*) AS replyCount,
+                   MIN(reply.expiresAtEpoch) AS replyExpiry, root.expiresAtEpoch AS rootExpiry
+            FROM message reply JOIN message root ON root.id = reply.parentId AND root.conversationId = reply.conversationId
+            WHERE reply.conversationId = :room AND root.parentId IS NULL AND substr(root.id, 1, 6) != 'local_'
+              AND root.deletedAt IS NULL AND (root.expiresAtEpoch IS NULL OR root.expiresAtEpoch > :now)
+              AND reply.deletedAt IS NULL AND (reply.expiresAtEpoch IS NULL OR reply.expiresAtEpoch > :now)
+              AND NOT EXISTS (SELECT 1 FROM outbox o WHERE reply.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)
+            GROUP BY reply.parentId, root.expiresAtEpoch
+            """, arguments: ["room": conversationId, "now": now.timeIntervalSince1970])
+        var snapshot = ThreadReplyCountSnapshot()
+        for row in rows {
+            let root: String = row["parentId"]
+            let count: Int = row["replyCount"]
+            snapshot.counts[root] = count
+            let replyExpiry: Double? = row["replyExpiry"], rootExpiry: Double? = row["rootExpiry"]
+            if let earliest = [replyExpiry, rootExpiry].compactMap({ $0 }).min() {
+                let deadline = Date(timeIntervalSince1970: earliest)
+                snapshot.nextExpiry = min(snapshot.nextExpiry ?? deadline, deadline)
+            }
+        }
+        return snapshot
+    }
+
     /// Full authoritative envelope for new rows; column fallback only for
     /// legacy local operations preserved by the privacy-cache migration.
     private static func messageRow(from row: Row) -> WireChatMessage? {
@@ -1312,4 +1347,10 @@ enum PulseOutboxClock {
     static func now() -> String {
         formatter.string(from: Date())
     }
+}
+
+/// The visibility clock re-queries only when a relevant cached root/reply expires.
+struct ThreadReplyCountSnapshot: Equatable {
+    var counts: [String: Int] = [:]
+    var nextExpiry: Date?
 }
