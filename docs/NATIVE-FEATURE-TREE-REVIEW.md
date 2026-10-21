@@ -2148,3 +2148,38 @@ Native Actions for the preceding call tranche exposed two Kotlin assertions: the
 pre-offer microphone guard had not actually been applied, and a hangup fixture had
 not dispatched its offer. c1a6811 applies the missing runtime guard and makes that
 fixture explicitly exercise an already-dispatched call. Native rerun pending.
+
+
+## 2026-10-21 — Swift group-call admission and mesh lifetime
+
+Group call preparation checked only a broad connected flag, ignored signaling-send
+failure, and disconnect teardown did not invalidate suspended permissions. The mesh
+accepted answer/ICE without current room/call matching; several async SDP completions
+and all bridge callbacks could mutate replacement peers. Opening another conversation
+could replace a live call's displayed roster. The join path had no admission timeout.
+
+Repairs:
+- Check joined transport readiness before/after permission waits. Teardown invalidates
+  preparation, ring work, peer bridges and SDP ownership before native close. Each SDP
+  suspension checks call generation AND exact peer identity before the next operation.
+- Per-peer negotiation gates suppress duplicate concurrent SDP. Local ICE waits for
+  SDP dispatch; early remote/local queues are bounded. Peer failure closes that peer.
+- Bind admission to the relay's conversation/call ID; targeted messages must match the
+  viewer, roster and deterministic offer direction. Foreign-room state cannot replace
+  a live roster; authoritative removal ends local media. Old-call ended events do not
+  terminate the admitted replacement call.
+- Only the admitted roster starts ring API work; full/rejected joins no longer ring
+  other members prematurely. Failed dispatch and unacknowledged join timeout end setup.
+- Teardown disables the shared microphone and restores audio only if this engine
+  acquired it. Dismiss actions cannot silently reset an active call. Probe completions
+  are fenced against a newer probe, room switch, join lifetime or relay roster.
+
+Added controlled permission, rejected-dispatch, admission-timeout, foreign roster,
+member removal, suspended-offer and old-bridge regressions. The audio-session seam
+avoids requiring physical audio activation to exercise ownership logic. Both changed
+Swift files syntax-parse; native compilation/execution remains pending. No theme edit.
+
+Limits: the protocol still has no client join-attempt nonce/acknowledged SDP transaction,
+so this does not prove same-room pre-admission replay impossible. Physical multi-peer
+ICE/media, Bluetooth, Android group engine parity, cross-device admission ownership,
+relay membership authorization and network reconnection need further work.
