@@ -2291,3 +2291,11 @@ ownership, unchosen reject/hangup/ICE, passive disconnect and immediate active-o
 hangup. All 118 server tests and strict relay TypeScript checking pass. Native behavior
 on physical devices is not proven by these server checks. Authentication migration,
 same-socket identity rebinding and conversation authorization remain deferred/open.
+
+
+Validation follow-up: the previously dependency-free server-contract workflow had no
+Socket.IO packages for the new real-relay regression (the local checkout had them).
+Added a narrowly scoped relay dependency install and relay/helper path triggers. The
+initial 6bf6279 server-contract run failed; it is not a runtime or native pass claim.
+GitHub log download returned EOF and its annotation was tail-truncated; the fresh-job
+dependency omission is directly visible in the workflow. A rerun must confirm the fix.
