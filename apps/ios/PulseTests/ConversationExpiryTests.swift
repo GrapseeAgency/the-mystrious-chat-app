@@ -32,6 +32,27 @@ final class ConversationExpiryTests: XCTestCase {
         XCTAssertEqual(oldServer.removingExpiredSummary(at: base).unreadCount, 4)
     }
 
+    func testRootBoundedReplyBucketsExpireWithoutThreadHistory() throws {
+        var snapshot = try fixture(deadline: base)
+        snapshot.unreadCount = 7
+        snapshot.unreadExpirations = [
+            WireUnreadExpiration(expiresAt: ISO8601DateFormatter().string(from: base.addingTimeInterval(-10)), count: 1),
+            WireUnreadExpiration(expiresAt: ISO8601DateFormatter().string(from: base), count: 4),
+            WireUnreadExpiration(expiresAt: ISO8601DateFormatter().string(from: base.addingTimeInterval(10)), count: 1),
+        ]
+        let early = snapshot.removingExpiredSummary(at: base.addingTimeInterval(-10))
+        XCTAssertEqual(early.unreadCount, 6)
+        XCTAssertNotNil(early.lastMessage)
+        let rootExpired = early.removingExpiredSummary(at: base)
+        XCTAssertEqual(rootExpired.unreadCount, 2)
+        XCTAssertNil(rootExpired.lastMessage)
+        XCTAssertTrue(rootExpired.manualUnread)
+        XCTAssertEqual(rootExpired.myDraft, "unfinished")
+        let later = rootExpired.removingExpiredSummary(at: base.addingTimeInterval(10))
+        XCTAssertEqual(later.unreadCount, 1)
+        XCTAssertEqual(later.unreadExpirations, [])
+    }
+
     func testOptimisticMetadataCopiesPreserveExpiryAndPrivacy() throws {
         let raw = try fixture(deadline: base)
         let updated = raw.withPinnedAt("pin").withArchived("archive").withMutedUntil("mute").withManualUnread(false)

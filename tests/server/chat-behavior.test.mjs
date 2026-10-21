@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { advanceReadReceipt, receiptRecipients } from '../../src/lib/read-receipt.ts'
-import { threadRepliesWhere, removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
+import { inboxMessagesWhere, visibleInboxPreview, threadRepliesWhere, removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
 import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { openDirectConversation } from '../../src/lib/direct-conversation.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
@@ -223,4 +223,84 @@ test('thread reader excludes foreign-room and expired replies even with a matchi
     ('different-thread','room','other-root',${t(0)},NULL)`
   const rows = await db.message.findMany({ where: threadRepliesWhere('root', 'room', t(20)), select: { id: true } })
   assert.deepEqual(rows.map(row => row.id), ['live'])
+}))
+
+
+test('unread replies require a live same-room canonical root, including at its expiry boundary', () => fixture(async db => {
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,expiresAt,deletedAt,parentId) VALUES
+    ('root','room','reader',${t(0)},${t(30)},NULL,NULL),
+    ('reply','room','peer',${t(10)},NULL,NULL,'root'),
+    ('deleted-root','room','reader',${t(0)},NULL,${t(1)},NULL),
+    ('deleted-root-reply','room','peer',${t(10)},NULL,NULL,'deleted-root'),
+    ('expired-root','room','reader',${t(0)},${t(20)},NULL,NULL),
+    ('expired-root-reply','room','peer',${t(10)},NULL,NULL,'expired-root'),
+    ('foreign-root','other','reader',${t(0)},NULL,NULL,NULL),
+    ('foreign-root-reply','room','peer',${t(10)},NULL,NULL,'foreign-root'),
+    ('nested-reply','room','peer',${t(10)},NULL,NULL,'reply'),
+    ('orphan','room','peer',${t(10)},NULL,NULL,'missing')`
+  assert.equal(await db.message.count({ where: unreadMessages('room', 'reader', t(0), t(20)) }), 1)
+  assert.deepEqual(await unreadSnapshot(db, 'room', 'reader', t(0), t(20)), {
+    unreadCount: 1, unreadExpirations: [{ expiresAt: t(30).toISOString(), count: 1 }],
+  })
+  assert.deepEqual(await unreadSnapshot(db, 'room', 'reader', t(0), t(30)), { unreadCount: 0, unreadExpirations: [] })
+  await db.$executeRaw`UPDATE Message SET deletedAt=${t(21)} WHERE id='root'`
+  assert.deepEqual(await unreadSnapshot(db, 'room', 'reader', t(0), t(22)), { unreadCount: 0, unreadExpirations: [] })
+}))
+
+test('offline unread buckets use the earlier root/reply deadline without double counting', () => fixture(async db => {
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,expiresAt,parentId) VALUES
+    ('root','room','peer',${t(1)},${t(30)},NULL),
+    ('early','room','peer',${t(2)},${t(25)},'root'),
+    ('late','room','peer',${t(3)},${t(40)},'root'),
+    ('same','room','peer',${t(4)},${t(30)},'root'),
+    ('no-deadline','room','peer',${t(5)},NULL,'root'),
+    ('own','room','reader',${t(6)},NULL,'root'),
+    ('permanent-root','room','reader',${t(0)},NULL,NULL),
+    ('permanent','room','peer',${t(7)},NULL,'permanent-root'),
+    ('child-only','room','peer',${t(8)},${t(40)},'permanent-root')`
+  const initial = await unreadSnapshot(db, 'room', 'reader', t(0), t(20))
+  assert.deepEqual(initial, { unreadCount: 7, unreadExpirations: [
+    { expiresAt: t(25).toISOString(), count: 1 }, { expiresAt: t(30).toISOString(), count: 4 },
+    { expiresAt: t(40).toISOString(), count: 1 },
+  ] })
+  for (const now of [t(25), t(30), t(40)]) {
+    const expired = initial.unreadExpirations.filter(bucket => new Date(bucket.expiresAt) <= now)
+      .reduce((n, bucket) => n + bucket.count, 0)
+    const refreshed = await unreadSnapshot(db, 'room', 'reader', t(0), now)
+    assert.equal(initial.unreadCount - expired, refreshed.unreadCount)
+    assert.equal(await db.message.count({ where: unreadMessages('room', 'reader', t(0), now) }), refreshed.unreadCount)
+  }
+}))
+
+test('unread aggregation binds room and viewer values rather than interpolating SQL', () => fixture(async db => {
+  const room = "room' OR 1=1 --", viewer = "reader' --"
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt) VALUES
+    ('mine',${room},${viewer},${t(5)}),('incoming',${room},'peer',${t(6)}),('elsewhere','other','peer',${t(7)})`
+  assert.deepEqual(await unreadSnapshot(db, room, viewer, t(0), t(20)), { unreadCount: 1, unreadExpirations: [] })
+}))
+
+
+test('inbox preview skips hidden-root replies and carries the earlier lifetime without changing stored rows', () => fixture(async db => {
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,expiresAt,deletedAt,parentId) VALUES
+    ('root','room','reader',${t(0)},${t(30)},NULL,NULL),
+    ('reply','room','peer',${t(10)},${t(40)},NULL,'root'),
+    ('deleted-root','room','reader',${t(0)},NULL,${t(1)},NULL),
+    ('hidden','room','peer',${t(20)},NULL,NULL,'deleted-root'),
+    ('orphan','room','peer',${t(21)},NULL,NULL,'missing'),
+    ('fallback','room','peer',${t(5)},NULL,NULL,NULL)`
+  const fields = { id: true, conversationId: true, parentId: true, expiresAt: true, deletedAt: true }
+  async function preview(at) {
+    const row = await db.message.findFirst({ where: inboxMessagesWhere('room', at),
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { ...fields, parent: { select: fields } } })
+    return { raw: row, projected: visibleInboxPreview(row, 'room', at) }
+  }
+  const initial = await preview(t(22))
+  assert.equal(initial.projected.id, 'reply')
+  assert.equal(initial.projected.expiresAt.toISOString(), t(30).toISOString())
+  assert.equal(initial.raw.expiresAt.toISOString(), t(40).toISOString())
+  assert.equal((await preview(t(30))).projected.id, 'fallback')
+  assert.equal(visibleInboxPreview(initial.raw, 'room', t(30)), null)
+  assert.equal(visibleInboxPreview(initial.raw, 'other', t(22)), null)
+  assert.equal(visibleInboxPreview({ ...initial.raw, parent: null }, 'room', t(22)), null)
+  assert.equal(visibleInboxPreview({ ...initial.raw, parent: { ...initial.raw.parent, parentId: 'nested' } }, 'room', t(22)), null)
 }))

@@ -2394,3 +2394,31 @@ Still separate/open: offline read-intent persistence after leaving a thread, cum
 conversation watermark semantics across unseen gaps, and unread aggregation/expiry of
 replies whose ROOT is unavailable (existing unread snapshots group by the reply's own
 expiry). Do not equate this live-surface repair with all Seen/unread behavior being solved.
+
+## 2026-10-22 — unavailable thread replies stop keeping inbox badges/previews alive
+
+The unread snapshot counted a reply using only its own deletion/expiry fields. A
+permanent reply under an expired/deleted root could therefore leave an unread badge
+which the user could not clear by opening that thread. The snapshot now aggregates a
+same-room canonical-root join in a single SQLite statement, excluding unavailable roots
+and grouping each reply at min(reply expiry, root expiry). It does not download message
+history or infer authoritative counts from the native cache. ORM unread predicates use
+the same visibility rule; values remain bound SQL parameters.
+
+Inbox preview selection now also skips unavailable-root replies and falls back to the
+next visible message. Preview-only DTO copies inherit an earlier root deadline, allowing
+both existing native offline expiry schedulers to remove the preview on time, even when
+that device never downloaded the thread. Canonical database message expiry is unchanged;
+root tombstones still use the existing redacted preview serializer.
+
+Added actual SQLite cases for deleted/expired/foreign/nested/missing roots, inclusive
+expiry boundaries, mixed root/child buckets, bound values, and preview fallback. Added
+Swift/Kotlin offline bucket regressions. Server suite 123/123 passed; targeted strict
+TypeScript checks include the serializer and pass; native regression syntax checks pass.
+Native execution for this tranche is pending. The prior 21aa7a1 Android build + API30/34
+instrumentation and iOS build/tests/archive all passed; that is not physical-device proof.
+
+Still open: offline read-intent persistence after leaving a thread, cumulative-watermark
+semantics across unseen gaps, and out-of-cache history-window navigation. No autumn
+styling changes. Existing cached envelopes created by older servers do not acquire a
+root deadline until refreshed; this change does not claim retroactive offline knowledge.

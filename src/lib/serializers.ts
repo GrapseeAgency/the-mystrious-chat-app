@@ -6,7 +6,7 @@ import path from 'node:path'
 import { redactDeletedMessage, quoteDisclosure } from '@/lib/message-disclosure'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
-import { unreadSnapshot, isExpiredMessage, unexpiredMessages } from '@/lib/message-visibility'
+import { unreadSnapshot, inboxMessagesWhere, visibleInboxPreview } from '@/lib/message-visibility'
 import { DEFAULT_PREFERENCES, mergePrefs, type PulsePrefs } from '@/lib/prefs-defaults'
 import type {
   AppUser,
@@ -399,12 +399,17 @@ export function membersForViewer(
 }
 
 /** Reusable deep include for "conversation + members + newest message". */
+const INBOX_MESSAGE_INCLUDE = {
+  ...MESSAGE_FULL_INCLUDE,
+  parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } },
+} satisfies Prisma.MessageInclude
+
 export const CONVERSATION_FULL_INCLUDE = {
   participants: { include: { user: true } },
   messages: {
-    orderBy: { createdAt: 'desc' as const },
+    orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
     take: 1,
-    include: MESSAGE_FULL_INCLUDE,
+    include: INBOX_MESSAGE_INCLUDE,
   },
 } satisfies Prisma.ConversationInclude
 
@@ -425,18 +430,19 @@ export async function buildConversationSummary(
   const myReadAt =
     conv.participants.find((p) => p.userId === viewerId)?.lastReadAt ?? new Date(0)
   const at = new Date()
-  const preview = conv.messages[0] ?? null
+  const preview = visibleInboxPreview(conv.messages[0], conv.id, at)
   const [unread, streakRow, lastRow] = await Promise.all([
     unreadSnapshot(db, conv.id, viewerId, myReadAt, at),
     db.conversationStreak.findUnique({
       where: { conversationId_userId: { conversationId: conv.id, userId: viewerId } },
       select: { lastDay: true, count: true, best: true },
     }),
-    // TTL cleanup may not run until someone opens the room. Inbox truth must
-    // not depend on that incidental purge, nor leak an expired preview body.
-    preview && isExpiredMessage(preview, at)
-      ? db.message.findFirst({ where: { conversationId: conv.id, ...unexpiredMessages(at) },
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: MESSAGE_FULL_INCLUDE })
+    // Root deletion/expiry can hide the newest reply without changing its own
+    // expiresAt. Select the next visible row, not merely the next unexpired one.
+    !preview && conv.messages.length > 0
+      ? db.message.findFirst({ where: inboxMessagesWhere(conv.id, at),
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], include: INBOX_MESSAGE_INCLUDE })
+          .then(row => visibleInboxPreview(row, conv.id, new Date()))
       : Promise.resolve(preview),
   ])
   const mine = conv.participants.find((p) => p.userId === viewerId)
