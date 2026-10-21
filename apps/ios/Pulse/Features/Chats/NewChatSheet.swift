@@ -21,6 +21,9 @@ struct NewChatSheet: View {
     @State private var picked: Set<String> = []
     @State private var groupName = ""
     @State private var creating = false
+    @State private var creationTask: Task<Void, Never>?
+    @State private var creationError: String?
+    @State private var directoryRetry = 0
 
     private enum Phase { case loading, ready, failed(String) }
 
@@ -55,6 +58,7 @@ struct NewChatSheet: View {
                     case .failed(let message):
                         Spacer()
                         ContentUnavailableCompat(title: "Can't load contacts", systemImage: "wifi.exclamationmark", note: message)
+                        Button("Retry") { directoryRetry += 1 }
                         Spacer()
                     case .ready:
                         if filtered.isEmpty {
@@ -72,8 +76,14 @@ struct NewChatSheet: View {
                         }
                     }
 
+                    if let creationError {
+                        Text(creationError).font(.footnote).foregroundStyle(PulseTheme.titleOnWash)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                    }
+                    if creating { ProgressView(mode == .group ? "Creating group…" : "Opening chat…").padding(8) }
                     if mode == .group { groupComposer }
                 }
+                .disabled(creating)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -81,13 +91,15 @@ struct NewChatSheet: View {
                     Text("New chat").font(.headline)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { creationTask?.cancel(); dismiss() }
                 }
             }
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task { await load() }
+        .task(id: directoryRetry) { await load() }
+        .onDisappear { creationTask?.cancel() }
+        .onChange(of: session.sessionGeneration) { _, _ in creationTask?.cancel(); dismiss() }
     }
 
     // sections
@@ -320,44 +332,50 @@ struct NewChatSheet: View {
     private var canCreateGroup: Bool { groupValid && !groupName.trimmingCharacters(in: .whitespaces).isEmpty }
 
     private func load() async {
+        let api = session.api, epoch = session.sessionGeneration
+        phase = .loading
         do {
-            let page = try await session.api.users()
-            // The viewer never chats with themselves here (Note to Self exists for that).
-            users = page.filter { $0.id != session.viewer?.id }
+            let page = try await api.users()
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            users = page.filter { $0.id != api.userId }
             phase = .ready
         } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             phase = .failed(ChatsViewModel.describe(error))
         }
     }
 
     private func startDirect(_ user: WireUser) {
-        guard !creating else { return }
-        creating = true
-        Task {
-            defer { creating = false }
-            do {
-                let conv = try await session.api.createConversation(memberIds: [user.id], isGroup: false)
-                session.noteInboxChanged()
-                onCreated(conv)
-            } catch {
-                session.toasts.show(ChatsViewModel.describe(error))
-            }
-        }
+        create(memberIds: [user.id], isGroup: false, name: nil)
     }
 
     private func createGroup() {
-        guard canCreateGroup, !creating else { return }
+        guard canCreateGroup else { return }
+        create(memberIds: Array(picked), isGroup: true, name: groupName.trimmingCharacters(in: .whitespaces))
+    }
+
+    private func create(memberIds: [String], isGroup: Bool, name: String?) {
+        guard !creating, let viewer = session.viewer else { return }
+        let api = session.api, epoch = session.sessionGeneration
         creating = true
-        let name = groupName.trimmingCharacters(in: .whitespaces)
-        let memberIds = Array(picked)
-        Task {
-            defer { creating = false }
+        creationError = nil
+        creationTask = Task { @MainActor in
+            defer {
+                creating = false
+                // A canceled/lost response may still have committed a group.
+                if session.sessionGeneration == epoch { session.noteInboxChanged() }
+            }
             do {
-                let conv = try await session.api.createConversation(memberIds: memberIds, isGroup: true, name: name)
-                session.noteInboxChanged()
+                let conv = try await PulseConversationNavigation.create(viewerId: viewer.id,
+                    memberIds: memberIds, isGroup: isGroup) {
+                    try await api.createConversation(memberIds: memberIds, isGroup: isGroup, name: name)
+                }
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 onCreated(conv)
             } catch {
-                session.toasts.show(ChatsViewModel.describe(error))
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                creationError = isGroup ? "Couldn't confirm group creation. Check Chats before retrying."
+                    : ChatsViewModel.describe(error)
             }
         }
     }

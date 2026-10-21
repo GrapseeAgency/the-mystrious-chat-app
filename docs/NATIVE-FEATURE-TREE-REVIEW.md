@@ -2488,3 +2488,33 @@ were added but have not been compiled/executed yet. These checks are not device 
 Inventory regenerated separately; autumn styling unchanged. Still open: primary Swift
 contact actions, cold external deep links missing from the inbox, group/channel creation
 lost-acknowledgement ambiguity, durable offline receipts, and history-window pagination.
+
+
+## 2026-10-22 — primary Swift Contacts and New Chat actually complete their actions
+
+RootView's mounted ContactsView stored an ObservableObject in @State, discarded the
+returned DM instead of navigating, and gave each row a local spinner that was never
+cleared. It now uses @StateObject and a model-owned pending identity; success hands the
+returned conversation to RootView, switches to Chats, and opens that identity without
+another detail fetch. The Add Contact callback now uses this same tab handoff. Loading
+and action failures remain distinguishable, errors are visible, and directory retry is
+available. Directory responses are latest-request/session fenced.
+
+Contact DM/voice/video resolution is one owned task with overlap prevention, captured
+client/engine, exact returned-member/type validation, cancellation and epoch checks.
+Leaving Contacts, opening another surface/profile, or blocking cancels pending opening;
+late responses cannot start a call or navigate through the canceled task. This is not a
+claim about physical microphone/camera behavior or the whole call pipeline.
+
+The mounted NewChatSheet likewise cancels creation on dismissal/session change, captures
+selection/client before awaiting, disables conflicting edits while busy, and validates
+the acknowledged members/type before invoking its navigation callback. It shows an
+in-sheet failure and directory retry instead of a disappearing/toast-only failure. Group
+lost-response ambiguity remains: the warning tells users to check Chats before retrying,
+but durable operation IDs are not implemented here.
+
+Added Swift identity/response/cancellation/refusal regression cases used by these actual
+surfaces. Five touched Swift files syntax-parse; native compilation/execution remains
+pending. No new server behavior in this tranche (128 server cases passed on f2930bb).
+Autumn styling retained. User-profile message actions, Note to Self's refresh-dependent
+Swift opening and cold root deep links still need their own follow-through.

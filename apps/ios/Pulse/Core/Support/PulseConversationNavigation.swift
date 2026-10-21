@@ -11,4 +11,24 @@ enum PulseConversationNavigation {
                 Set($0.members.map(\.id)) == expected
         }
     }
+
+    /// Validate the acknowledged identity before a screen navigates or starts a call.
+    static func create(viewerId: String, memberIds: [String], isGroup: Bool,
+                       request: () async throws -> WireConversationSummary) async throws -> WireConversationSummary {
+        try Task.checkCancellation()
+        let expected = Set(memberIds + [viewerId])
+        guard !viewerId.isEmpty, memberIds.allSatisfy({ !$0.isEmpty }),
+              isGroup ? expected.count >= 3 : expected.count == 2 else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Choose the people for this chat again.")
+        }
+        let created = try await request()
+        try Task.checkCancellation()
+        guard !created.id.isEmpty, created.isGroup == isGroup, created.isSelf != true,
+              created.members.count == expected.count, Set(created.members.map(\.id)) == expected else {
+            throw PulseAPIClient.Failure(kind: .validation,
+                message: "The returned chat didn't match your selection. Refresh Chats before retrying.")
+        }
+        return created
+    }
+
 }

@@ -257,8 +257,12 @@ struct RootView: View {
                 })
                 .transition(panelTransition)
             case .contacts:
-                ContactsView(session: session)
-                    .transition(panelTransition)
+                ContactsView(session: session, onOpenRoom: { conversation in
+                    guard tab == .contacts else { return }
+                    switchTab(.chats)
+                    session.requestOpenRoom(conversation)
+                })
+                .transition(panelTransition)
             case .profile:
                 ProfileView(
                     session: session,
