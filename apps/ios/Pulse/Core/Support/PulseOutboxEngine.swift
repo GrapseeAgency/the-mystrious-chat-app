@@ -171,6 +171,8 @@ public final class PulseOutboxEngine: ObservableObject {
     /// Engine → session pipe (delivered/dropped events feed the UI).
     public var onEvent: ((Event) -> Void)?
     public var onAcknowledgement: ((PulseSendResult) -> Void)?
+    /// Session fallback still blocks dispatch if recording a denial on disk failed.
+    public var additionalThreadAccessDenied: ((String) -> Bool)?
 
     private let store: PulseStore
     private let senderProvider: () -> (any PulseOutboxSending)?
@@ -243,6 +245,7 @@ public final class PulseOutboxEngine: ObservableObject {
         pathMonitor.cancel()
         onEvent = nil
         onAcknowledgement = nil
+        additionalThreadAccessDenied = nil
     }
 
     /// Only explicit message-endpoint slow_mode failures are room scoped.
@@ -276,6 +279,12 @@ public final class PulseOutboxEngine: ObservableObject {
 
     public func count() -> Int {
         pendingCount
+    }
+
+    private func requireThreadAccess(_ rootId: String?) throws {
+        guard let rootId else { return }
+        if additionalThreadAccessDenied?(rootId) == true { throw PulseStore.ThreadAccessError() }
+        if try store.threadAccessDenied(rootId: rootId) { throw PulseStore.ThreadAccessError() }
     }
 
     // flushing
@@ -316,6 +325,7 @@ public final class PulseOutboxEngine: ObservableObject {
                 // the text-only body.
                 var forward = PulseOutboxForward.decode(entry.payloadJson)
                 if entry.payloadJson != nil && forward == nil { throw CocoaError(.coderReadCorrupt) }
+                try requireThreadAccess(forward?.parentId)
                 if let dataUrl = forward?.uploadDataUrl {
                     guard var uploaded = forward, ["image", "file", "audio"].contains(uploaded.kind ?? "") else {
                         throw CocoaError(.coderReadCorrupt)
@@ -333,6 +343,9 @@ public final class PulseOutboxEngine: ObservableObject {
                     guard try store.recordOutboxUpload(clientId: entry.clientId, envelope: uploaded) else { continue }
                     forward = uploaded
                 }
+                // Denial/discard can arrive during upload. Keep its durable receipt, but do not POST.
+                guard try store.isPendingOutbox(clientId: entry.clientId) else { continue }
+                try requireThreadAccess(forward?.parentId)
                 postingMessage = true
                 let receipt = try await sender.sendMessageWithStreak(
                     conversationId: entry.conversationId,
@@ -376,8 +389,10 @@ public final class PulseOutboxEngine: ObservableObject {
                     }
                 }
                 let damagedEnvelope = (error as? CocoaError)?.code == .coderReadCorrupt
-                if Self.isDroppable(error) || damagedEnvelope {
-                    let reason = damagedEnvelope ? "Saved message metadata is damaged" : Self.describe(error)
+                let refusedThread = error is PulseStore.ThreadAccessError
+                if Self.isDroppable(error) || damagedEnvelope || refusedThread {
+                    let reason = refusedThread ? "Thread access was refused. Reopen the thread before retrying this saved reply." :
+                        (damagedEnvelope ? "Saved message metadata is damaged" : Self.describe(error))
                     do {
                         if try store.rejectOutbox(clientId: entry.clientId, reason: reason) {
                             onEvent?(.dropped(clientId: entry.clientId, conversationId: entry.conversationId,

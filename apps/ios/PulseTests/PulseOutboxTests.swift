@@ -491,6 +491,68 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(store.countOutbox(), 0)
     }
 
+    func testKnownThreadRefusalStopsUploadAndPostWithoutBlockingOtherMessages() async throws {
+        let store = try PulseStore()
+        let envelope = PulseOutboxForward(kind: "file", fileName: "notes.pdf", parentId: "root",
+            uploadDataUrl: "data:application/pdf;base64,JVBERg==")
+        try store.appendOutbox(conversationId: "room", clientId: "held", content: "held", kind: "file",
+            payloadJson: PulseOutboxForward.encode(envelope))
+        try store.appendOutbox(conversationId: "room", clientId: "next", content: "next")
+        try store.denyThread(rootId: "root")
+        let sender = StubSender(behaviors: [:]), engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        await engine.flush()
+        XCTAssertEqual(sender.uploadCount, 0)
+        XCTAssertEqual(sender.operationIds, ["next"])
+        let retained = try XCTUnwrap(store.outboxAll().first)
+        XCTAssertEqual(retained.clientId, "held")
+        XCTAssertNotNil(retained.failureReason)
+        XCTAssertEqual(PulseOutboxForward.decode(retained.payloadJson), envelope)
+        XCTAssertEqual(store.countPendingOutbox(), 0)
+    }
+
+    func testSessionOnlyRefusalAlsoBlocksBackgroundDrain() async throws {
+        let store = try PulseStore()
+        try store.appendOutbox(conversationId: "room", clientId: "held", content: "held",
+            payloadJson: PulseOutboxForward.encode(PulseOutboxForward(kind: "text", parentId: "root")))
+        let sender = StubSender(behaviors: [:]), engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        engine.additionalThreadAccessDenied = { $0 == "root" }
+        await engine.flush()
+        XCTAssertTrue(sender.operationIds.isEmpty)
+        XCTAssertNotNil(try store.outboxAll().first?.failureReason)
+    }
+
+    func testThreadRefusalDuringUploadKeepsReceiptAndRequiresExplicitRetry() async throws {
+        let store = try PulseStore()
+        let root = OutboxFixtures.makeMessage(id: "root", conversationId: "room", content: "root")
+        try store.upsert(messages: [root])
+        let envelope = PulseOutboxForward(kind: "file", fileName: "notes.pdf", parentId: "root",
+            uploadDataUrl: "data:application/pdf;base64,JVBERg==")
+        let echo = TempMessages.make(conversationId: "room", viewer: PulseViewer(id: "me", name: "Me"),
+            clientId: "held", content: "held", parentId: "root", attachment: envelope)
+        try store.enqueueMessage(echo, clientId: "held", envelope: envelope)
+        let sender = StubSender(behaviors: [:]), engine = makeEngine(store, sender)
+        defer { engine.stop() }
+        sender.beforeUploadReturn = { try store.denyThread(rootId: "root") }
+        await engine.flush()
+        XCTAssertEqual(sender.uploadCount, 1)
+        XCTAssertTrue(sender.operationIds.isEmpty)
+        let retained = try XCTUnwrap(store.outboxAll().first)
+        let uploaded = try XCTUnwrap(PulseOutboxForward.decode(retained.payloadJson))
+        XCTAssertNotNil(retained.failureReason)
+        XCTAssertNil(uploaded.uploadDataUrl)
+        XCTAssertEqual(uploaded.filePath, "uploaded-file.pdf")
+        _ = try store.acceptThreadSnapshot(rootId: "root", roomId: "room", messages: [root])
+        await engine.flush() // revalidation alone does not auto-send a previously refused operation
+        XCTAssertTrue(sender.operationIds.isEmpty)
+        XCTAssertTrue(try store.retryOutbox(clientId: "held", message: echo))
+        await engine.flush()
+        XCTAssertEqual(sender.uploadCount, 1)
+        XCTAssertEqual(sender.operationIds, ["held"])
+        XCTAssertEqual(store.countOutbox(), 0)
+    }
+
     func testUnknownUploadKeepsBytesAndDiscardDuringUploadDoesNotSend() async throws {
         let store = try PulseStore()
         _ = try PulseAttachmentDelivery.enqueue(store: store, viewer: PulseViewer(id: "me", name: "Me"),

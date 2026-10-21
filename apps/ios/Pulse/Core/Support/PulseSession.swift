@@ -640,6 +640,9 @@ public final class PulseSession: ObservableObject {
         guard let store, let viewer else { return }
         let client = api
         let engine = PulseOutboxEngine(store: store) { client }
+        engine.additionalThreadAccessDenied = { [weak self] rootId in
+            self?.threadAccessDenied(rootId: rootId) ?? true
+        }
         engine.onAcknowledgement = { [weak self] receipt in
             if let line = PulseStreakVerdict.toastLine(count: receipt.streak?.count, continued: receipt.streak?.continued) {
                 self?.toasts.show(line)

@@ -1185,6 +1185,11 @@ class PulseRepositoryImpl constructor(
                 },
                 conversationId = temp.conversationId,
             ) {
+                if (temp.threadRootId?.let { threadIsDenied(it) } == true) {
+                    val reason = "Thread access was refused. Reopen the thread before retrying this saved reply."
+                    dropOutboxEntry(clientId, reason)
+                    return@tryImmediate Result.failure<SendReceipt>(IllegalStateException(reason))
+                }
                 when (val response = send()) {
                     is PulseResult.Success -> {
                         val receipt = response.value.toReceipt()
@@ -2059,6 +2064,10 @@ class PulseRepositoryImpl constructor(
             stored == null || stored.authorId != owner || stored.conversationId != entry.conversationId
         ) return Result.failure(OutboxDeliveryException(OutboxFailureClass.RETRY, "Sign in to the message's original account to send it"))
         var temp = checkNotNull(stored)
+        if (temp.threadRootId?.let { threadIsDenied(it) } == true) {
+            return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP,
+                "Thread access was refused. Reopen the thread before retrying this saved reply."))
+        }
         if (current.uploadKey != null) {
             if (current.kind !in setOf("image", "audio", "file")) return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Saved upload kind is invalid"))
             val bytes = try { withContext(Dispatchers.IO) { attachmentFiles().read(current.uploadKey) } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, error.message ?: "Saved attachment is unavailable")) }
@@ -2102,6 +2111,11 @@ class PulseRepositoryImpl constructor(
         // Do not start a POST for an intent observed to have been removed.
         if (outboxDao.pendingByClientId(entry.clientId) == null) {
             return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP, "Message was discarded before sending"))
+        }
+        // Access can be revoked while an attachment upload/receipt write is suspended.
+        if (temp.threadRootId?.let { threadIsDenied(it) } == true) {
+            return Result.failure(OutboxDeliveryException(OutboxFailureClass.DROP,
+                "Thread access was refused. The uploaded receipt and saved reply are kept for explicit retry."))
         }
         return when (val r = api.sendMessage(
             entry.conversationId, owner, entry.content, clientId = entry.clientId,

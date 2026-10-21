@@ -2011,3 +2011,30 @@ The latest observed 1ac720f iOS archive passed; other native jobs were still pen
 Remaining: unbounded thread API and Swift's 300-row cached thread window; full lifecycle,
 exports/notifications and historical media URL revocation; broader room membership
 revocation. Autumn UI tokens/layout are unchanged. This is not whole-app completion.
+
+## 2026-10-21 — queued-thread dispatch and consistent server reads
+
+Follow-through from the refusal ledger found an existing queued send could bypass the
+new composer/retry guard. Android immediate dispatch/background drain and Swift's outbox
+now check refusal before upload and again before message POST. A denial arriving during
+upload retains the completed receipt but holds the original operation as failed; a fresh
+thread validation alone does not auto-send that failed operation. Explicit retry keeps
+its clientId and avoids another upload. Other queued messages can continue. Swift's live
+engine also receives the session's in-memory fallback denial if disk persistence failed.
+Three Swift engine regressions exercise pre-upload refusal, in-memory-only refusal and
+mid-upload refusal/revalidation/explicit retry; Android uses its existing retained-failure
+DROP classification rather than deleting queued content. Actual native execution pending.
+
+The thread server endpoint previously fetched root, participant and replies separately.
+It now reads all three in one Serializable transaction, with expiry rechecked after
+reply selection. Removed members/deleted, nested or expired roots cannot produce an
+accepted snapshot; busy/conflicting reads map to 409, not a persistent access refusal.
+Tombstones and viewer-aware serialization remain intact. The wire shape is unchanged;
+this server change requires deployment separately from the native source changes.
+
+Verification: four new thread-read contracts pass, including real SQLite membership/
+root/room/expiry cases and transaction-client/conflict mapping checks. Full server suite
+110/110 passes. Strict TypeScript checking passes for message-visibility.ts (not the
+whole application). Four changed native files syntax-parse; that is not compilation or
+runtime validation. Unbounded thread paging, global membership revocation, exports and
+public media URL authorization remain open. No autumn styling changes.
