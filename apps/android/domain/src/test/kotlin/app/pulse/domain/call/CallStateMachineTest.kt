@@ -535,6 +535,7 @@ class CallStateMachineTest {
 
         val smOut = machine(clock)
         smOut.dispatch(CallEvent.StartOutgoing("c1", peer, CallKind.VOICE, "Alice", "emerald", null))
+        smOut.dispatch(CallEvent.OfferReady("v=0 offer"))
         val outEffects = smOut.dispatch(CallEvent.Hangup)
         assertTrue(outEffects.any { it is CallEffect.SendCancel })
         assertEquals(CallOutcome.MISSED, smOut.snapshot.value.outcome)

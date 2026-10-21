@@ -480,8 +480,8 @@ class CallStateMachine(
 
             is CallEvent.MediaFailed -> when {
                 state == CallState.OUTGOING_RINGING -> {
-                    // Honest error card; the attempt still counts as an
-                    // unanswered outgoing call (web dismissError parity).
+                    if (!offerSent) return terminate(outcome = null, summary = "Call not started", error = MIC_DENIED_MESSAGE)
+                    // Only an already-dispatched attempt counts as an unanswered call.
                     val cancel = callId?.takeIf { offerSent }?.let { id ->
                         listOf(
                             CallEffect.SendCancel(
