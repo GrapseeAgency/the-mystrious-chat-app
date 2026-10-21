@@ -2268,3 +2268,26 @@ Open: equivalent 1:1 relay device ownership, conversation membership authorizati
 legacy identity/session verification, same-socket identity changes, missing call-ID
 legacy sends, and physical multi-device media. GitHub rejected cancellation of obsolete
 Actions runs with integration-permission 403; no runs were canceled or checks bypassed.
+
+## 2026-10-21 — 1:1 relay owner loss and competing devices
+
+The equivalent 1:1 relay bug was confirmed: disconnect of an unrelated session removed
+an active call. Worse, active disconnect used the unanswered timeout branch, deleting
+the server session WITHOUT notifying the surviving endpoint. Duplicate offers could
+cancel their own ring as busy, a new offer from another caller device could silently
+drop the old call, and multiple callee devices could overwrite the accepted SDP.
+
+Caller ownership is now the originating socket; the first answering callee socket wins.
+Unchosen devices stop ringing, cannot overwrite the answer or terminate/inject ICE into
+the answered call. Answer/established ICE/terminal delivery targets the actual endpoint.
+Unrelated disconnects preserve the call; actual owner loss emits hangup immediately.
+Unanswered callee departure cancels only when its last available socket disappears.
+Same-owner duplicate offers are idempotent; a competing device/new call cannot evict
+an existing call. Relay duration fallback starts at answer rather than counting ringing
+(it still cannot measure actual media establishment).
+
+The real relay regression now covers duplicate offers, competing devices, first-answer
+ownership, unchosen reject/hangup/ICE, passive disconnect and immediate active-owner
+hangup. All 118 server tests and strict relay TypeScript checking pass. Native behavior
+on physical devices is not proven by these server checks. Authentication migration,
+same-socket identity rebinding and conversation authorization remain deferred/open.

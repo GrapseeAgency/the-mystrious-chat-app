@@ -542,6 +542,9 @@ interface CallSession {
   conversationId: string
   callerId: string
   calleeId: string
+  callerSocketId: string
+  calleeSocketId: string | null
+  answeredAt: number | null
   kind: 'voice' | 'video'
   /** Ring phase (offer sent, no answer yet) when false. */
   answered: boolean
@@ -580,18 +583,19 @@ function dropCallSession(
     conversationId: session.conversationId,
     kind: session.kind,
   }
-  if (session.answered && (reason === 'hangup' || reason === 'error')) {
+  if (session.answered) {
     // Active call torn down — the surviving party stops the media UI.
     const survivorId = endedByUserId === session.callerId ? session.calleeId : session.callerId
-    io.to(roomOf(survivorId)).emit('call:hangup', {
+    const survivorSocket = survivorId === session.callerId ? session.callerSocketId : session.calleeSocketId
+    if (survivorSocket) io.to(survivorSocket).emit('call:hangup', {
       ...base,
       from: endedByUserId ?? '',
       to: survivorId,
-      durationSec: Math.round((Date.now() - session.createdAt) / 1000),
+      durationSec: Math.max(0, Math.round((Date.now() - (session.answeredAt ?? session.createdAt)) / 1000)),
     })
   } else if (!session.answered) {
     // Ring torn down — BOTH sides drop the ringer (terminal before media).
-    io.to(roomOf(session.callerId)).emit('call:cancel', {
+    io.to(session.callerSocketId).emit('call:cancel', {
       ...base,
       from: endedByUserId ?? session.calleeId,
       to: session.callerId,
@@ -1508,6 +1512,13 @@ io.on('connection', (socket: Socket) => {
     if (!callId || !conversationId || !from || !to || from === to || !kind || !sdp) return
     // Identity gate: you may only ring people AS the user your socket joined as.
     if (socketUser.get(socket.id) !== from) return
+    const existing = callSessions.get(callId)
+    if (existing && existing.callerSocketId === socket.id && existing.callerId === from &&
+        existing.calleeId === to && existing.conversationId === conversationId) return
+    if (existing || callByUser.has(from)) {
+      socket.emit('call:cancel', { callId, conversationId, from, to, kind, reason: 'busy' })
+      return
+    }
     if (!onlineUsers.has(to)) {
       socket.emit('call:cancel', { callId, conversationId, from, to, kind, reason: 'offline' })
       console.log(`[call] offer rejected (callee offline) call=${callId} from=${from} to=${to}`)
@@ -1519,15 +1530,14 @@ io.on('connection', (socket: Socket) => {
       console.log(`[call] offer rejected (busy) call=${callId} from=${from} to=${to} against=${calleeBusy}`)
       return
     }
-    // Defensive: a stale session of the caller's own never blocks a new ring.
-    const callerBusy = callByUser.get(from)
-    if (callerBusy) dropCallSession(callerBusy, 'cancel', from)
-
     const session: CallSession = {
       callId,
       conversationId,
       callerId: from,
       calleeId: to,
+      callerSocketId: socket.id,
+      calleeSocketId: null,
+      answeredAt: null,
       kind,
       answered: false,
       createdAt: Date.now(),
@@ -1567,11 +1577,13 @@ io.on('connection', (socket: Socket) => {
         ? data.sdp
         : null
     const session = callSessions.get(callId)
-    if (!session || !sdp) return
+    if (!session || !sdp || session.answered) return
     if (socketUser.get(socket.id) !== from || from !== session.calleeId) return
+    session.calleeSocketId = socket.id
+    session.answeredAt = Date.now()
     session.answered = true
     clearTimeout(session.timer)
-    io.to(roomOf(session.callerId)).emit('call:answer', {
+    io.to(session.callerSocketId).emit('call:answer', {
       callId,
       conversationId: session.conversationId,
       from,
@@ -1579,6 +1591,13 @@ io.on('connection', (socket: Socket) => {
       kind: session.kind,
       sdp,
     })
+    // The first accepting device wins; stop ringing on the other devices only.
+    for (const other of onlineUsers.get(session.calleeId) ?? []) {
+      if (other !== socket.id) io.to(other).emit('call:cancel', {
+        callId, conversationId: session.conversationId, from: session.callerId,
+        to: session.calleeId, kind: session.kind, reason: 'cancel', answeredElsewhere: true,
+      })
+    }
     console.log(`[call] answer call=${callId} from=${from} → caller=${session.callerId}`)
   })
 
@@ -1599,8 +1618,11 @@ io.on('connection', (socket: Socket) => {
     if (!session || !candidate) return
     if (socketUser.get(socket.id) !== from) return
     if (from !== session.callerId && from !== session.calleeId) return
+    if (from === session.callerId && session.callerSocketId !== socket.id) return
+    if (from === session.calleeId && session.answered && session.calleeSocketId !== socket.id) return
     const to = from === session.callerId ? session.calleeId : session.callerId
-    io.to(roomOf(to)).emit('call:ice', {
+    const destination = to === session.callerId ? session.callerSocketId : (session.calleeSocketId ?? roomOf(to))
+    io.to(destination).emit('call:ice', {
       callId,
       conversationId: session.conversationId,
       from,
@@ -1624,13 +1646,13 @@ io.on('connection', (socket: Socket) => {
     const callId = asTrimmedString(data.callId).slice(0, 64)
     const from = asTrimmedString(data.from).slice(0, 64)
     const session = callSessions.get(callId)
-    if (!session) return
+    if (!session || session.answered) return
     if (socketUser.get(socket.id) !== from || from !== session.calleeId) return
     clearTimeout(session.timer)
     callSessions.delete(callId)
     if (callByUser.get(session.callerId) === callId) callByUser.delete(session.callerId)
     if (callByUser.get(session.calleeId) === callId) callByUser.delete(session.calleeId)
-    io.to(roomOf(session.callerId)).emit('call:reject', {
+    io.to(session.callerSocketId).emit('call:reject', {
       callId,
       conversationId: session.conversationId,
       from,
@@ -1657,7 +1679,7 @@ io.on('connection', (socket: Socket) => {
     const callId = asTrimmedString(data.callId).slice(0, 64)
     const from = asTrimmedString(data.from).slice(0, 64)
     const session = callSessions.get(callId)
-    if (!session) return
+    if (!session || session.answered || session.callerSocketId !== socket.id) return
     if (socketUser.get(socket.id) !== from || from !== session.callerId) return
     dropCallSession(callId, 'cancel', from)
   })
@@ -1673,6 +1695,8 @@ io.on('connection', (socket: Socket) => {
     const session = callSessions.get(callId)
     if (!session) return
     if (socketUser.get(socket.id) !== from || (from !== session.callerId && from !== session.calleeId)) return
+    const owner = from === session.callerId ? session.callerSocketId : session.calleeSocketId
+    if (owner !== socket.id) return
     dropCallSession(callId, 'hangup', from)
   })
 
@@ -1831,7 +1855,11 @@ io.on('connection', (socket: Socket) => {
     const departedUserId = socketUser.get(socket.id)
     if (departedUserId) {
       const callId = callByUser.get(departedUserId)
-      if (callId) dropCallSession(callId, 'timeout', departedUserId)
+      const call = callId ? callSessions.get(callId) : undefined
+      if (call && (call.callerSocketId === socket.id || call.calleeSocketId === socket.id ||
+          (!call.answered && call.calleeId === departedUserId && (onlineUsers.get(departedUserId)?.size ?? 0) <= 1))) {
+        dropCallSession(call.callId, call.answered ? 'hangup' : 'timeout', departedUserId)
+      }
       // Group calls: the departed member drops out; last one out ends the call.
       leaveGroupCall(departedUserId, `disconnect:${reason}`, socket.id)
     }

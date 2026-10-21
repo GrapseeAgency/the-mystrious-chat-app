@@ -17,7 +17,7 @@ function event(socket, name, predicate = () => true) {
   })
 }
 
-test('real group relay binds membership, signaling and disconnect to the admitted device', { timeout: 15000 }, async t => {
+test('real call relay binds membership, signaling and disconnect to the admitted device', { timeout: 15000 }, async t => {
   const server = spawn(process.execPath, ['--experimental-transform-types', 'index.ts'], {
     cwd: fileURLToPath(new URL('../../mini-services/pulse-socket/', import.meta.url)),
     env: { ...process.env, PULSE_SOCKET_PORT: '0', PULSE_ORIGIN: 'http://127.0.0.1:1' },
@@ -132,6 +132,60 @@ test('real group relay binds membership, signaling and disconnect to the admitte
       const current = await join(activeAlice, 'alice')
       assert.equal(current.callId, callId)
       assert.deepEqual(current.members.map(row => row.id), ['alice'])
+    })
+
+    await t.test('direct call ignores unrelated disconnects, duplicate offers and a second answering device', async () => {
+      const caller = await connect('direct-caller'), idleCaller = await connect('direct-caller')
+      const callee = await connect('direct-callee'), otherCallee = await connect('direct-callee')
+      const directId = 'direct-current'
+      const request = { callId: directId, conversationId: 'dm', from: 'direct-caller', to: 'direct-callee', kind: 'voice', sdp: 'offer' }
+      const cancels = [], answers = [], callerHangups = []
+      caller.on('call:cancel', row => cancels.push(row))
+      caller.on('call:answer', row => answers.push(row.sdp))
+      caller.on('call:hangup', row => callerHangups.push(row))
+      const firstRing = event(callee, 'call:offer'), secondRing = event(otherCallee, 'call:offer')
+      caller.emit('call:offer', request)
+      await Promise.all([firstRing, secondRing])
+      caller.emit('call:offer', request) // retransmission must not cancel its own ring as busy
+      const unrelatedId = idleCaller.id
+      idleCaller.disconnect()
+      await logged(new RegExp(`disconnect sock=${unrelatedId} reason=`))
+      await barrier(caller, 'direct-caller')
+      assert.deepEqual(cancels, [])
+      const accepted = event(caller, 'call:answer')
+      const otherStopped = event(otherCallee, 'call:cancel', row => row.answeredElsewhere === true)
+      callee.emit('call:answer', { callId: directId, from: 'direct-callee', sdp: 'chosen-answer' })
+      assert.equal((await accepted).sdp, 'chosen-answer')
+      await otherStopped
+      const receivedIce = []
+      caller.on('call:ice', row => receivedIce.push(row.candidate))
+      otherCallee.emit('call:answer', { callId: directId, from: 'direct-callee', sdp: 'losing-answer' })
+      otherCallee.emit('call:reject', { callId: directId, from: 'direct-callee' })
+      otherCallee.emit('call:hangup', { callId: directId, from: 'direct-callee' })
+      otherCallee.emit('call:ice', { callId: directId, from: 'direct-callee', candidate: 'wrong-device' })
+      await barrier(otherCallee, 'direct-callee')
+      const secondCaller = await connect('direct-caller')
+      const busy = event(secondCaller, 'call:cancel')
+      secondCaller.emit('call:offer', { ...request, callId: 'new-attempt-from-another-device' })
+      assert.equal((await busy).reason, 'busy')
+      const liveIce = event(caller, 'call:ice')
+      callee.emit('call:ice', { callId: directId, from: 'direct-callee', candidate: 'chosen-device' })
+      assert.equal((await liveIce).candidate, 'chosen-device')
+      assert.deepEqual(answers, ['chosen-answer'])
+      assert.deepEqual(callerHangups, [])
+      assert.deepEqual(receivedIce, ['chosen-device'])
+      const otherId = otherCallee.id
+      otherCallee.disconnect()
+      await logged(new RegExp(`disconnect sock=${otherId} reason=`))
+      // The actual media owner's disconnect must notify the survivor immediately,
+      // not silently delete the session using the unanswered 'timeout' path.
+      const ended = event(caller, 'call:hangup')
+      callee.disconnect()
+      const termination = await ended
+      assert.equal(termination.callId, directId)
+      assert.equal(termination.to, 'direct-caller')
+      assert.ok(termination.durationSec >= 0)
+      assert.equal(callerHangups.length, 1)
     })
   } finally {
     for (const socket of sockets) socket.disconnect()
