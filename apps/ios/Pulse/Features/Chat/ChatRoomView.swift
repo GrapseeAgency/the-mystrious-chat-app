@@ -131,7 +131,7 @@ private struct RoomMessageRow: View {
     let onOpenThread: (WireChatMessage) -> Void
     let onForward: (WireChatMessage) -> Void
     let onInfo: (WireChatMessage) -> Void
-    /// Wave 2 view-once - instant reveal (lightbox) + POST /viewed burn.
+    /// Reveal only after the server grants this tap one-time access.
     let onViewOnce: (WireChatMessage) -> Void
     // ── Wave 7 - rich-object cards + message actions ──
     let wave7: Wave7RoomActions
@@ -251,7 +251,7 @@ private struct RoomMessageRow: View {
             UIPasteboard.general.string = message.content
         } label: {
             Label("Copy", systemImage: "doc.on.doc.fill")
-        }
+        }.disabled(message.deletedAt != nil || (message.viewOnce == true && message.senderId != session.viewer?.id))
         // R1-W2B F-MD-06 - on-demand LLM translation (POST /translate);
         // the fresh row's translations render inline in the bubble.
         if message.kind == "text", message.deletedAt == nil, !message.id.hasPrefix("local_") {
@@ -275,7 +275,7 @@ private struct RoomMessageRow: View {
             onForward(message)
         } label: {
             Label("Forward", systemImage: "arrowshape.turn.up.right.fill")
-        }
+        }.disabled(message.deletedAt != nil || message.viewOnce == true)
         if message.senderId == session.viewer?.id && message.deletedAt == nil {
             Button(role: .destructive) {
                 viewModel.delete(message, session: session)
@@ -336,6 +336,8 @@ private struct RoomContent: View {
     @State private var infoTarget: WireChatMessage?
     @State private var pinsOpen = false
     @State private var lightbox: MediaLightboxTarget?
+    @State private var lightboxMessageId: String?
+    @State private var viewOnceTask: Task<Void, Never>?
     @State private var quicklook: QuickLookTarget?
     @State private var searchOpen = false
     @State private var searchQuery = ""
@@ -1262,7 +1264,12 @@ private struct RoomContent: View {
     private var chatBodyStyled12: some View {
         chatBodyStyled11
         .fullScreenCover(item: $lightbox) { target in
-            MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt)
+            MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt, singleUse: target.singleUse)
+        }
+        .onReceive(session.messageVisibilityClock) { now in
+            guard lightbox != nil, let id = lightboxMessageId else { return }
+            let current = try? session.store?.message(id: id, now: now)
+            if current == nil || current?.deletedAt != nil { lightbox = nil; lightboxMessageId = nil }
         }
         .fullScreenCover(item: $quicklook) { target in
             QuickLookView(url: target.url)
@@ -1271,6 +1278,7 @@ private struct RoomContent: View {
         .onDisappear {
             // Wave 2 - honest teardown: a recording or playback must never
             // outlive the room (roomVisible off / conversation change).
+            viewOnceTask?.cancel()
             viewModel.handleRoomDisappeared()
         }
     }
@@ -1553,9 +1561,14 @@ private struct RoomContent: View {
                                 onForward: { forwardSource = $0 },
                                 onInfo: { infoTarget = $0 },
                                 onViewOnce: { message in
-                                    // Instant reveal first (web parity), burn after.
-                                    openLightbox(message)
-                                    viewModel.revealViewOnce(message, session: session)
+                                    guard viewOnceTask == nil, lightbox == nil else { return }
+                                    viewOnceTask = Task {
+                                        defer { viewOnceTask = nil }
+                                        if let granted = await session.consumeViewOnce(message), !Task.isCancelled {
+                                            viewModel.upsert(granted)
+                                            openLightbox(granted, singleUse: true)
+                                        }
+                                    }
                                 },
                                 wave7: wave7,
                                 memberNames: memberNames,
@@ -1789,12 +1802,15 @@ private struct RoomContent: View {
         .accessibilityLabel("Screen security is on - messages are hidden while Pulse is not focused")
     }
 
-    private func openLightbox(_ message: WireChatMessage) {
+    private func openLightbox(_ message: WireChatMessage, singleUse: Bool = false) {
+        guard message.deletedAt == nil, PulseRemediationLogic.isAlive(message.expiresAt),
+              singleUse || message.viewOnce != true || message.senderId == session.viewer?.id else { return }
         guard let url = PulseMediaOpener.url(for: message) else {
             session.toasts.show("Media unavailable")
             return
         }
-        lightbox = MediaLightboxTarget(url: url, caption: message.content, expiresAt: message.expiresAt)
+        lightboxMessageId = message.id
+        lightbox = MediaLightboxTarget(url: url, caption: message.content, expiresAt: message.expiresAt, singleUse: singleUse)
     }
 
     private func openFile(_ message: WireChatMessage) {
@@ -5065,7 +5081,9 @@ final class RoomViewModel: ObservableObject {
     }
 
     func beginReply(to message: WireChatMessage) {
-        replyTarget = message
+        var preview = message
+        if preview.viewOnce == true { preview.content = "View-once message" }
+        replyTarget = preview
     }
 
     func cancelReply() {
@@ -5603,26 +5621,6 @@ final class RoomViewModel: ObservableObject {
     }
 
     // ── Wave 2 view-once (spec §1 rows 5/6/7) ────────────
-
-    /// The reveal already happened in the UI (instant lightbox, web parity);
-    /// this stamps the burn server-side and patches the rows. Best-effort -
-    /// the relayed message:viewed envelope reconciles later on failure.
-    func revealViewOnce(_ message: WireChatMessage, session: PulseSession) {
-        guard message.viewOnce == true,
-              message.senderId != session.viewer?.id,
-              message.viewedAt == nil,
-              let viewer = session.viewer else { return }
-        Task { [weak self] in
-            do {
-                let fresh = try await session.api.markViewed(messageId: message.id, userId: viewer.id)
-                try? session.store?.upsert(messages: [fresh])
-                self?.upsert(fresh)
-            } catch {
-                // Instant-open parity: the image is already on screen; the
-                // envelope will re-stamp the row. Nothing honest to add here.
-            }
-        }
-    }
 
     // ── Wave 2 polls (spec §1 rows 2/3/4) ────────────────
 

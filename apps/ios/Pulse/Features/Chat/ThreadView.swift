@@ -37,6 +37,7 @@ struct ThreadView: View {
     // opens the lightbox right here (the sheet owns its cover).
     @State private var lightbox: MediaLightboxTarget?
     @State private var lightboxMessageId: String?
+    @State private var viewOnceTask: Task<Void, Never>?
     @FocusState private var composerFocused: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -106,7 +107,7 @@ struct ThreadView: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .fullScreenCover(item: $lightbox) { target in
-            MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt)
+            MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt, singleUse: target.singleUse)
         }
         .task(id: ThreadLoadKey(connected: session.connected, target: initialJumpMessageId)) { await load() }
         .onChange(of: initialJumpMessageId) { _, _ in
@@ -148,6 +149,7 @@ struct ThreadView: View {
             }
         } message: { Text("This removes the saved outgoing reply from this device. It does not erase your current draft.") }
         .onDisappear {
+            viewOnceTask?.cancel()
             loadGeneration = UUID()
             recoveryObservation?.cancel()
             recoveryObservation = nil
@@ -230,32 +232,17 @@ struct ThreadView: View {
         }
     }
 
-    /// Wave 2 view-once in threads - instant reveal (web parity), then the
-    /// idempotent burn stamp; the relayed envelope reconciles the rest.
     private func revealViewOnce(_ message: WireChatMessage) {
-        guard !rootUnavailable, message.deletedAt == nil, PulseRemediationLogic.isAlive(message.expiresAt),
-              message.conversationId == conversation.id, message.id == root.id || message.parentId == root.id,
-              message.viewOnce == true,
-              message.senderId != viewerId,
-              message.viewedAt == nil,
-              let url = PulseMediaOpener.url(for: message) else { return }
-        lightboxMessageId = message.id
-        lightbox = MediaLightboxTarget(url: url, caption: message.content, expiresAt: message.expiresAt)
-        guard let viewer = session.viewer else { return }
-        let api = session.api
-        let store = session.store
-        let epoch = session.sessionGeneration
-        Task {
-            if let fresh = try? await api.markViewed(messageId: message.id, userId: viewer.id) {
-                guard session.sessionGeneration == epoch, !Task.isCancelled else { return }
-                try? store?.upsert(messages: [fresh])
-                if let index = replies.firstIndex(where: { $0.id == fresh.id }) {
-                    replies[index] = fresh
-                }
-                if parent?.id == fresh.id {
-                    parent = fresh
-                }
-            }
+        guard !rootUnavailable, message.conversationId == conversation.id,
+              message.id == root.id || message.parentId == root.id else { return }
+        guard viewOnceTask == nil, lightbox == nil else { return }
+        viewOnceTask = Task {
+            defer { viewOnceTask = nil }
+            guard let granted = await session.consumeViewOnce(message), !Task.isCancelled, !rootUnavailable,
+                  let url = PulseMediaOpener.url(for: granted) else { return }
+            lightboxMessageId = granted.id
+            lightbox = MediaLightboxTarget(url: url, caption: granted.content, expiresAt: granted.expiresAt, singleUse: true)
+            if granted.id == root.id { parent = granted } else { appendReply(granted) }
         }
     }
 

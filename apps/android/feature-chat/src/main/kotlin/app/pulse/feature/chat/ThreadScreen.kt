@@ -307,9 +307,12 @@ class ThreadViewModel @Inject constructor(
         if (_state.value.openedFile != null) _state.value = _state.value.copy(openedFile = null)
     }
 
-    /** Wave 2 view-once - fire-and-forget POST /viewed (reveal is instant). */
-    fun consumeViewOnce(message: Message) {
-        viewModelScope.launch { repo.markMessageViewed(message.id) }
+    /** Render only after this request receives a one-time grant. */
+    suspend fun consumeViewOnce(message: Message): Message? {
+        if (message.conversationId != conversationId) return null
+        val granted = repo.consumeViewOnce(message.id)
+            .onFailure { notify(it.message ?: "Couldn't open this photo", isError = true) }.getOrNull()
+        return granted.takeIf { !_state.value.unavailable && threadRootAvailable(parent.value, conversationId, rootId) }
     }
 
     /** Wave 2 transcript pill (thread parity with the room strip). */
@@ -343,6 +346,8 @@ fun ThreadScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val failedReplies by viewModel.failedReplies.collectAsStateWithLifecycle()
     var discardConfirm by remember { mutableStateOf<String?>(null) }
+    val revealScope = androidx.compose.runtime.rememberCoroutineScope()
+    val revealLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val clipboard = LocalClipboardManager.current
     discardConfirm?.let { clientId ->
         androidx.compose.material3.AlertDialog(
@@ -371,6 +376,18 @@ fun ThreadScreen(
 
     val draft = state.draft
     var lightboxTarget by remember { mutableStateOf<Message?>(null) }
+    var openingViewOnce by remember(viewModel.rootId) { mutableStateOf(false) }
+    fun openViewOnce(target: Message) {
+        if (openingViewOnce || lightboxTarget != null) return
+        openingViewOnce = true
+        revealScope.launch {
+            try {
+                viewModel.consumeViewOnce(target)?.let {
+                    if (revealLifecycle.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) lightboxTarget = it
+                }
+            } finally { openingViewOnce = false }
+        }
+    }
     var anchoredToLatest by remember(viewModel.rootId) { mutableStateOf(false) }
     var jumpResolved by remember(viewModel.rootId, jumpMessageId) { mutableStateOf(false) }
     var flashId by remember(viewModel.rootId, jumpMessageId) { mutableStateOf<String?>(null) }
@@ -409,7 +426,7 @@ fun ThreadScreen(
         if (flashId != null) { kotlinx.coroutines.delay(1_700); flashId = null }
     }
 
-    LaunchedEffect(parent, replies) {
+    LaunchedEffect(parent, replies, lightboxTarget?.id) {
         val target = lightboxTarget
         if (target != null && (parent == null || parent?.isDeleted == true ||
                 (parent?.id != target.id && replies.none { it.id == target.id && !it.isDeleted }))) {
@@ -523,8 +540,7 @@ fun ThreadScreen(
                                 voicePlayer = viewModel.voicePlayer,
                                 memberNames = memberNames,
                                 onConsumeViewOnce = { target ->
-                                    viewModel.consumeViewOnce(target)
-                                    lightboxTarget = target
+                                    openViewOnce(target)
                                 },
                                 onTranscribe = viewModel::transcribeVoice,
                                 onOpenImage = { lightboxTarget = root },
@@ -546,8 +562,7 @@ fun ThreadScreen(
                             voicePlayer = viewModel.voicePlayer,
                             memberNames = memberNames,
                             onConsumeViewOnce = { target ->
-                                viewModel.consumeViewOnce(target)
-                                lightboxTarget = target
+                                openViewOnce(target)
                             },
                             onTranscribe = viewModel::transcribeVoice,
                             onOpenImage = { lightboxTarget = reply },

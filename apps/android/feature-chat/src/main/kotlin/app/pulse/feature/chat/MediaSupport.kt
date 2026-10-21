@@ -557,11 +557,27 @@ internal fun FileBubble(
  * session never ends on a stray tap. The scrim stays.
  */
 @Composable
-internal fun ImageLightbox(
+fun ImageLightbox(
     message: Message,
     onDismiss: () -> Unit,
 ) {
     val dismiss = androidx.compose.runtime.rememberUpdatedState(onDismiss)
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val imageModel = remember(message.id, message.imagePath, message.viewOnce) {
+        if (message.viewOnce) coil.request.ImageRequest.Builder(context)
+            .data(MediaSupport.mediaUrl(message.imagePath))
+            .memoryCachePolicy(coil.request.CachePolicy.DISABLED)
+            .diskCachePolicy(coil.request.CachePolicy.DISABLED).build()
+        else MediaSupport.mediaUrl(message.imagePath)
+    }
+    androidx.compose.runtime.DisposableEffect(lifecycle, message.id, message.viewOnce) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (message.viewOnce && event == androidx.lifecycle.Lifecycle.Event.ON_STOP) dismiss.value()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     androidx.compose.runtime.LaunchedEffect(message.id, message.expiresAtEpochMs) {
         val deadline = message.expiresAtEpochMs ?: return@LaunchedEffect
         while (true) {
@@ -577,7 +593,9 @@ internal fun ImageLightbox(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(usePlatformDefaultWidth = false,
+            securePolicy = if (message.viewOnce) androidx.compose.ui.window.SecureFlagPolicy.SecureOn
+                else androidx.compose.ui.window.SecureFlagPolicy.Inherit),
     ) {
         Box(
             Modifier
@@ -601,7 +619,7 @@ internal fun ImageLightbox(
             contentAlignment = Alignment.Center,
         ) {
             coil.compose.AsyncImage(
-                model = MediaSupport.mediaUrl(message.imagePath),
+                model = imageModel,
                 contentDescription = message.body.ifBlank { "Photo" },
                 contentScale = ContentScale.Fit,
                 modifier = Modifier

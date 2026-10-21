@@ -1628,6 +1628,9 @@ class PulseRepositoryImpl constructor(
      * media stays online-only per spec §1.2.
      */
     override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> {
+        if (source.viewOnce || source.isDeleted || source.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
+            return Result.failure(IllegalStateException("This message can't be forwarded."))
+        }
         val clientId = java.util.UUID.randomUUID().toString()
         val textOnly = source.kind == Message.Kind.TEXT &&
             source.imagePath == null && source.audioPath == null && source.filePath == null
@@ -2659,11 +2662,43 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
+    private val viewOnceActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     override suspend fun markMessageViewed(messageId: String) {
-        when (val r = api.markViewed(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> upsertMessage(r.value.toDomain())
-            is PulseResult.Failure -> Log.w(TAG, "markViewed failed: ${r.kind}: ${r.message}")
-        }
+        consumeViewOnce(messageId).onFailure { Log.w(TAG, "One-time access wasn't granted") }
+    }
+
+    override suspend fun consumeViewOnce(messageId: String): Result<Message> {
+        if (!viewOnceActions.add(messageId)) return Result.failure(IllegalStateException("This photo is already opening."))
+        try {
+            val owner = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
+            val requested = messageDao.byId(messageId)?.toDomain()
+                ?: return Result.failure(IllegalStateException("This photo is unavailable."))
+            if (!app.pulse.domain.sync.canRequestViewOnce(requested, owner)) {
+                return Result.failure(IllegalStateException("This photo is no longer available to open."))
+            }
+            return when (val response = api.markViewed(messageId, owner)) {
+                is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+                is PulseResult.Success -> {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    check(viewerId == owner) { "The account changed." }
+                    val returned = response.value.message.toDomain()
+                    check(returned.id == messageId && returned.conversationId == requested.conversationId) { "Unexpected photo acknowledgement." }
+                    val retained = upsertMessage(returned)
+                    val parentId = retained.threadRootId
+                    val rootLive = parentId == null || app.pulse.domain.sync.threadRootAvailable(
+                        messageDao.byId(parentId)?.toDomain(), retained.conversationId, parentId)
+                    if (rootLive && (response.value.message.viewedBy as? kotlinx.serialization.json.JsonPrimitive)?.content == owner &&
+                        app.pulse.domain.sync.acceptsViewOnceGrant(response.value.consumed, requested, retained, owner)) {
+                        Result.success(retained)
+                    } else Result.failure(IllegalStateException("One-time access wasn't granted. The photo may already have been opened."))
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            return Result.failure(error)
+        } finally { viewOnceActions.remove(messageId) }
     }
 
     override suspend fun createPoll(conversationId: String, question: String, options: List<String>): Result<Message> =

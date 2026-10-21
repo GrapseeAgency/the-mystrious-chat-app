@@ -252,6 +252,12 @@ public struct WireMessagesPage: Codable, Sendable {
 }
 
 
+/// Only consumed=true grants this request a reveal; legacy acknowledgements fail closed.
+public struct WireViewOnceReceipt: Codable, Sendable {
+    public let message: WireChatMessage
+    public let consumed: Bool?
+}
+
 /// GET /api/messages/{id}/thread?userId= - thread-root message + its replies
 /// (replies asc). Wave 1 thread sheet page (spec §1.1 "Thread read").
 public struct WireThreadPage: Codable, Sendable {

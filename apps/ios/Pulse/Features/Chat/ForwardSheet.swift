@@ -212,6 +212,10 @@ struct ForwardSheet: View {
     /// connection returns.
     private func send() {
         guard !sending, !selected.isEmpty else { return }
+        guard source.viewOnce != true, source.deletedAt == nil, PulseRemediationLogic.isAlive(source.expiresAt) else {
+            session.toasts.show("This message can't be forwarded.")
+            return
+        }
         sending = true
         let targets = conversations.filter { selected.contains($0.id) }
         let forward = PulseOutboxForward(

@@ -680,10 +680,14 @@ interface PulseRepository {
     /**
      * POST /api/messages/{id}/viewed {userId} - consume a view-once photo.
      * The returned authoritative row is upserted (viewedAt stamp); other
-     * members learn it via the message:viewed relay. Failures are logged
-     * only - the gate tap can be retried.
+     * members learn it via the message:viewed relay. Legacy bookkeeping only;
+     * reveal callers must use consumeViewOnce and require its successful grant.
      */
     suspend fun markMessageViewed(messageId: String)
+
+    /** Only a newly granted server consumption permits rendering the returned photo. */
+    suspend fun consumeViewOnce(messageId: String): Result<Message> =
+        Result.failure(IllegalStateException("One-time access is not supported by this gateway."))
 
     /** POST /api/conversations/{id}/poll {senderId, question, options[]} → fresh poll row (upserted). */
     suspend fun createPoll(conversationId: String, question: String, options: List<String>): Result<Message>

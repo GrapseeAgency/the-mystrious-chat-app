@@ -1924,3 +1924,50 @@ Existing view-once UIs still reveal before consumption acknowledgement; the atom
 stamp alone does NOT make that flow safe. Public media lifetime, full-thread pagination,
 revocation across navigation and legacy credential migration remain open. No autumn
 palette changes; backend changes require deployment with the native work.
+
+### View-once reveal requires this request's grant (2026-10-21)
+
+Followed the consumption stamp into the actual renderers. Swift and primary Android
+opened the image before the POST completed, so rejection/offline failure still revealed
+it. Mirror's main image renderer did not gate view-once at all; its thread used only a
+placeholder without an opening action. These were separate from the server stamp race.
+
+- Native consumption now requires `consumed=true` from this request, matching message,
+  room, author and thread scope, a live image and a confirmed consumer. A cached viewed
+  stamp, replay acknowledgement, malformed response or legacy missing flag is NOT a
+  reveal grant. The authoritative burn is still cached when a replay is refused.
+- Kotlin repository and Swift session own per-message in-flight gates. Account/room,
+  cancellation, foreground and parent-availability checks prevent a late response from
+  opening unavailable content. Swift double taps do not cancel/reconsume the first tap.
+- Primary Android and Swift room/thread viewers await the result instead of opening
+  optimistically. Mirror gates incoming view-once images before constructing AsyncImage,
+  hides their captions, and provides explicit grant-based opening in both river and thread.
+  Failures are surfaced without revealing the image. Mirror's granted viewer blocks Seen.
+- The shared Android lightbox uses a secure dialog for view-once, disables Coil memory/
+  disk caching for that request, and closes on stop or expiry. Swift uses a dedicated
+  ephemeral URLSession with no shared URL cache, drops view-local decoded data on close,
+  hides content/closes on inactive scene or detected screen recording. Live deletion/root
+  invalidation closes selected media through the owning surfaces. This does not promise
+  that iOS can prevent screenshots.
+- Native forwarding rejects view-once, deleted and expired sources. Recipient copy paths
+  are blocked for view-once captions; quote composer previews use a placeholder. This
+  does not remove already-copied/exported material or redesign the autumn surfaces.
+
+Verification: 106/106 server contracts remain green locally. Added two Kotlin gate tests,
+three Swift gate/receipt tests and one Kotlin protocol receipt test; 23 changed/new native
+files pass syntax parsing, not native execution. Fixed the newly added MessageMergeTests
+actor annotation: 9d4d2bf iOS production archive passed, but test compilation reported its
+call to MainActor-isolated timeline from a nonisolated test. The test class now explicitly
+uses MainActor. Latest native build/device execution is still required.
+
+Deployment/order: deploy the 9d4d2bf server receipt before these apps. Older servers do not
+return a grant flag; new clients deliberately refuse to reveal rather than silently
+falling back. A lost acknowledgement, cancellation or image-download failure after a
+successful consume can spend the one-time grant without displaying it; there is no
+invented reopen permission or automatic consumption retry.
+
+Remaining privacy boundary: media URLs are still public-style cached upload URLs, not
+per-view signed capabilities. Server media authorization/lifetime, prior image caches,
+other-device screenshots, historical quote copies and full cross-navigation revocation
+need further work. Large-thread pagination remains open. Nothing here is a claim of
+complete view-once secrecy, whole-app correctness, merge or deployment.

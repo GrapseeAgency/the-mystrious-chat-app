@@ -81,6 +81,10 @@ data class MessagesPageDto(
     val nextSyncCursor: String? = null,
 )
 
+/** Missing consumed on older gateways must never grant a reveal. */
+@Serializable
+data class ViewOnceReceiptDto(val message: ChatMessageDto, val consumed: Boolean = false)
+
 /** GET /api/messages/{id}/thread?userId= → { parent, replies } (replies ascending). */
 @Serializable
 data class ThreadPageDto(

@@ -438,6 +438,8 @@ internal fun MirrorRoom(
         }
     }
     var draftValue by composerDraft
+    var viewOnceGrant by remember(groupId, viewerId) { mutableStateOf<Message?>(null) }
+    var openingViewOnce by remember(groupId, viewerId) { mutableStateOf(false) }
     val roomActionsLive = remember(groupId) { java.util.concurrent.atomic.AtomicBoolean(true) }
     DisposableEffect(roomActionsLive) { onDispose { roomActionsLive.set(false) } }
     var composerFocused by remember { mutableStateOf(false) }
@@ -664,7 +666,7 @@ internal fun MirrorRoom(
         menuOpen || trayOpen || roomSearchOpen || pinnedOpen || phraseManagerOpen || pollOpen || stickerOpen ||
         locationOpen || captionFor != null || remindersOpen || scheduledOpen || recapOpen || eventsOpen ||
         kanbanOpen || whiteboardOpen || tournamentOpen || redPacketOpen || trayEffectsOpen || slashHelpOpen ||
-        safetyOpen || scheduleOpen
+        safetyOpen || scheduleOpen || viewOnceGrant != null
     val readRows = androidx.compose.runtime.rememberUpdatedState(visibleMessages)
     val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
     LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, minimumReadPixels, readerLifecycle) {
@@ -693,6 +695,26 @@ internal fun MirrorRoom(
         }
     }
     val historyScope = rememberCoroutineScope()
+    fun openViewOnce(message: Message) {
+        if (openingViewOnce || viewOnceGrant != null) return
+        openingViewOnce = true
+        historyScope.launch {
+            try {
+                repository.consumeViewOnce(message.id).onSuccess {
+                    if (roomActionsLive.get() && readerLifecycle.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) viewOnceGrant = it
+                }.onFailure {
+                    if (roomActionsLive.get()) sendError = it.message ?: "Couldn't open this photo"
+                }
+            } finally { openingViewOnce = false }
+        }
+    }
+    LaunchedEffect(messages, viewOnceGrant?.id) {
+        val granted = viewOnceGrant
+        if (granted != null && messages.none { it.id == granted.id && !it.isDeleted }) viewOnceGrant = null
+    }
+    viewOnceGrant?.let { granted ->
+        app.pulse.feature.chat.ImageLightbox(message = granted, onDismiss = { viewOnceGrant = null })
+    }
     fun toggleReaction(messageId: String, emoji: String) {
         historyScope.launch {
             try {
@@ -1667,6 +1689,7 @@ internal fun MirrorRoom(
                             showReadBy = showReadBy,
                             animateIn = isNewest && entry.message.deletedAt == null,
                             onOpenMenu = { actionFor = entry.message },
+                            onViewOnce = { openViewOnce(entry.message) },
                             onVote = { optionId ->
                                 entry.message.poll?.let { poll ->
                                     CoroutineScope(Dispatchers.IO).launch {
@@ -1677,7 +1700,7 @@ internal fun MirrorRoom(
                             onToggleReaction = ::toggleReaction,
                             // R74 - swipe-to-reply + effect origin registration
                             onReply = {
-                                replyTo = entry.message
+                                replyTo = if (entry.message.viewOnce) entry.message.copy(body = "View-once message", imagePath = null) else entry.message
                             },
                             registerRect = { rect -> bubbleRects[entry.message.id] = rect },
                             repository = repository,
@@ -2629,7 +2652,7 @@ internal fun MirrorRoom(
             members = members,
             repository = repository,
             onReaction = { emoji -> toggleReaction(target.id, emoji) },
-            onReply = { replyTo = target },
+            onReply = { replyTo = if (target.viewOnce) target.copy(body = "View-once message", imagePath = null) else target },
             onEdit = {
                 if (editing == null) {
                     draftBeforeEdit = draftValue
@@ -3451,6 +3474,7 @@ private fun MirrorBubbleRow(
     showReadBy: Boolean,
     animateIn: Boolean,
     onOpenMenu: () -> Unit,
+    onViewOnce: () -> Unit,
     onVote: (String) -> Unit,
     onToggleReaction: (String, String) -> Unit,
     // R74 - swipe-to-reply trigger + the effect-origin registration
@@ -3671,6 +3695,11 @@ private fun MirrorBubbleRow(
                         // poll tallies, stamps, location pins, voice waveform
                         // players, document cards, images, plain text.
                         when {
+                            message.viewOnce && !mine -> {
+                                Text(if (message.viewedAt != null) "Photo opened" else "View-once photo · Tap to open",
+                                    color = MirrorArt.TextSoft, fontSize = 13.sp,
+                                    modifier = Modifier.padding(12.dp).clickable(enabled = message.viewedAt == null, onClick = onViewOnce))
+                            }
                             // R74 - self-contained cards (web plainChrome branch)
                             redPacketInfo != null -> {
                                 MirrorRedPacketBubble(

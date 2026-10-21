@@ -213,11 +213,11 @@ internal fun MirrorMessageActionPanel(
                 MirrorActionRow(glyph = "LMessagesSquare", label = "Reply in thread") { onDismiss(); onThread() }
             }
             MirrorActionSeparator()
-            MirrorActionRow(glyph = "LCopy", label = "Copy text", enabled = !deleted) {
+            MirrorActionRow(glyph = "LCopy", label = "Copy text", enabled = !deleted && (!message.viewOnce || mine)) {
                 clipboard.setText(AnnotatedString(message.body))
                 onDismiss()
             }
-            MirrorActionRow(glyph = "LExternalLink", label = "Forward to chat", enabled = !deleted) { onDismiss(); onForward() }
+            MirrorActionRow(glyph = "LExternalLink", label = "Forward to chat", enabled = !deleted && !message.viewOnce) { onDismiss(); onForward() }
             if (!deleted) {
                 MirrorActionRow(
                     glyph = "LStar",
@@ -462,6 +462,27 @@ internal fun MirrorThreadSheet(
     var flashId by remember(root.id) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val revealLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var viewOnceGrant by remember(root.id) { mutableStateOf<Message?>(null) }
+    var openingViewOnce by remember(root.id) { mutableStateOf(false) }
+    fun openViewOnce(message: Message) {
+        if (openingViewOnce || viewOnceGrant != null) return
+        openingViewOnce = true
+        scope.launch {
+            try {
+                threadRepository.consumeViewOnce(message.id).onSuccess {
+                    if (!denied && threadRootAvailable(currentRoot, root.conversationId, root.id) &&
+                        revealLifecycle.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) viewOnceGrant = it
+                }.onFailure { error = it.message ?: "Couldn't open this photo" }
+            } finally { openingViewOnce = false }
+        }
+    }
+    viewOnceGrant?.let { app.pulse.feature.chat.ImageLightbox(message = it, onDismiss = { viewOnceGrant = null }) }
+    LaunchedEffect(currentRoot, cachedReplies, denied, viewOnceGrant?.id) {
+        val granted = viewOnceGrant
+        if (granted != null && (denied || !threadRootAvailable(currentRoot, root.conversationId, root.id) ||
+                (granted.id != root.id && cachedReplies.none { it.id == granted.id && !it.isDeleted }))) viewOnceGrant = null
+    }
     LaunchedEffect(threadRepository, root.id) {
         threadRepository.observeThreadDraft(root.conversationId, root.id).collect { snapshot ->
             val currentToken = threadRepository.captureThreadDraftToken(root.conversationId, root.id)
@@ -557,12 +578,12 @@ internal fun MirrorThreadSheet(
             } else {
                 LazyColumn(state = listState, modifier = Modifier.weight(1f, fill = false).heightIn(max = 340.dp)) {
                     item(key = "thread-parent") {
-                        currentRoot?.let { parent -> MirrorThreadTextBubble(parent, parent.authorId == viewerId) }
+                        currentRoot?.let { parent -> MirrorThreadTextBubble(parent, parent.authorId == viewerId, onViewOnce = { openViewOnce(parent) }) }
                     }
                     items(replies, key = { it.id }) { reply ->
                         Box(Modifier.fillMaxWidth().then(if (flashId == reply.id)
                             Modifier.border(1.dp, MirrorArt.Accent, androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) else Modifier)) {
-                            MirrorThreadTextBubble(reply, reply.authorId == viewerId)
+                            MirrorThreadTextBubble(reply, reply.authorId == viewerId, onViewOnce = { openViewOnce(reply) })
                         }
                     }
                     if (replies.isEmpty()) item {
@@ -646,7 +667,7 @@ internal fun MirrorThreadSheet(
 }
 
 @Composable
-private fun MirrorThreadTextBubble(message: Message, mine: Boolean) {
+private fun MirrorThreadTextBubble(message: Message, mine: Boolean, onViewOnce: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
         Column(Modifier.widthIn(max = 250.dp)
@@ -655,8 +676,11 @@ private fun MirrorThreadTextBubble(message: Message, mine: Boolean) {
             .padding(horizontal = 12.dp, vertical = 8.dp)) {
             Text(threadAuthorLabel(message), color = if (mine) MirrorArt.Ink else MirrorArt.TextSoft,
                 fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Text(threadMessageLabel(message), color = if (mine) MirrorArt.Ink else MirrorArt.Text,
-                fontSize = 13.sp, lineHeight = 17.sp)
+            val canOpen = message.viewOnce && !mine && !message.isDeleted && message.viewedAt == null && message.imagePath != null
+            Text(if (canOpen) "View-once photo · Tap to open" else if (message.viewOnce && message.viewedAt != null) "Photo opened" else threadMessageLabel(message),
+                color = if (mine) MirrorArt.Ink else MirrorArt.Text,
+                fontSize = 13.sp, lineHeight = 17.sp,
+                modifier = Modifier.clickable(enabled = canOpen, onClick = onViewOnce))
         }
     }
 }

@@ -597,7 +597,9 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     fun setReplyTo(message: Message?) {
-        _state.value = _state.value.copy(replyTo = message)
+        _state.value = _state.value.copy(replyTo = message?.let {
+            if (it.viewOnce) it.copy(body = "View-once message", imagePath = null) else it
+        })
     }
 
     fun notify(text: String, isError: Boolean = false) {
@@ -1406,9 +1408,13 @@ class ChatRoomViewModel @Inject constructor(
 
     // ── Wave 2: view-once consumption (spec §1 rows 6/7) ───────────────
 
-    /** Fire-and-forget POST /viewed - the lightbox opens WITHOUT waiting on it. */
-    fun consumeViewOnce(message: Message) {
-        viewModelScope.launch { repo.markMessageViewed(message.id) }
+    /** Render only after this request receives a one-time grant. */
+    suspend fun consumeViewOnce(message: Message, expectedViewerId: String?): Message? {
+        val bound = repo.boundToCurrentAccount()
+        if (expectedViewerId == null || bound.viewerId != expectedViewerId || message.conversationId != conversationId) return null
+        val granted = bound.consumeViewOnce(message.id)
+            .onFailure { notify(it.message ?: "Couldn't open this photo", isError = true) }.getOrNull()
+        return granted.takeIf { bound.viewerId == expectedViewerId && repo.viewerId == expectedViewerId }
     }
 
     // ── Wave 2: polls (spec §1 rows 2/3/4) ─────────────────────────────

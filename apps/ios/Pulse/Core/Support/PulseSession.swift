@@ -132,6 +132,44 @@ public final class PulseSession: ObservableObject {
         (messageRevisions[id] ?? 0) <= revision
     }
 
+    private var viewOnceActions: Set<String> = []
+
+    /// A tap is not permission to reveal. Only this request's successful consumption is.
+    public func consumeViewOnce(_ requested: WireChatMessage) async -> WireChatMessage? {
+        guard let viewer, let store, ready, isForeground, activeRoomId == requested.conversationId,
+              PulseViewOnceAccess.canRequest(requested, viewerId: viewer.id),
+              viewOnceActions.insert(requested.id).inserted else { return nil }
+        let epoch = sessionGeneration, client = api
+        defer { viewOnceActions.remove(requested.id) }
+        do {
+            let receipt = try await client.markViewed(messageId: requested.id, userId: viewer.id)
+            try Task.checkCancellation()
+            guard sessionGeneration == epoch else { return nil }
+            guard receipt.message.id == requested.id, receipt.message.conversationId == requested.conversationId else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Unexpected photo acknowledgement.")
+            }
+            let retained = try store.mergeMessages([receipt.message]).first ?? receipt.message
+            noteMessageRevision(retained.id)
+            messageVisibilityClock.send(Date())
+            let rootLive: Bool
+            if let rootId = retained.parentId, let root = try store.message(id: rootId) {
+                rootLive = PulseRemediationLogic.threadRootAvailable(root, roomId: retained.conversationId, rootId: rootId)
+            } else { rootLive = retained.parentId == nil }
+            guard rootLive, PulseViewOnceAccess.granted(receipt.consumed, requested: requested, returned: retained, viewerId: viewer.id) else {
+                toasts.show("One-time access wasn't granted. The photo may already have been opened.")
+                return nil
+            }
+            guard isForeground, activeRoomId == requested.conversationId else { return nil }
+            return retained
+        } catch is CancellationError {
+            return nil
+        } catch {
+            guard sessionGeneration == epoch else { return nil }
+            toasts.show("Couldn't confirm one-time access. The photo wasn't opened here.")
+            return nil
+        }
+    }
+
     public func recordMessageMutation(_ message: WireChatMessage) throws {
         try store?.upsert(messages: [message])
         noteMessageRevision(message.id)

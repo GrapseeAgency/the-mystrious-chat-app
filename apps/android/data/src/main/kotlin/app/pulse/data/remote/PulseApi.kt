@@ -743,8 +743,10 @@ class PulseApi(
         }
 
     /** POST /api/messages/{id}/viewed {userId} → { message } (idempotent burn stamp). */
-    suspend fun markViewed(messageId: String, userId: String): PulseResult<ChatMessageDto> =
-        post("/api/messages/$messageId/viewed", jsonOf("userId" to userId)) { messageOf(it) }
+    suspend fun markViewed(messageId: String, userId: String): PulseResult<app.pulse.protocol.ViewOnceReceiptDto> =
+        post("/api/messages/$messageId/viewed", jsonOf("userId" to userId)) {
+            PulseJson.decodeFromString(app.pulse.protocol.ViewOnceReceiptDto.serializer(), it)
+        }
 
     /**
      * R1-W2F - POST /api/messages/{id}/translate {userId, lang?} → { message }.

@@ -795,9 +795,9 @@ public struct PulseAPIClient: Sendable {
     /// POST /api/messages/{id}/viewed {userId} - consume a view-once
     /// attachment. Idempotent: the FIRST non-sender open stamps
     /// viewedAt/viewedBy forever; the {message} back is authoritative.
-    public func markViewed(messageId: String, userId: String) async throws -> WireChatMessage {
+    public func markViewed(messageId: String, userId: String) async throws -> WireViewOnceReceipt {
         let data = try await postRaw("/api/messages/\(messageId)/viewed", body: ["userId": userId])
-        return try WireMessageEnvelope.extract(from: data)
+        return try decoder.decode(WireViewOnceReceipt.self, from: data)
     }
 
     /// POST /api/conversations/{id}/poll {senderId, question, options} -

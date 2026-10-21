@@ -263,6 +263,11 @@ fun ChatRoomScreen(
     var infoTarget by remember { mutableStateOf<Message?>(null) }
     var deleteTarget by remember { mutableStateOf<Message?>(null) }
     var lightboxTarget by remember { mutableStateOf<Message?>(null) }
+    var openingViewOnce by remember(conversationId, viewerId) { mutableStateOf(false) }
+    LaunchedEffect(messages, lightboxTarget?.id) {
+        val shown = lightboxTarget
+        if (shown != null && messages.none { it.id == shown.id && !it.isDeleted }) lightboxTarget = null
+    }
     var pinsOpen by remember { mutableStateOf(false) }
     var attachOpen by remember { mutableStateOf(false) }
     // R4-B item 2 - the attach sheet's Effects submenu state (web
@@ -411,6 +416,17 @@ fun ChatRoomScreen(
         }
     }
     val lifecycleOwner = LocalLifecycleOwner.current
+    fun openViewOnce(target: Message) {
+        if (openingViewOnce || lightboxTarget != null) return
+        openingViewOnce = true
+        listScope.launch {
+            try {
+                viewModel.consumeViewOnce(target, viewerId)?.let {
+                    if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) lightboxTarget = it
+                }
+            } finally { openingViewOnce = false }
+        }
+    }
     DisposableEffect(lifecycleOwner, screenPrivacyOn) {
         val obs = LifecycleEventObserver { _, event ->
             when (event) {
@@ -891,9 +907,7 @@ fun ChatRoomScreen(
                                 onTournamentJoin = { id -> viewModel.joinTournament(id) },
                                 onTournamentFinish = { id -> viewModel.finishTournament(id) },
                                 onConsumeViewOnce = { target ->
-                                    // Reveal is instant - the POST is fire-and-forget (web parity).
-                                    viewModel.consumeViewOnce(target)
-                                    lightboxTarget = target
+                                    openViewOnce(target)
                                 },
                                 onLongPress = if (!message.isDeleted && !message.id.startsWith(TEMP_MESSAGE_PREFIX)) {
                                     {
@@ -2152,8 +2166,10 @@ fun ChatRoomScreen(
                 actionTarget = null
             },
             onCopy = {
-                clipboard.setText(AnnotatedString(target.body))
-                viewModel.notify("Copied to clipboard")
+                if (!target.viewOnce || target.authorId == viewerId) {
+                    clipboard.setText(AnnotatedString(target.body))
+                    viewModel.notify("Copied to clipboard")
+                } else viewModel.notify("View-once content can't be copied", isError = true)
                 actionTarget = null
             },
             onTogglePin = {
@@ -2165,7 +2181,8 @@ fun ChatRoomScreen(
                 actionTarget = null
             },
             onForward = {
-                forwardTarget = target
+                if (!target.viewOnce) forwardTarget = target
+                else viewModel.notify("View-once content can't be forwarded", isError = true)
                 actionTarget = null
             },
             onShare = target.filePath?.takeIf { it.isNotBlank() }?.let {

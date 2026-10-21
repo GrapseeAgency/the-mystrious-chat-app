@@ -1,6 +1,7 @@
 import XCTest
 @testable import Pulse
 
+@MainActor
 final class MessageMergeTests: XCTestCase {
     private func row(_ values: [String: Any] = [:]) throws -> WireChatMessage {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(
