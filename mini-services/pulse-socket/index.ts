@@ -1,7 +1,7 @@
 /**
  * Pulse Chat — realtime mini service (socket.io)
  * ------------------------------------------------
- * Port: 3003 (hardcoded — reached from Next.js/preview via Caddy `/?XTransformPort=3003`).
+ * Port: 3003 by default (Caddy `/?XTransformPort=3003`); PULSE_SOCKET_PORT permits isolated tests.
  *
  * Responsibilities (NO database access ever):
  *  - Presence tracking   : onlineUsers Map<userId, Set<socketId>>, rooms `user:{userId}`
@@ -40,7 +40,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Server } from 'socket.io'
 import type { Socket } from 'socket.io'
 
-const PORT = 3003
+const PORT = Number(process.env.PULSE_SOCKET_PORT ?? 3003)
 
 // ---------------------------------------------------------------------------
 // Bootstrap http server + socket.io (options copied from examples/websocket)
@@ -614,7 +614,7 @@ function dropCallSession(
 //
 // ONE live group call per conversation, keyed by conversationId. The JOINER
 // offers to every existing member (deterministic direction, no glare);
-// signaling is targeted per-peer via `roomOf(userId)` so the conversation
+// signaling is targeted at each member's admitted socket so the conversation
 // room itself never carries a flood. Rings travel through Next's HTTP relay
 // (`/notify` event `gcall:ring`) so the ring also reaches members who are
 // merely in another room, and push fanout (Next side) covers OFFLINE users.
@@ -625,6 +625,7 @@ const GCALL_ICE_MAX_CHARS = CALL_ICE_MAX_CHARS
 
 interface GroupCallMember {
   userId: string
+  socketId: string // the device that actually joined, not every session of this user
   name: string
   color: string
   avatar: string | null
@@ -669,11 +670,11 @@ function broadcastGcallState(conversationId: string): void {
   if (payload) io.to(gcallRoomName(conversationId)).emit('gcall:state', payload)
 }
 
-/** Tear down the whole group call (host left or last member departed). */
+/** Tear down the whole group call after its last member departed. */
 function dropGroupCall(
   conversationId: string,
   reason: string,
-  notifyUserIds: Iterable<string> = [],
+  notifySocketIds: Iterable<string> = [],
 ): void {
   const call = groupCalls.get(conversationId)
   if (!call) return
@@ -682,19 +683,17 @@ function dropGroupCall(
   }
   groupCalls.delete(conversationId)
   const payload = { conversationId, callId: call.callId, reason }
-  // Room broadcast + per-member user rooms: the departing last member has
-  // already left the socket room AND the roster by the time this runs, so the
-  // user-room copies (from the caller's member snapshot) are the ONLY
-  // guaranteed delivery — without them `gcall:ended` is undeliverable.
+  // The departing owner already left the room. Notify that device directly,
+  // not unrelated tabs/devices belonging to the same account.
   io.to(gcallRoomName(conversationId)).emit('gcall:ended', payload)
-  for (const userId of new Set(notifyUserIds)) {
-    io.to(roomOf(userId)).emit('gcall:ended', payload)
+  for (const socketId of new Set(notifySocketIds)) {
+    io.to(socketId).emit('gcall:ended', payload)
   }
   console.log(`[gcall] drop conv=${conversationId} members=${call.members.size} reason=${reason}`)
 }
 
 /** Remove one user from their group call (leave/disconnect path). */
-function leaveGroupCall(userId: string, reason: string): void {
+function leaveGroupCall(userId: string, reason: string, expectedSocketId?: string): void {
   const conversationId = groupCallByUser.get(userId)
   if (!conversationId) return
   const call = groupCalls.get(conversationId)
@@ -702,15 +701,18 @@ function leaveGroupCall(userId: string, reason: string): void {
     groupCallByUser.delete(userId)
     return
   }
-  // Snapshot BEFORE mutation — dropGroupCall needs everyone who was in the
-  // call (including the leaver) to receive `gcall:ended` on their user room.
-  const memberSnapshot = Array.from(call.members.keys())
+  const member = call.members.get(userId)
+  if (!member || (expectedSocketId && member.socketId !== expectedSocketId)) return
+  const memberSnapshot = Array.from(call.members.values(), value => value.socketId)
+  const owner = io.sockets.sockets.get(member.socketId)
+  void owner?.leave(gcallRoomName(conversationId))
   call.members.delete(userId)
   groupCallByUser.delete(userId)
   if (call.members.size === 0) {
     dropGroupCall(conversationId, reason, memberSnapshot)
     return
   }
+  owner?.emit('gcall:ended', { conversationId, callId: call.callId, reason })
   broadcastGcallState(conversationId)
   console.log(`[gcall] leave conv=${conversationId} user=${userId} remaining=${call.members.size}`)
 }
@@ -722,6 +724,7 @@ function asGroupMember(value: unknown): GroupCallMember | null {
   if (!id) return null
   return {
     userId: id,
+    socketId: "", // assigned by the server on admission; never trusted from the payload
     name: asTrimmedString(v.name).slice(0, 64) || 'Someone',
     color: asTrimmedString(v.color).slice(0, 24) || 'emerald',
     avatar:
@@ -1690,14 +1693,22 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !kind || !me) return
     if (socketUser.get(socket.id) !== me.userId) return
 
-    // One group call per user: re-joining the same conversation is idempotent;
-    // joining a DIFFERENT one first leaves the old call (single-writer honesty).
-    const currentConv = groupCallByUser.get(me.userId)
-    if (currentConv && currentConv !== conversationId) {
-      leaveGroupCall(me.userId, 'switch')
-    }
-
     let call = groupCalls.get(conversationId)
+    // Capacity refusal must not evict an existing call on the user's other device.
+    if (call && !call.members.has(me.userId) && call.members.size >= MAX_GROUP_CALL_PARTICIPANTS) {
+      socket.emit('gcall:full', { conversationId, callId: call.callId, max: MAX_GROUP_CALL_PARTICIPANTS })
+      return
+    }
+    const currentConv = groupCallByUser.get(me.userId)
+    if (currentConv) {
+      const previous = groupCalls.get(currentConv)?.members.get(me.userId)
+      if (currentConv !== conversationId || previous?.socketId !== socket.id) {
+        // Explicit takeover: remove the old endpoint and publish departure BEFORE
+        // re-admission, so peers rebuild their media connection to the new device.
+        leaveGroupCall(me.userId, 'replaced')
+      }
+    }
+    call = groupCalls.get(conversationId)
     if (!call) {
       call = {
         callId: `gcall-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
@@ -1716,7 +1727,7 @@ io.on('connection', (socket: Socket) => {
         console.log(`[gcall] join rejected (full) conv=${conversationId} user=${me.userId}`)
         return
       }
-      call.members.set(me.userId, { ...me, joinedAt: Date.now() })
+      call.members.set(me.userId, { ...me, socketId: socket.id, joinedAt: Date.now() })
     }
     socket.join(gcallRoomName(conversationId))
     groupCallByUser.set(me.userId, conversationId)
@@ -1733,7 +1744,7 @@ io.on('connection', (socket: Socket) => {
     if (socketUser.get(socket.id) !== me) return
     if (groupCallByUser.get(me) !== conversationId) return
     socket.leave(gcallRoomName(conversationId))
-    leaveGroupCall(me, 'leave')
+    leaveGroupCall(me, 'leave', socket.id)
   })
 
   /**
@@ -1753,8 +1764,9 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !from || !to || from === to || !sdp || !kind) return
     if (socketUser.get(socket.id) !== from) return
     const call = groupCalls.get(conversationId)
-    if (!call || !call.members.has(from) || !call.members.has(to)) return
-    io.to(roomOf(to)).emit('gcall:offer', { conversationId, callId: call.callId, from, to, kind, sdp })
+    if (!call || call.members.get(from)?.socketId !== socket.id || !call.members.has(to)) return
+    if (typeof data.callId === 'string' && data.callId.length > 0 && data.callId !== call.callId) return
+    io.to(call.members.get(to)!.socketId).emit('gcall:offer', { conversationId, callId: call.callId, from, to, kind, sdp })
   })
 
   /** gcall:answer { conversationId, to, sdp } — existing member → joiner. */
@@ -1770,8 +1782,9 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !from || !to || from === to || !sdp) return
     if (socketUser.get(socket.id) !== from) return
     const call = groupCalls.get(conversationId)
-    if (!call || !call.members.has(from) || !call.members.has(to)) return
-    io.to(roomOf(to)).emit('gcall:answer', { conversationId, callId: call.callId, from, to, sdp })
+    if (!call || call.members.get(from)?.socketId !== socket.id || !call.members.has(to)) return
+    if (typeof data.callId === 'string' && data.callId.length > 0 && data.callId !== call.callId) return
+    io.to(call.members.get(to)!.socketId).emit('gcall:answer', { conversationId, callId: call.callId, from, to, sdp })
   })
 
   /** gcall:ice { conversationId, to, candidate, sdpMid, sdpMLineIndex } — targeted relay. */
@@ -1787,8 +1800,9 @@ io.on('connection', (socket: Socket) => {
     if (!conversationId || !from || !to || from === to || !candidate) return
     if (socketUser.get(socket.id) !== from) return
     const call = groupCalls.get(conversationId)
-    if (!call || !call.members.has(from) || !call.members.has(to)) return
-    io.to(roomOf(to)).emit('gcall:ice', {
+    if (!call || call.members.get(from)?.socketId !== socket.id || !call.members.has(to)) return
+    if (typeof data.callId === 'string' && data.callId.length > 0 && data.callId !== call.callId) return
+    io.to(call.members.get(to)!.socketId).emit('gcall:ice', {
       conversationId,
       callId: call.callId,
       from,
@@ -1819,7 +1833,7 @@ io.on('connection', (socket: Socket) => {
       const callId = callByUser.get(departedUserId)
       if (callId) dropCallSession(callId, 'timeout', departedUserId)
       // Group calls: the departed member drops out; last one out ends the call.
-      leaveGroupCall(departedUserId, `disconnect:${reason}`)
+      leaveGroupCall(departedUserId, `disconnect:${reason}`, socket.id)
     }
     const wentOffline = dropPresence(socket.id)
     if (wentOffline) {
@@ -1875,7 +1889,9 @@ process.on('unhandledRejection', (err) => {
 })
 
 httpServer.listen(PORT, () => {
-  console.log(`Pulse socket service listening on port ${PORT} (path "/", presence+relay+voice+stage+space ready)`)
+  const address = httpServer.address()
+  const actualPort = address && typeof address === 'object' ? address.port : PORT
+  console.log(`Pulse socket service listening on port ${actualPort} (path "/", presence+relay+voice+stage+space ready)`)
 })
 
 let shuttingDown = false

@@ -517,7 +517,7 @@ public final class PulseGroupCallEngine: ObservableObject {
             try await pc.setLocalDescription(sdp: sdp)
             guard ownsPeer(peerId, pc, ticket) else { return }
             guard signaling.send(event: "gcall:offer", payload: GroupCallWire.offerPayload(
-                conversationId: conversationId, from: viewer.id, to: peerId, kind: kind, sdp: sdp
+                conversationId: conversationId, from: viewer.id, to: peerId, kind: kind, sdp: sdp, callId: joinedCallId
             )) else { handleSocketDisconnected(); return }
             flushLocalIce(for: peerId)
         } catch {
@@ -541,7 +541,7 @@ public final class PulseGroupCallEngine: ObservableObject {
             try await pc.setLocalDescription(sdp: answerSdp)
             guard ownsPeer(peerId, pc, ticket) else { return }
             guard signaling.send(event: "gcall:answer", payload: GroupCallWire.answerPayload(
-                conversationId: conversationId, from: viewer.id, to: peerId, sdp: answerSdp
+                conversationId: conversationId, from: viewer.id, to: peerId, sdp: answerSdp, callId: joinedCallId
             )) else { handleSocketDisconnected(); return }
             flushLocalIce(for: peerId)
             await drainPendingIce(for: peerId, pc: pc, ticket: ticket)
@@ -803,6 +803,7 @@ public final class PulseGroupCallEngine: ObservableObject {
             candidate: candidate,
             sdpMid: sdpMid,
             sdpMLineIndex: sdpMLineIndex,
+            callId: joinedCallId,
         )
         if localDescriptionSent.contains(peerId) {
             if !signaling.send(event: "gcall:ice", payload: payload) { handleSocketDisconnected() }

@@ -2237,3 +2237,34 @@ Mute expiry at the boundary restores both channels. No account/auth redesign.
 Two focused delivery regressions and all 112 server contracts pass. The shared dispatch
 helper passes strict targeted TypeScript checking. This does not solve relay admission
 authorization, remote push credentials/delivery or idempotency of repeated ring requests.
+
+
+## 2026-10-21 — group relay device ownership and replacement calls
+
+The relay keyed group membership only by user ID. Disconnecting ANY other socket for
+that user removed the real calling device; unjoined devices could also emit SDP/ICE or
+leave the call, and targeted signaling was broadcast to every recipient device.
+
+Group members now retain the admitted server-side socket ID. Only that endpoint may
+signal/leave; disconnect of an unrelated device does not change the roster. Signals go
+to the recipient's admitted socket. Explicit join from a different device publishes
+old-device departure before re-admission, so existing peers close/rebuild rather than
+reusing the old media connection. The old endpoint receives its own ended event. A full
+target room refuses admission BEFORE evicting an existing call on another device.
+
+Explicit stale call IDs are no longer overwritten with the current server call ID.
+Swift's actual mesh path now attaches the admitted ID; Android already supplied it.
+Omitted legacy IDs remain compatible, so this is NOT full nonce/ACK replay protection.
+Default deployment port stays 3003; tests use an isolated ephemeral listener.
+
+Verification: the REAL relay was launched with Socket.IO clients (not the simplified
+native fixture). Regressions exercised unjoined same-account injection/leave, recipient
+device isolation, unrelated disconnect, device takeover/reconnect rosters, stale-device
+callbacks and full-room admission. All 117 server tests pass; full relay strict targeted
+TypeScript checking passes; three Swift files syntax-parse. Native runtime and hardware
+results remain separate. Existing sign-in migration behavior was not redesigned.
+
+Open: equivalent 1:1 relay device ownership, conversation membership authorization,
+legacy identity/session verification, same-socket identity changes, missing call-ID
+legacy sends, and physical multi-device media. GitHub rejected cancellation of obsolete
+Actions runs with integration-permission 403; no runs were canceled or checks bypassed.

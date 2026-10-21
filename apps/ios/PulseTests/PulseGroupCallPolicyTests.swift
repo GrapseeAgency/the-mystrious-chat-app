@@ -330,4 +330,13 @@ final class PulseGroupCallPolicyTests: XCTestCase {
         )
         XCTAssertEqual(partial.startedAtMs, 1_700_000_000, "seconds-form startedAt coerces to ms-ish integer")
     }
+
+    func testAdmittedPeerPayloadsCarryCallIdentityWithoutChangingLegacyDefault() {
+        let offer = GroupCallWire.offerPayload(conversationId: "room", from: "a", to: "b", kind: .voice, sdp: "offer", callId: "current")
+        let answer = GroupCallWire.answerPayload(conversationId: "room", from: "b", to: "a", sdp: "answer", callId: "current")
+        let ice = GroupCallWire.icePayload(conversationId: "room", from: "a", to: "b", kind: .voice,
+            candidate: "candidate", sdpMid: "0", sdpMLineIndex: 0, callId: "current")
+        for payload in [offer, answer, ice] { XCTAssertEqual(payload["callId"] as? String, "current") }
+        XCTAssertNil(GroupCallWire.answerPayload(conversationId: "room", from: "a", to: "b", sdp: "legacy")["callId"])
+    }
 }

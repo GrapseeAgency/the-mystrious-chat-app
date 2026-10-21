@@ -170,11 +170,9 @@ public struct PulseGroupCallStateSnapshot: Decodable, Equatable, Sendable {
 
 // gcall:* wire payload builders (C→S, exact relay-validated shapes)
 
-/// Builders for the C→S group-call events. NOTE: unlike call:*, the
-/// targeted gcall events carry NO callId from the client - the relay
-/// injects the conversation call's id server-side (mini-services
-/// pulse-socket gcall:offer/answer/ice handlers). Shapes mirror the web
-/// emit payloads verbatim; pinned by PulseGroupCallPolicyTests.
+/// Builders for C→S group calls. Admitted native peers carry the relay call ID
+/// so stale signaling cannot be relabeled as a replacement call in the same room.
+/// The optional default preserves compatibility for legacy callers.
 public enum GroupCallWire {
     /// gcall:join { conversationId, kind, user: {id,name,color,avatar} }
     public static func joinPayload(
@@ -203,15 +201,18 @@ public enum GroupCallWire {
         from: String,
         to: String,
         kind: CallKind,
-        sdp: String
+        sdp: String,
+        callId: String? = nil
     ) -> [String: Any] {
-        [
+        var payload: [String: Any] = [
             "conversationId": conversationId,
             "from": from,
             "to": to,
             "kind": kind.rawValue,
             "sdp": sdp,
         ]
+        if let callId, !callId.isEmpty { payload["callId"] = callId }
+        return payload
     }
 
     /// gcall:answer { conversationId, from, to, sdp }
@@ -219,14 +220,17 @@ public enum GroupCallWire {
         conversationId: String,
         from: String,
         to: String,
-        sdp: String
+        sdp: String,
+        callId: String? = nil
     ) -> [String: Any] {
-        [
+        var payload: [String: Any] = [
             "conversationId": conversationId,
             "from": from,
             "to": to,
             "sdp": sdp,
         ]
+        if let callId, !callId.isEmpty { payload["callId"] = callId }
+        return payload
     }
 
     /// gcall:ice { conversationId, from, to, kind, candidate, sdpMid, sdpMLineIndex }
@@ -238,7 +242,8 @@ public enum GroupCallWire {
         kind: CallKind,
         candidate: String,
         sdpMid: String?,
-        sdpMLineIndex: Int32?
+        sdpMLineIndex: Int32?,
+        callId: String? = nil
     ) -> [String: Any] {
         var payload: [String: Any] = [
             "conversationId": conversationId,
@@ -247,6 +252,7 @@ public enum GroupCallWire {
             "kind": kind.rawValue,
             "candidate": candidate,
         ]
+        if let callId, !callId.isEmpty { payload["callId"] = callId }
         payload["sdpMid"] = sdpMid ?? NSNull()
         payload["sdpMLineIndex"] = sdpMLineIndex.map { Int($0) } ?? NSNull()
         return payload
