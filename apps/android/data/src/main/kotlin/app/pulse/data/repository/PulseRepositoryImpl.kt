@@ -191,6 +191,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -372,7 +373,17 @@ class PulseRepositoryImpl constructor(
     override suspend fun retryOutboxEntry(clientId: String): Result<Unit> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in to the original account"))
         return try {
-            if (outboxDao.retryFailed(clientId, owner) == 0) {
+            val retried = database.withTransaction {
+                val echo = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
+                echo?.threadRootId?.let { rootId ->
+                    check(!threadIsDenied(rootId) && app.pulse.domain.sync.threadRootAvailable(
+                        messageDao.byId(rootId)?.toDomain(), echo.conversationId, rootId)) {
+                        "Reopen this thread to check access. Your saved reply is kept."
+                    }
+                }
+                outboxDao.retryFailed(clientId, owner)
+            }
+            if (retried == 0) {
                 Result.failure(IllegalStateException("This saved message is no longer available for retry"))
             } else {
                 scope.launch {
@@ -1033,6 +1044,7 @@ class PulseRepositoryImpl constructor(
             topicId = if (parentId == null) topicId else null,
         )
         persistComposerSend(draftToken) {
+            check(parentId == null || !threadIsDenied(parentId)) { "This thread is unavailable. Your draft is still saved." }
             messageDao.upsertAll(listOf(MessageEntity.from(temp)))
             outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
@@ -1106,6 +1118,7 @@ class PulseRepositoryImpl constructor(
             anonAlias = anonAliasPreview.takeIf { anon },
         )
         persistComposerSend(draftToken) {
+            check(parentId == null || !threadIsDenied(parentId)) { "This thread is unavailable. Your draft is still saved." }
             messageDao.upsertAll(listOf(MessageEntity.from(temp.copy(payload = payload)).copy(kind = if (kind == "audio") "VOICE" else kind.uppercase(java.util.Locale.ROOT))))
             outboxDao.insert(OutboxEntity(
                 conversationId = conversationId, clientId = clientId, content = body, createdAt = nowIso,
@@ -1506,6 +1519,7 @@ class PulseRepositoryImpl constructor(
         return try {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 database.withTransaction {
+                    check(!threadIsDenied(rootId)) { "This thread is unavailable. Your reply is still saved." }
                     val root = messageDao.byId(rootId)?.toDomain()
                     check(app.pulse.domain.sync.threadRootAvailable(root, conversationId, rootId)) { "This thread is unavailable. Your reply is still saved." }
                     val echo = messageDao.byId(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId)
@@ -1548,24 +1562,68 @@ class PulseRepositoryImpl constructor(
         }
     }
 
+    private val threadValidationFence = app.pulse.domain.sync.ThreadValidationFence()
+    private val deniedThreads = MutableStateFlow<Set<String>>(emptySet())
+
+    override fun observeThreadAccessDenied(rootId: String): Flow<Boolean> = kotlinx.coroutines.flow.combine(
+        wave7Dao.observe(app.pulse.domain.sync.threadDenialKey(rootId)), deniedThreads,
+    ) { persisted, memory -> persisted != null || rootId in memory }.distinctUntilChanged()
+
+    private suspend fun threadIsDenied(rootId: String): Boolean = rootId in deniedThreads.value ||
+        wave7Dao.get(app.pulse.domain.sync.threadDenialKey(rootId)) != null
+
     override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
+        val ticket = messageCacheMutex.withLock { threadValidationFence.begin(rootId) }
         val watermark = messageEventClock.get()
-        val page = when (val r = api.thread(rootId, viewerId ?: "")) {
-            is PulseResult.Success -> r.value
-            is PulseResult.Failure -> throw apiExceptionOf(r)
-        }
-        val parent = page.parent?.toDomain() ?: throw IllegalStateException("thread parent missing")
-        val replies = page.replies.map { it.toDomain() } // wire order: createdAt asc
-        // Upsert both so observeThread(rootId) rehydrates the sheet offline
-        // and realtime reply appends merge with this window.
-        val merged = cacheFetchedMessages(listOf(parent) + replies, watermark)
-        val currentParent = merged.firstOrNull { it.id == parent.id }
-            ?: throw IllegalStateException("Thread parent is no longer available")
-        if (currentParent.id != rootId || currentParent.threadRootId != null || currentParent.isDeleted ||
-            (currentParent.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
-            throw PulseApiException("NOT_FOUND", "This thread is no longer available", status = 410)
-        }
-        return currentParent to merged.filter { it.threadRootId == rootId && it.conversationId == currentParent.conversationId }
+        try {
+            val page = when (val r = api.thread(rootId, viewerId ?: "")) {
+                is PulseResult.Success -> r.value
+                is PulseResult.Failure -> throw apiExceptionOf(r)
+            }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            return messageCacheMutex.withLock {
+                if (!threadValidationFence.isCurrent(rootId, ticket)) throw PulseApiException("CONFLICT", "A newer thread check superseded this one. Try again.", 409)
+                val parent = page.parent?.toDomain() ?: throw IllegalStateException("Thread parent missing")
+                if (parent.id != rootId || parent.threadRootId != null) throw IllegalStateException("Unexpected thread parent")
+                val known = messageDao.byId(rootId)
+                check(known == null || known.conversationId == parent.conversationId) { "Unexpected thread room" }
+                val accepted = database.withTransaction {
+                    val raw = listOf(parent) + page.replies.map { it.toDomain() }.filter {
+                        it.threadRootId == rootId && it.conversationId == parent.conversationId
+                    }
+                    val merged = cacheFetchedMessagesLocked(raw, watermark)
+                    val currentParent = merged.firstOrNull { it.id == rootId }
+                    if (!app.pulse.domain.sync.threadRootAvailable(currentParent, parent.conversationId, rootId)) {
+                        throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
+                    }
+                    wave7Dao.delete(app.pulse.domain.sync.threadDenialKey(rootId))
+                    checkNotNull(currentParent) to merged.filter { it.threadRootId == rootId }
+                }
+                deniedThreads.value = deniedThreads.value - rootId
+                accepted
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (app.pulse.domain.sync.threadAccessDenied((error as? PulseApiException)?.status)) {
+                // Navigation cancellation must not forget an explicit refusal already received.
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    messageCacheMutex.withLock {
+                        if (threadValidationFence.isCurrent(rootId, ticket)) {
+                            deniedThreads.value = deniedThreads.value + rootId
+                            try {
+                                wave7Dao.upsert(Wave7CacheEntity(app.pulse.domain.sync.threadDenialKey(rootId), "denied", System.currentTimeMillis()))
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (storage: Exception) {
+                                Log.w(TAG, "Thread refusal could not be persisted", storage)
+                            }
+                        }
+                    }
+                }
+            }
+            throw error
+        } finally { threadValidationFence.finish(rootId, ticket) }
     }
 
     override suspend fun messagesPage(conversationId: String, before: String?, limit: Int): Pair<List<Message>, Boolean> {
@@ -1628,6 +1686,15 @@ class PulseRepositoryImpl constructor(
      * media stays online-only per spec §1.2.
      */
     override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> {
+        try {
+            if (source.threadRootId?.let { threadIsDenied(it) } == true) {
+                return Result.failure(IllegalStateException("This thread is unavailable. Nothing was forwarded."))
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            return Result.failure(error)
+        }
         if (source.viewOnce || source.isDeleted || source.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
             return Result.failure(IllegalStateException("This message can't be forwarded."))
         }
@@ -2674,6 +2741,9 @@ class PulseRepositoryImpl constructor(
             val owner = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
             val requested = messageDao.byId(messageId)?.toDomain()
                 ?: return Result.failure(IllegalStateException("This photo is unavailable."))
+            if (requested.threadRootId?.let { threadIsDenied(it) } == true) {
+                return Result.failure(IllegalStateException("Reopen this thread to check access before opening the photo."))
+            }
             if (!app.pulse.domain.sync.canRequestViewOnce(requested, owner)) {
                 return Result.failure(IllegalStateException("This photo is no longer available to open."))
             }
@@ -2686,8 +2756,8 @@ class PulseRepositoryImpl constructor(
                     check(returned.id == messageId && returned.conversationId == requested.conversationId) { "Unexpected photo acknowledgement." }
                     val retained = upsertMessage(returned)
                     val parentId = retained.threadRootId
-                    val rootLive = parentId == null || app.pulse.domain.sync.threadRootAvailable(
-                        messageDao.byId(parentId)?.toDomain(), retained.conversationId, parentId)
+                    val rootLive = parentId == null || (!threadIsDenied(parentId) && app.pulse.domain.sync.threadRootAvailable(
+                        messageDao.byId(parentId)?.toDomain(), retained.conversationId, parentId))
                     if (rootLive && (response.value.message.viewedBy as? kotlinx.serialization.json.JsonPrimitive)?.content == owner &&
                         app.pulse.domain.sync.acceptsViewOnceGrant(response.value.consumed, requested, retained, owner)) {
                         Result.success(retained)

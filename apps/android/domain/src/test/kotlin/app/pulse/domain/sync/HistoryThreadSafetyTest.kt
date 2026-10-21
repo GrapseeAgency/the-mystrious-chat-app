@@ -88,4 +88,20 @@ class HistoryThreadSafetyTest {
         assertNull(threadReplyTargetIndex(listOf(row("reply").copy(threadRootId = pending.id)), pending, "reply", 1000))
     }
 
+
+    @Test fun `older thread validation cannot grant or deny after a newer request`() {
+        val fence = ThreadValidationFence()
+        val old = fence.begin("root")
+        val current = fence.begin("root")
+        val other = fence.begin("other")
+        assertFalse(fence.isCurrent("root", old))
+        fence.finish("root", old)
+        assertTrue(fence.isCurrent("root", current))
+        assertTrue(fence.isCurrent("other", other))
+        fence.finish("root", current)
+        assertFalse(fence.isCurrent("root", old))
+        assertFalse(fence.isCurrent("root", current))
+        assertTrue(fence.isCurrent("other", other))
+        assertEquals("thread-access-denied:v1|root", threadDenialKey("root"))
+    }
 }

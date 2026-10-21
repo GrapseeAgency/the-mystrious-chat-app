@@ -129,8 +129,8 @@ class ThreadViewModel @Inject constructor(
 
     /** The thread root - rehydrated from Room, refreshed by loadThread. */
     val parent: StateFlow<Message?> = combine(repo.observeMessages(conversationId),
-        _state.map { it.unavailable }.distinctUntilChanged()) { rows, denied ->
-            if (denied) null else rows.firstOrNull { threadRootAvailable(it, conversationId, rootId) }
+        _state.map { it.unavailable }.distinctUntilChanged(), repo.observeThreadAccessDenied(rootId)) { rows, denied, persistedDenial ->
+            if (denied || persistedDenial) null else rows.firstOrNull { threadRootAvailable(it, conversationId, rootId) }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 

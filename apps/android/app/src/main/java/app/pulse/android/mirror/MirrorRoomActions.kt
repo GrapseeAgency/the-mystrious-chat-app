@@ -438,10 +438,13 @@ internal fun MirrorThreadSheet(
     var discardConfirm by remember(root.id) { mutableStateOf<String?>(null) }
     val replyFlow = remember(threadRepository, root.id) { threadRepository.observeThreadMessages(root.id) }
     val rootFlow = remember(threadRepository, root.id) {
-        threadRepository.observeMessages(root.conversationId).map { rows -> rows.firstOrNull { it.id == root.id } }
+        kotlinx.coroutines.flow.combine(threadRepository.observeMessages(root.conversationId),
+            threadRepository.observeThreadAccessDenied(root.id)) { rows, refused ->
+            if (refused) null else rows.firstOrNull { it.id == root.id }
+        }
     }
     val cachedReplies by replyFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    val currentRoot by rootFlow.collectAsStateWithLifecycle(initialValue = root)
+    val currentRoot by rootFlow.collectAsStateWithLifecycle(initialValue = null)
     val connectedFlow = remember(threadRepository) { threadRepository.observeConnected() }
     val connected by connectedFlow.collectAsStateWithLifecycle(initialValue = false)
     var draftToken by remember(threadRepository, root.id) { mutableStateOf<app.pulse.domain.model.ComposerDraftToken?>(null) }

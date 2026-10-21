@@ -27,3 +27,14 @@ fun threadReplyTargetIndex(replies: List<Message>, root: Message, targetId: Stri
         it.threadRootId == root.id && !it.isDeleted && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
         .takeIf { it >= 0 }
 }
+
+/** Root IDs are globally unique; the containing database supplies account/gateway isolation. */
+fun threadDenialKey(rootId: String): String = "thread-access-denied:v1|" + rootId
+
+/** Access responses are ordered by request start, not by network completion. */
+class ThreadValidationFence {
+    private val tickets = java.util.concurrent.ConcurrentHashMap<String, String>()
+    fun begin(rootId: String): String = java.util.UUID.randomUUID().toString().also { tickets[rootId] = it }
+    fun isCurrent(rootId: String, ticket: String): Boolean = tickets[rootId] == ticket
+    fun finish(rootId: String, ticket: String) { tickets.remove(rootId, ticket) }
+}

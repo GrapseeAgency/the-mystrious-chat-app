@@ -647,14 +647,14 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND pinnedAt IS NOT NULL ORDER BY pinnedAt ASC, id ASC")
     suspend fun pinned(conversationId: String): List<MessageEntity>
 
-    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || messages.threadRootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeFor(conversationId: String): Flow<List<MessageEntity>>
 
     /** Thread screen rehydration - replies asc from the Room cache. */
-    @Query("SELECT * FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
+    @Query("SELECT * FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL) ORDER BY createdAt ASC, id ASC")
     fun observeThread(rootId: String): Flow<List<MessageEntity>>
 
-    @Query("SELECT COUNT(*) FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)")
+    @Query("SELECT COUNT(*) FROM messages WHERE threadRootId = :rootId AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.`key` = 'thread-access-denied:v1|' || :rootId) AND NOT EXISTS (SELECT 1 FROM outbox o WHERE messages.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)")
     suspend fun countByThread(rootId: String): Int
 
     /**
@@ -1014,10 +1014,14 @@ interface Wave7Dao {
     @Query("SELECT * FROM wave7_cache WHERE `key` = :key")
     suspend fun get(key: String): Wave7CacheEntity?
 
+    @Query("SELECT * FROM wave7_cache WHERE `key` = :key")
+    fun observe(key: String): Flow<Wave7CacheEntity?>
+
     @Query("DELETE FROM wave7_cache WHERE `key` = :key")
     suspend fun delete(key: String)
 
-    @Query("DELETE FROM wave7_cache")
+    // Access refusals are durable metadata, not disposable feature snapshots.
+    @Query("DELETE FROM wave7_cache WHERE substr(`key`, 1, 24) != 'thread-access-denied:v1|'")
     suspend fun clearAll()
 }
 

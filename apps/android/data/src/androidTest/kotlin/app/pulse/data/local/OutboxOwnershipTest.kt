@@ -149,4 +149,42 @@ class OutboxOwnershipTest {
         } finally { db.close() }
     }
 
+
+    @Test fun deniedThreadStaysHiddenAfterReopenAndCacheClearWithoutDeletingIntent() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "thread-access-${java.util.UUID.randomUUID()}.db"
+        fun open() = Room.databaseBuilder(context, PulseDatabase::class.java, name).build()
+        val other = Room.inMemoryDatabaseBuilder(context, PulseDatabase::class.java).build()
+        var db = open()
+        try {
+            val root = Message(id = "root", conversationId = "room", authorId = "me", authorName = "Me",
+                kind = Message.Kind.TEXT, body = "Root", createdAt = "2026-10-21T00:00:00Z")
+            val reply = root.copy(id = "reply", threadRootId = root.id)
+            db.messageDao().upsertAll(listOf(root, reply).map { MessageEntity.from(it) })
+            val key = app.pulse.domain.sync.threadDenialKey(root.id)
+            db.draftDao().upsert(DraftEntity("draft", "keep typing", root.createdAt))
+            db.outboxDao().insert(OutboxEntity.from(OutboxEntry(conversationId = "room", clientId = "pending", content = "keep reply", createdAt = root.createdAt)))
+            db.wave7Dao().upsert(Wave7CacheEntity(key, "denied", 1L))
+            db.wave7Dao().upsert(Wave7CacheEntity("hub:market", "{}", 1L))
+            db.wave7Dao().clearAll()
+            assertEquals(null, db.wave7Dao().get("hub:market"))
+            assertEquals(key, db.wave7Dao().observe(key).first()?.key)
+            assertEquals(emptyList<MessageEntity>(), db.messageDao().observeThread("root").first())
+            assertEquals(listOf("root"), db.messageDao().observeFor("room").first().map { it.id })
+            db.close()
+            db = open()
+            assertEquals(key, db.wave7Dao().get(key)?.key)
+            // Ordinary cache refresh cannot override an explicit access refusal.
+            db.messageDao().upsertAll(listOf(MessageEntity.from(reply)))
+            assertEquals(emptyList<MessageEntity>(), db.messageDao().observeThread("root").first())
+            assertEquals(0, db.messageDao().countByThread("root"))
+            assertEquals(1, db.outboxDao().all().size)
+            assertEquals("keep typing", db.draftDao().get("draft")?.text)
+            assertEquals(null, other.wave7Dao().get(key))
+            other.messageDao().upsertAll(listOf(MessageEntity.from(reply)))
+            assertEquals(listOf("reply"), other.messageDao().observeThread("root").first().map { it.id })
+            db.wave7Dao().delete(key) // repository does this only after validated fresh parent + cache commit
+            assertEquals(listOf("reply"), db.messageDao().observeThread("root").first().map { it.id })
+        } finally { db.close(); other.close(); context.deleteDatabase(name) }
+    }
 }

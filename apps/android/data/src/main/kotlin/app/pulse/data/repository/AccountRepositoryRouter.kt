@@ -49,6 +49,7 @@ internal class AccountRepositoryRouter(
                             if (!initial) when (method.name) {
                                 "events" -> Unit
                                 "observeConnected" -> emit(false)
+                                "observeThreadAccessDenied" -> emit(true)
                                 "observePresence" -> emit(emptySet<String>())
                                 "observeDraft" -> emit(null)
                                 "observeThreadDraft" -> emit(app.pulse.domain.model.ThreadDraftSnapshot(null, -1))

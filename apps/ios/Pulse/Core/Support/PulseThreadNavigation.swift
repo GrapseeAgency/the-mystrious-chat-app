@@ -14,3 +14,17 @@ enum PulseThreadNavigation {
         nearTail && !pendingTarget
     }
 }
+
+/// MainActor owns this value in PulseSession. A superseded completion changes no access state.
+struct PulseThreadValidationFence {
+    private var tickets: [String: UUID] = [:]
+    mutating func begin(_ rootId: String) -> UUID {
+        let ticket = UUID()
+        tickets[rootId] = ticket
+        return ticket
+    }
+    func isCurrent(_ rootId: String, _ ticket: UUID) -> Bool { tickets[rootId] == ticket }
+    mutating func finish(_ rootId: String, _ ticket: UUID) {
+        if isCurrent(rootId, ticket) { tickets.removeValue(forKey: rootId) }
+    }
+}

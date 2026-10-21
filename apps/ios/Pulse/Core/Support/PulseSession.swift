@@ -132,6 +132,51 @@ public final class PulseSession: ObservableObject {
         (messageRevisions[id] ?? 0) <= revision
     }
 
+    private var threadValidationFence = PulseThreadValidationFence()
+    private var deniedThreadRoots: Set<String> = []
+
+    public func threadAccessDenied(rootId: String) -> Bool {
+        deniedThreadRoots.contains(rootId) || ((try? store?.threadAccessDenied(rootId: rootId)) ?? true)
+    }
+
+    /// Only the newest validation may change persistent access state.
+    public func validatedThread(rootId: String, roomId: String) async throws -> WireThreadPage {
+        guard let store, let viewer, ready else { throw CancellationError() }
+        let ticket = threadValidationFence.begin(rootId), epoch = sessionGeneration, client = api, revision = messageRevision
+        defer { threadValidationFence.finish(rootId, ticket) }
+        do {
+            let page = try await client.thread(rootId: rootId, userId: viewer.id)
+            try Task.checkCancellation()
+            guard epoch == sessionGeneration else { throw CancellationError() }
+            guard threadValidationFence.isCurrent(rootId, ticket) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "A newer thread check superseded this one. Try again.", status: 409)
+            }
+            guard page.parent.id == rootId, page.parent.conversationId == roomId, page.parent.parentId == nil else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Unexpected thread response.", status: 409)
+            }
+            let eligible = ([page.parent] + page.replies).filter { acceptsSyncMessage($0.id, startedAt: revision) }
+            let saved = try store.acceptThreadSnapshot(rootId: rootId, roomId: roomId, messages: eligible)
+            deniedThreadRoots.remove(rootId)
+            messageVisibilityClock.send(Date())
+            // Rows rejected by the revision fence may still be live in newer storage.
+            let replies = page.replies.compactMap { incoming -> WireChatMessage? in
+                guard incoming.parentId == rootId, incoming.conversationId == roomId else { return nil }
+                return try? store.message(id: incoming.id)
+            }
+            return WireThreadPage(parent: saved.parent, replies: replies)
+        } catch {
+            let unavailable = error is PulseStore.ThreadAccessError
+            if epoch == sessionGeneration, threadValidationFence.isCurrent(rootId, ticket),
+               unavailable || [403, 404, 410].contains((error as? PulseAPIClient.Failure)?.status ?? 0) {
+                deniedThreadRoots.insert(rootId)
+                try? store.denyThread(rootId: rootId) // memory still blocks this session if disk is unwritable
+                messageVisibilityClock.send(Date())
+            }
+            if unavailable { throw PulseAPIClient.Failure(kind: .notFound, message: "This thread is no longer available.", status: 410) }
+            throw error
+        }
+    }
+
     private var viewOnceActions: Set<String> = []
 
     /// A tap is not permission to reveal. Only this request's successful consumption is.
@@ -139,6 +184,11 @@ public final class PulseSession: ObservableObject {
         guard let viewer, let store, ready, isForeground, activeRoomId == requested.conversationId,
               PulseViewOnceAccess.canRequest(requested, viewerId: viewer.id),
               viewOnceActions.insert(requested.id).inserted else { return nil }
+        if let rootId = requested.parentId, threadAccessDenied(rootId: rootId) {
+            viewOnceActions.remove(requested.id)
+            toasts.show("Reopen this thread to check access before opening the photo.")
+            return nil
+        }
         let epoch = sessionGeneration, client = api
         defer { viewOnceActions.remove(requested.id) }
         do {
@@ -153,7 +203,7 @@ public final class PulseSession: ObservableObject {
             messageVisibilityClock.send(Date())
             let rootLive: Bool
             if let rootId = retained.parentId, let root = try store.message(id: rootId) {
-                rootLive = PulseRemediationLogic.threadRootAvailable(root, roomId: retained.conversationId, rootId: rootId)
+                rootLive = !threadAccessDenied(rootId: rootId) && PulseRemediationLogic.threadRootAvailable(root, roomId: retained.conversationId, rootId: rootId)
             } else { rootLive = retained.parentId == nil }
             guard rootLive, PulseViewOnceAccess.granted(receipt.consumed, requested: requested, returned: retained, viewerId: viewer.id) else {
                 toasts.show("One-time access wasn't granted. The photo may already have been opened.")
@@ -354,6 +404,8 @@ public final class PulseSession: ObservableObject {
         viewer = nil
         store = nil
         messageRevisions.removeAll()
+        threadValidationFence = PulseThreadValidationFence()
+        deniedThreadRoots.removeAll()
         pendingOpenRoom = nil
         pendingJumpMessageId = nil
         pendingLinkedRoomId = nil
@@ -631,6 +683,10 @@ public final class PulseSession: ObservableObject {
             let envelope = PulseOutboxForward.decode(row.payloadJson)
             if row.payloadJson != nil && envelope == nil { throw CocoaError(.coderReadCorrupt) }
             if let threadRootId, envelope?.parentId != threadRootId { return false }
+            if let rootId = envelope?.parentId, threadAccessDenied(rootId: rootId) {
+                toasts.show("Reopen this thread to check access. Your saved reply is kept.")
+                return false
+            }
             let anonymous = envelope?.anon == true
             var message = TempMessages.make(conversationId: row.conversationId, viewer: viewer, clientId: row.clientId,
                 content: row.content, parentId: envelope?.parentId, anon: anonymous,

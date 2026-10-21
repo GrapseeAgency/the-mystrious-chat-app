@@ -4419,7 +4419,7 @@ final class RoomViewModel: ObservableObject {
         }
         let ticket = historyGeneration, epoch = session.sessionGeneration, revision = session.messageRevision
         do {
-            let page = try await session.api.thread(rootId: rootId, userId: session.api.userId)
+            let page = try await session.validatedThread(rootId: rootId, roomId: conversationId)
             guard !Task.isCancelled, ticket == historyGeneration, epoch == session.sessionGeneration else { return }
             let fresh = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
             try session.store?.upsert(messages: fresh)

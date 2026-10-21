@@ -1971,3 +1971,43 @@ per-view signed capabilities. Server media authorization/lifetime, prior image c
 other-device screenshots, historical quote copies and full cross-navigation revocation
 need further work. Large-thread pagination remains open. Nothing here is a claim of
 complete view-once secrecy, whole-app correctness, merge or deployment.
+
+
+## 2026-10-21 — thread refusal survives offline reopening
+
+Broken path: a thread GET returned 403/404/410, the sheet hid replies, then navigation
+recreated its view-local flag. An offline reopen could display the same cached replies
+and enable a new send or a retry. This repair keeps an account/gateway-scoped refusal
+in existing KV storage; it is not a destructive message deletion or a schema migration.
+
+- Both Android thread surfaces observe persisted refusal before presenting their parent.
+  Room reply/room observations exclude denied replies, including after process restart;
+  cache clearing preserves the reserved metadata namespace. Swift thread reads/counts
+  exclude denied replies and ThreadView consults the shared session/store decision.
+- Only a fresh, identity-checked, live canonical parent can clear the refusal. Parent/reply
+  cache writes and metadata removal commit together. Ordinary message refreshes and
+  transport failures do not clear it. Swift thread-sheet and search-jump requests share
+  this validation path. No backend deployment is needed specifically for this ledger.
+- Per-root request fences reject superseded responses; starting another request and
+  applying a result are serialized with Android's cache mutex / Swift's MainActor.
+  An already received Android denial persists even if navigation cancels its caller.
+- Composer queue insertion, explicit thread and generic recovery retry, forwarding and
+  reply-photo grant opening respect known refusal. Drafts, failed outgoing identity,
+  envelope and upload receipts are retained. Revalidation remains available.
+- In-memory denial protects this process if persistence fails; disk failure cannot promise
+  refusal survives restart. Raw single-message lookup remains available to reconciliation
+  and recovery. This is not global cache/media erasure or comprehensive export revocation.
+
+Verification: 106/106 existing server contracts pass locally (no server change in this
+tranche); 17 changed native files syntax-parse. Added Room disk-reopen/cache-clear/account
+isolation coverage; Swift reopen/isolation/invalid-root rollback/blocked enqueue and
+retry coverage; Kotlin and Swift superseded-ticket regressions. These tests still need
+native execution on the pushed revision, not merely parser success. bb619bd Android
+build/API30/API34 passed; its iOS archive and simulator compile passed but storage tests
+had obsolete deletion/consumption expectations. 1ac720f updates those expectations;
+its additional viewOnce assertion matches the merge rule for a stored viewedAt stamp.
+The latest observed 1ac720f iOS archive passed; other native jobs were still pending.
+
+Remaining: unbounded thread API and Swift's 300-row cached thread window; full lifecycle,
+exports/notifications and historical media URL revocation; broader room membership
+revocation. Autumn UI tokens/layout are unchanged. This is not whole-app completion.

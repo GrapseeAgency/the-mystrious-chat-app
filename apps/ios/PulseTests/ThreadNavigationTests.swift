@@ -27,4 +27,17 @@ final class ThreadNavigationTests: XCTestCase {
         XCTAssertFalse(PulseThreadNavigation.shouldFollowTail(nearTail: false, pendingTarget: true))
         XCTAssertTrue(PulseThreadNavigation.shouldFollowTail(nearTail: true, pendingTarget: false))
     }
+
+    func testSupersededValidationCannotRestoreOrRevokeAccessOrFinishNewRequest() {
+        var fence = PulseThreadValidationFence()
+        let old = fence.begin("root"), current = fence.begin("root"), other = fence.begin("other")
+        XCTAssertFalse(fence.isCurrent("root", old))
+        fence.finish("root", old)
+        XCTAssertTrue(fence.isCurrent("root", current))
+        XCTAssertTrue(fence.isCurrent("other", other))
+        fence.finish("root", current)
+        XCTAssertFalse(fence.isCurrent("root", old))
+        XCTAssertFalse(fence.isCurrent("root", current))
+        XCTAssertTrue(fence.isCurrent("other", other))
+    }
 }

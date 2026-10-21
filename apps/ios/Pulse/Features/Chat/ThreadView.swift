@@ -259,8 +259,8 @@ struct ThreadView: View {
         let ticket = UUID()
         loadGeneration = ticket
         let epoch = session.sessionGeneration
-        let api = session.api
         let store = session.store
+        rootUnavailable = session.threadAccessDenied(rootId: root.id)
         // The sheet's input is a snapshot; a cached tombstone/edit is newer.
         if let cachedRoot = try? store?.message(id: root.id, now: .distantPast) { parent = cachedRoot }
         if let cached = try? store?.messages(threadRootId: root.id) {
@@ -271,7 +271,7 @@ struct ThreadView: View {
         guard PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else { return }
         let revision = session.messageRevision
         do {
-            let page = try await api.thread(rootId: root.id, userId: viewerId)
+            let page = try await session.validatedThread(rootId: root.id, roomId: conversation.id)
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
             // A slower HTTP snapshot must not undo a newer edit/deletion relay.
             let eligible = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
@@ -306,7 +306,7 @@ struct ThreadView: View {
     private func pruneExpired(now: Date = Date()) {
         if let cachedRoot = try? session.store?.message(id: root.id, now: .distantPast) { parent = cachedRoot }
         let parentMessage = parent ?? root
-        if !PulseRemediationLogic.threadRootAvailable(parentMessage, roomId: conversation.id, rootId: root.id, now: now) {
+        if session.threadAccessDenied(rootId: root.id) || !PulseRemediationLogic.threadRootAvailable(parentMessage, roomId: conversation.id, rootId: root.id, now: now) {
             rootUnavailable = true
             replies = []
             lightbox = nil

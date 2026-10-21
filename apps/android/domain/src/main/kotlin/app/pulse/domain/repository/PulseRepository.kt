@@ -496,6 +496,9 @@ interface PulseRepository {
     /** GET /api/messages/{id}/thread?userId= → (parent, replies asc) - also upserts Room. */
     suspend fun loadThread(rootId: String): Pair<Message, List<Message>>
 
+    /** Explicit refusal survives reopening; transport failures never clear it. */
+    fun observeThreadAccessDenied(rootId: String): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+
     /**
      * GET /api/conversations/{id}/messages?limit=&before= → (rows asc, hasMore).
      * Older page of the timeline; rows are upserted into Room (pagination merge).

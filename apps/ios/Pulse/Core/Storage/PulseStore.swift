@@ -293,6 +293,45 @@ public final class PulseStore: Sendable {
         }
     }
 
+    // Account-scoped access refusals use a reserved metadata namespace, not message tombstones.
+    static func threadDenialKey(_ rootId: String) -> String { "thread-access-denied:v1|" + rootId }
+
+    public struct ThreadAccessError: LocalizedError {
+        public var errorDescription: String? { "This thread is unavailable. Your draft and saved replies are kept." }
+    }
+
+    private static func threadIsDenied(_ db: Database, rootId: String) throws -> Bool {
+        try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM wave7Cache WHERE key = ?)",
+            arguments: [threadDenialKey(rootId)]) ?? false
+    }
+
+    public func threadAccessDenied(rootId: String) throws -> Bool {
+        try dbQueue.read { try Self.threadIsDenied($0, rootId: rootId) }
+    }
+
+    public func denyThread(rootId: String) throws {
+        try saveWave7Cache(key: Self.threadDenialKey(rootId), json: "denied", updatedAt: Int64(Date().timeIntervalSince1970 * 1000))
+    }
+
+    /// A valid refreshed parent and its rows commit with removal of the refusal.
+    /// Ordinary message upserts can never clear a denial.
+    public func acceptThreadSnapshot(rootId: String, roomId: String, messages: [WireChatMessage]) throws -> WireThreadPage {
+        try dbQueue.write { db in
+            var replies: [WireChatMessage] = []
+            for message in messages where message.conversationId == roomId && (message.id == rootId || message.parentId == rootId) {
+                let saved = try Self.writeMessage(message, db: db)
+                if saved.parentId == rootId { replies.append(saved) }
+            }
+            guard let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [rootId]),
+                  let parent = Self.messageRow(from: row),
+                  PulseRemediationLogic.threadRootAvailable(parent, roomId: roomId, rootId: rootId) else {
+                throw ThreadAccessError()
+            }
+            try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [Self.threadDenialKey(rootId)])
+            return WireThreadPage(parent: parent, replies: replies)
+        }
+    }
+
     // conversation cache
     public func upsert(conversations: [PulseConversation], replacingSnapshot: Bool = false) throws {
         try dbQueue.write { db in
@@ -420,6 +459,7 @@ public final class PulseStore: Sendable {
         }
         let commit: (Bool) throws -> Void = { consume in
             try self.dbQueue.write { db in
+                if let root = envelope.parentId, try Self.threadIsDenied(db, rootId: root) { throw ThreadAccessError() }
                 try Self.writeMessage(message, db: db)
                 try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,
                     content: message.content, kind: envelope.kind ?? "text", createdAt: PulseOutboxClock.now(),
@@ -462,7 +502,7 @@ public final class PulseStore: Sendable {
         let rows = try dbQueue.read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM (SELECT * FROM message WHERE conversationId = :cid AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
+                sql: "SELECT * FROM (SELECT * FROM message WHERE conversationId = :cid AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || message.parentId) AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
                 arguments: ["cid": conversationId, "limit": limit, "now": now.timeIntervalSince1970],
             )
         }
@@ -488,7 +528,7 @@ public final class PulseStore: Sendable {
         let rows = try dbQueue.read { db in
             try Row.fetchAll(
                 db,
-                sql: "SELECT * FROM (SELECT * FROM message WHERE parentId = :root AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
+                sql: "SELECT * FROM (SELECT * FROM message WHERE parentId = :root AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || :root) AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) ORDER BY createdAt DESC, id DESC LIMIT :limit) ORDER BY createdAt ASC, id ASC",
                 arguments: ["root": threadRootId, "limit": limit, "now": now.timeIntervalSince1970],
             )
         }
@@ -502,7 +542,7 @@ public final class PulseStore: Sendable {
             var counts: [String: Int] = [:]
             let rows = try Row.fetchAll(
                 db,
-                sql: "SELECT parentId, COUNT(*) AS replyCount FROM message WHERE parentId IS NOT NULL AND deletedAt IS NULL AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) GROUP BY parentId",
+                sql: "SELECT parentId, COUNT(*) AS replyCount FROM message WHERE parentId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || message.parentId) AND deletedAt IS NULL AND (expiresAtEpoch IS NULL OR expiresAtEpoch > :now) GROUP BY parentId",
                 arguments: ["now": now.timeIntervalSince1970],
             )
             for row in rows {
@@ -531,6 +571,7 @@ public final class PulseStore: Sendable {
                    MIN(reply.expiresAtEpoch) AS replyExpiry, root.expiresAtEpoch AS rootExpiry
             FROM message reply JOIN message root ON root.id = reply.parentId AND root.conversationId = reply.conversationId
             WHERE reply.conversationId = :room AND root.parentId IS NULL AND substr(root.id, 1, 6) != 'local_'
+              AND NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || root.id)
               AND root.deletedAt IS NULL AND (root.expiresAtEpoch IS NULL OR root.expiresAtEpoch > :now)
               AND reply.deletedAt IS NULL AND (reply.expiresAtEpoch IS NULL OR reply.expiresAtEpoch > :now)
               AND NOT EXISTS (SELECT 1 FROM outbox o WHERE reply.id = 'local_' || o.clientId AND o.failureReason IS NOT NULL)
@@ -919,9 +960,10 @@ public final class PulseStore: Sendable {
     /// Explicit retry keeps the original identity and metadata, including upload receipt.
     public func retryOutbox(clientId: String, message: WireChatMessage, threadRootId: String? = nil) throws -> Bool {
         guard message.id == "local_" + clientId else { throw CocoaError(.coderInvalidValue) }
+        if let threadRootId, message.parentId != threadRootId { return false }
         return try dbQueue.write { db in
-            if let rootId = threadRootId {
-                guard message.parentId == rootId,
+            if let rootId = message.parentId {
+                guard try !Self.threadIsDenied(db, rootId: rootId), message.parentId == rootId,
                       let retained = try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE clientId = ? AND conversationId = ? AND failureReason IS NOT NULL", arguments: [clientId, message.conversationId]),
                       PulseOutboxForward.decode(retained.payloadJson)?.parentId == rootId,
                       let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [rootId]),

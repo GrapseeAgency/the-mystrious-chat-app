@@ -81,4 +81,64 @@ final class ThreadReplyCountTests: XCTestCase {
         await fulfillment(of: [deleted], timeout: 3)
         observation.cancel()
     }
+
+    func testRefusalSurvivesReopenAndOrdinaryRefreshAndIsAccountScoped() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let root = try row("root"), reply = try row("reply", parent: "root")
+        do {
+            let store = try PulseStore(path: url.path)
+            try store.upsert(messages: [root, reply])
+            try store.denyThread(rootId: "root")
+        }
+        let reopened = try PulseStore(path: url.path)
+        try reopened.upsert(messages: [root, reply])
+        XCTAssertTrue(try reopened.threadAccessDenied(rootId: "root"))
+        XCTAssertTrue(try reopened.messages(threadRootId: "root").isEmpty)
+        XCTAssertEqual(try reopened.messages(conversationId: "room").map(\.id), ["root"])
+        XCTAssertTrue(try reopened.threadReplyCountSnapshot(conversationId: "room").counts.isEmpty)
+        XCTAssertNotNil(try reopened.message(id: "reply")) // hidden, not destructively erased
+        let other = try PulseStore()
+        XCTAssertFalse(try other.threadAccessDenied(rootId: "root"))
+        try other.upsert(messages: [root, reply])
+        XCTAssertEqual(try other.messages(threadRootId: "root").map(\.id), ["reply"])
+        _ = try reopened.acceptThreadSnapshot(rootId: "root", roomId: "room", messages: [root, reply])
+        XCTAssertFalse(try reopened.threadAccessDenied(rootId: "root"))
+        XCTAssertEqual(try reopened.messages(threadRootId: "root").map(\.id), ["reply"])
+    }
+
+    func testInvalidRefreshCannotClearRefusalOrResurrectDeletedRoot() throws {
+        let store = try PulseStore(), root = try row("root")
+        try store.upsert(messages: [root.deletedCopy()])
+        try store.denyThread(rootId: "root")
+        XCTAssertThrowsError(try store.acceptThreadSnapshot(rootId: "root", roomId: "room", messages: [root, row("reply", parent: "root")]))
+        XCTAssertTrue(try store.threadAccessDenied(rootId: "root"))
+        XCTAssertNil(try store.message(id: "reply")) // rejected snapshot rolls back together
+        XCTAssertNotNil(try store.message(id: "root")?.deletedAt)
+    }
+
+    func testDeniedEnqueueAndGenericRetryPreserveDraftAndOriginalFailedReply() throws {
+        let store = try PulseStore(), root = try row("root")
+        try store.upsert(messages: [root])
+        let envelope = PulseOutboxForward(kind: "text", parentId: "root")
+        let echo = TempMessages.make(conversationId: "room", viewer: PulseViewer(id: "me", name: "Me"),
+            clientId: "failed", content: "original reply", parentId: "root")
+        try store.enqueueMessage(echo, clientId: "failed", envelope: envelope)
+        try store.rejectOutbox(clientId: "failed", reason: "forbidden")
+        let draftKey = PulseThreadDraft.key("room", parentId: "root")
+        try store.saveDraft(conversationId: draftKey, text: "keep typing")
+        let token = store.captureDraftConsumption(conversationId: "room", parentId: "root")
+        try store.denyThread(rootId: "root")
+        XCTAssertFalse(try store.retryOutbox(clientId: "failed", message: echo)) // generic settings retry too
+        let next = TempMessages.make(conversationId: "room", viewer: PulseViewer(id: "me", name: "Me"),
+            clientId: "next", content: "keep typing", parentId: "root")
+        XCTAssertThrowsError(try store.enqueueMessage(next, clientId: "next", envelope: envelope, consumingDraft: token))
+        XCTAssertEqual(store.draft(conversationId: draftKey), "keep typing")
+        XCTAssertEqual(try store.outboxAll().map(\.clientId), ["failed"])
+        XCTAssertNotNil(try store.outboxAll().first?.failureReason)
+        XCTAssertNil(try store.message(id: "local_next"))
+        _ = try store.acceptThreadSnapshot(rootId: "root", roomId: "room", messages: [root])
+        XCTAssertTrue(try store.retryOutbox(clientId: "failed", message: echo))
+        XCTAssertEqual(store.draft(conversationId: draftKey), "keep typing")
+    }
 }
