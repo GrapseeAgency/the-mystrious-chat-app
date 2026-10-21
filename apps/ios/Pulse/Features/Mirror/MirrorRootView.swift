@@ -649,6 +649,8 @@ struct MirrorRowOptions: View {
     @Environment(\.dismiss) private var dismiss
     @State private var muteStrip = false
     @State private var note = ""
+    @State private var busy = false
+    @State private var actionTask: Task<Void, Never>?
 
     var body: some View {
         MirrorPanel(title: row.title) {
@@ -670,29 +672,49 @@ struct MirrorRowOptions: View {
                 }
             } else {
                 MirrorPanelOption(icon: row.pinned ? "pin.slash" : "pin", label: row.pinned ? "Unpin from top" : "Pin to top") {
-                    Task { try? await session.api.togglePin(conversationId: row.id); finish() }
+                    perform { try await $0.setPinned(conversationId: row.id, pinned: !row.pinned) }
                 }
                 MirrorPanelOption(icon: "archivebox", label: "Archive chat") {
-                    Task { try? await session.api.archive(conversationId: row.id, archived: true); finish() }
+                    perform { try await $0.archive(conversationId: row.id, archived: true) }
                 }
                 MirrorPanelOption(icon: row.manualUnread ? "envelope.open" : "envelope", label: row.manualUnread ? "Mark as read" : "Mark as unread") {
-                    Task { try? await session.api.markUnread(conversationId: row.id, on: !row.manualUnread); finish() }
+                    perform { try await $0.markUnread(conversationId: row.id, on: !row.manualUnread) }
                 }
                 MirrorPanelOption(icon: "bell.slash", label: "Mute notifications") { muteStrip = true }
-                if !note.isEmpty {
-                    MirrorPanelHint(note)
-                }
             }
+            if busy { MirrorPanelHint("Updating…") }
+            if !note.isEmpty { MirrorPanelHint(note) }
         }
+        .disabled(busy)
+        .onDisappear { actionTask?.cancel() }
+        .onChange(of: session.sessionGeneration) { _, _ in actionTask?.cancel(); dismiss() }
     }
 
     private func finish() { onDone(); dismiss() }
 
-    private func mute(until: String?) {
-        Task {
-            try? await session.api.setMuted(conversationId: row.id, until: until)
-            finish()
+    private func perform(_ work: @escaping (PulseAPIClient) async throws -> Void) {
+        guard !busy else { return }
+        let client = session.api, epoch = session.sessionGeneration
+        busy = true
+        note = ""
+        actionTask = Task { @MainActor in
+            defer {
+                busy = false
+                if session.sessionGeneration == epoch { session.noteInboxChanged() }
+            }
+            do {
+                try await work(client)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                finish()
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                note = "Couldn't confirm this change. Reconnect and try again."
+            }
         }
+    }
+
+    private func mute(until: String?) {
+        perform { try await $0.setMuted(conversationId: row.id, until: until) }
     }
 }
 

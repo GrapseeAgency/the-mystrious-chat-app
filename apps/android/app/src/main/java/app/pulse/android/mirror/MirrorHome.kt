@@ -232,6 +232,24 @@ internal fun MirrorHome(
     /** R76 - (conversationId, jumpMessageId?) - web jumpToMessage anchor. */
     onOpenConversationId: (String, String?) -> Unit = { _, _ -> },
 ) {
+    val actionRepository = repository?.boundToCurrentAccount()
+    val actionScope = rememberCoroutineScope()
+    val actionContext = androidx.compose.ui.platform.LocalContext.current
+    var pendingRows by remember { mutableStateOf(emptySet<String>()) }
+    fun changeRow(id: String, work: suspend (PulseRepository) -> Result<Unit>) {
+        val api = actionRepository ?: return
+        if (id in pendingRows) return
+        pendingRows = pendingRows + id
+        actionScope.launch {
+            try {
+                work(api).getOrThrow()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                android.widget.Toast.makeText(actionContext, failure.message ?: "Couldn't update this chat", android.widget.Toast.LENGTH_LONG).show()
+            } finally { pendingRows = pendingRows - id }
+        }
+    }
     val maxW = 560.dp
     val unreadTotal = conversations.sumOf { it.unread }
 
@@ -419,18 +437,10 @@ internal fun MirrorHome(
                     onOptions = { onRowOptions(row) },
                     // R74 - swipe chips run the SAME handlers the option sheet uses
                     onPin = {
-                        repository?.let { repo ->
-                            CoroutineScope(Dispatchers.IO).launch {
-                                runCatching { repo.togglePin(row.id, !row.pinned) }
-                            }
-                        }
+                        changeRow(row.id) { it.togglePin(row.id, !row.pinned) }
                     },
                     onArchive = {
-                        repository?.let { repo ->
-                            CoroutineScope(Dispatchers.IO).launch {
-                                runCatching { repo.archive(row.id, true) }
-                            }
-                        }
+                        changeRow(row.id) { it.archive(row.id, true) }
                     },
                 )
             }

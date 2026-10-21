@@ -2272,47 +2272,53 @@ private struct ChatActionSheet: View {
     // ── actions (exact verbs + bodies per spec §14) ─────────
 
     private func togglePin() async {
+        let client = session.api, epoch = session.sessionGeneration
         PulseHaptics.tap()
         dismiss()
         do {
-            try await session.api.togglePin(conversationId: conversation.id)
-            await MainActor.run { onChanged() }
+            try await client.setPinned(conversationId: conversation.id, pinned: !conversation.isPinned)
+            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; onChanged() }
         } catch {
-            await MainActor.run { session.toasts.show("Could not update the pin") }
+            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not update the pin") }
         }
     }
 
     private func toggleArchive() async {
+        let client = session.api, epoch = session.sessionGeneration
         PulseHaptics.tap()
         dismiss()
         do {
-            try await session.api.archive(conversationId: conversation.id, archived: !conversation.isArchived)
+            try await client.archive(conversationId: conversation.id, archived: !conversation.isArchived)
             await MainActor.run {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 session.toasts.show(conversation.isArchived ? "Chat unarchived" : "Chat archived")
                 onChanged()
             }
         } catch {
-            await MainActor.run { session.toasts.show("Could not update the archive") }
+            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not update the archive") }
         }
     }
 
     private func toggleMarkUnread() async {
+        let client = session.api, epoch = session.sessionGeneration
         PulseHaptics.tap()
         dismiss()
         do {
-            try await session.api.markUnread(conversationId: conversation.id, on: !conversation.manualUnread)
-            await MainActor.run { onChanged() }
+            try await client.markUnread(conversationId: conversation.id, on: !conversation.manualUnread)
+            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; onChanged() }
         } catch {
-            await MainActor.run { session.toasts.show("Could not update the unread flag") }
+            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not update the unread flag") }
         }
     }
 
     private func setMuted(until preset: String?) async {
+        let client = session.api, epoch = session.sessionGeneration
         PulseHaptics.tap()
         dismiss()
         do {
-            try await session.api.setMuted(conversationId: conversation.id, until: preset)
+            try await client.setMuted(conversationId: conversation.id, until: preset)
             await MainActor.run {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 if let preset {
                     if preset == "always" {
                         session.toasts.show("Muted - always")
@@ -2326,7 +2332,7 @@ private struct ChatActionSheet: View {
                 onChanged()
             }
         } catch {
-            await MainActor.run { session.toasts.show("Could not update the mute") }
+            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not update the mute") }
         }
     }
 
@@ -2335,8 +2341,8 @@ private struct ChatActionSheet: View {
         PulseHaptics.tap()
         exportPending = true
         defer { exportPending = false }
-        guard let history = await session.api.fullHistory(conversationId: conversation.id) else {
-            await MainActor.run { session.toasts.show("Could not export this chat") }
+        guard let history = await client.fullHistory(conversationId: conversation.id) else {
+            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not export this chat") }
             return
         }
         let text = Self.transcript(for: conversation, viewerId: viewerId, messages: history)
@@ -2345,10 +2351,11 @@ private struct ChatActionSheet: View {
         do {
             try text.write(to: fileURL, atomically: true, encoding: .utf8)
         } catch {
-            await MainActor.run { session.toasts.show("Could not export this chat") }
+            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not export this chat") }
             return
         }
         await MainActor.run {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show("Chat exported - Saved \(fileURL.lastPathComponent)")
             shareURL = fileURL
         }
@@ -2358,19 +2365,20 @@ private struct ChatActionSheet: View {
     private func clearChat() async {
         clearPending = true
         defer { clearPending = false }
-        guard let history = await session.api.fullHistory(conversationId: conversation.id) else {
-            await MainActor.run { session.toasts.show("Could not clear this chat") }
+        guard let history = await client.fullHistory(conversationId: conversation.id) else {
+            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not clear this chat") }
             return
         }
         let mine = history.filter { $0.senderId == viewerId && $0.deletedAt == nil }
         var cleared = 0
         for message in mine {
             // Keep going - clear as many of my own messages as the server allows.
-            if (try? await session.api.deleteOwnMessage(id: message.id)) != nil {
+            if (try? await client.deleteOwnMessage(id: message.id)) != nil {
                 cleared += 1
             }
         }
         await MainActor.run {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             if cleared == 0 {
                 session.toasts.show("Nothing to clear - none of your messages are left in this chat.")
             } else {
@@ -3106,26 +3114,53 @@ final class ChatsViewModel: ObservableObject {
         if selection.isEmpty { selectMode = false }
     }
 
+    private var pendingConversationActions: Set<String> = []
+
+    private func beginConversationActions(_ ids: Set<String>, session: PulseSession) -> Bool {
+        guard pendingConversationActions.isDisjoint(with: ids) else {
+            session.toasts.show("This chat is still updating. Please wait.")
+            return false
+        }
+        pendingConversationActions.formUnion(ids)
+        refreshGeneration &+= 1
+        return true
+    }
+
     private func updateSummaries(_ transform: (WireConversationSummary) -> WireConversationSummary, ids: Set<String>) {
+        refreshGeneration &+= 1 // a pre-confirmation list response cannot undo this action
         summaries = summaries.map { ids.contains($0.id) ? transform($0) : $0 }
     }
 
-    // ── single-row actions (optimistic, web copies) ──────────
+    // ── single-row actions (confirmed, owner-bound) ──────────
 
     func togglePin(_ conv: WireConversationSummary, session: PulseSession) async {
+        let client = session.api, epoch = session.sessionGeneration
+        let ids: Set<String> = [conv.id]
+        guard beginConversationActions(ids, session: session) else { return }
+        defer {
+            pendingConversationActions.subtract(ids)
+            if session.sessionGeneration == epoch { session.noteInboxChanged() }
+        }
         let wasPinned = conv.isPinned
-        updateSummaries({ $0.withPinnedAt(wasPinned ? nil : "optimistic") }, ids: [conv.id])
         do {
-            try await session.api.togglePin(conversationId: conv.id)
+            try await client.setPinned(conversationId: conv.id, pinned: !wasPinned)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            updateSummaries({ $0.withPinnedAt(wasPinned ? nil : ISO8601DateFormatter().string(from: Date())) }, ids: [conv.id])
             session.toasts.show(wasPinned ? "Unpinned" : "Pinned to top")
         } catch {
-            updateSummaries({ $0.withPinnedAt(conv.pinnedAt) }, ids: [conv.id])
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show("Could not update the pin")
         }
-        await refreshQuiet(session: session)
     }
 
     func setMuted(_ conv: WireConversationSummary, _ until: String?, session: PulseSession) async {
+        let client = session.api, epoch = session.sessionGeneration
+        let ids: Set<String> = [conv.id]
+        guard beginConversationActions(ids, session: session) else { return }
+        defer {
+            pendingConversationActions.subtract(ids)
+            if session.sessionGeneration == epoch { session.noteInboxChanged() }
+        }
         let offsets: [String: TimeInterval] = [
             "8h": 8 * 3600,
             "1w": 7 * 86_400,
@@ -3138,9 +3173,10 @@ final class ChatsViewModel: ObservableObject {
         } else {
             optimistic = nil
         }
-        updateSummaries({ $0.withMutedUntil(optimistic) }, ids: [conv.id])
         do {
-            try await session.api.setMuted(conversationId: conv.id, until: until)
+            try await client.setMuted(conversationId: conv.id, until: until)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            updateSummaries({ $0.withMutedUntil(optimistic) }, ids: [conv.id])
             if let until {
                 if until == "always" {
                     session.toasts.show("Muted - always")
@@ -3152,36 +3188,49 @@ final class ChatsViewModel: ObservableObject {
                 session.toasts.show("Notifications unmuted")
             }
         } catch {
-            updateSummaries({ $0.withMutedUntil(conv.mutedUntil) }, ids: [conv.id])
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show("Could not update the mute")
         }
-        await refreshQuiet(session: session)
     }
 
     func setArchived(_ conv: WireConversationSummary, _ archived: Bool, session: PulseSession) async {
-        updateSummaries({ $0.withArchived(archived ? ISO8601DateFormatter().string(from: Date()) : nil) }, ids: [conv.id])
+        let client = session.api, epoch = session.sessionGeneration
+        let ids: Set<String> = [conv.id]
+        guard beginConversationActions(ids, session: session) else { return }
+        defer {
+            pendingConversationActions.subtract(ids)
+            if session.sessionGeneration == epoch { session.noteInboxChanged() }
+        }
         do {
-            try await session.api.archive(conversationId: conv.id, archived: archived)
+            try await client.archive(conversationId: conv.id, archived: archived)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            updateSummaries({ $0.withArchived(archived ? ISO8601DateFormatter().string(from: Date()) : nil) }, ids: [conv.id])
             PulseHaptics.success()
             session.toasts.show(archived ? "Chat archived" : "Chat unarchived")
         } catch {
-            updateSummaries({ $0.withArchived(conv.archivedAt) }, ids: [conv.id])
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show("Could not update the archive")
         }
-        await refreshQuiet(session: session)
     }
 
     func toggleMarkUnread(_ conv: WireConversationSummary, session: PulseSession) async {
+        let client = session.api, epoch = session.sessionGeneration
+        let ids: Set<String> = [conv.id]
+        guard beginConversationActions(ids, session: session) else { return }
+        defer {
+            pendingConversationActions.subtract(ids)
+            if session.sessionGeneration == epoch { session.noteInboxChanged() }
+        }
         let next = !conv.manualUnread
-        updateSummaries({ $0.withManualUnread(next) }, ids: [conv.id])
         do {
-            try await session.api.markUnread(conversationId: conv.id, on: next)
+            try await client.markUnread(conversationId: conv.id, on: next)
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            updateSummaries({ $0.withManualUnread(next) }, ids: [conv.id])
             session.toasts.show(next ? "Marked as unread" : "Marked as read")
         } catch {
-            updateSummaries({ $0.withManualUnread(conv.manualUnread) }, ids: [conv.id])
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show("Could not update the unread flag")
         }
-        await refreshQuiet(session: session)
     }
 
     // ── batch actions (spec §7.5) ────────────────────────────
@@ -3193,18 +3242,27 @@ final class ChatsViewModel: ObservableObject {
     func batchArchive(session: PulseSession) async {
         let convs = selectedConvs
         guard !convs.isEmpty else { return }
+        let client = session.api, epoch = session.sessionGeneration
+        let actionIDs = Set(convs.map(\.id))
+        guard beginConversationActions(actionIDs, session: session) else { return }
+        defer {
+            pendingConversationActions.subtract(actionIDs)
+            if session.sessionGeneration == epoch { session.noteInboxChanged() }
+        }
         batchArchivePending = true
         defer { batchArchivePending = false }
-        let ids = Set(convs.map(\.id))
         let stamp = ISO8601DateFormatter().string(from: Date())
-        updateSummaries({ $0.withArchived(stamp) }, ids: ids)
         var archived = 0
         for conv in convs {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             // Same PATCH /archive the sheet + swipe chips use.
-            if (try? await session.api.archive(conversationId: conv.id, archived: true)) != nil {
+            if (try? await client.archive(conversationId: conv.id, archived: true)) != nil {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                updateSummaries({ $0.withArchived(stamp) }, ids: [conv.id])
                 archived += 1
             }
         }
+        guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
         if archived == convs.count {
             PulseHaptics.success()
             session.toasts.show("Archived \(archived) chat\(archived == 1 ? "" : "s")")
@@ -3212,49 +3270,65 @@ final class ChatsViewModel: ObservableObject {
         } else {
             session.toasts.show("Could not archive the selected chats")
         }
-        await refreshQuiet(session: session)
     }
 
     func batchMute8h(session: PulseSession) async {
         let convs = selectedConvs
         guard !convs.isEmpty else { return }
+        let client = session.api, epoch = session.sessionGeneration
+        let actionIDs = Set(convs.map(\.id))
+        guard beginConversationActions(actionIDs, session: session) else { return }
+        defer {
+            pendingConversationActions.subtract(actionIDs)
+            if session.sessionGeneration == epoch { session.noteInboxChanged() }
+        }
         batchMutePending = true
         defer { batchMutePending = false }
-        let ids = Set(convs.map(\.id))
         let stamp = ISO8601DateFormatter().string(from: Date().addingTimeInterval(8 * 3600))
-        updateSummaries({ $0.withMutedUntil(stamp) }, ids: ids)
         var muted = 0
         for conv in convs {
-            if (try? await session.api.setMuted(conversationId: conv.id, until: "8h")) != nil {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            if (try? await client.setMuted(conversationId: conv.id, until: "8h")) != nil {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                updateSummaries({ $0.withMutedUntil(stamp) }, ids: [conv.id])
                 muted += 1
             }
         }
+        guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
         if muted > 0 {
             PulseHaptics.success()
             session.toasts.show("Muted \(muted) chat\(muted == 1 ? "" : "s") for 8 hours")
         } else {
             session.toasts.show("Could not mute the selected chats")
         }
-        await refreshQuiet(session: session)
     }
 
     func batchMarkRead(session: PulseSession) async {
         let convs = selectedConvs
         guard !convs.isEmpty else { return }
+        let client = session.api, epoch = session.sessionGeneration
+        let actionIDs = Set(convs.map(\.id))
+        guard beginConversationActions(actionIDs, session: session) else { return }
+        defer {
+            pendingConversationActions.subtract(actionIDs)
+            if session.sessionGeneration == epoch { session.noteInboxChanged() }
+        }
         batchReadPending = true
         defer { batchReadPending = false }
-        let ids = Set(convs.map(\.id))
-        updateSummaries({ $0.withUnreadCount(0) }, ids: ids)
         var read = 0
         var failed = 0
         for conv in convs {
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             // POST /read { userId } - per-chat failures counted honestly.
-            if (try? await session.api.markRead(conversationId: conv.id)) != nil {
+            if (try? await client.markRead(conversationId: conv.id)) != nil {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                updateSummaries({ $0.withUnreadCount(0).withManualUnread(false) }, ids: [conv.id])
                 read += 1
             } else {
                 failed += 1
             }
         }
+        guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
         if read > 0 {
             PulseHaptics.success()
             session.toasts.show("\(read) chat\(read == 1 ? "" : "s") marked as read")
@@ -3264,7 +3338,6 @@ final class ChatsViewModel: ObservableObject {
         } else {
             exitSelect()
         }
-        await refreshQuiet(session: session)
     }
 
     // ── Note to Self ─────────────────────────────────────────

@@ -309,10 +309,9 @@ public struct PulseAPIClient: Sendable {
         try await postEmpty("/api/conversations/\(conversationId)/read", body: body)
     }
 
-    /// N10-b transport fix - PATCH /pin { userId }; the server TOGGLES the pin
-    /// (the old POST { pinned } body was never part of the route contract).
-    public func togglePin(conversationId: String) async throws {
-        try await patchEmpty("/api/conversations/\(conversationId)/pin", body: ["userId": userId])
+    /// Explicit desired state makes retrying after a lost response repeat-safe.
+    public func setPinned(conversationId: String, pinned: Bool) async throws {
+        try await patchEmpty("/api/conversations/\(conversationId)/pin", body: ["userId": userId, "pinned": pinned])
     }
 
     /// N10-b - per-viewer notification mute with the wire preset until:

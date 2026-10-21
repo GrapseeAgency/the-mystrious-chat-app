@@ -1,5 +1,6 @@
 package app.pulse.android.mirror
 
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1471,13 +1472,23 @@ internal fun MirrorRowOptionsSheet(
     var muteStrip by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
-    fun act(work: suspend () -> Unit) {
-        CoroutineScope(Dispatchers.IO).launch {
-            runCatching { work() }
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                onChanged()
-                onDismiss()
-            }
+    val actionRepository = repository.boundToCurrentAccount()
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var busy by remember(conversationId, actionRepository) { mutableStateOf(false) }
+    fun act(close: Boolean = true, work: suspend () -> Result<*>) {
+        if (busy) return
+        busy = true
+        note = ""
+        actionScope.launch {
+            try {
+                app.pulse.domain.sync.confirmedAction(request = work) { value ->
+                    if (close) { onChanged(); onDismiss() } else note = "Saved as $value"
+                }.getOrThrow()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                note = failure.message ?: "Couldn't confirm this change. Try again."
+            } finally { busy = false }
         }
     }
     MirrorSheet(title = title, onDismiss = onDismiss) {
@@ -1506,7 +1517,7 @@ internal fun MirrorRowOptionsSheet(
                                             // old ISO timestamps were a silent 400 and the
                                             // mute never landed (same bug R70 fixed in the
                                             // room kebab strip).
-                                            repository.setMutedUntil(
+                                            actionRepository.setMutedUntil(
                                                 conversationId,
                                                 when (choice) {
                                                     "8h" -> "8h"
@@ -1558,7 +1569,7 @@ internal fun MirrorRowOptionsSheet(
                                 .background(MirrorArt.Red)
                                 .clickable {
                                     act {
-                                        repository.clearMyMessages(conversationId)
+                                        actionRepository.clearMyMessages(conversationId)
                                     }
                                 },
                             contentAlignment = Alignment.Center,
@@ -1569,31 +1580,26 @@ internal fun MirrorRowOptionsSheet(
                 }
                 else -> {
                     MirrorOptionRow("LPin", if (pinned) "Unpin from top" else "Pin to top") {
-                        act { repository.togglePin(conversationId, !pinned) }
+                        act { actionRepository.togglePin(conversationId, !pinned) }
                     }
                     MirrorOptionRow("LArchive", if (archived) "Unarchive chat" else "Archive chat") {
-                        act { repository.archive(conversationId, !archived) }
+                        act { actionRepository.archive(conversationId, !archived) }
                     }
                     MirrorOptionRow(if (manualUnread) "LMailOpen" else "LMail", if (manualUnread) "Mark as read" else "Mark as unread") {
-                        act { repository.markUnread(conversationId, !manualUnread) }
+                        act { actionRepository.markUnread(conversationId, !manualUnread) }
                     }
                     MirrorOptionRow("LBellOff", "Mute notifications") { muteStrip = true }
                     // Export runs WITHOUT closing the sheet - the saved file
                     // name lands in the note row (web downloadTranscript feel).
                     MirrorOptionRow("LDownload", "Export chat (.txt)") {
-                        CoroutineScope(Dispatchers.IO).launch {
-                            repository.exportChat(conversationId).onSuccess { file ->
-                                kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                    note = "Saved as $file"
-                                }
-                            }
-                        }
+                        act(close = false) { actionRepository.exportChat(conversationId) }
                     }
                     MirrorOptionRow("LEraser", "Clear chat…") { confirmClear = true }
-                    if (note.isNotEmpty()) {
-                        Text(note, color = MirrorArt.Accent2, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
-                    }
                 }
+            }
+            if (busy) Text("Updating…", color = MirrorArt.TextSoft, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+            if (note.isNotEmpty()) {
+                Text(note, color = MirrorArt.Accent2, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
             }
         }
     }

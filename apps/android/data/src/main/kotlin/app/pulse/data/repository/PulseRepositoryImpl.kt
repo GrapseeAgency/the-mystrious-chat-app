@@ -2366,62 +2366,71 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit> {
-        mutateConversation(conversationId) { it.copy(isPinned = pinned) }
-        val result = api.patchAction(
-            "/api/conversations/$conversationId/pin",
-            PulseApi.jsonOf("userId" to (viewerId ?: "")),
-        ).toResult()
-        refreshConversations() // server toggles - reconcile from truth either way
-        return result
+    private val conversationActionLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+
+    /** Serialize this device's intents per room. Failed/offline requests must not
+     * persist optimistic pin/archive/mute/unread flags as confirmed local truth.
+     */
+    private suspend fun confirmedConversationChange(
+        id: String,
+        request: suspend (String) -> Result<Unit>,
+        apply: (Conversation) -> Conversation,
+    ): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        return conversationActionLocks.getOrPut(id) { Mutex() }.withLock {
+            if (viewerId != owner) return@withLock Result.failure(IllegalStateException("The account changed"))
+            try {
+                app.pulse.domain.sync.confirmedAction(request = { request(owner) }) {
+                    if (viewerId == owner) mutateConversation(id, apply)
+                }
+            } finally {
+                // A cancelled/lost response may still have committed remotely.
+                // Reconcile in repository scope, not the dismissed sheet's job.
+                scheduleConversationsRefresh()
+            }
+        }
     }
+
+    override suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit> =
+        confirmedConversationChange(conversationId, request = { owner ->
+            api.patchAction("/api/conversations/$conversationId/pin",
+                PulseApi.jsonOf("userId" to owner, "pinned" to pinned)).toResult()
+        }, apply = { it.copy(isPinned = pinned) })
 
     override suspend fun setMuted(conversationId: String, muted: Boolean): Result<Unit> =
         setMutedUntil(conversationId, if (muted) "8h" else null)
 
     override suspend fun setMutedUntil(conversationId: String, until: String?): Result<Unit> {
-        val epoch = when (until) {
+        val duration = when (until) {
             null -> 0L
-            "8h" -> System.currentTimeMillis() + 8 * 60 * 60 * 1000L
-            "1w" -> System.currentTimeMillis() + 7 * 24 * 60 * 60 * 1000L
-            "always" -> System.currentTimeMillis() + 50L * 365 * 24 * 60 * 60 * 1000L
-            else -> 0L
+            "8h" -> 8L * 60 * 60 * 1000
+            "1w" -> 7L * 24 * 60 * 60 * 1000
+            "always" -> 50L * 365 * 24 * 60 * 60 * 1000
+            else -> return Result.failure(IllegalArgumentException("Unknown mute duration"))
         }
-        mutateConversation(conversationId) {
-            it.copy(mutedUntilEpoch = epoch, isMuted = epoch > System.currentTimeMillis())
-        }
-        val body = kotlinx.serialization.json.buildJsonObject {
-            // Explicit JsonPrimitive/JsonNull - JsonObjectBuilder.put has no
-            // String overload at the resolved serialization version.
-            put("userId", kotlinx.serialization.json.JsonPrimitive(viewerId ?: ""))
-            put("until", until?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull)
-        }
-        val result = api.patchAction("/api/conversations/$conversationId/mute", body).toResult()
-        refreshConversations()
-        return result
+        return confirmedConversationChange(conversationId, request = { owner ->
+            val body = kotlinx.serialization.json.buildJsonObject {
+                put("userId", kotlinx.serialization.json.JsonPrimitive(owner))
+                put("until", until?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull)
+            }
+            api.patchAction("/api/conversations/$conversationId/mute", body).toResult()
+        }, apply = {
+            val deadline = if (duration == 0L) 0L else System.currentTimeMillis() + duration
+            it.copy(mutedUntilEpoch = deadline, isMuted = duration > 0)
+        })
     }
 
-    override suspend fun archive(conversationId: String, archived: Boolean): Result<Unit> {
-        mutateConversation(conversationId) { it.copy(isArchived = archived) }
-        val result = api.patchAction(
-            "/api/conversations/$conversationId/archive",
-            PulseApi.jsonOf("userId" to (viewerId ?: ""), "archived" to archived),
-        ).toResult()
-        refreshConversations()
-        return result
-    }
+    override suspend fun archive(conversationId: String, archived: Boolean): Result<Unit> =
+        confirmedConversationChange(conversationId, request = { owner ->
+            api.patchAction("/api/conversations/$conversationId/archive",
+                PulseApi.jsonOf("userId" to owner, "archived" to archived)).toResult()
+        }, apply = { it.copy(isArchived = archived) })
 
-    override suspend fun markUnread(conversationId: String, on: Boolean): Result<Unit> {
-        mutateConversation(conversationId) { it.copy(myManualUnread = on) }
-        val result = api.patchAction(
-            "/api/conversations/$conversationId/mark-unread",
-            PulseApi.jsonOf("userId" to (viewerId ?: ""), "on" to on),
-        ).toResult()
-        if (result.isFailure) {
-            mutateConversation(conversationId) { it.copy(myManualUnread = !on) }
-        }
-        return result
-    }
+    override suspend fun markUnread(conversationId: String, on: Boolean): Result<Unit> =
+        confirmedConversationChange(conversationId, request = { owner ->
+            api.patchAction("/api/conversations/$conversationId/mark-unread",
+                PulseApi.jsonOf("userId" to owner, "on" to on)).toResult()
+        }, apply = { it.copy(myManualUnread = on) })
 
     // Wave 6 route fixes (audit A): block carries the ACTOR in the body, and
     // unblock is DELETE /block?userId= - POST /unblock does NOT exist on the

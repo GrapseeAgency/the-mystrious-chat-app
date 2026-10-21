@@ -2422,3 +2422,34 @@ Still open: offline read-intent persistence after leaving a thread, cumulative-w
 semantics across unseen gaps, and out-of-cache history-window navigation. No autumn
 styling changes. Existing cached envelopes created by older servers do not acquire a
 root deadline until refreshed; this change does not claim retroactive offline knowledge.
+
+## 2026-10-22 — conversation actions confirm instead of silently toggling or pretending success
+
+Native Pin requested a toggle, so a lost response followed by retry could undo the pin.
+Both native transports now send an explicit desired boolean. The server applies it in
+a Serializable transaction; repeated Pin preserves the original ordering timestamp,
+repeated Unpin stays removed, and legacy callers that omit the field retain toggle
+compatibility. Invalid explicit types are refused; presented credentials are owner-bound.
+This does not redesign the remaining legacy tokenless authorization policy.
+
+Android pin/archive/mute/manual-unread mutations no longer persist optimistic flags on
+failure. Requests serialize per room, publish only after confirmation, and schedule an
+account-owned reconciliation even after cancellation/lost responses. The mounted row
+options sheet now unwraps Result rather than throwing it away, stays open with an error
+on failure, prevents simultaneous actions, and uses composition-owned jobs. Export and
+clear-message actions use the same error/cancellation handling. Swipe actions likewise
+stop using detached jobs and surface failure. No theme redesign.
+
+Swift row options now capture the client/session, block duplicate work, retain errors
+instead of silently dismissing, and cancel on departure. ChatsViewModel's single/batch
+operations also publish only confirmed fields, reject overlapping row actions, invalidate
+pre-confirmation list responses and bind every batch to one client/epoch. Cancellation
+or account change stops the remaining batch instead of retargeting later iterations.
+Legacy sheet callbacks are epoch-guarded as well.
+
+Actual SQLite pin replay/concurrency/isolation scenarios pass; full server suite is
+126/126. Strict pin-helper TypeScript passes. Added Swift URLProtocol boolean/failure
+transport cases and Kotlin confirmed-action refusal/cancellation/apply regressions.
+Native compilation/execution for these changes is pending; syntax checks are not device
+proof. Open work still includes disconnected read-intent persistence, gap-aware history,
+and broader inbox/action/contact paths, not whole-app completion.

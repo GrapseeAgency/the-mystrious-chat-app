@@ -1,7 +1,10 @@
-// /api/conversations/[id]/pin - per-user pinned-to-top toggle
+// /api/conversations/[id]/pin - explicit state, with legacy toggle compatibility
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { safeJson, strField } from '@/lib/serializers'
+import { ConversationPinError, setConversationPin } from '@/lib/conversation-pin'
+import { bearerToken } from '@/lib/session-token'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,8 +13,8 @@ interface RouteCtx {
 }
 
 /**
- * PATCH /api/conversations/[id]/pin  body { userId }
- * Toggles the viewer's pinnedAt watermark.
+ * PATCH /api/conversations/[id]/pin  body { userId, pinned?: boolean }
+ * Sets the explicit state, or (legacy omission only) toggles the viewer's pinnedAt watermark.
  * → { ok: true, pinned: boolean, pinnedAt: string | null }
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {
@@ -23,31 +26,17 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
-  const conv = await db.conversation.findUnique({ where: { id }, select: { id: true } })
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  if (body.pinned !== undefined && typeof body.pinned !== 'boolean') {
+    return NextResponse.json({ error: 'pinned must be a boolean.' }, { status: 400 })
   }
-
-  const participant = await db.conversationParticipant.findUnique({
-    where: { userId_conversationId: { userId, conversationId: id } },
-    select: { id: true, pinnedAt: true },
-  })
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, userId, 'conversation pin')
+    if (denied) return denied
   }
-
-  const nextPinnedAt = participant.pinnedAt ? null : new Date()
-  await db.conversationParticipant.update({
-    where: { id: participant.id },
-    data: { pinnedAt: nextPinnedAt },
-  })
-
-  return NextResponse.json({
-    ok: true,
-    pinned: nextPinnedAt !== null,
-    pinnedAt: nextPinnedAt ? nextPinnedAt.toISOString() : null,
-  })
+  try {
+    return NextResponse.json(await setConversationPin(db, id, userId, body.pinned as boolean | undefined))
+  } catch (error) {
+    if (error instanceof ConversationPinError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
+  }
 }
