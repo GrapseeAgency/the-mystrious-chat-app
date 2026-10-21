@@ -2341,8 +2341,8 @@ private struct ChatActionSheet: View {
         PulseHaptics.tap()
         exportPending = true
         defer { exportPending = false }
-        guard let history = await client.fullHistory(conversationId: conversation.id) else {
-            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not export this chat") }
+        guard let history = await session.api.fullHistory(conversationId: conversation.id) else {
+            await MainActor.run { session.toasts.show("Could not export this chat") }
             return
         }
         let text = Self.transcript(for: conversation, viewerId: viewerId, messages: history)
@@ -2351,11 +2351,10 @@ private struct ChatActionSheet: View {
         do {
             try text.write(to: fileURL, atomically: true, encoding: .utf8)
         } catch {
-            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not export this chat") }
+            await MainActor.run { session.toasts.show("Could not export this chat") }
             return
         }
         await MainActor.run {
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             session.toasts.show("Chat exported - Saved \(fileURL.lastPathComponent)")
             shareURL = fileURL
         }
@@ -2365,20 +2364,19 @@ private struct ChatActionSheet: View {
     private func clearChat() async {
         clearPending = true
         defer { clearPending = false }
-        guard let history = await client.fullHistory(conversationId: conversation.id) else {
-            await MainActor.run { guard !Task.isCancelled, session.sessionGeneration == epoch else { return }; session.toasts.show("Could not clear this chat") }
+        guard let history = await session.api.fullHistory(conversationId: conversation.id) else {
+            await MainActor.run { session.toasts.show("Could not clear this chat") }
             return
         }
         let mine = history.filter { $0.senderId == viewerId && $0.deletedAt == nil }
         var cleared = 0
         for message in mine {
             // Keep going - clear as many of my own messages as the server allows.
-            if (try? await client.deleteOwnMessage(id: message.id)) != nil {
+            if (try? await session.api.deleteOwnMessage(id: message.id)) != nil {
                 cleared += 1
             }
         }
         await MainActor.run {
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             if cleared == 0 {
                 session.toasts.show("Nothing to clear - none of your messages are left in this chat.")
             } else {
