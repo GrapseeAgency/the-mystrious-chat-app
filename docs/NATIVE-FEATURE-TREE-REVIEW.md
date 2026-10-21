@@ -2613,3 +2613,24 @@ check cancellation before invoking an adapter, as well as afterward: a caller al
 canceled must not begin a mutation just because that adapter completes synchronously.
 Added Kotlin no-dispatch-after-cancel cases. Five Kotlin files syntax-parse; native
 execution is pending. This does not undo a mutation already committed by the server.
+
+
+## 2026-10-22 — consumed Swift navigation handoffs cannot resurrect during publication
+
+The room/profile subscribers cleared their @Published property inline while handling
+that property's publication. @Published emits before the setter completes; a reentrant
+nil assignment can be overwritten by the original assignment, retaining a supposedly
+consumed route for replay on the next subscription. PulseSession now defers consumption
+until the setter finishes and checks a per-delivery UUID plus session generation. A
+queued cleanup for an earlier room/profile cannot erase a newer delivery. Root's writable
+linked-room input uses the same deferred, delivery-tagged clearing boundary. The room
+jump payload remains associated with the original handoff; old cleanup does not touch
+a newer jump target.
+
+Added three Combine-subscriber regressions exercising actual PulseSession publications:
+room consumption, preservation of a newer room/jump, and profile consumption/newer-route
+preservation. These native tests have not executed yet; three Swift files syntax-parse
+and diff checks pass. Reference semantic cross-check: OpenCombine's Published.swift
+explicitly documents willSet publication (community compatibility implementation, not
+an Apple runtime test): https://github.com/OpenCombine/OpenCombine/blob/master/Sources/OpenCombine/Published.swift.
+Autumn UI unchanged; this is a targeted handoff repair, not full navigation acceptance.

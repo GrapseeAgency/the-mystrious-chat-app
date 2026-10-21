@@ -42,6 +42,7 @@ public final class PulseSession: ObservableObject {
     /// Chats tab's NavigationStack (the dock lives above the shell, the stack
     /// lives inside ChatsView - this is the bridge, same pattern as search).
     @Published public private(set) var pendingOpenRoom: WireConversationSummary?
+    private var pendingRoomDelivery = UUID()
     /// User navigation intent, distinct from room visibility during foreground/
     /// sheet transitions. Async link resolution must not displace a newer intent.
     public private(set) var roomNavigationGeneration = UUID()
@@ -57,6 +58,7 @@ public final class PulseSession: ObservableObject {
     /// NavigationStack (same bridge pattern as pendingOpenRoom). Consumers
     /// call `consumePendingUserRoute()` when received.
     @Published public private(set) var pendingUserRoute: UserRoute?
+    private var pendingUserDelivery = UUID()
     /// R2-D - the linked-room bridge (conversation ID only): reminder-
     /// notification taps (PulseReminderNotificationDelegate) and calls-
     /// history rows set this; RootView consumes it and follows the exact
@@ -850,12 +852,21 @@ public final class PulseSession: ObservableObject {
     /// that message (saved-library "open original", spec §1 row 14).
     public func requestOpenRoom(_ conversation: WireConversationSummary, jumpMessageId: String? = nil) {
         noteRoomNavigationIntent()
+        pendingRoomDelivery = UUID()
         pendingJumpMessageId = jumpMessageId
         pendingOpenRoom = conversation
     }
 
-    public func consumePendingOpenRoom() {
-        pendingOpenRoom = nil
+    /// @Published emits from willSet. Clearing inline from its subscriber can
+    /// be overwritten by the outer setter and replay the already-opened room.
+    /// Defer until that setter completes, without erasing a newer delivery.
+    @discardableResult
+    public func consumePendingOpenRoom() -> Task<Void, Never> {
+        let delivery = pendingRoomDelivery, epoch = generation
+        return Task { @MainActor [weak self] in
+            guard let self, generation == epoch, pendingRoomDelivery == delivery else { return }
+            pendingOpenRoom = nil
+        }
     }
 
     public func consumePendingJumpMessageId() {
@@ -866,11 +877,17 @@ public final class PulseSession: ObservableObject {
     /// the full user page (F-CP-03). `name` seeds the nav title while the
     /// page fetches (nil-safe).
     public func requestOpenUser(_ userId: String, name: String?) {
+        pendingUserDelivery = UUID()
         pendingUserRoute = UserRoute(userId: userId, name: name ?? "Profile")
     }
 
-    public func consumePendingUserRoute() {
-        pendingUserRoute = nil
+    @discardableResult
+    public func consumePendingUserRoute() -> Task<Void, Never> {
+        let delivery = pendingUserDelivery, epoch = generation
+        return Task { @MainActor [weak self] in
+            guard let self, generation == epoch, pendingUserDelivery == delivery else { return }
+            pendingUserRoute = nil
+        }
     }
 
     public func typers(in conversationId: String, excluding userId: String?) -> [Typer] {
