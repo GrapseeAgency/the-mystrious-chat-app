@@ -880,7 +880,9 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     fun react(messageId: String, emoji: String) {
-        viewModelScope.launch { repo.react(messageId, emoji) }
+        viewModelScope.launch {
+            repo.react(messageId, emoji).onFailure { notify(it.message ?: "Couldn't update reaction", isError = true) }
+        }
     }
 
     // ── R1-W2A - F-MS-24 sticker send + F-MS-23 effect send ──────────

@@ -335,10 +335,13 @@ public final class PulseStore: Sendable {
 
     // message cache (N3-b - room offline-first seed; v3/v4 full fidelity)
     public func upsert(messages: [WireChatMessage]) throws {
+        _ = try mergeMessages(messages)
+    }
+
+    /// Return the same privacy-preserving rows that committed, not stale HTTP inputs.
+    public func mergeMessages(_ messages: [WireChatMessage]) throws -> [WireChatMessage] {
         try dbQueue.write { db in
-            for m in messages {
-                try Self.writeMessage(m, db: db)
-            }
+            try messages.map { try Self.writeMessage($0, db: db) }
         }
     }
 
@@ -346,7 +349,13 @@ public final class PulseStore: Sendable {
     /// a fresh envelope row is AUTHORITATIVE - spec §0 - so every column,
     /// v1 through v4, lands in both the INSERT and the conflict SET clause).
     /// Shared by the bulk cache upsert and the saved-library sync.
-    private static func writeMessage(_ m: WireChatMessage, db: Database) throws {
+    @discardableResult
+    private static func writeMessage(_ incoming: WireChatMessage, db: Database) throws -> WireChatMessage {
+        let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [incoming.id])
+        let current = row.flatMap { Self.messageRow(from: $0) }
+        var m = PulseMessageMerge.merge(current, incoming: incoming)
+        if let deleted: String = row?["deletedAt"], !deleted.isEmpty { m = m.deletedCopy() }
+        if let viewed: String = row?["viewedAt"] { m.viewedAt = viewed; m.viewOnce = true }
         try db.execute(
             sql: """
             INSERT INTO message (id, conversationId, authorId, authorName, kind, body,
@@ -394,6 +403,7 @@ public final class PulseStore: Sendable {
                 "expiresAtEpoch": m.expiresAt.flatMap { PulseFormat.date($0)?.timeIntervalSince1970 },
             ],
         )
+        return m
     }
 
     /// Persist operation and optimistic bubble before any network I/O.
@@ -545,7 +555,8 @@ public final class PulseStore: Sendable {
     private static func messageRow(from row: Row) -> WireChatMessage? {
         if let wire: String = row["wireJson"] {
             // Corrupt full envelopes must not fall back to missing privacy flags.
-            return try? JSONDecoder().decode(WireChatMessage.self, from: Data(wire.utf8))
+            return (try? JSONDecoder().decode(WireChatMessage.self, from: Data(wire.utf8)))
+                .map { PulseMessageMerge.merge(nil, incoming: $0) }
         }
         guard let id: String = row["id"],
               let conversationId: String = row["conversationId"],
@@ -572,7 +583,7 @@ public final class PulseStore: Sendable {
         let topicId: String? = row["topicId"]
         let decodedPoll = Self.poll(fromJson: row["pollJson"])
         let decodedLinkPreview = Self.linkPreview(fromJson: row["linkPreviewJson"])
-        return WireChatMessage(
+        return PulseMessageMerge.merge(nil, incoming: WireChatMessage(
             id: id, conversationId: conversationId, senderId: authorId,
             content: body, kind: kind, createdAt: createdAt,
             editedAt: editedAt, deletedAt: deletedAt,
@@ -588,7 +599,7 @@ public final class PulseStore: Sendable {
             linkPreview: decodedLinkPreview, poll: decodedPoll,
             payload: row["payloadJson"],
             translations: Self.translations(fromJson: row["translationsJson"]),
-        )
+        ))
     }
 
     // reactionsJson codec (v3 cache column ⇄ grouped wire reactions)

@@ -622,12 +622,13 @@ class PulseRepositoryImpl constructor(
 
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
         val dto = signal.dto ?: return
-        val message = dto.toDomain()
-        messageCacheMutex.withLock {
+        val message = messageCacheMutex.withLock {
+            val message = dto.toDomain()
             messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
             // Persist tombstones too; an event-only deletion resurrects after restart.
             messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
             messageCacheChanges.value = messageEventClock.get()
+            checkNotNull(messageDao.byId(message.id)).toDomain()
         }
         if (signal.event == app.pulse.protocol.SocketEvents.MESSAGE_DELETED) {
             eventsBus.tryEmit(
@@ -647,10 +648,8 @@ class PulseRepositoryImpl constructor(
     private suspend fun cacheFetchedMessagesLocked(rows: List<Message>, watermark: Long): List<Message> {
         val fresh = rows.filter { (messageEventRevisions[it.id] ?: 0L) <= watermark }
         messageDao.upsertAll(fresh.map { MessageEntity.from(it, reactionsJsonOf(it)) })
-        return rows.mapNotNull { row ->
-            if ((messageEventRevisions[row.id] ?: 0L) > watermark) messageDao.byId(row.id)?.toDomain()
-            else row
-        }
+        val stored = rows.map { it.id }.distinct().chunked(400).flatMap { messageDao.byIds(it) }.associateBy { it.id }
+        return rows.mapNotNull { stored[it.id]?.toDomain() }
     }
 
     private var refreshScheduled = false
@@ -1427,8 +1426,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun editMessage(messageId: String, content: String): Result<Message> =
         when (val r = api.editMessage(messageId, viewerId ?: "", content)) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
-                upsertMessage(message)
+                val message = upsertMessage(r.value.toDomain())
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -1437,8 +1435,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun toggleMessagePin(messageId: String): Result<Message> =
         when (val r = api.toggleMessagePin(messageId, viewerId ?: "")) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
-                upsertMessage(message)
+                val message = upsertMessage(r.value.toDomain())
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -2241,32 +2238,26 @@ class PulseRepositoryImpl constructor(
         socket.emitTyping(recipients = recipients, conversationId, viewerId ?: "", userName = userName, isTyping = typing)
     }
 
+    private val reactionActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     override suspend fun react(messageId: String, emoji: String): Result<Unit> {
-        // Optimistic local toggle (viewer-scoped), then server truth via refetch.
-        val row = messageDao.byId(messageId)
-        if (row != null && viewerId != null) {
-            val me = viewerId!!
-            val current = row.toDomain()
-            val mine = current.reactions.filter { it.userId == me }
-            val hadSame = mine.any { it.emoji == emoji }
-            val updated = if (hadSame) {
-                current.reactions.filterNot { it.userId == me && it.emoji == emoji }
-            } else {
-                current.reactions + Reaction(emoji, me)
+        if (!reactionActions.add(messageId)) return Result.failure(IllegalStateException("A reaction is still updating."))
+        try {
+            val current = messageDao.byId(messageId)?.toDomain()
+            if (current != null && (current.isDeleted || current.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+                return Result.failure(IllegalStateException("This message is no longer available."))
             }
-            messageDao.upsertAll(
-                listOf(MessageEntity.from(current.copy(reactions = updated), reactionsJsonOf(current.copy(reactions = updated)))),
-            )
-        }
-        val result = api.react(messageId, viewerId ?: "", emoji)
-        if (result is PulseResult.Success && row != null) {
-            scope.launch {
-                delay(500)
-                runCatching { refreshMessages(row.conversationId) }
-                    .onFailure { Log.w(TAG, "react refetch failed", it) }
+            // Do not leave an invented optimistic chip after rejection/offline failure.
+            // Apply the returned row; an old message may be outside any room refresh page.
+            return when (val result = api.react(messageId, viewerId ?: "", emoji)) {
+                is PulseResult.Success -> { upsertMessage(result.value.toDomain()); Result.success(Unit) }
+                is PulseResult.Failure -> Result.failure(apiExceptionOf(result))
             }
-        }
-        return result.toResult()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            return Result.failure(error)
+        } finally { reactionActions.remove(messageId) }
     }
 
     /**
@@ -2629,6 +2620,7 @@ class PulseRepositoryImpl constructor(
         messageEventRevisions[m.id] = messageEventClock.incrementAndGet()
         messageDao.upsertAll(listOf(MessageEntity.from(m, reactionsJsonOf(m))))
         messageCacheChanges.value = messageEventClock.get()
+        checkNotNull(messageDao.byId(m.id)).toDomain()
     }
 
     // Wave 2 messaging depth (spec §0/§1 - routes verified live)
@@ -2688,8 +2680,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun votePoll(pollId: String, optionId: String): Result<Message> =
         when (val r = api.votePoll(pollId, viewerId ?: "", optionId)) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
-                upsertMessage(message)
+                val message = upsertMessage(r.value.toDomain())
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
@@ -2698,8 +2689,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun closePoll(pollId: String): Result<Message> =
         when (val r = api.closePoll(pollId, viewerId ?: "")) {
             is PulseResult.Success -> {
-                val message = r.value.toDomain()
-                upsertMessage(message)
+                val message = upsertMessage(r.value.toDomain())
                 Result.success(message)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))

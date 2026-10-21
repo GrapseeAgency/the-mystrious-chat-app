@@ -124,4 +124,29 @@ class OutboxOwnershipTest {
         } finally { db.close() }
     }
 
+    @Test fun delayedRowsCannotReopenDeletedOrConsumedMessages() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
+        try {
+            val live = Message(id = "m", conversationId = "room", authorId = "peer", authorName = "Peer",
+                kind = Message.Kind.IMAGE, body = "secret", imagePath = "secret.jpg", viewOnce = true,
+                expiresAtEpochMs = 9000L, createdAt = "2026-10-21T00:00:00Z")
+            val consumed = live.copy(viewedAt = 1000L)
+            db.messageDao().upsertAll(listOf(consumed, live.copy(viewOnce = false, expiresAtEpochMs = null)).map { MessageEntity.from(it) })
+            val retained = db.messageDao().byId("m")!!.toDomain()
+            assertEquals(1000L, retained.viewedAt)
+            assertEquals(true, retained.viewOnce)
+            assertEquals(9000L, retained.expiresAtEpochMs)
+            db.messageDao().upsertAll(listOf(live.copy(deletedAt = "2026-10-21T00:01:00Z"), live).map { MessageEntity.from(it) })
+            val rawDeleted = db.messageDao().byId("m")!!
+            assertEquals("", rawDeleted.body)
+            assertEquals(null, rawDeleted.imagePath)
+            val deleted = rawDeleted.toDomain()
+            assertEquals(true, deleted.isDeleted)
+            assertEquals("", deleted.body)
+            assertEquals(null, deleted.imagePath)
+            db.messageDao().upsertAll(listOf(MessageEntity.from(live)))
+            assertEquals(true, db.messageDao().byId("m")!!.toDomain().isDeleted)
+        } finally { db.close() }
+    }
+
 }

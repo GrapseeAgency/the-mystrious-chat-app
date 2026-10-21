@@ -109,6 +109,7 @@ internal fun MirrorMessageActionPanel(
     viewerId: String,
     members: List<ConversationMember>,
     repository: PulseRepository,
+    onReaction: (String) -> Unit,
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onThread: () -> Unit,
@@ -185,9 +186,7 @@ internal fun MirrorMessageActionPanel(
                             )
                             .mirrorPressClick(onClick = {
                                 onDismiss()
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    runCatching { repository.react(message.id, def.id) }
-                                }
+                                onReaction(def.id)
                             }),
                         contentAlignment = Alignment.Center,
                     ) {

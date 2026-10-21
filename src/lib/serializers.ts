@@ -3,6 +3,7 @@
 // input normalization, safe JSON parsing, socket relay.
 // Server-only - never import from client components.
 import path from 'node:path'
+import { redactDeletedMessage, quoteDisclosure } from '@/lib/message-disclosure'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
 import { unreadSnapshot, isExpiredMessage, unexpiredMessages } from '@/lib/message-visibility'
@@ -221,7 +222,7 @@ export function groupReactions(reactions: ReactionRow[]): MessageReactionGroup[]
 export const MESSAGE_FULL_INCLUDE = {
   sender: true,
   reactions: { select: { emoji: true, userId: true } },
-  replyTo: { select: { id: true, content: true, deletedAt: true, sender: { select: { name: true } } } },
+  replyTo: { select: { id: true, content: true, deletedAt: true, expiresAt: true, viewOnce: true, sender: { select: { name: true } } } },
   poll: {
     include: {
       options: {
@@ -241,9 +242,8 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
   const replyTo = parent
     ? {
         id: parent.id,
-        content: parent.content,
+        ...quoteDisclosure(parent),
         senderName: parent.sender.name,
-        deleted: parent.deletedAt !== null,
       }
     : null
 
@@ -273,7 +273,7 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
     }
   }
 
-  return {
+  return redactDeletedMessage({
     id: message.id,
     conversationId: message.conversationId,
     senderId: message.senderId,
@@ -321,7 +321,7 @@ export function mapMessage(message: MessageRowWithRelations, viewerId?: string):
     translations: message.translations.map((t) => ({ lang: t.lang, text: t.text })),
     // R39 additive - honest machine-sent marker on automation-authored bubbles.
     viaAutomation: message.viaAutomation ?? false,
-  }
+  })
 }
 
 /** Group role of a participant row - normalizes unexpected values to "member". */

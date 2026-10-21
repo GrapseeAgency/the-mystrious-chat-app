@@ -224,7 +224,7 @@ data class MessageEntity(
         // REM-A - reserved pulse:* keys ride payloadJson (schema v9 frozen);
         // pop them back out so the domain payload stays the clean wire blob.
         val (payloadClean, anon, anonAlias, expiresAt) = payloadPulseKeys(payloadJson)
-        return Message(
+        return app.pulse.domain.sync.mergeMessageState(null, Message(
             id = id, conversationId = conversationId, authorId = authorId,
             authorName = authorName, kind = Message.Kind.valueOf(kind), body = body,
             createdAt = createdAt, editedAt = editedAt, deletedAt = deletedAt,
@@ -251,7 +251,7 @@ data class MessageEntity(
             anon = anon,
             anonAlias = anonAlias,
             expiresAtEpochMs = expiresAt,
-        )
+        ))
     }
 
     companion object {
@@ -682,8 +682,29 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE id = :id")
     suspend fun byId(id: String): MessageEntity?
 
+    @Query("SELECT * FROM messages WHERE id IN (:ids)")
+    suspend fun byIds(ids: List<String>): List<MessageEntity>
+
+    /** All writers, including pending-delivery handoff, share monotonic privacy state. */
+    @androidx.room.Transaction
+    suspend fun upsertAll(items: List<MessageEntity>) {
+        if (items.isEmpty()) return
+        val current = items.map { it.id }.distinct().chunked(400).flatMap { byIds(it) }.associateBy { it.id }.toMutableMap()
+        val merged = items.map { incoming ->
+            val old = current[incoming.id]
+            val candidate = incoming.toDomain()
+            val safe = app.pulse.domain.sync.mergeMessageState(old?.toDomain(), candidate)
+            val row = if (safe == candidate && !safe.isDeleted) incoming.copy(viewOnce = safe.viewOnce) else MessageEntity.from(safe,
+                if (safe.isDeleted) null else if (safe.reactions == candidate.reactions) incoming.reactionsJson else old?.reactionsJson)
+            current[row.id] = row
+            row
+        }
+        replaceMerged(merged)
+    }
+
+    /** Implementation primitive. Call upsertAll so terminal state is never bypassed. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertAll(items: List<MessageEntity>)
+    suspend fun replaceMerged(items: List<MessageEntity>)
 
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun deleteById(id: String)

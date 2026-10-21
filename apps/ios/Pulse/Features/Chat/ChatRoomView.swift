@@ -4227,8 +4227,8 @@ final class RoomViewModel: ObservableObject {
                 if from != nil && page.syncVersion != 1 {
                     throw PulseAPIClient.Failure(kind: .server, message: "Gateway needs the paged message-sync update")
                 }
-                let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-                try store?.upsert(messages: fresh)
+                let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+                let fresh = try store?.mergeMessages(eligible) ?? eligible
                 if from != nil, let catchUpBoundary, arrivalScope == missedScopeRevision, historyTopic == activeTopicId {
                     missedMessages.receive(fresh, roomId: conversationId, viewerId: session.viewer?.id,
                         topicId: activeTopicId, after: catchUpBoundary)
@@ -4345,8 +4345,8 @@ final class RoomViewModel: ObservableObject {
                         self.errorText = "History returned a repeated page. Try loading earlier messages again."
                         return
                     }
-                    let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-                    try store?.upsert(messages: fresh)
+                    let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+                    let fresh = try store?.mergeMessages(eligible) ?? eligible
                     let previousIDs = Set(self.messages.map(\.id))
                     self.messages = PulseTimelineMerge.merge(self.messages, incoming: fresh, topicId: topic)
                     self.historyWindow.record(cursor: next, hasMore: page.hasMore)
@@ -4465,8 +4465,8 @@ final class RoomViewModel: ObservableObject {
                     return
                 }
             }
-            let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-            try store?.upsert(messages: fresh)
+            let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            let fresh = try store?.mergeMessages(eligible) ?? eligible
             messages = PulseTimelineMerge.merge(messages, incoming: fresh, topicId: topic)
             historyWindow.record(cursor: next ?? oldest, hasMore: page.hasMore && next != nil)
             if page.messages.contains(where: { $0.id == messageId }) {
@@ -4691,7 +4691,9 @@ final class RoomViewModel: ObservableObject {
         if countsAsArrival, let session, session.sessionGeneration == readSessionGeneration {
             missedMessages.receive([message], roomId: conversationId, viewerId: session.viewer?.id, topicId: activeTopicId)
         }
-        messages = PulseTimelineMerge.merge(messages, incoming: [message], topicId: activeTopicId)
+        let cached = try? session?.store?.message(id: message.id, now: .distantPast)
+        let canonical = PulseMessageMerge.merge(cached, incoming: message)
+        messages = PulseTimelineMerge.merge(messages, incoming: [canonical], topicId: activeTopicId)
     }
 
     func draftChanged(session: PulseSession) {
@@ -5037,15 +5039,26 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
+    private var reactionActions: Set<String> = []
     func react(_ message: WireChatMessage, emoji: String, session: PulseSession) {
+        guard session.sessionGeneration == readSessionGeneration, message.conversationId == conversationId,
+              message.deletedAt == nil, !message.id.hasPrefix("local_"),
+              PulseRemediationLogic.isAlive(message.expiresAt), reactionActions.insert(message.id).inserted else { return }
+        let epoch = session.sessionGeneration, watermark = session.messageRevision, api = session.api
         PulseHaptics.tap()
         Task { [weak self] in
             guard let self else { return }
+            defer { reactionActions.remove(message.id) }
             do {
-                let fresh = try await session.api.react(messageId: message.id, emoji: emoji)
-                upsert(fresh)
+                let fresh = try await api.react(messageId: message.id, emoji: emoji)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                if session.acceptsSyncMessage(fresh.id, startedAt: watermark) {
+                    try session.recordMessageMutation(fresh)
+                    upsert(fresh)
+                }
                 if emoji == PulseReactionId.heart.rawValue { session.particles.fire(kind: .hearts, count: 24) }
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 errorText = Self.describe(error)
             }
         }
@@ -5719,8 +5732,8 @@ final class RoomViewModel: ObservableObject {
             let page = try await client.messages(conversationId: conversationId, topicId: topic)
             try Task.checkCancellation()
             guard session.sessionGeneration == epoch, activeTopicId == topic else { return }
-            let fresh = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
-            try store?.upsert(messages: fresh)
+            let eligible = page.messages.filter { session.acceptsSyncMessage($0.id, startedAt: watermark) }
+            let fresh = try store?.mergeMessages(eligible) ?? eligible
             let cached = (try? store?.messages(conversationId: conversationId)) ?? messages
             let retained = PulseTimelineMerge.merge(messages, incoming: cached, topicId: topic)
             messages = PulseTimelineMerge.merge(retained, incoming: fresh, topicId: topic)

@@ -178,10 +178,10 @@ public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let conversationId: String
     public let senderId: String
-    public let content: String
+    public var content: String
     public let kind: String
     public let createdAt: String
-    public let editedAt: String?
+    public var editedAt: String?
     public let deletedAt: String?
     public let sender: WireSender?
     public let reactions: [WireReactionGroup]?
@@ -194,17 +194,17 @@ public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     public let fileName: String?
     public let fileSize: Int?
     public var pinnedAt: String?
-    public let viewOnce: Bool?
+    public var viewOnce: Bool?
     public let anon: Bool?
     public let anonAlias: String?
     // W2-DATA-B - Wave 2 additive fields (all optional: old relays never
     // send them and the decoder must stay tolerant both ways).
     /// View-once burn stamp - the FIRST non-sender open, wire ISO string.
-    public let viewedAt: String?
+    public var viewedAt: String?
     /// Who consumed the view-once attachment. Server column is a SINGLE
     /// userId string (Message.viewedBy String? in prisma/schema.prisma) -
     /// NOT an array, despite what stale fixtures once guessed.
-    public let viewedBy: String?
+    public var viewedBy: String?
     /// Cached voice-note transcription (real ASR, stored on the row).
     public let transcript: String?
     public let transcribedAt: String?
@@ -780,17 +780,17 @@ extension WireChatMessage {
     public func deletedCopy() -> WireChatMessage {
         WireChatMessage(
             id: id, conversationId: conversationId, senderId: senderId,
-            content: content, kind: kind, createdAt: createdAt,
+            content: "", kind: kind, createdAt: createdAt,
             editedAt: editedAt, deletedAt: deletedAt ?? createdAt,
-            sender: sender, reactions: reactions, replyTo: replyTo,
-            parentId: parentId, imagePath: imagePath, audioPath: audioPath,
-            durationMs: durationMs, filePath: filePath, fileName: fileName,
-            fileSize: fileSize, pinnedAt: pinnedAt, viewOnce: viewOnce,
+            sender: sender, reactions: [], replyTo: nil,
+            parentId: parentId, imagePath: nil, audioPath: nil,
+            durationMs: nil, filePath: nil, fileName: nil,
+            fileSize: nil, pinnedAt: nil, viewOnce: viewOnce,
             anon: anon, anonAlias: anonAlias,
-            viewedAt: viewedAt, viewedBy: viewedBy, transcript: transcript,
-            transcribedAt: transcribedAt, topicId: topicId, linkUrl: linkUrl,
-            linkPreview: linkPreview, poll: poll, payload: payload, expiresAt: expiresAt,
-            viaAutomation: viaAutomation, translations: translations
+            viewedAt: viewedAt, viewedBy: viewedBy, transcript: nil,
+            transcribedAt: nil, topicId: topicId, linkUrl: nil,
+            linkPreview: nil, poll: nil, payload: nil, expiresAt: expiresAt,
+            viaAutomation: viaAutomation, translations: []
         )
     }
 

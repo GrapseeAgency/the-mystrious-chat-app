@@ -410,7 +410,6 @@ internal fun MirrorRoom(
     jumpMessageId: String? = null,
     onJumpConsumed: () -> Unit = {},
     onBack: () -> Unit,
-    onToggleReaction: (String, String) -> Unit,
     onAddPhrase: (String) -> Unit,
     onDeletePhrase: (String) -> Unit,
     onTyping: (Boolean) -> Unit,
@@ -694,6 +693,19 @@ internal fun MirrorRoom(
         }
     }
     val historyScope = rememberCoroutineScope()
+    fun toggleReaction(messageId: String, emoji: String) {
+        historyScope.launch {
+            try {
+                repository.react(messageId, emoji).onFailure {
+                    if (roomActionsLive.get()) sendError = it.message ?: "Couldn't update reaction"
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (roomActionsLive.get()) sendError = "Couldn't update reaction. Try again."
+            }
+        }
+    }
     var loadingHistory by remember(groupId) { mutableStateOf(false) }
     var historyHasMore by remember(groupId) { mutableStateOf(true) }
     var historyCursor by remember(groupId) { mutableStateOf<MessageHistoryCursor?>(null) }
@@ -1662,7 +1674,7 @@ internal fun MirrorRoom(
                                     }
                                 }
                             },
-                            onToggleReaction = onToggleReaction,
+                            onToggleReaction = ::toggleReaction,
                             // R74 - swipe-to-reply + effect origin registration
                             onReply = {
                                 replyTo = entry.message
@@ -2616,6 +2628,7 @@ internal fun MirrorRoom(
             viewerId = viewerId,
             members = members,
             repository = repository,
+            onReaction = { emoji -> toggleReaction(target.id, emoji) },
             onReply = { replyTo = target },
             onEdit = {
                 if (editing == null) {

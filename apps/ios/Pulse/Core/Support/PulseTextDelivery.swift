@@ -84,8 +84,10 @@ enum PulseTextDelivery {
     /// Merge confirmations and persisted sends in chronological order without duplicate IDs.
     static func timeline(_ remote: [WireChatMessage], pending: [WireChatMessage]) -> [WireChatMessage] {
         var rows: [String: WireChatMessage] = [:]
-        for message in remote + pending where PulseRemediationLogic.isAlive(message.expiresAt) { rows[message.id] = message }
-        return rows.values.sorted {
+        for message in remote + pending {
+            rows[message.id] = PulseMessageMerge.merge(rows[message.id], incoming: message)
+        }
+        return rows.values.filter { PulseRemediationLogic.isAlive($0.expiresAt) }.sorted {
             let a = PulseFormat.date($0.createdAt) ?? .distantPast
             let b = PulseFormat.date($1.createdAt) ?? .distantPast
             return a == b ? $0.id < $1.id : a < b

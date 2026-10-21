@@ -1073,11 +1073,6 @@ private fun MirrorRoomScaffold(
         isBroadcast = convo.kind == Conversation.Kind.CHANNEL,
         avatarPath = convo.avatar,
         onBack = onClose,
-        onToggleReaction = { messageId, emoji ->
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching { repository.react(messageId, emoji) }
-            }
-        },
         onAddPhrase = { text ->
             CoroutineScope(Dispatchers.IO).launch {
                 repository.addPhrase(text).onSuccess { phrases = repository.phrases().getOrDefault(emptyList()) }

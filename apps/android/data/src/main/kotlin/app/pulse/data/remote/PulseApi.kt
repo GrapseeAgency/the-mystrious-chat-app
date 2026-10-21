@@ -404,14 +404,14 @@ class PulseApi(
 
     // reactions
     /** POST /api/messages/{id}/react { userId, emoji } - server toggles. */
-    suspend fun react(messageId: String, userId: String, emoji: String): PulseResult<Unit> =
+    suspend fun react(messageId: String, userId: String, emoji: String): PulseResult<ChatMessageDto> =
         post(
             "/api/messages/$messageId/react",
             buildJsonObject {
                 put("userId", userId)
                 put("emoji", emoji)
             },
-        )
+        ) { messageOf(it) }
 
     // users / identity
     /** GET /api/users → { users: [...] } (identity picker + contacts). */

@@ -1876,3 +1876,51 @@ Mirror thread search jumps now require a successful availability request; ordina
 thread/draft handling is unchanged. Full-thread loading and the fourteen-page room jump
 limit remain; this does not add thread pagination or persist revocation across navigation.
 No autumn palette/bubble redesign and no merge/deployment implied.
+
+### Transactional message actions and monotonic cached privacy state (2026-10-21)
+
+While tracing thread lifetime, found message action races: edit/delete read permissions
+separately from writes, repeat-delete returned a tombstone before checking the requester,
+view-once consumers could overwrite the first consumer, and native full-row acknowledgements
+could restore content after a newer tombstone. Android reaction failures left optimistic
+chips behind and successful reactions relied on a later bounded room refresh.
+
+- Edit/delete/react/viewed routes now share a serializable transaction for membership,
+  owner checks where required, message/root lifetime, the write and response snapshot.
+  Repeat-delete is checked for ownership/membership too. Delete clears pin state; deleted
+  or expired rows and unavailable thread parents reject new edits/reactions/consumption.
+  Contention reports 409, not an automatic toggle replay. View-once's first consumer is a
+  conditional write; the additive `consumed` response distinguishes a new consumption.
+- Mutation fanout includes the actor's other devices. Relays retain neutral poll metadata;
+  the direct response remains viewer-aware. Existing transport identity migration is
+  unchanged: this is not an authentication overhaul.
+- Shared serialization redacts body, attachments, rich payload, quotes, translations and
+  preview/poll content from tombstones. Quoted deleted/expired parents expose no original
+  body, and view-once quotes expose a placeholder rather than their caption.
+- Room's transactional message upsert and GRDB's shared write path preserve deletion,
+  consumption, view-once flags, earliest expiry and newer edit stamps across late rows.
+  Tombstones retain identity/routing/deadlines but not media/body payload. Cache reads
+  normalize old tombstones too. Pending send/draft intent is not discarded by this policy.
+- Swift river/thread merges apply the same rules. Network ingestion returns committed
+  canonical rows rather than feeding raw stale HTTP inputs back into the UI. Android
+  fetched rows and socket fanout likewise use the actual retained cache state.
+- Android reactions apply the returned server row, serialize one in-flight action per
+  message, retain existing state on failure and no longer depend on a bounded refetch.
+  Primary and active Mirror surface failures. Mirror reactions use room-owned coroutines
+  rather than detached IO launches. Swift reactions are persisted, session-fenced and
+  gated per message instead of updating only the in-memory river.
+
+Verification: 106/106 server contracts pass locally, including seven new transaction,
+concurrent-consumer and disclosure regressions. New pure TypeScript helpers pass strict
+standalone type checking. Added three Kotlin merge tests, one real Room DAO test and four
+Swift merge/storage tests; native parsing passes, but new native compilation/device tests
+remain pending. Previous 83f99d5 Android build and iOS archive passed; its iOS test compile
+failed because two assertions called dictionary `isEmpty` as a function. Corrected that
+mistake separately in 20510c0; no claim that the earlier tests passed.
+
+Limits: these are monotonic known-row fields, not a total server revision for reactions,
+pins or equal-timestamp edits. Cache purge is not a durable tombstone/revocation ledger.
+Existing view-once UIs still reveal before consumption acknowledgement; the atomic server
+stamp alone does NOT make that flow safe. Public media lifetime, full-thread pagination,
+revocation across navigation and legacy credential migration remain open. No autumn
+palette changes; backend changes require deployment with the native work.

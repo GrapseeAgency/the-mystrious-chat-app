@@ -287,8 +287,8 @@ struct ThreadView: View {
             let page = try await api.thread(rootId: root.id, userId: viewerId)
             guard !Task.isCancelled, loadGeneration == ticket, session.sessionGeneration == epoch else { return }
             // A slower HTTP snapshot must not undo a newer edit/deletion relay.
-            let fresh = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
-            try store?.upsert(messages: fresh)
+            let eligible = ([page.parent] + page.replies).filter { session.acceptsSyncMessage($0.id, startedAt: revision) }
+            let fresh = try store?.mergeMessages(eligible) ?? eligible
             parent = fresh.first(where: { $0.id == root.id }) ?? (try? store?.message(id: root.id, now: .distantPast)) ?? parent
             guard PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else {
                 pruneExpired()
@@ -352,9 +352,10 @@ struct ThreadView: View {
         default: return
         }
         guard room == conversation.id, message.id == root.id || message.parentId == root.id else { return }
-        if message.id == root.id { parent = message }
-        else { appendReply(message) }
-        try? session.store?.upsert(messages: [message])
+        let committed = try? session.store?.mergeMessages([message])
+        let canonical = committed?.first ?? message
+        if canonical.id == root.id { parent = PulseMessageMerge.merge(parent, incoming: canonical) }
+        else { appendReply(canonical) }
         pruneExpired()
     }
 
