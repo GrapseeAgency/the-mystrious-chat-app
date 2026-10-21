@@ -2,6 +2,41 @@ import XCTest
 @testable import Pulse
 
 final class ReadVisibilityTests: XCTestCase {
+    func testThreadLeaseIgnoresUnderlyingRoomAndRestoresEitherDismissalOrder() {
+        var surfaces = PulseReadSurfaces()
+        surfaces.setPrimary(roomId: "room", messageId: "river")
+        let thread = surfaces.begin(roomId: "room")
+        XCTAssertNil(surfaces.boundary)
+        surfaces.setOverlay(thread, messageId: "reply")
+        surfaces.setPrimary(roomId: "room", messageId: nil) // obscured room refresh
+        XCTAssertEqual(surfaces.boundary?.messageId, "reply")
+        surfaces.setPrimary(roomId: "room", messageId: "river-restored") // parent dismisses first
+        XCTAssertEqual(surfaces.boundary?.messageId, "reply")
+        XCTAssertTrue(surfaces.end(thread))
+        XCTAssertEqual(surfaces.boundary?.messageId, "river-restored")
+        let second = surfaces.begin(roomId: "room")
+        surfaces.setPrimary(roomId: "room", messageId: nil)
+        surfaces.end(second) // sheet disappears first
+        XCTAssertNil(surfaces.boundary)
+        surfaces.setPrimary(roomId: "room", messageId: "river-again")
+        XCTAssertEqual(surfaces.boundary?.messageId, "river-again")
+    }
+
+    func testRetiredThreadCannotClearReplacementOrSurviveRoomReset() {
+        var surfaces = PulseReadSurfaces()
+        let first = surfaces.begin(roomId: "room")
+        let second = surfaces.begin(roomId: "room")
+        surfaces.setOverlay(second, messageId: "new-reply")
+        surfaces.setOverlay(first, messageId: "old-reply")
+        XCTAssertFalse(surfaces.end(first))
+        XCTAssertEqual(surfaces.boundary?.messageId, "new-reply")
+        surfaces.reset()
+        surfaces.setPrimary(roomId: "other", messageId: "other-message")
+        surfaces.setOverlay(second, messageId: "late-reply")
+        XCTAssertFalse(surfaces.end(second))
+        XCTAssertEqual(surfaces.boundary?.roomId, "other")
+    }
+
     func testPrefetchedClippedAndZeroSizeRowsCannotBeRead() {
         let frames = [
             "visible": CGRect(x: 0, y: 50, width: 100, height: 100),

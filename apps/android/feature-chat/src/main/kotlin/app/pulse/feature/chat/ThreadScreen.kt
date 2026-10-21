@@ -274,6 +274,8 @@ class ThreadViewModel @Inject constructor(
         }
     }
 
+    suspend fun markVisibleRead(messageId: String): Result<Unit> = repo.markReadThrough(conversationId, messageId)
+
     fun notify(text: String, isError: Boolean = false) {
         _state.value = _state.value.copy(notice = RoomNotice(text, isError))
     }
@@ -352,6 +354,7 @@ fun ThreadScreen(
     onBack: () -> Unit,
     viewModel: ThreadViewModel = hiltViewModel(),
     jumpMessageId: String? = viewModel.initialJumpMessageId,
+    readingEnabled: Boolean = false, // host must grant foreground/unlocked reading eligibility
 ) {
     val cachedParent by viewModel.parent.collectAsStateWithLifecycle()
     val cachedReplies by viewModel.replies.collectAsStateWithLifecycle()
@@ -400,6 +403,15 @@ fun ThreadScreen(
             } finally { openingViewOnce = false }
         }
     }
+    ThreadReadReceipts(
+        ownerKey = viewModel,
+        enabled = readingEnabled && !state.unavailable && lightboxTarget == null && discardConfirm == null,
+        connected = state.connected == true,
+        root = parent,
+        replies = replies,
+        listState = listState,
+        onRead = viewModel::markVisibleRead,
+    )
     var anchoredToLatest by remember(viewModel.rootId) { mutableStateOf(false) }
     var jumpResolved by remember(viewModel.rootId, jumpMessageId) { mutableStateOf(false) }
     var flashId by remember(viewModel.rootId, jumpMessageId) { mutableStateOf<String?>(null) }

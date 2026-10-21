@@ -2361,3 +2361,36 @@ reply read boundaries, although server unread counting includes replies. Fixing 
 requires explicit read-surface ownership so the obscured room cannot overwrite the
 thread's boundary, plus lifecycle/dwell/lock gating in both Android thread surfaces.
 Do not call thread Seen/unread complete based on room-only receipt repairs.
+
+## 2026-10-21 — thread visibility owns Seen, not the covered room
+
+Implemented the live-thread read-boundary gap identified above. Swift ThreadView now
+measures actual bubble overlap and submits only the last visible live server-backed
+root/reply through the existing foreground/lock/600ms dwell/retry gate. A thread lease
+keeps the covered room's refreshes from clearing/replacing that boundary. Returning to
+the room restores its latest eligible boundary in either dismissal callback order;
+retired threads cannot update another thread or account/room. Just before dispatch,
+thread expiry/refusal is rechecked against canonical storage, not only the 1s UI timer.
+
+Android's mounted MirrorThreadSheet uses a shared lifecycle-RESUMED 600ms viewport reader,
+with host lock/live-surface eligibility, lightbox/confirmation occlusion, exact live
+root/reply filtering and bounded retries. It rechecks lifetime before each send. The
+legacy, currently unmounted ThreadScreen also exposes this reader with a safe-default
+host eligibility parameter. Android incoming-attention leases prevent cleanup of the
+obscured room from clearing a newly active thread's notification suppression.
+
+Server explicit message-boundary receipts now transactionally reject deleted/expired
+messages and replies with missing/deleted/expired/nested/foreign-room parents. These
+refusals leave both lastReadAt and manualUnread unchanged. Deliberate mark-all remains
+separate and continues using the latest server row, not the phone clock.
+
+Validation: 119/119 real server contracts passed (including unavailable read anchors and
+live relay scenarios); targeted strict TypeScript passed. Twelve native source/test files
+syntax-parse and diff checks pass. Added Swift surface-lease, Kotlin visible-target, and
+Android attention-ownership regressions; native compilation/execution for these changes
+is pending, and device-level Seen behavior is not yet verified. Autumn visuals unchanged.
+
+Still separate/open: offline read-intent persistence after leaving a thread, cumulative
+conversation watermark semantics across unseen gaps, and unread aggregation/expiry of
+replies whose ROOT is unavailable (existing unread snapshots group by the reply's own
+expiry). Do not equate this live-surface repair with all Seen/unread behavior being solved.

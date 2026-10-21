@@ -21,9 +21,20 @@ export async function advanceReadReceipt(db: PrismaClient, room: string, owner: 
     if (!participant) throw new ReadReceiptError(403, 'You are not a participant of this conversation.')
     const message = await tx.message.findFirst({
       where: { conversationId: room, ...(messageId ? { id: messageId } : {}) },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { createdAt: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { createdAt: true, deletedAt: true, expiresAt: true, parentId: true,
+        parent: { select: { conversationId: true, deletedAt: true, expiresAt: true, parentId: true } } },
     })
-    if (messageId && !message) throw new ReadReceiptError(404, 'The displayed message is no longer in this conversation.')
+    const now = new Date()
+    const parent = message?.parent
+    const unavailableParent = message?.parentId !== null && (!parent || parent.conversationId !== room ||
+      parent.parentId !== null || parent.deletedAt !== null || (parent.expiresAt !== null && parent.expiresAt <= now))
+    // Explicit viewport receipts need the same live canonical-root boundary as
+    // thread reads. Legacy/manual mark-all remains a distinct deliberate action.
+    if (messageId && (!message || message.deletedAt !== null ||
+        (message.expiresAt !== null && message.expiresAt <= now) || unavailableParent)) {
+      throw new ReadReceiptError(404, 'The displayed message is no longer available in this conversation.')
+    }
     const boundary = message?.createdAt ?? participant.lastReadAt
     // A late response from an older screen/device must not move the watermark backwards.
     await tx.conversationParticipant.updateMany({

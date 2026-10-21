@@ -8,6 +8,20 @@ class HistoryThreadSafetyTest {
     private fun row(id: String) = Message(id = id, conversationId = "room", authorId = "peer", authorName = "Peer",
         kind = Message.Kind.TEXT, body = id, createdAt = "2026-10-21T00:00:00Z")
 
+    @Test fun `thread read boundary excludes prefetched rejected expired and foreign rows`() {
+        val root = row("root")
+        val reply = row("shown").copy(threadRootId = "root")
+        val candidates = listOf(reply, reply.copy(id = "prefetched"), reply.copy(id = "local_pending"),
+            reply.copy(id = "deleted", deletedAt = "now"), reply.copy(id = "expired", expiresAtEpochMs = 1000),
+            reply.copy(id = "foreign", conversationId = "other"), reply.copy(id = "wrong-parent", threadRootId = "elsewhere"))
+        val visible = candidates.map { it.id }.toSet() - "prefetched"
+        assertEquals("shown", visibleThreadReadBoundary(root, candidates, visible, 1000))
+        assertEquals("root", visibleThreadReadBoundary(root, candidates, setOf("root"), 1000))
+        assertNull(visibleThreadReadBoundary(root, candidates, emptySet(), 1000))
+        assertNull(visibleThreadReadBoundary(root.copy(deletedAt = "now"), candidates, visible, 1000))
+        assertNull(visibleThreadReadBoundary(root.copy(expiresAtEpochMs = 1000), candidates, visible, 1000))
+    }
+
     @Test fun `offline jump consults cache only after transport failure`() = kotlinx.coroutines.test.runTest {
         val root = row("root")
         val reply = row("reply").copy(threadRootId = "root")

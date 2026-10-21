@@ -26,7 +26,7 @@ async function fixture(run) {
         handRaisedAt DATETIME, screenPrivacy BOOLEAN NOT NULL DEFAULT false, manualUnread BOOLEAN NOT NULL DEFAULT false,
         draft TEXT, UNIQUE(userId,conversationId))`,
       `CREATE TABLE Message(id TEXT PRIMARY KEY, conversationId TEXT, createdAt DATETIME, senderId TEXT,
-        expiresAt DATETIME, deletedAt DATETIME, viaAutomation BOOLEAN NOT NULL DEFAULT false)`,
+        expiresAt DATETIME, deletedAt DATETIME, parentId TEXT, viaAutomation BOOLEAN NOT NULL DEFAULT false)`,
       `CREATE TABLE UserBlock(id TEXT PRIMARY KEY, blockerId TEXT, blockedId TEXT)`,
     ]) await db.$executeRawUnsafe(sql)
     await run(db)
@@ -54,6 +54,27 @@ test('unknown or foreign message cannot clear unread, nonmember cannot acknowled
   const row = await db.conversationParticipant.findUnique({ where: { id: 'p' } })
   assert.equal(row.manualUnread, true)
   assert.equal(row.lastReadAt.toISOString(), t(0).toISOString())
+}))
+test('unavailable displayed anchors never advance or clear manual unread', () => fixture(async db => {
+  await seedRead(db)
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,createdAt,parentId) VALUES
+    ('reply','room',${t(30)},'displayed'),('foreign-parent','room',${t(30)},'foreign'),
+    ('nested','room',${t(30)},'reply'),('orphan','room',${t(30)},'missing')`
+  for (const id of ['foreign-parent', 'nested', 'orphan']) {
+    await assert.rejects(advanceReadReceipt(db, 'room', 'reader', id), { status: 404 })
+  }
+  for (const patch of ["deletedAt=0", "deletedAt=NULL,expiresAt=0"]) {
+    await db.$executeRawUnsafe(`UPDATE Message SET ${patch} WHERE id='displayed'`)
+    for (const id of ['displayed', 'reply']) await assert.rejects(advanceReadReceipt(db, 'room', 'reader', id), { status: 404 })
+  }
+  const unread = await db.conversationParticipant.findUnique({ where: { id: 'p' } })
+  assert.equal(unread.manualUnread, true)
+  assert.equal(unread.lastReadAt.toISOString(), t(0).toISOString())
+  await db.$executeRawUnsafe("UPDATE Message SET deletedAt=NULL,expiresAt=NULL WHERE id='displayed'")
+  await db.$executeRawUnsafe("UPDATE Message SET expiresAt=0 WHERE id='reply'")
+  await assert.rejects(advanceReadReceipt(db, 'room', 'reader', 'reply'), { status: 404 })
+  await db.$executeRawUnsafe("UPDATE Message SET expiresAt=NULL WHERE id='reply'")
+  assert.equal((await advanceReadReceipt(db, 'room', 'reader', 'reply')).toISOString(), t(30).toISOString())
 }))
 test('explicit mark-all uses the latest server row, not wall-clock time', () => fixture(async db => {
   await seedRead(db)
@@ -195,7 +216,6 @@ test('explicit unsave retries stay removed, affect only the owner, and need no s
 
 
 test('thread reader excludes foreign-room and expired replies even with a matching parent link', () => fixture(async db => {
-  await db.$executeRawUnsafe('ALTER TABLE Message ADD COLUMN parentId TEXT')
   await db.$executeRaw`INSERT INTO Message(id,conversationId,parentId,createdAt,expiresAt) VALUES
     ('live','room','root',${t(0)},NULL),
     ('foreign','other','root',${t(0)},NULL),

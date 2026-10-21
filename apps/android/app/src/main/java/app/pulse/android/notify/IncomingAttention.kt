@@ -37,6 +37,24 @@ object IncomingAttention {
     var foreground: Boolean = false
 
     @Volatile var activeReadingRoom: String? = null
+        private set
+    private var readingOwner: Any? = null
+
+    /** A closing obscured room must not clear a newer thread's attention lease. */
+    @Synchronized
+    fun beginReading(roomId: String): () -> Unit {
+        val owner = Any()
+        readingOwner = owner
+        activeReadingRoom = roomId
+        return { endReading(owner) }
+    }
+
+    @Synchronized
+    private fun endReading(owner: Any) {
+        if (readingOwner !== owner) return
+        readingOwner = null
+        activeReadingRoom = null
+    }
 
     /**
      * R7 item 7 - notifPreviews mirror (Wave-8 server blob). ON → the

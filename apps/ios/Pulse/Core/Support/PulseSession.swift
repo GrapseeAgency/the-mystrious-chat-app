@@ -85,12 +85,14 @@ public final class PulseSession: ObservableObject {
         didSet {
             if oldValue != activeRoomId {
                 readGate.reset()
+                readSurfaces.reset()
                 readFailureCount = 0
                 readReceiptTask?.cancel()
             }
         }
     }
     private var readGate = PulseReadReceiptGate()
+    private var readSurfaces = PulseReadSurfaces()
     private var readFailureCount = 0
     private var readReceiptTask: Task<Void, Never>?
     /// Wave 8 - weak handoff to the RootView-owned PulsePrefs (incoming
@@ -263,6 +265,30 @@ public final class PulseSession: ObservableObject {
 
     public func setVisibleReadBoundary(conversationId: String, messageId: String?) {
         guard activeRoomId == conversationId else { return }
+        readSurfaces.setPrimary(roomId: conversationId, messageId: messageId)
+        applyVisibleReadBoundary(conversationId: conversationId)
+    }
+
+    func beginReadSurface(conversationId: String, rootId: String) -> PulseReadSurfaces.Owner? {
+        guard activeRoomId == conversationId else { return nil }
+        let owner = readSurfaces.begin(roomId: conversationId, rootId: rootId)
+        applyVisibleReadBoundary(conversationId: conversationId)
+        return owner
+    }
+
+    func setVisibleReadBoundary(owner: PulseReadSurfaces.Owner, messageId: String?) {
+        guard activeRoomId == owner.roomId else { return }
+        readSurfaces.setOverlay(owner, messageId: messageId)
+        applyVisibleReadBoundary(conversationId: owner.roomId)
+    }
+
+    func endReadSurface(_ owner: PulseReadSurfaces.Owner) {
+        guard readSurfaces.end(owner), activeRoomId == owner.roomId else { return }
+        applyVisibleReadBoundary(conversationId: owner.roomId)
+    }
+
+    private func applyVisibleReadBoundary(conversationId: String) {
+        let messageId = readSurfaces.boundary?.messageId
         guard readGate.setBoundary(roomId: conversationId, messageId: messageId,
             now: ProcessInfo.processInfo.systemUptime) else { return }
         readFailureCount = 0
@@ -285,6 +311,25 @@ public final class PulseSession: ObservableObject {
         guard let conversationId, ready, isForeground,
               activeRoomId == conversationId, !PulseAppLock.shared.needsLock, readFailureCount < 4,
               let request = readGate.begin(roomId: conversationId, now: ProcessInfo.processInfo.systemUptime) else { return }
+        if let owner = readSurfaces.owner, let rootId = owner.rootId {
+            // The expiry timer can tick AFTER the 600ms dwell. Recheck the
+            // canonical cache immediately before sending a thread boundary.
+            let available: Bool
+            if threadAccessDenied(rootId: rootId) {
+                available = false
+            } else if request.boundary.messageId == rootId {
+                let root = try? store?.message(id: rootId)
+                available = root.map { PulseRemediationLogic.threadRootAvailable($0, roomId: conversationId, rootId: rootId) } ?? false
+            } else {
+                available = (try? store?.cachedThreadTarget(roomId: conversationId, rootId: rootId,
+                    targetId: request.boundary.messageId)) != nil
+            }
+            if !available {
+                readGate.finish(request, succeeded: false)
+                setVisibleReadBoundary(owner: owner, messageId: nil)
+                return
+            }
+        }
         let client = api
         let epoch = generation
         do {

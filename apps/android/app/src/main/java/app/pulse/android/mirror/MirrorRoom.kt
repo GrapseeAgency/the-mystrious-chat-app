@@ -672,7 +672,7 @@ internal fun MirrorRoom(
     LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, minimumReadPixels, readerLifecycle) {
         readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             if (!readingEnabled || readObscured) return@repeatOnLifecycle
-            app.pulse.android.notify.IncomingAttention.activeReadingRoom = groupId
+            val releaseAttention = app.pulse.android.notify.IncomingAttention.beginReading(groupId)
             try {
                 androidx.compose.runtime.snapshotFlow {
                     val layout = listState.layoutInfo
@@ -690,7 +690,7 @@ internal fun MirrorRoom(
                     }
                 }
             } finally {
-                if (app.pulse.android.notify.IncomingAttention.activeReadingRoom == groupId) app.pulse.android.notify.IncomingAttention.activeReadingRoom = null
+                releaseAttention()
             }
         }
     }
@@ -2687,6 +2687,7 @@ internal fun MirrorRoom(
                 viewerName = viewerName,
                 memberNames = memberNames,
                 jumpMessageId = threadJumpId,
+                readingEnabled = readingEnabled && !roomPanelOpen,
                 onDismiss = { threadFor = null; threadJumpId = null },
             )
         }

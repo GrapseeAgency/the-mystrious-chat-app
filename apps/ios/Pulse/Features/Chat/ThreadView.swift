@@ -27,6 +27,9 @@ struct ThreadView: View {
     @State private var initialJumpResolved = false
     @State private var highlightedReplyId: String?
     @State private var nearTail = true
+    @State private var visibleReadIDs: Set<String> = []
+    @State private var readOwner: PulseReadSurfaces.Owner?
+    @Environment(\.scenePhase) private var readScenePhase
     @State private var tailScrollRevision = 0
     @State private var cachedCursor: PulseCachedThreadCursor?
     @State private var hasEarlierCachedReplies = false
@@ -52,6 +55,22 @@ struct ThreadView: View {
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !rootUnavailable &&
         draftJournal?.isCurrentOwner == true && draftSession == session.sessionGeneration }
 
+    private var readCandidate: String? {
+        guard phase == .loaded, !rootUnavailable, lightbox == nil, discardReply == nil,
+              readScenePhase == .active, !session.threadAccessDenied(rootId: root.id),
+              PulseRemediationLogic.threadRootAvailable(parent ?? root, roomId: conversation.id, rootId: root.id) else { return nil }
+        return ([parent ?? root] + replies).last {
+            visibleReadIDs.contains($0.id) && $0.conversationId == conversation.id &&
+                ($0.id == root.id || $0.parentId == root.id) && !$0.id.hasPrefix("local_") && $0.deletedAt == nil &&
+                PulseRemediationLogic.isAlive($0.expiresAt)
+        }?.id
+    }
+
+    private func updateReadBoundary() {
+        guard let readOwner else { return }
+        session.setVisibleReadBoundary(owner: readOwner, messageId: readCandidate)
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -71,6 +90,10 @@ struct ThreadView: View {
                             .padding(.vertical, 10)
                         }
                         .coordinateSpace(name: "thread-viewport")
+                        .onPreferenceChange(PulseRoomViewportKey.self) { layout in
+                            visibleReadIDs = PulseReadViewport.visibleIDs(layout.messages, height: viewport.size.height)
+                            updateReadBoundary()
+                        }
                         .defaultScrollAnchor(.bottom)
                         .onPreferenceChange(ThreadTailPositionKey.self) { tailY in
                             nearTail = tailY >= 0 && tailY <= viewport.size.height + 80
@@ -121,13 +144,18 @@ struct ThreadView: View {
         .fullScreenCover(item: $lightbox) { target in
             MediaLightboxView(url: target.url, caption: target.caption, expiresAt: target.expiresAt, singleUse: target.singleUse)
         }
+        .onAppear {
+            readOwner = session.beginReadSurface(conversationId: conversation.id, rootId: root.id)
+            updateReadBoundary()
+        }
+        .onChange(of: readCandidate, initial: true) { _, _ in updateReadBoundary() }
         .task(id: ThreadLoadKey(connected: session.connected, target: initialJumpMessageId)) { await load() }
         .onChange(of: initialJumpMessageId) { _, _ in
             initialJumpResolved = false
             highlightedReplyId = nil
         }
         .onReceive(session.signals) { handle(signal: $0) }
-        .onReceive(session.messageVisibilityClock) { now in pruneExpired(now: now) }
+        .onReceive(session.messageVisibilityClock) { now in pruneExpired(now: now); updateReadBoundary() }
         .onReceive(session.outboxEvents) { event in
             switch event {
             case .delivered(let message, let room, let clientId):
@@ -161,6 +189,9 @@ struct ThreadView: View {
             }
         } message: { Text("This removes the saved outgoing reply from this device. It does not erase your current draft.") }
         .onDisappear {
+            if let readOwner { session.endReadSurface(readOwner) }
+            readOwner = nil
+            visibleReadIDs = []
             viewOnceTask?.cancel()
             loadGeneration = UUID()
             recoveryObservation?.cancel()
@@ -214,6 +245,10 @@ struct ThreadView: View {
                     memberNames: conversation.members.map(\.name),
                 )
                 .padding(.bottom, 4)
+                .background(GeometryReader { geometry in
+                    Color.clear.preference(key: PulseRoomViewportKey.self,
+                        value: PulseRoomViewport(messages: [parentMessage.id: geometry.frame(in: .named("thread-viewport"))]))
+                })
             }
             if !rootUnavailable {
                 if showingCachedHistory && hasEarlierCachedReplies {
@@ -245,6 +280,10 @@ struct ThreadView: View {
                         memberNames: conversation.members.map(\.name),
                     )
                     .id(reply.id)
+                    .background(GeometryReader { geometry in
+                        Color.clear.preference(key: PulseRoomViewportKey.self,
+                            value: PulseRoomViewport(messages: [reply.id: geometry.frame(in: .named("thread-viewport"))]))
+                    })
                     .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(
                         highlightedReplyId == reply.id ? PulseTheme.color(named: "orange") : Color.clear, lineWidth: 2))
                 }

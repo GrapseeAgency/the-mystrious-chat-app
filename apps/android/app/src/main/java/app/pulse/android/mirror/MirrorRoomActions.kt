@@ -428,6 +428,7 @@ internal fun MirrorThreadSheet(
     viewerName: String,
     memberNames: List<String>,
     jumpMessageId: String? = null,
+    readingEnabled: Boolean = false,
     onDismiss: () -> Unit,
 ) {
     val threadRepository = remember(repository, viewerId) { repository.boundToCurrentAccount() }
@@ -526,6 +527,16 @@ internal fun MirrorThreadSheet(
     val available = !denied && threadRootAvailable(currentRoot, root.conversationId, root.id, now)
     val replies = if (available) cachedReplies.filter { it.conversationId == root.conversationId &&
         it.threadRootId == root.id && (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) } else emptyList()
+    app.pulse.feature.chat.ThreadReadReceipts(
+        ownerKey = threadRepository,
+        enabled = readingEnabled && available && viewOnceGrant == null && discardConfirm == null,
+        connected = connected,
+        root = currentRoot,
+        replies = replies,
+        listState = listState,
+        onRead = { threadRepository.markReadThrough(root.conversationId, it) },
+        onActive = { app.pulse.android.notify.IncomingAttention.beginReading(root.conversationId) },
+    )
     LaunchedEffect(jumpMessageId, replies, available, loading, fetchedReplies) {
         if (jumpResolved || jumpMessageId == null || !available) return@LaunchedEffect
         val index = threadJumpIndex(replies, root, jumpMessageId, System.currentTimeMillis())
