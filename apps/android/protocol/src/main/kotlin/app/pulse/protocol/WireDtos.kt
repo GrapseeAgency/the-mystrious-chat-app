@@ -102,6 +102,18 @@ data class ThreadSliceDto(
     val nextCursor: String? = null,
 )
 
+/** Identity-bearing read receipt, not an arbitrary HTTP success. */
+@Serializable
+data class ReadReceiptDto(
+    val ok: Boolean,
+    val readReceiptVersion: Int,
+    val conversationId: String,
+    val userId: String,
+    val mode: String,
+    val lastReadAt: String,
+    val messageId: String? = null,
+)
+
 /** GET /api/conversations/{id}/pinned?userId= → { messages } (pinnedAt ascending). */
 @Serializable
 data class PinnedPageDto(

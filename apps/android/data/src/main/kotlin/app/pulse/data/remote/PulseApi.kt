@@ -416,6 +416,22 @@ class PulseApi(
             row
         }
 
+    /** Visible attention and manual mark-all are separate, versioned intents. */
+    suspend fun markRead(conversationId: String, userId: String, messageId: String? = null,
+        minimumReadAt: String? = null): PulseResult<Unit> =
+        post("/api/conversations/$conversationId/read-state", jsonOf("userId" to userId,
+            "mode" to if (messageId == null) "all" else "visible", "messageId" to messageId)) { raw ->
+            val receipt = PulseJson.decodeFromString(app.pulse.protocol.ReadReceiptDto.serializer(), raw)
+            require(receipt.ok && receipt.readReceiptVersion == 1 && receipt.conversationId == conversationId &&
+                receipt.userId == userId && receipt.messageId == messageId &&
+                receipt.mode == if (messageId == null) "all" else "visible") { "Read state was not confirmed." }
+            val acknowledged = java.time.Instant.parse(receipt.lastReadAt)
+            require(minimumReadAt == null || !acknowledged.isBefore(java.time.Instant.parse(minimumReadAt))) {
+                "The displayed read boundary was not confirmed."
+            }
+            Unit
+        }
+
     // reactions
     /** Explicit state: no legacy toggle fallback after an uncertain reply. */
     suspend fun react(messageId: String, userId: String, emoji: String, present: Boolean): PulseResult<ChatMessageDto> =

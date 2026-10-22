@@ -463,7 +463,7 @@ fun ChatsScreen(
                         onClearRecents = { viewModel.clearSpotlightRecents() },
                         onPress = { conv ->
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
-                            openConversation(viewModel, conv, onOpenRoom)
+                            openConversation(conv, onOpenRoom)
                         },
                         onOpenHit = { hit ->
                             if (query.isNotBlank()) viewModel.pushSpotlightRecent(query.trim())
@@ -518,7 +518,7 @@ ConversationRowItem(
                                         selected = conv.id in selectedIds,
                                         entranceIndex = null,
                                         inArchived = false,
-                                        onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                        onPress = { openConversation(conv, onOpenRoom) },
                                         onLongPress = {
                                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                             selectMode = true
@@ -545,7 +545,7 @@ ConversationRowItem(
                                     selected = conv.id in selectedIds,
                                     entranceIndex = null,
                                     inArchived = false,
-                                    onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                    onPress = { openConversation(conv, onOpenRoom) },
                                     onLongPress = {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         selectMode = true
@@ -670,9 +670,8 @@ ConversationRowItem(
     }
 }
 
-/** Freeze "where was I" semantics live in the room; the list just marks read + opens. */
-private fun openConversation(viewModel: ChatsViewModel, conv: Conversation, onOpenRoom: (String, String?) -> Unit) {
-    viewModel.markRead(conv.id)
+/** Navigation is not attention. Only the room's visible viewport may acknowledge Seen. */
+private fun openConversation(conv: Conversation, onOpenRoom: (String, String?) -> Unit) {
     onOpenRoom(conv.id, null)
 }
 
@@ -801,7 +800,7 @@ ConversationRowItem(
                                     selected = false,
                                     entranceIndex = null,
                                     inArchived = true,
-                                    onPress = { openConversation(viewModel, conv, onOpenRoom) },
+                                    onPress = { openConversation(conv, onOpenRoom) },
                                     onLongPress = {
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         actionTarget = conv

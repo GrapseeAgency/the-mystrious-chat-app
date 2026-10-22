@@ -303,10 +303,26 @@ public struct PulseAPIClient: Sendable {
         return try WireMessageEnvelope.extractSendResult(from: data)
     }
 
-    public func markRead(conversationId: String, messageId: String? = nil) async throws {
-        var body = ["userId": userId]
+    public func markRead(conversationId: String, messageId: String? = nil, minimumReadAt: String? = nil) async throws {
+        struct Receipt: Decodable {
+            let ok: Bool; let readReceiptVersion: Int; let conversationId: String; let userId: String
+            let mode: String; let messageId: String?; let lastReadAt: String
+        }
+        let mode = messageId == nil ? "all" : "visible"
+        var body = ["userId": userId, "mode": mode]
         if let messageId { body["messageId"] = messageId }
-        try await postEmpty("/api/conversations/\(conversationId)/read", body: body)
+        let data = try await postRaw("/api/conversations/\(conversationId)/read-state", body: body)
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.readReceiptVersion == 1, receipt.conversationId == conversationId,
+              receipt.userId == userId, receipt.mode == mode, receipt.messageId == messageId,
+              let acknowledged = PulseFormat.date(receipt.lastReadAt) else {
+            throw Failure(kind: .validation, message: "Read state was not confirmed.")
+        }
+        if let minimumReadAt {
+            guard let minimum = PulseFormat.date(minimumReadAt), acknowledged >= minimum else {
+                throw Failure(kind: .validation, message: "The displayed read boundary was not confirmed.")
+            }
+        }
     }
 
     /// Explicit desired state makes retrying after a lost response repeat-safe.

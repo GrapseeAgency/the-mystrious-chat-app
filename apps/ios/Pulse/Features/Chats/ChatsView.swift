@@ -3374,10 +3374,11 @@ final class ChatsViewModel: ObservableObject {
         var failed = 0
         for conv in convs {
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-            // POST /read { userId } - per-chat failures counted honestly.
+            // Explicit mark-all; acceptance must not erase arrivals during the request.
             if (try? await client.markRead(conversationId: conv.id)) != nil {
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                updateSummaries({ $0.withUnreadCount(0).withManualUnread(false) }, ids: [conv.id])
+                selection.remove(conv.id)
+                session.noteInboxChanged() // reload canonical counts; never zero a newer arrival locally
                 read += 1
             } else {
                 failed += 1

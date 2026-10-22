@@ -2504,27 +2504,38 @@ class PulseRepositoryImpl constructor(
         acknowledgeRead(conversationId, messageId)
 
     private suspend fun acknowledgeRead(conversationId: String, messageId: String?): Result<Unit> {
-        if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
-            mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
-            return Result.success(Unit)
-        }
-        val owner = viewerId ?: return Result.failure(IllegalStateException("The account is no longer active"))
-        val epoch = attachmentSession
-        conversationSnapshots.invalidate(conversationId)
-        val result = try {
-            when (val response = api.postAction("/api/conversations/$conversationId/read",
-                PulseApi.jsonOf("userId" to owner, "messageId" to messageId))) {
-                is PulseResult.Success -> Result.success(Unit)
-                is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+        return try {
+            if (app.pulse.domain.model.PulseDemo.isDemoConversation(conversationId)) {
+                mutateConversation(conversationId) { it.copy(unreadCount = 0, myManualUnread = false) }
+                return Result.success(Unit)
             }
-        } finally {
-            if (viewerId == owner && attachmentSession == epoch) conversationSnapshots.invalidate(conversationId)
+            val owner = viewerId ?: return Result.failure(IllegalStateException("The account is no longer active"))
+            val epoch = attachmentSession
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val anchor = if (messageId == null) null else messageDao.byId(messageId)?.toDomain()
+            requireConversationOwner(owner, epoch)
+            if (messageId != null && (anchor == null || anchor.conversationId != conversationId || anchor.isDeleted ||
+                    anchor.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) ||
+                    anchor.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+                return Result.failure(PulseApiException("VALIDATION", "The displayed read boundary is no longer available.", 400))
+            }
+            conversationSnapshots.invalidate(conversationId)
+            val result = try {
+                when (val response = api.markRead(conversationId, owner, messageId, anchor?.createdAt)) {
+                    is PulseResult.Success -> Result.success(Unit)
+                    is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+                }
+            } finally {
+                if (viewerId == owner && attachmentSession == epoch) conversationSnapshots.invalidate(conversationId)
+            }
+            requireConversationOwner(owner, epoch)
+            // Do not zero newer arrivals or roll an entire stale conversation back
+            // over messages/pins received while the read request was in flight.
+            if (result.isSuccess && viewerId == owner) scheduleConversationsRefresh()
+            result
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            Result.failure(error)
         }
-        requireConversationOwner(owner, epoch)
-        // Do not zero newer arrivals or roll an entire stale conversation back
-        // over messages/pins received while the read request was in flight.
-        if (result.isSuccess && viewerId == owner) scheduleConversationsRefresh()
-        return result
     }
 
     override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {

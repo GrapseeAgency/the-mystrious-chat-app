@@ -335,7 +335,14 @@ class ChatsViewModel @Inject constructor(
     }
 
     fun markRead(conversationId: String) {
-        viewModelScope.launch { repo.markRead(conversationId) }
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
+        viewModelScope.launch {
+            if (repo.attachmentSessionKey() != epoch) return@launch
+            owned.markRead(conversationId).onFailure {
+                if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Could not mark this chat read", isError = true)
+            }
+        }
     }
 
     // batch multi-select (web copies)
@@ -362,12 +369,16 @@ class ChatsViewModel @Inject constructor(
 
     /** Returns the ids that FAILED so the screen keeps the mode on partial failure. */
     fun batchMarkRead(ids: List<String>, onDone: (failed: List<String>) -> Unit) {
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
         viewModelScope.launch {
             val failed = mutableListOf<String>()
-            for (id in ids) {
-                if (repo.markRead(id).isFailure) failed += id
+            for (id in ids.distinct()) {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                if (owned.markRead(id).isFailure) failed += id
             }
-            val read = ids.size - failed.size
+            if (repo.attachmentSessionKey() != epoch) return@launch
+            val read = ids.distinct().size - failed.size
             if (read > 0) notify("$read ${if (read == 1) "chat" else "chats"} marked as read")
             if (failed.isNotEmpty()) {
                 notify("${failed.size} ${if (failed.size == 1) "chat" else "chats"} could not be marked read - try again", isError = true)

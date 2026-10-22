@@ -3403,3 +3403,37 @@ authorized snapshots, not one database snapshot across the whole load; same-time
 backfills and edits still require later synchronization. The independent 14-page main
 river jump limitation and durable offline read receipts are not fixed by this tranche.
 No deployment, merge or whole-app clearance.
+
+### 2026-10-22 — navigation is not Seen, identity-bearing read acceptance
+
+Found an eager mark-all still wired in primary Android chat-list navigation: tapping
+any ordinary/archive/search conversation called `markRead` before a room or message was
+visible. Removed it. Existing room/thread viewport dwell now owns automatic receipts;
+manual mark-all remains a separate deliberate action.
+
+Both native clients previously treated any successful empty HTTP response as confirmation
+of read state. Added `/conversations/{id}/read-state` with mandatory explicit `visible`
+(with anchor) or `all` intent and authenticated ownership. The response binds version,
+reader, conversation, mode, message boundary and committed timestamp. Kotlin/Swift require
+that exact receipt and validate that the watermark reaches the visible cached message.
+Missing or malformed receipts cannot retire the visibility retry gate. No fallback to a
+legacy endpoint that might ignore an anchor and mark everything read. Legacy web route
+remains available separately.
+
+Android rechecks the cached anchor/owner, preserves cancellation and returns storage
+failures instead of crashing manual actions. Manual/batch actions capture their account
+before scheduling; batch progress only counts distinct IDs. Swift batch mark-all no
+longer writes unread=0 over arrivals received during the request: canonical inbox refresh
+owns counts, and accepted selections are removed so retry only targets failures.
+
+Verification: 198/198 server contracts pass, including route intent/receipt/privacy/refusal
+coverage and a navigation regression guard; existing real SQLite watermark tests remain
+passing. Scoped strict TypeScript and ten native syntax parses pass. Added Kotlin/Swift
+mocked acknowledgement tests for identity, mode, dates, missing/false bodies and old-route
+refusal. Native tests/device verification are separate; preceding 6f1d88a iOS archive
+passed when checked. No schema change; new route rollout required before updated clients.
+
+This does not add durable offline read replay or per-message/per-thread unread accounting.
+The server still uses a cumulative conversation timestamp, so skipped older messages,
+same-timestamp boundaries, thread-versus-river gaps and manual-unread ordering remain open.
+No production deployment, merge or full-app clearance. Autumn theme unchanged.
