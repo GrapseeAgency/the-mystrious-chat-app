@@ -49,7 +49,7 @@ async function loadContext(id: string, userId: string, body: Record<string, unkn
     return { error: NextResponse.json({ error: 'That user is not a member of this group.' }, { status: 404 }) }
   }
 
-  return { conv, target }
+  return { conv, target, requesterId }
 }
 
 /**
@@ -116,7 +116,7 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     recipientIds: recipients,
   })
 
-  return NextResponse.json({ conversation: await buildConversationDetail(updated, userId) })
+  return NextResponse.json({ conversation: await buildConversationDetail(updated, ctx.requesterId!) })
 }
 
 /**

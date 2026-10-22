@@ -2766,3 +2766,13 @@ Full server suite 132/132 passes (/home/user/channel-recovery-server.log); stric
 TypeScript and three modified Swift syntax checks pass. Native UI/device execution of this
 tranche remains unverified. Channel leave/admin concurrency and directory message-lifetime
 semantics are still under review. Autumn styling unchanged.
+
+
+## 2026-10-22 — member-role response used the wrong viewer
+
+The targeted member promote/demote route serialized its successful conversation response
+as the target member instead of the requesting admin. buildConversationDetail includes
+viewer-private fields (including myDraft), so this was a real cross-member projection error,
+not merely a label issue. The route now retains the validated requester ID and uses it for
+the response. Concurrent group/channel role/leave checks remain outside a single snapshot
+in several handlers; those are the next governance paths being repaired.
