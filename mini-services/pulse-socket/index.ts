@@ -1886,14 +1886,26 @@ const DISPATCH_INTERVAL_MS = 20_000
 // Fail-closed (audit finding S5): no default secret; empty key never sent.
 const DISPATCH_KEY = process.env.CRON_SECRET ?? ''
 
+let dispatchCursor: string | null = null
+let dispatchBusy = false
 async function tickDispatch(): Promise<void> {
+  if (dispatchBusy || !DISPATCH_KEY) return
+  dispatchBusy = true
   try {
-    const res = await fetch(`${NEXT_APP_URL}/api/maintenance/dispatch`, {
+    const suffix = dispatchCursor ? `?cursor=${encodeURIComponent(dispatchCursor)}` : ''
+    const res = await fetch(`${NEXT_APP_URL}/api/maintenance/dispatch${suffix}`, {
       method: 'POST',
       headers: DISPATCH_KEY ? { 'x-pulse-key': DISPATCH_KEY } : {},
       signal: AbortSignal.timeout(8000),
     })
-    const body = (await res.json().catch(() => null)) as { dispatched?: number } | null
+    if (!res.ok) {
+      if (res.status === 400) dispatchCursor = null
+      return
+    }
+    const body = (await res.json().catch(() => null)) as { dispatched?: number; nextCursor?: unknown } | null
+    if (body && typeof body.dispatched === 'number') {
+      dispatchCursor = typeof body.nextCursor === 'string' && body.nextCursor.length <= 1024 && body.nextCursor ? body.nextCursor : null
+    }
     if (body && typeof body.dispatched === 'number' && body.dispatched > 0) {
       console.log(`[cron] dispatched ${body.dispatched} scheduled message(s)`)
     }
@@ -1902,7 +1914,7 @@ async function tickDispatch(): Promise<void> {
     if (process.env.PULSE_DISPATCH_DEBUG === '1') {
       console.log('[cron] dispatch probe failed:', error instanceof Error ? error.message : error)
     }
-  }
+  } finally { dispatchBusy = false }
 }
 setInterval(() => void tickDispatch(), DISPATCH_INTERVAL_MS)
 

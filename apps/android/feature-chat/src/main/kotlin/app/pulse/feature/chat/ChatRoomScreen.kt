@@ -235,6 +235,8 @@ fun ChatRoomScreen(
     // + composer chip); item 4 - the incognito arming; item 6 - task busy.
     val scheduledItems by viewModel.scheduled.collectAsStateWithLifecycle()
     val scheduledLoading by viewModel.scheduledLoading.collectAsStateWithLifecycle()
+    val scheduledBusy by viewModel.scheduledBusy.collectAsStateWithLifecycle()
+    val scheduledError by viewModel.scheduledError.collectAsStateWithLifecycle()
     // R6 - BE7 - upcoming-reminder count for the room-header badge.
     val remindersUpcoming by viewModel.remindersUpcoming.collectAsStateWithLifecycle()
     val anonNext by viewModel.anonNext.collectAsStateWithLifecycle()
@@ -647,6 +649,12 @@ fun ChatRoomScreen(
      * the AI recap request.
      */
     fun runPaletteCommand(command: PulseSlash.SlashCommand) {
+        if (command.cmd == "/schedule") {
+            val text = draft.trim().removePrefix("/schedule").trim()
+            if (text.isEmpty()) viewModel.notify("Type the message first, then schedule it")
+            else { scheduleDraft = text; scheduleOpen = true }
+            return
+        }
         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         draft = ""
         viewModel.onDraftChanged("")
@@ -1950,12 +1958,14 @@ fun ChatRoomScreen(
     if (scheduleOpen) {
         ScheduleSheet(
             draft = scheduleDraft.orEmpty(),
-            busy = false,
+            busy = scheduledBusy,
             onDismiss = { scheduleOpen = false },
             onSchedule = { iso ->
-                scheduleOpen = false
-                viewModel.scheduleSend(scheduleDraft.orEmpty(), iso)
-                scheduleDraft = null
+                val submitted = scheduleDraft.orEmpty()
+                viewModel.scheduleSend(submitted, iso) {
+                    if (draft.trim().removePrefix("/schedule").trim() == submitted.trim()) { draft = ""; viewModel.onDraftChanged("") }
+                    scheduleOpen = false; scheduleDraft = null
+                }
             },
         )
     }
@@ -1965,6 +1975,9 @@ fun ChatRoomScreen(
         ScheduledSendsSheet(
             items = scheduledItems,
             loading = scheduledLoading,
+            error = scheduledError,
+            busy = scheduledBusy,
+            onRetry = viewModel::loadScheduled,
             onCancel = { scheduledId -> viewModel.cancelScheduled(scheduledId) },
             onDismiss = { scheduledOpen = false },
         )

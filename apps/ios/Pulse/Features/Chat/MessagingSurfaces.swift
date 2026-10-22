@@ -36,10 +36,7 @@ struct ScheduleSheet: View {
         case .preset:
             let preset = Self.presets[presetIndex]
             if preset.seconds > 0 { return Date().addingTimeInterval(preset.seconds) }
-            var components = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-            components.hour = 9
-            components.minute = 0
-            return Calendar.current.date(from: components).flatMap { $0 > Date() ? $0 : Calendar.current.date(byAdding: .day, value: 1, to: $0) }
+            return PulseScheduledChip.tomorrowMorning()
         case .custom:
             var components = Calendar.current.dateComponents([.year, .month, .day], from: customDate)
             let time = Calendar.current.dateComponents([.hour, .minute], from: customTime)
@@ -137,10 +134,14 @@ struct ScheduledManagerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var items: [WireScheduledItem] = []
     @State private var loading = true
+    @State private var busy = false
+    @State private var loadError: String?
+    @State private var request = UUID()
 
     var body: some View {
         NavigationStack {
             List {
+                if let loadError { Button("\(loadError) Retry") { Task { await load() } } }
                 if loading && items.isEmpty {
                     ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
                 }
@@ -174,9 +175,10 @@ struct ScheduledManagerSheet: View {
                     }
                 }
             }
+            .disabled(busy)
             .listStyle(.insetGrouped)
             .overlay {
-                if !loading && items.isEmpty {
+                if !loading && items.isEmpty && loadError == nil {
                     ContentUnavailableCompat(title: "Nothing scheduled", systemImage: "hourglass", note: "Arm a delayed send from the composer banner.")
                 }
             }
@@ -188,14 +190,25 @@ struct ScheduledManagerSheet: View {
                 }
             }
             .refreshable { await load() }
-            .task { await load() }
+            .task(id: session.sessionGeneration) { items = []; busy = false; await load() }
+            .onDisappear { request = UUID() }
         }
         .presentationDetents([.medium, .large])
     }
 
     private func load() async {
-        items = (try? await session.api.scheduledMessages(conversationId: conversationId)) ?? []
-        loading = false
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+        request = ticket; loading = true
+        do {
+            let rows = try await api.scheduledMessages(conversationId: conversationId)
+            guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
+            items = rows; loading = false; loadError = nil
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
+            if let failure = error as? PulseAPIClient.Failure, [.auth, .forbidden, .notFound].contains(failure.kind) { items = [] }
+            loading = false; loadError = RoomViewModel.describe(error)
+        }
     }
 
     private func refusalLabel(_ reason: String?) -> String {
@@ -209,12 +222,18 @@ struct ScheduledManagerSheet: View {
     }
 
     private func cancel(_ item: WireScheduledItem) {
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+        request = ticket; busy = true; loading = false
         Task {
+            defer { if session.sessionGeneration == epoch && request == ticket { busy = false } }
             do {
-                try await session.api.cancelScheduled(item.id)
+                try await api.cancelScheduled(item.id)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 withAnimation { items.removeAll { $0.id == item.id } }
                 PulseHaptics.tap()
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }

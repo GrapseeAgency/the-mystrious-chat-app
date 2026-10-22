@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { scheduledDeliveryDecision } from '@/lib/scheduled-delivery'
+import { scheduledDispatchPage, scheduledErrorResponse } from '@/lib/scheduled-operation'
 import { mapMessage, memberIdsOf, notifySocket, MESSAGE_FULL_INCLUDE } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
@@ -29,15 +30,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
   }
 
-  const due = await db.scheduledMessage.findMany({
-    where: { sentAt: null, cancelledAt: null, scheduledAt: { lte: new Date() } },
-    orderBy: { scheduledAt: 'asc' },
-    take: 25,
-    select: { id: true },
-  })
-  if (due.length === 0) {
-    return NextResponse.json({ dispatched: 0 })
-  }
+  let page: Awaited<ReturnType<typeof scheduledDispatchPage>>
+  try { page = await scheduledDispatchPage(db, new URL(req.url).searchParams.get('cursor')) }
+  catch (error) { return scheduledErrorResponse(error) }
+  const due = page.rows
 
   let dispatched = 0
   for (const { id } of due) {
@@ -70,12 +66,12 @@ export async function POST(req: Request) {
           data: { archivedAt: null },
         })
         return created
-      })
+      }, { isolationLevel: 'Serializable' })
       if (!result) continue
 
-      const recipients = (await memberIdsOf(result.conversationId)).filter(
-        (memberId) => memberId !== result.senderId,
-      )
+      // No live send response reaches the sender when the scheduler fires.
+      // Include the sender's devices or their own message stays invisible until refresh.
+      const recipients = await memberIdsOf(result.conversationId)
       const mapped = mapMessage(result)
       await notifySocket('message:new', recipients, {
         type: 'message:new',
@@ -89,5 +85,5 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ dispatched })
+  return NextResponse.json({ dispatched, nextCursor: page.nextCursor })
 }

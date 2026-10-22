@@ -3796,7 +3796,9 @@ final class RoomViewModel: ObservableObject {
     /// replaces the bare count.
     @Published private(set) var scheduledItems: [WireScheduledItem] = []
     /// F-MS-18 - pending-row count for the chip (R5-A: derived from the list).
-    var scheduledCount: Int { scheduledItems.count }
+    var scheduledCount: Int { scheduledItems.filter { $0.cancelledAt == nil }.count }
+    private var scheduledRevision = UUID()
+    private var scheduling = false
     /// R5-A Item 6 - web scheduledChip parity: "{next} · {count} pending -
     /// tap to manage" where next = the soonest non-cancelled row's stamp
     /// (web formatListStamp(items[0]); the API sorts pending soonest-first).
@@ -3804,7 +3806,7 @@ final class RoomViewModel: ObservableObject {
         guard !scheduledItems.isEmpty else { return nil }
         let next = PulseFormat.listStamp(PulseScheduledChip.nextIso(in: scheduledItems))
         if next.isEmpty {
-            return "\(scheduledCount) pending - tap to manage"
+            return scheduledCount == 0 ? "Scheduled messages need attention - tap to manage" : "\(scheduledCount) pending - tap to manage"
         }
         return "\(next) · \(scheduledCount) pending - tap to manage"
     }
@@ -3933,9 +3935,20 @@ final class RoomViewModel: ObservableObject {
 
     /// F-MS-18 - scheduled-row refresh (open + after arming/cancelling).
     func loadScheduled(session: PulseSession) {
+        guard !scheduling else { return }
+        let epoch = session.sessionGeneration, client = session.api, ticket = UUID()
+        scheduledRevision = ticket
         Task { [weak self] in
             guard let self else { return }
-            self.scheduledItems = (try? await session.api.scheduledMessages(conversationId: conversationId)) ?? []
+            do {
+                let rows = try await client.scheduledMessages(conversationId: conversationId)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, self.scheduledRevision == ticket else { return }
+                self.scheduledItems = rows
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, self.scheduledRevision == ticket else { return }
+                if let failure = error as? PulseAPIClient.Failure, [.auth, .forbidden, .notFound].contains(failure.kind) { self.scheduledItems = [] }
+                // A failed refresh is not an empty queue; the manager provides retry.
+            }
         }
     }
 
@@ -5010,6 +5023,7 @@ final class RoomViewModel: ObservableObject {
     // ── REM-B F-MS-18 - schedule the composer draft ────────
 
     func scheduleDraft(for date: Date, session: PulseSession) {
+        guard !scheduling else { session.toasts.show("Scheduling is still in progress"); return }
         let body = draft.trimmingCharacters(in: .whitespaces)
         guard !body.isEmpty else {
             session.toasts.show("Type the message first - scheduling sends the draft")
@@ -5019,22 +5033,25 @@ final class RoomViewModel: ObservableObject {
         let revision = draftEditRevision
         let client = session.api
         let epoch = session.sessionGeneration
+        scheduling = true; scheduledRevision = UUID()
         Task { [weak self] in
             guard let self else { return }
+            defer { if session.sessionGeneration == epoch { self.scheduling = false } }
             do {
                 // R5-A Item 6 - the returned row joins the cached list (no
                 // refetch) so the chip count + next-dispatch stamp update.
                 let item = try await client.scheduleMessage(conversationId: conversationId, content: body, scheduledAtIso: iso)
-                guard session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 if self.draftEditRevision == revision && self.draftJournal?.isCurrentOwner == true {
                     self.draft = ""
                     self.scheduleDraftSave(session: session)
                 }
+                self.scheduledItems.removeAll { $0.id == item.id }
                 self.scheduledItems.append(item)
                 PulseHaptics.success()
                 session.toasts.show("Scheduled - \(PulseFormat.dayLabel(iso)) \(PulseFormat.clockTime(iso))")
             } catch {
-                guard session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 session.toasts.show(Self.describe(error))
             }
         }

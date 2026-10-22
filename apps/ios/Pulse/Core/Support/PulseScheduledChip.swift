@@ -7,6 +7,13 @@ import Foundation
 // verdict and stays honest when the locally-cached list order drifts
 // (e.g. after an in-place append from scheduleDraft).
 enum PulseScheduledChip {
+    /// "Tomorrow" means the next local calendar date, including before 09:00
+    /// and across daylight-saving boundaries; it is not "the next 09:00".
+    static func tomorrowMorning(now: Date = Date(), calendar: Calendar = .current) -> Date? {
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) else { return nil }
+        return calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow)
+    }
+
     /// The scheduledAt ISO of the soonest non-cancelled row, or nil when
     /// every row is refused/cancelled (or nothing is schedulable).
     static func nextIso(in items: [WireScheduledItem]) -> String? {

@@ -470,9 +470,16 @@ internal fun MirrorRoom(
     val outboxRows by repository.observeOutbox().collectAsStateWithLifecycle(initialValue = emptyList())
     val pendingOutbox = outboxRows.count { it.conversationId == groupId && it.failureReason == null }
     // R73 - scheduled sends chip above the composer (web scheduled chip)
-    var scheduledCount by remember { mutableStateOf(0) }
-    LaunchedEffect(groupId) {
-        scheduledCount = runCatching { repository.scheduledMessages(groupId).getOrDefault(emptyList()).size }.getOrDefault(0)
+    var scheduledCount by remember(repository, viewerId, groupId) { mutableStateOf(0) }
+    var scheduledRefresh by remember { mutableStateOf(0) }
+    LaunchedEffect(repository, viewerId, groupId, scheduledRefresh) {
+        try {
+            val page = repository.scheduledMessages(groupId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            scheduledCount = page.count { it.cancelledAtIso == null }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+            if (failure is app.pulse.domain.sync.PrivateScheduleUnavailableException) scheduledCount = 0
+        }
     }
     // R73 - composer draft persistence (web pulse-drafts): restore once,
     // debounced 600ms save, clear on send (web saveDraft cadence).
@@ -2633,7 +2640,7 @@ internal fun MirrorRoom(
         MirrorRemindersSheet(repository, viewerId, groupId) { remindersOpen = false }
     }
     if (scheduledOpen) {
-        MirrorScheduledSheet(repository, groupId) { scheduledOpen = false }
+        MirrorScheduledSheet(repository, groupId) { scheduledOpen = false; scheduledRefresh++ }
     }
     // R72 - DM safety number sheet (verify/unverify on the real contract)
     if (safetyOpen && dmPeerId != null) {
@@ -2646,7 +2653,7 @@ internal fun MirrorRoom(
             repository = repository,
             conversationId = groupId,
             initialDraft = draftValue.text,
-            onConsumedDraft = { if (roomActionsLive.get()) composerDraft.clearIfUnchanged(scheduledRevision) },
+            onConsumedDraft = { if (roomActionsLive.get()) { composerDraft.clearIfUnchanged(scheduledRevision); scheduledRefresh++ } },
             onDismiss = { scheduleOpen = false },
         )
     }
@@ -4599,14 +4606,25 @@ private fun MirrorScheduleComposerSheet(
     onConsumedDraft: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    androidx.compose.runtime.key(repository, repository.attachmentSessionKey(), conversationId) {
+        MirrorOwnedScheduleComposerSheet(repository, conversationId, initialDraft, onConsumedDraft, onDismiss)
+    }
+}
+
+@Composable
+private fun MirrorOwnedScheduleComposerSheet(
+    repository: PulseRepository, conversationId: String, initialDraft: String,
+    onConsumedDraft: () -> Unit, onDismiss: () -> Unit,
+) {
     var body by remember { mutableStateOf(initialDraft) }
     var customWhen by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var done by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val epoch = repository.attachmentSessionKey()
 
     fun parseWhen(iso: String): java.time.Instant? = runCatching {
-        java.time.LocalDateTime.parse(iso).atZone(java.time.ZoneId.systemDefault()).toInstant()
+        java.time.LocalDateTime.parse(iso.trim().replace(' ', 'T')).atZone(java.time.ZoneId.systemDefault()).toInstant()
     }.getOrNull()
 
     fun scheduleAt(whenIso: String?) {
@@ -4625,26 +4643,23 @@ private fun MirrorScheduleComposerSheet(
             error = "Use the YYYY-MM-DD HH:MM format"
             return
         }
-        if (!instant.isAfter(java.time.Instant.now())) {
-            error = "Pick a time in the future"
+        val now = java.time.Instant.now()
+        if (instant.isBefore(now.plusSeconds(30)) || instant.isAfter(now.plusSeconds(30L * 86400))) {
+            error = "Choose a time between 30 seconds and 30 days from now"
             return
         }
         error = null
         busy = true
-        CoroutineScope(Dispatchers.IO).launch {
-            val ok = runCatching {
+        scope.launch {
+            try {
+                if (epoch == null || repository.attachmentSessionKey() != epoch) return@launch
                 repository.scheduleMessage(conversationId, text, instant.toString()).getOrThrow()
-            }.isSuccess
-            withContext(Dispatchers.Main) {
-                busy = false
-                if (ok) {
-                    done = true
-                    onConsumedDraft()
-                    onDismiss()
-                } else {
-                    error = "Could not schedule - try again"
-                }
-            }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() != epoch) return@launch
+                onConsumedDraft(); onDismiss()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                if (repository.attachmentSessionKey() == epoch) error = failure.message ?: "Could not schedule. Your draft is kept."
+            } finally { if (repository.attachmentSessionKey() == epoch) busy = false }
         }
     }
 
@@ -4652,7 +4667,7 @@ private fun MirrorScheduleComposerSheet(
         MirrorSheetScroll {
             BasicTextField(
                 value = body,
-                onValueChange = { body = it },
+                onValueChange = { if (!busy) body = it },
                 textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp, lineHeight = 18.sp),
                 cursorBrush = SolidColor(MirrorArt.Accent2),
                 modifier = Modifier
@@ -4681,7 +4696,7 @@ private fun MirrorScheduleComposerSheet(
                             .clip(RoundedCornerShape(50))
                             .background(MirrorArt.White7)
                             .border(1.dp, MirrorArt.Hairline, RoundedCornerShape(50))
-                            .clickable { scheduleAt(preset.second.toString()) }
+                            .clickable(enabled = !busy) { scheduleAt(preset.second.toString()) }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                     )
                 }
@@ -4693,7 +4708,7 @@ private fun MirrorScheduleComposerSheet(
             )
             BasicTextField(
                 value = customWhen,
-                onValueChange = { customWhen = it },
+                onValueChange = { if (!busy) customWhen = it },
                 singleLine = true,
                 textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
                 cursorBrush = SolidColor(MirrorArt.Accent2),

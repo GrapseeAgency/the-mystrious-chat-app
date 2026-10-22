@@ -2220,10 +2220,26 @@ export function ChatRoom({
   const scheduledQuery = useQuery({
     queryKey: ['scheduled', conversationId, me.id],
     queryFn: async (): Promise<ScheduledItem[]> => {
-      const res = await apiJson<{ items: ScheduledItem[] }>(
-        `/api/conversations/${encodeURIComponent(conversationId)}/scheduled?userId=${encodeURIComponent(me.id)}`,
-      )
-      return res.items
+      const items: ScheduledItem[] = [], ids = new Set<string>(), cursors = new Set<string>()
+      let cursor: string | null = null
+      let size = 0
+      for (let page = 0; page < 100; page++) {
+        const res: { scheduleVersion: number; userId: string; conversationId: string; items: ScheduledItem[]; hasMore: boolean; nextCursor: string | null } = await apiJson(
+          `/api/conversations/${encodeURIComponent(conversationId)}/scheduled?userId=${encodeURIComponent(me.id)}` + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''),
+        )
+        if (res.scheduleVersion !== 1 || res.userId !== me.id || res.conversationId !== conversationId || !Array.isArray(res.items) ||
+            res.items.length > 50 || typeof res.hasMore !== 'boolean') throw new Error('Scheduled list was not confirmed.')
+        for (const item of res.items) {
+          if (!item.id || item.conversationId !== conversationId || typeof item.content !== 'string' || ids.has(item.id)) throw new Error('Scheduled list changed. Retry.')
+          ids.add(item.id); size += item.content.length
+        }
+        if (size > 4 * 1024 * 1024) throw new Error('Scheduled list is too large to confirm safely.')
+        items.push(...res.items)
+        if (!res.hasMore && res.nextCursor === null) return items
+        if (res.hasMore !== true || !res.items.length || !res.nextCursor || cursors.has(res.nextCursor)) throw new Error('Scheduled list cursor was not confirmed.')
+        cursors.add(res.nextCursor); cursor = res.nextCursor
+      }
+      throw new Error('Scheduled list exceeded the safe page limit. No partial list was applied.')
     },
     enabled: scheduleFor !== null || scheduledListOpen,
   })

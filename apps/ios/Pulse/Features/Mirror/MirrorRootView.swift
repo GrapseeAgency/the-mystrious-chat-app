@@ -1761,6 +1761,10 @@ struct MirrorRoomView: View {
                     composerFocused = true
                 },
                 onSent: { if generation == session.sessionGeneration { refreshRevision &+= 1 } },
+                onScheduled: { body in
+                    if generation == session.sessionGeneration, draftJournal?.isCurrentOwner == true,
+                       draft.trimmingCharacters(in: .whitespacesAndNewlines) == body { draft = "" }
+                },
                 onCreated: { message in
                     if generation == session.sessionGeneration { acceptCarrier(message) }
                 }
@@ -2581,6 +2585,7 @@ struct MirrorRoomSheetView: View {
     var draftText: String = ""
     var onInsertDraft: (String) -> Void = { _ in }
     var onSent: () -> Void = {}
+    var onScheduled: (String) -> Void = { _ in }
     var onCreated: (WireChatMessage) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -2667,7 +2672,7 @@ struct MirrorRoomSheetView: View {
             case .poll:
                 MirrorPollBuilder(session: session, row: row, onSent: onSent)
             case .schedule:
-                MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent)
+                MirrorScheduleBuilder(session: session, row: row, draftText: draftText, onSent: onSent, onScheduled: onScheduled)
             case .phrases:
                 MirrorPhrasesBuilder(session: session, onInsert: onInsertDraft)
             case .sticker:
@@ -2966,10 +2971,12 @@ private struct MirrorScheduleBuilder: View {
     let row: MirrorViewModel.MirrorRow
     let draftText: String
     let onSent: () -> Void
+    let onScheduled: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var content = ""
     @State private var when = Date().addingTimeInterval(3600)
     @State private var busy = false
+    @State private var request = UUID()
 
     var body: some View {
         MirrorPanel(title: "Schedule a message") {
@@ -2982,26 +2989,34 @@ private struct MirrorScheduleBuilder: View {
                 MirrorTrayAction(label: "Schedule send", disabled: !valid || busy) { send() }
             }
         }
+        .disabled(busy)
         .onAppear { if content.isEmpty { content = draftText } }
+        .onDisappear { request = UUID() }
     }
 
     private var valid: Bool {
-        !content.trimmingCharacters(in: .whitespaces).isEmpty
+        !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && content.utf16.count <= 2000 &&
+            when.timeIntervalSinceNow >= 30 && when.timeIntervalSinceNow <= 30 * 86400
     }
 
     private func send() {
-        busy = true
+        guard !busy, valid else { return }
+        let epoch = session.sessionGeneration, api = session.api, ticket = UUID()
+        request = ticket; busy = true
         let iso = ISO8601DateFormatter().string(from: when)
-        let body = content.trimmingCharacters(in: .whitespaces)
+        let body = content.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
-            defer { busy = false }
+            defer { if session.sessionGeneration == epoch && request == ticket { busy = false } }
             do {
-                _ = try await session.api.scheduleMessage(conversationId: row.id, content: body, scheduledAtIso: iso)
+                _ = try await api.scheduleMessage(conversationId: row.id, content: body, scheduledAtIso: iso)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
+                onScheduled(body)
                 dismiss()
                 onSent()
                 session.toasts.show("Scheduled - it sends on its own")
             } catch {
-                session.toasts.show("Schedule failed - check the connection")
+                guard !Task.isCancelled, session.sessionGeneration == epoch, request == ticket else { return }
+                session.toasts.show(RoomViewModel.describe(error))
             }
         }
     }

@@ -309,41 +309,78 @@ class ChatRoomViewModel @Inject constructor(
     private val _scheduledLoading = MutableStateFlow(false)
     val scheduledLoading: StateFlow<Boolean> = _scheduledLoading.asStateFlow()
 
+    private val _scheduledBusy = MutableStateFlow(false)
+    val scheduledBusy: StateFlow<Boolean> = _scheduledBusy.asStateFlow()
+    private val _scheduledError = MutableStateFlow<String?>(null)
+    val scheduledError: StateFlow<String?> = _scheduledError.asStateFlow()
+    private var scheduledRevision = 0L
+
     fun loadScheduled() {
+        if (_scheduledBusy.value) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        val ticket = ++scheduledRevision
+        _scheduledLoading.value = true
         viewModelScope.launch {
-            _scheduledLoading.value = true
-            _scheduled.value = runCatching { repo.scheduledMessages(conversationId).getOrDefault(emptyList()) }
-                .getOrDefault(emptyList())
-            _scheduledLoading.value = false
+            try {
+                val rows = repo.scheduledMessages(conversationId).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() == epoch && ticket == scheduledRevision) {
+                    _scheduled.value = rows; _scheduledError.value = null
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch && ticket == scheduledRevision) {
+                    if (error is app.pulse.domain.sync.PrivateScheduleUnavailableException) _scheduled.value = emptyList()
+                    _scheduledError.value = error.message ?: "Couldn't load scheduled messages"
+                }
+            } finally {
+                if (repo.attachmentSessionKey() == epoch && ticket == scheduledRevision) _scheduledLoading.value = false
+            }
         }
     }
 
-    /** POST the pending row, then refresh the manager list (web parity toast). */
-    fun scheduleSend(content: String, scheduledAtIso: String) {
+    fun scheduleSend(content: String, scheduledAtIso: String, confirmed: () -> Unit = {}) {
+        if (_scheduledBusy.value) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        _scheduledBusy.value = true; scheduledRevision++; _scheduledLoading.value = false
         viewModelScope.launch {
-            repo.scheduleMessage(conversationId, content, scheduledAtIso)
-                .onSuccess { item ->
-                    notify("Scheduled for ${formatScheduleStamp(item.scheduledAtIso)} - it sends itself")
-                    loadScheduled()
-                }
-                .onFailure { notify(failureNotice(it), isError = true) }
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val item = repo.scheduleMessage(conversationId, content, scheduledAtIso).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                _scheduled.value = (_scheduled.value.filterNot { it.id == item.id } + item).sortedBy { it.scheduledAtIso }
+                notify("Scheduled for ${formatScheduleStamp(item.scheduledAtIso)}")
+                confirmed()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) notify(failureNotice(error), isError = true)
+            } finally { if (repo.attachmentSessionKey() == epoch) _scheduledBusy.value = false }
         }
     }
 
     fun cancelScheduled(scheduledId: String) {
+        if (_scheduledBusy.value) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        _scheduledBusy.value = true; scheduledRevision++; _scheduledLoading.value = false
         viewModelScope.launch {
-            runCatching { repo.cancelScheduled(scheduledId) }
-                .onSuccess {
-                    notify("Scheduled message cancelled")
-                    loadScheduled()
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                repo.cancelScheduled(scheduledId).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                _scheduled.value = _scheduled.value.filterNot { it.id == scheduledId }
+                notify("Scheduled message cancelled")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) {
+                    _scheduledError.value = error.message ?: "Couldn't cancel the scheduled message"
+                    notify(_scheduledError.value.orEmpty(), isError = true)
                 }
-                .onFailure { notify("Couldn't cancel the scheduled message", isError = true) }
+            } finally { if (repo.attachmentSessionKey() == epoch) _scheduledBusy.value = false }
         }
     }
 
     private fun formatScheduleStamp(iso: String): String = runCatching {
-        val zoned = java.time.OffsetDateTime.parse(iso)
-        java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm").format(zoned)
+        java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm")
+            .format(java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault()))
     }.getOrDefault(iso)
 
     // ── R3-B item 4 - F-MS-17 incognito arming (GROUPS only, session-scoped) ──

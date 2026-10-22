@@ -1869,28 +1869,76 @@ public struct PulseAPIClient: Sendable {
 
     // REM-B F-MS-18 - scheduled sends
 
-    /// GET /api/conversations/{id}/scheduled?userId= - the caller's OWN
-    /// pending rows, soonest first (plus dispatch-refused ones).
+    private struct ScheduledReceipt: Decodable {
+        let scheduleVersion: Int
+        let userId: String
+        let conversationId: String
+        let items: [WireScheduledItem]?
+        let hasMore: Bool?
+        let nextCursor: String?
+        let item: WireScheduledItem?
+        let scheduledId: String?
+        let cancelled: Bool?
+        let ok: Bool?
+    }
+    private func validateScheduledScope(_ value: ScheduledReceipt, room: String? = nil) throws {
+        guard value.scheduleVersion == 1, value.userId == userId, !userId.isEmpty, !value.conversationId.isEmpty,
+              room == nil || value.conversationId == room else {
+            throw Failure(kind: .server, message: "Scheduled-message ownership was not confirmed.")
+        }
+    }
+    private func validateScheduled(_ row: WireScheduledItem, room: String) throws {
+        guard !row.id.isEmpty, row.conversationId == room, !row.content.isEmpty, row.sentAt == nil,
+              PulseFormat.date(row.scheduledAt) != nil,
+              row.cancelledAt == nil || PulseFormat.date(row.cancelledAt) != nil else {
+            throw Failure(kind: .server, message: "Invalid scheduled message.")
+        }
+    }
     public func scheduledMessages(conversationId: String) async throws -> [WireScheduledItem] {
-        let page: WireScheduledPage = try await get(
-            "/api/conversations/\(q(conversationId))/scheduled?userId=\(q(userId))",
-        )
-        return page.items ?? []
+        var rows: [WireScheduledItem] = [], ids = Set<String>(), cursors = Set<String>()
+        var cursor: String?, bytes = 0
+        for _ in 0..<100 {
+            try Task.checkCancellation()
+            let page: ScheduledReceipt = try await get("/api/conversations/\(q(conversationId))/scheduled?userId=\(q(userId))" + (cursor.map { "&cursor=\(q($0))" } ?? ""))
+            try validateScheduledScope(page, room: conversationId)
+            guard let items = page.items, items.count <= 50, let more = page.hasMore,
+                  more ? (page.nextCursor?.isEmpty == false && !items.isEmpty) : page.nextCursor == nil else {
+                throw Failure(kind: .server, message: "Scheduled list was not completely confirmed.")
+            }
+            for row in items {
+                try validateScheduled(row, room: conversationId)
+                guard ids.insert(row.id).inserted else { throw Failure(kind: .server, message: "Scheduled list changed while loading. Retry.") }
+                bytes += row.content.utf8.count
+            }
+            guard bytes <= 8 * 1024 * 1024 else { throw Failure(kind: .server, message: "Scheduled list is too large to confirm safely.") }
+            rows.append(contentsOf: items)
+            if !more { return rows }
+            guard let next = page.nextCursor, cursors.insert(next).inserted else { throw Failure(kind: .server, message: "Scheduled list cursor repeated. Retry.") }
+            cursor = next
+        }
+        throw Failure(kind: .server, message: "Scheduled list exceeded the safe page limit. No partial list was applied.")
     }
-
-    /// POST /api/conversations/{id}/scheduled { senderId, content,
-    /// scheduledAt } → 201 { item }. Window guard server-side: 30 s – 30 d.
     public func scheduleMessage(conversationId: String, content: String, scheduledAtIso: String) async throws -> WireScheduledItem {
-        let data = try await postRaw(
-            "/api/conversations/\(q(conversationId))/scheduled",
-            body: ["senderId": userId, "content": content, "scheduledAt": scheduledAtIso],
-        )
-        return try envelope(WireScheduledItem.self, from: data)
+        let data = try await postRaw("/api/conversations/\(q(conversationId))/scheduled",
+            body: ["senderId": userId, "content": content, "scheduledAt": scheduledAtIso])
+        let receipt = try decoder.decode(ScheduledReceipt.self, from: data)
+        try validateScheduledScope(receipt, room: conversationId)
+        guard let row = receipt.item, row.content == content.trimmingCharacters(in: .whitespacesAndNewlines),
+              row.cancelledAt == nil, row.cancelledReason == nil,
+              let actual = PulseFormat.date(row.scheduledAt), let expected = PulseFormat.date(scheduledAtIso),
+              abs(actual.timeIntervalSince(expected)) < 0.001 else {
+            throw Failure(kind: .server, message: "The requested scheduled message was not confirmed.")
+        }
+        try validateScheduled(row, room: conversationId)
+        return row
     }
-
-    /// DELETE /api/scheduled/{id} { requesterId } - sender-only cancel.
     public func cancelScheduled(_ id: String) async throws {
-        try await deleteEmpty("/api/scheduled/\(q(id))", body: ["requesterId": userId])
+        let data = try await deleteRaw("/api/scheduled/\(q(id))", body: ["requesterId": userId])
+        let receipt = try decoder.decode(ScheduledReceipt.self, from: data)
+        try validateScheduledScope(receipt)
+        guard receipt.scheduledId == id, receipt.ok == true, receipt.cancelled == true else {
+            throw Failure(kind: .server, message: "Scheduled cancellation was not confirmed.")
+        }
     }
 
     // R1-W2B - translation + quick phrases (F-MD-06 / F-MS-29)

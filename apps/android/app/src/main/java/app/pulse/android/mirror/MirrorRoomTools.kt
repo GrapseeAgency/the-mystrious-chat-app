@@ -561,49 +561,60 @@ internal fun MirrorScheduledSheet(
     conversationId: String,
     onDismiss: () -> Unit,
 ) {
+    androidx.compose.runtime.key(repository, repository.attachmentSessionKey(), conversationId) {
+        MirrorOwnedScheduledSheet(repository, conversationId, onDismiss)
+    }
+}
+
+@Composable
+private fun MirrorOwnedScheduledSheet(repository: PulseRepository, conversationId: String, onDismiss: () -> Unit) {
     var items by remember { mutableStateOf<List<ScheduledItem>?>(null) }
     var loadFailed by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
     var cancelling by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var cancelFailed by remember { mutableStateOf(false) }
+    var cancelError by remember { mutableStateOf<String?>(null) }
     val now = remember { ZonedDateTime.now() }
+    val scope = rememberCoroutineScope()
+    val epoch = repository.attachmentSessionKey()
+    var revision by remember { mutableStateOf(0) }
 
     LaunchedEffect(reloadKey) {
-        loadFailed = false
-        cancelFailed = false
-        runCatching { repository.scheduledMessages(conversationId).getOrThrow() }
-            .fold(
-                onSuccess = { page ->
-                    items = page
-                    loadFailed = false
-                },
-                onFailure = { if (items == null) loadFailed = true },
-            )
+        if (cancelling.isNotEmpty()) return@LaunchedEffect
+        val ticket = revision
+        loadFailed = false; cancelError = null
+        try {
+            val page = repository.scheduledMessages(conversationId).getOrThrow()
+            currentCoroutineContext().ensureActive()
+            if (repository.attachmentSessionKey() == epoch && revision == ticket) items = page
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            if (repository.attachmentSessionKey() == epoch && revision == ticket) {
+                if (error is app.pulse.domain.sync.PrivateScheduleUnavailableException) items = null
+                loadFailed = true
+            }
+        }
     }
 
     fun cancel(id: String) {
-        if (cancelling.contains(id)) return
-        cancelFailed = false
-        cancelling = cancelling + id
-        CoroutineScope(Dispatchers.IO).launch {
-            val outcome = runCatching { repository.cancelScheduled(id).getOrThrow() }
-            withContext(Dispatchers.Main) {
-                cancelling = cancelling - id
-                outcome.fold(
-                    onSuccess = {
-                        // web cancelScheduled.onSuccess refetches; a refused
-                        // row re-renders in its rose "blocked" skin
-                        reloadKey++
-                    },
-                    onFailure = { cancelFailed = true },
-                )
-            }
+        if (cancelling.isNotEmpty() || epoch == null) return
+        cancelError = null; cancelling = setOf(id); revision++
+        scope.launch {
+            try {
+                if (repository.attachmentSessionKey() != epoch) return@launch
+                repository.cancelScheduled(id).getOrThrow()
+                currentCoroutineContext().ensureActive()
+                if (repository.attachmentSessionKey() != epoch) return@launch
+                items = items?.filterNot { it.id == id }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repository.attachmentSessionKey() == epoch) cancelError = error.message ?: "Could not cancel"
+            } finally { if (repository.attachmentSessionKey() == epoch) cancelling = emptySet() }
         }
     }
 
     val loaded = items
     val count = loaded?.size ?: 0
     val countLabel = when {
+        loadFailed -> "Scheduled messages unavailable"
+        loaded == null -> "Loading scheduled messages"
         count == 0 -> "Nothing scheduled"
         count == 1 -> "1 scheduled message"
         else -> "$count scheduled messages"
@@ -646,12 +657,12 @@ internal fun MirrorScheduledSheet(
                     }
                 }
             }
-            if (cancelFailed) {
+            cancelError?.let { failure ->
                 Text(
-                    "Could not cancel",
+                    "$failure · Tap to refresh",
                     color = MirrorArt.Red,
                     fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.clickable(enabled = cancelling.isEmpty()) { reloadKey++ }.padding(horizontal = 8.dp, vertical = 6.dp),
                 )
             }
         }

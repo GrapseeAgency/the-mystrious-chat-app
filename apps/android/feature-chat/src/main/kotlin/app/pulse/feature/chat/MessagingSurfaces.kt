@@ -621,6 +621,9 @@ internal fun ScheduleSheet(
 internal fun ScheduledSendsSheet(
     items: List<ScheduledItem>,
     loading: Boolean,
+    error: String?,
+    busy: Boolean,
+    onRetry: () -> Unit,
     onCancel: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -639,7 +642,7 @@ internal fun ScheduledSendsSheet(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    if (items.isEmpty()) {
+                    if (loading) { "Loading scheduled messages" } else if (error != null) { "Scheduled messages unavailable" } else if (items.isEmpty()) {
                         "Nothing scheduled"
                     } else {
                         "${items.size} scheduled ${if (items.size == 1) "message" else "messages"}"
@@ -648,6 +651,7 @@ internal fun ScheduledSendsSheet(
                     fontWeight = FontWeight.Bold,
                 )
             }
+            error?.let { TextButton(onClick = onRetry, enabled = !busy) { Text("$it · Retry") } }
             when {
                 loading -> Row(
                     Modifier.fillMaxWidth().padding(vertical = 20.dp),
@@ -663,6 +667,7 @@ internal fun ScheduledSendsSheet(
                         modifier = Modifier.semantics { contentDescription = "Loading scheduled messages" },
                     )
                 }
+                items.isEmpty() && error != null -> Unit
                 items.isEmpty() -> Text(
                     "Draft a message and choose \u201CSchedule message\u201D - it sends itself later.",
                     fontSize = 12.sp,
@@ -672,13 +677,13 @@ internal fun ScheduledSendsSheet(
                         .fillMaxWidth()
                         .padding(vertical = 22.dp),
                 )
-                else -> Column(
+                else -> LazyColumn(
                     Modifier
                         .heightIn(max = 320.dp)
                         .padding(vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items.forEach { item ->
+                    items(items, key = { it.id }) { item ->
                         val refused = item.cancelledAtIso != null
                         Column(
                             Modifier
@@ -721,6 +726,7 @@ internal fun ScheduledSendsSheet(
                                 Spacer(Modifier.weight(1f))
                                 IconButton(
                                     onClick = { onCancel(item.id) },
+                                    enabled = !busy,
                                     modifier = Modifier
                                         .size(28.dp)
                                         .semantics {

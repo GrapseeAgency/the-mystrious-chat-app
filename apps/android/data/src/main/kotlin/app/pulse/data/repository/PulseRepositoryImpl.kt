@@ -2236,22 +2236,13 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun scheduledMessages(conversationId: String): Result<List<ScheduledItem>> =
-        when (val r = api.scheduledMessages(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.items.map { it.toDomainScheduled() })
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest(denyScheduledRead = true) { api.scheduledMessages(conversationId, it) }.map { page -> page.items.map { it.toDomainScheduled() } }
 
     override suspend fun scheduleMessage(conversationId: String, content: String, scheduledAtIso: String): Result<ScheduledItem> =
-        when (val r = api.scheduleMessage(conversationId, viewerId ?: "", content, scheduledAtIso)) {
-            is PulseResult.Success -> Result.success(r.value.toDomainScheduled())
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.scheduleMessage(conversationId, it, content, scheduledAtIso) }.map { it.toDomainScheduled() }
 
     override suspend fun cancelScheduled(scheduledId: String): Result<Unit> =
-        when (val r = api.cancelScheduled(scheduledId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.cancelScheduled(scheduledId, it) }.map { Unit }
 
     // offline outbox engine (Wave 0 - web pulse-outbox parity)
 
@@ -3564,7 +3555,7 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    private suspend fun <T> ownedAccountRequest(denyGameRead: Boolean = false, operation: suspend (String) -> PulseResult<T>): Result<T> {
+    private suspend fun <T> ownedAccountRequest(denyGameRead: Boolean = false, denyScheduledRead: Boolean = false, operation: suspend (String) -> PulseResult<T>): Result<T> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
@@ -3576,6 +3567,8 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(
                 if (denyGameRead && result.kind in setOf(PulseResult.Failure.Kind.AUTH, PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND))
                     app.pulse.domain.sync.PrivateGameUnavailableException(result.message ?: "Private game is no longer available.")
+                else if (denyScheduledRead && result.kind in setOf(PulseResult.Failure.Kind.AUTH, PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND))
+                    app.pulse.domain.sync.PrivateScheduleUnavailableException(result.message ?: "Scheduled messages are no longer available.")
                 else IllegalStateException("${result.kind}: ${result.message}"))
         }
     }

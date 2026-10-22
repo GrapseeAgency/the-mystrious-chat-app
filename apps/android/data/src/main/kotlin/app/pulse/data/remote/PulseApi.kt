@@ -2345,26 +2345,82 @@ class PulseApi(
 
     // REM-A scheduled sends (F-MS-18)
 
-    /** GET /api/conversations/{id}/scheduled?userId= - the caller's OWN pending rows, soonest first. */
-    suspend fun scheduledMessages(conversationId: String, userId: String): PulseResult<ScheduledPageDto> =
-        get(
-            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
-                "/scheduled?userId=" + java.net.URLEncoder.encode(userId, "UTF-8"),
-        ) { PulseJson.decodeFromString(ScheduledPageDto.serializer(), it) }
+    private fun scheduledScope(text: String, owner: String, room: String? = null): JsonObject {
+        val root = PulseJson.parseToJsonElement(text) as? JsonObject ?: error("Scheduled response is missing.")
+        val user = root["userId"] as? JsonPrimitive
+        val conversation = root["conversationId"] as? JsonPrimitive
+        require(root["scheduleVersion"]?.toString() == "1" && owner.isNotBlank() && user?.isString == true && user.content == owner &&
+            conversation?.isString == true && conversation.content.isNotBlank() && (room == null || conversation.content == room)) {
+            "Scheduled-message ownership was not confirmed."
+        }
+        return root
+    }
+    private fun validateScheduled(row: ScheduledItemDto, room: String) {
+        require(row.id.isNotBlank() && row.conversationId == room && row.content.isNotBlank() && row.sentAt == null &&
+            runCatching { java.time.Instant.parse(row.scheduledAt) }.isSuccess &&
+            (row.cancelledAt == null || runCatching { java.time.Instant.parse(row.cancelledAt) }.isSuccess)) { "Invalid scheduled message." }
+    }
+    /** Complete-or-error scan; never publish the old endpoint's silently truncated first 50 rows. */
+    suspend fun scheduledMessages(conversationId: String, userId: String): PulseResult<ScheduledPageDto> {
+        val rows = mutableListOf<ScheduledItemDto>()
+        val ids = mutableSetOf<String>(); val cursors = mutableSetOf<String>()
+        var cursor: String? = null
+        var characters = 0
+        repeat(100) {
+            val path = "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
+                "/scheduled?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
+                (cursor?.let { "&cursor=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")
+            when (val result = get(path) { text ->
+                characters += text.length
+                require(characters <= 4 * 1024 * 1024) { "Scheduled list is too large to confirm safely." }
+                val root = scheduledScope(text, userId, conversationId)
+                require(root["items"] is JsonArray && root["hasMore"]?.toString() in setOf("true", "false")) { "Scheduled list is incomplete." }
+                val page = PulseJson.decodeFromString(ScheduledPageDto.serializer(), text)
+                require(page.items.size <= 50) { "Scheduled page exceeded its limit." }
+                page.items.forEach { validateScheduled(it, conversationId) }
+                val more = root["hasMore"]?.toString() == "true"
+                val next = root["nextCursor"] as? JsonPrimitive
+                require(if (more) next?.isString == true && next.content.isNotBlank() && page.items.isNotEmpty() else root["nextCursor"] == kotlinx.serialization.json.JsonNull) {
+                    "Scheduled list cursor was not confirmed."
+                }
+                page.items to if (more) next?.content else null
+            }) {
+                is PulseResult.Failure -> return result
+                is PulseResult.Success -> {
+                    val (page, next) = result.value
+                    if (page.any { !ids.add(it.id) } || (next != null && !cursors.add(next))) {
+                        return PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "Scheduled list changed while loading. Retry.")
+                    }
+                    rows.addAll(page)
+                    if (next == null) return PulseResult.Success(ScheduledPageDto(items = rows))
+                    cursor = next
+                }
+            }
+        }
+        return PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "Scheduled list exceeded the safe page limit. No partial list was applied.")
+    }
 
-    /** POST /api/conversations/{id}/scheduled { senderId, content, scheduledAt } → 201 { item }. */
     suspend fun scheduleMessage(conversationId: String, senderId: String, content: String, scheduledAtIso: String): PulseResult<ScheduledItemDto> =
-        post(
-            "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/scheduled",
-            jsonOf("senderId" to senderId, "content" to content, "scheduledAt" to scheduledAtIso),
-        ) { PulseJson.decodeFromString(ScheduledItemDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("item").toString()) }
+        post("/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/scheduled",
+            jsonOf("senderId" to senderId, "content" to content, "scheduledAt" to scheduledAtIso)) {
+            val root = scheduledScope(it, senderId, conversationId)
+            val item = root["item"] as? JsonObject ?: error("Scheduled message was not confirmed.")
+            PulseJson.decodeFromString(ScheduledItemDto.serializer(), item.toString()).also { row ->
+                validateScheduled(row, conversationId)
+                require(row.content == content.trim() && row.cancelledAt == null && row.cancelledReason == null &&
+                    java.time.Instant.parse(row.scheduledAt).toEpochMilli() == java.time.Instant.parse(scheduledAtIso).toEpochMilli()) {
+                    "The requested scheduled message was not confirmed."
+                }
+            }
+        }
 
-    /** DELETE /api/scheduled/{id} { requesterId } → { ok: true } - cancel a pending delayed send. */
     suspend fun cancelScheduled(scheduledId: String, requesterId: String): PulseResult<OkDto> =
-        deleteWithJson(
-            "/api/scheduled/" + java.net.URLEncoder.encode(scheduledId, "UTF-8"),
-            jsonOf("requesterId" to requesterId),
-        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+        deleteWithJson("/api/scheduled/" + java.net.URLEncoder.encode(scheduledId, "UTF-8"), jsonOf("requesterId" to requesterId)) {
+            val root = scheduledScope(it, requesterId)
+            require(root["ok"]?.toString() == "true" && root["cancelled"]?.toString() == "true" &&
+                (root["scheduledId"] as? JsonPrimitive)?.content == scheduledId) { "Scheduled cancellation was not confirmed." }
+            OkDto(ok = true)
+        }
 
     // R2-A round-2 parity (automations · webhooks · AI recap · per-viewer privacy)
 
