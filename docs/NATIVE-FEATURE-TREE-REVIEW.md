@@ -2958,3 +2958,25 @@ Android build-test and iOS archive succeeded; iOS build/test was still running a
 The last full server run remains 163/163 at 8b8e8af (no server changes in this tranche).
 Autumn styles and colors are retained. Still open: room-info mutation ordering/refresh
 races, transport-loss operation receipts, directory visibility and broader device coverage.
+
+## 2026-10-22 — room-info response ownership and explicit membership acknowledgements
+
+Android room-info now fences metadata reads by request ticket, invalidating pre-write
+responses at action boundaries. Permission/uncertain failures request current settings rather
+than repeatedly offering stale controls. The two privacy switches are single-flight, disabled
+while pending, and keep their pending display through the follow-up read rather than briefly
+snapping back to the old flag. Repository cancellation is rethrown instead of being recast as
+an ordinary failure and allowed into subsequent work. These changes preserve the existing
+failed-load/retry state and amber controls.
+
+Add-member responses must contain a distinct subset of the requested IDs; an explicitly
+empty list remains an already-member success, whereas a missing list cannot dismiss the
+picker as successful. Kick/leave need an affirmative ACK; invite administration needs a raw,
+usable normalized code, not an empty string or arbitrary link. Undecodable DELETE mutation
+responses are unconfirmed server outcomes. New MockEngine regressions cover those cases;
+three Kotlin files pass syntax checks, native compilation/execution is pending.
+
+Important next storage issue: page-level tickets cannot stop an older detail request from
+writing into the shared conversation cache before its UI result is discarded. The current
+account-epoch fence protects identity, not same-account read/write ordering. Tracing that
+cache ordering and post-leave room resurrection is the next repair; not claimed fixed here.

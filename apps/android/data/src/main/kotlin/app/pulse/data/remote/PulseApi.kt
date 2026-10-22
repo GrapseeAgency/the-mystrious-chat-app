@@ -1097,7 +1097,7 @@ class PulseApi(
                 failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
-            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+            PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "The gateway did not confirm the change; refresh before retrying")
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
@@ -1934,7 +1934,15 @@ class PulseApi(
                 put("requesterId", requesterId)
                 put("userIds", kotlinx.serialization.json.JsonArray(userIds.map { kotlinx.serialization.json.JsonPrimitive(it) }))
             },
-        ) { PulseJson.decodeFromString(MembersAddedDto.serializer(), it) }
+        ) {
+            val body = PulseJson.parseToJsonElement(it) as? JsonObject
+            val result = PulseJson.decodeFromString(MembersAddedDto.serializer(), it)
+            if (body?.get("added") !is JsonArray || result.added.distinct().size != result.added.size ||
+                result.added.any { id -> id !in userIds }) {
+                throw kotlinx.serialization.SerializationException("Member additions were not confirmed")
+            }
+            result
+        }
 
     /** PATCH /api/conversations/{id}/members { requesterId, userId, role } - promote/demote (admin-only). */
     suspend fun setMemberRole(conversationId: String, requesterId: String, userId: String, role: String): PulseResult<Unit> =
@@ -1968,7 +1976,11 @@ class PulseApi(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members/" +
                 java.net.URLEncoder.encode(userId, "UTF-8"),
             jsonOf("requesterId" to requesterId),
-        ) { PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it) }
+        ) {
+            PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it).also { result ->
+                if (!result.ok) throw kotlinx.serialization.SerializationException("Membership change was not confirmed")
+            }
+        }
 
     /**
      * DELETE /api/conversations/{id}/members { requesterId } - LEAVE group.
@@ -1979,14 +1991,24 @@ class PulseApi(
         deleteWithJson(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/members",
             jsonOf("requesterId" to requesterId),
-        ) { PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it) }
+        ) {
+            PulseJson.decodeFromString(GroupMutationAckDto.serializer(), it).also { result ->
+                if (!result.ok) throw kotlinx.serialization.SerializationException("Membership change was not confirmed")
+            }
+        }
 
     /** POST /api/conversations/{id}/invite { requesterId, regenerate? } - admin-only lazy create/regenerate. */
     suspend fun createInvite(conversationId: String, requesterId: String, regenerate: Boolean): PulseResult<InviteCodeDto> =
         post(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/invite",
             jsonOf("requesterId" to requesterId, "regenerate" to regenerate),
-        ) { PulseJson.decodeFromString(InviteCodeDto.serializer(), it) }
+        ) {
+            val result = PulseJson.decodeFromString(InviteCodeDto.serializer(), it)
+            val code = app.pulse.core.link.PulseDeepLink.inviteCode(result.inviteCode)
+                ?.takeIf { normalized -> result.inviteCode.trim().equals(normalized, ignoreCase = true) }
+                ?: throw kotlinx.serialization.SerializationException("Invite link was not confirmed")
+            result.copy(inviteCode = code)
+        }
 
     /** PATCH /api/conversations/{id}/disappearing { userId, ttlSeconds } - any participant; presets 0/1d/7d/30d. */
     suspend fun setDisappearingTtl(conversationId: String, userId: String, ttlSeconds: Int): PulseResult<ConversationSummaryDto> =

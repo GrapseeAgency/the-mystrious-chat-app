@@ -66,4 +66,35 @@ class GroupSettingsAcknowledgementTest {
             } finally { http.close() }
         }
     }
+    @Test fun membershipAndInviteActionsCannotSucceedFromAnEmptyAcknowledgement() = runTest {
+        val http = HttpClient(MockEngine { respond("{}", HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+        try {
+            val api = PulseApi(http, gateway = { "https://groups.test" })
+            for (result in listOf(api.addMembers("room", "me", listOf("friend")),
+                api.kickMember("room", "me", "friend"), api.leaveGroup("room", "me"), api.createInvite("room", "me", false))) {
+                assertEquals(PulseResult.Failure.Kind.SERVER, (result as PulseResult.Failure).kind)
+            }
+        } finally { http.close() }
+    }
+    @Test fun additionsMustAcknowledgeOnlyDistinctRequestedMembers() = runTest {
+        for (body in listOf("""{"added":["stranger"]}""", """{"added":["friend","friend"]}""")) {
+            val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+            try {
+                assertTrue(PulseApi(http, gateway = { "https://groups.test" }).addMembers("room", "me", listOf("friend")) is PulseResult.Failure)
+            } finally { http.close() }
+        }
+        val http = HttpClient(MockEngine { respond("""{"added":[]}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+        try {
+            val result = PulseApi(http, gateway = { "https://groups.test" }).addMembers("room", "me", listOf("friend"))
+            assertEquals(emptyList<String>(), (result as PulseResult.Success).value.added)
+        } finally { http.close() }
+    }
+    @Test fun inviteAcknowledgementMustBeARawUsableCode() = runTest {
+        for (code in listOf("", "abc", "not a code", "pulse://invite/ABCD1234")) {
+            val http = HttpClient(MockEngine { respond("""{"inviteCode":"$code"}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+            try {
+                assertTrue(PulseApi(http, gateway = { "https://groups.test" }).createInvite("room", "me", false) is PulseResult.Failure)
+            } finally { http.close() }
+        }
+    }
 }

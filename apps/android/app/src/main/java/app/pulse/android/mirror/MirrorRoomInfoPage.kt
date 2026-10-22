@@ -58,6 +58,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -607,6 +610,7 @@ internal fun MirrorRoomInfoPage(
     // server truth (fetched on open + after every mutation + 20s loop)
     var meta by remember { mutableStateOf<GroupMeta?>(null) }
     var metaFailed by remember { mutableStateOf(false) }
+    var metaTicket by remember { mutableStateOf(0L) }
     var pinnedCount by remember { mutableStateOf(0) }
     var automations by remember { mutableStateOf<List<Automation>>(emptyList()) }
     var automationsLoading by remember { mutableStateOf(true) }
@@ -651,10 +655,19 @@ internal fun MirrorRoomInfoPage(
         }
     }
 
+    suspend fun <T> repositoryResult(block: suspend () -> Result<T>): Result<T> = try {
+        withContext(Dispatchers.IO) { block() }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+
     suspend fun refreshMeta() {
-        val res = withContext(Dispatchers.IO) {
-            runCatching { repository.groupMeta(conversationId) }.getOrElse { Result.failure(it) }
-        }
+        val ticket = ++metaTicket
+        val res = repositoryResult { repository.groupMeta(conversationId) }
+        currentCoroutineContext().ensureActive()
+        if (ticket != metaTicket) return
         meta = res.getOrNull()
         metaFailed = res.isFailure
     }
@@ -667,17 +680,13 @@ internal fun MirrorRoomInfoPage(
     }
 
     suspend fun refreshAutomations() {
-        val res = withContext(Dispatchers.IO) {
-            runCatching { repository.automations(conversationId) }.getOrElse { Result.failure(it) }
-        }
+        val res = repositoryResult { repository.automations(conversationId) }
         automationsLoading = false
         res.onSuccess { automations = it }
     }
 
     suspend fun refreshUsers() {
-        val res = withContext(Dispatchers.IO) {
-            runCatching { repository.users() }.getOrElse { Result.failure(it) }
-        }
+        val res = repositoryResult { repository.users() }
         directoryFailed = res.isFailure
         res.onSuccess { directory = it }
     }
@@ -690,9 +699,7 @@ internal fun MirrorRoomInfoPage(
     }
 
     suspend fun refreshSafetyRow(peer: String) {
-        val res = withContext(Dispatchers.IO) {
-            runCatching { repository.safetyState(peer) }.getOrElse { Result.failure(it) }
-        }
+        val res = repositoryResult { repository.safetyState(peer) }
         safetyRow = res.getOrNull()
     }
 
@@ -745,31 +752,29 @@ internal fun MirrorRoomInfoPage(
 
     fun doMute(until: String?) {
         if (mutePending) return
+        metaTicket++
         mutePending = true
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setMutedUntil(conversationId, until) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.setMutedUntil(conversationId, until) }
+            metaTicket++
             mutePending = false
             res.onSuccess {
                 showNote(if (until == null) "Notifications unmuted" else "Notifications muted", false)
             }.onFailure {
                 showNote(it.message ?: "Could not update the mute", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
     fun commitTtl(ttlSeconds: Int) {
         if (ttlPending) return
+        metaTicket++
         ttlPending = true
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setDisappearingTtl(conversationId, ttlSeconds) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.setDisappearingTtl(conversationId, ttlSeconds) }
+            metaTicket++
             ttlPending = false
             res.onSuccess { applied ->
                 showNote(
@@ -779,68 +784,60 @@ internal fun MirrorRoomInfoPage(
             }.onFailure {
                 showNote(it.message ?: "Could not update disappearing messages", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
     fun setMyScreenPrivacy(on: Boolean) {
+        if (myPrivacyLocal != null) return
+        metaTicket++
         myPrivacyLocal = on
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setMyScreenPrivacy(conversationId, on) }.getOrElse { Result.failure(it) }
-            }
-            myPrivacyLocal = null
-            res.onSuccess {
-                showNote(if (on) "Screen security on for you" else "Screen security off for you", false)
-            }.onFailure {
-                showNote(it.message ?: "Could not update screen security", true)
-            }
-            if (res.isSuccess) {
+            try {
+                val res = repositoryResult { repository.setMyScreenPrivacy(conversationId, on) }
+                metaTicket++
+                res.onSuccess {
+                    meta = meta?.copy(myScreenPrivacy = on)
+                    showNote(if (on) "Screen security on for you" else "Screen security off for you", false)
+                }.onFailure { showNote(it.message ?: "Could not confirm screen security", true) }
                 refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+                onChanged()
+            } finally { myPrivacyLocal = null }
         }
     }
 
     fun setEveryoneScreenPrivacy(on: Boolean) {
+        if (everyonePrivacyLocal != null) return
+        metaTicket++
         everyonePrivacyLocal = on
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setScreenPrivacy(conversationId, on) }.getOrElse { Result.failure(it) }
-            }
-            everyonePrivacyLocal = null
-            res.onSuccess {
-                showNote(if (on) "Screen security on" else "Screen security off", false)
-            }.onFailure {
-                showNote(it.message ?: "Could not update screen security", true)
-            }
-            if (res.isSuccess) {
+            try {
+                val res = repositoryResult { repository.setScreenPrivacy(conversationId, on) }
+                metaTicket++
+                res.onSuccess { showNote("Room screen security updated", false) }
+                    .onFailure { showNote(it.message ?: "Could not confirm screen security", true) }
                 refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+                onChanged()
+            } finally { everyonePrivacyLocal = null }
         }
     }
 
     fun commitSlowMode(seconds: Int) {
         if (slowPending) return
+        metaTicket++
         slowPending = true
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setSlowMode(conversationId, seconds) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.setSlowMode(conversationId, seconds) }
+            metaTicket++
             slowPending = false
             res.onSuccess {
                 showNote(if (seconds > 0) "Slow mode on - members wait ${infoSlowLabel(seconds)}" else "Slow mode off", false)
             }.onFailure {
                 showNote(it.message ?: "Could not update slow mode", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
@@ -862,61 +859,55 @@ internal fun MirrorRoomInfoPage(
 
     fun createInvite() {
         if (invitePending) return
+        metaTicket++
         invitePending = true
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.createGroupInvite(conversationId, false) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.createGroupInvite(conversationId, false) }
+            metaTicket++
             invitePending = false
             res.onSuccess { code ->
                 copyInvite(code)
             }.onFailure {
                 showNote(it.message ?: "Could not create the invite link", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
     fun setMemberRole(userId: String, promote: Boolean) {
         if (rolePendingId != null) return
+        metaTicket++
         rolePendingId = userId
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setMemberRole(conversationId, userId, promote) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.setMemberRole(conversationId, userId, promote) }
+            metaTicket++
             rolePendingId = null
             res.onSuccess {
                 showNote(if (promote) "Promoted to admin" else "Role set to member", false)
             }.onFailure {
                 showNote(it.message ?: "Could not update the role", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
     fun kickMember(userId: String) {
         if (rolePendingId != null) return
+        metaTicket++
         rolePendingId = userId
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.kickMember(conversationId, userId) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.kickMember(conversationId, userId) }
+            metaTicket++
             rolePendingId = null
             res.onSuccess {
                 showNote("Removed from the group", false)
             }.onFailure {
                 showNote(it.message ?: "Could not remove the member", true)
             }
-            if (res.isSuccess) {
-                refreshMeta()
-                withContext(Dispatchers.Main) { onChanged() }
-            }
+            refreshMeta()
+            onChanged()
         }
     }
 
@@ -924,11 +915,11 @@ internal fun MirrorRoomInfoPage(
 
     fun leaveChannel() {
         if (leavingChannel) return
+        metaTicket++
         leavingChannel = true
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.unsubscribeChannel(conversationId) }.getOrElse { Result.failure(it) }
-            }
+            val res = repositoryResult { repository.unsubscribeChannel(conversationId) }
+            metaTicket++
             leavingChannel = false
             res.onSuccess {
                 withContext(Dispatchers.Main) {
@@ -944,26 +935,26 @@ internal fun MirrorRoomInfoPage(
     // R33-b photo chain: pick -> data URL -> uploadMedia -> setGroupPhoto
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null && !photoBusy) {
+            metaTicket++
             photoBusy = true
             scope.launch {
                 val dataUrl = infoUriToDataUrl(context, uri)
                 if (dataUrl == null) {
+                    metaTicket++
                     photoBusy = false
                     showNote("Could not upload that photo", true)
                     return@launch
                 }
-                val uploadRes = withContext(Dispatchers.IO) {
-                    runCatching { repository.uploadMedia(dataUrl) }.getOrElse { Result.failure(it) }
-                }
+                val uploadRes = repositoryResult { repository.uploadMedia(dataUrl) }
                 val photoPath = uploadRes.getOrNull()
                 if (photoPath == null) {
+                    metaTicket++
                     photoBusy = false
                     showNote("Could not upload that photo", true)
                     return@launch
                 }
-                val patchRes = withContext(Dispatchers.IO) {
-                    runCatching { repository.setGroupPhoto(conversationId, photoPath) }.getOrElse { Result.failure(it) }
-                }
+                val patchRes = repositoryResult { repository.setGroupPhoto(conversationId, photoPath) }
+                metaTicket++
                 photoBusy = false
                 patchRes.onSuccess {
                     showNote("Photo updated", false)
@@ -1469,6 +1460,7 @@ internal fun MirrorRoomInfoPage(
                                 InfoSwitch(
                                     checked = myPrivacyLocal ?: m.myScreenPrivacy,
                                     onCheckedChange = ::setMyScreenPrivacy,
+                                    enabled = myPrivacyLocal == null,
                                 )
                             }
 
@@ -1500,6 +1492,7 @@ internal fun MirrorRoomInfoPage(
                                 InfoSwitch(
                                     checked = everyonePrivacyLocal ?: m.screenPrivacy,
                                     onCheckedChange = ::setEveryoneScreenPrivacy,
+                                    enabled = everyonePrivacyLocal == null,
                                 )
                             }
 
@@ -1902,9 +1895,10 @@ internal fun MirrorRoomInfoPage(
                 directoryFailed = directoryFailed,
                 onClose = { addOpen = false },
                 onAdded = { count ->
+                    metaTicket++
                     addOpen = false
                     showNote(
-                        if (count == 1) "1 member added" else "$count members added",
+                        when (count) { 0 -> "Selected people are already members"; 1 -> "1 member added"; else -> "$count members added" },
                         false,
                     )
                     scope.launch {
