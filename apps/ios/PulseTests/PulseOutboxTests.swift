@@ -125,14 +125,14 @@ final class PulseOutboxTests: XCTestCase {
             let database = try DatabaseQueue(path: path)
             try store.appendOutbox(conversationId: "c1", clientId: "durable", content: "keep")
             if failBeforeEngineCreation {
-                try database.write { try $0.execute(sql: "ALTER TABLE outbox RENAME TO unavailable_outbox") }
+                try await database.write { try $0.execute(sql: "ALTER TABLE outbox RENAME TO unavailable_outbox") }
             }
             let sender = StubSender(behaviors: [:])
             let engine = makeEngine(store, sender)
             defer { engine.stop() }
             if !failBeforeEngineCreation {
                 XCTAssertEqual(engine.pendingCount, 1)
-                try database.write { try $0.execute(sql: "ALTER TABLE outbox RENAME TO unavailable_outbox") }
+                try await database.write { try $0.execute(sql: "ALTER TABLE outbox RENAME TO unavailable_outbox") }
             }
             XCTAssertThrowsError(try store.countPendingOutbox())
             XCTAssertThrowsError(try store.countOutbox())
@@ -142,7 +142,7 @@ final class PulseOutboxTests: XCTestCase {
             XCTAssertTrue(engine.recoveryScheduled)
             XCTAssertEqual(engine.pendingCount, failBeforeEngineCreation ? 0 : 1)
             XCTAssertEqual(sender.attempts(of: "keep"), 0)
-            try database.write { try $0.execute(sql: "ALTER TABLE unavailable_outbox RENAME TO outbox") }
+            try await database.write { try $0.execute(sql: "ALTER TABLE unavailable_outbox RENAME TO outbox") }
             let recovered = await engine.flush()
             XCTAssertTrue(recovered)
             XCTAssertFalse(engine.storageUnavailable)
@@ -171,7 +171,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(try store.outboxAll().map(\.clientId), ["same-operation"])
         XCTAssertTrue(engine.recoveryScheduled)
         sender.beforeSend = nil
-        try database.write { try $0.execute(sql: "ALTER TABLE unavailable_message RENAME TO message") }
+        try await database.write { try $0.execute(sql: "ALTER TABLE unavailable_message RENAME TO message") }
         let recovered = await engine.flush()
         XCTAssertTrue(recovered)
         XCTAssertEqual(sender.operationIds, ["same-operation", "same-operation"])

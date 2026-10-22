@@ -2712,3 +2712,11 @@ newly enqueued messages surviving snapshot discard, actual account footprint pat
 throwing total-outbox counts. Fourteen modified native files syntax-parse; diff checks pass.
 Native builds/tests for these new edits have not been confirmed. Autumn palette unchanged;
 this is not a whole-app completion claim.
+
+
+Native follow-up: 2951f0d's iOS simulator application build and device archive succeeded,
+but test compilation exposed four new SQLite fault-injection writes that select GRDB's
+async overload inside async tests. Those calls now explicitly await the write; the
+synchronous sender callback retains its synchronous write. Test execution is not yet
+confirmed. GitHub check annotations supplied the compiler diagnostics (full log download
+redirected to a host unavailable in this environment).
