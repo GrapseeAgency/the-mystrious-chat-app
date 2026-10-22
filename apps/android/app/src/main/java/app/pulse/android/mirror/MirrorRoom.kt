@@ -251,21 +251,10 @@ private fun buildRoomEntries(messages: List<Message>): List<RoomEntry> {
 /** Grouped reaction chips (emoji, count, iReacted) in first-seen order. */
 private data class ReactionChip(val emoji: String, val count: Int, val iReacted: Boolean)
 
-private fun groupReactions(message: Message, viewerId: String): List<ReactionChip> {
-    if (message.reactions.isEmpty()) return emptyList()
-    val order = mutableListOf<String>()
-    val counts = LinkedHashMap<String, Int>()
-    val mine = HashSet<String>()
-    for (r in message.reactions) {
-        if (!counts.containsKey(r.emoji)) {
-            order.add(r.emoji)
-            counts[r.emoji] = 0
-        }
-        counts[r.emoji] = counts[r.emoji]!! + 1
-        if (r.userId == viewerId) mine.add(r.emoji)
-    }
-    return order.map { e -> ReactionChip(e, counts[e] ?: 0, e in mine) }
-}
+private fun groupReactions(message: Message, viewerId: String): List<ReactionChip> = message.reactions
+    .distinctBy { app.pulse.protocol.reactionId(it.emoji) to it.userId }
+    .groupBy { app.pulse.protocol.reactionId(it.emoji) }
+    .map { (id, members) -> ReactionChip(id, members.size, members.any { it.userId == viewerId }) }
 
 /**
  * R74 - submit-time slash text transforms. Web parseSlashResult text cases
@@ -735,11 +724,12 @@ internal fun MirrorRoom(
     fun toggleReaction(message: Message, emoji: String) {
         val owner = repository.viewerId ?: return
         val epoch = repository.attachmentSessionKey()
-        val present = message.reactions.none { it.userId == owner && it.emoji == emoji }
+        val reaction = app.pulse.protocol.reactionId(emoji)
+        val present = message.reactions.none { it.userId == owner && app.pulse.protocol.reactionId(it.emoji) == reaction }
         historyScope.launch {
             if (!roomActionsLive.get() || repository.viewerId != owner || repository.attachmentSessionKey() != epoch) return@launch
             try {
-                repository.react(message.id, emoji, present).onFailure {
+                repository.react(message.id, reaction, present).onFailure {
                     if (roomActionsLive.get()) sendError = it.message ?: "Couldn't update reaction"
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -3931,7 +3921,8 @@ private fun MirrorBubbleRow(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                Text(chip.emoji, fontSize = 12.sp, lineHeight = 14.sp)
+                                MirrorLucideIcon(MirrorReactions.glyphOf(chip.emoji),
+                                    tint = if (chip.iReacted) MirrorArt.Accent2 else MirrorArt.TextSoft, modifier = Modifier.size(12.dp))
                                 if (chip.count > 1) {
                                     Text(
                                         chip.count.toString(),

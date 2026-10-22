@@ -1935,12 +1935,13 @@ struct MirrorRoomView: View {
             return
         }
         guard let requested = messages.first(where: { $0.id == messageId }), let owner = session.viewer?.id else { return }
-        let present = !(requested.reactions ?? []).contains { $0.emoji == emoji && $0.userIds.contains(owner) }
+        let reaction = PulseReactionId.normalize(emoji)
+        let present = !(requested.reactions ?? []).contains { PulseReactionId.normalize($0.emoji) == reaction && $0.userIds.contains(owner) }
         let generation = session.sessionGeneration
         roomOperations.run(key: "reaction-" + messageId, operation: {
             do {
                 guard generation == session.sessionGeneration else { return false }
-                try await session.setReaction(requested, emoji: emoji, present: present)
+                try await session.setReaction(requested, emoji: reaction.rawValue, present: present)
                 try Task.checkCancellation()
                 guard generation == session.sessionGeneration,
                       let message = try session.store?.message(id: messageId), message.conversationId == row.id else { return false }
@@ -2361,7 +2362,7 @@ struct MirrorBubble: View {
 
 
     private var chips: [MirrorReactionChip] {
-        (message.reactions ?? []).map { g in
+        PulseReactionId.groups(message.reactions).map { g in
             MirrorReactionChip(emoji: g.emoji, count: g.count, iReacted: g.userIds.contains(viewerId))
         }
     }
@@ -2466,7 +2467,7 @@ struct MirrorBubble: View {
                         ForEach(chips) { chip in
                             Button(action: { onToggleReaction(chip.emoji) }) {
                                 HStack(spacing: 2) {
-                                    Text(chip.emoji).font(.system(size: 12))
+                                    Image(systemName: PulseReactionId.normalize(chip.emoji).symbolName).font(.system(size: 12))
                                     if chip.count > 1 {
                                         Text("\(chip.count)")
                                             .font(.system(size: 11, weight: .semibold))

@@ -1,4 +1,5 @@
 import type { PrismaClient, Prisma } from '../../prisma/generated-client'
+import { reactionId } from './icon-ids.ts'
 
 export class MessageMutationError extends Error {
   constructor(public readonly status: number, message: string) { super(message) }
@@ -48,15 +49,17 @@ export async function mutateMessage<T>(db: PrismaClient, id: string, owner: stri
           await tx.message.update({ where: { id }, data: { deletedAt: now, pinnedAt: null, pinnedBy: null }, select: { id: true } })
           break
         case 'react': {
-          const existing = await tx.reaction.findUnique({
-            where: { messageId_userId_emoji: { messageId: id, userId: owner, emoji: action.emoji } }, select: { id: true },
-          })
-          // Native state requests are replay-safe. Keep legacy web toggle semantics
-          // only when the desired state is absent.
-          const present = action.present ?? !existing
-          changed = present !== Boolean(existing)
-          if (!present && existing) await tx.reaction.delete({ where: { id: existing.id } })
-          else if (present && !existing) await tx.reaction.create({ data: { messageId: id, userId: owner, emoji: action.emoji } })
+          const rows = await tx.reaction.findMany({ where: { messageId: id, userId: owner }, select: { id: true, emoji: true } })
+          const matching = rows.filter(row => reactionId(row.emoji) === action.emoji)
+          const canonical = matching.find(row => row.emoji === action.emoji)
+          // Same semantics as the displayed group, including legacy aliases.
+          // Adding converges to one canonical row; removal clears this actor's
+          // complete logical group without touching other actors/reaction types.
+          const present = action.present ?? matching.length === 0
+          const obsolete = matching.filter(row => !present || row.id !== canonical?.id)
+          changed = obsolete.length > 0 || (present && !canonical)
+          if (obsolete.length) await tx.reaction.deleteMany({ where: { id: { in: obsolete.map(row => row.id) } } })
+          if (present && !canonical) await tx.reaction.create({ data: { messageId: id, userId: owner, emoji: action.emoji } })
           break
         }
         case 'view': {

@@ -283,7 +283,7 @@ struct WhoReactedSheet: View {
     private var reaction: PulseReactionId { PulseReactionId.normalize(emoji) }
 
     private var group: WireReactionGroup? {
-        (message.reactions ?? []).first { $0.emoji == emoji }
+        PulseReactionId.groups(message.reactions).first { $0.emoji == reaction.rawValue }
     }
     private var iReacted: Bool {
         group?.userIds.contains(viewerId ?? "") == true

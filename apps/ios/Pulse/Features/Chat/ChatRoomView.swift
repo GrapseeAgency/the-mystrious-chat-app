@@ -3492,7 +3492,7 @@ struct BubbleView: View {
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.08)))
     }
 
-    private var reactions: [WireReactionGroup] { message.reactions ?? [] }
+    private var reactions: [WireReactionGroup] { PulseReactionId.groups(message.reactions) }
 
     private var reactionChips: some View {
         HStack(spacing: 4) {
@@ -5100,12 +5100,13 @@ final class RoomViewModel: ObservableObject {
     func react(_ message: WireChatMessage, emoji: String, session: PulseSession) {
         guard session.sessionGeneration == readSessionGeneration, let owner = session.viewer?.id else { return }
         let epoch = session.sessionGeneration
-        let present = !(message.reactions ?? []).contains { $0.emoji == emoji && $0.userIds.contains(owner) }
+        let reaction = PulseReactionId.normalize(emoji)
+        let present = !(message.reactions ?? []).contains { PulseReactionId.normalize($0.emoji) == reaction && $0.userIds.contains(owner) }
         PulseHaptics.tap()
         Task { [weak self] in
             guard let self, session.sessionGeneration == epoch else { return }
             do {
-                try await setReaction(message, emoji: emoji, present: present, session: session)
+                try await setReaction(message, emoji: reaction.rawValue, present: present, session: session)
             } catch is CancellationError { return } catch {
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 errorText = Self.describe(error)

@@ -888,10 +888,11 @@ class ChatRoomViewModel @Inject constructor(
     fun react(message: Message, emoji: String) {
         val owner = repo.viewerId ?: return
         val epoch = repo.attachmentSessionKey()
-        val present = message.reactions.none { it.userId == owner && it.emoji == emoji }
+        val reaction = app.pulse.protocol.reactionId(emoji)
+        val present = message.reactions.none { it.userId == owner && app.pulse.protocol.reactionId(it.emoji) == reaction }
         viewModelScope.launch {
             if (repo.viewerId != owner || repo.attachmentSessionKey() != epoch) return@launch
-            repo.react(message.id, emoji, present).onFailure { notify(it.message ?: "Couldn't update reaction", isError = true) }
+            repo.react(message.id, reaction, present).onFailure { notify(it.message ?: "Couldn't update reaction", isError = true) }
         }
     }
 

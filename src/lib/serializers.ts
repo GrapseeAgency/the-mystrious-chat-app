@@ -4,6 +4,7 @@
 // Server-only - never import from client components.
 import path from 'node:path'
 import { randomInt } from 'node:crypto'
+import { normalizedReactionGroups } from '@/lib/reaction-contract'
 import { redactDeletedMessage, quoteDisclosure } from '@/lib/message-disclosure'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
@@ -202,21 +203,7 @@ interface ReactionRow {
 }
 
 export function groupReactions(reactions: ReactionRow[]): MessageReactionGroup[] {
-  const order: string[] = []
-  const byEmoji = new Map<string, string[]>()
-  for (const r of reactions) {
-    let ids = byEmoji.get(r.emoji)
-    if (!ids) {
-      ids = []
-      byEmoji.set(r.emoji, ids)
-      order.push(r.emoji)
-    }
-    ids.push(r.userId)
-  }
-  return order.map((emoji) => {
-    const userIds = byEmoji.get(emoji) ?? []
-    return { emoji, userIds, count: userIds.length }
-  })
+  return normalizedReactionGroups(reactions)
 }
 
 /** Deep include reused by every message fetch (history, last-message, single). */

@@ -153,3 +153,25 @@ test('reaction state route refuses missing/nonboolean state and never invokes a 
   }
   assert.equal(fanouts.length, 1)
 })
+
+test('explicit reaction state removes legacy aliases as one owned logical reaction', () => fixture(async (db, act) => {
+  for (const [userId, emoji] of [['peer', '\u2764'], ['peer', 'heart'], ['peer', '\u2665\uFE0F'], ['other', '\u2764'], ['peer', 'fire']]) {
+    await db.reaction.create({ data: { messageId: 'root', userId, emoji } })
+  }
+  await act('peer', { kind: 'react', emoji: 'heart', present: false })
+  assert.deepEqual((await db.reaction.findMany({ where: { userId: 'peer' } })).map(r => r.emoji), ['fire'])
+  assert.equal(await db.reaction.count({ where: { userId: 'other' } }), 1)
+  assert.equal((await act('peer', { kind: 'react', emoji: 'heart', present: false })).changed, false)
+}))
+test('adding a legacy reaction converges to one canonical row and failed normalization rolls back', () => fixture(async (db, act) => {
+  for (const emoji of ['\u{1F525}', '\u{1F525}\uFE0F']) await db.reaction.create({ data: { messageId: 'root', userId: 'peer', emoji } })
+  const before = await db.reaction.findMany()
+  await assert.rejects(act('peer', { kind: 'react', emoji: 'fire', present: true }, 'root', async () => { throw Error('fault') }), /fault/)
+  assert.deepEqual(await db.reaction.findMany(), before)
+  await act('peer', { kind: 'react', emoji: 'fire', present: true })
+  const rows = await db.reaction.findMany()
+  assert.equal(rows.length, 1); assert.equal(rows[0].emoji, 'fire')
+  assert.equal((await act('peer', { kind: 'react', emoji: 'fire', present: true })).changed, false)
+  await act('peer', { kind: 'react', emoji: 'fire' }) // legacy toggle still toggles the whole displayed group
+  assert.equal(await db.reaction.count(), 0)
+}))

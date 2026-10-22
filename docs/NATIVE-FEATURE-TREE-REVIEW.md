@@ -3280,3 +3280,26 @@ retroactively repair votes that an older server already accepted after closure. 
 is still no total revision for open poll tallies or a durable offline vote queue. Poll
 creation's lost-ack identity is separate and not covered here. Autumn styling unchanged;
 no production deployment, merge, or whole-app clearance.
+
+### 2026-10-22 — legacy reaction aliases, unique members and mounted chips
+
+Stored emoji aliases and stable IDs could represent the same visible reaction while
+being counted and removed as different database rows. Native old caches also computed
+desired state from raw strings, and mounted Mirror chips rendered stable IDs as words.
+
+- Read serialization groups canonical IDs and counts unique members. The existing
+  serializable mutation now finds all actor-owned aliases, removes the whole logical
+  group, or converges an add to one canonical row. Other people and reaction types are
+  untouched; failed snapshot reads roll alias cleanup back.
+- JavaScript, Kotlin and Swift normalize text/emoji presentation selectors consistently.
+  Primary and mounted native desired-state calculations normalize cached aliases too.
+- Primary/Mirror chips and Swift's people drawer deduplicate aliases by member. Mounted
+  chips use the existing icon registry instead of showing the raw word `heart`/`fire`.
+  Existing autumn colors, chip layout and styling are retained.
+
+Verification: 184/184 server contracts passed, including real SQLite alias cleanup,
+explicit replay, legacy toggle and rollback coverage. Scoped TypeScript check and ten
+native syntax parses passed. Added Kotlin registry and Swift registry/cache-group tests;
+these are not locally compiled/device-tested. No schema migration needed, but changed
+serializer/mutation must be deployed together. No durable offline reaction queue, total
+reaction ordering or guaranteed event delivery is claimed. Not deployed or merged.

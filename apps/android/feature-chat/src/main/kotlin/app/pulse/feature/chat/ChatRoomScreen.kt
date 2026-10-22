@@ -3768,6 +3768,7 @@ private fun MessageRow(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 message.reactions
+                    .distinctBy { reactionId(it.emoji) to it.userId }
                     .groupBy { reactionId(it.emoji) }
                     .forEach { (id, list) ->
                         val popped by animateFloatAsState(1f, animationSpec = PulseMotion.bouncy(), label = "react")
