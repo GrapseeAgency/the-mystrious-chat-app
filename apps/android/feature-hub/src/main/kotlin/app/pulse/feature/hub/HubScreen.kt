@@ -387,12 +387,23 @@ class HubViewModel @Inject constructor(
     private val _logs = MutableStateFlow<List<HubLogDto>>(emptyList())
     val logs: StateFlow<List<HubLogDto>> = _logs.asStateFlow()
 
+    private var logsRequest = 0L
     fun loadLogs() {
+        val ticket = ++logsRequest
+        val epoch = repo.attachmentSessionKey()
+        val owned = repo.boundToCurrentAccount()
+        val owner = owned.viewerId
+        _logs.value = if (owner == null) emptyList() else _logs.value.filter { it.user?.id == owner }
         viewModelScope.launch {
-            repo.hubLogs(limit = 80, kind = null).fold(
-                onSuccess = { v -> _logs.value = v.logs },
-                onFailure = { t -> notify(t.message ?: "Could not load logs", isError = true) },
-            )
+            if (logsRequest != ticket || repo.attachmentSessionKey() != epoch) return@launch
+            try {
+                val page = owned.hubLogs(limit = 80, kind = null).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (logsRequest == ticket && repo.attachmentSessionKey() == epoch) _logs.value = page.logs
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (logsRequest == ticket && repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not load activity", isError = true)
+            }
         }
     }
 

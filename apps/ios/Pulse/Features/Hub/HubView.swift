@@ -308,15 +308,17 @@ final class HubViewModel: ObservableObject {
     func loadLogs() {
         let ticket = UUID()
         logsRequest = ticket
-        let epoch = session.sessionGeneration
+        let epoch = session.sessionGeneration, client = api
+        let owner = session.viewer?.id
+        logs = owner.map { id in logs.filter { $0.user?.id == id } } ?? []
         Task { @MainActor in
-            guard let api = api else { return }
+            guard logsRequest == ticket, session.sessionGeneration == epoch, let api = client else { return }
             do {
                 let fresh = try await api.hubLogs(limit: 80, kind: nil).logs
-                guard logsRequest == ticket, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, logsRequest == ticket, session.sessionGeneration == epoch else { return }
                 logs = fresh
             } catch {
-                guard logsRequest == ticket, session.sessionGeneration == epoch else { return }
+                guard !Task.isCancelled, logsRequest == ticket, session.sessionGeneration == epoch else { return }
                 toast(describe(error), isError: true) // keep the last real list
             }
         }

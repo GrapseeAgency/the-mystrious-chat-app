@@ -465,6 +465,8 @@ public struct WireHubLog: Codable, Hashable, Sendable {
 }
 
 public struct WireHubLogsPage: Codable, Sendable {
+    public let activityVersion: Int
+    public let userId: String
     public let logs: [WireHubLog]
 }
 

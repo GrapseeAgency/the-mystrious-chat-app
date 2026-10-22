@@ -3551,3 +3551,42 @@ Remaining: create lost-ACK identity, bounded event history/list pagination (cap 
 cross-device revision/ordering, durable offline actions and persisted native event snapshots.
 Deploy backend receipt changes before these native clients. No schema change, deployment or
 whole-app clearance; autumn appearance unchanged.
+
+### 2026-10-22 — private activity boundary discovered through task conversion
+
+Following message→board conversion revealed a separate, urgent disclosure: its
+message-derived task title is written to LogEvent, and `/api/hub/logs` returned
+all actors' raw rows/metadata. Anonymous-send rows linked the real sender to the
+room/message ID; private folder names, transfer details and whiteboard reset
+journal rows were also eligible for this global feed. This is not public activity.
+
+- Activity GET now requires the existing credential to own `userId`, queries only
+  that actor, omits internal/unknown journal categories and orphan rows, and sends
+  `private, no-store` plus `Vary: Authorization`. Kind filters cannot bypass owner
+  scope. No operation journal is deleted or rewritten (whiteboard correctness kept).
+- Versioned `{activityVersion:1,userId,logs}` is required by both native APIs; every
+  row must identify that same owner. Even an empty legacy/global response is refused.
+  Android repository rejects account/session changes before accepting a result.
+- Primary Hub reads capture their API/account before launching, discard superseded
+  completions and keep genuine history on refresh failure. Mounted Android now loops
+  every 12 seconds while STARTED (the previous code refreshed only once after the
+  initial load), uses an account-keyed lifetime and reports failure instead of clearing
+  history into a fake empty result. Swift Hub state resets with session generation.
+- Browser query/cache keys are owner/version scoped and validate the receipt too. The
+  legacy demo browser has no credential injection in `apiJson`; it now displays a
+  verified-session error rather than receiving private data by supplying a user ID.
+  No new sign-in/recovery flow or anonymous-access fallback was introduced.
+
+Verification: three new real SQLite/evaluated-route tests verify actor isolation,
+anonymous metadata exclusion, kind scoping, journal retention and denial before DB reads.
+218/218 full server contracts, scoped backend TS, Hub TSX syntax-only check, 12 native
+syntax parses and diff checks pass. Added Kotlin/Swift wrong-owner/legacy/orphan receipt
+matrices and updated the Swift wire fixture. Full native/React type checking for this
+tranche is still separate. Event Android build exposed one missing Compose import;
+8d83ff9 adds `rememberCoroutineScope` (subsequent native result not yet known).
+
+Important: this is a source correction, NOT a verified production closure. Backend
+rollout is required; previously returned activity cannot be recalled. Task-board source
+privacy/lifetime, operation receipts/ordering and creation retry identity are still under
+investigation; this urgent leak interrupted that trace. Wallet/task private read paths
+also need continued inspection. Autumn colors/layout preserved; no merge/deployment claim.

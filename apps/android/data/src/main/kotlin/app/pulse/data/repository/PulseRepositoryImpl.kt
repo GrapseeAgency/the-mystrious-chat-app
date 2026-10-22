@@ -3916,11 +3916,18 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun hubLogs(limit: Int, kind: String?): Result<HubLogsPageDto> =
-        when (val r = api.hubLogs(limit, kind)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun hubLogs(limit: Int, kind: String?): Result<HubLogsPageDto> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val response = api.hubLogs(owner, limit, kind)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Activity account changed")
+        return when (response) {
+            is PulseResult.Success -> Result.success(response.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${response.kind}: ${response.message}"))
         }
+    }
 
     override suspend fun appInstallState(appId: String): Result<AppInstallStateDto> =
         when (val r = api.appInstallState(appId, viewerId ?: "")) {

@@ -203,7 +203,7 @@ final class Wave7WireTests: XCTestCase {
     func testHubLogsAndInstallStateAndCommunity() throws {
         let logs = try decode(
             WireHubLogsPage.self,
-            #"{"logs":[{"id":"g1","kind":"transfer","message":"sent 25 PC to @bob","meta":"{\"to\":\"u2\"}","user":{"id":"u1","name":"A"}}]}"#,
+            #"{"activityVersion":1,"userId":"u1","logs":[{"id":"g1","kind":"transfer","message":"sent 25 PC to @bob","meta":"{\"to\":\"u2\"}","user":{"id":"u1","name":"A"}}]}"#,
         )
         XCTAssertEqual(logs.logs.first?.meta, #"{"to":"u2"}"#)
         let install = try decode(

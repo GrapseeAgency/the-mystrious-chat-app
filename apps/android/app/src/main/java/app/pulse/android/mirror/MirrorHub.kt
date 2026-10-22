@@ -1,5 +1,7 @@
 package app.pulse.android.mirror
 
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.ensureActive
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -230,7 +232,7 @@ internal fun MirrorHub(
                 "tasks" -> HubTasksPanel(repository)
                 "market" -> HubMarketPanel(repository, viewerId, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
                 "swap" -> HubSwapPanel(repository, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
-                "logs" -> HubLogsPanel(repository)
+                "logs" -> androidx.compose.runtime.key(viewerId) { HubLogsPanel(repository, viewerId) }
                 "apps" -> HubAppsPanel(repository, viewerId, onOpenCategory = { categoryPage = it }, onOpenApp = { appPage = it })
                 else -> HubWalletPanel(repository, onCoinsChanged = { walletCoins = it.first; walletGems = it.second })
             }
@@ -1065,17 +1067,30 @@ private fun HubSwapPanel(repository: PulseRepository, onCoinsChanged: () -> Unit
 // ── Logs panel (terminal) ────────────────────────────────────────────────────
 
 @Composable
-private fun HubLogsPanel(repository: PulseRepository) {
-    var logs by remember { mutableStateOf<List<HubLogDto>>(emptyList()) }
-    var tick by remember { mutableStateOf(0) }
-
-    LaunchedEffect(Unit) {
-        logs = repository.hubLogs(80, null).getOrNull()?.logs ?: emptyList()
-    }
-    // web refetchInterval 12s
-    LaunchedEffect(tick) {
-        delay(12_000)
-        logs = repository.hubLogs(80, null).getOrNull()?.logs ?: emptyList()
+private fun HubLogsPanel(repository: PulseRepository, viewerId: String) {
+    var logs by remember(viewerId) { mutableStateOf<List<HubLogDto>>(emptyList()) }
+    var error by remember(viewerId) { mutableStateOf<String?>(null) }
+    var loaded by remember(viewerId) { mutableStateOf(false) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(repository, viewerId, lifecycle) {
+        val epoch = repository.attachmentSessionKey()
+        val owned = repository.boundToCurrentAccount()
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                if (repository.viewerId != viewerId || repository.attachmentSessionKey() != epoch) break
+                try {
+                    val page = owned.hubLogs(80, null).getOrThrow()
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (repository.viewerId != viewerId || repository.attachmentSessionKey() != epoch) break
+                    logs = page.logs; loaded = true; error = null
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (failure: Exception) {
+                    if (repository.viewerId != viewerId || repository.attachmentSessionKey() != epoch) break
+                    error = failure.message ?: "Could not refresh private activity."
+                }
+                delay(12_000)
+            }
+        }
     }
 
     Column(
@@ -1098,16 +1113,17 @@ private fun HubLogsPanel(repository: PulseRepository) {
             Box(Modifier.size(10.dp).clip(CircleShape).background(SubPageInk.Amber500))
             Spacer(Modifier.width(4.dp))
             Text(
-                "pulse://logs - live event stream",
+                "pulse://logs - your private activity",
                 color = SubPageInk.Zinc400,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
             )
         }
         Column(Modifier.heightIn(max = 416.dp)) {
+            error?.let { Text(it, color = SubPageInk.Amber400, fontSize = 11.sp, modifier = Modifier.padding(8.dp)) }
             if (logs.isEmpty()) {
                 Text(
-                    "no events yet - use the economy panels to generate some",
+                    if (error != null) "Activity unavailable" else if (loaded) "No activity yet" else "Loading private activity…",
                     color = SubPageInk.Zinc600,
                     fontSize = 11.sp,
                     modifier = Modifier

@@ -270,6 +270,7 @@ struct RootView: View {
                     switchTab(.chats)
                     session.requestOpenRoom(conversation)
                 })
+                .id(session.sessionGeneration)
                 .transition(panelTransition)
             case .contacts:
                 ContactsView(session: session, onOpenRoom: { conversation in

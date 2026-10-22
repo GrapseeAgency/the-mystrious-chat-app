@@ -1521,9 +1521,13 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/hub/logs?limit=&kind= → { logs } desc.
     public func hubLogs(limit: Int, kind: String?) async throws -> WireHubLogsPage {
-        var path = "/api/hub/logs?limit=\(limit)"
+        var path = "/api/hub/logs?userId=\(q(userId))&limit=\(limit)"
         if let kind, !kind.isEmpty { path += "&kind=\(q(kind))" }
-        return try await get(path)
+        let page: WireHubLogsPage = try await get(path)
+        guard page.activityVersion == 1, page.userId == userId, page.logs.allSatisfy({ $0.user?.id == userId }) else {
+            throw Failure(kind: .validation, message: "Private activity could not be verified. Update the gateway before retrying.")
+        }
+        return page
     }
 
     /// GET /api/hub/apps/{appId}/install?userId= - appId is the numeric matrix id as a string.

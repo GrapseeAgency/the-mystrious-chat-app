@@ -1980,10 +1980,16 @@ class PulseApi(
         }
 
     /** GET /api/hub/logs?limit=&kind= → { logs } desc; `meta` stays a raw JSON string. */
-    suspend fun hubLogs(limit: Int = 60, kind: String? = null): PulseResult<HubLogsPageDto> {
-        val q = StringBuilder("?limit=$limit")
+    suspend fun hubLogs(userId: String, limit: Int = 60, kind: String? = null): PulseResult<HubLogsPageDto> {
+        val q = StringBuilder("?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&limit=$limit")
         if (!kind.isNullOrBlank()) q.append("&kind=").append(java.net.URLEncoder.encode(kind, "UTF-8"))
-        return get("/api/hub/logs$q") { PulseJson.decodeFromString(HubLogsPageDto.serializer(), it) }
+        return get("/api/hub/logs$q") {
+            PulseJson.decodeFromString(HubLogsPageDto.serializer(), it).also { page ->
+                require(page.activityVersion == 1 && page.userId == userId && page.logs.all { row -> row.user?.id == userId }) {
+                    "Private activity could not be verified. Update the gateway before retrying."
+                }
+            }
+        }
     }
 
     /** GET /api/hub/apps/{appId}/install?userId= - appId is the numeric matrix id as a string. */

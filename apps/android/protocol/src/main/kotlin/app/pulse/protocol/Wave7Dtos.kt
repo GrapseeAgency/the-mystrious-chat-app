@@ -573,7 +573,7 @@ data class HubLogDto(
 )
 
 @Serializable
-data class HubLogsPageDto(val logs: List<HubLogDto> = emptyList())
+data class HubLogsPageDto(val activityVersion: Int, val userId: String, val logs: List<HubLogDto>)
 
 @Serializable
 data class AppInstallStateDto(
