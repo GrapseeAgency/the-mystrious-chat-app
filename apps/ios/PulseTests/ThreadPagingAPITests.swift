@@ -20,7 +20,7 @@ private final class ThreadPagingProtocol: URLProtocol {
         }
         var object: [String: Any] = ["error": "failure", "code": code]
         if status == 200 {
-            let root: [String: Any] = ["id": "root", "conversationId": "room", "senderId": "me", "content": "Hi", "createdAt": "2026-10-22T00:00:00Z"]
+            let root: [String: Any] = ["id": "root", "conversationId": "room", "senderId": "me", "content": "Hi", "kind": "text", "createdAt": "2026-10-22T00:00:00Z"]
             var reply = root; reply["id"] = next ? "b" : "a"; reply["parentId"] = "root"
             object = ["parent": root, "replies": [reply], "threadPageVersion": 1, "hasMore": !next]
             if !next { object["nextCursor"] = "next" }

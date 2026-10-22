@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class CompleteThreadTests: XCTestCase {
     private func row(_ id: String, parent: String? = nil) throws -> WireChatMessage {
-        var values: [String: Any] = ["id": id, "conversationId": "room", "senderId": "me", "content": "Hi",
+        var values: [String: Any] = ["id": id, "conversationId": "room", "senderId": "me", "content": "Hi", "kind": "text",
             "createdAt": "2026-10-22T00:00:00Z"]
         if let parent { values["parentId"] = parent }
         return try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: values))
