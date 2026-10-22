@@ -2842,3 +2842,19 @@ native syntax checks pass. New native test execution is pending. Historical nati
 94c7404 iOS succeeded after the async fixture fix; 04b33a9 iOS build/tests/archive and Android
 build succeeded (Android instrumented jobs were still pending when inspected). Those runs
 do not validate these newer invite edits. Autumn palette unchanged.
+
+
+## 2026-10-22 — conversation-detail reads need membership, not just a room ID
+
+GET /conversations/:id previously loaded by ID alone and serialized the room for any
+supplied viewer. It now filters on the viewer's membership inside a read transaction, so
+the permission predicate and included message/member snapshot cannot race a removal.
+Nonmembers receive the same 404 as an unavailable room and never enter private-field
+serialization. A supplied bearer credential must also own the viewer ID. Important limit:
+legacy tokenless compatibility remains; this is not a claim that claimed user IDs are fully
+authenticated without credentials. That broader authentication migration remains deferred.
+
+Three actual-handler regressions pass with injected storage/transport boundaries: denied
+nonmember read without serialization, authorized viewer projection, and mismatched supplied
+credential rejection before DB access. Full server rerun for this tiny follow-up is pending;
+previous invite tranche was 148/148. No native appearance changes.
