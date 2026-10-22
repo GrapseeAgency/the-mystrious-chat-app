@@ -589,25 +589,36 @@ data class HubLogsPageDto(val activityVersion: Int, val userId: String, val logs
 
 @Serializable
 data class AppInstallStateDto(
-    val installed: Boolean = false,
+    val appVersion: Int,
+    val appId: String,
+    val userId: String,
+    val installed: Boolean,
     /** 'connected' | null */
     val status: String? = null,
     val installedAt: String? = null,
-    val installs: Int = 0,
-    val installers: List<HubLogUserDto> = emptyList(),
+    val installs: Int,
+    val installers: List<HubLogUserDto>,
 )
 
 @Serializable
 data class AppInstallResultDto(
-    val installed: Boolean = false,
+    val appVersion: Int,
+    val appId: String,
+    val userId: String,
+    val installed: Boolean,
     val status: String? = null,
-    val installs: Int = 0,
+    val installs: Int,
+    val installedAt: String? = null,
+    val installers: List<HubLogUserDto> = emptyList(),
 )
 
 @Serializable
 data class AppCommunityDto(
+    val appVersion: Int,
+    val appId: String,
+    val userId: String,
     /** Existing conversation-detail shape (same serializer as GET /api/conversations/{id}). */
     val conversation: ConversationSummaryDto? = null,
-    val memberCount: Long = 0,
-    val joined: Boolean = false,
+    val memberCount: Long,
+    val joined: Boolean,
 )

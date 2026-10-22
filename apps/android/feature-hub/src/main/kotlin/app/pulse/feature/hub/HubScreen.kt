@@ -478,79 +478,84 @@ class HubViewModel @Inject constructor(
     }
 
     // ── F-HB-08/09/10 apps ──
+    private val appGates = mutableMapOf<String, app.pulse.domain.sync.RoomRefreshGate>()
+    private val _appBusy = MutableStateFlow<Set<String>>(emptySet())
+    val appBusy = _appBusy.asStateFlow()
+    private val _appErrors = MutableStateFlow<Map<String, String>>(emptyMap())
+    val appErrors = _appErrors.asStateFlow()
+    private var appsOwner: String? = null
+    private var appsScan = 0L
+    private fun prepareApps() {
+        if (appsOwner != repo.attachmentSessionKey()) {
+            _installs.value = emptyMap(); _appErrors.value = emptyMap(); appGates.clear()
+            appsOwner = repo.attachmentSessionKey(); appsScan++
+        }
+    }
+    private suspend fun fetchInstall(appId: String, owned: PulseRepository, epoch: String?) {
+        if (repo.attachmentSessionKey() != epoch || "install:$appId" in _appBusy.value) return
+        val gate = appGates.getOrPut("install:$appId") { app.pulse.domain.sync.RoomRefreshGate() }
+        val ticket = gate.beginRead() ?: return
+        try {
+            val row = owned.appInstallState(appId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repo.attachmentSessionKey() == epoch && gate.accepts(ticket)) {
+                _installs.value = _installs.value + (appId to AppInstallRow(appId, row.installed, row.installs, row.status, row.installedAt, row.installers))
+                _appErrors.value = _appErrors.value - "read:$appId"
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) {
+            if (repo.attachmentSessionKey() == epoch && gate.accepts(ticket)) _appErrors.value = _appErrors.value + ("read:$appId" to (error.message ?: "Connection status unavailable."))
+        }
+    }
     fun loadInstallState(appId: String) {
+        prepareApps()
+        val owned = repo.boundToCurrentAccount(); val epoch = repo.attachmentSessionKey()
+        viewModelScope.launch { fetchInstall(appId, owned, epoch) }
+    }
+    private fun <T> appAction(key: String, operation: suspend (PulseRepository) -> T, accepted: (T) -> Unit, refresh: () -> Unit = {}) {
+        prepareApps()
+        if (key in _appBusy.value) return
+        val owned = repo.boundToCurrentAccount(); val epoch = repo.attachmentSessionKey() ?: return
+        val gate = appGates.getOrPut(key) { app.pulse.domain.sync.RoomRefreshGate() }
+        _appBusy.value = _appBusy.value + key; _appErrors.value = _appErrors.value - key; gate.beginWrite()
         viewModelScope.launch {
-            repo.appInstallState(appId).onSuccess { v ->
-                _installs.value = _installs.value + (
-                    appId to AppInstallRow(
-                        appId = appId,
-                        installed = v.installed,
-                        installs = v.installs,
-                        status = v.status,
-                        installedAt = v.installedAt,
-                        installers = v.installers,
-                    )
-                    )
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val row = operation(owned)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() == epoch) accepted(row)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) _appErrors.value = _appErrors.value + (key to (error.message ?: "App action was not confirmed."))
+            } finally { _appBusy.value = _appBusy.value - key; gate.endWrite() }
+            if (repo.attachmentSessionKey() == epoch) refresh()
+        }
+    }
+    private fun setInstalled(appId: String, name: String, installed: Boolean) = appAction("install:$appId", operation = { owned ->
+        (if (installed) owned.installApp(appId) else owned.uninstallApp(appId)).getOrThrow()
+    }, accepted = { row ->
+        _installs.value = _installs.value + (appId to AppInstallRow(appId, row.installed, row.installs, row.status, row.installedAt, row.installers))
+        notify(if (installed) "Connected to $name" else "Disconnected from $name")
+    }, refresh = { loadInstallState(appId) })
+    fun installApp(appId: String, name: String) = setInstalled(appId, name, true)
+    fun uninstallApp(appId: String, name: String) = setInstalled(appId, name, false)
+    fun joinCommunity(appId: String, name: String, onJoined: (String) -> Unit) = appAction("community:$appId",
+        operation = { it.joinAppCommunity(appId).getOrThrow() }, accepted = { row ->
+            require(row.joined); onJoined(requireNotNull(row.conversation).id)
+        })
+    fun loadMyApps(catalog: HubCatalog) {
+        prepareApps()
+        val epoch = repo.attachmentSessionKey(); val owned = repo.boundToCurrentAccount(); val ticket = ++appsScan
+        viewModelScope.launch {
+            // All catalog entries, bounded sequential traffic; never silently drop apps 25–100.
+            for (app in catalog.apps) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (ticket != appsScan || repo.attachmentSessionKey() != epoch) return@launch
+                fetchInstall(app.n.toString(), owned, epoch)
             }
         }
     }
 
-    fun installApp(appId: String, name: String) {
-        viewModelScope.launch {
-            repo.installApp(appId).fold(
-                onSuccess = { v ->
-                    notify(if (v.installed) "Connected to $name" else "Disconnected from $name")
-                    loadInstallState(appId)
-                },
-                onFailure = { t -> notify(t.message ?: "Install failed", isError = true) },
-            )
-        }
-    }
-
-    fun uninstallApp(appId: String, name: String) {
-        viewModelScope.launch {
-            repo.uninstallApp(appId).fold(
-                onSuccess = { _ -> notify("Disconnected from $name"); loadInstallState(appId) },
-                onFailure = { t -> notify(t.message ?: "Disconnect failed", isError = true) },
-            )
-        }
-    }
-
-    /** F-HB-09 - join (or fetch) the app community → real conversation id. */
-    fun joinCommunity(appId: String, name: String, onJoined: (String) -> Unit) {
-        viewModelScope.launch {
-            repo.joinAppCommunity(appId).fold(
-                onSuccess = { v ->
-                    v.conversation?.id?.let { id ->
-                        notify("Welcome to the $name community")
-                        onJoined(id)
-                    } ?: notify("Community unavailable", isError = true)
-                },
-                onFailure = { t -> notify(t.message ?: "Could not join the community", isError = true) },
-            )
-        }
-    }
-
-    /** F-HB-10 - fan-out My apps state (web hub-data.tsx parity). */
-    fun loadMyApps(catalog: HubCatalog) {
-        viewModelScope.launch {
-            val ids = catalog.apps.take(24).map { it.n.toString() }
-            val rows = ids.map { id -> async { id to runCatching { repo.appInstallState(id).getOrNull() }.getOrNull() } }.awaitAll()
-            val map = rows.mapNotNull { (id, state) ->
-                state?.let {
-                    id to AppInstallRow(
-                        appId = id,
-                        installed = it.installed,
-                        installs = it.installs,
-                        status = it.status,
-                        installedAt = it.installedAt,
-                        installers = it.installers,
-                    )
-                }
-            }.toMap()
-            _installs.value = _installs.value + map
-        }
-    }
 }
 
 // ── Surface routing (hub tab → sub-surface sheets) ───────────────────────

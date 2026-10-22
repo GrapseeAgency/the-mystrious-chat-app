@@ -208,14 +208,14 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(logs.logs.first?.meta, #"{"to":"u2"}"#)
         let install = try decode(
             WireAppInstallState.self,
-            #"{"installed":true,"status":"connected","installedAt":"2026-01-15T00:00:00.000Z","installs":3,"installers":[{"id":"u1","name":"A"}]}"#,
+            #"{"appVersion":1,"appId":"11","userId":"u1","installed":true,"status":"connected","installedAt":"2026-01-15T00:00:00.000Z","installs":3,"installers":[{"id":"u1","name":"A"}]}"#,
         )
         XCTAssertEqual(install.installs, 3)
-        let installResult = try decode(WireAppInstallResult.self, #"{"installed":true,"status":"connected","installs":4}"#)
+        let installResult = try decode(WireAppInstallResult.self, #"{"appVersion":1,"appId":"11","userId":"u1","installed":true,"status":"connected","installs":4}"#)
         XCTAssertEqual(installResult.status, "connected")
         let community = try decode(
             WireAppCommunity.self,
-            ##"{"conversation":{"id":"cnv1","isGroup":true,"name":"#011 · Twitch community","members":[]},"memberCount":2,"joined":true}"##,
+            ##"{"appVersion":1,"appId":"11","userId":"u1","conversation":{"id":"cnv1","isGroup":true,"name":"#011 · Twitch community","members":[]},"memberCount":2,"joined":true}"##,
         )
         XCTAssertEqual(community.conversation?.id, "cnv1")
         XCTAssertEqual(community.joined, true)

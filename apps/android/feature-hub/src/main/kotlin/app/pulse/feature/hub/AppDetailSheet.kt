@@ -29,7 +29,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -160,12 +162,19 @@ internal fun AppDetailSheet(
     val installed = row?.installed == true
     val viewerId = vm.viewerId
 
-    LaunchedEffect(appId) { vm.loadInstallState(appId) }
+    val actionErrors by vm.appErrors.collectAsStateWithLifecycle()
+    val pending by vm.appBusy.collectAsStateWithLifecycle()
+    LaunchedEffect(appId, viewerId) { vm.loadInstallState(appId) }
 
     var tab by remember(appId) { mutableIntStateOf(0) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
+            (actionErrors["install:$appId"] ?: actionErrors["community:$appId"] ?: actionErrors["read:$appId"])?.let {
+                Text(it, color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { vm.loadInstallState(appId) }) { Text("Refresh status") }
+            }
+            if ("install:$appId" in pending || "community:$appId" in pending) Text("Waiting for confirmation…")
             // hero (identity + live install card + installer stack)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AppIconTile(app, 44)

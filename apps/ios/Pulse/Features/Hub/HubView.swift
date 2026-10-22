@@ -347,84 +347,107 @@ final class HubViewModel: ObservableObject {
 
     // MARK: apps
 
-    func loadInstallState(appId: String) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                installs[appId] = try await api.appInstallState(appId: appId)
-                installStateFailed.remove(appId)
-            } catch {
-                // Honest failure - the sheet shows "Connection stats
-                // unavailable" + Retry instead of a fake zero.
-                installStateFailed.insert(appId)
-            }
+    @Published private(set) var appBusy: Set<String> = []
+    @Published private(set) var appErrors: [String: String] = [:]
+    private var appTickets: [String: UUID] = [:]
+    private var appsOwner: UUID?
+    private func prepareApps() {
+        if appsOwner != session.sessionGeneration {
+            installs = [:]; communities = [:]; installStateFailed = []; communityFailed = []
+            appErrors = [:]; appTickets = [:]; appsOwner = session.sessionGeneration
         }
     }
-
-    /// R5-A Item 3 - community state for the detail sheet's Community tab
-    /// (member count badge, roster, joined pill). Failures are marked so the
-    /// tab can honestly offer a retry.
+    private func fetchInstall(_ appId: String, client: PulseAPIClient, epoch: UUID) async {
+        let key = "install:" + appId
+        guard session.sessionGeneration == epoch, !appBusy.contains(key) else { return }
+        let ticket = UUID(); appTickets[key] = ticket
+        do {
+            let row = try await client.appInstallState(appId: appId)
+            guard !Task.isCancelled, session.sessionGeneration == epoch, appTickets[key] == ticket else { return }
+            installs[appId] = row; installStateFailed.remove(appId)
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, appTickets[key] == ticket else { return }
+            installStateFailed.insert(appId)
+        }
+    }
+    func loadInstallState(appId: String) {
+        prepareApps()
+        guard let client = api else { installStateFailed.insert(appId); return }
+        let epoch = session.sessionGeneration
+        Task { @MainActor in await fetchInstall(appId, client: client, epoch: epoch) }
+    }
     func loadAppCommunity(appId: String) {
+        prepareApps()
+        let key = "community:" + appId
+        guard !appBusy.contains(key), let client = api else { return }
+        let epoch = session.sessionGeneration, ticket = UUID(); appTickets[key] = ticket
         Task { @MainActor in
-            guard let api = api else { return }
+            guard session.sessionGeneration == epoch, appTickets[key] == ticket else { return }
             do {
-                communities[appId] = try await api.appCommunity(appId: appId)
-                communityFailed.remove(appId)
+                let row = try await client.appCommunity(appId: appId)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, appTickets[key] == ticket else { return }
+                communities[appId] = row; communityFailed.remove(appId)
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, appTickets[key] == ticket else { return }
                 communityFailed.insert(appId)
             }
         }
     }
-
-    func toggleInstall(_ app: HubCatalogApp) {
-        let appId = String(app.n)
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                let connected = installs[appId]?.installed == true
-                let result = connected ? try await api.uninstallApp(appId: appId) : try await api.installApp(appId: appId)
-                toast((result.installed ?? false) ? "Connected to \(app.name)" : "Disconnected from \(app.name)")
-                loadInstallState(appId: appId)
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
-    }
-
-    func joinCommunity(_ app: HubCatalogApp, completion: @escaping (WireConversationSummary) -> Void) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                let result = try await api.joinAppCommunity(appId: String(app.n))
-                if let conversation = result.conversation {
-                    toast("Welcome to the \(app.name) community")
-                    completion(conversation)
-                } else {
-                    toast("Community unavailable", isError: true)
-                }
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
-    }
-
-    /// F-HB-10 - My apps fan-out (web hub-data.tsx:61,107 parity).
-    func loadMyApps(_ catalog: HubCatalog) {
-        let ticket = UUID()
-        appsRequest = ticket
+    private func appAction<T: Sendable>(_ key: String, operation: @escaping (PulseAPIClient) async throws -> T,
+                                        accepted: @escaping (T) -> Void, refresh: @escaping () -> Void) {
+        prepareApps()
+        guard !appBusy.contains(key), let client = api else { return }
         let epoch = session.sessionGeneration
+        appBusy.insert(key); appTickets[key] = UUID(); appErrors[key] = nil
         Task { @MainActor in
-            guard let api = api else { return }
+            do {
+                defer { appBusy.remove(key) }
+                guard session.sessionGeneration == epoch else { return }
+                try Task.checkCancellation()
+                let row = try await operation(client)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                accepted(row)
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                appErrors[key] = describe(error)
+            }
+            if !Task.isCancelled, session.sessionGeneration == epoch { refresh() }
+        }
+    }
+    func toggleInstall(_ app: HubCatalogApp) {
+        prepareApps()
+        let id = String(app.n)
+        guard let state = installs[id], !installStateFailed.contains(id) else { loadInstallState(appId: id); return }
+        let disconnect = state.installed == true
+        appAction("install:" + id, operation: { client in
+            if disconnect { return try await client.uninstallApp(appId: id) }
+            return try await client.installApp(appId: id)
+        }, accepted: { row in
+            self.installs[id] = WireAppInstallState(appVersion: row.appVersion, appId: row.appId, userId: row.userId,
+                installed: row.installed, status: row.status, installedAt: row.installedAt, installs: row.installs, installers: row.installers)
+            self.toast(disconnect ? "Disconnected from \(app.name)" : "Connected to \(app.name)")
+        }, refresh: { self.loadInstallState(appId: id) })
+    }
+    func joinCommunity(_ app: HubCatalogApp, completion: @escaping (WireConversationSummary) -> Void) {
+        let id = String(app.n)
+        appAction("community:" + id, operation: { client in try await client.joinAppCommunity(appId: id) }, accepted: { row in
+            guard row.joined == true, let conversation = row.conversation else { return }
+            self.communities[id] = row; self.communityFailed.remove(id)
+            completion(conversation)
+        }, refresh: { self.loadAppCommunity(appId: id) })
+    }
+    func loadMyApps(_ catalog: HubCatalog) {
+        prepareApps()
+        guard let client = api else { return }
+        let ticket = UUID(), epoch = session.sessionGeneration; appsRequest = ticket
+        Task { @MainActor in
             for app in catalog.apps {
                 guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
-                let appId = String(app.n)
-                if let state = try? await api.appInstallState(appId: appId) {
-                    guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
-                    installs[appId] = state
-                }
+                await fetchInstall(String(app.n), client: client, epoch: epoch)
             }
         }
     }
+
 }
 
 private enum HubSurface: String, Identifiable {
@@ -1048,6 +1071,9 @@ private struct HubAppDetailSheet: View {
                 tabBar
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
+                        if let error = vm.appErrors["install:" + appId] ?? vm.appErrors["community:" + appId] {
+                            Text(error).foregroundStyle(.red)
+                        }
                         switch tab {
                         case .overview: overviewPanel
                         case .community: communityPanel
@@ -1058,6 +1084,7 @@ private struct HubAppDetailSheet: View {
                     .padding(.bottom, 28)
                 }
             }
+            .disabled(vm.appBusy.contains("install:" + appId) || vm.appBusy.contains("community:" + appId))
             .background(Color(.systemBackground))
             .navigationTitle(currentApp.name)
             .navigationBarTitleDisplayMode(.inline)
@@ -1065,7 +1092,7 @@ private struct HubAppDetailSheet: View {
             // Load (and re-load on related-app swaps) the install state +
             // community state for the current app (web useAppInstallStatus /
             // useAppCommunity parity).
-            .task(id: currentApp.n) {
+            .task(id: "\(vm.viewerId ?? ""):\(currentApp.n)") {
                 vm.loadInstallState(appId: appId)
                 vm.loadAppCommunity(appId: appId)
             }

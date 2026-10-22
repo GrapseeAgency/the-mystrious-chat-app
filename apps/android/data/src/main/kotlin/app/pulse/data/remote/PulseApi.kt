@@ -2051,34 +2051,68 @@ class PulseApi(
         }
     }
 
+    private fun requireAppIdentity(version: Int, app: String, owner: String, expectedApp: String, expectedOwner: String) {
+        require(version == 1 && app == expectedApp && owner == expectedOwner) { "App response was not confirmed for this account. Update the gateway before retrying." }
+    }
+    private fun requireInstallState(installed: Boolean, status: String?, count: Int) {
+        require(count >= 0 && if (installed) status == "connected" && count > 0 else status == null) { "Connection state was not confirmed." }
+    }
+    private fun requireAppCommunity(row: AppCommunityDto, appId: String, userId: String) {
+        requireAppIdentity(row.appVersion, row.appId, row.userId, appId, userId)
+        val room = row.conversation
+        require(row.memberCount >= 0)
+        if (room == null) { require(!row.joined && row.memberCount == 0L); return }
+        require(room.id.isNotBlank() && room.isGroup && room.myDraft == null && room.inviteCode == null)
+        require(room.members.all { it.id.isNotBlank() } && room.members.map { it.id }.distinct().size == room.members.size)
+        require(if (row.joined) room.members.size.toLong() == row.memberCount && room.members.any { it.id == userId } else room.members.isEmpty()) {
+            "Community membership was not confirmed."
+        }
+    }
+
     /** GET /api/hub/apps/{appId}/install?userId= - appId is the numeric matrix id as a string. */
     suspend fun appInstallState(appId: String, userId: String): PulseResult<AppInstallStateDto> =
         get("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(AppInstallStateDto.serializer(), it)
+            PulseJson.decodeFromString(AppInstallStateDto.serializer(), it).also { row ->
+                requireAppIdentity(row.appVersion, row.appId, row.userId, appId, userId)
+                requireInstallState(row.installed, row.status, row.installs)
+                if (row.installed) java.time.Instant.parse(requireNotNull(row.installedAt))
+                require(row.installers.size <= 6 && row.installers.size <= row.installs && row.installers.all { person -> person.id.isNotBlank() } && row.installers.map { person -> person.id }.distinct().size == row.installers.size)
+            }
         }
 
     /** POST /api/hub/apps/{appId}/install { userId } - idempotent connect. */
     suspend fun installApp(appId: String, userId: String): PulseResult<AppInstallResultDto> =
         post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(AppInstallResultDto.serializer(), it)
+            PulseJson.decodeFromString(AppInstallResultDto.serializer(), it).also { row ->
+                requireAppIdentity(row.appVersion, row.appId, row.userId, appId, userId)
+                requireInstallState(row.installed, row.status, row.installs)
+                require(row.installed == true) { "Connection change was not confirmed." }
+            }
         }
 
     /** DELETE /api/hub/apps/{appId}/install { userId } - hard remove. */
     suspend fun uninstallApp(appId: String, userId: String): PulseResult<AppInstallResultDto> =
         deleteWithBody("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/install", userId) {
-            PulseJson.decodeFromString(AppInstallResultDto.serializer(), it)
+            PulseJson.decodeFromString(AppInstallResultDto.serializer(), it).also { row ->
+                requireAppIdentity(row.appVersion, row.appId, row.userId, appId, userId)
+                requireInstallState(row.installed, row.status, row.installs)
+                require(row.installed == false) { "Connection change was not confirmed." }
+            }
         }
 
     /** GET /api/hub/apps/{appId}/community?userId= → { conversation|null, memberCount, joined }. */
     suspend fun appCommunity(appId: String, userId: String): PulseResult<AppCommunityDto> =
         get("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/community?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(AppCommunityDto.serializer(), it)
+            PulseJson.decodeFromString(AppCommunityDto.serializer(), it).also { row -> requireAppCommunity(row, appId, userId) }
         }
 
     /** POST /api/hub/apps/{appId}/community { userId } - auto-provisions the group; founder = admin. */
     suspend fun joinAppCommunity(appId: String, userId: String): PulseResult<AppCommunityDto> =
         post("/api/hub/apps/" + java.net.URLEncoder.encode(appId, "UTF-8") + "/community", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(AppCommunityDto.serializer(), it)
+            PulseJson.decodeFromString(AppCommunityDto.serializer(), it).also { row ->
+                requireAppCommunity(row, appId, userId)
+                require(row.joined && row.conversation != null) { "Community membership was not confirmed." }
+            }
         }
 
     // REM-A group governance (web group-info-sheet parity)

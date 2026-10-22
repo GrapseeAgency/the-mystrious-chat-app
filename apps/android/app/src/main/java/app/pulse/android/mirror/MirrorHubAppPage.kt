@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import app.pulse.domain.repository.PulseRepository
+import app.pulse.domain.sync.RoomRefreshGate
 import app.pulse.protocol.AppCommunityDto
 import app.pulse.protocol.AppInstallStateDto
 import java.time.Instant
@@ -94,6 +95,21 @@ internal fun MirrorHubAppPage(
     onOpenApp: (Int) -> Unit,
     onOpenConversation: (String) -> Unit,
 ) {
+    androidx.compose.runtime.key(appId, viewerId, repository.attachmentSessionKey()) {
+        MirrorHubAppContent(appId, repository, viewerId, onBack, onOpenCategory, onOpenApp, onOpenConversation)
+    }
+}
+
+@Composable
+private fun MirrorHubAppContent(
+    appId: Int,
+    repository: PulseRepository,
+    viewerId: String,
+    onBack: () -> Unit,
+    onOpenCategory: (String) -> Unit,
+    onOpenApp: (Int) -> Unit,
+    onOpenConversation: (String) -> Unit,
+) {
     val app = HubCatalog.MATRIX.firstOrNull { it.n == appId }
     if (app == null) {
         MirrorHubAppUnknown(appId, onBack)
@@ -117,101 +133,87 @@ internal fun MirrorHubAppPage(
     var menuOpen by remember(appId) { mutableStateOf(false) }
     var tab by remember(appId) { mutableStateOf(0) } // 0 overview / 1 community / 2 connectors
 
-    fun loadStatus() {
+    val owned = remember { repository.boundToCurrentAccount() }
+    val epoch = remember { repository.attachmentSessionKey() }
+    val installGate = remember { RoomRefreshGate() }
+    val communityGate = remember { RoomRefreshGate() }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    fun current() = repository.viewerId == viewerId && repository.attachmentSessionKey() == epoch
+    suspend fun refreshStatus() {
+        val ticket = installGate.beginRead() ?: return
         statusLoading = status == null
-        scope.launch(Dispatchers.IO) {
-            val fresh = runCatching { repository.appInstallState(appIdStr).getOrNull() }.getOrNull()
-            launch(Dispatchers.Main) {
-                status = fresh
-                statusError = fresh == null
-                statusLoading = false
-            }
-        }
+        try {
+            if (!current()) return
+            val fresh = owned.appInstallState(appIdStr).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (current() && installGate.accepts(ticket)) { status = fresh; statusError = false }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) { if (current() && installGate.accepts(ticket)) statusError = true
+        } finally { if (current() && installGate.accepts(ticket)) statusLoading = false }
     }
-    fun loadCommunity() {
-        scope.launch(Dispatchers.IO) {
-            val fresh = runCatching { repository.appCommunity(appIdStr).getOrNull() }.getOrNull()
-            launch(Dispatchers.Main) {
-                community = fresh
-                communityError = fresh == null
-                communityLoading = false
-            }
-        }
+    suspend fun refreshCommunity() {
+        val ticket = communityGate.beginRead() ?: return
+        communityLoading = community == null
+        try {
+            if (!current()) return
+            val fresh = owned.appCommunity(appIdStr).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (current() && communityGate.accepts(ticket)) { community = fresh; communityError = false }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) { if (current() && communityGate.accepts(ticket)) communityError = true
+        } finally { if (current() && communityGate.accepts(ticket)) communityLoading = false }
     }
-    LaunchedEffect(appId) {
-        scope.launch(Dispatchers.IO) {
-            val fresh = runCatching { repository.appInstallState(appIdStr).getOrNull() }.getOrNull()
-            launch(Dispatchers.Main) {
-                status = fresh
-                statusError = fresh == null
-                statusLoading = false
-            }
-            val comm = runCatching { repository.appCommunity(appIdStr).getOrNull() }.getOrNull()
-            launch(Dispatchers.Main) {
-                community = comm
-                communityError = comm == null
-                communityLoading = false
-            }
-            val wallet = runCatching { repository.wallet().getOrNull() }.getOrNull()
-            launch(Dispatchers.Main) {
-                walletCoins = wallet?.wallet?.coins
-                walletGems = wallet?.wallet?.gems
-            }
-        }
+    fun loadStatus() { scope.launch { refreshStatus() } }
+    fun loadCommunity() { scope.launch { refreshCommunity() } }
+    LaunchedEffect(owned) {
+        refreshStatus(); refreshCommunity()
+        val wallet = owned.wallet().getOrNull()
+        if (current() && wallet != null) { walletCoins = wallet.wallet.coins; walletGems = wallet.wallet.gems }
     }
-
     val installed = status?.installed == true
-
-    // web useInstallToggle L105-125: POST/DELETE then the fresh state refetch
     fun toggleConnect() {
-        if (busy) return
+        // Never guess a toggle from a failed or not-yet-loaded read.
+        if (busy || status == null || statusError || !current()) { loadStatus(); return }
+        val disconnect = installed
         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-        busy = true
-        scope.launch(Dispatchers.IO) {
-            runCatching {
-                if (installed) repository.uninstallApp(appIdStr) else repository.installApp(appIdStr)
-            }
-            val fresh = runCatching { repository.appInstallState(appIdStr).getOrNull() }.getOrNull()
-            launch(Dispatchers.Main) {
-                status = fresh
-                statusError = fresh == null
-                statusLoading = false
-                busy = false
-            }
+        busy = true; actionError = null; installGate.beginWrite(); statusLoading = false
+        scope.launch {
+            try {
+                if (!current()) return@launch
+                val result = (if (disconnect) owned.uninstallApp(appIdStr) else owned.installApp(appIdStr)).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) status = AppInstallStateDto(result.appVersion, result.appId, result.userId,
+                    result.installed, result.status, result.installedAt, result.installs, result.installers)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { if (current()) actionError = error.message ?: "Connection change was not confirmed."
+            } finally { busy = false; installGate.endWrite() }
+            if (current()) refreshStatus()
         }
     }
-
-    // web join.mutate (L1017-1019): onJoined hands the conversation id to the
-    // main chat surface - the page pops itself (backHash('/hub')) on the way
     fun joinCommunity() {
-        if (joining) return
-        joining = true
-        scope.launch(Dispatchers.IO) {
-            val joined = runCatching { repository.joinAppCommunity(appIdStr).getOrNull() }
-            val fresh = runCatching { repository.appCommunity(appIdStr).getOrNull() }.getOrNull()
-            launch(Dispatchers.Main) {
-                community = fresh
-                communityError = fresh == null
-                communityLoading = false
-                joining = false
-                val cid = joined.getOrNull()?.conversation?.id ?: fresh?.conversation?.id
-                if (cid != null) {
-                    onBack()
-                    onOpenConversation(cid)
+        if (joining || !current()) return
+        joining = true; actionError = null; communityGate.beginWrite(); communityLoading = false
+        scope.launch {
+            try {
+                if (!current()) return@launch
+                val joined = owned.joinAppCommunity(appIdStr).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) {
+                    community = joined; communityError = false
+                    // A preview or a later GET is never a successful join receipt.
+                    val id = requireNotNull(joined.conversation).id
+                    onBack(); onOpenConversation(id)
                 }
-            }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { if (current()) actionError = error.message ?: "Community membership was not confirmed."
+            } finally { joining = false; communityGate.endWrite() }
         }
     }
-
     fun openChat() {
+        if (!current()) return
         val convo = community?.conversation
-        if (convo != null) {
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            onBack()
-            onOpenConversation(convo.id)
-        } else {
-            joinCommunity()
-        }
+        if (community?.joined == true && convo != null) { onBack(); onOpenConversation(convo.id) }
+        else joinCommunity()
     }
 
     Column(
@@ -264,6 +266,8 @@ internal fun MirrorHubAppPage(
             }
             if (installed) HubConnectedBadge()
         }
+
+        actionError?.let { Text(it, color = SubPageInk.Rose400, modifier = Modifier.padding(12.dp)) }
 
         // DetailTabBar (web 143-215): h-11 flex rows, amber selected text,
         // sliding gradient underline, pop-in count badges

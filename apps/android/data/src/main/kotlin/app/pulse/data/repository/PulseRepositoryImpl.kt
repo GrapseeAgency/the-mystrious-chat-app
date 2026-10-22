@@ -3947,35 +3947,11 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun appInstallState(appId: String): Result<AppInstallStateDto> =
-        when (val r = api.appInstallState(appId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
-    override suspend fun installApp(appId: String): Result<AppInstallResultDto> =
-        when (val r = api.installApp(appId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
-    override suspend fun uninstallApp(appId: String): Result<AppInstallResultDto> =
-        when (val r = api.uninstallApp(appId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
-    override suspend fun appCommunity(appId: String): Result<AppCommunityDto> =
-        when (val r = api.appCommunity(appId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
-    override suspend fun joinAppCommunity(appId: String): Result<AppCommunityDto> =
-        when (val r = api.joinAppCommunity(appId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun appInstallState(appId: String): Result<AppInstallStateDto> = ownedAccountRequest { api.appInstallState(appId, it) }
+    override suspend fun installApp(appId: String): Result<AppInstallResultDto> = ownedAccountRequest { api.installApp(appId, it) }
+    override suspend fun uninstallApp(appId: String): Result<AppInstallResultDto> = ownedAccountRequest { api.uninstallApp(appId, it) }
+    override suspend fun appCommunity(appId: String): Result<AppCommunityDto> = ownedAccountRequest { api.appCommunity(appId, it) }
+    override suspend fun joinAppCommunity(appId: String): Result<AppCommunityDto> = ownedAccountRequest { api.joinAppCommunity(appId, it) }
 
     // Wave 7 read-through snapshot cache (story_cache precedent): network
     // success overwrites the blob, network failure serves the last good page.

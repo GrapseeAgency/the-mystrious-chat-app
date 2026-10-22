@@ -370,15 +370,16 @@ class Wave7ApiTest {
     @Test
     fun `app install state GET install POST and uninstall DELETE`() = runTest {
         configured()
-        response = """{"installed":true,"status":"connected","installedAt":"2026-01-15T00:00:00.000Z","installs":3,"installers":[{"id":"u1","name":"A"}]}"""
+        response = """{"appVersion":1,"appId":"11","userId":"u1","installed":true,"status":"connected","installedAt":"2026-01-15T00:00:00.000Z","installs":3,"installers":[{"id":"u1","name":"A"}]}"""
         val g = api().appInstallState("11", "u1")
         assertTrue(g is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/hub/apps/11/install?userId=u1"))
 
-        response = """{"installed":true,"status":"connected","installs":4}"""
+        response = """{"appVersion":1,"appId":"11","userId":"u1","installed":true,"status":"connected","installs":4}"""
         val p = api().installApp("11", "u1")
         assertTrue(p is PulseResult.Success)
 
+        response = """{"appVersion":1,"appId":"11","userId":"u1","installed":false,"status":null,"installs":3}"""
         val d = api().uninstallApp("11", "u1")
         assertTrue(d is PulseResult.Success)
         assertEquals(HttpMethod.Delete, lastMethod)
@@ -387,7 +388,7 @@ class Wave7ApiTest {
     @Test
     fun `app community join posts userId and decodes conversation`() = runTest {
         configured()
-        response = """{"conversation":{"id":"cnv1","isGroup":true,"name":"#011 · Twitch community"},"memberCount":2,"joined":true}"""
+        response = """{"appVersion":1,"appId":"11","userId":"u1","conversation":{"id":"cnv1","isGroup":true,"name":"#011 · Twitch community","members":[{"id":"u1","name":"A"},{"id":"u2","name":"B"}]},"memberCount":2,"joined":true}"""
         val r = api().joinAppCommunity("11", "u1")
         assertTrue(r is PulseResult.Success)
         val v = (r as PulseResult.Success).value

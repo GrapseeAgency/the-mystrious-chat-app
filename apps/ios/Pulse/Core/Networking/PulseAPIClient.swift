@@ -1620,32 +1620,74 @@ public struct PulseAPIClient: Sendable {
         return page
     }
 
+    private func requireAppIdentity(_ version: Int, _ app: String, _ owner: String, _ expectedApp: String) throws {
+        guard version == 1, app == expectedApp, owner == userId else { throw Failure(kind: .validation, message: "App response was not confirmed for this account. Update the gateway before retrying.") }
+    }
+    private func requireInstallState(_ installed: Bool?, _ status: String?, _ count: Int?) throws {
+        guard let installed, let count, count >= 0, installed ? status == "connected" && count > 0 : status == nil else {
+            throw Failure(kind: .validation, message: "Connection state was not confirmed.")
+        }
+    }
+    private func requireAppCommunity(_ row: WireAppCommunity, _ appId: String) throws {
+        try requireAppIdentity(row.appVersion, row.appId, row.userId, appId)
+        guard let joined = row.joined, let count = row.memberCount, count >= 0 else { throw Failure(kind: .validation, message: "Community state was not confirmed.") }
+        guard let room = row.conversation else {
+            guard !joined, count == 0 else { throw Failure(kind: .validation, message: "Community is missing.") }; return
+        }
+        guard !room.id.isEmpty, room.isGroup, room.myDraft == nil, room.inviteCode == nil,
+              room.members.allSatisfy({ !$0.id.isEmpty }), Set(room.members.map(\.id)).count == room.members.count,
+              joined ? room.members.count == count && room.members.contains(where: { $0.id == userId }) : room.members.isEmpty else {
+            throw Failure(kind: .validation, message: "Community membership was not confirmed.")
+        }
+    }
+
     /// GET /api/hub/apps/{appId}/install?userId= - appId is the numeric matrix id as a string.
     public func appInstallState(appId: String) async throws -> WireAppInstallState {
-        try await get("/api/hub/apps/\(q(appId))/install?userId=\(q(userId))")
+        let row: WireAppInstallState = try await get("/api/hub/apps/\(q(appId))/install?userId=\(q(userId))")
+        try requireAppIdentity(row.appVersion, row.appId, row.userId, appId)
+        try requireInstallState(row.installed, row.status, row.installs)
+        guard let people = row.installers, people.count <= 6, people.count <= (row.installs ?? -1),
+              people.allSatisfy({ $0.id?.isEmpty == false }), Set(people.compactMap(\.id)).count == people.count,
+              row.installed != true || row.installedAt.flatMap(PulseFormat.date) != nil else {
+            throw Failure(kind: .validation, message: "Connection snapshot was not confirmed.")
+        }
+        return row
     }
 
     /// POST /api/hub/apps/{appId}/install { userId } - idempotent connect.
     public func installApp(appId: String) async throws -> WireAppInstallResult {
         let data = try await postRaw("/api/hub/apps/\(q(appId))/install", body: ["userId": userId])
-        return try envelope(WireAppInstallResult.self, from: data)
+        let row = try envelope(WireAppInstallResult.self, from: data)
+        try requireAppIdentity(row.appVersion, row.appId, row.userId, appId)
+        try requireInstallState(row.installed, row.status, row.installs)
+        guard row.installed == true else { throw Failure(kind: .validation, message: "Connection change was not confirmed.") }
+        return row
     }
 
     /// DELETE /api/hub/apps/{appId}/install { userId } - hard remove.
     public func uninstallApp(appId: String) async throws -> WireAppInstallResult {
         let data = try await deleteRaw("/api/hub/apps/\(q(appId))/install", body: ["userId": userId])
-        return try envelope(WireAppInstallResult.self, from: data)
+        let row = try envelope(WireAppInstallResult.self, from: data)
+        try requireAppIdentity(row.appVersion, row.appId, row.userId, appId)
+        try requireInstallState(row.installed, row.status, row.installs)
+        guard row.installed == false else { throw Failure(kind: .validation, message: "Connection change was not confirmed.") }
+        return row
     }
 
     /// GET /api/hub/apps/{appId}/community?userId= → { conversation|null, memberCount, joined }.
     public func appCommunity(appId: String) async throws -> WireAppCommunity {
-        try await get("/api/hub/apps/\(q(appId))/community?userId=\(q(userId))")
+        let row: WireAppCommunity = try await get("/api/hub/apps/\(q(appId))/community?userId=\(q(userId))")
+        try requireAppCommunity(row, appId)
+        return row
     }
 
     /// POST /api/hub/apps/{appId}/community { userId } - auto-provisions the group; founder = admin.
     public func joinAppCommunity(appId: String) async throws -> WireAppCommunity {
         let data = try await postRaw("/api/hub/apps/\(q(appId))/community", body: ["userId": userId])
-        return try envelope(WireAppCommunity.self, from: data)
+        let row = try envelope(WireAppCommunity.self, from: data)
+        try requireAppCommunity(row, appId)
+        guard row.joined == true, row.conversation != nil else { throw Failure(kind: .validation, message: "Community membership was not confirmed.") }
+        return row
     }
 
     // REM-B - group admin (web group-info-sheet.tsx parity)

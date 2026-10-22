@@ -486,6 +486,9 @@ public struct WireHubLogsPage: Codable, Sendable {
 }
 
 public struct WireAppInstallState: Codable, Hashable, Sendable {
+    public let appVersion: Int
+    public let appId: String
+    public let userId: String
     public let installed: Bool?
     public let status: String?
     public let installedAt: String?
@@ -494,12 +497,20 @@ public struct WireAppInstallState: Codable, Hashable, Sendable {
 }
 
 public struct WireAppInstallResult: Codable, Sendable {
+    public let appVersion: Int
+    public let appId: String
+    public let userId: String
     public let installed: Bool?
     public let status: String?
     public let installs: Int?
+    public let installedAt: String?
+    public let installers: [WireHubLogUser]?
 }
 
 public struct WireAppCommunity: Codable, Sendable {
+    public let appVersion: Int
+    public let appId: String
+    public let userId: String
     public let conversation: WireConversationSummary?
     public let memberCount: Int?
     public let joined: Bool?
