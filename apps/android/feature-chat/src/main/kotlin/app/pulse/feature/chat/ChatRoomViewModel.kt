@@ -852,7 +852,7 @@ class ChatRoomViewModel @Inject constructor(
                         .onSuccess { if (repo.attachmentSessionKey() == epoch) { notify("Message unpinned"); loadPins() } }
                         .onFailure { if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Couldn't remove the pin", isError = true) }
                 } else {
-                    repo.toggleMessagePin(messageId)
+                    repo.pinMessage(messageId)
                         .onSuccess { if (repo.attachmentSessionKey() == epoch) { notify(if (it.pinnedAt != null) "Message pinned" else "Message unpinned"); loadPins() } }
                         .onFailure { if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Couldn't update the pin", isError = true) }
                 }

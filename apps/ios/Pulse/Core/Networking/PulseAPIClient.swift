@@ -365,15 +365,17 @@ public struct PulseAPIClient: Sendable {
         return message
     }
 
-    /// POST /api/messages/{id}/pin {userId} - toggle; the {message} back
-    /// carries pinnedAt/pinnedBy when pinned, nil when unpinned.
-    public func toggleMessagePin(id: String, userId: String) async throws -> WireChatMessage {
-        let data = try await postRaw("/api/messages/\(id)/pin", body: ["userId": userId])
-        let message = try WireMessageEnvelope.extract(from: data)
-        guard message.id == id, message.deletedAt == nil else {
+    /// Explicit addition; an old gateway must refuse rather than toggle on retry.
+    public func pinMessage(id: String, userId: String) async throws -> WireChatMessage {
+        struct Receipt: Decodable { let messageId: String; let pinned: Bool }
+        struct Envelope: Decodable { let message: WireChatMessage; let pin: Receipt }
+        let data = try await postRaw("/api/messages/\(id)/pin-state", body: ["userId": userId, "pinned": true])
+        let response = try decoder.decode(Envelope.self, from: data)
+        guard response.pin.messageId == id, response.pin.pinned, response.message.id == id,
+              response.message.deletedAt == nil, response.message.pinnedAt != nil else {
             throw Failure(kind: .validation, message: "The pin update was not confirmed.")
         }
-        return message
+        return response.message
     }
 
     private struct UnpinAck: Decodable { let unpinned: Bool }

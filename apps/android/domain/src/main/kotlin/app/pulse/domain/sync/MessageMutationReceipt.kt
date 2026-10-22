@@ -14,7 +14,7 @@ fun validateMessageMutationReceipt(requested: Message, incoming: Message, owner:
         MessageMutationKind.EDIT -> check(incoming.authorId == owner && !incoming.isDeleted &&
             incoming.editedAt != null && incoming.body == content) { "The message edit was not confirmed." }
         MessageMutationKind.DELETE -> check(incoming.authorId == owner && incoming.isDeleted) { "Message deletion was not confirmed." }
-        MessageMutationKind.PIN -> check(!incoming.isDeleted) { "The pin update was not confirmed." }
+        MessageMutationKind.PIN -> check(!incoming.isDeleted && incoming.pinnedAt != null) { "The pin update was not confirmed." }
     }
 }
 

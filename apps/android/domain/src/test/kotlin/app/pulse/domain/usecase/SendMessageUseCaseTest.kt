@@ -150,7 +150,7 @@ class SendMessageUseCaseTest {
         // Wave 1 messaging surface (stubs - the send path is the subject here)
         override suspend fun editMessage(messageId: String, content: String) =
             Result.failure<Message>(UnsupportedOperationException())
-        override suspend fun toggleMessagePin(messageId: String) =
+        override suspend fun pinMessage(messageId: String) =
             Result.failure<Message>(UnsupportedOperationException())
         override suspend fun toggleMessageSave(messageId: String) =
             Result.failure<Boolean>(UnsupportedOperationException())

@@ -280,7 +280,7 @@ internal fun MirrorMessageActionPanel(
                         val next = if (pinnedLocal) {
                             repository.unpinMessage(message.id).getOrThrow()
                             false
-                        } else repository.toggleMessagePin(message.id).getOrThrow().pinnedAt != null
+                        } else repository.pinMessage(message.id).getOrThrow().pinnedAt != null
                         requireActionOwner()
                         pinnedLocal = next
                         null

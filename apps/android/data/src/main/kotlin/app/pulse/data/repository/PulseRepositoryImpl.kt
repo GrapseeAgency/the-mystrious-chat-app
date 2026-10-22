@@ -1600,7 +1600,7 @@ class PulseRepositoryImpl constructor(
     override suspend fun editMessage(messageId: String, content: String): Result<Message> =
         mutateOwnedMessage(messageId, app.pulse.domain.sync.MessageMutationKind.EDIT, content)
 
-    override suspend fun toggleMessagePin(messageId: String): Result<Message> =
+    override suspend fun pinMessage(messageId: String): Result<Message> =
         mutateOwnedMessage(messageId, app.pulse.domain.sync.MessageMutationKind.PIN)
 
     private val messageActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -1622,7 +1622,7 @@ class PulseRepositoryImpl constructor(
             val watermark = messageEventClock.get()
             val response = when (kind) {
                 app.pulse.domain.sync.MessageMutationKind.EDIT -> api.editMessage(messageId, owner, checkNotNull(content))
-                app.pulse.domain.sync.MessageMutationKind.PIN -> api.toggleMessagePin(messageId, owner)
+                app.pulse.domain.sync.MessageMutationKind.PIN -> api.pinMessage(messageId, owner)
                 app.pulse.domain.sync.MessageMutationKind.DELETE -> api.deleteMessage(messageId, owner)
             }
             requireConversationOwner(owner, epoch)

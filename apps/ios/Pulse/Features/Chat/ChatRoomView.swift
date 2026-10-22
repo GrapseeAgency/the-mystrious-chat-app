@@ -5249,7 +5249,7 @@ final class RoomViewModel: ObservableObject {
             do {
                 try Task.checkCancellation()
                 guard session.sessionGeneration == epoch else { return }
-                let fresh = try await session.mutateMessage(message, action: message.pinnedAt == nil ? .togglePin : .unpin)
+                let fresh = try await session.mutateMessage(message, action: message.pinnedAt == nil ? .pin : .unpin)
                 try Task.checkCancellation()
                 guard session.sessionGeneration == epoch else { return }
                 self.upsert(fresh)

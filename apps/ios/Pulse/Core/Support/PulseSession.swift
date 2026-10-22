@@ -232,7 +232,7 @@ public final class PulseSession: ObservableObject {
         }
     }
 
-    public enum MessageAction { case edit(String), togglePin, unpin, delete }
+    public enum MessageAction { case edit(String), pin, unpin, delete }
     private var messageActions: [String: UUID] = [:]
 
     /// One account-owned action per message, persisted before any surface accepts it.
@@ -249,7 +249,7 @@ public final class PulseSession: ObservableObject {
         let incoming: WireChatMessage?
         switch action {
         case .edit(let content): incoming = try await client.editMessage(id: requested.id, userId: viewer.id, content: content)
-        case .togglePin: incoming = try await client.toggleMessagePin(id: requested.id, userId: viewer.id)
+        case .pin: incoming = try await client.pinMessage(id: requested.id, userId: viewer.id)
         case .delete: incoming = try await client.deleteOwnMessage(id: requested.id)
         case .unpin:
             try await client.unpinMessage(id: requested.id, userId: viewer.id)
@@ -271,7 +271,7 @@ public final class PulseSession: ObservableObject {
                         let merged = PulseMessageMerge.acceptEdit(current, incoming: incoming)
                         try recordMessageMutation(merged)
                     }
-                case .togglePin, .unpin: break // never rewind a later relayed pin/reaction
+                case .pin, .unpin: break // never rewind a later relayed pin/reaction
                 }
             }
         } else { try applyPinRemoval(requested.id, startedAt: revision) }

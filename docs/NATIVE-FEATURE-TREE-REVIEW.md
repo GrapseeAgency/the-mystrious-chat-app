@@ -3345,3 +3345,26 @@ of this tranche. No schema change or production deployment. Legacy positive Pin 
 a toggle, not a durable/replay-safe set command, and pins still have no total revision.
 Saved/task backend ordering, durable edit recovery and broader action paths remain open.
 No whole-app clearance; autumn palette/layout unchanged.
+
+### 2026-10-22 — explicit native pin-add after uncertain acknowledgements
+
+Followed the remaining positive-Pin toggle called out above. A repeated Pin after a
+lost response could remove the pin. Native Android/Swift now use `pinMessage` and the
+new `/api/messages/{id}/pin-state` endpoint with `pinned:true`; unpin remains an explicit
+removal. The server checks boolean state, commits using the shared serializable helper,
+and returns an identity/state receipt alongside the transaction snapshot. Repeated adds
+keep the original pin stamp and attribution; they do not toggle or steal another pinner's
+credit. Legacy web toggle remains supported separately.
+
+Both native decoders require the matching receipt and a live, actually pinned message.
+There is no fallback to the toggle route: an older gateway fails visibly rather than
+inverting state. Updated primary/mounted calls and Kotlin fake repository implementations.
+Added real SQLite replay/attribution and route validation/fanout cases, Kotlin MockEngine
+receipt/no-fallback checks, and expanded Swift mocked receipt validation.
+
+Verification: 189/189 server contracts, scoped strict TypeScript, 13 native syntax parses
+and whitespace checks pass. Prior 077ba72 iOS archive passed when checked; these new
+native tests have not run locally. No DB migration; deploy the new backend route before
+clients if Pin must remain available throughout rollout. No total pin revision, durable
+offline pin queue or exactly-once ordering across another person's intervening action is
+claimed. No production deployment/merge; autumn styling unchanged.

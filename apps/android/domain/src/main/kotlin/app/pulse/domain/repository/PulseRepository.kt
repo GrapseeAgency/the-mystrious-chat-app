@@ -481,8 +481,8 @@ interface PulseRepository {
     /** PATCH /api/messages/{id} {userId, content} - sender-only edit → fresh row (editedAt set). */
     suspend fun editMessage(messageId: String, content: String): Result<Message>
 
-    /** POST /api/messages/{id}/pin {userId} - toggle → fresh row (pinnedAt/pinnedBy). */
-    suspend fun toggleMessagePin(messageId: String): Result<Message>
+    /** POST /api/messages/{id}/pin-state {userId, pinned:true} - replay-safe addition, never a toggle. */
+    suspend fun pinMessage(messageId: String): Result<Message>
 
     /** POST /api/messages/{id}/save {userId} - toggle → the new saved state. */
     suspend fun toggleMessageSave(messageId: String): Result<Boolean>

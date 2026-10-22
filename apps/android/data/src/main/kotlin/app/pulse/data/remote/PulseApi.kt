@@ -549,9 +549,18 @@ class PulseApi(
     suspend fun editMessage(messageId: String, userId: String, content: String): PulseResult<ChatMessageDto> =
         patch("/api/messages/$messageId", jsonOf("userId" to userId, "content" to content)) { messageOf(it) }
 
-    /** POST /api/messages/{id}/pin { userId } → { message } (toggle; relays message:pinned). */
-    suspend fun toggleMessagePin(messageId: String, userId: String): PulseResult<ChatMessageDto> =
-        post("/api/messages/$messageId/pin", jsonOf("userId" to userId)) { messageOf(it) }
+    /** Explicit addition; no legacy toggle fallback on an uncertain response. */
+    suspend fun pinMessage(messageId: String, userId: String): PulseResult<ChatMessageDto> =
+        post("/api/messages/$messageId/pin-state", jsonOf("userId" to userId, "pinned" to true)) { raw ->
+            val envelope = requireNotNull(PulseJson.parseToJsonElement(raw) as? JsonObject) { "Pin response is missing" }
+            val receipt = requireNotNull(envelope["pin"] as? JsonObject) { "Pin state was not confirmed" }
+            require(receipt["messageId"] == JsonPrimitive(messageId) && receipt["pinned"] == JsonPrimitive(true)) {
+                "Pin state acknowledgement did not match"
+            }
+            messageOf(raw).also { row ->
+                require(row.id == messageId && row.deletedAt == null && row.pinnedAt != null) { "The pin update was not confirmed" }
+            }
+        }
 
     suspend fun unpinMessage(messageId: String, userId: String): PulseResult<Unit> =
         deleteWithBody("/api/messages/$messageId/pin", userId) {
