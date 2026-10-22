@@ -1848,99 +1848,45 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    /**
-     * Forward = re-POST the SAME body into the target conversation (no wire
-     * endpoint - spec §1.1). Media is forwarded by reusing the stored paths;
-     * the wire kind maps back through the whitelist (text|image|audio|sticker|
-     * location|file). REM-A F-MS-10: a NETWORK-class failure on a PLAIN TEXT
-     * forward rides the existing outbox (kind "text") instead of dying -
-     * media stays online-only per spec §1.2.
-     */
+    /** All forward kinds enter the same durable queue BEFORE any network request. */
     override suspend fun forwardMessage(targetConversationId: String, source: Message): Result<Message> {
-        try {
-            if (source.threadRootId?.let { threadIsDenied(it) } == true) {
-                return Result.failure(IllegalStateException("This thread is unavailable. Nothing was forwarded."))
-            }
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            return Result.failure(error)
-        }
-        if (source.viewOnce || source.isDeleted || source.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
-            return Result.failure(IllegalStateException("This message can't be forwarded."))
-        }
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
         val clientId = java.util.UUID.randomUUID().toString()
-        val textOnly = source.kind == Message.Kind.TEXT &&
-            source.imagePath == null && source.audioPath == null && source.filePath == null
-        return when (
-            val r = api.sendMessage(
-                conversationId = targetConversationId,
-                senderId = viewerId ?: "",
-                content = source.body,
-                clientId = clientId,
-                imagePath = source.imagePath,
-                audioPath = source.audioPath,
-                durationMs = source.durationMs,
-                filePath = source.filePath,
-                fileName = source.fileName,
-                fileSize = source.fileSize,
-                kind = wireKindOf(source.kind),
-                // R1-W2F (F-MD-07) - location pins keep their {lat,lng,label}
-                // payload when forwarded, so the target room renders a REAL pin.
-                payload = source.payload?.let { raw ->
-                    runCatching { PulseJson.parseToJsonElement(raw) }.getOrNull()
-                        as? kotlinx.serialization.json.JsonObject
-                },
-            )
-        ) {
-            is PulseResult.Success -> {
-                val message = r.value.messageOrThrow()
-                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
-                scheduleConversationsRefresh()
-                Result.success(message)
-            }
-            is PulseResult.Failure -> {
-                if (r.kind == PulseResult.Failure.Kind.NETWORK && textOnly && !viewerId.isNullOrBlank()) {
-                    val nowIso = java.time.OffsetDateTime.now()
-                        .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-                    val temp = Message(
-                        id = app.pulse.domain.model.TEMP_MESSAGE_PREFIX + clientId,
-                        conversationId = targetConversationId,
-                        authorId = viewerId ?: "",
-                        authorName = viewerId ?: "",
-                        kind = Message.Kind.TEXT,
-                        body = source.body,
-                        createdAt = nowIso,
-                    )
-                    messageDao.upsertAll(listOf(MessageEntity.from(temp).copy(payloadJson = source.payload)))
-                    outboxDao.insert(
-                        OutboxEntity(
-                            conversationId = targetConversationId,
-                            clientId = clientId,
-                            content = source.body,
-                            kind = "text",
-                            createdAt = nowIso,
-                        ),
-                    )
-                                eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, targetConversationId))
-                    return Result.success(temp)
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val temp = database.withTransaction {
+                requireConversationOwner(owner, epoch)
+                val current = messageDao.byId(source.id)?.toDomain()
+                    ?: throw IllegalStateException("Refresh the original message before forwarding it.")
+                check(current.conversationId == source.conversationId) { "The source conversation changed." }
+                current.threadRootId?.let { rootId ->
+                    check(!threadIsDenied(rootId) && app.pulse.domain.sync.threadRootAvailable(
+                        messageDao.byId(rootId)?.toDomain(), current.conversationId, rootId)) { "This thread is unavailable. Nothing was forwarded." }
                 }
-                Result.failure(apiExceptionOf(r))
+                val sourceRoom = conversationDao.byId(current.conversationId)?.toDomain()
+                val targetRoom = conversationDao.byId(targetConversationId)?.toDomain()
+                check(sourceRoom?.memberIds?.contains(owner) == true && targetRoom?.memberIds?.contains(owner) == true) {
+                    "Refresh the source and destination chats before forwarding."
+                }
+                val plan = ForwardMessagePlan.create(current, targetConversationId, owner, clientId, System.currentTimeMillis())
+                messageDao.upsertAll(listOf(MessageEntity.from(plan.message)))
+                outboxDao.insert(OutboxEntity(conversationId = targetConversationId, clientId = clientId,
+                    content = plan.message.body, kind = plan.kind, createdAt = plan.message.createdAt, wirePayload = plan.message.payload))
+                requireConversationOwner(owner, epoch)
+                kotlin.coroutines.coroutineContext.ensureActive()
+                plan.message
             }
-        }
-    }
-
-    /** Domain kind → wire kind (whitelist text|image|audio|sticker|location|file). */
-    private fun wireKindOf(kind: Message.Kind): String? = when (kind) {
-        Message.Kind.TEXT -> "text"
-        Message.Kind.IMAGE -> "image"
-        Message.Kind.VOICE -> "audio"
-        Message.Kind.FILE -> "file"
-        // R1-W2F (F-MD-07) - pins re-POST with their wire kind + payload.
-        Message.Kind.LOCATION -> "location"
-        // VIDEO/POLL/RED_PACKET/SYSTEM are outside the send whitelist - omit
-        // and let the server default to text (media fields still ride along).
-        else -> null
+            // The account-owned dispatcher survives closing this picker. Its saved
+            // clientId/media/payload remain identical after lost replies or restart.
+            eventsBus.tryEmit(PulseEvent.OutboxQueued(clientId, targetConversationId))
+            scope.launch {
+                try { flushOutbox() } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                    Log.w(TAG, "Forward remains queued", error); scheduleSelfHeal()
+                }
+            }
+            return Result.success(temp)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(error) }
     }
 
     override suspend fun setServerDraft(conversationId: String, draft: String) {

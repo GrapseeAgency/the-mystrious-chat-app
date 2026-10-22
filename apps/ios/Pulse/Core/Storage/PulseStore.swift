@@ -446,19 +446,32 @@ public final class PulseStore: Sendable {
     }
 
     /// Persist operation and optimistic bubble before any network I/O.
-    public func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward) throws {
-        _ = try enqueueMessage(message, clientId: clientId, envelope: envelope, consumingDraft: nil)
+    public func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
+                               forwarding source: WireChatMessage? = nil) throws {
+        _ = try enqueueMessage(message, clientId: clientId, envelope: envelope, consumingDraft: nil, forwarding: source)
     }
 
     @discardableResult
     func enqueueMessage(_ message: WireChatMessage, clientId: String, envelope: PulseOutboxForward,
-                        consumingDraft token: PulseDraftConsumption?) throws -> Bool {
+                        consumingDraft token: PulseDraftConsumption?, forwarding source: WireChatMessage? = nil) throws -> Bool {
         guard let payload = PulseOutboxForward.encode(envelope) else { throw CocoaError(.coderInvalidValue) }
         if let token, token.storageIdentity != storageIdentity || token.conversationId != message.conversationId || token.parentId != message.parentId || token.parentId != envelope.parentId {
             throw CocoaError(.userCancelled)
         }
         let commit: (Bool) throws -> Void = { consume in
             try self.dbQueue.write { db in
+                if let source {
+                    guard let row = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [source.id]),
+                          let current = Self.messageRow(from: row), current.conversationId == source.conversationId,
+                          current.deletedAt == nil, current.viewOnce != true,
+                          PulseRemediationLogic.isAlive(current.expiresAt) else { throw ThreadAccessError() }
+                    if let root = current.parentId {
+                        if try Self.threadIsDenied(db, rootId: root) { throw ThreadAccessError() }
+                        guard let parent = try Row.fetchOne(db, sql: "SELECT * FROM message WHERE id = ?", arguments: [root]),
+                              let parentMessage = Self.messageRow(from: parent),
+                              PulseRemediationLogic.threadRootAvailable(parentMessage, roomId: current.conversationId, rootId: root) else { throw ThreadAccessError() }
+                    }
+                }
                 if let root = envelope.parentId, try Self.threadIsDenied(db, rootId: root) { throw ThreadAccessError() }
                 try Self.writeMessage(message, db: db)
                 try OutboxRow(id: nil, conversationId: message.conversationId, clientId: clientId,

@@ -2235,8 +2235,7 @@ fun ChatRoomScreen(
             conversations = conversations,
             onDismiss = { forwardTarget = null },
             onSend = { targets ->
-                viewModel.forwardTo(source, targets)
-                forwardTarget = null
+                viewModel.forwardTo(source, targets, viewerId)
             },
         )
     }

@@ -3199,3 +3199,42 @@ bubble, independently of the unavailable build log. `MirrorBubbleRow` still requ
 changed to accept `(Message, String)`. Replaced that stale method reference with an adapter
 that uses the displayed entry's message, preserving explicit tap-time intent. This repairs
 the source-level mismatch; replacement native compilation remains pending.
+
+### 2026-10-22 — forwarding is durable acceptance, not nested-result false success
+
+Traced both mounted Android and primary forward pickers. They wrapped a returned
+`Result` in `runCatching` and counted the outer success even when the actual forward
+failed. Mirror also launched detached work and left its picker live after completion.
+The repository posted before persisting, did not durably retain media forwards on an
+uncertain reply, and downgraded unsupported rich kinds to text. Swift forwarded before
+journaling, dropped sticker/location payloads, discarded successful returned messages,
+and consulted mutable session state between targets.
+
+- Android now reads and validates the canonical source and its thread/room availability,
+  then atomically commits a new optimistic message and complete outbox envelope before
+  any network dispatch. The existing owner-scoped dispatcher handles delivery, retry,
+  process recovery and permanent rejection. Stored media, sticker and location metadata
+  survive; unsupported poll/system/game/etc. carriers explicitly refuse rather than
+  masquerading as text. Forward copies do not inherit source reply/topic/pin/identity.
+- Mounted Mirror uses a composition-owned coroutine, captured account/session, actual
+  `getOrThrow` acceptance, visible failures and pending reset. Primary multi-target
+  forwarding retains only failed selections and no longer dismisses on the initial tap.
+  Both say **queued**, not delivered, after durable acceptance.
+- Swift uses the same queue-first semantics with a complete envelope and optimistic row.
+  The source is reread from storage; source privacy and thread availability are checked
+  again in the GRDB enqueue transaction. The synchronous MainActor batch cannot switch
+  its client/account between targets; accepted destinations are removed from selection
+  before retry. Directory loading is owned, epoch-fenced and can show saved targets offline.
+- New Kotlin plan tests cover stable metadata, stripped source routing, rich payloads,
+  unsupported kinds and unavailable content. Swift tests cover disk reopen, exact queued
+  identity/payload, stale tombstone/thread refusal and unsupported/malformed inputs.
+
+Checks: 174/174 existing server contracts pass; 12 changed/new native files parse and
+whitespace checks pass. This native tranche has not been compiled or device-tested locally.
+The preceding 9464df1 iOS archive passed when checked; its other native jobs were still
+running. No source-availability validation on the server was added: forwarding remains a
+client-side content copy, not a permission-bearing server forward endpoint. The copied
+intent is not revoked if its original changes after enqueue, and already-shared media
+URLs are not revoked. Failed delivery is exposed through the existing outbox recovery.
+No schema rollout is required for this tranche; no production deployment or merge.
+Autumn palette and styling remain unchanged.

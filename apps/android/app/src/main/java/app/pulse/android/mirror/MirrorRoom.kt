@@ -2691,7 +2691,7 @@ internal fun MirrorRoom(
             repository = repository,
             source = target,
             onDismiss = { forwardFor = null },
-            onForwarded = { name -> sendError = "Forwarded to $name" },
+            onForwarded = { name -> sendError = "Forward queued for $name" },
         )
     }
     threadFor?.let { root ->

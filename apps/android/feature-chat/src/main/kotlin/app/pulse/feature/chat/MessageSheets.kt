@@ -36,6 +36,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -277,8 +279,11 @@ internal fun MessageActionSheet(
 internal fun ForwardSheet(
     conversations: List<Conversation>,
     onDismiss: () -> Unit,
-    onSend: (List<String>) -> Unit,
+    onSend: suspend (List<String>) -> Map<String, String>,
 ) {
+    val scope = rememberCoroutineScope()
+    var sending by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(emptySet<String>()) }
     val filtered = conversations.filter { it.title.contains(query.trim(), ignoreCase = true) }
@@ -290,12 +295,28 @@ internal fun ForwardSheet(
         ) {
             Text("Forward to", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TextButton(
-                onClick = { if (selected.isNotEmpty()) onSend(selected.toList()) },
-                enabled = selected.isNotEmpty(),
+                onClick = {
+                    if (!sending && selected.isNotEmpty()) {
+                        val targets = selected.toList()
+                        sending = true; error = null
+                        scope.launch {
+                            try {
+                                val failed = onSend(targets)
+                                selected = failed.keys
+                                if (failed.isEmpty()) onDismiss()
+                                else error = "${failed.size} weren't queued. ${failed.values.first()}"
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                                error = failure.message ?: "Forward wasn't queued. Try again."
+                            } finally { sending = false }
+                        }
+                    }
+                },
+                enabled = selected.isNotEmpty() && !sending,
             ) {
-                Text("Send" + if (selected.size > 1) " (${selected.size})" else "")
+                Text(if (sending) "Queueing…" else "Send" + if (selected.size > 1) " (${selected.size})" else "")
             }
         }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
         BasicField(
             value = query,
             onValueChange = { query = it },
@@ -315,7 +336,7 @@ internal fun ForwardSheet(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable {
+                        .clickable(enabled = !sending) {
                             selected = if (isSelected) selected - conv.id else selected + conv.id
                         }
                         .padding(horizontal = 16.dp, vertical = 8.dp),

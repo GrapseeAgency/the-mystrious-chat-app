@@ -864,19 +864,25 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    fun forwardTo(source: Message, targetIds: List<String>) {
-        if (targetIds.isEmpty()) return
-        viewModelScope.launch {
-            var done = 0
-            for (target in targetIds) {
-                if (runCatching { repo.forwardMessage(target, source) }.isSuccess) done += 1
-            }
-            if (done == 0) {
-                notify("Couldn't forward - check your connection", isError = true)
-            } else {
-                notify("Forwarded to $done ${if (done == 1) "chat" else "chats"}")
+    suspend fun forwardTo(source: Message, targetIds: List<String>, expectedOwner: String?): Map<String, String> {
+        val bound = repo.boundToCurrentAccount()
+        val owner = bound.viewerId
+        val epoch = bound.attachmentSessionKey()
+        if (owner == null || owner != expectedOwner) throw kotlinx.coroutines.CancellationException("Forward account changed")
+        val failed = linkedMapOf<String, String>()
+        val targets = targetIds.distinct()
+        for (target in targets) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (bound.viewerId != owner || bound.attachmentSessionKey() != epoch) throw kotlinx.coroutines.CancellationException("Forward account changed")
+            try {
+                bound.forwardMessage(target, source).getOrThrow()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                failed[target] = error.message ?: "Forward wasn't queued."
             }
         }
+        val queued = targets.size - failed.size
+        if (queued > 0) notify("Forward queued for $queued ${if (queued == 1) "chat" else "chats"}")
+        return failed
     }
 
     fun react(message: Message, emoji: String) {

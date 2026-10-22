@@ -355,7 +355,11 @@ internal fun MirrorForwardSheet(
     onDismiss: () -> Unit,
     onForwarded: (String) -> Unit,
 ) {
-    val conversations by repository.observeConversations().collectAsState(initial = emptyList())
+    val bound = remember(repository) { repository.boundToCurrentAccount() }
+    val owner = remember(bound) { bound.viewerId }
+    val epoch = remember(bound) { bound.attachmentSessionKey() }
+    val actionScope = rememberCoroutineScope()
+    val conversations by bound.observeConversations().collectAsStateWithLifecycle(initialValue = emptyList())
     var query by remember { mutableStateOf("") }
     var busyId by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -371,16 +375,17 @@ internal fun MirrorForwardSheet(
                         .clickable(enabled = busyId == null) {
                             busyId = convo.id
                             error = null
-                            CoroutineScope(Dispatchers.IO).launch {
-                                val result = runCatching { repository.forwardMessage(convo.id, source) }
-                                CoroutineScope(Dispatchers.Main).launch {
-                                    result.onSuccess {
-                                        onForwarded(convo.title)
-                                    }.onFailure {
-                                        busyId = null
-                                        error = "Forward failed - try again"
-                                    }
-                                }
+                            actionScope.launch {
+                                try {
+                                    currentCoroutineContext().ensureActive()
+                                    if (owner == null || bound.viewerId != owner || bound.attachmentSessionKey() != epoch) throw CancellationException("Forward account changed")
+                                    bound.forwardMessage(convo.id, source).getOrThrow()
+                                    if (bound.viewerId != owner || bound.attachmentSessionKey() != epoch) throw CancellationException("Forward account changed")
+                                    onForwarded(convo.title)
+                                    onDismiss()
+                                } catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) {
+                                    error = failure.message ?: "Forward wasn't queued. Try again."
+                                } finally { busyId = null }
                             }
                         }
                         .padding(horizontal = 4.dp, vertical = 6.dp),
