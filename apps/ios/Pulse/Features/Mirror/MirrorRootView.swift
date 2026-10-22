@@ -3218,6 +3218,7 @@ private struct MirrorKanbanBuilder: View {
     @State private var title = ""
     @State private var column = "todo"
     @State private var busy = false
+    @State private var submission: Task<Void, Never>?
 
     private let columns: [(id: String, label: String)] = [
         ("todo", "Todo"), ("doing", "Doing"), ("done", "Done"),
@@ -3247,25 +3248,35 @@ private struct MirrorKanbanBuilder: View {
                 MirrorTrayAction(label: "Add card", disabled: title.trimmingCharacters(in: .whitespaces).isEmpty || busy) { send() }
             }
         }
+        .disabled(busy)
+        .onDisappear { submission?.cancel() }
+        .onChange(of: session.sessionGeneration) { _, _ in submission?.cancel(); dismiss() }
     }
 
     private func send() {
+        guard !busy, session.ready, session.viewer != nil else { return }
+        let client = session.api, epoch = session.sessionGeneration
         busy = true
         let t = title.trimmingCharacters(in: .whitespaces)
-        Task {
-            defer { busy = false }
+        submission = Task { @MainActor in
+            defer { if session.sessionGeneration == epoch { busy = false } }
             do {
-                _ = try await session.api.createKanbanCard(
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                _ = try await client.createKanbanCard(
                     conversationId: row.id,
                     title: t,
                     column: column,
                     assigneeId: nil,
                     messageId: nil
                 )
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
                 dismiss()
                 onSent()
-            } catch {
-                session.toasts.show("Card failed - check the connection")
+            } catch is CancellationError { }
+            catch {
+                if !Task.isCancelled, session.sessionGeneration == epoch { session.toasts.show(RoomViewModel.describe(error)) }
             }
         }
     }

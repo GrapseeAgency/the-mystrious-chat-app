@@ -76,10 +76,10 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(card.title, "Ship it")
         XCTAssertEqual(card.column, "doing")
 
-        let fromEnvelope = try decode(WireKanbanCardEnvelope.self, #"{"card":{"id":"k2","title":"T2","column":"todo","position":0}}"#)
+        let fromEnvelope = try decode(WireKanbanCardEnvelope.self, #"{"boardReceiptVersion":1,"userId":"me","conversationId":"room","card":{"id":"k2","title":"T2","column":"todo","position":0}}"#)
         XCTAssertEqual(fromEnvelope.card?.id, "k2")
 
-        let page = try decode(WireKanbanPage.self, #"{"cards":[{"id":"k1","title":"a","column":"todo","position":0},{"id":"k2","title":"b","column":"done","position":1}]}"#)
+        let page = try decode(WireKanbanPage.self, #"{"boardReceiptVersion":1,"userId":"me","conversationId":"room","cards":[{"id":"k1","title":"a","column":"todo","position":0},{"id":"k2","title":"b","column":"done","position":1}]}"#)
         XCTAssertEqual(page.cards.count, 2)
     }
 

@@ -1613,16 +1613,14 @@ class ChatRoomViewModel @Inject constructor(
             .onSuccess { tournamentOpen = false; notify(if (it.replayed) "Recovered the previous tournament" else "Tournament \"$name\" started") }
             .onFailure { notify(it.message ?: "Could not start the tournament", isError = true) }.isSuccess
 
-    fun createKanbanCard(title: String, column: String, assigneeId: String?) {
-        viewModelScope.launch {
-            repo.createKanbanCard(conversationId, title.trim(), column, assigneeId, kanbanSourceMessage)
-                .onSuccess {
-                    kanbanSourceMessage = null
-                    kanbanSourceTitle = null
-                    notify("Task \"${it.title}\" added to the board")
-                }
-                .onFailure { notify(it.message ?: "Could not add the card", isError = true) }
+    suspend fun createKanbanCard(title: String, column: String, assigneeId: String?): Boolean {
+        val source = kanbanSourceMessage
+        val accepted = confirmedRoomAction("board:create:$conversationId") { owned ->
+            val card = owned.createKanbanCard(conversationId, title.trim(), column, assigneeId, source).getOrThrow()
+            "Task added to the board: ${card.title}"
         }
+        if (accepted && kanbanSourceMessage == source) { kanbanSourceMessage = null; kanbanSourceTitle = null }
+        return accepted
     }
 
     /** Message long-press → "Add to board" (web parity: message→card title cap 80). */
@@ -1645,15 +1643,16 @@ class ChatRoomViewModel @Inject constructor(
 
     fun convertMessageToTask(messageId: String) {
         if (_taskPending.value) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        _taskPending.value = true
         viewModelScope.launch {
-            _taskPending.value = true
             try {
-                repo.createKanbanCard(conversationId, null, null, null, messageId)
-                    .onSuccess { notify("Task created from message") }
-                    .onFailure { notify("Could not create the task", isError = true) }
-            } finally {
-                _taskPending.value = false
-            }
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                confirmedRoomAction("board:source:$messageId") { owned ->
+                    owned.createKanbanCard(conversationId, null, null, null, messageId).getOrThrow()
+                    "Task created from message"
+                }
+            } finally { _taskPending.value = false }
         }
     }
 
@@ -1724,21 +1723,26 @@ class ChatRoomViewModel @Inject constructor(
     fun roomMembers(): List<Pair<String, String>> =
         conversation.value?.members?.map { it.id to it.name } ?: emptyList()
 
-    suspend fun kanbanBoard(conversationId: String): KanbanPageDto? =
-        runCatching { repo.kanbanBoard(conversationId).getOrNull() }.getOrNull()
-
-    fun moveKanbanCard(cardId: String, column: String, position: Long?) {
-        viewModelScope.launch {
-            repo.updateKanbanCard(cardId, null, column, null, false, position)
-                .onFailure { notify(it.message ?: "Couldn't move the card", isError = true) }
-        }
+    suspend fun kanbanBoard(conversationId: String): KanbanPageDto? {
+        val epoch = repo.attachmentSessionKey() ?: return null
+        val owned = repo.boundToCurrentAccount()
+        return try {
+            val page = owned.kanbanBoard(conversationId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repo.attachmentSessionKey() == epoch) page else null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (_: Exception) { null }
     }
 
-    fun deleteKanbanCard(cardId: String) {
-        viewModelScope.launch {
-            repo.deleteKanbanCard(cardId)
-                .onFailure { notify(it.message ?: "Couldn't delete the card", isError = true) }
+    suspend fun moveKanbanCard(cardId: String, column: String, position: Long?): Boolean =
+        confirmedRoomAction("board:$cardId") { owned ->
+            owned.updateKanbanCard(cardId, null, column, null, false, position).getOrThrow()
+            null
         }
+
+    suspend fun deleteKanbanCard(cardId: String): Boolean = confirmedRoomAction("board:$cardId") { owned ->
+        owned.deleteKanbanCard(cardId).getOrThrow()
+        "Task deleted."
     }
 
     suspend fun whiteboard(conversationId: String, since: Long?): WhiteboardPageDto? =
@@ -1807,12 +1811,12 @@ class ChatRoomViewModel @Inject constructor(
         } catch (_: Exception) { null }
     }
 
-    private val eventActions = mutableSetOf<Pair<String, String>>()
-    private suspend fun eventAction(key: String, operation: suspend (PulseRepository) -> String?): Boolean {
+    private val roomResourceActions = mutableSetOf<Pair<String, String>>()
+    private suspend fun confirmedRoomAction(key: String, operation: suspend (PulseRepository) -> String?): Boolean {
         val epoch = repo.attachmentSessionKey() ?: return false
         val owned = repo.boundToCurrentAccount()
         val ticket = epoch to key
-        if (!eventActions.add(ticket)) return false
+        if (!roomResourceActions.add(ticket)) return false
         return try {
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             val success = operation(owned)
@@ -1822,23 +1826,23 @@ class ChatRoomViewModel @Inject constructor(
             true
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
         } catch (error: Exception) {
-            if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not update this event.", isError = true)
+            if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not update this item.", isError = true)
             false
-        } finally { eventActions.remove(ticket) }
+        } finally { roomResourceActions.remove(ticket) }
     }
 
     suspend fun createEvent(title: String, startsAtIso: String, description: String?, location: String?): Boolean =
-        eventAction("create:$conversationId") { owned ->
+        confirmedRoomAction("create:$conversationId") { owned ->
             owned.createEvent(conversationId, title, startsAtIso, description, location).getOrThrow()
             "Event scheduled - see you there"
         }
 
-    suspend fun rsvp(eventId: String, status: String): Boolean = eventAction(eventId) { owned ->
+    suspend fun rsvp(eventId: String, status: String): Boolean = confirmedRoomAction(eventId) { owned ->
         owned.rsvpEvent(eventId, status).getOrThrow()
         null
     }
 
-    suspend fun checkin(eventId: String): Boolean = eventAction(eventId) { owned ->
+    suspend fun checkin(eventId: String): Boolean = confirmedRoomAction(eventId) { owned ->
         val receipt = owned.checkinEvent(eventId).getOrThrow()
         when {
             receipt.alreadyCheckedIn -> "Already checked in."
@@ -1847,7 +1851,7 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    suspend fun deleteEvent(eventId: String): Boolean = eventAction(eventId) { owned ->
+    suspend fun deleteEvent(eventId: String): Boolean = confirmedRoomAction(eventId) { owned ->
         owned.deleteEvent(eventId).getOrThrow()
         "Event deleted."
     }

@@ -1402,11 +1402,19 @@ class PulseApi(
             PulseJson.parseToJsonElement(json).unwrapOrRoot("packet").toString(),
         )
 
-    private fun cardOf(json: String): KanbanCardDto =
-        PulseJson.decodeFromString(
-            KanbanCardDto.serializer(),
-            PulseJson.parseToJsonElement(json).unwrapOrRoot("card").toString(),
-        )
+    private fun cardOf(json: String, userId: String, room: String? = null): KanbanCardDto {
+        val receipt = PulseJson.decodeFromString(app.pulse.protocol.KanbanCardReceiptDto.serializer(), json)
+        require(receipt.boardReceiptVersion == 1 && receipt.userId == userId && receipt.conversationId.isNotBlank() &&
+            (room == null || receipt.conversationId == room)) { "Board action owner was not confirmed." }
+        return receipt.card.also { requireBoardCard(it, receipt.conversationId) }
+    }
+
+    private fun requireBoardCard(card: KanbanCardDto, room: String) {
+        require(card.id.isNotBlank() && card.conversationId == room && card.title.isNotBlank() && card.title.length <= 120 &&
+            card.column in listOf("todo", "doing", "done") && card.position in 0..2_147_483_647L) { "Board card was not confirmed." }
+        java.time.Instant.parse(requireNotNull(card.createdAt))
+        java.time.Instant.parse(requireNotNull(card.updatedAt))
+    }
 
     private fun eventOf(json: String): GroupEventDto =
         PulseJson.decodeFromString(
@@ -1539,7 +1547,11 @@ class PulseApi(
     /** GET /api/conversations/{id}/kanban?userId= → { cards } ordered column → position → createdAt. */
     suspend fun kanbanBoard(conversationId: String, userId: String): PulseResult<KanbanPageDto> =
         get("/api/conversations/$conversationId/kanban?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(KanbanPageDto.serializer(), it)
+            PulseJson.decodeFromString(KanbanPageDto.serializer(), it).also { page ->
+                require(page.boardReceiptVersion == 1 && page.userId == userId && page.conversationId == conversationId &&
+                    page.cards.size <= 500 && page.cards.map { card -> card.id }.distinct().size == page.cards.size) { "Complete board was not confirmed." }
+                page.cards.forEach { card -> requireBoardCard(card, conversationId) }
+            }
         }
 
     /** POST /api/conversations/{id}/kanban { userId, title?, column?, assigneeId?, messageId? }. */
@@ -1560,7 +1572,13 @@ class PulseApi(
                 if (!assigneeId.isNullOrBlank()) put("assigneeId", assigneeId)
                 if (!messageId.isNullOrBlank()) put("messageId", messageId)
             },
-        ) { cardOf(it) }
+        ) { raw ->
+            cardOf(raw, userId, conversationId).also { card ->
+                require(card.createdById == userId && card.column == column?.takeIf { it.isNotBlank() }.orEmpty().ifEmpty { "todo" } &&
+                    card.assigneeId == assigneeId?.takeIf { it.isNotBlank() } && card.sourceMessageId == messageId?.takeIf { it.isNotBlank() } &&
+                    ((title.isNullOrBlank() && !messageId.isNullOrBlank()) || card.title == title?.trim())) { "Task creation was not confirmed." }
+            }
+        }
 
     /** PATCH /api/kanban/{cardId} { userId, title?, column?, assigneeId?, position? }. */
     suspend fun updateKanbanCard(
@@ -1582,12 +1600,23 @@ class PulseApi(
                 else if (!assigneeId.isNullOrBlank()) put("assigneeId", assigneeId)
                 if (position != null) put("position", position)
             },
-        ) { cardOf(it) }
+        ) { raw ->
+            cardOf(raw, userId).also { card ->
+                require(card.id == cardId && (title == null || card.title == title.trim()) &&
+                    (column == null || card.column == column) && (position == null || card.position == position) &&
+                    (if (clearAssignee) card.assigneeId == null else assigneeId.isNullOrBlank() || card.assigneeId == assigneeId)) {
+                    "Task update was not confirmed."
+                }
+            }
+        }
 
     /** DELETE /api/kanban/{cardId}?userId= - creator OR group admin (403 copy verbatim). */
     suspend fun deleteKanbanCard(cardId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/kanban/" + java.net.URLEncoder.encode(cardId, "UTF-8"), userId) {
-            PulseJson.decodeFromString(OkDto.serializer(), it)
+            val receipt = PulseJson.decodeFromString(app.pulse.protocol.KanbanDeleteReceiptDto.serializer(), it)
+            require(receipt.boardReceiptVersion == 1 && receipt.userId == userId && receipt.cardId == cardId &&
+                receipt.conversationId.isNotBlank() && receipt.ok) { "Task deletion was not confirmed." }
+            OkDto(ok = true)
         }
 
     /** GET /api/conversations/{id}/events?userId= - upcoming asc then past desc, merged ≤50. */

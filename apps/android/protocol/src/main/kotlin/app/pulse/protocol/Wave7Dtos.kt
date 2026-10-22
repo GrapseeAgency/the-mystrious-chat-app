@@ -186,7 +186,13 @@ data class KanbanCardDto(
 )
 
 @Serializable
-data class KanbanPageDto(val cards: List<KanbanCardDto> = emptyList())
+data class KanbanPageDto(val boardReceiptVersion: Int, val userId: String, val conversationId: String, val cards: List<KanbanCardDto>)
+
+@Serializable
+data class KanbanCardReceiptDto(val boardReceiptVersion: Int, val userId: String, val conversationId: String, val card: KanbanCardDto)
+
+@Serializable
+data class KanbanDeleteReceiptDto(val boardReceiptVersion: Int, val userId: String, val conversationId: String, val cardId: String, val ok: Boolean)
 
 // Events (F-RO-05)
 

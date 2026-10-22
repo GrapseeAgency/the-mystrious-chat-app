@@ -122,10 +122,16 @@ public struct WireKanbanCard: Codable, Hashable, Sendable {
 }
 
 public struct WireKanbanPage: Codable, Sendable {
+    public let boardReceiptVersion: Int
+    public let userId: String
+    public let conversationId: String
     public let cards: [WireKanbanCard]
 }
 
 public struct WireKanbanCardEnvelope: Codable, Sendable {
+    public let boardReceiptVersion: Int
+    public let userId: String
+    public let conversationId: String
     public let card: WireKanbanCard?
 }
 

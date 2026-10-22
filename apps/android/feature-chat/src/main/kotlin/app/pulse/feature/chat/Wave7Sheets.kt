@@ -248,9 +248,9 @@ fun KanbanSheet(
     viewerId: String,
     isAdmin: Boolean,
     loadBoard: suspend () -> KanbanPageDto?,
-    onAddCard: (title: String, column: String, assigneeId: String?) -> Unit,
-    onMoveCard: (cardId: String, column: String, position: Long?) -> Unit,
-    onDeleteCard: (cardId: String) -> Unit,
+    onAddCard: suspend (title: String, column: String, assigneeId: String?) -> Boolean,
+    onMoveCard: suspend (cardId: String, column: String, position: Long?) -> Boolean,
+    onDeleteCard: suspend (cardId: String) -> Boolean,
     prefillTitle: String?,
     onDismiss: () -> Unit,
 ) {
@@ -259,14 +259,31 @@ fun KanbanSheet(
     var addTitle by remember { mutableStateOf(prefillTitle ?: "") }
     var ticking by remember { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) { addTitle = prefillTitle ?: addTitle }
-
-    // 1500 ms poll while open (web parity), paused by ticking=false.
-    LaunchedEffect(ticking) {
-        while (ticking) {
-            loadBoard()?.let { board = it }
-            delay(1_500)
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    var draftRevision by remember { mutableStateOf(0L) }
+    val scope = rememberCoroutineScope()
+    val refreshGate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    suspend fun refresh() {
+        val ticket = refreshGate.beginRead() ?: return
+        val page = loadBoard()
+        if (!refreshGate.accepts(ticket)) return
+        if (page != null) board = page else notice = "Couldn't load the complete board. Last confirmed cards are kept."
+    }
+    fun mutate(operation: suspend () -> Boolean, accepted: () -> Unit = {}) {
+        if (busy) return
+        busy = true; notice = null; refreshGate.beginWrite()
+        scope.launch {
+            try {
+                if (operation()) accepted() else notice = "Task update wasn't confirmed. Your input is kept."
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { notice = error.message ?: "Could not update this task."
+            } finally { busy = false; refreshGate.endWrite() }
+            refresh()
         }
+    }
+    LaunchedEffect(ticking) {
+        while (ticking) { refresh(); delay(1_500) }
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
@@ -275,6 +292,8 @@ fun KanbanSheet(
                 Text("Kanban", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
                 TextButton(onClick = { ticking = !ticking }) { Text(if (ticking) "Pause" else "Live") }
             }
+            notice?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+            if (board == null && notice == null) Text("Loading board…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             val cards = board?.cards ?: emptyList()
             PulseWave7Logic.KANBAN_COLUMNS.forEach { col ->
                 val colCards = cards.filter { it.column == col }.sortedBy { it.position }
@@ -290,20 +309,23 @@ fun KanbanSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = { addColumn = if (addColumn == col) null else col; addTitle = prefillTitle ?: "" }) { Text("+ Add") }
+                    TextButton(enabled = !busy, onClick = { draftRevision++; addColumn = if (addColumn == col) null else col; addTitle = prefillTitle ?: "" }) { Text("+ Add") }
                 }
                 if (addColumn == col) {
                     OutlinedTextField(
-                        value = addTitle, onValueChange = { addTitle = it.take(120) },
+                        value = addTitle, onValueChange = { draftRevision++; addTitle = it.take(120) },
                         label = { Text("Task title") }, modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(6.dp))
                     Button(
+                        enabled = !busy,
                         onClick = {
                             if (addTitle.isNotBlank()) {
-                                onAddCard(addTitle.trim(), col, null)
-                                addTitle = ""
-                                addColumn = null
+                                val revision = draftRevision
+                                val title = addTitle.trim()
+                                mutate(operation = { onAddCard(title, col, null) }, accepted = {
+                                    if (draftRevision == revision) { addTitle = ""; addColumn = null; draftRevision++ }
+                                })
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -330,10 +352,10 @@ fun KanbanSheet(
                         }
                         // move controls - native-native equivalent of web drag/drop
                         if (col != "todo") {
-                            Text("‹", Modifier.clickable { onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) - 1], null) }.padding(6.dp), fontSize = 18.sp)
+                            Text("‹", Modifier.clickable(enabled = !busy) { mutate({ onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) - 1], null) }) }.padding(6.dp), fontSize = 18.sp)
                         }
                         if (col != "done") {
-                            Text("›", Modifier.clickable { onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) + 1], null) }.padding(6.dp), fontSize = 18.sp)
+                            Text("›", Modifier.clickable(enabled = !busy) { mutate({ onMoveCard(card.id, PulseWave7Logic.KANBAN_COLUMNS[colIndex(col) + 1], null) }) }.padding(6.dp), fontSize = 18.sp)
                         }
                         if (card.createdById == viewerId || isAdmin) {
                             Icon(
@@ -341,7 +363,7 @@ fun KanbanSheet(
                                 contentDescription = "Delete card",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
-                                    .clickable { onDeleteCard(card.id) }
+                                    .clickable(enabled = !busy) { mutate({ onDeleteCard(card.id) }) }
                                     .padding(6.dp)
                                     .size(16.dp),
                             )

@@ -150,7 +150,7 @@ class Wave7ApiTest {
     @Test
     fun `kanban board GET and card create POST`() = runTest {
         configured()
-        response = """{"card":{"id":"k1","conversationId":"c1","title":"Ship it","column":"todo","position":0}}"""
+        response = """{"boardReceiptVersion":1,"userId":"u1","conversationId":"c1","card":{"id":"k1","conversationId":"c1","title":"Ship it","column":"todo","position":0,"createdById":"u1","createdAt":"2026-10-22T00:00:00Z","updatedAt":"2026-10-22T00:00:00Z"}}"""
         val r = api().createKanbanCard("c1", "u1", title = "Ship it", column = "todo", assigneeId = null, messageId = null)
         assertTrue(r is PulseResult.Success)
         assertEquals(HttpMethod.Post, lastMethod)
@@ -161,7 +161,7 @@ class Wave7ApiTest {
     @Test
     fun `kanban PATCH moves card and DELETE goes with query`() = runTest {
         configured()
-        response = """{"card":{"id":"k1","column":"doing","position":4}}"""
+        response = """{"boardReceiptVersion":1,"userId":"u1","conversationId":"c1","card":{"id":"k1","conversationId":"c1","title":"Ship it","column":"doing","position":4,"createdAt":"2026-10-22T00:00:00Z","updatedAt":"2026-10-22T00:00:00Z"}}"""
         val r = api().updateKanbanCard("k1", "u1", title = null, column = "doing", assigneeId = null, clearAssignee = false, position = null)
         assertTrue(r is PulseResult.Success)
         assertEquals(HttpMethod.Patch, lastMethod)
@@ -169,7 +169,7 @@ class Wave7ApiTest {
         assertTrue(lastBody.contains("\"column\":\"doing\""))
         assertTrue(!lastBody.contains("position"))
 
-        response = """{"ok":true}"""
+        response = """{"boardReceiptVersion":1,"userId":"u1","conversationId":"c1","cardId":"k1","ok":true}"""
         val d = api().deleteKanbanCard("k1", "u1")
         assertTrue(d is PulseResult.Success)
         assertEquals(HttpMethod.Delete, lastMethod)

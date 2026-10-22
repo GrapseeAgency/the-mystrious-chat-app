@@ -1116,7 +1116,13 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/conversations/{id}/kanban?userId= → { cards }.
     public func kanbanBoard(conversationId: String) async throws -> WireKanbanPage {
-        try await get("/api/conversations/\(q(conversationId))/kanban?userId=\(q(userId))")
+        let page: WireKanbanPage = try await get("/api/conversations/\(q(conversationId))/kanban?userId=\(q(userId))")
+        guard page.boardReceiptVersion == 1, page.userId == userId, page.conversationId == conversationId,
+              page.cards.count <= 500, Set(page.cards.map(\.id)).count == page.cards.count else {
+            throw Failure(kind: .validation, message: "Complete board was not confirmed.")
+        }
+        for card in page.cards { try requireBoardCard(card, room: conversationId) }
+        return page
     }
 
     /// POST /api/conversations/{id}/kanban { userId, title?, column?, assigneeId?, messageId? } → { card }.
@@ -1127,7 +1133,12 @@ public struct PulseAPIClient: Sendable {
         if let assigneeId { body["assigneeId"] = assigneeId }
         if let messageId { body["messageId"] = messageId }
         let data = try await postRaw("/api/conversations/\(q(conversationId))/kanban", body: body)
-        return try envelope(WireKanbanCardEnvelope.self, from: data).card ?? WireKanbanCard(id: "", conversationId: conversationId, title: title, column: column, position: 0, assigneeId: assigneeId, assigneeName: nil, createdById: nil, createdByName: nil, createdAt: nil, updatedAt: nil, sourceMessageId: messageId)
+        let card = try acceptedBoardCard(data, room: conversationId)
+        guard card.createdById == userId, card.column == (column ?? "todo"), card.assigneeId == assigneeId,
+              card.sourceMessageId == messageId, (title == nil && messageId != nil) || card.title == title?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw Failure(kind: .validation, message: "Task creation was not confirmed.")
+        }
+        return card
     }
 
     /// PATCH /api/kanban/{cardId} { userId, title?, column?, assigneeId?, position? } → { card }.
@@ -1139,14 +1150,43 @@ public struct PulseAPIClient: Sendable {
         else if let assigneeId { body["assigneeId"] = assigneeId }
         if let position { body["position"] = position }
         let data = try await patchRaw("/api/kanban/\(q(cardId))", body: body)
-        return try envelope(WireKanbanCardEnvelope.self, from: data).card ?? WireKanbanCard(id: cardId, conversationId: nil, title: title, column: column, position: position, assigneeId: assigneeId, assigneeName: nil, createdById: nil, createdByName: nil, createdAt: nil, updatedAt: nil, sourceMessageId: nil)
+        let card = try acceptedBoardCard(data)
+        guard card.id == cardId, title == nil || card.title == title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              column == nil || card.column == column, position == nil || card.position == position,
+              clearAssignee ? card.assigneeId == nil : (assigneeId == nil || card.assigneeId == assigneeId) else {
+            throw Failure(kind: .validation, message: "Task update was not confirmed.")
+        }
+        return card
     }
 
     /// DELETE /api/kanban/{cardId}?userId= - creator OR group admin.
     public func deleteKanbanCard(_ cardId: String) async throws {
         var request = URLRequest(url: url("/api/kanban/\(q(cardId))?userId=\(q(userId))"))
         request.httpMethod = "DELETE"
-        _ = try await send(request)
+        let data = try await send(request)
+        struct Receipt: Decodable { let boardReceiptVersion: Int; let userId: String; let conversationId: String; let cardId: String; let ok: Bool }
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.boardReceiptVersion == 1, receipt.userId == userId, !receipt.conversationId.isEmpty, receipt.cardId == cardId, receipt.ok else {
+            throw Failure(kind: .validation, message: "Task deletion was not confirmed.")
+        }
+    }
+
+    private func requireBoardCard(_ card: WireKanbanCard, room: String) throws {
+        guard !card.id.isEmpty, card.conversationId == room, let title = card.title, !title.isEmpty, title.utf16.count <= 120,
+              ["todo", "doing", "done"].contains(card.column ?? ""), let position = card.position, (0...2_147_483_647).contains(position),
+              card.createdAt.flatMap(PulseFormat.date) != nil, card.updatedAt.flatMap(PulseFormat.date) != nil else {
+            throw Failure(kind: .validation, message: "Board card was not confirmed.")
+        }
+    }
+
+    private func acceptedBoardCard(_ data: Data, room: String? = nil) throws -> WireKanbanCard {
+        let receipt = try envelope(WireKanbanCardEnvelope.self, from: data)
+        guard receipt.boardReceiptVersion == 1, receipt.userId == userId, !receipt.conversationId.isEmpty,
+              room == nil || receipt.conversationId == room, let card = receipt.card else {
+            throw Failure(kind: .validation, message: "Board action owner was not confirmed.")
+        }
+        try requireBoardCard(card, room: receipt.conversationId)
+        return card
     }
 
     // MARK: events

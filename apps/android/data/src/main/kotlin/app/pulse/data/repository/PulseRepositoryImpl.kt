@@ -3577,29 +3577,30 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun kanbanBoard(conversationId: String): Result<KanbanPageDto> =
-        when (val r = api.kanbanBoard(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    private suspend fun <T> ownedBoardRequest(operation: suspend (String) -> PulseResult<T>): Result<T> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val result = operation(owner)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Board account changed")
+        return when (result) {
+            is PulseResult.Success -> Result.success(result.value)
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
         }
+    }
+
+    override suspend fun kanbanBoard(conversationId: String): Result<KanbanPageDto> =
+        ownedBoardRequest { api.kanbanBoard(conversationId, it) }
 
     override suspend fun createKanbanCard(conversationId: String, title: String?, column: String?, assigneeId: String?, messageId: String?): Result<KanbanCardDto> =
-        when (val r = api.createKanbanCard(conversationId, viewerId ?: "", title, column, assigneeId, messageId)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedBoardRequest { api.createKanbanCard(conversationId, it, title, column, assigneeId, messageId) }
 
     override suspend fun updateKanbanCard(cardId: String, title: String?, column: String?, assigneeId: String?, clearAssignee: Boolean, position: Long?): Result<KanbanCardDto> =
-        when (val r = api.updateKanbanCard(cardId, viewerId ?: "", title, column, assigneeId, clearAssignee, position)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedBoardRequest { api.updateKanbanCard(cardId, it, title, column, assigneeId, clearAssignee, position) }
 
     override suspend fun deleteKanbanCard(cardId: String): Result<Unit> =
-        when (val r = api.deleteKanbanCard(cardId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedBoardRequest { api.deleteKanbanCard(cardId, it) }.map { Unit }
 
     override suspend fun events(conversationId: String): Result<EventsPageDto> =
         when (val r = api.events(conversationId, viewerId ?: "")) {

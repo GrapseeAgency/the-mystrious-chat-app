@@ -2048,17 +2048,19 @@ fun ChatRoomScreen(
         )
     }
     if (viewModel.kanbanOpen) {
-        KanbanSheet(
-            conversationId = viewModel.conversationId,
-            viewerId = viewerId ?: "",
-            isAdmin = viewModel.isAdmin(),
-            prefillTitle = viewModel.kanbanSourceTitle?.take(80), // audit D2 fix: was dead `let { null }`
-            loadBoard = { viewModel.kanbanBoard(viewModel.conversationId) },
-            onAddCard = { title, column, assigneeId -> viewModel.createKanbanCard(title, column, assigneeId) },
-            onMoveCard = { cardId, column, position -> viewModel.moveKanbanCard(cardId, column, position) },
-            onDeleteCard = { cardId -> viewModel.deleteKanbanCard(cardId) },
-            onDismiss = { viewModel.kanbanOpen = false },
-        )
+        androidx.compose.runtime.key(viewerId, viewModel.conversationId) {
+            KanbanSheet(
+                conversationId = viewModel.conversationId,
+                viewerId = viewerId ?: "",
+                isAdmin = viewModel.isAdmin(),
+                prefillTitle = viewModel.kanbanSourceTitle?.take(80), // audit D2 fix: was dead `let { null }`
+                loadBoard = { viewModel.kanbanBoard(viewModel.conversationId) },
+                onAddCard = { title, column, assigneeId -> viewModel.createKanbanCard(title, column, assigneeId) },
+                onMoveCard = { cardId, column, position -> viewModel.moveKanbanCard(cardId, column, position) },
+                onDeleteCard = { cardId -> viewModel.deleteKanbanCard(cardId) },
+                onDismiss = { viewModel.kanbanOpen = false },
+            )
+        }
     }
     if (viewModel.whiteboardOpen) {
         WhiteboardSheet(

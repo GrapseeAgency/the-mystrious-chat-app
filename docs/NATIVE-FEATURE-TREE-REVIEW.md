@@ -3590,3 +3590,47 @@ rollout is required; previously returned activity cannot be recalled. Task-board
 privacy/lifetime, operation receipts/ordering and creation retry identity are still under
 investigation; this urgent leak interrupted that trace. Wallet/task private read paths
 also need continued inspection. Autumn colors/layout preserved; no merge/deployment claim.
+
+### 2026-10-22 — task-board source boundaries and canonical action acceptance
+
+Traced room board create/convert/move/assign/delete through Kotlin, Swift and API.
+The conversion handler fetched deletedAt but never checked it; expired/view-once
+content and inaccessible roots could become permanent titles. Permission checks,
+append-position reads, writes and activity/receipt work were separate. Swift synthesized
+success cards from empty responses; Android accepted default-filled DTOs. Primary Android
+cleared the title before an asynchronous creation had succeeded.
+
+- Added a serializable board operation shared by read/create/update/delete. The existing
+  credential must own the actor, membership/assignee/creator/admin checks happen within
+  the operation, and implicit append ranks cannot be concurrently calculated from stale
+  snapshots. Replaying a move to the same column retains position. Strict integer bounds
+  reject coerced/null/overflow positions. Receipt/name/journal failures roll back writes.
+- Conversion rejects deleted/expired/foreign/missing sources and unavailable roots.
+  View-once/disappearing sources (including a root deadline) cannot become permanent
+  tasks. Explicit edited titles are respected after source validation. Provenance is
+  returned (previous serialization omitted it); activity no longer copies plaintext titles.
+- Both native APIs require a versioned owner/room receipt and canonical card identity,
+  timestamps, desired title/column/position/assignee/source state. No empty/bare-card
+  success fallback. Delete requires an exact positive receipt. Board reads reject wrong
+  room/owner, duplicate rows and incomplete legacy responses.
+- Primary Android awaits actions, gates writes/poll acceptance, preserves failed/newer
+  title drafts, and keys the sheet to room/account. Conversion acquires pending state
+  before launching, and reads/writes reject retired account completions. Swift conversion
+  and mounted creation capture their API/session before dispatch and fence UI results;
+  mounted creation cancels on disappearance without erasing an edited draft.
+- Existing 500-card truncation is now an explicit complete-or-error boundary: oversized
+  existing boards return 413 rather than a misleading prefix; additions at capacity fail
+  before writing. Incremental/paginated large boards remain open.
+
+Validation: eight real SQLite/route cases cover source/privacy/ancestry, custom title,
+provenance, explicit moves, permissions, rollback, concurrency, capacity, position bounds
+and denial before DB access. Full server suite 226/226, scoped strict TS, 14 native syntax
+parses and diff checks pass. New native canonical-receipt matrices await runners/device
+validation. Previous b70badd Android build and API30/API34 instrumentation passed; Swift
+archive passed but thread tests failed because two fixtures omitted required `kind`.
+9e3b08f corrects those fixtures without weakening production decoding or assertions.
+
+Boundaries: backend rollout required; legacy credential-free browser board access now
+fails closed (no sign-in redesign). Creation lost-ACK identity, cross-device revisions,
+durable offline board work, retroactive removal of previously copied titles and large-board
+pagination remain unsolved. No schema/deployment/whole-app correctness claim. Autumn unchanged.

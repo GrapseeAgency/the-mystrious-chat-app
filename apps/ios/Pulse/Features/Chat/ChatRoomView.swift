@@ -4888,23 +4888,30 @@ final class RoomViewModel: ObservableObject {
     /// the success burst mirrors web fireParticles({kind:'burst',count:40}).
     func convertMessageToTask(_ message: WireChatMessage, session: PulseSession) {
         PulseHaptics.tap()
-        guard !convertingTaskIds.contains(message.id) else { return }
+        guard session.ready, let owner = session.viewer?.id, message.conversationId == conversationId,
+              !convertingTaskIds.contains(message.id) else { return }
+        let api = session.api, epoch = session.sessionGeneration
         convertingTaskIds.insert(message.id)
         Task { [weak self] in
             guard let self else { return }
             defer { self.convertingTaskIds.remove(message.id) }
             do {
-                let card = try await session.api.createKanbanCard(
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch, session.viewer?.id == owner else { return }
+                let card = try await api.createKanbanCard(
                     conversationId: conversationId,
                     title: nil,
                     column: nil,
                     assigneeId: nil,
                     messageId: message.id,
                 )
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch, session.viewer?.id == owner else { return }
                 session.toasts.show("Task \"\(card.title ?? "")\" created from message")
                 session.particles.fire(kind: .burst, count: 40)
-            } catch {
-                session.toasts.show(Self.describe(error))
+            } catch is CancellationError { }
+            catch {
+                if session.sessionGeneration == epoch, session.viewer?.id == owner { session.toasts.show(Self.describe(error)) }
             }
         }
     }
