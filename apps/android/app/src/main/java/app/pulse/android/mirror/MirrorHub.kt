@@ -67,7 +67,6 @@ import app.pulse.protocol.HubTaskDto
 import app.pulse.protocol.MarketListingDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -239,7 +238,7 @@ internal fun MirrorHub(
                 "market" -> androidx.compose.runtime.key(viewerId, repository.attachmentSessionKey()) { HubMarketPanel(repository, viewerId, onCoinsChanged = { hubScope.launch { loadWallet() } }) }
                 "swap" -> HubSwapPanel(repository, onCoinsChanged = { hubScope.launch { loadWallet() } })
                 "logs" -> androidx.compose.runtime.key(viewerId) { HubLogsPanel(repository, viewerId) }
-                "apps" -> HubAppsPanel(repository, viewerId, onOpenCategory = { categoryPage = it }, onOpenApp = { appPage = it })
+                "apps" -> androidx.compose.runtime.key(viewerId, repository.attachmentSessionKey()) { HubAppsPanel(repository, viewerId, onOpenCategory = { categoryPage = it }, onOpenApp = { appPage = it }) }
                 else -> HubWalletPanel(repository, onCoinsChanged = { walletCoins = it.first; walletGems = it.second })
             }
         }
@@ -1230,42 +1229,47 @@ private fun HubAppsPanel(
     onOpenApp: (Int) -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
-    var installed by remember { mutableStateOf<Set<String>>(emptySet()) } // matrix app.n ids
+    var installed by remember { mutableStateOf<Set<String>?>(null) }
     var busyId by remember { mutableStateOf<String?>(null) }
-
+    var loading by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val owned = remember { repository.boundToCurrentAccount() }
+    val epoch = remember { repository.attachmentSessionKey() }
+    val gate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    fun current() = repository.viewerId == viewerId && repository.attachmentSessionKey() == epoch
     suspend fun loadInstalled() {
-        // fan the real install states across the catalog (web hydrateInstalledSet:
-        // Promise.all over the matrix) - batched to keep the phone's pool sane
-        val ids = mutableSetOf<String>()
-        for (batch in HubCatalog.MATRIX.chunked(8)) {
-            val results = batch.map { app ->
-                CoroutineScope(Dispatchers.IO).async {
-                    val state = runCatching {
-                        repository.appInstallState(app.n.toString()).getOrNull()
-                    }.getOrNull()
-                    app to (state?.installed == true)
-                }
-            }.map { it.await() }
-            for ((app, on) in results) {
-                if (on) ids.add(app.n.toString())
-            }
-        }
-        installed = ids
+        val ticket = gate.beginRead() ?: return
+        loading = true
+        try {
+            if (!current()) return
+            val ids = app.pulse.domain.sync.appInstallSnapshot(HubCatalog.MATRIX.map { it.n.toString() }, viewerId) { owned.appInstallState(it) }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (current() && gate.accepts(ticket)) { installed = ids; notice = null }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) {
+            if (current() && gate.accepts(ticket)) notice = "Could not verify all connections. The last confirmed list is kept."
+        } finally { if (current() && gate.accepts(ticket)) loading = false }
     }
-
     fun toggleApp(app: MatrixApp) {
-        busyId = app.n.toString()
-        CoroutineScope(Dispatchers.IO).launch {
-            if (app.n.toString() in installed) {
-                repository.uninstallApp(app.n.toString())
-            } else {
-                repository.installApp(app.n.toString())
-            }
-            loadInstalled()
-            busyId = null
+        val confirmed = installed ?: run { scope.launch { loadInstalled() }; return }
+        if (busyId != null || !current()) return
+        val id = app.n.toString(); val disconnect = id in confirmed
+        busyId = id; gate.beginWrite(); loading = false; notice = null
+        scope.launch {
+            var failure: String? = null
+            try {
+                if (!current()) return@launch
+                val result = (if (disconnect) owned.uninstallApp(id) else owned.installApp(id)).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) installed = if (result.installed) installed.orEmpty() + id else installed.orEmpty() - id
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { failure = error.message ?: "Connection change was not confirmed."
+            } finally { busyId = null; gate.endWrite() }
+            if (current()) { loadInstalled(); if (failure != null) notice = failure }
         }
     }
-    LaunchedEffect(Unit) { CoroutineScope(Dispatchers.IO).launch { loadInstalled() } }
+    LaunchedEffect(owned) { loadInstalled() }
 
     val chips = buildList {
         // static order first (minus 'all'), then live categories the static list misses
@@ -1290,6 +1294,11 @@ private fun HubAppsPanel(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (loading) Text("Checking connections…", color = SubPageInk.Zinc500, fontSize = 12.sp)
+        notice?.let {
+            Text(it, color = SubPageInk.Rose400, fontSize = 12.sp)
+            HubPrimaryButton(label = "Refresh connections", enabled = !loading && busyId == null, onClick = { scope.launch { loadInstalled() } })
+        }
         // glass search pill h-11
         Box(
             Modifier
@@ -1337,7 +1346,7 @@ private fun HubAppsPanel(
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
-                    "My apps" + if (installed.isNotEmpty()) " · ${installed.size}" else "",
+                    "My apps" + if (installed.orEmpty().isNotEmpty()) " · ${installed.orEmpty().size}" else "",
                     color = SubPageInk.Amber400,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
@@ -1372,8 +1381,8 @@ private fun HubAppsPanel(
                 for (app in pair) {
                     HubAppTile(
                         app = app,
-                        installed = app.n.toString() in installed,
-                        busy = busyId == app.n.toString(),
+                        installed = app.n.toString() in installed.orEmpty(),
+                        busy = busyId != null || installed == null,
                         onToggle = { toggleApp(app) },
                         // R76 - web root tiles NAVIGATE to the full app page
                         // (hub-tab.tsx:875 navigateHash('/hub/app/${a.n}'))
@@ -1503,6 +1512,19 @@ internal fun MirrorHubCategoryPage(
     // R76 - web rows navigateHash('/hub/app/<n>') - the FULL app page
     onOpenApp: (Int) -> Unit = {},
 ) {
+    androidx.compose.runtime.key(slug, repository.viewerId, repository.attachmentSessionKey()) {
+        MirrorHubCategoryContent(slug, repository, onBack, onOpenApp)
+    }
+}
+
+@Composable
+private fun MirrorHubCategoryContent(
+    slug: String,
+    repository: PulseRepository,
+    onBack: () -> Unit,
+    // R76 - web rows navigateHash('/hub/app/<n>') - the FULL app page
+    onOpenApp: (Int) -> Unit = {},
+) {
     val isMine = slug == HubCatalog.MINE_SLUG
     val category = HubCatalog.categoryBySlug(slug)
     val meta = category?.let { HubCatalog.CATEGORY_META[it] }
@@ -1512,33 +1534,27 @@ internal fun MirrorHubCategoryPage(
     var installed by remember { mutableStateOf<Set<String>?>(null) }
     var installFailed by remember { mutableStateOf(false) }
 
+    val scope = rememberCoroutineScope()
+    val owned = remember { repository.boundToCurrentAccount() }
+    val owner = remember { repository.viewerId }
+    val epoch = remember { repository.attachmentSessionKey() }
+    var loading by remember { mutableStateOf(false) }
+    fun current() = repository.viewerId == owner && repository.attachmentSessionKey() == epoch
     fun loadInstalled() {
-        CoroutineScope(Dispatchers.IO).launch {
+        if (loading || !current()) return
+        loading = true
+        scope.launch {
             try {
-                val ids = mutableSetOf<String>()
-                for (batch in HubCatalog.MATRIX.chunked(8)) {
-                    val results = batch.map { app ->
-                        CoroutineScope(Dispatchers.IO).async {
-                            val state = runCatching {
-                                repository.appInstallState(app.n.toString()).getOrNull()
-                            }.getOrNull()
-                            app to (state?.installed == true)
-                        }
-                    }.map { it.await() }
-                    for ((app, on) in results) if (on) ids.add(app.n.toString())
-                }
-                installed = ids
-                installFailed = false
-            } catch (_: Exception) {
-                installFailed = true
-            }
+                if (!current()) return@launch
+                val ids = app.pulse.domain.sync.appInstallSnapshot(HubCatalog.MATRIX.map { it.n.toString() }, owner.orEmpty()) { owned.appInstallState(it) }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) { installed = ids; installFailed = false }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { if (current()) installFailed = true
+            } finally { loading = false }
         }
     }
-    LaunchedEffect(slug) {
-        installed = null
-        installFailed = false
-        loadInstalled()
-    }
+    LaunchedEffect(owned) { loadInstalled() }
 
     val apps = when {
         isMine -> (installed ?: emptySet()).let { set -> HubCatalog.MATRIX.filter { it.n.toString() in set } }
@@ -1680,6 +1696,10 @@ internal fun MirrorHubCategoryPage(
                 .verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         ) {
+            if (installFailed && (!isMine || apps.isNotEmpty())) {
+                Text("Could not refresh connections. Showing the last confirmed state.", color = SubPageInk.Rose400)
+                HubPrimaryButton(label = "Retry", enabled = !loading, onClick = { loadInstalled() })
+            }
             when {
                 // unknown slug (web lines 140-159)
                 category == null && !isMine -> HubCategoryStateCard(
@@ -1711,7 +1731,7 @@ internal fun MirrorHubCategoryPage(
                     }
                 }
                 // failed install verification (web lines 165-169)
-                isMine && installFailed -> HubCategoryStateCard(
+                isMine && installFailed && apps.isEmpty() -> HubCategoryStateCard(
                     glyph = "LSearchX",
                     title = "Something went wrong",
                     body = "Could not verify your connected apps.",

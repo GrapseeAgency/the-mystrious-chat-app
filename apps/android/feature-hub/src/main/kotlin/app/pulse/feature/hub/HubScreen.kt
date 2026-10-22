@@ -485,10 +485,12 @@ class HubViewModel @Inject constructor(
     val appErrors = _appErrors.asStateFlow()
     private var appsOwner: String? = null
     private var appsScan = 0L
+    private val _appsLoading = MutableStateFlow(false)
+    val appsLoading = _appsLoading.asStateFlow()
     private fun prepareApps() {
         if (appsOwner != repo.attachmentSessionKey()) {
             _installs.value = emptyMap(); _appErrors.value = emptyMap(); appGates.clear()
-            appsOwner = repo.attachmentSessionKey(); appsScan++
+            appsOwner = repo.attachmentSessionKey(); appsScan++; _appsLoading.value = false
         }
     }
     private suspend fun fetchInstall(appId: String, owned: PulseRepository, epoch: String?) {
@@ -545,14 +547,18 @@ class HubViewModel @Inject constructor(
         })
     fun loadMyApps(catalog: HubCatalog) {
         prepareApps()
+        if (_appsLoading.value) return
         val epoch = repo.attachmentSessionKey(); val owned = repo.boundToCurrentAccount(); val ticket = ++appsScan
+        _appsLoading.value = true
         viewModelScope.launch {
-            // All catalog entries, bounded sequential traffic; never silently drop apps 25–100.
-            for (app in catalog.apps) {
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                if (ticket != appsScan || repo.attachmentSessionKey() != epoch) return@launch
-                fetchInstall(app.n.toString(), owned, epoch)
-            }
+            try {
+                // All catalog entries, bounded sequential traffic; never silently drop apps 25–100.
+                for (app in catalog.apps) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (ticket != appsScan || repo.attachmentSessionKey() != epoch) return@launch
+                    fetchInstall(app.n.toString(), owned, epoch)
+                }
+            } finally { if (ticket == appsScan && repo.attachmentSessionKey() == epoch) _appsLoading.value = false }
         }
     }
 
@@ -1156,6 +1162,9 @@ private fun AppsSheet(
     var category by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf<HubCatalogApp?>(null) }
 
+    val loading by vm.appsLoading.collectAsStateWithLifecycle()
+    val failures by vm.appErrors.collectAsStateWithLifecycle()
+    val verified = catalog.apps.all { installs[it.n.toString()] != null && failures["read:${it.n}"] == null }
     val visible = catalog.apps
         .filter { !myAppsOnly || (installs[it.n.toString()]?.installed == true) }
         .filter { category == null || it.category == category }
@@ -1189,7 +1198,12 @@ private fun AppsSheet(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            if (visible.isEmpty()) {
+            if (loading) Text("Checking connections…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!loading && !verified) {
+                Text("Connections could not all be verified. Previously confirmed apps are kept.", color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { vm.loadMyApps(catalog) }) { Text("Retry") }
+            }
+            if (visible.isEmpty() && (!myAppsOnly || (verified && !loading))) {
                 Text(
                     if (myAppsOnly) "No apps connected yet - open Mini apps to connect."
                     else "No apps match.",

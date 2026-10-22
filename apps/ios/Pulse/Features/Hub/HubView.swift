@@ -350,11 +350,12 @@ final class HubViewModel: ObservableObject {
     @Published private(set) var appBusy: Set<String> = []
     @Published private(set) var appErrors: [String: String] = [:]
     private var appTickets: [String: UUID] = [:]
+    @Published private(set) var appsLoading = false
     private var appsOwner: UUID?
     private func prepareApps() {
         if appsOwner != session.sessionGeneration {
             installs = [:]; communities = [:]; installStateFailed = []; communityFailed = []
-            appErrors = [:]; appTickets = [:]; appsOwner = session.sessionGeneration
+            appErrors = [:]; appTickets = [:]; appsLoading = false; appsOwner = session.sessionGeneration
         }
     }
     private func fetchInstall(_ appId: String, client: PulseAPIClient, epoch: UUID) async {
@@ -438,9 +439,11 @@ final class HubViewModel: ObservableObject {
     }
     func loadMyApps(_ catalog: HubCatalog) {
         prepareApps()
-        guard let client = api else { return }
+        guard !appsLoading, let client = api else { return }
         let ticket = UUID(), epoch = session.sessionGeneration; appsRequest = ticket
+        appsLoading = true
         Task { @MainActor in
+            defer { if appsRequest == ticket, session.sessionGeneration == epoch { appsLoading = false } }
             for app in catalog.apps {
                 guard !Task.isCancelled, appsRequest == ticket, session.sessionGeneration == epoch else { return }
                 await fetchInstall(String(app.n), client: client, epoch: epoch)
@@ -645,11 +648,11 @@ struct HubView: View {
                     vm.loadLogs()
                 }
         case .apps:
-            HubAppsList(catalog: catalog, installs: vm.installs, myAppsOnly: false) { app in
+            HubAppsList(catalog: catalog, installs: vm.installs, myAppsOnly: false, loading: vm.appsLoading, failedReads: vm.installStateFailed, onRetry: { vm.loadMyApps(catalog) }) { app in
                 expandedApp = app
             }
         case .myApps:
-            HubAppsList(catalog: catalog, installs: vm.installs, myAppsOnly: true) { app in
+            HubAppsList(catalog: catalog, installs: vm.installs, myAppsOnly: true, loading: vm.appsLoading, failedReads: vm.installStateFailed, onRetry: { vm.loadMyApps(catalog) }) { app in
                 expandedApp = app
             }
         }
@@ -956,11 +959,17 @@ private struct HubAppsList: View {
     let catalog: HubCatalog
     let installs: [String: WireAppInstallState]
     let myAppsOnly: Bool
+    let loading: Bool
+    let failedReads: Set<String>
+    let onRetry: () -> Void
     let onExpand: (HubCatalogApp) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var category: String?
 
+    private var verified: Bool {
+        catalog.apps.allSatisfy { installs[String($0.n)] != nil && !failedReads.contains(String($0.n)) }
+    }
     private var visible: [HubCatalogApp] {
         catalog.apps
             .filter { !myAppsOnly || (installs[String($0.n)]?.installed == true) }
@@ -984,7 +993,12 @@ private struct HubAppsList: View {
                 }
             }
             Section(myAppsOnly ? "Installed & connected apps" : "\(catalog.apps.count) apps · \(catalog.categories.count) categories - browsable offline") {
-                if visible.isEmpty {
+                if loading { Text("Checking connections…").foregroundStyle(.secondary) }
+                if !loading && !verified {
+                    Text("Connections could not all be verified. Previously confirmed apps are kept.").foregroundStyle(.secondary)
+                    Button("Retry") { onRetry() }
+                }
+                if visible.isEmpty && (!myAppsOnly || (verified && !loading)) {
                     Text(myAppsOnly ? "No apps connected yet - open Mini apps to connect." : "No apps match.")
                         .foregroundStyle(.secondary)
                 }
@@ -997,7 +1011,7 @@ private struct HubAppsList: View {
                             .background(PulseTheme.emberGlowBottom, in: Circle())
                         VStack(alignment: .leading, spacing: 1) {
                             Text(app.name).font(.subheadline)
-                            Text("\(installs[String(app.n)]?.installs ?? 0) connected")
+                            Text(installs[String(app.n)].flatMap { $0.installs }.map { "\($0) connected" } ?? "Connection count unavailable")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
