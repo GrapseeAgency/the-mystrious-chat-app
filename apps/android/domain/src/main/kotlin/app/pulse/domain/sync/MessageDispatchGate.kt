@@ -38,7 +38,15 @@ class MessageDispatchGate(private val nowMillis: () -> Long = { System.nanoTime(
         }
     }
 
-    suspend fun <T> serialized(block: suspend () -> T): T = mutex.withLock { block() }
+    suspend fun <T> serialized(onFailure: () -> Unit = {}, block: suspend () -> T): T = try {
+        mutex.withLock { block() }
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        // A failed read/write/ACK does not prove the durable queue is empty.
+        onFailure()
+        throw error
+    }
 
     /** null means keep the already-persisted intent queued, not fail or wait on UI. */
     suspend fun <T : Any> tryImmediate(isHead: suspend () -> Boolean, conversationId: String? = null, send: suspend () -> T): T? {

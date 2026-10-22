@@ -724,7 +724,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         let reopened = try PulseStore(path: url.path)
         XCTAssertNil(try reopened.message(id: "server-row"))
         XCTAssertNotNil(try reopened.message(id: "local_pending"))
-        XCTAssertEqual(reopened.countPendingOutbox(), 1)
+        XCTAssertEqual(try reopened.countPendingOutbox(), 1)
         XCTAssertEqual(reopened.draft(conversationId: "room"), "keep draft")
     }
 

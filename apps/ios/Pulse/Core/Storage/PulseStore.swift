@@ -975,10 +975,11 @@ public final class PulseStore: Sendable {
         }
     }
 
-    public func countPendingOutbox() -> Int {
-        (try? dbQueue.read { db in
-            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox WHERE failureReason IS NULL")
-        }) ?? 0
+    /// Unreadable storage is not an empty queue. Callers must keep recovery alive.
+    public func countPendingOutbox() throws -> Int {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox WHERE failureReason IS NULL") ?? 0
+        }
     }
 
     /// Do not touch the composer. Keep content + full envelope and retract only

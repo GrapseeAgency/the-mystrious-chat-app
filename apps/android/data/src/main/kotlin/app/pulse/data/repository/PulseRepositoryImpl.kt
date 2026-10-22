@@ -293,7 +293,7 @@ class PulseRepositoryImpl constructor(
             launch { runCatching { ensureDemoSeeded(userId) } }
             launch { fetchSettings() }
             launch { refreshConversations() }
-            launch { runCatching { if (outboxDao.count() > 0) flushOutbox() } }
+            launch { runCatching { flushOutbox() } }
             launch { runCatching { if (callLogDao.queueCount() > 0) flushCallLogQueue() } }
         }
     }
@@ -2173,7 +2173,9 @@ class PulseRepositoryImpl constructor(
      * self-heal). The drain policy itself is FlushOutboxUseCase - single
      * source of truth, unit-tested at the domain layer.
      */
-    override suspend fun flushOutbox(): FlushReport = dispatchGate.serialized {
+    override suspend fun flushOutbox(): FlushReport = dispatchGate.serialized(
+        onFailure = { if (viewerId != null) scheduleSelfHeal() },
+    ) {
         if (viewerId == null || sessionTokenStore.cached.isNullOrBlank() || sessionTokenStore.invalidated.value) {
             return@serialized FlushReport(sent = 0, dropped = 0, pending = pendingOutboxCount())
         }

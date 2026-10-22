@@ -50,7 +50,7 @@ final class TextDeliveryTests: XCTestCase {
         let store = try PulseStore()
         XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: " \n", effect: "echo"))
         XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room", content: "hello", effect: "unknown"))
-        XCTAssertEqual(store.countPendingOutbox(), 0)
+        XCTAssertEqual(try store.countPendingOutbox(), 0)
         XCTAssertTrue(try store.messages(conversationId: "room").isEmpty)
     }
 
@@ -115,7 +115,7 @@ final class TextDeliveryTests: XCTestCase {
         XCTAssertEqual(envelope.anon, true)
         XCTAssertEqual(try store.message(id: sticker.id)?.payload, envelope.payload)
         XCTAssertThrowsError(try PulseTextDelivery.enqueueRich(store: store, viewer: viewer, conversationId: "room", kind: "location", payload: ["lat": Double.nan, "lng": 10.0]))
-        XCTAssertEqual(store.countPendingOutbox(), 2)
+        XCTAssertEqual(try store.countPendingOutbox(), 2)
     }
 
 }

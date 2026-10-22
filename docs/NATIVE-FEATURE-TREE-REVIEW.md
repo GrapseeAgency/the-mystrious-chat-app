@@ -2662,3 +2662,27 @@ completed successfully, but that does not validate these edits or prove device b
 Inventory regenerated. Autumn unchanged. Durable read intent after leaving/killing the
 surface, cumulative unseen-gap semantics and cross-device manual-unread replay ordering
 remain open; this change intentionally does not introduce an unsafe offline receipt queue.
+
+
+## 2026-10-22 — an unreadable outgoing queue is not a successfully drained queue
+
+Swift's countPendingOutbox swallowed SQLite errors and returned zero. The engine could
+therefore report a successful empty drain and stop its recovery timer even though sends
+remained on disk. The count is now throwing, with all callers adapted. The engine keeps
+its last known count plus an explicit storageUnavailable state, reports an incomplete
+flush when it cannot determine the queue, and retains its recovery/network triggers.
+Only a confirmed empty count stops recovery; no synthetic queue count or delivery is
+invented. Local acknowledgement failures retain the same operation identity for retry.
+
+Android already propagated storage failures, but several drain callers only logged them,
+and the recovery timer could exit without scheduling another pass. The shared serialized
+drain now invokes its recovery callback on non-cancellation exceptions, after releasing
+the writer. Startup also enters that guarded drain without an unguarded preliminary count.
+Account cancellation is rethrown and does not schedule work for a retired repository.
+
+Added real SQLite unavailability/restoration and acknowledgement-write fault regressions
+for Swift, plus Kotlin writer-release/recovery/cancellation cases. Eight native files
+syntax-parse and diff checks pass; native execution is pending. Server behavior unchanged
+from c815be6 (129/129 passed). No autumn styling changes. This is recovery from transient
+storage failures, not repair of a corrupt database or a promise that lost storage can be
+reconstructed. Offline receipt persistence and broader feature trees remain open.
