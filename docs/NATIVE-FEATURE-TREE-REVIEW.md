@@ -3045,3 +3045,57 @@ ordering/idempotency of every webhook/tournament operation in those child sectio
 Seven changed native source/test files pass syntax parsing; native execution/device navigation
 coverage of these changes is not yet established. Palette is unchanged. Server source is
 unchanged; no new server pass-count claim is made for native-only changes.
+
+
+## 2026-10-22 — durable ordinary group/channel creation receipts and native retry ownership
+
+Ordinary groups and channels still always created another room if the first response was
+lost. They now accept owner-scoped creation IDs backed by ConversationCreationOperation.
+The room, membership, initial channel post and receipt commit in one Serializable
+transaction. Repeating identical instructions returns the existing identity; changing
+instructions/kind under the same key is rejected. Receipts survive deletion: a removed
+room produces an ID-bound creation_gone verdict, never a replacement. Departed creators
+cannot recover a room they no longer belong to. Later metadata/membership changes are not
+reapplied from the old creation form. Group member existence is checked only for a new
+creation, not before a replay that might reference a subsequently deleted member.
+
+Both native transports use **versioned create-v2 paths**, require the echoed ID and an
+explicit replay flag, validate returned identity/ownership and never downgrade to a legacy
+POST. An old gateway therefore refuses rather than ignoring the key and duplicating a
+creation. The existing account/gateway-scoped durable journals retain the key across
+transport failure, cancellation, malformed acknowledgements and app restart. Identical
+canonical instructions reuse it; explicit acceptance releases it for a later intentional
+new group/channel. Channel creation includes its conversation summary, so accepting/opening
+it no longer requires a second unrelated detail fetch. Android persists the room before
+retiring the operation; Swift primary New Chat/Channels and the alternate Mirror caller
+persist history and explicitly acknowledge the receipt before retiring it. Verified group
+replays may contain a roster changed since the original creation. Raw/malformed responses
+cannot use that exception without a confirmed receipt.
+
+The mounted Android group sheet also used a detached job, swallowed Result failures and
+never reset Creating. It now binds the repository/scope, snapshots the selected instructions,
+prevents pending edits, propagates cancellation, resets pending state in finally and displays
+failure. Its directory excludes self and distinguishes loading/failure with retry. The autumn
+palette is unchanged.
+
+**Rollout requirement:** back up the live DB and apply
+`prisma/patches/20261022_conversation_creation_operations.sql`, deploy the server routes, then
+release the native clients. The patch is additive/rerunnable and intentionally has no FK
+cascade or expiry. Missing schema fails with 503 before creation; clients do not silently use
+unsafe legacy routes. No production deployment was performed here. Prisma's declarative
+schema records the receipt model; helpers use parameterized SQL, so generated Prisma client
+artifacts need not be checked in for the additive patch.
+
+Executed: seven targeted SQLite/entry-point cases and full server suite 170/170; strict
+TypeScript checks include the creation helper and both legacy/versioned route entry points.
+Added Android transport/version-path/refusal tests and Swift durable-reopen/receipt-retirement/
+roster-replay/channel-acceptance tests. Native syntax checks pass, but native compilation,
+test execution and device acceptance of this tranche are pending. The existing DataStore
+creation journal also has restart/stale-ACK tests. Inventory regenerated, not a safety claim.
+
+Limits: this cannot merge duplicates created by older clients; legacy POST without a key
+still creates separately. Recovery keys are per canonical instruction (including uploaded
+photo path); pending forms/photo selections are not restored automatically. Editing an
+uncertain form is a different creation intent, not a retry. Cross-device metadata revision,
+queue/receipt durability beyond these operations, media revocation and other feature trees
+remain open. A receipt is evidence of server creation, not proof that the user saw the UI.

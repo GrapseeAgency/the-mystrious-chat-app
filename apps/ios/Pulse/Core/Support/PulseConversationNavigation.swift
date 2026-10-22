@@ -23,8 +23,10 @@ enum PulseConversationNavigation {
         }
         let created = try await request()
         try Task.checkCancellation()
+        let confirmedReplay = isGroup && created.creationClientId != nil && created.creationReplayed == true &&
+            created.broadcastMode != true && created.members.contains(where: { $0.id == viewerId })
         guard !created.id.isEmpty, created.isGroup == isGroup, created.isSelf != true,
-              created.members.count == expected.count, Set(created.members.map(\.id)) == expected else {
+              confirmedReplay || (created.members.count == expected.count && Set(created.members.map(\.id)) == expected) else {
             throw PulseAPIClient.Failure(kind: .validation,
                 message: "The returned chat didn't match your selection. Refresh Chats before retrying.")
         }

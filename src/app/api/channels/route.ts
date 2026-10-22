@@ -4,8 +4,11 @@
 // POST = create a channel (creator becomes the admin) + first post.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { notifySocket, safeJson, strField } from '@/lib/serializers'
+import { createConversationOnce, ConversationCreationError } from '@/lib/conversation-creation'
+import { notifySocket, safeJson, strField, CONVERSATION_FULL_INCLUDE, buildConversationSummary } from '@/lib/serializers'
 import type { ChannelSummary } from '@/lib/types'
+import { bearerToken } from '@/lib/session-token'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import { channelIdentity, normalizeChannelPhoto } from '@/lib/channel-contract'
 
 export const dynamic = 'force-dynamic'
@@ -106,6 +109,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, userId, 'channel creation')
+    if (denied) return denied
+  }
+
   const name = strField(body.name)
   if (name.length < NAME_MIN || name.length > NAME_MAX) {
     return NextResponse.json(
@@ -136,44 +144,52 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unknown user.' }, { status: 404 })
   }
 
-  const now = new Date()
-  const created = await db.conversation.create({
-    data: {
-      isGroup: true,
-      broadcastMode: true,
-      createdAt: now,
-      updatedAt: now,
-      name,
-      description,
-      ...(photo ? { photo } : {}),
-      participants: {
-        create: { userId, role: 'admin', lastReadAt: now },
+  try {
+    const now = new Date()
+    const created = await createConversationOnce(db, userId, body.clientId, 'channel',
+      [name, description, photo], tx => tx.conversation.create({
+      data: {
+        isGroup: true,
+        broadcastMode: true,
+        createdAt: now,
+        updatedAt: now,
+        name,
+        description,
+        ...(photo ? { photo } : {}),
+        participants: {
+          create: { userId, role: 'admin', lastReadAt: now },
+        },
+        messages: {
+          create: { senderId: userId, content: FIRST_MESSAGE, kind: 'text', createdAt: now },
+        },
       },
-      messages: {
-        create: { senderId: userId, content: FIRST_MESSAGE, kind: 'text', createdAt: now },
-      },
-    },
-    select: { id: true },
-  })
-  // All creation writes commit together; a redundant post-commit DB read/write
-  // must not turn an already-created channel into an apparent creation failure.
-  const recipients = [userId]
-  await notifySocket('conversation:updated', recipients, {
-    type: 'conversation:updated',
-    conversationId: created.id,
-    recipientIds: recipients,
-  })
+      select: { id: true },
+    }))
+    // Creation and its receipt committed together. A failed serialization/read can
+    // now be retried with the same identity, without another room or first post.
+    const recipients = [userId]
+    await notifySocket('conversation:updated', recipients, {
+      type: 'conversation:updated',
+      conversationId: created.id,
+      recipientIds: recipients,
+    })
 
-  const channel: ChannelSummary & { conversationId: string } = {
-    ...channelIdentity(created.id),
-    name,
-    description,
-    createdAt: now.toISOString(),
-    memberCount: 1,
-    isSubscribed: true,
-    unread: false,
-    preview: snippet(FIRST_MESSAGE),
-    photo: photo ?? null,
+    const current = await db.conversation.findFirst({
+      where: { id: created.id, participants: { some: { userId } } },
+      include: CONVERSATION_FULL_INCLUDE,
+    })
+    if (!current) return NextResponse.json({ error: 'The created channel is no longer available.' }, { status: 404 })
+    const conversation = await buildConversationSummary(current, userId)
+    const channel: ChannelSummary & { conversationId: string } = {
+      ...channelIdentity(current.id), name: current.name ?? 'Channel', description: current.description,
+      createdAt: current.createdAt.toISOString(), memberCount: current.participants.length,
+      isSubscribed: true, unread: conversation.unreadCount > 0,
+      preview: conversation.lastMessage && !conversation.lastMessage.deletedAt ? snippet(conversation.lastMessage.content) : null, photo: current.photo,
+    }
+    return NextResponse.json({ channel, conversation, clientId: created.clientId, replayed: created.replayed }, { status: created.replayed ? 200 : 201 })
+  } catch (error) {
+    if (error instanceof ConversationCreationError) return NextResponse.json(
+      { error: error.message, code: error.code, clientId: error.clientId }, { status: error.status })
+    throw error
   }
-  return NextResponse.json({ channel }, { status: 201 })
 }

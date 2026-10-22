@@ -1117,12 +1117,47 @@ class PulseRepositoryImpl constructor(
     private suspend fun createConversation(memberIds: List<String>, isGroup: Boolean, name: String?): Result<Conversation> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
-        return when (val r = api.createConversation(owner, memberIds, isGroup, name)) {
-            is PulseResult.Success -> {
-                Result.success(cacheConversation(r.value, owner, epoch))
-            }
+        val members = (memberIds + owner).distinct().sorted()
+        val normalizedName = name?.trim()?.ifBlank { "Group of ${members.size}" }
+        val intent = kotlinx.serialization.json.JsonArray((listOf(owner, "conversation-group", normalizedName.orEmpty()) + members).map { JsonPrimitive(it) }).toString()
+        if (isGroup) return persistentConversationCreation(intent, owner, epoch,
+            send = { api.createConversation(owner, members, true, normalizedName, it) },
+            accept = { cacheConversation(it, owner, epoch) })
+        return when (val r = api.createConversation(owner, memberIds, false, name)) {
+            is PulseResult.Success -> Result.success(cacheConversation(r.value, owner, epoch))
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
+
+    /** Account/gateway-scoped journal survives cancellation/restart. Clear only
+     * after a matching server receipt and the local room have both been accepted. */
+    private suspend fun <T, R> persistentConversationCreation(intent: String, owner: String, epoch: String,
+        send: suspend (String) -> PulseResult<T>, accept: suspend (T) -> R): Result<R> {
+        return try {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireConversationOwner(owner, epoch)
+            val id = prefsLocalStore.beginRoomCreation(intent)
+            requireConversationOwner(owner, epoch)
+            when (val result = send(id)) {
+                is PulseResult.Success -> {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    requireConversationOwner(owner, epoch)
+                    val accepted = accept(result.value)
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    requireConversationOwner(owner, epoch)
+                    prefsLocalStore.finishRoomCreation(intent, id)
+                    scheduleConversationsRefresh()
+                    Result.success(accepted)
+                }
+                is PulseResult.Failure -> {
+                    if (result.status == 410 && result.code == "creation_gone" && result.receiptClientId == id) {
+                        requireConversationOwner(owner, epoch)
+                        prefsLocalStore.finishRoomCreation(intent, id)
+                    }
+                    Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
     }
 
     override suspend fun me(): User? = null // no /me route on the wire yet - viewer lives in prefs
@@ -3943,19 +3978,18 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun createChannel(name: String, description: String?, photo: String?): Result<Channel> =
-        when (val r = api.createChannel(viewerId ?: "", name, description, photo)) {
-            is PulseResult.Success -> {
-                val channel = r.value.channel?.toChannel()
-                if (channel == null) {
-                    Result.failure(IllegalStateException("VALIDATION: channel missing in 201 body"))
-                } else {
-                    runCatching { refreshConversations() }
-                    Result.success(channel)
-                }
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun createChannel(name: String, description: String?, photo: String?): Result<Channel> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        val normalizedName = name.trim(); val detail = description.orEmpty().trim(); val image = photo?.trim()?.ifBlank { null }
+        val intent = kotlinx.serialization.json.JsonArray(listOf(owner, "conversation-channel", normalizedName, detail, image.orEmpty()).map { JsonPrimitive(it) }).toString()
+        return persistentConversationCreation(intent, owner, epoch,
+            send = { api.createChannel(owner, normalizedName, detail, image, it) },
+            accept = {
+                cacheConversation(requireNotNull(it.conversation), owner, epoch)
+                requireNotNull(it.channel).toChannel()
+            })
+    }
 
     override suspend fun subscribeChannel(channelId: String): Result<Boolean> = withRoomMutation(channelId) { owner, epoch ->
         when (val r = api.subscribeChannel(channelId, owner)) {

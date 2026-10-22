@@ -666,13 +666,15 @@ struct MirrorHomeSheetView: View {
                 if session.sessionGeneration == epoch { session.noteInboxChanged(); model.refresh() }
             }
             do {
-                let created = try await client.createConversation(memberIds: memberIds, isGroup: isGroup, name: name)
+                let created = try await PulseConversationNavigation.create(viewerId: viewer.id, memberIds: memberIds, isGroup: isGroup) {
+                    try await client.createConversation(memberIds: memberIds, isGroup: isGroup, name: name)
+                }
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                let expected = Set(memberIds + [viewer.id])
-                guard !created.id.isEmpty, created.isGroup == isGroup, created.isSelf != true,
-                      created.members.count == expected.count, Set(created.members.map(\.id)) == expected else {
-                    creationError = "The returned chat didn't match your selection. Refresh Chats before retrying."
-                    return
+                if isGroup {
+                    guard let store = session.store else { throw PulseAPIClient.Failure(kind: .server, message: "Local chat storage isn't ready.") }
+                    try store.upsert(conversations: [created.toDomain()])
+                    try await client.acknowledgeGroupCreation(memberIds: memberIds, name: name, receipt: created)
+                    guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 }
                 model.acceptCreatedConversation(created, viewerId: viewer.id)
                 // Open the returned identity directly; refresh() is asynchronous.

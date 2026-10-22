@@ -373,11 +373,18 @@ struct NewChatSheet: View {
                 }
                 guard !Task.isCancelled, session.sessionGeneration == epoch,
                       session.roomNavigationGeneration == navigation else { return }
+                if isGroup {
+                    guard let store = session.store else { throw PulseAPIClient.Failure(kind: .server, message: "Local chat storage isn't ready.") }
+                    try store.upsert(conversations: [conv.toDomain()])
+                    try await api.acknowledgeGroupCreation(memberIds: memberIds, name: name, receipt: conv)
+                    guard !Task.isCancelled, session.sessionGeneration == epoch,
+                          session.roomNavigationGeneration == navigation else { return }
+                }
                 onCreated(conv)
             } catch {
                 guard !Task.isCancelled, session.sessionGeneration == epoch,
                       session.roomNavigationGeneration == navigation else { return }
-                creationError = isGroup ? "Couldn't confirm group creation. Check Chats before retrying."
+                creationError = isGroup ? "Couldn't confirm group creation. Retry the same name and people to recover the same operation."
                     : ChatsViewModel.describe(error)
             }
         }

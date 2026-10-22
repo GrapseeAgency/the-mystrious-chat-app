@@ -933,14 +933,26 @@ internal fun MirrorGroupSheet(
     onOpened: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val actionRepository = remember(repository, repository.viewerId) { repository.boundToCurrentAccount() }
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var errorText by remember { mutableStateOf<String?>(null) }
+    var directoryError by remember { mutableStateOf<String?>(null) }
+    var directoryLoading by remember { mutableStateOf(false) }
+    var directoryRetry by remember { mutableStateOf(0) }
     var name by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
     var users by remember { mutableStateOf<List<User>>(emptyList()) }
     val picked = remember { mutableStateOf(setOf<String>()) }
     var creating by remember { mutableStateOf(false) }
-    LaunchedEffect(query) {
-        delay(180)
-        users = repository.users(query.trim()).getOrDefault(emptyList())
+    LaunchedEffect(actionRepository, query, directoryRetry) {
+        directoryLoading = true
+        directoryError = null
+        try {
+            delay(180)
+            app.pulse.domain.sync.confirmedAction({ actionRepository.users(query.trim()) }) { loaded ->
+                users = loaded.filter { it.id != actionRepository.viewerId }
+            }.getOrThrow()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) { directoryError = "People couldn't be loaded. Tap to retry." } finally { directoryLoading = false }
     }
     MirrorSheet(title = "New group", onDismiss = onDismiss) {
         MirrorSheetSearch(query, "Search people…", onQuery = { query = it })
@@ -958,6 +970,7 @@ internal fun MirrorGroupSheet(
             BasicTextField(
                 value = name,
                 onValueChange = { name = it },
+                readOnly = creating,
                 singleLine = true,
                 textStyle = TextStyle(color = MirrorArt.Text, fontSize = 14.sp),
                 cursorBrush = SolidColor(MirrorArt.Accent),
@@ -969,6 +982,10 @@ internal fun MirrorGroupSheet(
             )
         }
         Spacer(Modifier.height(10.dp))
+        if (directoryLoading) Text("Loading people…", color = MirrorArt.TextSoft, fontSize = 12.sp)
+        directoryError?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp,
+            modifier = Modifier.clickable { directoryRetry++ }.padding(8.dp)) }
+        errorText?.let { Text(it, color = MirrorArt.Accent, fontSize = 12.sp, modifier = Modifier.padding(8.dp)) }
         MirrorSheetScroll {
             for (user in users) {
                 val checked = user.id in picked.value
@@ -976,7 +993,7 @@ internal fun MirrorGroupSheet(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable {
+                        .clickable(enabled = !creating) {
                             picked.value = if (checked) picked.value - user.id else picked.value + user.id
                         }
                         .padding(horizontal = 4.dp, vertical = 6.dp),
@@ -1017,10 +1034,17 @@ internal fun MirrorGroupSheet(
                 .background(if (canCreate) MirrorArt.Accent else MirrorArt.White7)
                 .clickable(enabled = canCreate) {
                     creating = true
-                    CoroutineScope(Dispatchers.IO).launch {
-                        repository.createGroup(name.trim(), picked.value.toList()).onSuccess { convo ->
-                            kotlinx.coroutines.withContext(Dispatchers.Main) { onOpened(convo.id) }
-                        }
+                    errorText = null
+                    val submittedName = name.trim()
+                    val submittedMembers = picked.value.toList()
+                    actionScope.launch {
+                        try {
+                            app.pulse.domain.sync.confirmedAction({ actionRepository.createGroup(submittedName, submittedMembers) }) {
+                                onOpened(it.id)
+                            }.getOrThrow()
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                            errorText = failure.message ?: "Couldn't confirm creation. Retry the same name and people to recover the same group."
+                        } finally { creating = false }
                     }
                 },
             contentAlignment = Alignment.Center,

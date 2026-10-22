@@ -422,11 +422,42 @@ public struct PulseAPIClient: Sendable {
     }
 
     /// N3-b - create (or dedupe into) a DM/group. Tolerant { conversation } envelope.
+    private struct ConversationCreationAck: Decodable {
+        let clientId: String
+        let replayed: Bool
+    }
+
+    private func groupCreationIntent(memberIds: [String], name: String?) -> [String] {
+        let members = Set(memberIds + [userId]).sorted()
+        let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return [PulseWalletOperations.gatewayKey(baseURL), userId, "conversation-group",
+                trimmed.isEmpty ? "Group of \(members.count)" : trimmed] + members
+    }
+
     public func createConversation(memberIds: [String], isGroup: Bool, name: String? = nil) async throws -> WireConversationSummary {
         var body: [String: Any] = ["creatorId": userId, "memberIds": memberIds, "isGroup": isGroup]
         if let name { body["name"] = name }
-        let data = try await postRaw("/api/conversations", body: body)
-        return try WireConversationEnvelope.extract(from: data)
+        if !isGroup { return try WireConversationEnvelope.extract(from: try await postRaw("/api/conversations", body: body)) }
+        let intent = groupCreationIntent(memberIds: memberIds, name: name)
+        let id = try await creationOperations.begin(intent)
+        body["clientId"] = id
+        let data = try await postRoomCreation("/api/conversations/create-v2", body: body, intent: intent, id: id)
+        let ack = try decoder.decode(ConversationCreationAck.self, from: data)
+        var room = try WireConversationEnvelope.extract(from: data)
+        let expected = Set(memberIds + [userId])
+        guard ack.clientId == id, !room.id.isEmpty, room.isGroup, room.isSelf != true, room.broadcastMode != true,
+              room.members.contains(where: { $0.id == userId }),
+              ack.replayed || (room.members.count == expected.count && Set(room.members.map(\.id)) == expected) else {
+            throw Failure(kind: .server, message: "Group creation receipt wasn't confirmed. Retry the same details.")
+        }
+        room.creationClientId = id; room.creationReplayed = ack.replayed
+        try Task.checkCancellation()
+        return room // caller must accept local history before retiring this intent
+    }
+
+    public func acknowledgeGroupCreation(memberIds: [String], name: String?, receipt: WireConversationSummary) async throws {
+        guard receipt.isGroup, let id = receipt.creationClientId else { return }
+        try await creationOperations.finish(groupCreationIntent(memberIds: memberIds, name: name), id: id)
     }
 
     /// N3-b / Wave 8 - create a new identity. 409 username_taken surfaces
@@ -580,15 +611,35 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/channels { userId, name(2-40), description?(≤200), photo? }
     /// → 201 { channel } - creator lands as admin + the first post is real.
+    private func channelCreationIntent(name: String, description: String, photoPath: String?) -> [String] {
+        [PulseWalletOperations.gatewayKey(baseURL), userId, "conversation-channel",
+         name.trimmingCharacters(in: .whitespacesAndNewlines), description.trimmingCharacters(in: .whitespacesAndNewlines),
+         (photoPath ?? "").trimmingCharacters(in: .whitespacesAndNewlines)]
+    }
+
     public func createChannel(name: String, description: String, photoPath: String?) async throws -> WireChannelSummary {
-        var body: [String: Any] = ["userId": userId, "name": name, "description": description]
+        let intent = channelCreationIntent(name: name, description: description, photoPath: photoPath)
+        let id = try await creationOperations.begin(intent)
+        var body: [String: Any] = ["userId": userId, "name": name, "description": description, "clientId": id]
         if let photoPath, !photoPath.isEmpty { body["photo"] = photoPath }
-        let data = try await postRaw("/api/channels", body: body)
+        let data = try await postRoomCreation("/api/channels/create-v2", body: body, intent: intent, id: id)
+        let ack = try decoder.decode(ConversationCreationAck.self, from: data)
         let created = try decoder.decode(WireChannelCreated.self, from: data)
-        guard let channel = created.channel else {
-            throw Failure(kind: .validation, message: "Channel response missing the created channel")
+        guard ack.clientId == id, var channel = created.channel, let room = created.conversation,
+              !room.id.isEmpty, channel.id == room.id, channel.conversationId == room.id,
+              room.isGroup, room.isSelf != true, room.broadcastMode == true,
+              room.members.contains(where: { $0.id == userId }), channel.isSubscribed == true,
+              (channel.memberCount ?? 0) > 0 else {
+            throw Failure(kind: .validation, message: "Channel creation receipt wasn't confirmed. Retry the same details.")
         }
+        channel.creationClientId = id; channel.creationConversation = room
+        try Task.checkCancellation()
         return channel
+    }
+
+    public func acknowledgeChannelCreation(name: String, description: String, photoPath: String?, receipt: WireChannelSummary) async throws {
+        guard let id = receipt.creationClientId else { return }
+        try await creationOperations.finish(channelCreationIntent(name: name, description: description, photoPath: photoPath), id: id)
     }
 
     /// POST /api/channels/{id}/subscribe { userId } → { already, memberCount }.

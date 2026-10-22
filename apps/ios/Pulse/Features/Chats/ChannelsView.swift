@@ -527,6 +527,12 @@ struct ChannelsView: View {
             guard let conversationId = PulseChannelDirectory.roomId(channel) else {
                 throw PulseAPIClient.Failure(kind: .validation, message: "Channel response didn't identify its conversation.")
             }
+            guard let room = channel.creationConversation, let store = session.store else {
+                throw PulseAPIClient.Failure(kind: .server, message: "The channel couldn't be saved locally. Retry the same details.")
+            }
+            try store.upsert(conversations: [room.toDomain()])
+            try await api.acknowledgeChannelCreation(name: trimmedName, description: description, photoPath: photo, receipt: channel)
+            guard owns(epoch) else { return }
             acknowledged = true
             channels.removeAll { $0.id == channel.id }
             channels.insert(channel, at: 0)
@@ -537,7 +543,7 @@ struct ChannelsView: View {
             PulseHaptics.success()
             session.toasts.show("Channel “\(channel.name ?? trimmedName)” created")
             guard session.roomNavigationGeneration == navigation else { return }
-            let conv = try await PulseConversationNavigation.conversation(id: conversationId, cached: []) {
+            let conv = try await PulseConversationNavigation.conversation(id: conversationId, cached: [room]) {
                 try await api.conversationDetail(id: conversationId, userId: api.userId)
             }
             guard owns(epoch), session.roomNavigationGeneration == navigation else { return }
@@ -546,7 +552,7 @@ struct ChannelsView: View {
         } catch {
             guard owns(epoch), session.roomNavigationGeneration == navigation else { return }
             session.toasts.show(acknowledged ? "Channel created, but opening failed. Use Open in the directory; don't create it again."
-                : "Couldn't confirm channel creation. Check Channels before retrying.")
+                : "Couldn't confirm channel creation. Retry the same details to recover the same operation.")
         }
     }
 

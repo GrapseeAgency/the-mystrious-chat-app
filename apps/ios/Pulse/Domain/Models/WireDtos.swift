@@ -495,6 +495,8 @@ public struct WireStreak: Codable, Hashable, Sendable {
 }
 
 public struct WireConversationSummary: Codable, Hashable, Sendable {
+    public var creationClientId: String? = nil
+    public var creationReplayed: Bool? = nil
     public let id: String
     public let isGroup: Bool
     public let name: String?

@@ -391,16 +391,30 @@ class PulseApi(
         ) { app.pulse.protocol.decodeMessageSend(it) }
 
     /** POST /api/conversations { creatorId, memberIds, isGroup } → tolerant conversation. */
-    suspend fun createConversation(creatorId: String, memberIds: List<String>, isGroup: Boolean, name: String?): PulseResult<ConversationSummaryDto> =
+    suspend fun createConversation(creatorId: String, memberIds: List<String>, isGroup: Boolean, name: String?, clientId: String? = null): PulseResult<ConversationSummaryDto> =
         post(
-            "/api/conversations",
+            if (clientId == null) "/api/conversations" else "/api/conversations/create-v2",
             buildJsonObject {
                 put("creatorId", creatorId)
+                if (clientId != null) put("clientId", clientId)
                 put("memberIds", kotlinx.serialization.json.JsonArray(memberIds.map { kotlinx.serialization.json.JsonPrimitive(it) }))
                 put("isGroup", isGroup)
                 if (name != null) put("name", name)
             },
-        ) { PulseJson.decodeFromString(ConversationSummaryDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString()) }
+        ) { raw ->
+            val root = PulseJson.parseToJsonElement(raw)
+            val row = PulseJson.decodeFromString(ConversationSummaryDto.serializer(), root.unwrapOrRoot("conversation").toString())
+            if (clientId != null) {
+                val envelope = requireNotNull(root as? JsonObject)
+                require(envelope["clientId"] == JsonPrimitive(clientId) && envelope["replayed"] in listOf(JsonPrimitive(true), JsonPrimitive(false))) { "Creation receipt was not confirmed; keep the same retry identity" }
+                require(row.id.isNotBlank() && row.isGroup && row.isSelf != true && row.broadcastMode != true && row.members.any { it.id == creatorId }) { "Creation returned an unrelated room" }
+                if (envelope["replayed"] != JsonPrimitive(true)) {
+                    val expected = (memberIds + creatorId).toSet()
+                    require(row.members.size == expected.size && row.members.map { it.id }.toSet() == expected) { "Creation members were not confirmed" }
+                }
+            }
+            row
+        }
 
     // reactions
     /** POST /api/messages/{id}/react { userId, emoji } - server toggles. */
@@ -1223,16 +1237,30 @@ class PulseApi(
         }
 
     /** POST /api/channels { userId, name, description?, photo? } → 201 { channel }. */
-    suspend fun createChannel(userId: String, name: String, description: String?, photo: String?): PulseResult<ChannelCreatedDto> =
+    suspend fun createChannel(userId: String, name: String, description: String?, photo: String?, clientId: String? = null): PulseResult<ChannelCreatedDto> =
         post(
-            "/api/channels",
+            if (clientId == null) "/api/channels" else "/api/channels/create-v2",
             buildJsonObject {
                 put("userId", userId)
+                if (clientId != null) put("clientId", clientId)
                 put("name", name)
                 if (!description.isNullOrBlank()) put("description", description)
                 if (!photo.isNullOrBlank()) put("photo", photo)
             },
-        ) { PulseJson.decodeFromString(ChannelCreatedDto.serializer(), it) }
+        ) { raw ->
+            val result = PulseJson.decodeFromString(ChannelCreatedDto.serializer(), raw)
+            if (clientId != null) {
+                val root = requireNotNull(PulseJson.parseToJsonElement(raw) as? JsonObject)
+                require(root["clientId"] == JsonPrimitive(clientId) && root["replayed"] in listOf(JsonPrimitive(true), JsonPrimitive(false))) { "Channel creation receipt was not confirmed" }
+                val room = result.conversation
+                val channel = result.channel
+                require(room != null && channel != null && room.id.isNotBlank() && channel.id == room.id &&
+                    (root["channel"] as? JsonObject)?.get("conversationId") == JsonPrimitive(room.id) &&
+                    room.isGroup && room.isSelf != true && room.broadcastMode == true && room.members.any { it.id == userId } &&
+                    channel.isSubscribed && channel.memberCount > 0) { "Channel creation returned an unrelated room" }
+            }
+            result
+        }
 
     /** POST /api/channels/[id]/subscribe { userId } → { already, memberCount }. */
     suspend fun subscribeChannel(channelId: String, userId: String): PulseResult<SubscribeAckDto> =

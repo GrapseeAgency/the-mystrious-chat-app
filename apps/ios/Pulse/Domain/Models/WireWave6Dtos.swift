@@ -80,6 +80,8 @@ public struct WireReportHistory: Codable, Sendable {
 /// GET /api/channels - one broadcast-channel directory row
 /// (ChannelSummary on the wire; name falls back to "Channel" server-side).
 public struct WireChannelSummary: Codable, Hashable, Sendable, Identifiable {
+    public var creationClientId: String? = nil
+    public var creationConversation: WireConversationSummary? = nil
     public let id: String
     public let conversationId: String?
     public let name: String?
@@ -98,6 +100,7 @@ public struct WireChannelsPage: Codable, Sendable {
 
 /// 201 POST /api/channels response - { channel } (+ conversationId sibling).
 public struct WireChannelCreated: Codable, Sendable {
+    public var conversation: WireConversationSummary? = nil
     public let channel: WireChannelSummary?
 }
 
