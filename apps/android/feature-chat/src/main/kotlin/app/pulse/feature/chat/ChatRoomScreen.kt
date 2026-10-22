@@ -277,6 +277,7 @@ fun ChatRoomScreen(
     var pollBuilderOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var wasEditing by remember { mutableStateOf(false) }
+    var draftBeforeEdit by remember { mutableStateOf<String?>(null) }
     var scrolledFlash by remember(state.flashRevision) { mutableStateOf<String?>(null) }
     // R1-W2A - reaction picker / who-reacted / stickers / slash help /
     // schedule / quick-phrases hosts (D27, F-MS-24, F-MS-22, F-MS-29).
@@ -340,15 +341,17 @@ fun ChatRoomScreen(
         if (!seed.isNullOrBlank() && draft.isBlank() && state.editing == null) draft = seed
     }
 
-    // Edit mode drives the composer: prefill on begin, clear on success
-    // (VM keeps the editing row on failure so the text survives retries).
+    // Keep the unsent composer separate from the edit buffer; errors retain
+    // edited text, while success/cancel restores the draft that was there before.
     LaunchedEffect(state.editing) {
         val editing = state.editing
         if (editing != null) {
+            if (!wasEditing) draftBeforeEdit = draft
             draft = editing.body
             wasEditing = true
         } else if (wasEditing) {
-            draft = ""
+            draft = draftBeforeEdit.orEmpty()
+            draftBeforeEdit = null
             wasEditing = false
         }
     }
@@ -683,6 +686,11 @@ fun ChatRoomScreen(
     fun sendCurrentDraft() {
         if (draft.isBlank()) return
         val submitted = draft
+        if (viewModel.state.value.editing != null) {
+            // Editing a slash-prefixed message must not execute a new command.
+            viewModel.send(submitted)
+            return
+        }
         val restoreRejected = {
             if (draft.isBlank()) { draft = submitted; viewModel.onDraftChanged(submitted) }
         }

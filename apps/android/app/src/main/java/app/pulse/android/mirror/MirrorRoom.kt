@@ -983,6 +983,28 @@ internal fun MirrorRoom(
         val sendTopicId = activeTopicId
         if (broadcastLocked || sending) return
         if (rawText.isEmpty()) return
+        editing?.let { editTarget ->
+            // Editing is not a new slash command, reminder, effect or outbox send.
+            val epoch = repository.attachmentSessionKey() ?: return
+            val owner = repository.viewerId ?: return
+            stopTyping()
+            sending = true
+            historyScope.launch {
+                try {
+                    if (!roomActionsLive.get() || repository.viewerId != owner || repository.attachmentSessionKey() != epoch) return@launch
+                    repository.editMessage(editTarget.id, rawText).getOrThrow()
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (!roomActionsLive.get() || repository.attachmentSessionKey() != epoch) return@launch
+                    if (editing?.id == editTarget.id && composerDraft.revision == submittedRevision) finishEditing()
+                    sendError = null
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                    if (roomActionsLive.get() && repository.attachmentSessionKey() == epoch) {
+                        sendError = error.message ?: "Couldn't update this message. Your edit is still here."
+                    }
+                } finally { sending = false }
+            }
+            return
+        }
         if (slowModeUntil > System.currentTimeMillis() && editing == null) return
         // R74 - submit-time slash text transforms (web parseSlashResult text
         // cases + bot pass-through): /me /shrug /tableflip /unflip /roll send
@@ -1019,20 +1041,17 @@ internal fun MirrorRoom(
             null -> rawText
         }
         val draftToken = repository.captureDraftToken(groupId)
-        val editTarget = editing
         val replyTarget = replyTo
         // R74 - web consumes the armed effect at submit time (chat-room L3137:
         // "const armedEffect = pendingEffect; if (!== null) setPendingEffect(null)")
         val effectTarget = pendingEffect
         if (effectTarget != null) pendingEffect = null
-        val anonTarget = anonNext && isGroup && editTarget == null && effectTarget == null
+        val anonTarget = anonNext && isGroup && effectTarget == null
         stopTyping()
         sending = true
         CoroutineScope(Dispatchers.IO).launch {
             val outcome = runCatching {
-                if (editTarget != null) {
-                    repository.editMessage(editTarget.id, text).getOrThrow()
-                } else if (effectTarget != null) {
+                if (effectTarget != null) {
                     val payload = Json.encodeToString(
                         EffectPayloadDto.serializer(),
                         EffectPayloadDto(effect = effectTarget.wire),
@@ -1070,12 +1089,8 @@ internal fun MirrorRoom(
                 if (!roomActionsLive.get()) return@completion
                 sending = false
                 outcome.onSuccess {
-                    if (editTarget != null) {
-                        if (editing?.id == editTarget.id && composerDraft.revision == submittedRevision) finishEditing()
-                    } else {
-                        composerDraft.clearIfUnchanged(submittedRevision, notify = false)
-                        if (replyTo?.id == replyTarget?.id) replyTo = null
-                    }
+                    composerDraft.clearIfUnchanged(submittedRevision, notify = false)
+                    if (replyTo?.id == replyTarget?.id) replyTo = null
                     sendError = null
                     // R74 - the effect arm is one-shot like the web pendingEffect
                     // (armed stays until a send consumes it - web L3103 keeps it
@@ -3921,8 +3936,10 @@ private fun MirrorBubbleRow(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                MirrorLucideIcon(MirrorReactions.glyphOf(chip.emoji),
-                                    tint = if (chip.iReacted) MirrorArt.Accent2 else MirrorArt.TextSoft, modifier = Modifier.size(12.dp))
+                                val glyph = MirrorReactions.glyphOf(chip.emoji)
+                                val tint = if (chip.iReacted) MirrorArt.Accent2 else MirrorArt.TextSoft
+                                if (glyph.startsWith("P")) MirrorPhosphorIcon(glyph, tint, Modifier.size(12.dp))
+                                else MirrorLucideIcon(glyph, tint, Modifier.size(12.dp))
                                 if (chip.count > 1) {
                                     Text(
                                         chip.count.toString(),

@@ -2722,17 +2722,18 @@ struct MirrorRoomSheetView: View {
         guard !pinBusy else { return }
         pinBusy = true
         pinRequest = UUID() // A pending GET must not restore this selection.
-        let epoch = session.sessionGeneration, watermark = session.messageRevision
+        let epoch = session.sessionGeneration
         defer { pinBusy = false }
         do {
-            try await session.api.unpinMessage(id: message.id, userId: session.api.userId)
+            _ = try await session.mutateMessage(message, action: .unpin)
+            try Task.checkCancellation()
             guard session.sessionGeneration == epoch else { return }
-            try session.applyPinRemoval(message.id, startedAt: watermark)
-            pinned = pinned?.filter { $0.id != message.id }
+            reconcilePins()
             pinError = nil
+        } catch is CancellationError {
         } catch {
             guard session.sessionGeneration == epoch else { return }
-            pinError = "Couldn't remove pin. Try Unpin again."
+            pinError = error.localizedDescription
         }
     }
 

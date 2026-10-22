@@ -232,6 +232,55 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    public enum MessageAction { case edit(String), togglePin, unpin, delete }
+    private var messageActions: [String: UUID] = [:]
+
+    /// One account-owned action per message, persisted before any surface accepts it.
+    public func mutateMessage(_ requested: WireChatMessage, action: MessageAction) async throws -> WireChatMessage {
+        try Task.checkCancellation()
+        guard ready, let viewer, let store, !requested.id.hasPrefix("local_"),
+              let cached = try store.message(id: requested.id), cached.conversationId == requested.conversationId,
+              messageActions[requested.id] == nil else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "This message is unavailable or still updating.")
+        }
+        let ticket = UUID(), epoch = sessionGeneration, client = api, revision = messageRevision
+        messageActions[requested.id] = ticket
+        defer { if messageActions[requested.id] == ticket { messageActions.removeValue(forKey: requested.id) } }
+        let incoming: WireChatMessage?
+        switch action {
+        case .edit(let content): incoming = try await client.editMessage(id: requested.id, userId: viewer.id, content: content)
+        case .togglePin: incoming = try await client.toggleMessagePin(id: requested.id, userId: viewer.id)
+        case .delete: incoming = try await client.deleteOwnMessage(id: requested.id)
+        case .unpin:
+            try await client.unpinMessage(id: requested.id, userId: viewer.id)
+            incoming = nil
+        }
+        try Task.checkCancellation()
+        guard sessionGeneration == epoch, self.viewer?.id == viewer.id else { throw CancellationError() }
+        if let incoming {
+            guard incoming.id == requested.id, incoming.conversationId == requested.conversationId else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "The action returned an unrelated message.")
+            }
+            if acceptsSyncMessage(incoming.id, startedAt: revision) {
+                try recordMessageMutation(incoming)
+            } else {
+                switch action {
+                case .delete: try recordMessageMutation(incoming) // deletion is monotonic
+                case .edit:
+                    if let current = try store.message(id: requested.id) {
+                        let merged = PulseMessageMerge.acceptEdit(current, incoming: incoming)
+                        try recordMessageMutation(merged)
+                    }
+                case .togglePin, .unpin: break // never rewind a later relayed pin/reaction
+                }
+            }
+        } else { try applyPinRemoval(requested.id, startedAt: revision) }
+        guard let retained = try store.message(id: requested.id) else {
+            throw PulseAPIClient.Failure(kind: .notFound, message: "This message is no longer available.")
+        }
+        return retained
+    }
+
     private var pollActions: [String: UUID] = [:]
 
     public func updatePoll(conversationId: String, pollId: String, optionId: String?) async throws -> WireChatMessage {
@@ -526,6 +575,7 @@ public final class PulseSession: ObservableObject {
         messageRevisions.removeAll()
         reactionActions.removeAll()
         pollActions.removeAll()
+        messageActions.removeAll()
         threadValidationFence = PulseThreadValidationFence()
         deniedThreadRoots.removeAll()
         pendingOpenRoom = nil

@@ -6,9 +6,9 @@ export class MessageMutationError extends Error {
 }
 
 type Action = { kind: 'edit'; content: string } | { kind: 'delete' } |
-  { kind: 'react'; emoji: string; present?: boolean } | { kind: 'view' }
+  { kind: 'react'; emoji: string; present?: boolean } | { kind: 'view' } | { kind: 'pin'; present?: boolean }
 const fields = { id: true, conversationId: true, senderId: true, deletedAt: true,
-  expiresAt: true, parentId: true, viewOnce: true, viewedAt: true } as const
+  expiresAt: true, parentId: true, viewOnce: true, viewedAt: true, pinnedAt: true } as const
 
 /** Membership, parent lifetime, mutation and returned snapshot have one verdict.
  * Identity/session verification remains the caller's existing transport contract.
@@ -29,19 +29,27 @@ export async function mutateMessage<T>(db: PrismaClient, id: string, owner: stri
         throw new MessageMutationError(403, 'Only the sender can change this message.')
       }
       // Authenticate the actor before the repeat-delete acknowledgement, too.
-      if (message.deletedAt) {
+      const removingPin = action.kind === 'pin' && action.present === false
+      if (message.deletedAt && !removingPin) {
         if (action.kind !== 'delete') throw new MessageMutationError(410, 'This message was deleted.')
         return { message: await read(tx, id), conversationId: message.conversationId, changed: false }
       }
       const parent = message.parentId ? await tx.message.findUnique({ where: { id: message.parentId }, select: fields }) : null
       const now = clock()
-      if ((message.expiresAt && message.expiresAt <= now) ||
+      if (!removingPin && ((message.expiresAt && message.expiresAt <= now) ||
           (message.parentId && (!parent || parent.conversationId !== message.conversationId || parent.parentId !== null ||
-            parent.deletedAt !== null || (parent.expiresAt !== null && parent.expiresAt <= now)))) {
+            parent.deletedAt !== null || (parent.expiresAt !== null && parent.expiresAt <= now))))) {
         throw new MessageMutationError(410, 'This message or its thread is no longer available.')
       }
       let changed = true
       switch (action.kind) {
+        case 'pin': {
+          const present = action.present ?? !message.pinnedAt
+          changed = present !== Boolean(message.pinnedAt)
+          if (changed) await tx.message.update({ where: { id }, data: present
+            ? { pinnedAt: now, pinnedBy: owner } : { pinnedAt: null, pinnedBy: null }, select: { id: true } })
+          break
+        }
         case 'edit':
           await tx.message.update({ where: { id }, data: { content: action.content, editedAt: now }, select: { id: true } })
           break

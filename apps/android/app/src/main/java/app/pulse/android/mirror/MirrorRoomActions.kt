@@ -134,15 +134,29 @@ internal fun MirrorMessageActionPanel(
     var note by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
 
+    val actionScope = rememberCoroutineScope()
+    val panelSession = remember(repository, viewerId) { repository.attachmentSessionKey() }
+    val panelLive = remember(message.id, viewerId) { java.util.concurrent.atomic.AtomicBoolean(true) }
+    androidx.compose.runtime.DisposableEffect(panelLive) { onDispose { panelLive.set(false) } }
+    fun requireActionOwner() {
+        if (!panelLive.get() || repository.viewerId != viewerId || panelSession == null ||
+            repository.attachmentSessionKey() != panelSession) throw CancellationException("Message action owner changed")
+    }
     fun op(name: String, block: suspend () -> String?) {
         if (pendingOp != null) return
         pendingOp = name
-        CoroutineScope(Dispatchers.IO).launch {
-            val result = runCatching { block() }.getOrNull()
-            CoroutineScope(Dispatchers.Main).launch {
-                pendingOp = null
-                if (result != null) note = result
-            }
+        note = null
+        actionScope.launch {
+            try {
+                requireActionOwner()
+                val result = block()
+                currentCoroutineContext().ensureActive()
+                requireActionOwner()
+                note = result
+            } catch (cancelled: CancellationException) { throw cancelled } catch (error: Exception) {
+                requireActionOwner()
+                note = error.message ?: "This action could not be confirmed."
+            } finally { pendingOp = null }
         }
     }
 
@@ -173,7 +187,7 @@ internal fun MirrorMessageActionPanel(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 for (def in MirrorReactions.ALL) {
-                    val active = message.reactions.any { it.emoji == def.id && it.userId == viewerId }
+                    val active = message.reactions.any { app.pulse.protocol.reactionId(it.emoji) == def.id && it.userId == viewerId }
                     Box(
                         Modifier
                             .size(36.dp)
@@ -226,8 +240,9 @@ internal fun MirrorMessageActionPanel(
                     enabled = pendingOp == null,
                 ) {
                     op("save") {
-                        val next = runCatching { repository.toggleMessageSave(message.id).getOrThrow() }.getOrDefault(savedLocal)
-                        CoroutineScope(Dispatchers.Main).launch { savedLocal = next }
+                        val next = repository.toggleMessageSave(message.id).getOrThrow()
+                        requireActionOwner()
+                        savedLocal = next
                         null
                     }
                 }
@@ -239,17 +254,15 @@ internal fun MirrorMessageActionPanel(
                     enabled = pendingOp == null,
                 ) {
                     op("task") {
-                        runCatching {
-                            repository.createKanbanCard(
-                                conversationId = conversationId,
-                                title = message.body.take(80),
-                                column = null,
-                                assigneeId = null,
-                                messageId = message.id,
-                            ).getOrThrow()
-                        }.onSuccess {
-                            CoroutineScope(Dispatchers.Main).launch { onTaskCreated("Task added to the board") }
-                        }
+                        repository.createKanbanCard(
+                            conversationId = conversationId,
+                            title = message.body.take(80),
+                            column = null,
+                            assigneeId = null,
+                            messageId = message.id,
+                        ).getOrThrow()
+                        requireActionOwner()
+                        onTaskCreated("Task added to the board")
                         null
                     }
                 }
@@ -264,10 +277,12 @@ internal fun MirrorMessageActionPanel(
                     enabled = pendingOp == null,
                 ) {
                     op("pin") {
-                        runCatching {
-                            val updated = repository.toggleMessagePin(message.id).getOrThrow()
-                            CoroutineScope(Dispatchers.Main).launch { pinnedLocal = updated.pinnedAt != null }
-                        }
+                        val next = if (pinnedLocal) {
+                            repository.unpinMessage(message.id).getOrThrow()
+                            false
+                        } else repository.toggleMessagePin(message.id).getOrThrow().pinnedAt != null
+                        requireActionOwner()
+                        pinnedLocal = next
                         null
                     }
                 }
@@ -287,8 +302,9 @@ internal fun MirrorMessageActionPanel(
                 enabled = mine && !deleted && pendingOp == null,
             ) {
                 op("delete") {
-                    runCatching { repository.deleteMessage(message.id).getOrThrow() }
-                    CoroutineScope(Dispatchers.Main).launch { onDeleted() }
+                    repository.deleteMessage(message.id).getOrThrow()
+                    requireActionOwner()
+                    onDeleted()
                     null
                 }
             }

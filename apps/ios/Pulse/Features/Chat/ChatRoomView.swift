@@ -5194,20 +5194,16 @@ final class RoomViewModel: ObservableObject {
         guard !body.isEmpty else { return }
         let revision = draftEditRevision, ticket = editGeneration
         let epoch = session.sessionGeneration
-        let client = session.api
-        let watermark = session.messageRevision
         savingEdit = true
         editSaveTask = Task { [weak self] in
             guard let self else { return }
             defer { if self.editGeneration == ticket { self.savingEdit = false } }
             do {
-                let fresh = try await client.editMessage(id: target.id, userId: viewer.id, content: body)
+                guard session.sessionGeneration == epoch, self.editGeneration == ticket, session.viewer?.id == viewer.id else { return }
+                let fresh = try await session.mutateMessage(target, action: .edit(body))
                 try Task.checkCancellation()
                 guard session.sessionGeneration == epoch, self.editGeneration == ticket else { return }
-                if session.acceptsSyncMessage(fresh.id, startedAt: watermark) {
-                    try session.recordMessageMutation(fresh)
-                    self.upsert(fresh)
-                }
+                self.upsert(fresh)
                 if self.draftEditRevision == revision && self.draftJournal?.isCurrentOwner == true {
                     self.cancelEdit() // restore the unsent composer, not an empty string
                     self.scheduleDraftSave(session: session)
@@ -5222,21 +5218,21 @@ final class RoomViewModel: ObservableObject {
     }
 
     func delete(_ message: WireChatMessage, session: PulseSession) {
-        let epoch = session.sessionGeneration, api = session.api
+        let epoch = session.sessionGeneration
         Task { [weak self] in
             guard let self else { return }
             do {
                 try Task.checkCancellation()
                 guard session.sessionGeneration == epoch else { return }
-                let tombstone = try await api.deleteOwnMessage(id: message.id)
+                let tombstone = try await session.mutateMessage(message, action: .delete)
                 try Task.checkCancellation()
                 guard session.sessionGeneration == epoch else { return }
                 guard tombstone.conversationId == message.conversationId else {
                     throw PulseAPIClient.Failure(kind: .validation, message: "Deletion returned another conversation.")
                 }
-                try session.recordMessageMutation(tombstone)
-                if let retained = try session.store?.message(id: message.id) { self.upsert(retained) }
+                self.upsert(tombstone)
                 PulseHaptics.tap()
+            } catch is CancellationError {
             } catch {
                 guard session.sessionGeneration == epoch else { return }
                 self.errorText = Self.describe(error)
@@ -5244,33 +5240,22 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    private var pinActions: Set<String> = []
     func togglePin(_ message: WireChatMessage, session: PulseSession) {
-        guard let viewer = session.viewer, !pinActions.contains(message.id) else { return }
-        pinActions.insert(message.id)
-        let epoch = session.sessionGeneration, watermark = session.messageRevision
+        guard session.viewer != nil else { return }
+        let epoch = session.sessionGeneration
         PulseHaptics.tap()
         Task { [weak self] in
             guard let self else { return }
-            defer { pinActions.remove(message.id) }
             do {
-                if message.pinnedAt != nil {
-                    try await session.api.unpinMessage(id: message.id, userId: viewer.id)
-                    guard session.sessionGeneration == epoch else { return }
-                    try session.applyPinRemoval(message.id, startedAt: watermark)
-                    if let latest = try session.store?.message(id: message.id) { self.upsert(latest) }
-                    self.loadPins(session: session)
-                    session.toasts.show("Unpinned")
-                } else {
-                    let fresh = try await session.api.toggleMessagePin(id: message.id, userId: viewer.id)
-                    guard session.sessionGeneration == epoch else { return }
-                    if session.acceptsSyncMessage(message.id, startedAt: watermark) {
-                        self.upsert(fresh)
-                        try session.recordMessageMutation(fresh)
-                    }
-                    self.loadPins(session: session)
-                    session.toasts.show(fresh.pinnedAt == nil ? "Unpinned" : "Pinned")
-                }
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                let fresh = try await session.mutateMessage(message, action: message.pinnedAt == nil ? .togglePin : .unpin)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                self.upsert(fresh)
+                self.loadPins(session: session)
+                session.toasts.show(fresh.pinnedAt == nil ? "Unpinned" : "Pinned")
+            } catch is CancellationError {
             } catch {
                 guard session.sessionGeneration == epoch else { return }
                 self.errorText = Self.describe(error)

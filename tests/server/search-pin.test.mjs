@@ -30,9 +30,9 @@ async function fixture(run) {
   const dir = await mkdtemp(join(tmpdir(), 'pulse-pin-'))
   const db = new PrismaClient({ datasourceUrl: `file:${join(dir, 'test.sqlite')}` })
   try {
-    await db.$executeRawUnsafe('CREATE TABLE Message(id TEXT PRIMARY KEY, conversationId TEXT, pinnedAt DATETIME, pinnedBy TEXT)')
+    await db.$executeRawUnsafe('CREATE TABLE Message(id TEXT PRIMARY KEY, conversationId TEXT, pinnedAt DATETIME, pinnedBy TEXT, senderId TEXT, deletedAt DATETIME, expiresAt DATETIME, parentId TEXT, viewOnce BOOLEAN NOT NULL DEFAULT false, viewedAt DATETIME)')
     await db.$executeRawUnsafe('CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT, UNIQUE(userId,conversationId))')
-    await db.$executeRaw`INSERT INTO Message VALUES ('pin','room',${now},'member')`
+    await db.$executeRaw`INSERT INTO Message(id,conversationId,pinnedAt,pinnedBy,senderId) VALUES ('pin','room',${now},'member','member')`
     await db.$executeRaw`INSERT INTO ConversationParticipant VALUES ('p','member','room')`
     await run(db)
   } finally { await db.$disconnect(); await rm(dir, { recursive: true, force: true }) }

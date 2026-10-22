@@ -175,3 +175,31 @@ test('adding a legacy reaction converges to one canonical row and failed normali
   await act('peer', { kind: 'react', emoji: 'fire' }) // legacy toggle still toggles the whole displayed group
   assert.equal(await db.reaction.count(), 0)
 }))
+
+test('pin validates membership and message/thread lifetime in its write transaction', () => fixture(async (db, act) => {
+  await assert.rejects(act('stranger', { kind: 'pin' }), { status: 403 })
+  await db.$executeRaw`UPDATE Message SET expiresAt = ${now} WHERE id = 'root'`
+  await assert.rejects(act('peer', { kind: 'pin' }), { status: 410 })
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,content,parentId) VALUES ('reply','room','author','reply','root')`
+  await assert.rejects(act('peer', { kind: 'pin' }, 'reply'), { status: 410 })
+  await db.$executeRaw`UPDATE Message SET expiresAt = NULL, deletedAt = ${now} WHERE id = 'root'`
+  await assert.rejects(act('peer', { kind: 'pin' }), { status: 410 })
+  await assert.rejects(act('peer', { kind: 'pin' }, 'reply'), { status: 410 })
+}))
+test('pin snapshot failures roll back; explicit removal can clean expired/deleted pins and replay safely', () => fixture(async (db, act) => {
+  await assert.rejects(act('peer', { kind: 'pin' }, 'root', async () => { throw Error('snapshot fault') }), /snapshot fault/)
+  assert.equal((await read(db, 'root')).pinnedAt, null)
+  assert.equal((await act('peer', { kind: 'pin' })).message.pinnedAt.toISOString(), now.toISOString())
+  await db.$executeRaw`UPDATE Message SET deletedAt = ${now}, expiresAt = ${now} WHERE id = 'root'`
+  assert.equal((await act('peer', { kind: 'pin', present: false })).message.pinnedAt, null)
+  assert.equal((await act('peer', { kind: 'pin', present: false })).changed, false)
+  await db.$executeRaw`DELETE FROM ConversationParticipant WHERE userId = 'peer'`
+  await assert.rejects(act('peer', { kind: 'pin', present: false }), { status: 403 })
+}))
+test('pin and delete cannot commit a pinned tombstone even when requests overlap', () => fixture(async (db, act) => {
+  const results = await Promise.allSettled([act('peer', { kind: 'pin' }), act('author', { kind: 'delete' })])
+  for (const result of results) if (result.status === 'rejected') assert.ok([409, 410].includes(result.reason.status))
+  await act('author', { kind: 'delete' })
+  await assert.rejects(act('peer', { kind: 'pin' }), { status: 410 })
+  assert.equal((await read(db, 'root')).pinnedAt, null)
+}))

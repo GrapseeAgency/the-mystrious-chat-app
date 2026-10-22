@@ -43,6 +43,23 @@ final class MessageMergeTests: XCTestCase {
         XCTAssertEqual(merged.pinnedAt, incoming.pinnedAt)
     }
 
+    func testLateEditUpdatesOnlyTextWithoutLosingNewerUnrelatedEvents() throws {
+        let current = try row(["pinnedAt": "2026-10-22T00:02:00Z",
+            "reactions": [["emoji": "fire", "userIds": ["peer"], "count": 1]]])
+        let incoming = try row(["content": "edited", "editedAt": "2026-10-22T00:01:00Z"])
+        let merged = PulseMessageMerge.acceptEdit(current, incoming: incoming)
+        XCTAssertEqual(merged.content, "edited")
+        XCTAssertEqual(merged.pinnedAt, current.pinnedAt)
+        XCTAssertEqual(merged.reactions?.first?.emoji, "fire")
+        let newer = try row(["content": "latest", "editedAt": "2026-10-22T00:03:00Z"])
+        XCTAssertEqual(PulseMessageMerge.acceptEdit(newer, incoming: incoming).content, "latest")
+        XCTAssertNotNil(PulseMessageMerge.acceptEdit(current.deletedCopy(), incoming: incoming).deletedAt)
+        let store = try PulseStore()
+        try store.upsert(messages: [current, merged])
+        XCTAssertEqual(try store.message(id: current.id)?.reactions?.first?.emoji, "fire")
+        XCTAssertEqual(try store.message(id: current.id)?.content, "edited")
+    }
+
     func testStoreRejectsLateResurrectionAndDuplicateBatchOrdering() throws {
         let store = try PulseStore()
         let live = try row()

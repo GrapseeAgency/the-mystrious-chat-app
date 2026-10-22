@@ -3303,3 +3303,45 @@ native syntax parses passed. Added Kotlin registry and Swift registry/cache-grou
 these are not locally compiled/device-tested. No schema migration needed, but changed
 serializer/mutation must be deployed together. No durable offline reaction queue, total
 reaction ordering or guaranteed event delivery is claimed. Not deployed or merged.
+
+### 2026-10-22 — edit/pin/delete acceptance and action-menu failure handling
+
+Traced the primary and mounted action paths, not just their routes. Android edit/pin
+responses unconditionally rewrote cached rows, and deletion accepted any message body.
+The mounted menu swallowed failures and called its deletion callback regardless of the
+server result. Its Unpin action was actually a toggle. Both Android composers processed
+slash commands before checking edit mode; editing `/remind ...` could create a reminder
+instead of editing text. The primary editor also discarded the pre-edit composer.
+
+- Android now shares a per-message edit/pin/delete gate, captures account/session before
+  dispatch, validates identity/edit content/tombstone receipts, and commits under the
+  cache event fence. A late edit advances only text/editedAt across unrelated events,
+  respects newer edits, and cannot revive a tombstone. Late pin rows cannot rewind events.
+  Explicit unpin uses the same gate and owner/cancellation checks.
+- Primary edit completion is fenced by editor generation and text revision, so a late
+  success cannot close a different/newly modified editor. Draft and reply context return
+  after cancel/success. Both Android editors treat slash-prefixed edits as literal text;
+  mounted edits use composition-owned work, retain errors and do not claim outbox storage.
+- Mounted menu actions use owned coroutine work and show failures; deletion callbacks
+  run only after confirmed deletion. Unpin uses explicit removal. Save/task errors are
+  no longer swallowed. Corrected the prior chip change to dispatch Phosphor glyphs to
+  the Phosphor renderer (not Lucide's missing-glyph fallback), retaining autumn styling.
+- Swift validates edit/pin HTTP receipts and shares account-owned edit/pin/unpin/delete
+  acceptance across the primary room and mounted pin drawer. Captured client/store,
+  cancellation, identity, one-action gate and canonical reread precede UI success. Edits
+  overtaken by unrelated events patch only text with monotonic edit merging; deletion
+  always redacts. Pin UI no longer writes an unpersisted HTTP row first.
+- Server pin toggle now uses the same serializable membership/lifetime/write/snapshot
+  verdict as edits/deletion. Pinning an expired/deleted/unavailable thread is refused;
+  explicit unpin can clean a stale pin but still requires membership. Delete/unpin no
+  longer read a different post-transaction snapshot for their pin receipt/fanout. Actor
+  devices receive neutral pin updates; credential-bearing POSTs bind the action owner.
+
+Verification: 187/187 server contracts pass, with added actual SQLite pin/deletion race,
+permission/lifetime, replay and snapshot rollback cases. Scoped strict TypeScript passes;
+14 native files syntax-parse. Kotlin receipt/merge and Swift mocked receipt/GRDB tests are
+added, not executed locally. Earlier 9537f11 iOS archive passed when checked, not validation
+of this tranche. No schema change or production deployment. Legacy positive Pin remains
+a toggle, not a durable/replay-safe set command, and pins still have no total revision.
+Saved/task backend ordering, durable edit recovery and broader action paths remain open.
+No whole-app clearance; autumn palette/layout unchanged.

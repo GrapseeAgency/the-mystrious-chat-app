@@ -559,8 +559,8 @@ class ChatRoomViewModel @Inject constructor(
     // ── drafts (Wave 0 core) + typing ───────────────────────────
 
     fun onDraftChanged(text: String) {
-        if (_state.value.editing != null) return // composer is editing a row, not drafting
         composerRevision++
+        if (_state.value.editing != null) return // Track newer edit text, but do not persist it as a draft.
         repo.stageDraft(conversationId, text) // reserve/write locally before the debounce
         val draftToken = repo.captureDraftToken(conversationId)
         val userName = viewerName()
@@ -787,24 +787,39 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     /** PATCH edit - online-only by design (spec row 4); failure is an honest toast. */
+    private var replyBeforeEdit: Message? = null
+    private var editGeneration = 0L
+    private var editSendPending = false
     private fun sendEdit(messageId: String, content: String) {
+        if (editSendPending) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        val ticket = editGeneration
+        val revision = composerRevision
+        editSendPending = true
         viewModelScope.launch {
-            repo.editMessage(messageId, content.trim())
-                .onSuccess {
-                    _state.value = _state.value.copy(editing = null)
-                }
-                .onFailure { failure ->
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                repo.editMessage(messageId, content.trim()).getOrThrow()
+                if (repo.attachmentSessionKey() == epoch && editGeneration == ticket && composerRevision == revision &&
+                    _state.value.editing?.id == messageId) cancelEdit()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                if (repo.attachmentSessionKey() == epoch && editGeneration == ticket) {
                     notify(failure.message ?: "Couldn't update the message", isError = true)
                 }
+            } finally { editSendPending = false }
         }
     }
 
     fun beginEdit(message: Message) {
+        if (_state.value.editing == null) replyBeforeEdit = _state.value.replyTo
+        editGeneration++
         _state.value = _state.value.copy(editing = message, replyTo = null)
     }
 
     fun cancelEdit() {
-        _state.value = _state.value.copy(editing = null)
+        editGeneration++
+        _state.value = _state.value.copy(editing = null, replyTo = replyBeforeEdit)
+        replyBeforeEdit = null
     }
 
     // ── pin / save / delete / forward ───────────────────────────
@@ -826,18 +841,20 @@ class ChatRoomViewModel @Inject constructor(
 
     private val pinActions = mutableSetOf<String>()
     fun toggleMessagePin(messageId: String) {
+        val epoch = repo.attachmentSessionKey() ?: return
         if (!pinActions.add(messageId)) return
         val selected = messages.value.firstOrNull { it.id == messageId } ?: _state.value.pins.firstOrNull { it.id == messageId }
         viewModelScope.launch {
             try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
                 if (selected?.pinnedAt != null) {
                     repo.unpinMessage(messageId)
-                        .onSuccess { notify("Message unpinned"); loadPins() }
-                        .onFailure { notify("Couldn't remove the pin", isError = true) }
+                        .onSuccess { if (repo.attachmentSessionKey() == epoch) { notify("Message unpinned"); loadPins() } }
+                        .onFailure { if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Couldn't remove the pin", isError = true) }
                 } else {
                     repo.toggleMessagePin(messageId)
-                        .onSuccess { notify(if (it.pinnedAt != null) "Message pinned" else "Message unpinned"); loadPins() }
-                        .onFailure { notify("Couldn't update the pin", isError = true) }
+                        .onSuccess { if (repo.attachmentSessionKey() == epoch) { notify(if (it.pinnedAt != null) "Message pinned" else "Message unpinned"); loadPins() } }
+                        .onFailure { if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Couldn't update the pin", isError = true) }
                 }
             } finally { pinActions.remove(messageId) }
         }
@@ -852,15 +869,18 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     fun deleteMessage(messageId: String) {
+        val epoch = repo.attachmentSessionKey() ?: return
         viewModelScope.launch {
+            if (repo.attachmentSessionKey() != epoch) return@launch
             repo.deleteMessage(messageId)
                 .onSuccess {
+                    if (repo.attachmentSessionKey() != epoch) return@onSuccess
                     notify("Message deleted")
                     // The tombstone row arrives from the server truth - refetch
                     // the window so "Message deleted" renders immediately.
                     runCatching { repo.refreshMessages(conversationId) }
                 }
-                .onFailure { notify("Couldn't delete the message", isError = true) }
+                .onFailure { if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Couldn't delete the message", isError = true) }
         }
     }
 

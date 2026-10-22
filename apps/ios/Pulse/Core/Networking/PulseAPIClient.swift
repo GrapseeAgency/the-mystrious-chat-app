@@ -357,14 +357,23 @@ public struct PulseAPIClient: Sendable {
     /// server stamps editedAt and replies with the fresh row.
     public func editMessage(id: String, userId: String, content: String) async throws -> WireChatMessage {
         let data = try await patchRaw("/api/messages/\(id)", body: ["userId": userId, "content": content])
-        return try WireMessageEnvelope.extract(from: data)
+        let message = try WireMessageEnvelope.extract(from: data)
+        guard message.id == id, message.senderId == userId, message.deletedAt == nil, message.editedAt != nil,
+              message.content == content.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw Failure(kind: .validation, message: "The message edit was not confirmed.")
+        }
+        return message
     }
 
     /// POST /api/messages/{id}/pin {userId} - toggle; the {message} back
     /// carries pinnedAt/pinnedBy when pinned, nil when unpinned.
     public func toggleMessagePin(id: String, userId: String) async throws -> WireChatMessage {
         let data = try await postRaw("/api/messages/\(id)/pin", body: ["userId": userId])
-        return try WireMessageEnvelope.extract(from: data)
+        let message = try WireMessageEnvelope.extract(from: data)
+        guard message.id == id, message.deletedAt == nil else {
+            throw Failure(kind: .validation, message: "The pin update was not confirmed.")
+        }
+        return message
     }
 
     private struct UnpinAck: Decodable { let unpinned: Bool }

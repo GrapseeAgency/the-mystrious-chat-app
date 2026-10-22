@@ -3,6 +3,15 @@ import Foundation
 /// Delayed HTTP/socket envelopes cannot revive a tombstone or an unopened gate.
 /// These monotonic fields are not a total ordering for reactions/pins.
 enum PulseMessageMerge {
+    /// The edit ACK may advance text without rolling unrelated events backward.
+    static func acceptEdit(_ current: WireChatMessage, incoming: WireChatMessage) -> WireChatMessage {
+        guard current.id == incoming.id, current.conversationId == incoming.conversationId, current.deletedAt == nil else { return current }
+        var patched = current
+        patched.content = incoming.content
+        patched.editedAt = incoming.editedAt
+        return merge(current, incoming: patched)
+    }
+
     static func merge(_ current: WireChatMessage?, incoming: WireChatMessage) -> WireChatMessage {
         if let current, current.id == incoming.id, current.conversationId != incoming.conversationId { return merge(nil, incoming: current) }
         let prior = current.flatMap { $0.id == incoming.id ? $0 : nil }
