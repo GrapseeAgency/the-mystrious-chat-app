@@ -4,10 +4,11 @@ import re
 import xml.etree.ElementTree as ET
 
 lines = []
-log = Path('/tmp/pulse-native-jvm.log')
-if log.exists():
-    lines.extend(line for line in log.read_text(errors='replace').splitlines()
-                 if re.match(r'^e: .*\.kt:', line))
+for name in ('/tmp/pulse-native-jvm.log', '/tmp/pulse-native-build.log'):
+    log = Path(name)
+    if log.exists():
+        lines.extend(line for line in log.read_text(errors='replace').splitlines()
+                     if re.match(r'^e: .*\.kt:', line))
 reports = list(Path('.').glob('**/build/test-results/**/TEST-*.xml'))
 reports += list(Path('.').glob('**/build/outputs/androidTest-results/**/TEST-*.xml'))
 for report in reports:

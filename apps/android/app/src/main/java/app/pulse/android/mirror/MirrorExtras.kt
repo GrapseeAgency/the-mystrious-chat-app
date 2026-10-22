@@ -1526,6 +1526,7 @@ internal fun MirrorRowOptionsSheet(
     var muteStrip by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
+    val exportContext = androidx.compose.ui.platform.LocalContext.current
     val actionRepository = repository.boundToCurrentAccount()
     val actionScope = androidx.compose.runtime.rememberCoroutineScope()
     var busy by remember(conversationId, actionRepository) { mutableStateOf(false) }
@@ -1646,7 +1647,16 @@ internal fun MirrorRowOptionsSheet(
                     // Export runs WITHOUT closing the sheet - the saved file
                     // name lands in the note row (web downloadTranscript feel).
                     MirrorOptionRow("LDownload", "Export chat (.txt)") {
-                        act(close = false) { actionRepository.exportChat(conversationId) }
+                        val owner = actionRepository.viewerId
+                        val epoch = actionRepository.attachmentSessionKey()
+                        act(close = false) {
+                            val fileName = actionRepository.exportChat(conversationId).getOrThrow()
+                            if (!kotlin.coroutines.coroutineContext.isActive || actionRepository.viewerId != owner ||
+                                actionRepository.attachmentSessionKey() != epoch) throw kotlinx.coroutines.CancellationException("Export owner changed")
+                            val file = java.io.File(java.io.File(exportContext.cacheDir, "exports"), fileName)
+                            exportContext.startActivity(app.pulse.feature.chat.MediaSupport.buildShareIntent(exportContext, file.absolutePath, "text/plain", null))
+                            Result.success(fileName)
+                        }
                     }
                     MirrorOptionRow("LEraser", "Clear chat…") { confirmClear = true }
                 }

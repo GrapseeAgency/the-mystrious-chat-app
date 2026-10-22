@@ -2871,11 +2871,26 @@ class PulseRepositoryImpl constructor(
         }.withSearchHitExpiry().map { Result.success(it) })
     }
 
-    override suspend fun fullHistory(conversationId: String): Result<List<Message>> =
-        when (val r = api.messages(conversationId, 500)) {
-            is PulseResult.Success -> Result.success(r.value.messages.map { it.toDomain() })
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    private val historyActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    override suspend fun fullHistory(conversationId: String): Result<List<Message>> = withContext(Dispatchers.IO) {
+        val owner = viewerId ?: return@withContext Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        try {
+            val rows = app.pulse.data.remote.CompleteHistory.load(conversationId) { cursor ->
+                requireConversationOwner(owner, epoch)
+                val response = api.messages(conversationId, limit = 200,
+                    syncFrom = if (cursor == null) app.pulse.data.remote.CompleteHistory.START else null, syncCursor = cursor)
+                requireConversationOwner(owner, epoch)
+                when (response) {
+                    is PulseResult.Success -> response.value
+                    is PulseResult.Failure -> throw apiExceptionOf(response)
+                }
+            }
+            requireConversationOwner(owner, epoch)
+            Result.success(rows.map { it.toDomain() })
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
+    }
 
     override suspend fun deleteMessage(messageId: String): Result<Unit> =
         when (val r = api.deleteMessage(messageId, viewerId ?: "")) {
@@ -2892,40 +2907,83 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun exportChat(conversationId: String): Result<String> = withContext(Dispatchers.IO) {
-        runCatching {
-            val history = fullHistory(conversationId).getOrThrow()
+        val owner = viewerId ?: return@withContext Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        if (!historyActions.add(conversationId)) return@withContext Result.failure(IllegalStateException("An export or clear is already running for this chat."))
+        var output: File? = null
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val history = fullHistory(conversationId).getOrThrow().filter {
+                it.expiresAtEpochMs?.let { expires -> expires <= System.currentTimeMillis() } != true
+            }
+            requireConversationOwner(owner, epoch)
             val dir = File(context.cacheDir, "exports").apply { mkdirs() }
-            val fileName = "pulse-${conversationId.take(12)}-${java.time.LocalDate.now()}.txt"
-            File(dir, fileName).writeText(
-                buildString {
-                    appendLine("Pulse - exported chat")
-                    appendLine("Conversation: $conversationId")
-                    appendLine("Messages: ${history.size}")
-                    appendLine("Exported: ${java.time.LocalDateTime.now()}")
-                    appendLine()
-                    for (m in history) {
-                        val body = if (m.isDeleted) "(message deleted)" else m.body
-                        appendLine("[${PulseTime.clock(m.createdAt)}] ${m.authorName}: $body")
-                    }
-                },
-            )
-            fileName
-        }
+            val fileName = "pulse-${java.util.UUID.randomUUID()}.txt"
+            val file = File(dir, fileName)
+            output = file
+            file.bufferedWriter().use { writer ->
+                writer.appendLine("Pulse - exported chat")
+                writer.appendLine("Conversation: $conversationId")
+                writer.appendLine("Messages: ${history.size}")
+                writer.appendLine("Exported: ${java.time.LocalDateTime.now()}")
+                writer.appendLine()
+                for (m in history) {
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    requireConversationOwner(owner, epoch)
+                    val body = when { m.isDeleted -> "(message deleted)"; m.viewOnce -> "(view-once message)"; else -> m.body }
+                    val name = if (m.anon) m.anonAlias ?: "Anonymous" else m.authorName
+                    writer.appendLine("[${PulseTime.clock(m.createdAt)}] $name: $body")
+                }
+            }
+            requireConversationOwner(owner, epoch)
+            kotlin.coroutines.coroutineContext.ensureActive()
+            Result.success(fileName)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            output?.delete(); throw cancelled
+        } catch (error: Exception) { output?.delete(); Result.failure(error) } finally { historyActions.remove(conversationId) }
     }
 
     override suspend fun clearMyMessages(conversationId: String): Result<Int> {
-        val history = fullHistory(conversationId).getOrElse { return Result.failure(it) }
-        val mine = history.filter { it.authorId == viewerId && !it.isDeleted }
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        if (!historyActions.add(conversationId)) return Result.failure(IllegalStateException("An export or clear is already running for this chat."))
         var cleared = 0
-        for (message in mine) {
-            when (val response = api.deleteMessage(message.id, viewerId ?: "")) {
-                is PulseResult.Success -> { upsertMessage(response.value.toDomain()); cleared += 1 }
-                is PulseResult.Failure -> Unit // Failed rows remain intact and retryable.
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            val history = fullHistory(conversationId).getOrThrow()
+            requireConversationOwner(owner, epoch)
+            val mine = history.filter { it.authorId == owner && !it.isDeleted }
+            for (message in mine) {
+                kotlin.coroutines.coroutineContext.ensureActive()
+                requireConversationOwner(owner, epoch)
+                val response = api.deleteMessage(message.id, owner)
+                requireConversationOwner(owner, epoch)
+                when (response) {
+                    is PulseResult.Success -> {
+                        val tombstone = response.value.toDomain()
+                        check(tombstone.id == message.id && tombstone.conversationId == conversationId &&
+                            tombstone.authorId == owner && tombstone.isDeleted) { "Message deletion was not confirmed." }
+                        messageCacheMutex.withLock {
+                            database.withTransaction {
+                                requireConversationOwner(owner, epoch)
+                                messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
+                                messageDao.upsertAll(listOf(MessageEntity.from(tombstone, reactionsJsonOf(tombstone))))
+                                requireConversationOwner(owner, epoch)
+                            }
+                            messageCacheChanges.value = messageEventClock.get()
+                        }
+                        cleared += 1
+                    }
+                    is PulseResult.Failure -> throw apiExceptionOf(response)
+                }
             }
+            return Result.success(cleared)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            return Result.failure(IllegalStateException("Confirmed $cleared deletions before stopping. ${error.message ?: "Remaining deletions were not confirmed. Retry to reconcile."}", error))
+        } finally {
+            historyActions.remove(conversationId)
+            if (viewerId == owner && attachmentSession == epoch) scheduleConversationsRefresh()
         }
-        if (mine.isNotEmpty() && cleared == 0) return Result.failure(IllegalStateException("No messages could be deleted. Try again."))
-        scheduleConversationsRefresh()
-        return Result.success(cleared)
     }
 
     private fun <T> PulseResult<T>.toResult(): Result<T> = when (this) {

@@ -2102,6 +2102,8 @@ private struct ChatActionSheet: View {
     @State private var exportPending = false
     @State private var clearPending = false
     @State private var shareURL: URL?
+    @State private var bulkTask: Task<Void, Never>?
+    @State private var bulkError: String?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -2130,13 +2132,18 @@ private struct ChatActionSheet: View {
             } else {
                 muteStrip
             }
+            if exportPending || clearPending {
+                Text(exportPending ? "Reading complete history…" : "Reading history and confirming deletions…")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let bulkError { Text(bulkError).font(.caption).foregroundStyle(.red) }
         }
         .padding(.top, 20)
         .padding(.horizontal, 14)
         .padding(.bottom, 24)
         .frame(maxWidth: 340)
         .frame(maxWidth: .infinity)
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(.ultraThinMaterial)
         .confirmationDialog(
@@ -2144,10 +2151,10 @@ private struct ChatActionSheet: View {
             isPresented: $confirmClear,
             titleVisibility: .visible,
         ) {
-            Button("Clear chat", role: .destructive, action: { Task { await clearChat() } })
+            Button("Clear chat", role: .destructive, action: { startBulk(export: false) })
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your messages will be deleted for everyone - messages from other people stay in the chat. This cannot be undone.")
+            Text("Your messages will be deleted for everyone - messages from other people stay in the chat. This cannot be undone. Closing stops further requests, but confirmed deletions remain.")
         }
         .sheet(isPresented: Binding(get: { shareURL != nil }, set: { if !$0 { shareURL = nil } })) {
             if let shareURL {
@@ -2155,6 +2162,8 @@ private struct ChatActionSheet: View {
             }
         }
         .onAppear { view = .actions }
+        .onChange(of: session.sessionGeneration) { _ in bulkTask?.cancel(); shareURL = nil; dismiss() }
+        .onDisappear { bulkTask?.cancel() }
     }
 
     private var sheetHeader: some View {
@@ -2215,13 +2224,13 @@ private struct ChatActionSheet: View {
             }
             Divider().background(PulseTheme.hairlineSoft).padding(.vertical, 6)
             sheetRow(icon: "square.and.arrow.up", tint: PulseTheme.textPrimary, label: "Export chat (.txt)") {
-                Task { await exportChat() }
+                startBulk(export: true)
             }
-            .disabled(exportPending)
+            .disabled(exportPending || clearPending)
             sheetRow(icon: "trash", tint: PulseTheme.rose500, label: "Clear chat…") {
                 confirmClear = true
             }
-            .disabled(clearPending)
+            .disabled(exportPending || clearPending)
             Divider().background(PulseTheme.hairlineSoft).padding(.vertical, 6)
             sheetRow(icon: "xmark", tint: PulseTheme.textTertiary, label: "Close") {
                 dismiss()
@@ -2355,53 +2364,76 @@ private struct ChatActionSheet: View {
         }
     }
 
-    /// Export the real history to a .txt and hand it to the share sheet.
-    private func exportChat() async {
-        PulseHaptics.tap()
-        exportPending = true
-        defer { exportPending = false }
-        guard let history = await session.api.fullHistory(conversationId: conversation.id) else {
-            await MainActor.run { session.toasts.show("Could not export this chat") }
-            return
-        }
-        let text = Self.transcript(for: conversation, viewerId: viewerId, messages: history)
-        let fileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(Self.exportFileName(title: title))
-        do {
-            try text.write(to: fileURL, atomically: true, encoding: .utf8)
-        } catch {
-            await MainActor.run { session.toasts.show("Could not export this chat") }
-            return
-        }
-        await MainActor.run {
-            session.toasts.show("Chat exported - Saved \(fileURL.lastPathComponent)")
-            shareURL = fileURL
+    @MainActor private func startBulk(export: Bool) {
+        guard !exportPending, !clearPending else { return }
+        let epoch = session.sessionGeneration
+        exportPending = export; clearPending = !export; bulkError = nil
+        bulkTask = Task { @MainActor in
+            defer { exportPending = false; clearPending = false }
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            if export { await exportChat() } else { await clearChat() }
         }
     }
 
-    /// Clear chat - soft-delete MY OWN non-deleted messages, sequentially.
-    private func clearChat() async {
-        clearPending = true
-        defer { clearPending = false }
-        guard let history = await session.api.fullHistory(conversationId: conversation.id) else {
-            await MainActor.run { session.toasts.show("Could not clear this chat") }
-            return
+    /// A failed history page must never produce a successful partial export.
+    @MainActor private func exportChat() async {
+        guard session.ready, let owner = session.viewer?.id else { return }
+        let epoch = session.sessionGeneration, client = session.api
+        var output: URL?
+        var accepted = false
+        defer { if !accepted, let output { try? FileManager.default.removeItem(at: output.deletingLastPathComponent()) } }
+        do {
+            try Task.checkCancellation()
+            let history = try await client.fullHistory(conversationId: conversation.id)
+            try Task.checkCancellation()
+            guard session.sessionGeneration == epoch else { return }
+            let text = Self.transcript(for: conversation, viewerId: owner, messages: history)
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pulse-export-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let fileURL = directory.appendingPathComponent(Self.exportFileName(title: title))
+            output = fileURL
+            try text.write(to: fileURL, atomically: true, encoding: .utf8)
+            try Task.checkCancellation()
+            guard session.sessionGeneration == epoch else { return }
+            accepted = true
+            shareURL = fileURL
+            session.toasts.show("Chat exported - Saved \(fileURL.lastPathComponent)")
+        } catch is CancellationError { return } catch {
+            guard session.sessionGeneration == epoch else { return }
+            bulkError = RoomViewModel.describe(error)
         }
-        let mine = history.filter { $0.senderId == viewerId && $0.deletedAt == nil }
+    }
+
+    /// Owner-bound sweep: stop on the first unconfirmed deletion and retain each
+    /// acknowledged tombstone. A failure is not "nothing to clear" or full success.
+    @MainActor private func clearChat() async {
+        guard session.ready, let owner = session.viewer?.id, session.store != nil else { return }
+        let epoch = session.sessionGeneration, client = session.api
         var cleared = 0
-        for message in mine {
-            // Keep going - clear as many of my own messages as the server allows.
-            if (try? await session.api.deleteOwnMessage(id: message.id)) != nil {
+        do {
+            try Task.checkCancellation()
+            let history = try await client.fullHistory(conversationId: conversation.id)
+            try Task.checkCancellation()
+            guard session.sessionGeneration == epoch else { return }
+            let mine = history.filter { $0.senderId == owner && $0.deletedAt == nil }
+            for message in mine {
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                let tombstone = try await client.deleteOwnMessage(id: message.id)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                guard tombstone.conversationId == conversation.id else {
+                    throw PulseAPIClient.Failure(kind: .validation, message: "Deletion returned another conversation.")
+                }
+                try session.recordMessageMutation(tombstone)
                 cleared += 1
             }
-        }
-        await MainActor.run {
-            if cleared == 0 {
-                session.toasts.show("Nothing to clear - none of your messages are left in this chat.")
-            } else {
-                session.toasts.show("Cleared \(cleared) message\(cleared == 1 ? "" : "s")")
-            }
+            session.toasts.show(cleared == 0 ? "Nothing to clear - none of your messages are left in this chat." : "Cleared \(cleared) message\(cleared == 1 ? "" : "s")")
+            onChanged()
             dismiss()
+        } catch is CancellationError { return } catch {
+            guard session.sessionGeneration == epoch else { return }
+            bulkError = "Confirmed \(cleared) deletions before stopping. \(RoomViewModel.describe(error))"
             onChanged()
         }
     }
@@ -2415,6 +2447,7 @@ private struct ChatActionSheet: View {
             ?? "Conversation"
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        let messages = messages.filter { PulseRemediationLogic.isAlive($0.expiresAt) }
         var lines = [
             "Pulse - chat export",
             "Chat: \(title)",
@@ -2424,8 +2457,8 @@ private struct ChatActionSheet: View {
             "",
         ]
         for message in messages {
-            let who = message.anon == true && message.anonAlias != nil
-                ? (message.anonAlias ?? "Unknown")
+            let who = message.anon == true
+                ? (message.anonAlias ?? "Anonymous")
                 : (message.sender?.name ?? "Unknown")
             lines.append("[\(formatter.string(from: PulseFormat.date(message.createdAt) ?? Date()))] \(who): \(transcriptBody(message))")
         }
@@ -2434,6 +2467,7 @@ private struct ChatActionSheet: View {
 
     private static func transcriptBody(_ message: WireChatMessage) -> String {
         if message.deletedAt != nil { return "[message deleted]" }
+        if message.viewOnce == true { return "[view-once message]" }
         let text = message.content.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
         if !text.isEmpty { return text }
         if message.imagePath != nil { return "[photo]" }

@@ -3145,3 +3145,50 @@ revision for all message mutations, no durable reaction-intent queue, and no gua
 offline fanout. Identical repeated desired states are safe; concurrent opposite intents
 from different devices still follow server commit order. Existing exported media and
 broader durable read/history gaps are not claimed fixed by this work.
+
+### 2026-10-22 — complete-or-error bulk history, acknowledged clearing and export sharing
+
+Continued from reactions into export and clear-chat. Android used only one newest-500
+page for both. Swift stopped after 24 pages and swallowed later fetch failures/cancellation
+into a successful prefix; empty rooms were failures. Swift's clear sweep reread mutable
+session API/viewer state between deletions, discarded tombstones and called total deletion
+failure "nothing to clear". Mounted Android Mirror export merely named a private cache
+file without opening a share chooser.
+
+- Both clients now require the existing `syncVersion: 1` snapshot protocol for complete
+  history, with a server-fixed upper boundary, ascending timestamp/ID progress and cursor
+  continuation. Empty rooms succeed. Network/cancellation/version/progress failures cannot
+  yield a partial successful list. Replies are included, not just visible river rows.
+- These in-memory bulk operations explicitly refuse over 50,000 rows or 32 MiB of encoded
+  page data before an export/clear starts. This is an honest resource bound, not full-scale
+  streaming export support. A streaming design for larger rooms remains open.
+- Bulk deletion captures its owner/client/session, checks ownership before and after each
+  request, validates each deletion receipt and persists confirmed tombstones. It stops at
+  the first unconfirmed deletion and reports confirmed progress instead of false empty/full
+  success. Swift's individual delete now also uses the returned validated tombstone rather
+  than inventing one from an old message copy. Confirmed deletions cannot be undone by
+  canceling later work; a lost reply can still represent a committed deletion.
+- Android gates competing bulk work per room and shows detailed errors; Swift owns and
+  cancels the sheet task, blocks competing bulk taps, shows pending/failure state, and
+  refuses stale-account sharing. Export output names are unique and failed/retired output
+  is removed rather than overwriting another export. Mounted Mirror now launches the
+  existing FileProvider share chooser with read grants.
+- New transcripts suppress view-once content and expired rows at formatting time, and
+  Android now masks anonymous authors (Swift also uses an anonymous fallback when an alias
+  is absent). This does not revoke any already-shared files, grants or external copies.
+
+Checks: ten changed/new native files parsed, diff whitespace check passed. Added Kotlin
+and Swift complete-history tests for more than 24 pages, timestamp ties, empty rooms,
+interrupted/old/malformed scans and explicit resource limits. These new native tests and
+bulk-device workflows have not run locally. The existing server snapshot/transaction
+suite last passed 174/174; this tranche changes native code, not server history semantics.
+No new DB patch needed; gateways must already support snapshot sync. No production deploy.
+
+Follow-up verification of the preceding reaction tranche: Android's mocked transport test
+caught my incorrect cast of response **text** to JsonObject. Fixed in 9bec3ac by decoding
+JSON first; the failed version must not be treated as verified. Creation 4ca89aa's Android
+build and iOS tests/archive passed when inspected; reaction e04ead5's iOS archive passed,
+while its Android unit test and debug assembly jobs failed. Debug assembly emitted no
+compiler annotation and downloadable logs were blocked, so the existing diagnostic step
+now exposes bounded build errors too. Replacement native builds/device checks remain
+pending; no successful latest-head native build claim is made.

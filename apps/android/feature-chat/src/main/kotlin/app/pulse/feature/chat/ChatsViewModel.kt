@@ -392,7 +392,7 @@ class ChatsViewModel @Inject constructor(
         viewModelScope.launch {
             repo.exportChat(conversationId)
                 .onSuccess { notify("Chat exported - Saved $it") }
-                .onFailure { notify("Could not export this chat", isError = true) }
+                .onFailure { notify(it.message ?: "Could not export this chat", isError = true) }
         }
     }
 
@@ -406,7 +406,7 @@ class ChatsViewModel @Inject constructor(
                         notify("Cleared $cleared ${if (cleared == 1) "message" else "messages"}")
                     }
                 }
-                .onFailure { notify("Could not clear this chat", isError = true) }
+                .onFailure { notify(it.message ?: "Could not clear this chat", isError = true) }
         }
     }
 }

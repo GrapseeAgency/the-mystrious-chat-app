@@ -5225,11 +5225,16 @@ final class RoomViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await api.deleteOwnMessage(id: message.id)
+                try Task.checkCancellation()
                 guard session.sessionGeneration == epoch else { return }
-                let tombstone = message.deletedCopy()
-                self.upsert(tombstone)
+                let tombstone = try await api.deleteOwnMessage(id: message.id)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                guard tombstone.conversationId == message.conversationId else {
+                    throw PulseAPIClient.Failure(kind: .validation, message: "Deletion returned another conversation.")
+                }
                 try session.recordMessageMutation(tombstone)
+                if let retained = try session.store?.message(id: message.id) { self.upsert(retained) }
                 PulseHaptics.tap()
             } catch {
                 guard session.sessionGeneration == epoch else { return }

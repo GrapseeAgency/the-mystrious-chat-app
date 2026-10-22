@@ -804,30 +804,23 @@ public struct PulseAPIClient: Sendable {
 
     /// DELETE /api/messages/{id} { requesterId } - soft-delete MY OWN message
     /// (clear-chat; the route is sender-gated server-side).
-    public func deleteOwnMessage(id: String) async throws {
-        try await deleteEmpty("/api/messages/\(id)", body: ["requesterId": userId])
+    @discardableResult
+    public func deleteOwnMessage(id: String) async throws -> WireChatMessage {
+        let data = try await deleteRaw("/api/messages/\(id)", body: ["requesterId": userId])
+        let message = try WireMessageEnvelope.extract(from: data)
+        guard message.id == id, message.senderId == userId, message.deletedAt != nil else {
+            throw Failure(kind: .validation, message: "Message deletion was not confirmed.")
+        }
+        return message
     }
 
-    /// Every message in a room, oldest → newest (paginated via the `before`
-    /// cursor) - feeds the .txt export and the clear-chat sweep.
-    public func fullHistory(conversationId: String) async -> [WireChatMessage]? {
-        var pages: [[WireChatMessage]] = []
-        var before: String?
-        var beforeId: String?
-        for _ in 0..<24 {
-            var path = "/api/conversations/\(conversationId)/messages?limit=500"
-            if let before { path += "&before=\(before)" }
-            if let beforeId { path += "&beforeId=\(Self.queryEncoded(beforeId))" }
-            guard let page: WireMessagesPage = try? await get(path, as: WireMessagesPage.self),
-                  !page.messages.isEmpty else { break }
-            pages.append(page.messages)
-            if !page.hasMore { break }
-            guard let cursor = page.messages.first?.createdAt else { break }
-            before = Self.queryEncoded(cursor)
-            beforeId = page.messages.first?.id
+    /// Complete, server-bounded history including replies. Empty is success;
+    /// interrupted, unsupported, stalled or oversized scans throw, never return a prefix.
+    public func fullHistory(conversationId: String) async throws -> [WireChatMessage] {
+        try await PulseCompleteHistory.load(room: conversationId) { cursor in
+            try await messages(conversationId: conversationId, limit: 200,
+                syncFrom: cursor == nil ? PulseCompleteHistory.start : nil, syncCursor: cursor)
         }
-        guard !pages.isEmpty else { return nil }
-        return pages.reversed().flatMap { $0 }
     }
 
     // W2-DATA-B - Wave 2 message depth (spec §0 contract)
