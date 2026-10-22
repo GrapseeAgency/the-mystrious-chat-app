@@ -1896,38 +1896,56 @@ class ChatRoomViewModel @Inject constructor(
     fun openPhrases() { phrasesOpen = true }
     fun closePhrases() { phrasesOpen = false }
 
-    /** Rail rows refresh on room open and after every add/delete. */
+    private var phraseReadRevision = 0L
+
+    /** Failed refreshes preserve confirmed chips; pre-mutation reads cannot undo writes. */
     fun loadPhrases() {
+        if (_phrasesBusy.value) return
+        val epoch = repo.attachmentSessionKey() ?: return
+        val ticket = ++phraseReadRevision
         viewModelScope.launch {
-            val fetched: Result<List<QuickPhrase>> = repo.phrases()
-            _phrases.value = fetched.getOrElse { emptyList() }
+            try {
+                val fetched = repo.phrases().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() == epoch && ticket == phraseReadRevision) _phrases.value = fetched
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch && ticket == phraseReadRevision) notify(error.message ?: "Couldn't refresh quick phrases", isError = true)
+            }
         }
     }
 
-    fun addPhrase(text: String) {
+    fun addPhrase(text: String, confirmed: () -> Unit = {}) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || _phrasesBusy.value) return
-        _phrasesBusy.value = true
+        val epoch = repo.attachmentSessionKey() ?: return
+        if (trimmed.isEmpty() || trimmed.length > 120 || _phrasesBusy.value) return
+        _phrasesBusy.value = true; phraseReadRevision++
         viewModelScope.launch {
-            val outcome: Result<QuickPhrase> = repo.addPhrase(trimmed)
-            outcome
-                .onSuccess { phrase ->
-                    // Append at the end (server assigns position); keep the rail honest.
-                    _phrases.value = _phrases.value + phrase
-                }
-                .onFailure { notify(it.message ?: "Couldn't add the phrase", isError = true) }
-            _phrasesBusy.value = false
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val phrase = repo.addPhrase(trimmed).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                _phrases.value = _phrases.value.filterNot { it.id == phrase.id } + phrase
+                confirmed()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Couldn't add the phrase", isError = true)
+            } finally { if (repo.attachmentSessionKey() == epoch) _phrasesBusy.value = false }
         }
     }
 
     fun deletePhrase(phraseId: String) {
+        val epoch = repo.attachmentSessionKey() ?: return
         if (_phrasesBusy.value) return
-        _phrasesBusy.value = true
+        _phrasesBusy.value = true; phraseReadRevision++
         viewModelScope.launch {
-            runCatching { repo.deletePhrase(phraseId) }
-                .onSuccess { _phrases.value = _phrases.value.filterNot { it.id == phraseId } }
-                .onFailure { notify(it.message ?: "Couldn't delete the phrase", isError = true) }
-            _phrasesBusy.value = false
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                repo.deletePhrase(phraseId).getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() == epoch) _phrases.value = _phrases.value.filterNot { it.id == phraseId }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Couldn't delete the phrase", isError = true)
+            } finally { if (repo.attachmentSessionKey() == epoch) _phrasesBusy.value = false }
         }
     }
 

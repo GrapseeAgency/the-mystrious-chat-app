@@ -3015,6 +3015,11 @@ private struct MirrorPhrasesBuilder: View {
     @Environment(\.dismiss) private var dismiss
     @State private var phrases: [WireQuickPhrase] = []
     @State private var text = ""
+    @State private var busy = false
+    @State private var loadError: String?
+    @State private var ticket = UUID()
+
+    @State private var loading = true
 
     var body: some View {
         MirrorPanel(title: "Quick phrases") {
@@ -3022,17 +3027,7 @@ private struct MirrorPhrasesBuilder: View {
                 HStack(spacing: 8) {
                     MirrorTrayField(placeholder: "Add a phrase...", text: $text)
                     Button {
-                        let body = text.trimmingCharacters(in: .whitespaces)
-                        guard !body.isEmpty else { return }
-                        text = ""
-                        Task {
-                            do {
-                                _ = try await session.api.createQuickPhrase(text: body)
-                                await reload()
-                            } catch {
-                                session.toasts.show("Phrase rejected - max 120 chars, 12 rows")
-                            }
-                        }
+                        add()
                     } label: {
                         Image(systemName: "plus").font(.system(size: 15, weight: .bold))
                             .foregroundColor(MirrorArt.gapInk)
@@ -3043,7 +3038,9 @@ private struct MirrorPhrasesBuilder: View {
                     .buttonStyle(.plain)
                 }
                 MirrorPanelScroll {
-                    if phrases.isEmpty {
+                    if let loadError { Button("\(loadError) Retry") { Task { await reload() } } }
+                    if loading && phrases.isEmpty { ProgressView() }
+                    if phrases.isEmpty && !loading && loadError == nil {
                         MirrorPanelHint("No phrases yet - add your first line above")
                     }
                     ForEach(phrases, id: \.id) { phrase in
@@ -3062,14 +3059,7 @@ private struct MirrorPhrasesBuilder: View {
                             }
                             .buttonStyle(.plain)
                             Button {
-                                Task {
-                                    do {
-                                        try await session.api.deleteQuickPhrase(phrase.id)
-                                        await reload()
-                                    } catch {
-                                        session.toasts.show("Couldn't delete that phrase")
-                                    }
-                                }
+                                delete(phrase)
                             } label: {
                                 Image(systemName: "trash").font(.system(size: 12)).foregroundColor(MirrorArt.faint)
                                     .frame(width: 32, height: 32)
@@ -3081,11 +3071,67 @@ private struct MirrorPhrasesBuilder: View {
                 }
             }
         }
-        .task { await reload() }
+        .disabled(busy)
+        .task(id: session.sessionGeneration) {
+            phrases = []; text = ""; busy = false
+            await reload()
+        }
+        .onDisappear { ticket = UUID() }
     }
 
     private func reload() async {
-        phrases = (try? await session.api.quickPhrases()) ?? []
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; loading = true
+        do {
+            let rows = try await api.quickPhrases()
+            guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+            phrases = rows; loadError = nil; loading = false
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+            loadError = "Could not refresh quick phrases."; loading = false
+        }
+    }
+
+    private func add() {
+        let payload = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !busy, !payload.isEmpty, payload.utf16.count <= 120, phrases.count < 12 else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; busy = true
+        Task {
+            defer { if session.sessionGeneration == epoch && ticket == request { busy = false } }
+            do {
+                let phrase = try await api.createQuickPhrase(text: payload)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                phrases.removeAll { $0.id == phrase.id }; phrases.append(phrase)
+                if text.trimmingCharacters(in: .whitespacesAndNewlines) == payload { text = "" }
+                loadError = nil; loading = false
+                PulseHaptics.success()
+
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                session.toasts.show(RoomViewModel.describe(error))
+            }
+        }
+    }
+
+    private func delete(_ phrase: WireQuickPhrase) {
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; busy = true
+        Task {
+            defer { if session.sessionGeneration == epoch && ticket == request { busy = false } }
+            do {
+                try await api.deleteQuickPhrase(phrase.id)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                phrases.removeAll { $0.id == phrase.id }
+                PulseHaptics.tap()
+
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                session.toasts.show(RoomViewModel.describe(error))
+            }
+        }
     }
 }
 

@@ -517,14 +517,9 @@ class PulseApi(
      * reads the same server-backed rows the web renders (F-MS-29).
      */
     suspend fun quickPhrases(userId: String): PulseResult<List<Pair<String, String>>> =
-        get("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases") { body ->
-            val arr = (PulseJson.parseToJsonElement(body) as? JsonObject)?.get("phrases") as? JsonArray
-            arr.orEmpty().mapNotNull { el ->
-                val o = el as? JsonObject ?: return@mapNotNull null
-                val id = (o["id"] as? JsonPrimitive)?.content ?: return@mapNotNull null
-                val text = (o["text"] as? JsonPrimitive)?.content ?: return@mapNotNull null
-                id to text
-            }
+        when (val result = phrases(userId)) {
+            is PulseResult.Success -> PulseResult.Success(result.value.phrases.map { it.id to it.text })
+            is PulseResult.Failure -> result
         }
 
     /** PATCH /api/settings { userId, preferences: Partial } → { preferences } (shallow-merged + clamped server-side). */
@@ -1821,28 +1816,37 @@ class PulseApi(
     /** GET /api/users/{id}/phrases → { phrases: [{id,text,position}] } (position asc). */
     suspend fun phrases(userId: String): PulseResult<PhrasesPageDto> =
         get("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases") {
-            PulseJson.decodeFromString(PhrasesPageDto.serializer(), it)
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject
+            require(root?.get("phrases") is JsonArray) { "Quick phrases were not confirmed." }
+            PulseJson.decodeFromString(PhrasesPageDto.serializer(), it).also { page ->
+                require(page.phrases.all { row -> row.id.isNotBlank() && row.text.isNotBlank() && row.position >= 0 } &&
+                    page.phrases.map { row -> row.id }.distinct().size == page.phrases.size) { "Invalid quick-phrase list." }
+            }
         }
 
-    /** POST /api/users/{id}/phrases { text } → 201 { phrase } (server caps 12 rows × 120 chars). */
     suspend fun createPhrase(userId: String, text: String): PulseResult<PhraseEnvelopeDto> =
-        post(
-            "/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases",
-            jsonOf("text" to text),
-        ) {
-            PulseJson.decodeFromString(
-                PhraseEnvelopeDto.serializer(),
-                PulseJson.parseToJsonElement(it).unwrapOrRoot("phrase").toString(),
-            )
+        post("/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases", jsonOf("text" to text)) {
+            // Decode the envelope once. Unwrapping first silently decoded a null
+            // phrase, which the repository used to turn into a blank-ID success.
+            PulseJson.decodeFromString(PhraseEnvelopeDto.serializer(), it).also { receipt ->
+                val phrase = requireNotNull(receipt.phrase) { "Phrase creation was not confirmed." }
+                require(phrase.id.isNotBlank() && phrase.text == text.trim() && phrase.text.isNotBlank() && phrase.position >= 0) {
+                    "Phrase creation was not confirmed."
+                }
+            }
         }
 
-    /** DELETE /api/users/{id}/phrases?phraseId=X → { ok } (owner-guarded server-side). */
     suspend fun deletePhrase(userId: String, phraseId: String): PulseResult<OkDto> =
         deleteWithJson(
-            "/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases?phraseId=" +
-                java.net.URLEncoder.encode(phraseId, "UTF-8"),
+            "/api/users/" + java.net.URLEncoder.encode(userId, "UTF-8") + "/phrases?phraseId=" + java.net.URLEncoder.encode(phraseId, "UTF-8"),
             buildJsonObject { },
-        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+        ) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject ?: error("Phrase receipt is missing.")
+            require(root["ok"]?.toString() == "true" && root["deleted"]?.toString() == "true" &&
+                (root["userId"] as? JsonPrimitive)?.content == userId &&
+                (root["phraseId"] as? JsonPrimitive)?.content == phraseId) { "Phrase deletion was not confirmed." }
+            OkDto(ok = true)
+        }
 
     /** POST /api/games { userId, conversationId, game?='tictactoe', opponentId? } → { match, message }. */
     suspend fun createGame(userId: String, conversationId: String, opponentId: String?, clientId: String? = null): PulseResult<GameMatchCreateResultDto> =

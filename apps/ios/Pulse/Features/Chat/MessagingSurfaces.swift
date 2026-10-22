@@ -725,13 +725,16 @@ struct QuickPhrasesSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var phrases: [WireQuickPhrase] = []
     @State private var draft = ""
+    @State private var busy = false
+    @State private var loadError: String?
+    @State private var ticket = UUID()
     @State private var loading = true
 
     private static let maxPhrases = 12
     private static let maxChars = 120
 
     private var canAdd: Bool {
-        !draft.trimmingCharacters(in: .whitespaces).isEmpty && phrases.count < Self.maxPhrases
+        !busy && !draft.trimmingCharacters(in: .whitespaces).isEmpty && draft.utf16.count <= Self.maxChars && phrases.count < Self.maxPhrases
     }
 
     var body: some View {
@@ -759,6 +762,7 @@ struct QuickPhrasesSheet: View {
                 } footer: {
                     Text("One-tap lines above the composer. Up to \(Self.maxPhrases) phrases, \(Self.maxChars) characters each.")
                 }
+                if let loadError { Section { Button("\(loadError) Retry") { Task { await load() } } } }
                 Section("Add a phrase") {
                     TextField("Type a phrase…", text: $draft, axis: .vertical)
                         .lineLimit(1...3)
@@ -771,6 +775,7 @@ struct QuickPhrasesSheet: View {
                     .disabled(!canAdd)
                 }
             }
+            .disabled(busy)
             .listStyle(.insetGrouped)
             .navigationTitle("Quick phrases")
             .navigationBarTitleDisplayMode(.inline)
@@ -780,39 +785,65 @@ struct QuickPhrasesSheet: View {
                 }
             }
             .refreshable { await load() }
-            .task { await load() }
+            .task(id: session.sessionGeneration) {
+                phrases = []; draft = ""; busy = false
+                await load()
+            }
+            .onDisappear { ticket = UUID() }
         }
         .presentationDetents([.medium, .large])
     }
 
     private func load() async {
-        phrases = (try? await session.api.quickPhrases()) ?? []
-        loading = false
-        onChanged()
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; loading = true
+        do {
+            let rows = try await api.quickPhrases()
+            guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+            phrases = rows; loadError = nil; loading = false
+        } catch {
+            guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+            loadError = "Could not refresh quick phrases."; loading = false
+        }
     }
 
     private func add() {
-        let text = draft.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty, text.count <= Self.maxChars, phrases.count < Self.maxPhrases else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !busy, !text.isEmpty, text.utf16.count <= 120, phrases.count < 12 else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; busy = true
         Task {
+            defer { if session.sessionGeneration == epoch && ticket == request { busy = false } }
             do {
-                _ = try await session.api.createQuickPhrase(text: text)
-                draft = ""
+                let phrase = try await api.createQuickPhrase(text: text)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                phrases.removeAll { $0.id == phrase.id }; phrases.append(phrase)
+                if draft.trimmingCharacters(in: .whitespacesAndNewlines) == text { draft = "" }
+                loadError = nil; loading = false
                 PulseHaptics.success()
-                await load()
+                onChanged()
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }
     }
 
     private func delete(_ phrase: WireQuickPhrase) {
+        guard !busy else { return }
+        let epoch = session.sessionGeneration, api = session.api, request = UUID()
+        ticket = request; busy = true
         Task {
+            defer { if session.sessionGeneration == epoch && ticket == request { busy = false } }
             do {
-                try await session.api.deleteQuickPhrase(phrase.id)
+                try await api.deleteQuickPhrase(phrase.id)
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
+                phrases.removeAll { $0.id == phrase.id }
                 PulseHaptics.tap()
-                await load()
+                onChanged()
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch, ticket == request else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }

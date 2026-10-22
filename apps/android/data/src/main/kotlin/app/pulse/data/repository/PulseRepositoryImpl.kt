@@ -3275,13 +3275,8 @@ class PulseRepositoryImpl constructor(
         return postCallLog(payload)
     }
 
-    override suspend fun quickPhrases(): List<Pair<String, String>> {
-        val id = viewerId ?: return emptyList()
-        return when (val r = api.quickPhrases(id)) {
-            is PulseResult.Success -> r.value
-            is PulseResult.Failure -> emptyList()
-        }
-    }
+    override suspend fun quickPhrases(): List<Pair<String, String>> =
+        ownedAccountRequest { api.quickPhrases(it) }.getOrThrow()
 
     override suspend fun flushCallLogQueue(): Result<Int> {
         val rows = callLogDao.queued(MAX_CALL_LOG_QUEUE)
@@ -3683,32 +3678,18 @@ class PulseRepositoryImpl constructor(
     // R1-W2A - quick phrases (F-MS-29)
 
     override suspend fun phrases(): Result<List<QuickPhrase>> =
-        when (val r = api.phrases(viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(
-                r.value.phrases
-                    .map { QuickPhrase(id = it.id, text = it.text, position = it.position) }
-                    .sortedBy { it.position },
-            )
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        ownedAccountRequest { api.phrases(it) }.map { page ->
+            page.phrases.map { QuickPhrase(id = it.id, text = it.text, position = it.position) }.sortedBy { it.position }
         }
 
     override suspend fun addPhrase(text: String): Result<QuickPhrase> =
-        when (val r = api.createPhrase(viewerId ?: "", text)) {
-            is PulseResult.Success -> Result.success(
-                QuickPhrase(
-                    id = r.value.phrase?.id.orEmpty(),
-                    text = r.value.phrase?.text.orEmpty().ifBlank { text },
-                    position = r.value.phrase?.position ?: 0,
-                ),
-            )
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
+        ownedAccountRequest { api.createPhrase(it, text) }.map { receipt ->
+            val phrase = requireNotNull(receipt.phrase)
+            QuickPhrase(id = phrase.id, text = phrase.text, position = phrase.position)
         }
 
     override suspend fun deletePhrase(phraseId: String): Result<Unit> =
-        when (val r = api.deletePhrase(viewerId ?: "", phraseId)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.deletePhrase(it, phraseId) }.map { Unit }
 
     override suspend fun createGame(conversationId: String, opponentId: String?): Result<GameMatchCreateResultDto> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No room owner"))

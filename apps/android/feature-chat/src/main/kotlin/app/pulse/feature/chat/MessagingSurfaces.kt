@@ -924,7 +924,7 @@ internal fun PhrasesSheet(
     phrases: List<QuickPhrase>,
     busy: Boolean,
     onDismiss: () -> Unit,
-    onAdd: (String) -> Unit,
+    onAdd: (String, () -> Unit) -> Unit,
     onDelete: (String) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
@@ -979,8 +979,8 @@ internal fun PhrasesSheet(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .clickable(enabled = text.isNotBlank() && !busy) {
-                            onAdd(text.trim())
-                            text = ""
+                            val draft = text
+                            onAdd(draft.trim()) { if (text == draft) text = "" }
                         }
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                 )

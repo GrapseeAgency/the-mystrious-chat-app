@@ -1912,20 +1912,33 @@ public struct PulseAPIClient: Sendable {
     /// (phrases/route.ts:19-33, position asc, ≤12 rows).
     public func quickPhrases() async throws -> [WireQuickPhrase] {
         let page: WirePhrasesPage = try await get("/api/users/\(q(userId))/phrases")
-        return page.phrases ?? []
+        guard let phrases = page.phrases, Set(phrases.map(\.id)).count == phrases.count,
+              phrases.allSatisfy({ !$0.id.isEmpty && !$0.text.isEmpty && ($0.position ?? -1) >= 0 }) else {
+            throw Failure(kind: .server, message: "Quick phrases were not confirmed.")
+        }
+        return phrases
     }
 
     /// POST /api/users/{id}/phrases { text } → 201 { phrase } (append at
     /// end; 400 on >120 chars or >12 rows - server copy surfaces verbatim).
     public func createQuickPhrase(text: String) async throws -> WireQuickPhrase {
         let data = try await postRaw("/api/users/\(q(userId))/phrases", body: ["text": text])
-        return try envelope(WirePhraseEnvelope.self, from: data).phrase
-            ?? envelope(WireQuickPhrase.self, from: data)
+        guard let phrase = try decoder.decode(WirePhraseEnvelope.self, from: data).phrase,
+              !phrase.id.isEmpty, !phrase.text.isEmpty, phrase.text == text.trimmingCharacters(in: .whitespacesAndNewlines),
+              (phrase.position ?? -1) >= 0 else {
+            throw Failure(kind: .server, message: "Phrase creation was not confirmed.")
+        }
+        return phrase
     }
 
     /// DELETE /api/users/{id}/phrases?phraseId= → { ok } (owner-guarded).
     public func deleteQuickPhrase(_ phraseId: String) async throws {
-        try await deleteEmpty("/api/users/\(q(userId))/phrases?phraseId=\(q(phraseId))", body: ["userId": userId])
+        struct Receipt: Decodable { let ok: Bool; let deleted: Bool; let userId: String; let phraseId: String }
+        let data = try await deleteRaw("/api/users/\(q(userId))/phrases?phraseId=\(q(phraseId))", body: ["userId": userId])
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.deleted, receipt.userId == userId, receipt.phraseId == phraseId else {
+            throw Failure(kind: .server, message: "Phrase deletion was not confirmed.")
+        }
     }
 
     // R2-B - AI recap · automations · webhooks · per-viewer veil
