@@ -1,75 +1,62 @@
-// /api/conversations/[id]/disappearing - WhatsApp/Signal TTL switch
+// Participant-level TTL for newly sent messages; current membership and write are atomic.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
   buildConversationDetail,
   CONVERSATION_FULL_INCLUDE,
-  memberIdsOf,
   notifySocket,
   safeJson,
   strField,
 } from '@/lib/serializers'
+import { bearerToken } from '@/lib/session-token'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import {
+  ConversationMetadataError,
+  patchConversationMetadata,
+  requirePreset,
+  TTL_PRESETS,
+} from '@/lib/conversation-metadata'
 
 export const dynamic = 'force-dynamic'
-
 interface RouteCtx {
   params: Promise<{ id: string }>
 }
 
-/** Allowed disappearing-message TTL presets (seconds). 0 = off. */
-const TTL_PRESETS = [0, 86_400, 604_800, 2_592_000] as const // off · 24h · 7d · 30d
-
-/**
- * PATCH /api/conversations/[id]/disappearing  body { userId, ttlSeconds }
- * → 200 { conversation: ConversationDetail } · relays conversation:updated.
- * Any participant may change it - applies to messages sent AFTER the change.
- */
 export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id } = await params
-
   const body = await safeJson(req)
   const userId = strField(body.userId)
-  if (!userId) {
-    return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, userId, 'disappearing-message settings')
+    if (denied) return denied
   }
-  const rawTtl = body.ttlSeconds
-  if (typeof rawTtl !== 'number' || !Number.isInteger(rawTtl)) {
-    return NextResponse.json({ error: 'ttlSeconds must be an integer.' }, { status: 400 })
-  }
-  if (!(TTL_PRESETS as readonly number[]).includes(rawTtl)) {
-    return NextResponse.json(
-      { error: `ttlSeconds must be one of ${TTL_PRESETS.join(', ')}.` },
-      { status: 400 },
+  try {
+    const ttlSeconds = body.ttlSeconds
+    requirePreset(ttlSeconds, TTL_PRESETS, 'ttlSeconds')
+    const recipients = await patchConversationMetadata(db, id, userId, { ttlSeconds })
+    await notifySocket('conversation:updated', recipients, {
+      type: 'conversation:updated',
+      conversationId: id,
+      recipientIds: recipients,
+    })
+    const updated = await db.$transaction(
+      (tx) =>
+        tx.conversation.findFirst({
+          where: { id, participants: { some: { userId } } },
+          include: CONVERSATION_FULL_INCLUDE,
+        }),
+      { isolationLevel: 'Serializable' },
     )
+    if (!updated)
+      return NextResponse.json(
+        { error: 'Conversation is no longer available to this participant.' },
+        { status: 403 },
+      )
+    return NextResponse.json({ conversation: await buildConversationDetail(updated, userId) })
+  } catch (error) {
+    if (error instanceof ConversationMetadataError)
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
-
-  const participant = await db.conversationParticipant.findUnique({
-    where: { userId_conversationId: { userId, conversationId: id } },
-    select: { id: true },
-  })
-  if (!participant) {
-    const exists = await db.conversation.findUnique({ where: { id }, select: { id: true } })
-    if (!exists) {
-      return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-    }
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-
-  const updated = await db.conversation.update({
-    where: { id },
-    data: { ttlSeconds: rawTtl },
-    include: CONVERSATION_FULL_INCLUDE,
-  })
-
-  const recipients = await memberIdsOf(id)
-  await notifySocket('conversation:updated', recipients, {
-    type: 'conversation:updated',
-    conversationId: id,
-    recipientIds: recipients,
-  })
-
-  return NextResponse.json({ conversation: await buildConversationDetail(updated, userId) })
 }

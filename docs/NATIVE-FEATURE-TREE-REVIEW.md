@@ -2897,3 +2897,22 @@ those historical results validate these new native changes. Autumn styling is un
 Remaining: TTL/slow-mode/personal-privacy endpoints still need their own transactional
 permission work; durable operation receipts and broader channel-directory semantics remain
 open. This is not a whole-feature-tree or physical-device correctness claim.
+
+## 2026-10-22 — finish the backing TTL, throttle and personal-privacy write paths
+
+The three endpoints left open above now bind supplied credentials and perform current
+membership/authority checks with their writes. TTL remains participant-level in both DMs
+and groups; slow mode is group-admin-only. Personal privacy updates the matching membership
+row directly inside the transaction and cannot update another user's flag. Numeric preset
+validation is shared with the write helper. TTL's response uses a member-filtered requester
+snapshot, so a later removal cannot expose a detail response. Slow-mode changes notify the
+current room recipients; personal-privacy changes notify only the owner's sessions.
+Serializable contention returns 409. Tokenless legacy identity remains explicitly unchanged.
+
+163/163 full server regressions pass (/home/user/group-controls-server.log), including real
+SQLite permission/revocation/DM-policy cases and actual route-adapter owner, validation,
+recipient-scope and post-write membership tests. Strict helper TypeScript and diff checks
+pass. This resolves the three endpoint items above, not operation-receipt, authentication,
+directory-visibility or native-device coverage gaps. Android's mounted room kebab and room
+information actions are the next runtime path being inspected; fake-success TTL fallback
+and detached menu actions have been found there but are not fixed by this server tranche.

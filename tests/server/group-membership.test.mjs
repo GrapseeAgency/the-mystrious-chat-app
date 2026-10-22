@@ -17,6 +17,7 @@ import {
 import {
   conversationMetadataPatch,
   patchConversationMetadata,
+  patchMyScreenPrivacy,
 } from '../../src/lib/conversation-metadata.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 async function fixture(run) {
@@ -25,7 +26,7 @@ async function fixture(run) {
   try {
     for (const sql of [
       'CREATE TABLE User(id TEXT PRIMARY KEY)',
-      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, isGroup BOOLEAN, broadcastMode BOOLEAN, updatedAt DATETIME, inviteCode TEXT UNIQUE, name TEXT, photo TEXT, screenPrivacy BOOLEAN DEFAULT false)',
+      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, isGroup BOOLEAN, broadcastMode BOOLEAN, updatedAt DATETIME, inviteCode TEXT UNIQUE, name TEXT, photo TEXT, screenPrivacy BOOLEAN DEFAULT false, ttlSeconds INTEGER DEFAULT 0, slowModeSeconds INTEGER DEFAULT 0)',
       `CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT,
         role TEXT DEFAULT 'member', joinedAt DATETIME DEFAULT CURRENT_TIMESTAMP, lastReadAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME, handRaisedAt DATETIME,
@@ -382,3 +383,51 @@ test('malformed mixed metadata fields cannot silently clear a photo or partially
   )
   assert.deepEqual(conversationMetadataPatch({ broadcast: false }, 48), { broadcastMode: false })
 })
+
+test('TTL remains participant-level while slow mode requires a current group admin', () =>
+  fixture(async (db) => {
+    await patchConversationMetadata(db, 'group', 'b', { ttlSeconds: 86400 })
+    await assert.rejects(patchConversationMetadata(db, 'group', 'b', { slowModeSeconds: 5 }), {
+      status: 403,
+    })
+    await patchConversationMetadata(db, 'group', 'a', { slowModeSeconds: 5 })
+    await removeGroupMember(db, 'group', 'a', 'b')
+    await assert.rejects(patchConversationMetadata(db, 'group', 'b', { ttlSeconds: 604800 }), {
+      status: 403,
+    })
+    assert.deepEqual(
+      await db.conversation.findUnique({
+        where: { id: 'group' },
+        select: { ttlSeconds: true, slowModeSeconds: true },
+      }),
+      { ttlSeconds: 86400, slowModeSeconds: 5 },
+    )
+    await assert.rejects(patchConversationMetadata(db, 'group', 'a', { ttlSeconds: -1 }), {
+      status: 400,
+    })
+    await assert.rejects(patchConversationMetadata(db, 'group', 'a', { slowModeSeconds: 2 }), {
+      status: 400,
+    })
+  }))
+test('personal privacy writes only the current member and preserves DM comfort/TTL policy', () =>
+  fixture(async (db) => {
+    await patchMyScreenPrivacy(db, 'group', 'b', true)
+    const flag = (userId) =>
+      db.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId, conversationId: 'group' } },
+        select: { screenPrivacy: true },
+      })
+    assert.equal((await flag('b')).screenPrivacy, true)
+    assert.equal((await flag('a')).screenPrivacy, false)
+    await removeGroupMember(db, 'group', 'a', 'b')
+    await assert.rejects(patchMyScreenPrivacy(db, 'group', 'b', false), { status: 403 })
+    await db.conversationParticipant.create({
+      data: { conversationId: 'dm', userId: 'b' },
+      select: { id: true },
+    })
+    await patchConversationMetadata(db, 'dm', 'b', { ttlSeconds: 86400, screenPrivacy: true })
+    await patchMyScreenPrivacy(db, 'dm', 'b', true)
+    await assert.rejects(patchConversationMetadata(db, 'dm', 'b', { slowModeSeconds: 5 }), {
+      status: 400,
+    })
+  }))
