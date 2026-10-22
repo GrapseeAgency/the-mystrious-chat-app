@@ -272,7 +272,11 @@ struct WhoReactedSheet: View {
     let members: [WireConversationMember]
     let viewerId: String?
     @ObservedObject var session: PulseSession
+    let onReact: (Bool) async throws -> Void
     var onClosed: () -> Void = {}
+    @State private var updating = false
+    @State private var errorText: String?
+    @State private var actionTask: Task<Void, Never>?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -310,23 +314,31 @@ struct WhoReactedSheet: View {
                 }
             }
             .listStyle(.plain)
+            if let errorText {
+                Text(errorText).font(.caption).foregroundStyle(.red).padding(.horizontal, 14)
+            }
             Button {
+                guard !updating, let viewerId, session.viewer?.id == viewerId else { return }
+                let epoch = session.sessionGeneration, present = !iReacted
+                updating = true; errorText = nil
                 PulseHaptics.tap()
-                if let viewerId {
-                    Task {
-                        do {
-                            _ = try await session.api.react(messageId: message.id, emoji: reaction.rawValue)
-                        } catch {
-                            session.toasts.show(RoomViewModel.describe(error))
-                        }
+                actionTask = Task { @MainActor in
+                    defer { updating = false }
+                    do {
+                        guard session.sessionGeneration == epoch else { return }
+                        try await onReact(present)
+                        guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                        dismiss()
+                    } catch is CancellationError { return } catch {
+                        guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                        errorText = RoomViewModel.describe(error)
                     }
                 }
-                dismiss()
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: reaction.symbolName)
                         .font(.system(size: 14, weight: .medium))
-                    Text(iReacted ? "Remove your reaction" : "React with \(reaction.label)")
+                    Text(updating ? "Updating…" : (iReacted ? "Remove your reaction" : "React with \(reaction.label)"))
                         .font(.subheadline.weight(.bold))
                 }
                 .frame(maxWidth: .infinity, minHeight: 44)
@@ -334,12 +346,13 @@ struct WhoReactedSheet: View {
                 .foregroundStyle(PulseTheme.onAccent)
             }
             .buttonStyle(PulseButtonStyle())
-            .disabled(viewerId == nil)
+            .disabled(viewerId == nil || updating)
             .padding(.horizontal, 14)
             .padding(.bottom, 14)
         }
         .presentationDetents([.medium, .large])
-        .onDisappear { onClosed() }
+        .onChange(of: session.sessionGeneration) { _ in actionTask?.cancel(); dismiss() }
+        .onDisappear { actionTask?.cancel(); onClosed() }
     }
 }
 

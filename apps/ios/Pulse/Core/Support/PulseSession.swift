@@ -232,6 +232,35 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    private var reactionActions: [String: UUID] = [:]
+
+    /// Shared by the river, reaction drawer and alternate room. Persist before UI acceptance;
+    /// a late HTTP row must not overwrite a newer relayed edit/reaction/tombstone.
+    public func setReaction(_ requested: WireChatMessage, emoji: String, present: Bool) async throws {
+        try Task.checkCancellation()
+        guard ready, let store, let viewer, !requested.id.hasPrefix("local_"),
+              let cached = try store.message(id: requested.id), cached.conversationId == requested.conversationId,
+              cached.deletedAt == nil, PulseRemediationLogic.isAlive(cached.expiresAt) else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "This message is no longer available. Refresh before reacting.")
+        }
+        if let rootId = cached.parentId, threadAccessDenied(rootId: rootId) {
+            throw PulseAPIClient.Failure(kind: .forbidden, message: "Reopen this thread to check access before reacting.")
+        }
+        guard reactionActions[requested.id] == nil else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "A reaction is still updating.")
+        }
+        let ticket = UUID(), epoch = sessionGeneration, revision = messageRevision, client = api
+        reactionActions[requested.id] = ticket
+        defer { if reactionActions[requested.id] == ticket { reactionActions.removeValue(forKey: requested.id) } }
+        let fresh = try await client.react(messageId: requested.id, emoji: emoji, present: present)
+        try Task.checkCancellation()
+        guard sessionGeneration == epoch, self.viewer?.id == viewer.id else { throw CancellationError() }
+        guard fresh.id == requested.id, fresh.conversationId == requested.conversationId else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Reaction returned another message.")
+        }
+        if acceptsSyncMessage(fresh.id, startedAt: revision) { try recordMessageMutation(fresh) }
+    }
+
     public func recordMessageMutation(_ message: WireChatMessage) throws {
         try store?.upsert(messages: [message])
         noteMessageRevision(message.id)
@@ -461,6 +490,7 @@ public final class PulseSession: ObservableObject {
         viewer = nil
         store = nil
         messageRevisions.removeAll()
+        reactionActions.removeAll()
         threadValidationFence = PulseThreadValidationFence()
         deniedThreadRoots.removeAll()
         pendingOpenRoom = nil

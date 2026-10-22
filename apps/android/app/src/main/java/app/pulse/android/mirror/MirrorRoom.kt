@@ -719,10 +719,14 @@ internal fun MirrorRoom(
     viewOnceGrant?.let { granted ->
         app.pulse.feature.chat.ImageLightbox(message = granted, onDismiss = { viewOnceGrant = null })
     }
-    fun toggleReaction(messageId: String, emoji: String) {
+    fun toggleReaction(message: Message, emoji: String) {
+        val owner = repository.viewerId ?: return
+        val epoch = repository.attachmentSessionKey()
+        val present = message.reactions.none { it.userId == owner && it.emoji == emoji }
         historyScope.launch {
+            if (!roomActionsLive.get() || repository.viewerId != owner || repository.attachmentSessionKey() != epoch) return@launch
             try {
-                repository.react(messageId, emoji).onFailure {
+                repository.react(message.id, emoji, present).onFailure {
                     if (roomActionsLive.get()) sendError = it.message ?: "Couldn't update reaction"
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -2661,7 +2665,7 @@ internal fun MirrorRoom(
             viewerId = viewerId,
             members = members,
             repository = repository,
-            onReaction = { emoji -> toggleReaction(target.id, emoji) },
+            onReaction = { emoji -> toggleReaction(target, emoji) },
             onReply = { replyTo = if (target.viewOnce) target.copy(body = "View-once message", imagePath = null) else target },
             onEdit = {
                 if (editing == null) {

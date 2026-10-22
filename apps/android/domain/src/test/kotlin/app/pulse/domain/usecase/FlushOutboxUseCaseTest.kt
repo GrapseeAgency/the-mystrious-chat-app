@@ -85,7 +85,7 @@ class FlushOutboxUseCaseTest {
             Result.failure(UnsupportedOperationException())
         override suspend fun markRead(conversationId: String) = Result.success(Unit)
         override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {}
-        override suspend fun react(messageId: String, emoji: String) = Result.success(Unit)
+        override suspend fun react(messageId: String, emoji: String, present: Boolean) = Result.success(Unit)
         override suspend fun togglePin(conversationId: String, pinned: Boolean) = Result.success(Unit)
         override suspend fun setMuted(conversationId: String, muted: Boolean) = Result.success(Unit)
         override suspend fun archive(conversationId: String, archived: Boolean) = Result.success(Unit)

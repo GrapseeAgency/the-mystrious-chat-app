@@ -350,7 +350,7 @@ interface PulseRepository {
     /** Displayed server message boundary; never acknowledge unseen arrivals. */
     suspend fun markReadThrough(conversationId: String, messageId: String): Result<Unit> = markRead(conversationId)
     suspend fun setTyping(conversationId: String, userName: String, typing: Boolean)
-    suspend fun react(messageId: String, emoji: String): Result<Unit>
+    suspend fun react(messageId: String, emoji: String, present: Boolean): Result<Unit>
     suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit>
     suspend fun setMuted(conversationId: String, muted: Boolean): Result<Unit>
     suspend fun archive(conversationId: String, archived: Boolean): Result<Unit>

@@ -5,7 +5,7 @@ export class MessageMutationError extends Error {
 }
 
 type Action = { kind: 'edit'; content: string } | { kind: 'delete' } |
-  { kind: 'react'; emoji: string } | { kind: 'view' }
+  { kind: 'react'; emoji: string; present?: boolean } | { kind: 'view' }
 const fields = { id: true, conversationId: true, senderId: true, deletedAt: true,
   expiresAt: true, parentId: true, viewOnce: true, viewedAt: true } as const
 
@@ -51,8 +51,12 @@ export async function mutateMessage<T>(db: PrismaClient, id: string, owner: stri
           const existing = await tx.reaction.findUnique({
             where: { messageId_userId_emoji: { messageId: id, userId: owner, emoji: action.emoji } }, select: { id: true },
           })
-          if (existing) await tx.reaction.delete({ where: { id: existing.id } })
-          else await tx.reaction.create({ data: { messageId: id, userId: owner, emoji: action.emoji } })
+          // Native state requests are replay-safe. Keep legacy web toggle semantics
+          // only when the desired state is absent.
+          const present = action.present ?? !existing
+          changed = present !== Boolean(existing)
+          if (!present && existing) await tx.reaction.delete({ where: { id: existing.id } })
+          else if (present && !existing) await tx.reaction.create({ data: { messageId: id, userId: owner, emoji: action.emoji } })
           break
         }
         case 'view': {

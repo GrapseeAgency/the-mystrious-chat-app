@@ -944,7 +944,7 @@ fun ChatRoomScreen(
                                                 count = 28,
                                             )
                                         }
-                                        viewModel.react(message.id, REACTION_DEFAULT)
+                                        viewModel.react(message, REACTION_DEFAULT)
                                     }
                                 } else {
                                     null
@@ -2149,7 +2149,7 @@ fun ChatRoomScreen(
             pinned = target.pinnedAt != null,
             onDismiss = { actionTarget = null },
             onReact = { emoji ->
-                viewModel.react(target.id, emoji)
+                viewModel.react(target, emoji)
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 actionTarget = null
             },
@@ -2262,7 +2262,7 @@ fun ChatRoomScreen(
             viewerId = viewerId,
             onDismiss = { whoReactedFor = null },
             onToggle = { emoji ->
-                viewModel.react(reactedMessage.id, emoji)
+                viewModel.react(reactedMessage, emoji)
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 whoReactedFor = null
             },

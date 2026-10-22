@@ -1061,12 +1061,16 @@ private struct RoomContent: View {
         chatBodyStyled5
         .sheet(isPresented: $whoReactedOpen) {
             if let target = whoReactedMessage {
+                let selectedEmoji = whoReactedEmoji
                 WhoReactedSheet(
                     message: target,
-                    emoji: whoReactedEmoji,
+                    emoji: selectedEmoji,
                     members: conversation.members,
                     viewerId: session.viewer?.id,
                     session: session,
+                    onReact: { present in
+                        try await viewModel.setReaction(target, emoji: PulseReactionId.normalize(selectedEmoji).rawValue, present: present, session: session)
+                    }
                 )
             }
         }
@@ -5081,25 +5085,28 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    private var reactionActions: Set<String> = []
+    func setReaction(_ message: WireChatMessage, emoji: String, present: Bool, session: PulseSession) async throws {
+        guard session.sessionGeneration == readSessionGeneration, message.conversationId == conversationId else {
+            throw CancellationError()
+        }
+        let epoch = session.sessionGeneration
+        try await session.setReaction(message, emoji: emoji, present: present)
+        guard !Task.isCancelled, session.sessionGeneration == epoch else { throw CancellationError() }
+        // Re-read after the await; a socket event may have advanced the stored row.
+        if let retained = try session.store?.message(id: message.id) { upsert(retained) }
+        if present && emoji == PulseReactionId.heart.rawValue { session.particles.fire(kind: .hearts, count: 24) }
+    }
+
     func react(_ message: WireChatMessage, emoji: String, session: PulseSession) {
-        guard session.sessionGeneration == readSessionGeneration, message.conversationId == conversationId,
-              message.deletedAt == nil, !message.id.hasPrefix("local_"),
-              PulseRemediationLogic.isAlive(message.expiresAt), reactionActions.insert(message.id).inserted else { return }
-        let epoch = session.sessionGeneration, watermark = session.messageRevision, api = session.api
+        guard session.sessionGeneration == readSessionGeneration, let owner = session.viewer?.id else { return }
+        let epoch = session.sessionGeneration
+        let present = !(message.reactions ?? []).contains { $0.emoji == emoji && $0.userIds.contains(owner) }
         PulseHaptics.tap()
         Task { [weak self] in
-            guard let self else { return }
-            defer { reactionActions.remove(message.id) }
+            guard let self, session.sessionGeneration == epoch else { return }
             do {
-                let fresh = try await api.react(messageId: message.id, emoji: emoji)
-                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                if session.acceptsSyncMessage(fresh.id, startedAt: watermark) {
-                    try session.recordMessageMutation(fresh)
-                    upsert(fresh)
-                }
-                if emoji == PulseReactionId.heart.rawValue { session.particles.fire(kind: .hearts, count: 24) }
-            } catch {
+                try await setReaction(message, emoji: emoji, present: present, session: session)
+            } catch is CancellationError { return } catch {
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 errorText = Self.describe(error)
             }

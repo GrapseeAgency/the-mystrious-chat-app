@@ -879,9 +879,13 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    fun react(messageId: String, emoji: String) {
+    fun react(message: Message, emoji: String) {
+        val owner = repo.viewerId ?: return
+        val epoch = repo.attachmentSessionKey()
+        val present = message.reactions.none { it.userId == owner && it.emoji == emoji }
         viewModelScope.launch {
-            repo.react(messageId, emoji).onFailure { notify(it.message ?: "Couldn't update reaction", isError = true) }
+            if (repo.viewerId != owner || repo.attachmentSessionKey() != epoch) return@launch
+            repo.react(message.id, emoji, present).onFailure { notify(it.message ?: "Couldn't update reaction", isError = true) }
         }
     }
 

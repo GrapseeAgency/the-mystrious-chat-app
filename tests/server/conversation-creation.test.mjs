@@ -110,9 +110,13 @@ test('versioned entry points require an identity and forward the unconsumed auth
       const result = await post(new Request('https://creation.test', { method: 'POST', body: JSON.stringify({ clientId }) }))
       assert.equal(result.status, 400)
     }
+    if (resource === 'conversations') for (const isGroup of [undefined, false, 'true', 1]) {
+      const result = await post(new Request('https://creation.test', { method: 'POST', body: JSON.stringify({ clientId: key, isGroup }) }))
+      assert.equal(result.status, 400)
+    }
     assert.equal(dispatched, 0)
     const response = await post(new Request('https://creation.test', { method: 'POST',
-      headers: { Authorization: 'Bearer synthetic-owner' }, body: JSON.stringify({ clientId: key }) }))
+      headers: { Authorization: 'Bearer synthetic-owner' }, body: JSON.stringify({ clientId: key, isGroup: true }) }))
     assert.equal(response.status, 200); assert.equal(dispatched, 1)
   }
 })

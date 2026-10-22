@@ -336,10 +336,19 @@ public struct PulseAPIClient: Sendable {
         try await patchEmpty("/api/conversations/\(conversationId)/mark-unread", body: ["userId": userId, "on": on])
     }
 
-    /// N3-b - toggle an emoji reaction. Server replies with the FRESH message.
-    public func react(messageId: String, emoji: String) async throws -> WireChatMessage {
-        let data = try await postRaw("/api/messages/\(messageId)/react", body: ["userId": userId, "emoji": emoji])
-        return try WireMessageEnvelope.extract(from: data)
+    /// Explicit desired state. An older gateway must refuse, never fall back to a toggle.
+    public func react(messageId: String, emoji: String, present: Bool) async throws -> WireChatMessage {
+        struct Receipt: Decodable { let messageId: String; let emoji: String; let present: Bool }
+        struct Envelope: Decodable { let message: WireChatMessage; let reaction: Receipt }
+        let data = try await postRaw("/api/messages/\(messageId)/react-state",
+            body: ["userId": userId, "emoji": emoji, "present": present])
+        let response = try JSONDecoder().decode(Envelope.self, from: data)
+        let confirmed = (response.message.reactions ?? []).contains { $0.emoji == emoji && $0.userIds.contains(userId) }
+        guard response.message.id == messageId, response.reaction.messageId == messageId,
+              response.reaction.emoji == emoji, response.reaction.present == present, confirmed == present else {
+            throw Failure(kind: .validation, message: "Reaction state was not confirmed.")
+        }
+        return response.message
     }
 
     // W1-DATA-B - Wave 1 message actions (spec §1.1)

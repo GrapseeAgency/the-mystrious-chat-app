@@ -2533,18 +2533,41 @@ class PulseRepositoryImpl constructor(
 
     private val reactionActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    override suspend fun react(messageId: String, emoji: String): Result<Unit> {
+    override suspend fun react(messageId: String, emoji: String, present: Boolean): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
         if (!reactionActions.add(messageId)) return Result.failure(IllegalStateException("A reaction is still updating."))
         try {
+            kotlin.coroutines.coroutineContext.ensureActive()
             val current = messageDao.byId(messageId)?.toDomain()
-            if (current != null && (current.isDeleted || current.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true)) {
+                ?: return Result.failure(IllegalStateException("Refresh this message before reacting."))
+            requireConversationOwner(owner, epoch)
+            if (current.isDeleted || current.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) ||
+                current.expiresAtEpochMs?.let { it <= System.currentTimeMillis() } == true) {
                 return Result.failure(IllegalStateException("This message is no longer available."))
             }
-            // Do not leave an invented optimistic chip after rejection/offline failure.
-            // Apply the returned row; an old message may be outside any room refresh page.
-            return when (val result = api.react(messageId, viewerId ?: "", emoji)) {
-                is PulseResult.Success -> { upsertMessage(result.value.toDomain()); Result.success(Unit) }
-                is PulseResult.Failure -> Result.failure(apiExceptionOf(result))
+            val watermark = messageEventClock.get()
+            return when (val result = api.react(messageId, owner, emoji, present)) {
+                is PulseResult.Success -> {
+                    val message = result.value.toDomain()
+                    require(message.id == messageId && message.conversationId == current.conversationId) { "Reaction returned an unrelated message" }
+                    messageCacheMutex.withLock {
+                        database.withTransaction {
+                            requireConversationOwner(owner, epoch)
+                            kotlin.coroutines.coroutineContext.ensureActive()
+                            // A newer relayed mutation wins over this late full-row ACK.
+                            if ((messageEventRevisions[messageId] ?: 0L) <= watermark) {
+                                messageEventRevisions[messageId] = messageEventClock.incrementAndGet()
+                                messageDao.upsertAll(listOf(MessageEntity.from(message, reactionsJsonOf(message))))
+                            }
+                            requireConversationOwner(owner, epoch)
+                        }
+                        messageCacheChanges.value = messageEventClock.get()
+                    }
+                    requireConversationOwner(owner, epoch)
+                    Result.success(Unit)
+                }
+                is PulseResult.Failure -> { requireConversationOwner(owner, epoch); Result.failure(apiExceptionOf(result)) }
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled

@@ -11,5 +11,8 @@ export async function POST(req: Request) {
   if (typeof body.clientId !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(body.clientId)) {
     return NextResponse.json({ error: 'A valid creation clientId is required.' }, { status: 400 })
   }
+  if (body.isGroup !== true) {
+    return NextResponse.json({ error: 'This endpoint requires an explicit group creation.' }, { status: 400 })
+  }
   return create(req)
 }

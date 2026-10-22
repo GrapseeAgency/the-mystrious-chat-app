@@ -57,7 +57,7 @@ class SendMessageUseCaseTest {
         }
         override suspend fun markRead(conversationId: String) = Result.success(Unit)
         override suspend fun setTyping(conversationId: String, userName: String, typing: Boolean) {}
-        override suspend fun react(messageId: String, emoji: String) = Result.success(Unit)
+        override suspend fun react(messageId: String, emoji: String, present: Boolean) = Result.success(Unit)
         override suspend fun users(query: String) = Result.success(emptyList<app.pulse.domain.model.User>())
         override suspend fun checkHandle(handle: String) =
             Result.success(app.pulse.domain.model.HandleCheck(available = true))

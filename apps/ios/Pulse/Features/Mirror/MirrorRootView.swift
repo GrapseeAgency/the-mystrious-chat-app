@@ -1934,13 +1934,16 @@ struct MirrorRoomView: View {
             session.toasts.show("Wait for this queued message to be sent before reacting.")
             return
         }
-        let api = session.api
+        guard let requested = messages.first(where: { $0.id == messageId }), let owner = session.viewer?.id else { return }
+        let present = !(requested.reactions ?? []).contains { $0.emoji == emoji && $0.userIds.contains(owner) }
         let generation = session.sessionGeneration
         roomOperations.run(key: "reaction-" + messageId, operation: {
             do {
-                let message = try await api.react(messageId: messageId, emoji: emoji)
+                guard generation == session.sessionGeneration else { return false }
+                try await session.setReaction(requested, emoji: emoji, present: present)
                 try Task.checkCancellation()
-                guard generation == session.sessionGeneration, message.id == messageId, message.conversationId == row.id else { return false }
+                guard generation == session.sessionGeneration,
+                      let message = try session.store?.message(id: messageId), message.conversationId == row.id else { return false }
                 acceptCarrier(message)
                 return true
             } catch {

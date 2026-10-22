@@ -3099,3 +3099,49 @@ photo path); pending forms/photo selections are not restored automatically. Edit
 uncertain form is a different creation intent, not a retry. Cross-device metadata revision,
 queue/receipt durability beyond these operations, media revocation and other feature trees
 remain open. A receipt is evidence of server creation, not proof that the user saw the UI.
+
+### 2026-10-22 — explicit reaction state and owned drawer acknowledgement
+
+Traced the actual chip/picker/drawer actions beyond the earlier transactional-toggle
+repair. Both native stacks still sent toggles: after a committed request lost its reply,
+a retry could remove the reaction the user intended to add. The primary Swift who-reacted
+drawer also dismissed immediately, bypassed the message mutation/cache acceptance path
+and discarded the returned row.
+
+- Added `/api/messages/[id]/react-state`, requiring a boolean desired state. Add/add and
+  remove/remove are no-ops on replay, scoped to the actor and emoji. The shared serializable
+  mutation still checks current membership and message/thread lifetime even for no-ops.
+  Existing legacy `/react` toggle behavior is unchanged. Credential-bearing requests bind
+  the credential to the actor; this is not the deferred authentication migration.
+- Kotlin and Swift use only the state endpoint, verify the receipt, returned message ID
+  and actual owner/emoji state, and never fall back to a toggle on older gateways. UI taps
+  capture the intended add/remove from the displayed message before asynchronous work,
+  rather than deciding to invert a potentially newer cache after suspension.
+- Android applies accepted reaction rows with account-session checks and a transactional
+  message-event fence. A late full-row acknowledgement cannot overwrite a message event
+  observed after dispatch. Primary and mounted Mirror actions retain visible failures.
+- Swift river, drawer and alternate Mirror now share a per-session/per-message operation
+  gate, lifetime checks, session fences and checked storage acceptance. UI application
+  re-reads canonical storage after awaiting; a stale callback cannot retire a newer gate.
+  The drawer stays open with pending/error state, cancels its owned task on dismissal,
+  and closes on accepted completion rather than on the initial tap. Autumn styles remain.
+- Tightened group create-v2 to require `isGroup: true`; malformed versioned group calls
+  cannot fall through to legacy DM creation without creation-receipt semantics. Group
+  creation also notifies current participants to refresh their inboxes (in 4ca89aa).
+
+Verification: server suite 174/174 passed, including actual temporary SQLite explicit-state
+replay/owner/rollback/lifetime cases and a dependency-injected route validation/fanout case.
+Strict TypeScript helper/routes check passed with the existing minimal Next declaration.
+Fifteen changed/new native files passed syntax parsing. Added Kotlin mocked transport and
+Swift URLProtocol coverage for matching receipt/state, replay and old-gateway refusal;
+these new native tests/device flows have not yet been executed here. Earlier creation
+commit 4ca89aa's iOS archive passed; its remaining native jobs were still running when
+checked. That is not validation of this newer reaction tranche.
+
+Rollout: deploy the new reaction-state route before releasing these native changes; no
+additional reaction schema patch is needed. The earlier creation receipt SQL patch remains
+required for that feature. No production deployment performed. Limits: no total server
+revision for all message mutations, no durable reaction-intent queue, and no guaranteed
+offline fanout. Identical repeated desired states are safe; concurrent opposite intents
+from different devices still follow server commit order. Existing exported media and
+broader durable read/history gaps are not claimed fixed by this work.

@@ -96,3 +96,60 @@ test('deleted wire rows and unavailable quotes disclose no original body or atta
   assert.deepEqual(quoteDisclosure({ ...parent, expiresAt: now }, now), { content: '', deleted: true })
   assert.deepEqual(quoteDisclosure({ ...parent, viewOnce: true }, now), { content: 'View-once message', deleted: false })
 })
+
+test('explicit reaction add/remove can be replayed after a lost acknowledgement without toggling', () => fixture(async (db, act) => {
+  for (const present of [true, false]) {
+    assert.equal((await act('peer', { kind: 'react', emoji: 'heart', present })).changed, true)
+    for (let retry = 0; retry < 3; retry++) {
+      assert.equal((await act('peer', { kind: 'react', emoji: 'heart', present })).changed, false)
+      assert.equal(await db.reaction.count(), present ? 1 : 0)
+    }
+  }
+}))
+test('explicit reaction state changes only that owner and emoji and rolls back a failed acknowledgement', () => fixture(async (db, act) => {
+  await act('peer', { kind: 'react', emoji: 'heart', present: true })
+  await act('other', { kind: 'react', emoji: 'heart', present: true })
+  await act('peer', { kind: 'react', emoji: 'laugh', present: true })
+  await assert.rejects(act('peer', { kind: 'react', emoji: 'heart', present: false }, 'root', async () => { throw Error('fault') }), /fault/)
+  assert.equal(await db.reaction.count(), 3)
+  await act('peer', { kind: 'react', emoji: 'heart', present: false })
+  assert.equal(await db.reaction.count(), 2)
+  assert.equal(await db.reaction.count({ where: { userId: 'other', emoji: 'heart' } }), 1)
+  assert.equal(await db.reaction.count({ where: { userId: 'peer', emoji: 'laugh' } }), 1)
+}))
+test('even an unchanged reaction retry checks current membership and message lifetime', () => fixture(async (db, act) => {
+  await act('peer', { kind: 'react', emoji: 'heart', present: true })
+  await db.$executeRaw`DELETE FROM ConversationParticipant WHERE userId = 'peer'`
+  await assert.rejects(act('peer', { kind: 'react', emoji: 'heart', present: true }), { status: 403 })
+  await act('author', { kind: 'delete' })
+  await assert.rejects(act('other', { kind: 'react', emoji: 'heart', present: false }), { status: 410 })
+}))
+test('reaction state route refuses missing/nonboolean state and never invokes a legacy toggle', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { stripTypeScriptTypes } = await import('node:module')
+  const source = stripTypeScriptTypes(await readFile(new URL('../../src/app/api/messages/[id]/react-state/route.ts', import.meta.url), 'utf8'))
+    .replace(/^import .*$/gm, '').replace(/export /g, '')
+  const calls = [], fanouts = []
+  const dependencies = {
+    NextResponse: { json: Response.json }, db: {},
+    mutateMessage: async (_, id, owner, action) => {
+      calls.push({ id, owner, action }); return { message: { id }, conversationId: 'room', changed: action.present }
+    }, MessageMutationError: Error, mapMessage: m => m, memberIdsOf: async () => ['peer'],
+    notifySocket: async (...args) => { fanouts.push(args) }, MESSAGE_FULL_INCLUDE: {}, REACTION_EMOJIS: ['heart'],
+    safeJson: req => req.json(), strField: value => typeof value === 'string' ? value.trim() : '',
+    bearerToken: req => req.headers.get('Authorization'), requireActionOwner: async () => Response.json({}, { status: 403 }),
+  }
+  const post = new Function(...Object.keys(dependencies), source + '; return POST')(...Object.values(dependencies))
+  const request = (present, authorization) => post(new Request('https://reaction.test', { method: 'POST',
+    headers: authorization ? { Authorization: authorization } : {}, body: JSON.stringify({ userId: 'peer', emoji: 'heart', present }) }), { params: Promise.resolve({ id: 'root' }) })
+  for (const present of [undefined, null, 'true', 1, [], {}]) assert.equal((await request(present)).status, 400)
+  assert.equal((await request(true, 'Bearer wrong-owner')).status, 403)
+  assert.equal(calls.length, 0)
+  for (const present of [true, false]) {
+    const response = await request(present)
+    assert.equal(response.status, 200)
+    assert.deepEqual((await response.json()).reaction, { messageId: 'root', emoji: 'heart', present })
+    assert.deepEqual(calls.at(-1), { id: 'root', owner: 'peer', action: { kind: 'react', emoji: 'heart', present } })
+  }
+  assert.equal(fanouts.length, 1)
+})

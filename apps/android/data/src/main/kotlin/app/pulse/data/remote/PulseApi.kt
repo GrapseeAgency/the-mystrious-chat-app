@@ -417,15 +417,26 @@ class PulseApi(
         }
 
     // reactions
-    /** POST /api/messages/{id}/react { userId, emoji } - server toggles. */
-    suspend fun react(messageId: String, userId: String, emoji: String): PulseResult<ChatMessageDto> =
+    /** Explicit state: no legacy toggle fallback after an uncertain reply. */
+    suspend fun react(messageId: String, userId: String, emoji: String, present: Boolean): PulseResult<ChatMessageDto> =
         post(
-            "/api/messages/$messageId/react",
+            "/api/messages/$messageId/react-state",
             buildJsonObject {
                 put("userId", userId)
                 put("emoji", emoji)
+                put("present", present)
             },
-        ) { messageOf(it) }
+        ) { raw ->
+            val envelope = requireNotNull(raw as? JsonObject) { "Reaction response is missing" }
+            val receipt = requireNotNull(envelope["reaction"] as? JsonObject) { "Reaction state was not confirmed" }
+            require(receipt["messageId"] == JsonPrimitive(messageId) && receipt["emoji"] == JsonPrimitive(emoji) &&
+                receipt["present"] == JsonPrimitive(present)) { "Reaction state acknowledgement did not match" }
+            messageOf(raw).also { row ->
+                require(row.id == messageId) { "Reaction returned another message" }
+                val confirmed = row.reactions.any { it.emoji == emoji && (it.userId == userId || it.userIds?.contains(userId) == true) }
+                require(confirmed == present) { "Returned message did not contain the confirmed reaction state" }
+            }
+        }
 
     // users / identity
     /** GET /api/users → { users: [...] } (identity picker + contacts). */
