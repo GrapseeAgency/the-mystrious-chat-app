@@ -669,25 +669,28 @@ internal fun MirrorRoom(
         safetyOpen || scheduleOpen || viewOnceGrant != null
     val readRows = androidx.compose.runtime.rememberUpdatedState(visibleMessages)
     val minimumReadPixels = with(LocalDensity.current) { 44.dp.roundToPx() }
-    LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, minimumReadPixels, readerLifecycle) {
+    val readConnected by remember(repository) { repository.observeConnected() }
+        .collectAsStateWithLifecycle(initialValue = false)
+    LaunchedEffect(repository, viewerId, groupId, readingEnabled, readObscured, readConnected, minimumReadPixels, readerLifecycle) {
         readerLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             if (!readingEnabled || readObscured) return@repeatOnLifecycle
             val releaseAttention = app.pulse.android.notify.IncomingAttention.beginReading(groupId)
             try {
-                androidx.compose.runtime.snapshotFlow {
+                fun currentBoundary(): String? {
                     val layout = listState.layoutInfo
                     val visible = layout.visibleItemsInfo.filter {
                         app.pulse.domain.sync.hasReadViewportOverlap(it.offset, it.size, layout.viewportStartOffset, layout.viewportEndOffset, minimumReadPixels)
                     }.map { it.key }.toSet()
-                    readRows.value.lastOrNull { it.id in visible && !it.isDeleted && !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) }?.id
-                }.collectLatest { id ->
-                    if (id != null) {
-                        delay(600)
-                        repeat(3) { attempt ->
-                            if (repository.markReadThrough(groupId, id).isSuccess) return@collectLatest
-                            delay(1_500L * (attempt + 1))
-                        }
-                    }
+                    val now = System.currentTimeMillis()
+                    return readRows.value.lastOrNull { it.id in visible && !it.isDeleted &&
+                        !it.id.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX) &&
+                        (it.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }?.id
+                }
+                androidx.compose.runtime.snapshotFlow { currentBoundary() }.collectLatest { id ->
+                    if (id != null) app.pulse.domain.sync.acknowledgeVisibleRead(
+                        isCurrent = { currentBoundary() == id },
+                        send = { repository.markReadThrough(groupId, id) },
+                    )
                 }
             } finally {
                 releaseAttention()

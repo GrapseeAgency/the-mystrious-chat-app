@@ -338,3 +338,13 @@ test('a malformed shared self-flagged chat is never selected as a private notebo
   assert.notEqual(direct.id, 'shared')
   assert.notEqual(direct.id, notebook.id)
 }))
+
+
+test('read transaction contention is retryable, not an access refusal', async () => {
+  for (const code of ['P1008', 'P2028', 'P2034']) {
+    const db = { $transaction: async () => { throw Object.assign(new Error('busy'), { code }) } }
+    await assert.rejects(advanceReadReceipt(db, 'room', 'reader', 'displayed'), { status: 409 })
+  }
+  const failure = new Error('unexpected persistence failure')
+  await assert.rejects(advanceReadReceipt({ $transaction: async () => { throw failure } }, 'room', 'reader', 'displayed'), error => error === failure)
+})

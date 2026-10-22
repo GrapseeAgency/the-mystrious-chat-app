@@ -319,7 +319,7 @@ public final class PulseSession: ObservableObject {
 
     public func markReadIfVisible(conversationId: String?) async {
         guard let conversationId, ready, isForeground,
-              activeRoomId == conversationId, !PulseAppLock.shared.needsLock, readFailureCount < 4,
+              activeRoomId == conversationId, !PulseAppLock.shared.needsLock,
               let request = readGate.begin(roomId: conversationId, now: ProcessInfo.processInfo.systemUptime) else { return }
         if let owner = readSurfaces.owner, let rootId = owner.rootId {
             // The expiry timer can tick AFTER the 600ms dwell. Recheck the
@@ -352,9 +352,11 @@ public final class PulseSession: ObservableObject {
         } catch {
             guard generation == epoch, readGate.finish(request, succeeded: false),
                   !Task.isCancelled, isForeground, activeRoomId == conversationId else { return }
-            readFailureCount += 1
-            guard readFailureCount < 4 else { return }
-            let wait = Double(readFailureCount) * 1.5
+            readFailureCount = min(7, readFailureCount + 1)
+            guard let wait = PulseVisibleReadRetry.delay(after: error, failures: readFailureCount) else {
+                readGate.deferAttempt(until: .infinity)
+                return
+            }
             readGate.deferAttempt(until: ProcessInfo.processInfo.systemUptime + wait)
             scheduleVisibleRead(after: wait)
         }

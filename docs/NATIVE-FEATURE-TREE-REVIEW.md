@@ -2634,3 +2634,31 @@ and diff checks pass. Reference semantic cross-check: OpenCombine's Published.sw
 explicitly documents willSet publication (community compatibility implementation, not
 an Apple runtime test): https://github.com/OpenCombine/OpenCombine/blob/master/Sources/OpenCombine/Published.swift.
 Autumn UI unchanged; this is a targeted handoff repair, not full navigation acceptance.
+
+
+## 2026-10-22 — visible Seen recovery no longer permanently exhausts after an outage
+
+Tracing the mounted Android room and both thread/legacy room readers found a three-try
+cutoff. Swift's session similarly stopped after four attempts. HTTP can recover without
+a relay reconnect or a new viewport boundary, leaving Seen stuck until the reader moves
+or reopens. These surfaces now retry temporary failures while the same live boundary
+remains visible, with exponential delay capped at 60 seconds (and longer server-supplied
+Retry-After respected). Dwell, lifecycle/foreground, occlusion, task cancellation and
+boundary ownership remain prerequisites. Android's mounted room also re-arms on relay
+connection changes and checks expiry immediately before each attempt.
+
+Android read transport previously erased HTTP status/retry metadata into an untyped
+IllegalStateException. It now preserves PulseApiException so explicit auth/access/
+validation refusals stop polling rather than becoming endless transport retries. Swift
+blocks that boundary after refusal until fresh visibility/revalidation; 408/409/425/429
+and server/network failures remain recoverable. Server read transaction contention now
+returns a retryable 409, not an unclassified failure. No optimistic server Seen is claimed.
+
+Added Kotlin recovery after eight failed attempts, visibility exit, refusal, Retry-After,
+and cancellation cases; Swift policy/gate cases; server contention classification cases.
+Server suite 129/129 passed; strict read-helper TypeScript and nine native syntax checks
+passed. New native tests/builds are pending. Prior 284eb78 Android and iOS workflows both
+completed successfully, but that does not validate these edits or prove device behavior.
+Inventory regenerated. Autumn unchanged. Durable read intent after leaving/killing the
+surface, cumulative unseen-gap semantics and cross-device manual-unread replay ordering
+remain open; this change intentionally does not introduce an unsafe offline receipt queue.

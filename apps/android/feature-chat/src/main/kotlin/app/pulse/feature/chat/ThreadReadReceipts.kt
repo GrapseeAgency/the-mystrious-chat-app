@@ -14,7 +14,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import app.pulse.domain.model.Message
 import app.pulse.domain.sync.hasReadViewportOverlap
 import app.pulse.domain.sync.visibleThreadReadBoundary
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
 /** A thread is a reading surface, not permission to read every cached reply. */
@@ -50,13 +49,10 @@ fun ThreadReadReceipts(
             try {
                 snapshotFlow { currentBoundary() }.collectLatest { id ->
                     if (id == null) return@collectLatest
-                    delay(600)
-                    repeat(3) { attempt ->
-                        // Expiry may happen without a database/layout emission.
-                        if (currentBoundary() != id) return@collectLatest
-                        if (reader(id).isSuccess) return@collectLatest
-                        delay(1_500L * (attempt + 1))
-                    }
+                    app.pulse.domain.sync.acknowledgeVisibleRead(
+                        isCurrent = { currentBoundary() == id },
+                        send = { reader(id) },
+                    )
                 }
             } finally { releaseAttention() }
         }

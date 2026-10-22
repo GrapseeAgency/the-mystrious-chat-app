@@ -2313,8 +2313,11 @@ class PulseRepositoryImpl constructor(
             return Result.success(Unit)
         }
         val owner = viewerId ?: return Result.failure(IllegalStateException("The account is no longer active"))
-        val result = api.postAction("/api/conversations/$conversationId/read",
-            PulseApi.jsonOf("userId" to owner, "messageId" to messageId)).toResult()
+        val result = when (val response = api.postAction("/api/conversations/$conversationId/read",
+            PulseApi.jsonOf("userId" to owner, "messageId" to messageId))) {
+            is PulseResult.Success -> Result.success(Unit)
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+        }
         // Do not zero newer arrivals or roll an entire stale conversation back
         // over messages/pins received while the read request was in flight.
         if (result.isSuccess && viewerId == owner) scheduleConversationsRefresh()

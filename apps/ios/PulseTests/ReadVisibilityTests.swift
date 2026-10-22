@@ -101,4 +101,33 @@ final class ReadVisibilityTests: XCTestCase {
         XCTAssertNil(gate.begin(roomId: "room", now: 2.99))
         XCTAssertNotNil(gate.begin(roomId: "room", now: 3))
     }
+
+    func testVisibleReadOutageBackoffDoesNotExhaustAndHonorsServerDelay() throws {
+        let offline = URLError(.notConnectedToInternet)
+        XCTAssertEqual((1...9).map { PulseVisibleReadRetry.delay(after: offline, failures: $0)! },
+            [1.5, 3, 6, 12, 24, 48, 60, 60, 60])
+        let throttled = PulseAPIClient.Failure(kind: .rateLimited, message: nil, status: 429, retryAfter: 120)
+        XCTAssertEqual(PulseVisibleReadRetry.delay(after: throttled, failures: 1), 120)
+        for status in [408, 409, 425, 429, 500, 503] {
+            XCTAssertNotNil(PulseVisibleReadRetry.delay(after: PulseAPIClient.Failure(kind: .unknown, message: nil, status: status), failures: 8))
+        }
+        for status in [400, 401, 403, 404, 410, 422] {
+            XCTAssertNil(PulseVisibleReadRetry.delay(after: PulseAPIClient.Failure(kind: .unknown, message: nil, status: status), failures: 1))
+        }
+        XCTAssertNil(PulseVisibleReadRetry.delay(after: CancellationError(), failures: 1))
+        XCTAssertNil(PulseVisibleReadRetry.delay(after: URLError(.cancelled), failures: 1))
+    }
+
+    func testRefusedBoundaryStaysBlockedUntilFreshVisibility() throws {
+        var gate = PulseReadReceiptGate()
+        gate.setBoundary(roomId: "room", messageId: "shown", now: 0)
+        let request = try XCTUnwrap(gate.begin(roomId: "room", now: 1))
+        gate.finish(request, succeeded: false)
+        gate.deferAttempt(until: .infinity)
+        XCTAssertNil(gate.begin(roomId: "room", now: 1000))
+        gate.setBoundary(roomId: "room", messageId: "other", now: 1000)
+        XCTAssertNil(gate.begin(roomId: "room", now: 1000.1))
+        XCTAssertNotNil(gate.begin(roomId: "room", now: 1001))
+    }
+
 }

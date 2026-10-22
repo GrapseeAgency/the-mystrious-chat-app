@@ -100,3 +100,20 @@ struct PulseReadSurfaces {
         return true
     }
 }
+
+
+/// A temporary outage must not permanently exhaust Seen acknowledgements while
+/// the user remains on the same visible boundary. Visibility owns the task.
+enum PulseVisibleReadRetry {
+    static func delay(after error: Error, failures: Int) -> TimeInterval? {
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return nil }
+        let failure = error as? PulseAPIClient.Failure
+        if let status = failure?.status {
+            if (400..<500).contains(status) && ![408, 409, 425, 429].contains(status) { return nil }
+        } else if let kind = failure?.kind, [.auth, .forbidden, .notFound, .validation].contains(kind) {
+            return nil
+        }
+        let backoff = min(60, 1.5 * pow(2, Double(min(7, max(1, failures)) - 1)))
+        return max(backoff, Double(min(86_400, max(0, failure?.retryAfter ?? 0))))
+    }
+}

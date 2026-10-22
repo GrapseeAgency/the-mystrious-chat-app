@@ -549,12 +549,10 @@ class ChatRoomViewModel @Inject constructor(
         val anchor = readingAnchor ?: return
         readJob?.cancel()
         readJob = viewModelScope.launch {
-            delay(600)
-            repeat(3) { attempt ->
-                if (readingAnchor != anchor) return@launch
-                if (safelySend { repo.markReadThrough(conversationId, anchor) }.isSuccess) return@launch
-                delay(1_500L * (attempt + 1))
-            }
+            app.pulse.domain.sync.acknowledgeVisibleRead(
+                isCurrent = { readingAnchor == anchor },
+                send = { safelySend { repo.markReadThrough(conversationId, anchor) } },
+            )
         }
     }
 
