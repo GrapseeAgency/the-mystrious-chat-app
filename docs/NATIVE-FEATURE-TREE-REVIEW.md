@@ -2776,3 +2776,31 @@ viewer-private fields (including myDraft), so this was a real cross-member proje
 not merely a label issue. The route now retains the validated requester ID and uses it for
 the response. Concurrent group/channel role/leave checks remain outside a single snapshot
 in several handlers; those are the next governance paths being repaired.
+
+
+## 2026-10-22 — membership governance is one transaction, not a stale preflight
+
+All three group-member/channel-subscription route families now share serializable
+membership operations. Requester authority, target role, last-admin counts, oldest-member
+succession and membership writes are read/committed together. Previously, two departures
+could each observe the other admin, or a demotion/removal could act on a stale role. Channel
+last-admin protection also applies through the generic group leave alias, closing that
+bypass; ordinary groups still auto-promote their oldest remaining member and may become
+empty when their sole member leaves. Storage/contention conflicts fail explicitly with 409.
+
+Role assignments and authorized removals/additions are repeat-safe. A lost self-demotion
+acknowledgement can confirm the already-member state without regaining any admin capability.
+Duplicate channel joins do not reset admin role or read watermark. Successful leave events
+include the leaver's other sessions. Supplied bearer credentials must match the action owner;
+legacy tokenless behavior is retained, so this is not a claim of full authentication coverage.
+Former/unknown participants still cannot probe private group counts via repeat leave.
+
+The earlier requester-vs-target private projection fix is preserved and exercised by the
+actual targeted PATCH handler with injected transport dependencies, including a mismatched-
+credential rejection before mutation. Real SQLite contracts cover competing departures,
+demotion/departure, competing self-demotions, successor removal, trigger-induced rollbacks,
+repeat operations and ownership. Initial fixture-only date/default-column errors were fixed;
+no production error was suppressed to pass them. Targeted 13/13 and full server 145/145 pass
+(/home/user/group-governance-server.log); strict helper TypeScript and diff checks pass.
+No native appearance changes. Invite joins, broader metadata permission races, durable
+creation receipts and native runtime confirmation remain open rather than implied complete.
