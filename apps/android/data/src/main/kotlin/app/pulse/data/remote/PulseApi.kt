@@ -427,7 +427,7 @@ class PulseApi(
                 put("present", present)
             },
         ) { raw ->
-            val envelope = requireNotNull(raw as? JsonObject) { "Reaction response is missing" }
+            val envelope = requireNotNull(PulseJson.parseToJsonElement(raw) as? JsonObject) { "Reaction response is missing" }
             val receipt = requireNotNull(envelope["reaction"] as? JsonObject) { "Reaction state was not confirmed" }
             require(receipt["messageId"] == JsonPrimitive(messageId) && receipt["emoji"] == JsonPrimitive(emoji) &&
                 receipt["present"] == JsonPrimitive(present)) { "Reaction state acknowledgement did not match" }
