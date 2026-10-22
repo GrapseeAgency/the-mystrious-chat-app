@@ -36,7 +36,7 @@ final class RoomControlAcceptanceTests: XCTestCase {
                     switch action {
                     case "list": _ = try await api.automations(conversationId: "room")
                     case "create": _ = try await api.createAutomation(conversationId: "room", trigger: "Hello", reply: "Welcome")
-                    case "patch": _ = try await api.patchAutomation("rule", enabled: false)
+                    case "patch": _ = try await api.updateAutomation("rule", enabled: false)
                     case "delete": try await api.deleteAutomation("rule")
                     case "hooks": _ = try await api.webhooks(conversationId: "room")
                     case "hookCreate": _ = try await api.createWebhook(conversationId: "room", name: "Build bot")

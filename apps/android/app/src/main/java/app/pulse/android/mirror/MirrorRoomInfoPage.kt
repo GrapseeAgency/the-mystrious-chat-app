@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pulse.core.PulseEndpoints
 import app.pulse.domain.model.Automation
+import app.pulse.domain.sync.RoomControlGate
 import app.pulse.domain.model.ConvTheme
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConversationMember
@@ -615,6 +616,12 @@ internal fun MirrorRoomInfoPage(
     var pinnedCount by remember { mutableStateOf(0) }
     var automations by remember { mutableStateOf<List<Automation>>(emptyList()) }
     var automationsLoading by remember { mutableStateOf(true) }
+    var automationsLoaded by remember { mutableStateOf(false) }
+    var automationSnapshotOwner by remember { mutableStateOf<String?>(null) }
+    var automationsError by remember { mutableStateOf<String?>(null) }
+    var automationsBusy by remember { mutableStateOf(false) }
+    val automationGate = remember(repository, conversationId) { RoomControlGate { repository.attachmentSessionKey() } }
+    androidx.compose.runtime.DisposableEffect(automationGate) { onDispose { automationGate.invalidate() } }
     var directory by remember { mutableStateOf<List<User>>(emptyList()) }
     var directoryFailed by remember { mutableStateOf(false) }
     var historyPartial by remember { mutableStateOf(false) }
@@ -681,9 +688,49 @@ internal fun MirrorRoomInfoPage(
     }
 
     suspend fun refreshAutomations() {
-        val res = repositoryResult { repository.automations(conversationId) }
+        val ticket = automationGate.beginRead() ?: return
+        if (automationSnapshotOwner != ticket.owner) { automations = emptyList(); automationsLoaded = false }
+        automationsLoading = true
+        automationsError = null
+        try {
+            val res = repositoryResult { repository.automations(conversationId) }
+            currentCoroutineContext().ensureActive()
+            if (!automationGate.isCurrent(ticket)) return
+            automations = res.getOrDefault(emptyList())
+            automationsLoaded = res.isSuccess
+            if (res.isSuccess) automationSnapshotOwner = ticket.owner
+            automationsError = if (res.isFailure) res.exceptionOrNull()?.message ?: "Could not load automations. Try again." else null
+        } finally { if (automationGate.isCurrent(ticket)) automationsLoading = false }
+    }
+
+    suspend fun <T> changeAutomation(operation: suspend () -> Result<T>, apply: (T) -> Unit): Result<T> {
+        if (!automationsLoaded || automationSnapshotOwner != repository.attachmentSessionKey()) return Result.failure(IllegalStateException("Load the automation list before changing it."))
+        val ticket = automationGate.beginWrite() ?: return Result.failure(IllegalStateException("Another change is still pending."))
+        automationsBusy = true
         automationsLoading = false
-        res.onSuccess { automations = it }
+        try {
+            currentCoroutineContext().ensureActive()
+            if (!automationGate.isCurrent(ticket)) throw CancellationException("Account changed")
+            val value = repositoryResult(operation).getOrThrow()
+            currentCoroutineContext().ensureActive()
+            if (!automationGate.isCurrent(ticket)) throw CancellationException("Room manager changed")
+            apply(value)
+            return Result.success(value)
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (error: Exception) { return Result.failure(error)
+        } finally {
+            if (automationGate.finishWrite(ticket)) {
+                automationsBusy = false
+                if (repository.attachmentSessionKey() != ticket.owner) {
+                    automations = emptyList(); automationsLoaded = false
+                    automationsError = "Account changed. Reopen this room."
+                }
+            }
+        }
+    }
+
+    fun applyAutomation(row: Automation) {
+        automations = if (automations.any { it.id == row.id }) automations.map { if (it.id == row.id) row else it } else automations + row
     }
 
     suspend fun refreshUsers() {
@@ -1752,16 +1799,16 @@ internal fun MirrorRoomInfoPage(
                     Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
                 )
                 InfoAutomationsSection(
-                    repository = repository,
-                    conversationId = conversationId,
                     isAdmin = meta?.isAdmin == true,
                     rows = automations,
+                    busy = automationsBusy,
+                    loadError = automationsError,
+                    onRetry = { scope.launch { refreshAutomations() } },
+                    onToggle = { row, enabled -> changeAutomation({ repository.setAutomationEnabled(row.id, enabled) }, ::applyAutomation).map { Unit } },
+                    onDelete = { row -> changeAutomation({ repository.deleteAutomation(row.id) }) { automations = automations.filterNot { it.id == row.id } } },
                     loading = automationsLoading && automations.isEmpty(),
                     onOpenCreate = { createOpen = true },
                     onOpenEdit = { editTarget = it },
-                    onRowsChanged = {
-                        scope.launch { refreshAutomations() }
-                    },
                 )
 
                 // ENCRYPTION section (DMs only)
@@ -1927,13 +1974,9 @@ internal fun MirrorRoomInfoPage(
         // automation create sheet
         if (createOpen) {
             InfoAutomationCreateSheet(
-                repository = repository,
-                conversationId = conversationId,
+                submit = { trigger, reply -> changeAutomation({ repository.createAutomation(conversationId, trigger, reply) }, ::applyAutomation) },
                 onDismiss = { createOpen = false },
-                onCreated = {
-                    createOpen = false
-                    scope.launch { refreshAutomations() }
-                },
+                onCreated = { createOpen = false },
             )
         }
 
@@ -1941,13 +1984,10 @@ internal fun MirrorRoomInfoPage(
         val editRow = editTarget
         if (editRow != null) {
             InfoAutomationEditSheet(
-                repository = repository,
+                submit = { trigger -> changeAutomation({ repository.setAutomationTrigger(editRow.id, trigger) }, ::applyAutomation) },
                 automation = editRow,
                 onDismiss = { editTarget = null },
-                onSaved = {
-                    editTarget = null
-                    scope.launch { refreshAutomations() }
-                },
+                onSaved = { editTarget = null },
             )
         }
     }
@@ -2291,14 +2331,16 @@ private fun InfoThemePicker(
  */
 @Composable
 private fun InfoAutomationsSection(
-    repository: PulseRepository,
-    conversationId: String,
     isAdmin: Boolean,
     rows: List<Automation>,
     loading: Boolean,
+    busy: Boolean,
+    loadError: String?,
+    onRetry: () -> Unit,
+    onToggle: suspend (Automation, Boolean) -> Result<Unit>,
+    onDelete: suspend (Automation) -> Result<Unit>,
     onOpenCreate: () -> Unit,
     onOpenEdit: (Automation) -> Unit,
-    onRowsChanged: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var busyRowId by remember { mutableStateOf<String?>(null) }
@@ -2312,34 +2354,16 @@ private fun InfoAutomationsSection(
         }
     }
 
-    fun toggle(row: Automation, enabled: Boolean) {
-        if (busyRowId != null) return
-        busyRowId = row.id
-        busyKind = "toggle"
+    fun change(row: Automation, kind: String, operation: suspend () -> Result<Unit>) {
+        if (busyRowId != null || busy) return
+        busyRowId = row.id; busyKind = kind; errorText = ""
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setAutomationEnabled(row.id, enabled) }.getOrElse { Result.failure(it) }
-            }
-            busyRowId = null
-            busyKind = ""
-            res.onFailure { errorText = it.message ?: "Could not update the automation" }
-            onRowsChanged()
-        }
-    }
-
-    fun remove(row: Automation) {
-        if (busyRowId != null) return
-        busyRowId = row.id
-        busyKind = "delete"
-        scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.deleteAutomation(row.id) }.getOrElse { Result.failure(it) }
-            }
-            busyRowId = null
-            busyKind = ""
-            res.onSuccess { errorText = "" }
-                .onFailure { errorText = it.message ?: "Could not delete the automation" }
-            onRowsChanged()
+            try {
+                operation().getOrThrow()
+                currentCoroutineContext().ensureActive()
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { errorText = error.message ?: "Could not change the automation"
+            } finally { busyRowId = null; busyKind = "" }
         }
     }
 
@@ -2351,6 +2375,10 @@ private fun InfoAutomationsSection(
                         InfoSkeleton(heightDp = 48)
                         InfoSkeleton(widthFraction = 0.8f, heightDp = 48)
                     }
+                }
+                loadError != null -> Column(Modifier.padding(12.dp)) {
+                    Text(loadError, color = InfoInk.Rose, fontSize = 12.sp)
+                    Text("Try again", color = MirrorArt.Accent2, modifier = Modifier.clickable(onClick = onRetry).padding(8.dp))
                 }
                 rows.isEmpty() -> {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 16.dp)) {
@@ -2390,7 +2418,7 @@ private fun InfoAutomationsSection(
                                     .size(32.dp)
                                     .clip(CircleShape)
                                     .background(MirrorArt.White7)
-                                    .clickable(interactionSource = addInteraction, indication = null, onClick = onOpenCreate),
+                                    .clickable(interactionSource = addInteraction, indication = null, onClick = { if (!busy && busyRowId == null) onOpenCreate() }),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 MirrorLucideIcon("LPlus", tint = MirrorArt.Accent2, modifier = Modifier.size(16.dp))
@@ -2405,11 +2433,11 @@ private fun InfoAutomationsSection(
                                 InfoAutomationRow(
                                     row = row,
                                     isAdmin = isAdmin,
-                                    busy = busyRowId != null,
+                                    busy = busyRowId != null || busy,
                                     deletePending = busyRowId == row.id && busyKind == "delete",
-                                    onToggle = { toggle(row, it) },
-                                    onDelete = { remove(row) },
-                                    onEdit = { onOpenEdit(row) },
+                                    onToggle = { enabled -> change(row, "toggle") { onToggle(row, enabled) } },
+                                    onDelete = { change(row, "delete") { onDelete(row) } },
+                                    onEdit = { if (!busy && busyRowId == null) onOpenEdit(row) },
                                 )
                             }
                         }
@@ -2419,7 +2447,7 @@ private fun InfoAutomationsSection(
                                     .fillMaxWidth()
                                     .padding(top = 4.dp)
                                     .clip(RoundedCornerShape(16.dp))
-                                    .clickable(onClick = onOpenCreate)
+                                    .clickable(onClick = { if (!busy && busyRowId == null) onOpenCreate() })
                                     .padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -2570,8 +2598,7 @@ private fun InfoAutomationRow(
 /** "New automation" glass bottom sheet (web AutomationsCreateSheet). */
 @Composable
 private fun InfoAutomationCreateSheet(
-    repository: PulseRepository,
-    conversationId: String,
+    submit: suspend (String, String) -> Result<Automation>,
     onDismiss: () -> Unit,
     onCreated: () -> Unit,
 ) {
@@ -2587,25 +2614,22 @@ private fun InfoAutomationCreateSheet(
     val replyInvalid = trimmedReply.isEmpty() || trimmedReply.length > 500
     val valid = !triggerInvalid && !replyInvalid
 
-    fun submit() {
+    fun send() {
         if (!valid || pending) return
         pending = true
         errorText = ""
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.createAutomation(conversationId, trimmedTrigger, trimmedReply) }
-                    .getOrElse { Result.failure(it) }
-            }
-            pending = false
-            res.onSuccess {
+            try {
+                submit(trimmedTrigger, trimmedReply).getOrThrow()
+                currentCoroutineContext().ensureActive()
                 onCreated()
-            }.onFailure {
-                errorText = it.message ?: "Could not create the automation"
-            }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { errorText = error.message ?: "Could not save the automation"
+            } finally { pending = false }
         }
     }
 
-    InfoSheetPanel(onDismiss = onDismiss) {
+    InfoSheetPanel(onDismiss = { if (!pending) onDismiss() }) {
         InfoSheetHeader(
             icon = "LBot",
             title = "New automation",
@@ -2615,7 +2639,7 @@ private fun InfoAutomationCreateSheet(
         InfoFormLabel("Trigger keyword", "${trimmedTrigger.length}/40")
         InfoInputField(
             value = trigger,
-            onValueChange = { if (it.length <= 48) trigger = it },
+            onValueChange = { if (!pending && it.length <= 40) trigger = it },
             placeholder = "e.g. pricing",
             invalid = trigger.isNotEmpty() && triggerInvalid,
             singleLine = true,
@@ -2637,7 +2661,7 @@ private fun InfoAutomationCreateSheet(
         InfoFormLabel("Reply", "${trimmedReply.length}/500")
         InfoInputField(
             value = reply,
-            onValueChange = { if (it.length <= 508) reply = it },
+            onValueChange = { if (!pending && it.length <= 500) reply = it },
             placeholder = "Sent as a normal message when the keyword appears",
             invalid = reply.isNotEmpty() && replyInvalid,
             singleLine = false,
@@ -2672,7 +2696,7 @@ private fun InfoAutomationCreateSheet(
             icon = "LZap",
             enabled = valid && !pending,
             pending = pending,
-            onClick = ::submit,
+            onClick = ::send,
         )
     }
 }
@@ -2710,7 +2734,7 @@ private fun InfoSolidButton(
 /** "Edit trigger" sheet (web AutomationsEditSheet - only the keyword moves). */
 @Composable
 private fun InfoAutomationEditSheet(
-    repository: PulseRepository,
+    submit: suspend (String) -> Result<Automation>,
     automation: Automation,
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
@@ -2725,25 +2749,22 @@ private fun InfoAutomationEditSheet(
     val unchanged = trimmedTrigger == automation.trigger
     val valid = !triggerInvalid && !unchanged
 
-    fun submit() {
+    fun send() {
         if (!valid || pending) return
         pending = true
         errorText = ""
         scope.launch {
-            val res = withContext(Dispatchers.IO) {
-                runCatching { repository.setAutomationTrigger(automation.id, trimmedTrigger) }
-                    .getOrElse { Result.failure(it) }
-            }
-            pending = false
-            res.onSuccess {
+            try {
+                submit(trimmedTrigger).getOrThrow()
+                currentCoroutineContext().ensureActive()
                 onSaved()
-            }.onFailure {
-                errorText = it.message ?: "Could not rename the trigger"
-            }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) { errorText = error.message ?: "Could not save the automation"
+            } finally { pending = false }
         }
     }
 
-    InfoSheetPanel(onDismiss = onDismiss) {
+    InfoSheetPanel(onDismiss = { if (!pending) onDismiss() }) {
         InfoSheetHeader(
             icon = "LPencilLine",
             title = "Edit trigger",
@@ -2779,7 +2800,7 @@ private fun InfoAutomationEditSheet(
         InfoFormLabel("Trigger keyword", "${trimmedTrigger.length}/40")
         InfoInputField(
             value = trigger,
-            onValueChange = { if (it.length <= 48) trigger = it },
+            onValueChange = { if (!pending && it.length <= 40) trigger = it },
             placeholder = "e.g. pricing",
             invalid = trigger.isNotEmpty() && triggerInvalid,
             singleLine = true,
@@ -2814,7 +2835,7 @@ private fun InfoAutomationEditSheet(
             icon = "LCheck",
             enabled = valid && !pending,
             pending = pending,
-            onClick = ::submit,
+            onClick = ::send,
         )
     }
 }

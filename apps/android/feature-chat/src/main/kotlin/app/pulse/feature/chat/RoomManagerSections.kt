@@ -125,7 +125,7 @@ internal fun AutomationsSection(
                         AutomationRow(
                             row = row,
                             isAdmin = isAdmin,
-                            busy = row.id in state.busyIds,
+                            busy = state.busyIds.isNotEmpty() || state.creating,
                             onToggle = { onToggle(row) },
                             onRename = { renameTarget = row },
                             onDelete = { deleteTarget = row },
@@ -138,7 +138,7 @@ internal fun AutomationsSection(
             }
 
             if (isAdmin) {
-                TextButton(onClick = { onLoad(); createOpen = true }, modifier = Modifier.padding(top = 2.dp)) {
+                TextButton(onClick = { createOpen = true }, enabled = !state.loading && state.loadError == null && !state.creating && state.busyIds.isEmpty(), modifier = Modifier.padding(top = 2.dp)) {
                     Icon(PulseIcons.Plus, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Create automation", fontSize = 12.sp)
@@ -159,7 +159,7 @@ internal fun AutomationsSection(
     renameTarget?.let { row ->
         AutomationRenameSheet(
             row = row,
-            busy = row.id in state.busyIds,
+            busy = state.busyIds.isNotEmpty() || state.creating,
             onDismiss = { renameTarget = null },
             onRename = { trigger ->
                 onRename(row.id, trigger) { renameTarget = null }
@@ -414,14 +414,14 @@ internal fun WebhooksSection(
                                 clipboard.setText(AnnotatedString(fullUrl))
                                 onNotice("Webhook URL copied", false)
                             },
-                            onDelete = { deleteTarget = webhook },
+                            onDelete = { if (!state.busy && !state.loading) deleteTarget = webhook },
                         )
                     }
                 }
             }
 
             if (isAdmin) {
-                TextButton(onClick = { onLoad(); createOpen = true }, modifier = Modifier.padding(top = 2.dp)) {
+                TextButton(onClick = { createOpen = true }, enabled = !state.loading && state.loadError == null && !state.busy, modifier = Modifier.padding(top = 2.dp)) {
                     Icon(PulseIcons.Plus, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Create webhook", fontSize = 12.sp)

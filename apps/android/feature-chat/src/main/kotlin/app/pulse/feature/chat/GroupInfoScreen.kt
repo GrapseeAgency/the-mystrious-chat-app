@@ -66,6 +66,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import app.pulse.domain.sync.RoomControlGate
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import app.pulse.domain.model.Automation
 import app.pulse.domain.model.Conversation
 import app.pulse.domain.model.ConvTheme
@@ -300,105 +304,75 @@ class GroupInfoViewModel @Inject constructor(
     private val _automations = MutableStateFlow(AutomationsUi())
     val automations: StateFlow<AutomationsUi> = _automations.asStateFlow()
 
+    private val automationGate = RoomControlGate { repo.attachmentSessionKey() }
+    private var automationSnapshotOwner: String? = null
+
     fun loadAutomations() {
-        if (_automations.value.loading) return
+        val ticket = automationGate.beginRead() ?: return
+        if (automationSnapshotOwner != ticket.owner) _automations.value = AutomationsUi()
+        _automations.value = _automations.value.copy(loading = true, loadError = null, creating = false, busyIds = emptySet())
         viewModelScope.launch {
             try {
-                _automations.value = _automations.value.copy(loading = true, loadError = null)
-                val result: kotlin.Result<List<Automation>> = repo.automations(conversationId)
-                _automations.value = _automations.value.copy(
-                    rows = result.getOrElse { emptyList() },
-                    loading = false,
-                    loadError = result.exceptionOrNull()?.message,
-                )
+                if (!automationGate.isCurrent(ticket)) return@launch
+                val rows = repo.automations(conversationId).getOrThrow()
+                currentCoroutineContext().ensureActive()
+                if (automationGate.isCurrent(ticket)) {
+                    automationSnapshotOwner = ticket.owner
+                    _automations.value = _automations.value.copy(rows = rows)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (automationGate.isCurrent(ticket)) _automations.value = _automations.value.copy(rows = emptyList(), loadError = error.message ?: "Could not load automations. Try again.")
             } finally {
-                _automations.value = _automations.value.copy(loading = false)
+                if (automationGate.isCurrent(ticket)) _automations.value = _automations.value.copy(loading = false)
             }
         }
     }
 
-    fun createAutomation(trigger: String, reply: String, confirmed: () -> Unit) {
-        if (_automations.value.creating) return
-        _automations.value = _automations.value.copy(creating = true)
+    private fun changeAutomation(id: String? = null, deleting: Boolean = false, confirmed: () -> Unit = {},
+                                 notice: String, operation: suspend () -> Automation?) {
+        if (_automations.value.loading || _automations.value.loadError != null) return
+        if (automationSnapshotOwner != repo.attachmentSessionKey()) { loadAutomations(); return }
+        val ticket = automationGate.beginWrite() ?: return
+        _automations.value = _automations.value.copy(creating = id == null, busyIds = id?.let { setOf(it) } ?: emptySet(), loading = false)
         viewModelScope.launch {
             try {
-                repo.createAutomation(conversationId, trigger, reply)
-                    .onSuccess { created ->
-                        _automations.value = _automations.value.copy(
-                            rows = _automations.value.rows + created,
-                            creating = false,
-                        )
-                        confirmed()
-                        notify("Automation created")
-                    }
-                    .onFailure { failure ->
-                        _automations.value = _automations.value.copy(creating = false)
-                        notify(failure.message ?: "Could not create the automation", isError = true)
-                    }
+                if (!automationGate.isCurrent(ticket)) return@launch
+                val row = operation()
+                currentCoroutineContext().ensureActive()
+                if (!automationGate.isCurrent(ticket)) return@launch
+                val rows = _automations.value.rows
+                _automations.value = _automations.value.copy(rows = when {
+                    deleting -> rows.filterNot { it.id == id }
+                    row != null -> if (rows.any { it.id == row.id }) rows.map { if (it.id == row.id) row else it } else rows + row
+                    else -> rows
+                })
+                confirmed()
+                notify(notice)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (automationGate.isCurrent(ticket)) notify(error.message ?: "Could not change the automation", isError = true)
             } finally {
-                _automations.value = _automations.value.copy(creating = false)
+                if (automationGate.finishWrite(ticket)) {
+                    _automations.value = if (repo.attachmentSessionKey() == ticket.owner)
+                        _automations.value.copy(creating = false, busyIds = emptySet())
+                    else AutomationsUi(loadError = "Account changed. Reopen this room.")
+                }
             }
         }
     }
 
-    /** Optimistic toggle with honest rollback (web toggleMutation parity). */
-    fun toggleAutomation(row: Automation) {
-        if (row.id in _automations.value.busyIds) return
-        val next = !row.enabled
-        _automations.value = _automations.value.copy(
-            rows = _automations.value.rows.map { if (it.id == row.id) it.copy(enabled = next) else it },
-            busyIds = _automations.value.busyIds + row.id,
-        )
-        viewModelScope.launch {
-            repo.setAutomationEnabled(row.id, next)
-                .onSuccess { fresh ->
-                    _automations.value = _automations.value.copy(
-                        rows = _automations.value.rows.map { if (it.id == row.id) fresh else it },
-                    )
-                }
-                .onFailure { failure ->
-                    _automations.value = _automations.value.copy(
-                        rows = _automations.value.rows.map { if (it.id == row.id) it.copy(enabled = row.enabled) else it },
-                    )
-                    notify(failure.message ?: "Could not update the automation", isError = true)
-                }
-            _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds - row.id)
-        }
-    }
+    fun createAutomation(trigger: String, reply: String, confirmed: () -> Unit) =
+        changeAutomation(confirmed = confirmed, notice = "Automation created") { repo.createAutomation(conversationId, trigger, reply).getOrThrow() }
 
-    /** R41 - trigger rename-in-place (PATCH gains `trigger`). */
-    fun renameAutomationTrigger(automationId: String, trigger: String, confirmed: () -> Unit) {
-        if (automationId in _automations.value.busyIds) return
-        _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds + automationId)
-        viewModelScope.launch {
-            repo.setAutomationTrigger(automationId, trigger)
-                .onSuccess { fresh ->
-                    _automations.value = _automations.value.copy(
-                        rows = _automations.value.rows.map { if (it.id == automationId) fresh else it },
-                    )
-                    confirmed()
-                    notify("Trigger updated")
-                }
-                .onFailure { notify(it.message ?: "Could not rename the trigger", isError = true) }
-            _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds - automationId)
-        }
-    }
+    fun toggleAutomation(row: Automation) =
+        changeAutomation(id = row.id, notice = "Automation updated") { repo.setAutomationEnabled(row.id, !row.enabled).getOrThrow() }
 
-    fun deleteAutomation(automationId: String) {
-        if (automationId in _automations.value.busyIds) return
-        _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds + automationId)
-        viewModelScope.launch {
-            repo.deleteAutomation(automationId)
-                .onSuccess {
-                    _automations.value = _automations.value.copy(
-                        rows = _automations.value.rows.filterNot { it.id == automationId },
-                    )
-                    notify("Automation deleted")
-                }
-                .onFailure { notify(it.message ?: "Could not delete the automation", isError = true) }
-            _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds - automationId)
-        }
-    }
+    fun renameAutomationTrigger(automationId: String, trigger: String, confirmed: () -> Unit) =
+        changeAutomation(id = automationId, confirmed = confirmed, notice = "Trigger updated") { repo.setAutomationTrigger(automationId, trigger).getOrThrow() }
+
+    fun deleteAutomation(automationId: String) =
+        changeAutomation(id = automationId, deleting = true, notice = "Automation deleted") { repo.deleteAutomation(automationId).getOrThrow(); null }
 
     // R2-A item 7 - WEBHOOKS (web group-info-sheet.tsx WebhooksSection)
 
@@ -407,62 +381,75 @@ class GroupInfoViewModel @Inject constructor(
         val loading: Boolean = false,
         val loadError: String? = null,
         val creating: Boolean = false,
+        val busy: Boolean = false,
     )
 
     private val _webhooks = MutableStateFlow(WebhooksUi())
     val webhooks: StateFlow<WebhooksUi> = _webhooks.asStateFlow()
 
+    private val webhookGate = RoomControlGate { repo.attachmentSessionKey() }
+    private var webhookSnapshotOwner: String? = null
+
     fun loadWebhooks() {
-        if (_webhooks.value.loading) return
+        val ticket = webhookGate.beginRead() ?: return
+        if (webhookSnapshotOwner != ticket.owner) _webhooks.value = WebhooksUi()
+        _webhooks.value = _webhooks.value.copy(loading = true, loadError = null, busy = false, creating = false)
         viewModelScope.launch {
             try {
-                _webhooks.value = _webhooks.value.copy(loading = true, loadError = null)
-                val result: kotlin.Result<List<Webhook>> = repo.webhooks(conversationId)
-                _webhooks.value = _webhooks.value.copy(rows = result.getOrElse { emptyList() }, loading = false, loadError = result.exceptionOrNull()?.message)
-            } finally {
-                _webhooks.value = _webhooks.value.copy(loading = false)
-            }
-        }
-    }
-
-    fun createWebhook(name: String, confirmed: () -> Unit) {
-        if (_webhooks.value.creating) return
-        _webhooks.value = _webhooks.value.copy(creating = true)
-        viewModelScope.launch {
-            try {
-                repo.createWebhook(conversationId, name)
-                    .onSuccess { created ->
-                        _webhooks.value = _webhooks.value.copy(
-                            rows = _webhooks.value.rows + created,
-                            creating = false,
-                        )
-                        confirmed()
-                        notify("Webhook “${created.name}” created")
-                    }
-                    .onFailure { failure ->
-                        _webhooks.value = _webhooks.value.copy(creating = false)
-                        notify(failure.message ?: "Could not create the webhook", isError = true)
-                    }
-            } finally {
-                _webhooks.value = _webhooks.value.copy(creating = false)
-            }
-        }
-    }
-
-    fun deleteWebhook(token: String) {
-        viewModelScope.launch {
-            repo.deleteWebhook(token)
-                .onSuccess {
-                    _webhooks.value = _webhooks.value.copy(rows = _webhooks.value.rows.filterNot { it.token == token })
-                    notify("Webhook deleted")
+                if (!webhookGate.isCurrent(ticket)) return@launch
+                val rows = repo.webhooks(conversationId).getOrThrow()
+                currentCoroutineContext().ensureActive()
+                if (webhookGate.isCurrent(ticket)) {
+                    webhookSnapshotOwner = ticket.owner
+                    _webhooks.value = _webhooks.value.copy(rows = rows)
                 }
-                .onFailure { notify(it.message ?: "Could not delete the webhook", isError = true) }
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (webhookGate.isCurrent(ticket)) _webhooks.value = _webhooks.value.copy(rows = emptyList(), loadError = error.message ?: "Could not load webhooks. Try again.")
+            } finally { if (webhookGate.isCurrent(ticket)) _webhooks.value = _webhooks.value.copy(loading = false) }
         }
     }
 
-    // R2-A item 8 - SCREEN SECURITY (web room-info-page.tsx:581-632)
+    private fun changeWebhook(token: String? = null, confirmed: () -> Unit = {}, operation: suspend () -> Webhook?) {
+        if (_webhooks.value.loading || _webhooks.value.loadError != null) return
+        if (webhookSnapshotOwner != repo.attachmentSessionKey()) { loadWebhooks(); return }
+        val ticket = webhookGate.beginWrite() ?: return
+        _webhooks.value = _webhooks.value.copy(busy = true, creating = token == null, loading = false)
+        viewModelScope.launch {
+            try {
+                if (!webhookGate.isCurrent(ticket)) return@launch
+                val row = operation()
+                currentCoroutineContext().ensureActive()
+                if (!webhookGate.isCurrent(ticket)) return@launch
+                _webhooks.value = _webhooks.value.copy(rows = if (row != null)
+                    _webhooks.value.rows.filterNot { it.id == row.id } + row
+                    else _webhooks.value.rows.filterNot { it.token == token })
+                confirmed()
+                notify(if (row != null) "Webhook created" else "Webhook deleted")
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (webhookGate.isCurrent(ticket)) notify(error.message ?: "Could not change the webhook", isError = true)
+            } finally {
+                if (webhookGate.finishWrite(ticket)) _webhooks.value = if (repo.attachmentSessionKey() == ticket.owner)
+                    _webhooks.value.copy(busy = false, creating = false)
+                    else WebhooksUi(loadError = "Account changed. Reopen this room.")
+            }
+        }
+    }
 
-    /** R42 per-VIEWER veil flag (dedicated participant route). */
+    fun retireIntegrationRequests() {
+        automationGate.invalidate(); webhookGate.invalidate()
+        automationSnapshotOwner = null; webhookSnapshotOwner = null
+        _automations.value = AutomationsUi(); _webhooks.value = WebhooksUi()
+    }
+
+    fun createWebhook(name: String, confirmed: () -> Unit) =
+        changeWebhook(confirmed = confirmed) { repo.createWebhook(conversationId, name).getOrThrow() }
+
+    fun deleteWebhook(token: String) =
+        changeWebhook(token = token) { repo.deleteWebhook(token).getOrThrow(); null }
+
+
     fun setMyPrivacy(on: Boolean) {
         viewModelScope.launch {
             repo.setMyScreenPrivacy(conversationId, on)
@@ -575,6 +562,9 @@ fun GroupInfoScreen(
         uri?.let(viewModel::updatePhoto)
     }
 
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+        onDispose { viewModel.retireIntegrationRequests() }
+    }
     LaunchedEffect(Unit) {
         viewModel.load()
         viewModel.loadAutomations()
