@@ -3508,3 +3508,46 @@ compiler/device verification for this tranche remains separate. No schema change
 the state route before clients. Saved pagination/cap, durable offline intent and global
 cross-device saved ordering/refresh remain open. No deployment, merge or full-app claim.
 Autumn styling unchanged.
+
+### 2026-10-22 — event participation, attendance/XP and scheduling acceptance
+
+Traced events through both native surfaces and the API, beyond message actions.
+A stale RSVP authorized check-in after departure; attendance was stamped separately
+from XP, so a failed reward was permanently lost on retry. RSVP/delete authorization
+and creation/list snapshots were also detached from their writes/reads. The primary
+Android form discarded user input immediately and interpreted local times as UTC.
+
+- Serializable event mutations now recheck current membership, creator/admin deletion,
+  RSVP status, attendance window and tally. Attendance, +15 XP and final count commit
+  together or roll back together. Replays return the original attendance with no second
+  bonus, including after the window closes; departure still denies historical replay.
+  Presented credentials are bound to the actor; existing non-bearer browser handling
+  is preserved, not an authentication redesign.
+- Create/list permission, data and name snapshots now share a transaction. Creation
+  remains non-idempotent across lost responses; no claim that retry duplication is solved.
+- Native RSVP/check-in/delete acceptance requires version, exact owner/event, canonical
+  row/tally, and a real attendance stamp/consistent XP verdict. Swift no longer fabricates
+  an empty-ID event on missing creation data. Both reject incomplete/foreign creation.
+- Primary Android actions are awaited, per-event gated and account-bound. Form fields
+  survive failed creation and edits made during a request; polling cannot overwrite a
+  pending mutation. Read failure no longer pretends an empty list is confirmed. Check-in
+  window refresh actually invalidates Compose time state and stamped rows stop inviting
+  another XP claim. The sheet lifetime is keyed to room/account.
+- Shared strict local-date parser handles Dhaka +06:00 correctly and respects explicit
+  positive/negative ISO offsets. Impossible dates and DST gaps/overlaps require correction
+  or explicit offset, rather than rolling time forward. Both Android event surfaces use it;
+  the primary reminder absolute-time fallback benefits too. Mounted Swift creation captures
+  its API/session before task dispatch, fences completions and cancels on disappearance;
+  fields cannot be silently edited then discarded during submission.
+
+Verification: nine new actual SQLite/route cases cover revotes, departure, window endpoints,
+atomic XP failure/retry, final-snapshot rollback, concurrent check-in, delete authority and
+owned routes. Full server suite 215/215; scoped strict TS, 14 native syntax parses and diff
+checks pass. Added native receipt matrices and Dhaka/DST parser tests; native compilation/
+device results for this event tranche are not yet known. Earlier saved-state archive and
+server checks passed; its native build/test jobs were still running at last inspection.
+
+Remaining: create lost-ACK identity, bounded event history/list pagination (cap 50), global
+cross-device revision/ordering, durable offline actions and persisted native event snapshots.
+Deploy backend receipt changes before these native clients. No schema change, deployment or
+whole-app clearance; autumn appearance unchanged.

@@ -181,12 +181,12 @@ class Wave7ApiTest {
     @Test
     fun `event create posts startsAt ISO and RSVP posts status`() = runTest {
         configured()
-        response = """{"event":{"id":"e1","title":"Standup","startsAt":"2026-01-20T10:00:00.000Z","rsvps":[],"counts":{"going":0,"maybe":0,"no":0},"myStatus":null}}"""
+        response = """{"event":{"id":"e1","title":"Standup","createdById":"u1","startsAt":"2026-01-20T10:00:00.000Z","rsvps":[],"counts":{"going":0,"maybe":0,"no":0},"myStatus":null}}"""
         val r = api().createEvent("c1", "u1", "Standup", "2026-01-20T10:00:00.000Z", null, null)
         assertTrue(r is PulseResult.Success)
         assertTrue(lastBody.contains("\"startsAt\":\"2026-01-20T10:00:00.000Z\""))
 
-        response = """{"rsvp":{"id":"r1","eventId":"e1","userId":"u1","status":"going"},"counts":{"going":1,"maybe":0,"no":0}}"""
+        response = """{"eventReceiptVersion":1,"eventId":"e1","userId":"u1","rsvp":{"id":"r1","eventId":"e1","userId":"u1","status":"going"},"counts":{"going":1,"maybe":0,"no":0}}"""
         val s = api().rsvpEvent("e1", "u1", "going")
         assertTrue(s is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/events/e1/rsvp"))
@@ -196,7 +196,7 @@ class Wave7ApiTest {
     @Test
     fun `checkin posts and idempotent response decodes`() = runTest {
         configured()
-        response = """{"checkIn":null,"xpAwarded":false,"checkedInCount":3,"alreadyCheckedIn":true}"""
+        response = """{"eventReceiptVersion":1,"eventId":"e1","userId":"u1","checkIn":{"id":"r1","eventId":"e1","userId":"u1","status":"going","checkedInAt":"2026-01-20T10:00:00Z"},"xpAwarded":false,"checkedInCount":3,"alreadyCheckedIn":true}"""
         val r = api().checkinEvent("e1", "u1")
         assertTrue(r is PulseResult.Success)
         assertTrue((r as PulseResult.Success).value.alreadyCheckedIn)

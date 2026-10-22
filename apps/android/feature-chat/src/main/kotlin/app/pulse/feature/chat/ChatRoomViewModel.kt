@@ -1796,47 +1796,60 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    suspend fun events(conversationId: String): List<GroupEventDto>? =
-        runCatching { repo.events(conversationId).getOrNull()?.events }.getOrNull()
+    suspend fun events(conversationId: String): List<GroupEventDto>? {
+        val epoch = repo.attachmentSessionKey() ?: return null
+        val owned = repo.boundToCurrentAccount()
+        return try {
+            val page = owned.events(conversationId).getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repo.attachmentSessionKey() == epoch) page.events else null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (_: Exception) { null }
+    }
 
-    fun createEvent(title: String, startsAtIso: String, description: String?, location: String?) {
-        viewModelScope.launch {
-            repo.createEvent(conversationId, title, startsAtIso, description, location)
-                .onSuccess {
-                    eventsOpen = false
-                    notify("Event scheduled - see you there")
-                }
-                .onFailure { notify(it.message ?: "Could not schedule the event.", isError = true) }
+    private val eventActions = mutableSetOf<Pair<String, String>>()
+    private suspend fun eventAction(key: String, operation: suspend (PulseRepository) -> String?): Boolean {
+        val epoch = repo.attachmentSessionKey() ?: return false
+        val owned = repo.boundToCurrentAccount()
+        val ticket = epoch to key
+        if (!eventActions.add(ticket)) return false
+        return try {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val success = operation(owned)
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repo.attachmentSessionKey() != epoch) return false
+            success?.let { notify(it) }
+            true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) {
+            if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not update this event.", isError = true)
+            false
+        } finally { eventActions.remove(ticket) }
+    }
+
+    suspend fun createEvent(title: String, startsAtIso: String, description: String?, location: String?): Boolean =
+        eventAction("create:$conversationId") { owned ->
+            owned.createEvent(conversationId, title, startsAtIso, description, location).getOrThrow()
+            "Event scheduled - see you there"
+        }
+
+    suspend fun rsvp(eventId: String, status: String): Boolean = eventAction(eventId) { owned ->
+        owned.rsvpEvent(eventId, status).getOrThrow()
+        null
+    }
+
+    suspend fun checkin(eventId: String): Boolean = eventAction(eventId) { owned ->
+        val receipt = owned.checkinEvent(eventId).getOrThrow()
+        when {
+            receipt.alreadyCheckedIn -> "Already checked in."
+            receipt.xpAwarded -> "Checked in - see you there · +15 XP"
+            else -> "Checked in - see you there"
         }
     }
 
-    fun rsvp(eventId: String, status: String) {
-        viewModelScope.launch {
-            repo.rsvpEvent(eventId, status)
-                .onFailure { notify(it.message ?: "RSVP failed - try again.", isError = true) }
-        }
-    }
-
-    fun checkin(eventId: String) {
-        viewModelScope.launch {
-            repo.checkinEvent(eventId)
-                .onSuccess {
-                    when {
-                        it.alreadyCheckedIn -> notify("Already checked in.")
-                        it.xpAwarded -> notify("Checked in - see you there · +15 XP")
-                        else -> notify("Checked in - see you there")
-                    }
-                }
-                .onFailure { notify(it.message ?: "Check-in failed - try again.", isError = true) }
-        }
-    }
-
-    fun deleteEvent(eventId: String) {
-        viewModelScope.launch {
-            repo.deleteEvent(eventId)
-                .onSuccess { notify("Event deleted.") }
-                .onFailure { notify(it.message ?: "Could not delete the event.", isError = true) }
-        }
+    suspend fun deleteEvent(eventId: String): Boolean = eventAction(eventId) { owned ->
+        owned.deleteEvent(eventId).getOrThrow()
+        "Event deleted."
     }
 
     suspend fun reminders(): RemindersPageDto? =

@@ -2081,17 +2081,19 @@ fun ChatRoomScreen(
         )
     }
     if (viewModel.eventsOpen) {
-        EventsSheet(
-            conversationId = viewModel.conversationId,
-            viewerId = viewerId ?: "",
-            isAdmin = viewModel.isAdmin(),
-            load = { viewModel.events(viewModel.conversationId) },
-            onCreate = { title, iso, desc, loc -> viewModel.createEvent(title, iso, desc, loc) },
-            onRsvp = { eventId, status -> viewModel.rsvp(eventId, status) },
-            onCheckin = { eventId -> viewModel.checkin(eventId) },
-            onDelete = { eventId -> viewModel.deleteEvent(eventId) },
-            onDismiss = { viewModel.eventsOpen = false },
-        )
+        androidx.compose.runtime.key(viewerId, viewModel.conversationId) {
+            EventsSheet(
+                conversationId = viewModel.conversationId,
+                viewerId = viewerId ?: "",
+                isAdmin = viewModel.isAdmin(),
+                load = { viewModel.events(viewModel.conversationId) },
+                onCreate = { title, iso, desc, loc -> viewModel.createEvent(title, iso, desc, loc) },
+                onRsvp = { eventId, status -> viewModel.rsvp(eventId, status) },
+                onCheckin = { eventId -> viewModel.checkin(eventId) },
+                onDelete = { eventId -> viewModel.deleteEvent(eventId) },
+                onDismiss = { viewModel.eventsOpen = false },
+            )
+        }
     }
     if (viewModel.remindersOpen) {
         RemindersSheet(

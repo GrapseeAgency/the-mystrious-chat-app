@@ -184,12 +184,8 @@ private fun defaultStartLocal(): String = LocalDate.now()
     .format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
 
 /** Parses `yyyy-MM-ddTHH:mm` to epoch millis in the device zone; null when invalid. */
-private fun parseLocalStart(value: String): Long? = runCatching {
-    LocalDateTime.parse(value, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
-        .atZone(ZoneId.systemDefault())
-        .toInstant()
-        .toEpochMilli()
-}.getOrNull()
+private fun parseLocalStart(value: String): Long? =
+    app.pulse.protocol.PulseWave7Logic.parseEventStart(value)?.let { Instant.parse(it).toEpochMilli() }
 
 /** #rrggbb hex from the whiteboard wire to a Compose color. */
 private fun boardColor(hex: String): Color = Color(android.graphics.Color.parseColor(hex))

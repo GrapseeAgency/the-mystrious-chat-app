@@ -192,6 +192,8 @@ data class KanbanPageDto(val cards: List<KanbanCardDto> = emptyList())
 
 @Serializable
 data class EventRsvpDto(
+    val id: String? = null,
+    val eventId: String? = null,
     val userId: String = "",
     val name: String = "",
     /** going | maybe | no */
@@ -225,6 +227,9 @@ data class EventsPageDto(val events: List<GroupEventDto> = emptyList())
 
 @Serializable
 data class RsvpResultDto(
+    val eventReceiptVersion: Int,
+    val eventId: String,
+    val userId: String,
     val rsvp: EventRsvpDto? = null,
     val counts: EventCountsDto = EventCountsDto(),
 )
@@ -241,11 +246,17 @@ data class CheckinStampDto(
 
 @Serializable
 data class CheckinResultDto(
-    val checkIn: CheckinStampDto? = null,
-    val xpAwarded: Boolean = false,
-    val checkedInCount: Int = 0,
-    val alreadyCheckedIn: Boolean = false,
+    val eventReceiptVersion: Int,
+    val eventId: String,
+    val userId: String,
+    val checkIn: CheckinStampDto?,
+    val xpAwarded: Boolean,
+    val checkedInCount: Int,
+    val alreadyCheckedIn: Boolean,
 )
+
+@Serializable
+data class EventDeleteReceiptDto(val eventReceiptVersion: Int, val eventId: String, val userId: String, val ok: Boolean)
 
 // Reminders (F-RO-06)
 

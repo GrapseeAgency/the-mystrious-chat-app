@@ -1614,24 +1614,50 @@ class PulseApi(
                 if (!description.isNullOrBlank()) put("description", description)
                 if (!location.isNullOrBlank()) put("location", location)
             },
-        ) { eventOf(it) }
+        ) { raw ->
+            eventOf(raw).also { event ->
+                require(event.id.isNotBlank() && event.title == title.trim() && event.createdById == userId &&
+                    java.time.Instant.parse(event.startsAt) == java.time.Instant.parse(startsAtIso)) {
+                    "Event creation was not confirmed."
+                }
+            }
+        }
 
     /** DELETE /api/events/{id}?userId= - creator OR group admin. */
     suspend fun deleteEvent(eventId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8"), userId) {
-            PulseJson.decodeFromString(OkDto.serializer(), it)
+            val receipt = PulseJson.decodeFromString(app.pulse.protocol.EventDeleteReceiptDto.serializer(), it)
+            require(receipt.eventReceiptVersion == 1 && receipt.eventId == eventId && receipt.userId == userId && receipt.ok) {
+                "Event deletion was not confirmed."
+            }
+            OkDto(ok = true)
         }
 
     /** POST /api/events/{id}/rsvp { userId, status: going|maybe|no } → { rsvp, counts }. */
     suspend fun rsvpEvent(eventId: String, userId: String, status: String): PulseResult<RsvpResultDto> =
         post("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8") + "/rsvp", jsonOf("userId" to userId, "status" to status)) {
-            PulseJson.decodeFromString(RsvpResultDto.serializer(), it)
+            PulseJson.decodeFromString(RsvpResultDto.serializer(), it).also { receipt ->
+                val rsvp = receipt.rsvp
+                require(receipt.eventReceiptVersion == 1 && receipt.eventId == eventId && receipt.userId == userId &&
+                    rsvp != null && !rsvp.id.isNullOrBlank() && rsvp.eventId == eventId && rsvp.userId == userId && rsvp.status == status && status in listOf("going", "maybe", "no") &&
+                    receipt.counts.going >= 0 && receipt.counts.maybe >= 0 && receipt.counts.no >= 0 &&
+                    (when (status) { "going" -> receipt.counts.going; "maybe" -> receipt.counts.maybe; else -> receipt.counts.no }) > 0) {
+                    "Your RSVP was not confirmed."
+                }
+            }
         }
 
     /** POST /api/events/{id}/checkin { userId } - window +15 XP; 409 outside window is a real failure. */
     suspend fun checkinEvent(eventId: String, userId: String): PulseResult<CheckinResultDto> =
         post("/api/events/" + java.net.URLEncoder.encode(eventId, "UTF-8") + "/checkin", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(CheckinResultDto.serializer(), it)
+            PulseJson.decodeFromString(CheckinResultDto.serializer(), it).also { receipt ->
+                val stamp = receipt.checkIn
+                require(receipt.eventReceiptVersion == 1 && receipt.eventId == eventId && receipt.userId == userId &&
+                    stamp != null && stamp.id.isNotBlank() && stamp.eventId == eventId && stamp.userId == userId &&
+                    stamp.status in listOf("going", "maybe", "no") && receipt.checkedInCount > 0 &&
+                    receipt.xpAwarded != receipt.alreadyCheckedIn) { "Your attendance was not confirmed." }
+                java.time.Instant.parse(requireNotNull(stamp?.checkedInAt))
+            }
         }
 
     /** GET /api/reminders?userId=[&due=1] - due = remindAt ≤ now && firedAt null. */

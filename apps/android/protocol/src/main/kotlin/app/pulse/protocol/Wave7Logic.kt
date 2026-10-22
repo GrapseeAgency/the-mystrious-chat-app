@@ -150,6 +150,22 @@ object PulseWave7Logic {
     val TASK_STATUSES = listOf("todo", "doing", "done")
 
     /** RSVP statuses in display order (web events sheet:145-147). */
+    /** A local wall-clock input must not be silently relabelled UTC. Reject
+     * invalid dates and DST gaps/overlaps; an explicit ISO offset disambiguates. */
+    fun parseEventStart(text: String, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String? {
+        val value = text.trim()
+        if (value.isEmpty()) return null
+        runCatching { java.time.OffsetDateTime.parse(value).toInstant().toString() }.getOrNull()?.let { return it }
+        val local = runCatching {
+            if (value.length == 10) java.time.LocalDate.parse(value).atTime(19, 0)
+            else java.time.LocalDateTime.parse(value.replace('T', ' '),
+                java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm")
+                    .withResolverStyle(java.time.format.ResolverStyle.STRICT))
+        }.getOrNull() ?: return null
+        val offset = zone.rules.getValidOffsets(local).singleOrNull() ?: return null
+        return local.toInstant(offset).toString()
+    }
+
     val RSVP_STATUSES = listOf("going", "maybe", "no")
 
     /** Check-in window: startsAt − 15 min … + 2 h (server checkin route:36-37). */

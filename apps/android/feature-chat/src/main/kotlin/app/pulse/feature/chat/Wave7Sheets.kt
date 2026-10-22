@@ -569,10 +569,10 @@ fun EventsSheet(
     viewerId: String,
     isAdmin: Boolean,
     load: suspend () -> List<GroupEventDto>?,
-    onCreate: (title: String, startsAtIso: String, description: String?, location: String?) -> Unit,
-    onRsvp: (eventId: String, status: String) -> Unit,
-    onCheckin: (eventId: String) -> Unit,
-    onDelete: (eventId: String) -> Unit,
+    onCreate: suspend (title: String, startsAtIso: String, description: String?, location: String?) -> Boolean,
+    onRsvp: suspend (eventId: String, status: String) -> Boolean,
+    onCheckin: suspend (eventId: String) -> Boolean,
+    onDelete: suspend (eventId: String) -> Boolean,
     onDismiss: () -> Unit,
 ) {
     var events by remember { mutableStateOf<List<GroupEventDto>>(emptyList()) }
@@ -580,10 +580,34 @@ fun EventsSheet(
     var title by remember { mutableStateOf("") }
     var dateText by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
-    var tick by remember { mutableStateOf(0) }
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) { while (true) { load()?.let { events = it }; delay(4_000); tick++ } }
+    val scope = rememberCoroutineScope()
+    val refreshGate = remember(conversationId, viewerId) { app.pulse.domain.sync.RoomRefreshGate() }
+    var busy by remember { mutableStateOf(false) }
+    var loaded by remember { mutableStateOf(false) }
+    var draftRevision by remember { mutableStateOf(0L) }
+    suspend fun refresh() {
+        val ticket = refreshGate.beginRead() ?: return
+        val page = load()
+        if (!refreshGate.accepts(ticket)) return
+        if (page != null) { events = page; loaded = true }
+        else error = "Couldn't refresh events. Showing the last available list."
+    }
+    fun mutate(operation: suspend () -> Boolean, accepted: () -> Unit = {}) {
+        if (busy) return
+        busy = true; error = null; refreshGate.beginWrite()
+        scope.launch {
+            try {
+                if (operation()) accepted() else error = "Event update wasn't confirmed. Your input has been kept."
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (failure: Exception) { error = failure.message ?: "Could not update this event."
+            } finally { busy = false; refreshGate.endWrite() }
+            refresh()
+        }
+    }
+    LaunchedEffect(conversationId, viewerId) { while (true) { refresh(); delay(4_000); nowMs = System.currentTimeMillis() } }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
@@ -592,40 +616,44 @@ fun EventsSheet(
                 TextButton(onClick = { creating = !creating }) { Text(if (creating) "Close" else "+ New") }
             }
             if (creating) {
-                OutlinedTextField(value = title, onValueChange = { title = it.take(120) }, label = { Text("Event title") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = title, onValueChange = { draftRevision++; title = it.take(120) }, label = { Text("Event title") }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
-                    value = dateText, onValueChange = { dateText = it.take(16) }, label = { Text("Date (YYYY-MM-DD HH:mm)") }, modifier = Modifier.fillMaxWidth(),
+                    value = dateText, onValueChange = { draftRevision++; dateText = it.take(40) }, label = { Text("Local date (YYYY-MM-DD HH:mm)") }, modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(6.dp))
-                OutlinedTextField(value = location, onValueChange = { location = it.take(200) }, label = { Text("Location (optional)") }, modifier = Modifier.fillMaxWidth())
-                error?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-                }
+                OutlinedTextField(value = location, onValueChange = { draftRevision++; location = it.take(200) }, label = { Text("Location (optional)") }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 Button(
+                    enabled = !busy,
                     onClick = {
                         val parsed = parseEventDate(dateText)
                         if (title.isBlank()) error = "title must be 1-120 characters."
-                        else if (parsed == null) error = "startsAt must be a parseable ISO date string."
+                        else if (parsed == null) error = "Use a valid local date/time or an ISO timestamp with an explicit offset."
                         else {
                             error = null
-                            onCreate(title.trim(), parsed, null, location.trim().ifBlank { null })
-                            title = ""; dateText = ""; location = ""; creating = false
+                            val revision = draftRevision
+                            val submittedTitle = title.trim()
+                            val submittedLocation = location.trim().ifBlank { null }
+                            mutate(operation = { onCreate(submittedTitle, parsed, null, submittedLocation) }, accepted = {
+                                if (draftRevision == revision) {
+                                    title = ""; dateText = ""; location = ""; creating = false; draftRevision++
+                                }
+                            })
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Schedule event") }
                 Spacer(Modifier.height(10.dp))
             }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
             if (events.isEmpty()) {
-                Text("No events yet - schedule the first one.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (loaded) "No events yet - schedule the first one." else "Loading events…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             events.forEach { e ->
                 val counts = e.counts ?: EventCountsDto()
                 val startsMs = runCatching { Instant.parse(e.startsAt).toEpochMilli() }.getOrDefault(0L)
-                val inWindow = PulseWave7Logic.checkinWindowOpen(startsMs, System.currentTimeMillis())
+                val inWindow = PulseWave7Logic.checkinWindowOpen(startsMs, nowMs)
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -641,7 +669,7 @@ fun EventsSheet(
                                 contentDescription = "Delete event",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier
-                                    .clickable { onDelete(e.id) }
+                                    .clickable(enabled = !busy) { mutate({ onDelete(e.id) }) }
                                     .padding(4.dp)
                                     .size(16.dp),
                             )
@@ -661,7 +689,8 @@ fun EventsSheet(
                                 else -> "Can't"
                             }
                             OutlinedButton(
-                                onClick = { onRsvp(e.id, s) },
+                                onClick = { mutate({ onRsvp(e.id, s) }) },
+                                enabled = !busy && !selected,
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     containerColor = if (selected) PulsePalette.Emerald.copy(alpha = 0.2f) else Color.Transparent,
                                 ),
@@ -671,7 +700,10 @@ fun EventsSheet(
                     }
                     if (e.myStatus != null && e.myStatus != "no" && inWindow) {
                         Spacer(Modifier.height(6.dp))
-                        Button(onClick = { onCheckin(e.id) }, modifier = Modifier.fillMaxWidth()) { Text("Check in · +15 XP") }
+                        val checkedIn = e.rsvps.any { it.userId == viewerId && it.checkedInAt != null }
+                        Button(onClick = { mutate({ onCheckin(e.id) }) }, enabled = !busy && !checkedIn, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (checkedIn) "Checked in" else "Check in · +15 XP")
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -688,19 +720,7 @@ private fun countOf(c: EventCountsDto, s: String): Int = when (s) {
 }
 
 /** Accepts "YYYY-MM-DD HH:mm" (local) or ISO strings → ISO-8601 UTC wire form. */
-internal fun parseEventDate(text: String): String? {
-    val t = text.trim()
-    if (t.isEmpty()) return null
-    runCatching {
-        return Instant.parse(t.replace(" ", "T").let { if (it.endsWith("Z") || it.contains("+")) it else "$it:00Z" }).toString()
-    }
-    return runCatching {
-        val d = LocalDateTime.parse(t.replace("T", " ").let { it }, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-        d.atZone(ZoneId.systemDefault()).toInstant().toString()
-    }.getOrElse {
-        runCatching { LocalDate.parse(t).atTime(19, 0).atZone(ZoneId.systemDefault()).toInstant().toString() }.getOrNull()
-    }
-}
+internal fun parseEventDate(text: String): String? = PulseWave7Logic.parseEventStart(text)
 
 internal fun formatEventTime(iso: String?): String {
     val ms = runCatching { Instant.parse(iso).toEpochMilli() }.getOrDefault(0)

@@ -132,6 +132,8 @@ public struct WireKanbanCardEnvelope: Codable, Sendable {
 // MARK: - Events (F-RO-05)
 
 public struct WireEventRsvp: Codable, Hashable, Sendable {
+    public let id: String?
+    public let eventId: String?
     public let userId: String?
     public let name: String?
     public let status: String?
@@ -166,6 +168,9 @@ public struct WireEventEnvelope: Codable, Sendable {
 }
 
 public struct WireRsvpResult: Codable, Sendable {
+    public let eventReceiptVersion: Int?
+    public let eventId: String?
+    public let userId: String?
     public let rsvp: WireEventRsvp?
     public let counts: WireEventCounts?
 }
@@ -179,6 +184,9 @@ public struct WireCheckinStamp: Codable, Hashable, Sendable {
 }
 
 public struct WireCheckinResult: Codable, Sendable {
+    public let eventReceiptVersion: Int?
+    public let eventId: String?
+    public let userId: String?
     public let checkIn: WireCheckinStamp?
     public let xpAwarded: Bool?
     public let checkedInCount: Int?

@@ -1162,26 +1162,51 @@ public struct PulseAPIClient: Sendable {
         if let description { body["description"] = description }
         if let location { body["location"] = location }
         let data = try await postRaw("/api/conversations/\(q(conversationId))/events", body: body)
-        return try envelope(WireEventEnvelope.self, from: data).event ?? WireGroupEvent(id: "", title: title, description: description, location: location, startsAt: startsAtIso, createdById: userId, createdByName: nil, rsvps: nil, counts: nil, myStatus: nil)
+        guard let event = try envelope(WireEventEnvelope.self, from: data).event,
+              !event.id.isEmpty, event.title == title.trimmingCharacters(in: .whitespacesAndNewlines), event.createdById == userId,
+              let expected = PulseFormat.date(startsAtIso), event.startsAt.flatMap(PulseFormat.date) == expected else {
+            throw Failure(kind: .validation, message: "Event creation was not confirmed.")
+        }
+        return event
     }
 
     /// DELETE /api/events/{id}?userId= - creator OR group admin.
     public func deleteEvent(_ eventId: String) async throws {
         var request = URLRequest(url: url("/api/events/\(q(eventId))?userId=\(q(userId))"))
         request.httpMethod = "DELETE"
-        _ = try await send(request)
+        let data = try await send(request)
+        struct Receipt: Decodable { let eventReceiptVersion: Int; let eventId: String; let userId: String; let ok: Bool }
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.eventReceiptVersion == 1, receipt.eventId == eventId, receipt.userId == userId, receipt.ok else {
+            throw Failure(kind: .validation, message: "Event deletion was not confirmed.")
+        }
     }
 
-    /// POST /api/events/{id}/rsvp { userId, status: going|maybe|no } → { rsvp, counts }.
     public func rsvpEvent(_ eventId: String, status: String) async throws -> WireRsvpResult {
         let data = try await postRaw("/api/events/\(q(eventId))/rsvp", body: ["userId": userId, "status": status])
-        return try envelope(WireRsvpResult.self, from: data)
+        let receipt = try envelope(WireRsvpResult.self, from: data)
+        guard receipt.eventReceiptVersion == 1, receipt.eventId == eventId, receipt.userId == userId,
+              receipt.rsvp?.id?.isEmpty == false, receipt.rsvp?.eventId == eventId,
+              receipt.rsvp?.userId == userId, receipt.rsvp?.status == status,
+              ["going", "maybe", "no"].contains(status), let counts = receipt.counts,
+              let going = counts.going, let maybe = counts.maybe, let no = counts.no,
+              going >= 0, maybe >= 0, no >= 0, (status == "going" ? going : status == "maybe" ? maybe : no) > 0 else {
+            throw Failure(kind: .validation, message: "Your RSVP was not confirmed.")
+        }
+        return receipt
     }
 
-    /// POST /api/events/{id}/checkin { userId } - window +15 XP; 409 outside window is a real failure.
     public func checkinEvent(_ eventId: String) async throws -> WireCheckinResult {
         let data = try await postRaw("/api/events/\(q(eventId))/checkin", body: ["userId": userId])
-        return try envelope(WireCheckinResult.self, from: data)
+        let receipt = try envelope(WireCheckinResult.self, from: data)
+        guard receipt.eventReceiptVersion == 1, receipt.eventId == eventId, receipt.userId == userId,
+              let stamp = receipt.checkIn, stamp.id?.isEmpty == false, stamp.eventId == eventId, stamp.userId == userId,
+              ["going", "maybe", "no"].contains(stamp.status ?? ""), stamp.checkedInAt.flatMap(PulseFormat.date) != nil,
+              let count = receipt.checkedInCount, count > 0, let awarded = receipt.xpAwarded,
+              let already = receipt.alreadyCheckedIn, awarded != already else {
+            throw Failure(kind: .validation, message: "Your attendance was not confirmed.")
+        }
+        return receipt
     }
 
     // MARK: reminders
