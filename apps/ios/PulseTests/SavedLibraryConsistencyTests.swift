@@ -25,14 +25,14 @@ final class SavedLibraryConsistencyTests: XCTestCase {
         XCTAssertEqual(try store.cachedSavedItems().first?.message.expiresAt, root.expiresAt)
         XCTAssertNil(try store.message(id: reply.id)?.expiresAt)
         try store.denyThread(rootId: root.id)
-        XCTAssertTrue(try store.cachedSavedItems().isEmpty())
+        XCTAssertTrue(try store.cachedSavedItems().isEmpty)
         _ = try store.acceptThreadSnapshot(rootId: root.id, roomId: "room", messages: [root, reply])
         try store.upsert(messages: [root.deletedCopy()])
-        XCTAssertTrue(try store.cachedSavedItems().isEmpty())
+        XCTAssertTrue(try store.cachedSavedItems().isEmpty)
         var once = try item("once").message
         once.viewOnce = true
         try store.upsert(savedItems: [WireSavedItem(savedAt: saved.savedAt, conversation: saved.conversation, message: once)])
-        XCTAssertTrue(try store.cachedSavedItems().isEmpty())
+        XCTAssertTrue(try store.cachedSavedItems().isEmpty)
     }
 
     func testDeletedAndExpiredSavedRowsAreNotRenderedOrCounted() throws {
