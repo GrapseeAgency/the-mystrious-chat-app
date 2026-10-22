@@ -1,3 +1,4 @@
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/tournaments/[id] - season detail + lifecycle (Task R24-d)
 //
 // GET → { tournament: TournamentSummary }   (src/lib/types.ts)
@@ -131,6 +132,8 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'game')
+  if (denied) return denied
   const status = strField(body.status)
   if (status !== 'finished') {
     return NextResponse.json(

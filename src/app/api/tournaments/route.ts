@@ -1,3 +1,4 @@
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/tournaments - Twitch-style seasonal ladders per room
 // (Task R24-d)
 //
@@ -58,6 +59,8 @@ export async function POST(req: Request) {
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'game')
+  if (denied) return denied
   if (!conversationId) {
     return NextResponse.json({ error: 'conversationId is required.' }, { status: 400 })
   }

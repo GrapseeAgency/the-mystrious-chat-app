@@ -1,3 +1,4 @@
+import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/games - in-chat game matches (R23-b wave, tic-tac-toe first)
 //
 // A match lives in the chat as a REAL Message row (kind: "game",
@@ -104,6 +105,8 @@ export async function POST(req: Request) {
   if (!userId || !conversationId) {
     return NextResponse.json({ error: 'userId and conversationId are required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, userId, 'game')
+  if (denied) return denied
 
   const game = strField(body.game) || 'tictactoe'
   if (!(GAMES as readonly string[]).includes(game)) {
