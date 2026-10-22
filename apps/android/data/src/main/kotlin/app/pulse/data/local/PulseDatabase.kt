@@ -264,6 +264,8 @@ data class MessageEntity(
         private const val KEY_EXPIRES = "pulse:expiresAtMs"
 
         /** payloadJson → (clean payload, anon, anonAlias, expiresAtEpochMs). */
+        internal fun expiryFromPayload(raw: String?): Long? = payloadPulseKeys(raw).expiresAtEpochMs
+
         private fun payloadPulseKeys(raw: String?): Tuple4 = run {
             val obj = raw?.let { r ->
                 runCatching {
@@ -928,23 +930,32 @@ data class SavedLibraryRow(
     val savedStamp: String,
     val savedConversationName: String?,
     val savedConversationKind: String?,
+    val savedRootPayload: String? = null,
 ) {
-    fun toDomain() = app.pulse.domain.model.SavedItem(
-        savedAt = app.pulse.core.time.PulseTime.epochMs(savedStamp),
-        conversationId = message.conversationId,
-        conversationName = savedConversationName,
-        isGroup = savedConversationKind?.let { it != "DM" } ?: false,
-        message = message.toDomain(),
-    )
+    fun toDomain(): app.pulse.domain.model.SavedItem {
+        val canonical = message.toDomain()
+        val rootExpiry = MessageEntity.expiryFromPayload(savedRootPayload)
+        // This is a preview projection only; never persist the parent's deadline
+        // into the canonical reply row. The existing expiry flow owns its timer.
+        val preview = if (rootExpiry == null) canonical else canonical.copy(
+            expiresAtEpochMs = minOf(canonical.expiresAtEpochMs ?: rootExpiry, rootExpiry))
+        return app.pulse.domain.model.SavedItem(
+            savedAt = app.pulse.core.time.PulseTime.epochMs(savedStamp),
+            conversationId = message.conversationId,
+            conversationName = savedConversationName,
+            isGroup = savedConversationKind?.let { it != "DM" } ?: false,
+            message = preview,
+        )
+    }
 }
 
 /** Saved-library index (Wave 2) - server cap 100, newest first, no pagination. */
 @Dao
 interface SavedDao {
-    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId WHERE m.deletedAt IS NULL ORDER BY s.savedAt DESC, s.messageId DESC")
+    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind, p.payloadJson AS savedRootPayload FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId LEFT JOIN messages p ON p.id = m.threadRootId WHERE m.deletedAt IS NULL AND m.viewOnce = 0 AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.key = 'thread-access-denied:v1|' || m.threadRootId) AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.threadRootId IS NULL AND p.deletedAt IS NULL)) ORDER BY s.savedAt DESC, s.messageId DESC")
     fun observeLibrary(): Flow<List<SavedLibraryRow>>
 
-    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId WHERE m.deletedAt IS NULL ORDER BY s.savedAt DESC, s.messageId DESC")
+    @Query("SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName, c.kind AS savedConversationKind, p.payloadJson AS savedRootPayload FROM savedMessages s JOIN messages m ON m.id = s.messageId LEFT JOIN conversations c ON c.id = s.conversationId LEFT JOIN messages p ON p.id = m.threadRootId WHERE m.deletedAt IS NULL AND m.viewOnce = 0 AND NOT EXISTS (SELECT 1 FROM wave7_cache a WHERE a.key = 'thread-access-denied:v1|' || m.threadRootId) AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.threadRootId IS NULL AND p.deletedAt IS NULL)) ORDER BY s.savedAt DESC, s.messageId DESC")
     suspend fun library(): List<SavedLibraryRow>
 
     @Query("DELETE FROM savedMessages")

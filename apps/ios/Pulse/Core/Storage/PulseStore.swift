@@ -873,14 +873,23 @@ public final class PulseStore: Sendable {
     private static func savedItems(in db: Database, now: Date) throws -> [WireSavedItem] {
         try Row.fetchAll(db, sql: """
             SELECT m.*, s.savedAt AS savedStamp, c.title AS savedConversationName,
-                   c.kind AS savedConversationKind
+                   c.kind AS savedConversationKind, p.expiresAtEpoch AS savedRootExpiry
             FROM savedMessages s JOIN message m ON m.id = s.messageId
             LEFT JOIN conversation c ON c.id = s.conversationId
-            WHERE m.deletedAt IS NULL AND (m.expiresAtEpoch IS NULL OR m.expiresAtEpoch > :now)
+            LEFT JOIN message p ON p.id = m.parentId
+            WHERE NOT EXISTS (SELECT 1 FROM wave7Cache a WHERE a.key = 'thread-access-denied:v1|' || m.parentId)
+              AND (p.id IS NULL OR (p.conversationId = m.conversationId AND p.parentId IS NULL AND p.deletedAt IS NULL
+                AND (p.expiresAtEpoch IS NULL OR p.expiresAtEpoch > :now)))
+              AND m.deletedAt IS NULL AND (m.expiresAtEpoch IS NULL OR m.expiresAtEpoch > :now)
             ORDER BY s.savedAt DESC, s.messageId DESC
             """, arguments: ["now": now.timeIntervalSince1970]).compactMap { row in
-                guard let message = Self.messageRow(from: row),
+                guard var message = Self.messageRow(from: row), message.viewOnce != true,
                       let savedAt: String = row["savedStamp"] else { return nil }
+                // Preview deadline only; leave the canonical reply expiry untouched.
+                if let rootExpiry: Double = row["savedRootExpiry"],
+                   (message.expiresAt.flatMap(PulseFormat.date)?.timeIntervalSince1970 ?? .infinity) > rootExpiry {
+                    message.expiresAt = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: rootExpiry))
+                }
                 let kind: String? = row["savedConversationKind"]
                 return WireSavedItem(
                     savedAt: savedAt,

@@ -3437,3 +3437,41 @@ This does not add durable offline read replay or per-message/per-thread unread a
 The server still uses a cumulative conversation timestamp, so skipped older messages,
 same-timestamp boundaries, thread-versus-river gaps and manual-unread ordering remain open.
 No production deployment, merge or full-app clearance. Autumn theme unchanged.
+
+### 2026-10-22 — saved/pinned selections honor known thread availability
+
+Followed detached saved previews after thread refusal, root deletion and expiry. Saved
+SQL joined the child only: a known rejected/dead thread could still expose its reply
+through the library. Server saved/pinned selection also checked child lifetime without
+consistently checking the canonical root.
+
+- Android Room and Swift GRDB saved projections now depend on the thread-denial table
+  and cached parent. Known deleted, nested or foreign-room roots hide their saved replies.
+  Unknown offline parents remain unknown, not falsely classified as revoked. In-memory
+  denial state also filters the library if a refusal could not be persisted.
+- Cached parent expiry becomes a **preview-only** deadline; existing native expiry timers
+  hide the saved row at that deadline without rewriting canonical reply expiry. One-time
+  messages are excluded from detached saved previews. Swift retains a checked store as
+  the only display source rather than falling back to unvalidated HTTP rows; observer
+  results and account changes are fenced. Android saved refresh cannot overwrite a new
+  session with an old account's late snapshot, and cancellation is not rendered as error.
+- Server saved and pinned lists use serializable read snapshots with current membership
+  and live root checks, including cross-room root rejection at delivery. Credentialed
+  selection requests are bound to the owner. Saving one-time or unavailable-thread rows
+  is refused. Pinning one-time content is now refused inside its existing transaction;
+  old private pins can still be explicitly removed. Native pin receipts reject them too.
+
+Verification: 200/200 server contracts pass, including actual SQLite saved-selection
+ancestry/privacy/membership coverage and one-time pin refusal. Both native saved SQL
+queries were executed directly against SQLite for unknown/dead/foreign/denied parents.
+Added Room instrumentation and GRDB tests for denial, canonical-vs-preview expiry and
+one-time filtering; existing Kotlin expiry tests now include one-time rows. Scoped strict
+TypeScript, 13 native syntax parses and diff checks pass. Native compiler/device checks
+remain separate.
+
+No schema migration, production deployment or merge. The library still has its existing
+server cap of 100; this is not a complete paginated saved-library redesign. Offline
+expiry enforcement uses known cached parent metadata: an unknown parent's deadline is
+not invented. Legacy save-add remains a toggle with pre-write permission checks, not a
+new atomic/replay-safe save protocol. Media URLs are not revoked. Autumn theme unchanged;
+no full-app clearance.

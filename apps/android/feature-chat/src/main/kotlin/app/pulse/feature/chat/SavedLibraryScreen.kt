@@ -101,20 +101,18 @@ class SavedLibraryViewModel @Inject constructor(
     }
 
     fun refresh() {
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
         viewModelScope.launch {
+            if (repo.attachmentSessionKey() != epoch) return@launch
             _state.value = _state.value.copy(loading = true, error = null)
-            runCatching { repo.refreshSavedLibrary().getOrThrow() }
-                .onSuccess {
-                    // The joined Room stream is the only renderer; a delayed
-                    // HTTP return must not revive a removed/expired item.
-                    _state.value = _state.value.copy(loading = false)
-                }
-                .onFailure { failure ->
-                    _state.value = _state.value.copy(
-                        loading = false,
-                        error = failure.message ?: "Couldn't load your saved messages",
-                    )
-                }
+            try {
+                owned.refreshSavedLibrary().getOrThrow()
+                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(loading = false)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (failure: Exception) {
+                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(
+                    loading = false, error = failure.message ?: "Couldn't load your saved messages")
+            }
         }
     }
 

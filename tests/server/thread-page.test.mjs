@@ -70,3 +70,29 @@ test('bad limits and cursor shapes fail explicitly while an actually empty threa
   const empty = await read()
   assert.deepEqual(empty.replies, []); assert.equal(empty.hasMore, false); assert.equal(empty.nextCursor, null)
 }))
+
+test('saved selection excludes dead ancestors, private one-time rows, and unavailable memberships', () => fixture(async (db) => {
+  const { savedMessagesWhere, visibleInboxPreview } = await import('../../src/lib/message-visibility.ts')
+  await db.$executeRawUnsafe('ALTER TABLE Message ADD COLUMN viewOnce BOOLEAN NOT NULL DEFAULT false')
+  await db.$executeRawUnsafe('CREATE TABLE Conversation(id TEXT PRIMARY KEY)')
+  await db.$executeRawUnsafe('CREATE TABLE SavedMessage(id TEXT PRIMARY KEY,userId TEXT,messageId TEXT,savedAt DATETIME)')
+  await db.$executeRaw`INSERT INTO Conversation VALUES ('room'),('other')`
+  await db.$executeRaw`INSERT INTO SavedMessage VALUES ('s','viewer','m000',${now})`
+  const list = () => db.savedMessage.findMany({ where: savedMessagesWhere('viewer', now), select: { message: { select: {
+    ...fields, parent: { select: fields },
+  } } } })
+  assert.equal((await list()).length, 1)
+  for (const patch of ['deletedAt=0', 'deletedAt=NULL,expiresAt=0', "expiresAt=NULL,parentId='other-root'"]) {
+    await db.$executeRawUnsafe(`UPDATE Message SET ${patch} WHERE id='root'`)
+    assert.equal((await list()).length, 0)
+  }
+  await db.$executeRaw`UPDATE Message SET parentId=NULL,conversationId='other' WHERE id='root'`
+  const foreign = await list()
+  assert.equal(visibleInboxPreview(foreign[0].message, 'room', now), null)
+  await db.$executeRaw`UPDATE Message SET conversationId='room' WHERE id='root'`
+  await db.$executeRaw`UPDATE Message SET viewOnce=true WHERE id='m000'`
+  assert.equal((await list()).length, 0)
+  await db.$executeRaw`UPDATE Message SET viewOnce=false WHERE id='m000'`
+  await db.$executeRaw`DELETE FROM ConversationParticipant WHERE userId='viewer'`
+  assert.equal((await list()).length, 0)
+}))

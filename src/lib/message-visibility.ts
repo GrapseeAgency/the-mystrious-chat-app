@@ -88,6 +88,17 @@ export async function unreadSnapshot(
   }
 }
 
+/** Database prefilter for the saved library; validate the parent/child room
+ * relationship on the joined snapshot too (Prisma cannot compare those aliases). */
+export function savedMessagesWhere(userId: string, at: Date): Prisma.SavedMessageWhereInput {
+  return { userId, message: { deletedAt: null, viewOnce: false, ...unexpiredMessages(at),
+    conversation: { participants: { some: { userId } } },
+    AND: [{ OR: [{ parentId: null }, { parent: { is: {
+      parentId: null, deletedAt: null, ...unexpiredMessages(at),
+    } } }] }],
+  } }
+}
+
 /** Explicit removal is repeat-safe, including after message deletion or leaving
  * its conversation. The caller must authenticate ownership of this user ID. */
 export async function removeSavedMessage(

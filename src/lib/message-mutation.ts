@@ -45,6 +45,7 @@ export async function mutateMessage<T>(db: PrismaClient, id: string, owner: stri
       switch (action.kind) {
         case 'pin': {
           const present = action.present ?? !message.pinnedAt
+          if (present && message.viewOnce) throw new MessageMutationError(400, 'View-once messages cannot be pinned.')
           changed = present !== Boolean(message.pinnedAt)
           if (changed) await tx.message.update({ where: { id }, data: present
             ? { pinnedAt: now, pinnedBy: owner } : { pinnedAt: null, pinnedBy: null }, select: { id: true } })

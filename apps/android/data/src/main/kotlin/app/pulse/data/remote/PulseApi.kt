@@ -574,7 +574,7 @@ class PulseApi(
                 "Pin state acknowledgement did not match"
             }
             messageOf(raw).also { row ->
-                require(row.id == messageId && row.deletedAt == null && row.pinnedAt != null) { "The pin update was not confirmed" }
+                require(row.id == messageId && row.deletedAt == null && row.viewOnce != true && row.pinnedAt != null) { "The pin update was not confirmed" }
             }
         }
 

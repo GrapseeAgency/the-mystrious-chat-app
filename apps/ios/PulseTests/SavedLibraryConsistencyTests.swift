@@ -5,12 +5,34 @@ import Combine
 
 @MainActor
 final class SavedLibraryConsistencyTests: XCTestCase {
-    private func item(_ id: String, content: String = "original", expires: String? = nil) throws -> WireSavedItem {
+    private func item(_ id: String, content: String = "original", expires: String? = nil, parent: String? = nil) throws -> WireSavedItem {
         var json: [String: Any] = ["id": id, "conversationId": "room", "senderId": "peer", "kind": "text",
                                    "content": content, "createdAt": "2026-10-20T00:00:00Z"]
         if let expires { json["expiresAt"] = expires }
+        if let parent { json["parentId"] = parent }
         let message = try JSONDecoder().decode(WireChatMessage.self, from: JSONSerialization.data(withJSONObject: json))
         return WireSavedItem(savedAt: "2026-10-20T00:00:00Z", conversation: WireSavedConversation(id: "room", isGroup: true, name: "Room"), message: message)
+    }
+
+    func testKnownThreadDenialDeathAndExpiryCannotBeBypassedThroughSaved() throws {
+        let store = try PulseStore()
+        let reply = try item("reply", parent: "root").message
+        let saved = WireSavedItem(savedAt: "2026-10-20T00:00:00Z", conversation: try item("reply").conversation, message: reply)
+        try store.upsert(savedItems: [saved])
+        XCTAssertEqual(try store.cachedSavedItems().count, 1) // offline absence is not denial
+        let root = try item("root", expires: "2099-01-01T00:00:00Z").message
+        try store.upsert(messages: [root])
+        XCTAssertEqual(try store.cachedSavedItems().first?.message.expiresAt, root.expiresAt)
+        XCTAssertNil(try store.message(id: reply.id)?.expiresAt)
+        try store.denyThread(rootId: root.id)
+        XCTAssertTrue(try store.cachedSavedItems().isEmpty())
+        _ = try store.acceptThreadSnapshot(rootId: root.id, roomId: "room", messages: [root, reply])
+        try store.upsert(messages: [root.deletedCopy()])
+        XCTAssertTrue(try store.cachedSavedItems().isEmpty())
+        var once = try item("once").message
+        once.viewOnce = true
+        try store.upsert(savedItems: [WireSavedItem(savedAt: saved.savedAt, conversation: saved.conversation, message: once)])
+        XCTAssertTrue(try store.cachedSavedItems().isEmpty())
     }
 
     func testDeletedAndExpiredSavedRowsAreNotRenderedOrCounted() throws {

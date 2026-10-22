@@ -388,7 +388,7 @@ public struct PulseAPIClient: Sendable {
         let data = try await postRaw("/api/messages/\(id)/pin-state", body: ["userId": userId, "pinned": true])
         let response = try decoder.decode(Envelope.self, from: data)
         guard response.pin.messageId == id, response.pin.pinned, response.message.id == id,
-              response.message.deletedAt == nil, response.message.pinnedAt != nil else {
+              response.message.deletedAt == nil, response.message.viewOnce != true, response.message.pinnedAt != nil else {
             throw Failure(kind: .validation, message: "The pin update was not confirmed.")
         }
         return response.message

@@ -3156,28 +3156,41 @@ class PulseRepositoryImpl constructor(
         }
     }
 
-    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> = savedOperations.withLock {
-        val watermark = messageEventClock.get()
-        when (val r = api.savedList(viewerId ?: "")) {
-            is PulseResult.Success -> messageCacheMutex.withLock {
-                database.withTransaction {
-                    // One commit: message versions + exact index, including an empty list.
-                    // An older GET cannot overwrite a socket/local edit or deletion.
-                    cacheFetchedMessagesLocked(r.value.items.map { it.message.toDomain() }, watermark)
-                    savedDao.clear()
-                    savedDao.upsertAll(r.value.items.map { it.toSavedEntity() })
-                    Result.success(savedDao.library().map { it.toDomain() }.filter { savedMessageVisible(it.message) })
+    override suspend fun refreshSavedLibrary(): Result<List<SavedItem>> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return try {
+            savedOperations.withLock {
+                requireConversationOwner(owner, epoch)
+                kotlin.coroutines.coroutineContext.ensureActive()
+                val watermark = messageEventClock.get()
+                val response = api.savedList(owner)
+                requireConversationOwner(owner, epoch)
+                when (response) {
+                    is PulseResult.Success -> messageCacheMutex.withLock {
+                        database.withTransaction {
+                            requireConversationOwner(owner, epoch)
+                            kotlin.coroutines.coroutineContext.ensureActive()
+                            cacheFetchedMessagesLocked(response.value.items.map { it.message.toDomain() }, watermark)
+                            savedDao.clear()
+                            savedDao.upsertAll(response.value.items.map { it.toSavedEntity() })
+                            requireConversationOwner(owner, epoch)
+                            Result.success(savedDao.library().map { it.toDomain() }.filter { savedMessageVisible(it.message) })
+                        }
+                    }
+                    is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
                 }
             }
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
     }
 
-    private fun savedMessageVisible(message: Message): Boolean = !message.isDeleted &&
-        (message.expiresAtEpochMs?.let { it > System.currentTimeMillis() } != false)
+    private fun savedMessageVisible(message: Message): Boolean = !message.isDeleted && !message.viewOnce &&
+        message.threadRootId?.let { it in deniedThreads.value } != true && (message.expiresAtEpochMs?.let { it > System.currentTimeMillis() } != false)
 
-    override fun observeSavedLibrary(): Flow<List<SavedItem>> = savedDao.observeLibrary()
-        .map { rows -> rows.map { it.toDomain() } }.withSavedMessageExpiry()
+    override fun observeSavedLibrary(): Flow<List<SavedItem>> = kotlinx.coroutines.flow.combine(
+        savedDao.observeLibrary(), deniedThreads,
+    ) { rows, denied -> rows.map { it.toDomain() }.filter { it.message.threadRootId?.let(denied::contains) != true } }
+        .withSavedMessageExpiry()
 
     override suspend fun unsaveMessage(messageId: String): Result<Boolean> = savedOperations.withLock {
         when (val r = api.unsaveMessage(messageId, viewerId ?: "")) {

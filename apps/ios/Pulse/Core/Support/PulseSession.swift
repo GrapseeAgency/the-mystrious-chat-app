@@ -145,7 +145,7 @@ public final class PulseSession: ObservableObject {
     }
 
     private var threadValidationFence = PulseThreadValidationFence()
-    private var deniedThreadRoots: Set<String> = []
+    private(set) var deniedThreadRoots: Set<String> = []
 
     public func threadAccessDenied(rootId: String) -> Bool {
         deniedThreadRoots.contains(rootId) || ((try? store?.threadAccessDenied(rootId: rootId)) ?? true)

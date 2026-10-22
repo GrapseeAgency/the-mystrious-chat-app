@@ -31,7 +31,7 @@ fun Flow<List<app.pulse.domain.model.SavedItem>>.withSavedMessageExpiry(
     var current = rows
     while (true) {
         val now = nowMillis()
-        current = current.filter { !it.message.isDeleted && (it.message.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
+        current = current.filter { !it.message.isDeleted && !it.message.viewOnce && (it.message.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
         emit(current)
         val next = current.mapNotNull { it.message.expiresAtEpochMs }.minOrNull() ?: break
         delay((next - now).coerceIn(1L, 30_000L))

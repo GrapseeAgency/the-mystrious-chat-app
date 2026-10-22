@@ -177,6 +177,7 @@ test('adding a legacy reaction converges to one canonical row and failed normali
 }))
 
 test('pin validates membership and message/thread lifetime in its write transaction', () => fixture(async (db, act) => {
+  await db.$executeRaw`UPDATE Message SET viewOnce=false WHERE id='root'`
   await assert.rejects(act('stranger', { kind: 'pin' }), { status: 403 })
   await db.$executeRaw`UPDATE Message SET expiresAt = ${now} WHERE id = 'root'`
   await assert.rejects(act('peer', { kind: 'pin' }), { status: 410 })
@@ -187,6 +188,7 @@ test('pin validates membership and message/thread lifetime in its write transact
   await assert.rejects(act('peer', { kind: 'pin' }, 'reply'), { status: 410 })
 }))
 test('pin snapshot failures roll back; explicit removal can clean expired/deleted pins and replay safely', () => fixture(async (db, act) => {
+  await db.$executeRaw`UPDATE Message SET viewOnce=false WHERE id='root'`
   await assert.rejects(act('peer', { kind: 'pin' }, 'root', async () => { throw Error('snapshot fault') }), /snapshot fault/)
   assert.equal((await read(db, 'root')).pinnedAt, null)
   assert.equal((await act('peer', { kind: 'pin' })).message.pinnedAt.toISOString(), now.toISOString())
@@ -197,6 +199,7 @@ test('pin snapshot failures roll back; explicit removal can clean expired/delete
   await assert.rejects(act('peer', { kind: 'pin', present: false }), { status: 403 })
 }))
 test('pin and delete cannot commit a pinned tombstone even when requests overlap', () => fixture(async (db, act) => {
+  await db.$executeRaw`UPDATE Message SET viewOnce=false WHERE id='root'`
   const results = await Promise.allSettled([act('peer', { kind: 'pin' }), act('author', { kind: 'delete' })])
   for (const result of results) if (result.status === 'rejected') assert.ok([409, 410].includes(result.reason.status))
   await act('author', { kind: 'delete' })
@@ -205,6 +208,7 @@ test('pin and delete cannot commit a pinned tombstone even when requests overlap
 }))
 
 test('explicit pin retries retain the first stamp and pinner instead of unpinning or stealing attribution', () => fixture(async (db, act) => {
+  await db.$executeRaw`UPDATE Message SET viewOnce=false WHERE id='root'`
   assert.equal((await act('peer', { kind: 'pin', present: true })).changed, true)
   const first = await db.message.findUniqueOrThrow({ where: { id: 'root' }, select: { pinnedAt: true, pinnedBy: true } })
   for (const owner of ['peer', 'peer', 'other']) {
@@ -244,3 +248,9 @@ test('versioned pin route requires boolean state and returns the explicit action
     assert.deepEqual(fanouts.at(-1)[1], ['peer', 'other']) // actor devices too
   }
 })
+
+test('view-once content cannot be pinned into a detached preview but old pins can be removed', () => fixture(async (db, act) => {
+  await assert.rejects(act('peer', { kind: 'pin', present: true }), { status: 400 })
+  await db.$executeRaw`UPDATE Message SET pinnedAt=${now},pinnedBy='peer' WHERE id='root'`
+  assert.equal((await act('peer', { kind: 'pin', present: false })).message.pinnedAt, null)
+}))

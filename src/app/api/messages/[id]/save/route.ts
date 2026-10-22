@@ -1,7 +1,7 @@
 // /api/messages/[id]/save - Telegram-style star/save toggle
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { removeSavedMessage } from '@/lib/message-visibility'
+import { removeSavedMessage, threadRootAvailable } from '@/lib/message-visibility'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { safeJson, strField } from '@/lib/serializers'
 
@@ -25,9 +25,14 @@ export async function POST(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
 
+  if (req.headers.has('authorization')) {
+    const denied = await requireActionOwner(req, userId, 'saved messages')
+    if (denied) return denied
+  }
   const message = await db.message.findUnique({
     where: { id },
-    select: { conversationId: true, deletedAt: true, expiresAt: true },
+    select: { conversationId: true, deletedAt: true, expiresAt: true, viewOnce: true, parentId: true,
+      parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } } },
   })
   if (!message) {
     return NextResponse.json({ error: 'Message not found.' }, { status: 404 })
@@ -48,6 +53,11 @@ export async function POST(req: Request, { params }: RouteCtx) {
       { error: 'You are not a participant of this conversation.' },
       { status: 403 },
     )
+  }
+
+  if (message.viewOnce) return NextResponse.json({ error: 'View-once messages cannot be saved.' }, { status: 400 })
+  if (message.parentId && !threadRootAvailable(message.parent, message.conversationId, new Date())) {
+    return NextResponse.json({ error: 'This thread is no longer available.' }, { status: 410 })
   }
 
   const existing = await db.savedMessage.findUnique({
