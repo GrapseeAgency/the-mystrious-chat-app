@@ -3192,3 +3192,10 @@ while its Android unit test and debug assembly jobs failed. Debug assembly emitt
 compiler annotation and downloadable logs were blocked, so the existing diagnostic step
 now exposes bounded build errors too. Replacement native builds/device checks remain
 pending; no successful latest-head native build claim is made.
+
+Reaction follow-through: found a second Android call-site issue while tracing the mounted
+bubble, independently of the unavailable build log. `MirrorBubbleRow` still required a
+`(String, String) -> Unit` callback, while its direct `::toggleReaction` reference had been
+changed to accept `(Message, String)`. Replaced that stale method reference with an adapter
+that uses the displayed entry's message, preserving explicit tap-time intent. This repairs
+the source-level mismatch; replacement native compilation remains pending.

@@ -1705,7 +1705,9 @@ internal fun MirrorRoom(
                                     }
                                 }
                             },
-                            onToggleReaction = ::toggleReaction,
+                            onToggleReaction = { messageId, emoji ->
+                                if (messageId == entry.message.id) toggleReaction(entry.message, emoji)
+                            },
                             // R74 - swipe-to-reply + effect origin registration
                             onReply = {
                                 replyTo = if (entry.message.viewOnce) entry.message.copy(body = "View-once message", imagePath = null) else entry.message
