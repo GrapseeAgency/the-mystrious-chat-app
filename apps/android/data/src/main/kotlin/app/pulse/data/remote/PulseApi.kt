@@ -773,7 +773,15 @@ class PulseApi(
     /** GET /api/folders?userId= - Signal-style folder rail. */
     suspend fun folders(userId: String): PulseResult<FoldersPageDto> =
         get("/api/folders?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(FoldersPageDto.serializer(), it)
+            val root = requireFolderScope(it, userId)
+            require(root["folders"] is kotlinx.serialization.json.JsonArray) { "Folder list was not confirmed." }
+            (root["folders"] as kotlinx.serialization.json.JsonArray).forEach { row ->
+                require(row is kotlinx.serialization.json.JsonObject && row["conversationIds"] is kotlinx.serialization.json.JsonArray) { "Folder membership is missing." }
+            }
+            val page = PulseJson.decodeFromString(FoldersPageDto.serializer(), it)
+            page.folders.forEach { folder -> requireFolderRow(folder) }
+            require(page.folders.map { folder -> folder.id }.distinct().size == page.folders.size) { "Duplicate folders." }
+            page
         }
 
     /** GET /api/mentions?userId=&limit=50 - @mention feed (count consumer). */
@@ -1359,11 +1367,13 @@ class PulseApi(
                 if (emoji.isNotBlank()) put("emoji", emoji)
             },
         ) {
-            PulseJson.decodeFromString(FolderDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("folder").toString())
+            folderOf(it, userId).also { folder ->
+                require(folder.name == name.trim() && folder.emoji == app.pulse.protocol.folderIconId(emoji)) { "Folder creation was not confirmed." }
+            }
         }
 
     /** PATCH /api/folders/[id] { name?, emoji?, position? } → { folder }. */
-    suspend fun patchFolder(folderId: String, name: String?, emoji: String?, position: Int?): PulseResult<FolderDto> =
+    suspend fun patchFolder(folderId: String, name: String?, emoji: String?, position: Int?, userId: String): PulseResult<FolderDto> =
         patch(
             "/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8"),
             buildJsonObject {
@@ -1372,17 +1382,24 @@ class PulseApi(
                 if (position != null) put("position", position)
             },
         ) {
-            PulseJson.decodeFromString(FolderDto.serializer(), PulseJson.parseToJsonElement(it).unwrapOrRoot("folder").toString())
+            folderOf(it, userId, folderId).also { folder ->
+                require((name == null || folder.name == name.trim()) &&
+                    (emoji == null || folder.emoji == app.pulse.protocol.folderIconId(emoji)) &&
+                    (position == null || folder.position == position)) { "Folder changes were not confirmed." }
+            }
         }
 
     /** DELETE /api/folders/[id] → { ok } - membership rows cascade, chats stay. */
-    suspend fun deleteFolder(folderId: String): PulseResult<OkDto> =
+    suspend fun deleteFolder(folderId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8"), "") {
-            PulseJson.decodeFromString(OkDto.serializer(), it)
+            val root = requireFolderScope(it, userId)
+            require((root["folderId"] as? kotlinx.serialization.json.JsonPrimitive)?.content == folderId &&
+                root["deleted"]?.toString() == "true" && root["ok"]?.toString() == "true") { "Folder deletion was not confirmed." }
+            OkDto(ok = true)
         }
 
     /** PUT /api/folders/[id]/conversations { conversationIds[] } - FULL ordered replace. */
-    suspend fun setFolderConversations(folderId: String, conversationIds: List<String>): PulseResult<OkDto> =
+    suspend fun setFolderConversations(folderId: String, conversationIds: List<String>, userId: String): PulseResult<OkDto> =
         put(
             "/api/folders/" + java.net.URLEncoder.encode(folderId, "UTF-8") + "/conversations",
             buildJsonObject {
@@ -1392,8 +1409,37 @@ class PulseApi(
                 )
             },
         ) {
-            PulseJson.decodeFromString(OkDto.serializer(), it)
+            val folder = folderOf(it, userId, folderId)
+            require(conversationIds.all { id -> id.isNotBlank() } &&
+                folder.conversationIds == conversationIds.map { id -> id.trim() }.distinct()) { "Folder chats were not confirmed." }
+            OkDto(ok = true)
         }
+
+    private fun requireFolderScope(text: String, userId: String): kotlinx.serialization.json.JsonObject {
+        val root = PulseJson.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject
+            ?: error("Folder response is missing.")
+        val owner = root["userId"] as? kotlinx.serialization.json.JsonPrimitive
+        require(userId.isNotBlank() && root["folderVersion"]?.toString() == "1" && owner?.isString == true && owner.content == userId) {
+            "Folder ownership was not confirmed."
+        }
+        return root
+    }
+
+    private fun requireFolderRow(folder: FolderDto) {
+        require(folder.id.isNotBlank() && folder.name.isNotBlank() && folder.emoji.isNotBlank() &&
+            (folder.position ?: -1) >= 0 && folder.conversationIds.all { it.isNotBlank() } &&
+            folder.conversationIds.distinct().size == folder.conversationIds.size) { "Invalid folder snapshot." }
+    }
+
+    private fun folderOf(text: String, userId: String, folderId: String? = null): FolderDto {
+        val root = requireFolderScope(text, userId)
+        val row = root["folder"] as? kotlinx.serialization.json.JsonObject ?: error("Folder was not confirmed.")
+        require(row["conversationIds"] is kotlinx.serialization.json.JsonArray) { "Folder membership was not confirmed." }
+        return PulseJson.decodeFromString(FolderDto.serializer(), row.toString()).also { folder ->
+            requireFolderRow(folder)
+            require(folderId == null || folder.id == folderId) { "Wrong folder returned." }
+        }
+    }
 
     // Wave 7 - collaboration & hub (red packets / whiteboard / kanban / events / reminders / games / tournaments / leaderboard / hub economy)
 

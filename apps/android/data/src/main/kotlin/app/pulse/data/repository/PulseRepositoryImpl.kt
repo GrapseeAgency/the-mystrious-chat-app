@@ -2843,16 +2843,8 @@ class PulseRepositoryImpl constructor(
         )
     }
 
-    override suspend fun folders(): Result<List<FolderSummary>> = when (val r = api.folders(viewerId ?: "")) {
-        is PulseResult.Success -> Result.success(
-            r.value.folders.map { f ->
-                // R18 icon-id contract - normalize on read (stale emoji to the
-                // default) so the domain layer only ever carries registry ids.
-                FolderSummary(id = f.id, name = f.name, emoji = folderIconId(f.emoji), conversationIds = f.conversationIds)
-            },
-        )
-        is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-    }
+    override suspend fun folders(): Result<List<FolderSummary>> =
+        ownedAccountRequest { api.folders(it) }.map { page -> page.folders.map { it.toFolderSummary() } }
 
     override suspend fun mentions(): Result<List<MentionItem>> = when (val r = api.mentions(viewerId ?: "")) {
         is PulseResult.Success -> Result.success(
@@ -4142,28 +4134,16 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun createFolder(name: String, emoji: String): Result<FolderSummary> =
-        when (val r = api.createFolder(viewerId ?: "", name, emoji)) {
-            is PulseResult.Success -> Result.success(r.value.toFolderSummary())
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.createFolder(it, name, emoji) }.map { it.toFolderSummary() }
 
     override suspend fun updateFolder(folderId: String, name: String?, emoji: String?, position: Int?): Result<Unit> =
-        when (val r = api.patchFolder(folderId, name, emoji, position)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.patchFolder(folderId, name, emoji, position, it) }.map { Unit }
 
     override suspend fun deleteFolder(folderId: String): Result<Unit> =
-        when (val r = api.deleteFolder(folderId)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.deleteFolder(folderId, it) }.map { Unit }
 
     override suspend fun setFolderConversations(folderId: String, conversationIds: List<String>): Result<Unit> =
-        when (val r = api.setFolderConversations(folderId, conversationIds)) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.setFolderConversations(folderId, conversationIds, it) }.map { Unit }
 
     /** POST one terminal call-log row; network-class failures enqueue the EXACT payload. */
     private suspend fun postCallLog(payload: kotlinx.serialization.json.JsonObject): Result<Unit> =

@@ -725,38 +725,73 @@ public struct PulseAPIClient: Sendable {
         return try decoder.decode(WireInviteJoinResult.self, from: data)
     }
 
-    /// POST /api/folders { userId, name(1-24), emoji?(icon id, default 'folder') }
-    /// → 201 { folder } (position = max+1). R18-b - emoji carries the
-    /// PulseFolderIconId registry value, validated server-side.
+    private struct FolderReceipt: Decodable {
+        let folderVersion: Int
+        let userId: String
+        let folder: WireFolder?
+        let folders: [WireFolder]?
+        let folderId: String?
+        let deleted: Bool?
+        let ok: Bool?
+    }
+    private func folderReceipt(_ data: Data) throws -> FolderReceipt {
+        let value = try decoder.decode(FolderReceipt.self, from: data)
+        guard value.folderVersion == 1, value.userId == userId, !userId.isEmpty else {
+            throw Failure(kind: .server, message: "Folder ownership was not confirmed.")
+        }
+        return value
+    }
+    private func validateFolder(_ folder: WireFolder) throws {
+        guard !folder.id.isEmpty, !folder.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let icon = folder.emoji, !icon.isEmpty, let position = folder.position, position >= 0,
+              let ids = folder.conversationIds, ids.allSatisfy({ !$0.isEmpty }), Set(ids).count == ids.count else {
+            throw Failure(kind: .server, message: "Invalid folder snapshot.")
+        }
+    }
+    private func confirmedFolder(_ data: Data, id: String? = nil) throws -> WireFolder {
+        guard let folder = try folderReceipt(data).folder, id == nil || folder.id == id else {
+            throw Failure(kind: .server, message: "Folder was not confirmed.")
+        }
+        try validateFolder(folder)
+        return folder
+    }
     public func createFolder(name: String, emoji: String?) async throws -> WireFolder {
         var body: [String: Any] = ["userId": userId, "name": name]
         if let emoji, !emoji.isEmpty { body["emoji"] = emoji }
-        let data = try await postRaw("/api/folders", body: body)
-        return try decoder.decode(WireFolderEnvelope.self, from: data).folder
+        let folder = try confirmedFolder(try await postRaw("/api/folders", body: body))
+        guard folder.name == name.trimmingCharacters(in: .whitespacesAndNewlines),
+              folder.emoji == PulseFolderIconId.normalize(emoji).rawValue else {
+            throw Failure(kind: .server, message: "Folder creation was not confirmed.")
+        }
+        return folder
     }
-
-    /// PATCH /api/folders/{id} { name?, emoji?, position? } → { folder }.
     public func updateFolder(id: String, name: String?, emoji: String?, position: Int?) async throws -> WireFolder {
         var body: [String: Any] = [:]
         if let name { body["name"] = name }
         if let emoji { body["emoji"] = emoji }
         if let position { body["position"] = position }
-        let data = try await patchRaw("/api/folders/\(id)", body: body)
-        return try decoder.decode(WireFolderEnvelope.self, from: data).folder
+        let folder = try confirmedFolder(try await patchRaw("/api/folders/\(id)", body: body), id: id)
+        guard (name == nil || folder.name == name?.trimmingCharacters(in: .whitespacesAndNewlines)),
+              (emoji == nil || folder.emoji == PulseFolderIconId.normalize(emoji).rawValue),
+              (position == nil || folder.position == position) else {
+            throw Failure(kind: .server, message: "Folder changes were not confirmed.")
+        }
+        return folder
     }
-
-    /// DELETE /api/folders/{id} - cascades membership rows only; the chats
-    /// stay in the list. → { ok: true } (status is the contract).
     public func deleteFolder(id: String) async throws {
-        try await deleteEmpty("/api/folders/\(id)", body: ["userId": userId])
+        let receipt = try folderReceipt(try await deleteRaw("/api/folders/\(id)", body: ["userId": userId]))
+        guard receipt.folderId == id, receipt.deleted == true, receipt.ok == true else {
+            throw Failure(kind: .server, message: "Folder deletion was not confirmed.")
+        }
     }
-
-    /// PUT /api/folders/{id}/conversations { conversationIds[] } - FULL
-    /// ordered replace in one transaction (dups collapsed server-side,
-    /// empty clears). → { folder } with the fresh membership.
     public func saveFolderMembership(folderId: String, conversationIds: [String]) async throws -> WireFolder {
-        let data = try await putRaw("/api/folders/\(folderId)/conversations", body: ["conversationIds": conversationIds])
-        return try decoder.decode(WireFolderEnvelope.self, from: data).folder
+        let folder = try confirmedFolder(try await putRaw("/api/folders/\(folderId)/conversations", body: ["conversationIds": conversationIds]), id: folderId)
+        var seen = Set<String>()
+        let ids = conversationIds.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { seen.insert($0).inserted }
+        guard !ids.contains(""), folder.conversationIds == ids else {
+            throw Failure(kind: .server, message: "Folder chats were not confirmed.")
+        }
+        return folder
     }
 
     // N10-b home-page endpoints (all degrade to nil on failure)
@@ -816,11 +851,16 @@ public struct PulseAPIClient: Sendable {
         try await deleteEmpty("/api/stories/\(id)", body: ["requesterId": userId])
     }
 
-    /// GET /api/folders?userId= - chat folders (nil = unreachable → All only).
-    public func folders() async -> [WireFolder]? {
-        guard let page: WireFoldersPage = try? await get("/api/folders?userId=\(userId)", as: WireFoldersPage.self) else { return nil }
-        return page.folders
+    public func folderSnapshot() async throws -> [WireFolder] {
+        let receipt: FolderReceipt = try await get("/api/folders?userId=\(Self.queryEncoded(userId))")
+        guard receipt.folderVersion == 1, receipt.userId == userId, !userId.isEmpty,
+              let folders = receipt.folders, Set(folders.map(\.id)).count == folders.count else {
+            throw Failure(kind: .server, message: "Folder list was not confirmed.")
+        }
+        try folders.forEach { try validateFolder($0) }
+        return folders
     }
+    public func folders() async -> [WireFolder]? { try? await folderSnapshot() }
 
     /// GET /api/mentions?userId= - mention count for the entry pill (nil → 0).
     public func mentionsCount() async -> Int? {

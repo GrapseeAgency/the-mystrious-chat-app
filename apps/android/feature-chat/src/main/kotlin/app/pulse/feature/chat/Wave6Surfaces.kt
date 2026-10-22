@@ -532,78 +532,59 @@ class FoldersManageViewModel @Inject constructor(
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
-    init {
-        refresh()
-    }
+    private var readVersion = 0L
+    init { refresh() }
 
     fun refresh() {
+        if (_state.value.busy) return
+        val owner = repo.viewerId ?: return
+        val ticket = ++readVersion
         viewModelScope.launch {
-            val folders = repo.folders().getOrElse { emptyList() }
-            val conversations = repo.observeConversations().first()
-            _state.value = State(folders = folders, conversations = conversations)
-        }
-    }
-
-    fun create(name: String, emoji: String) {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(busy = true)
-            repo.createFolder(name, emoji)
-                .onSuccess {
-                    refresh()
-                    // R18 icon-id contract - the icon is a stable id now, so the
-                    // notice carries the name only (never the raw id/glyph).
-                    _state.value = _state.value.copy(busy = false, notice = "Folder \"$name\" created")
+            try {
+                val folders = repo.folders().getOrThrow()
+                val conversations = repo.observeConversations().first()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.viewerId == owner && ticket == readVersion) {
+                    _state.value = _state.value.copy(folders = folders, conversations = conversations)
                 }
-                .onFailure { _state.value = _state.value.copy(busy = false, notice = "Could not create the folder - try again") }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.viewerId == owner && ticket == readVersion) _state.value = _state.value.copy(notice = "Could not refresh folders - try again")
+            }
         }
     }
 
-    fun rename(folderId: String, name: String, emoji: String, position: Int?) {
+    private fun mutate(notice: String, confirmed: () -> Unit = {}, action: suspend () -> Result<*>) {
+        if (_state.value.busy) return
+        val owner = repo.viewerId ?: return
+        ++readVersion
+        _state.value = _state.value.copy(busy = true)
         viewModelScope.launch {
-            _state.value = _state.value.copy(busy = true)
-            repo.updateFolder(folderId, name.ifBlank { null }, emoji.ifBlank { null }, position)
-                .onSuccess {
-                    refresh()
-                    _state.value = _state.value.copy(busy = false, notice = "Renamed to \"$name\"")
-                }
-                .onFailure { _state.value = _state.value.copy(busy = false, notice = "Could not rename - try again") }
+            try {
+                action().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.viewerId != owner) return@launch
+                confirmed()
+                _state.value = _state.value.copy(notice = notice)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (repo.viewerId == owner) _state.value = _state.value.copy(notice = error.message ?: "Could not save the folder - try again")
+            } finally {
+                if (repo.viewerId == owner) { _state.value = _state.value.copy(busy = false); refresh() }
+            }
         }
     }
+    fun create(name: String, emoji: String, confirmed: () -> Unit = {}) =
+        mutate("Folder \"$name\" created", confirmed) { repo.createFolder(name, emoji) }
 
-    fun move(folderId: String, position: Int) {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(busy = true)
-            repo.updateFolder(folderId, null, null, position)
-                .onSuccess { refresh() }
-                .onFailure { }
-            _state.value = _state.value.copy(busy = false)
-        }
-    }
+    fun rename(folderId: String, name: String, emoji: String, position: Int?, confirmed: () -> Unit = {}) =
+        mutate("Folder updated", confirmed) { repo.updateFolder(folderId, name.ifBlank { null }, emoji.ifBlank { null }, position) }
 
-    fun delete(folderId: String) {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(busy = true)
-            repo.deleteFolder(folderId)
-                .onSuccess {
-                    refresh()
-                    _state.value = _state.value.copy(busy = false, notice = "Folder deleted - chats stay in your list")
-                }
-                .onFailure { _state.value = _state.value.copy(busy = false) }
-        }
-    }
+    fun move(folderId: String, position: Int) =
+        mutate("Folder moved") { repo.updateFolder(folderId, null, null, position) }
 
-    fun saveMembership(folderId: String, conversationIds: List<String>) {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(busy = true)
-            repo.setFolderConversations(folderId, conversationIds)
-                .onSuccess {
-                    refresh()
-                    val label = if (conversationIds.size == 1) "1 chat saved to the folder" else "${conversationIds.size} chats saved to the folder"
-                    _state.value = _state.value.copy(busy = false, notice = label)
-                }
-                .onFailure { _state.value = _state.value.copy(busy = false, notice = "Could not save - try again") }
-        }
-    }
+    fun delete(folderId: String) = mutate("Folder deleted - chats stay in your list") { repo.deleteFolder(folderId) }
+
+    fun saveMembership(folderId: String, conversationIds: List<String>, confirmed: () -> Unit = {}) =
+        mutate("${conversationIds.size} chats saved to the folder", confirmed) { repo.setFolderConversations(folderId, conversationIds) }
 
     fun consumeNotice() {
         _state.value = _state.value.copy(notice = null)
@@ -676,8 +657,8 @@ fun FoldersManageSheet(
                 Button(
                     onClick = {
                         if (createName.isNotBlank()) {
-                            viewModel.create(createName.trim(), createEmoji)
-                            createName = ""
+                            val draft = createName
+                            viewModel.create(draft.trim(), createEmoji) { if (createName == draft) createName = "" }
                         }
                     },
                     enabled = createName.isNotBlank() && !state.busy,
@@ -719,12 +700,10 @@ fun FoldersManageSheet(
             busy = state.busy,
             onDismiss = { editing = null },
             onSave = { ids ->
-                editing = null
-                viewModel.saveMembership(folder.id, ids)
+                viewModel.saveMembership(folder.id, ids) { if (editing?.id == folder.id) editing = null }
             },
             onRename = { name, emoji ->
-                editing = null
-                viewModel.rename(folder.id, name, emoji, null)
+                viewModel.rename(folder.id, name, emoji, null) { if (editing?.id == folder.id) editing = null }
             },
         )
     }
@@ -762,7 +741,7 @@ private fun FolderManageRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(8.dp))
-                TextButton(onClick = onEdit) { Text("Chats") }
+                TextButton(onClick = onEdit, enabled = !busy) { Text("Chats") }
                 TextButton(onClick = onMoveUp, enabled = !busy) { Text("Top") }
                 if (deleteArmed) {
                     TextButton(onClick = onDelete, enabled = !busy) { Text("Confirm", color = MaterialTheme.colorScheme.error) }
@@ -806,7 +785,7 @@ private fun FolderMembershipSheet(
                 )
                 Spacer(Modifier.width(7.dp))
                 Text(folder.name, fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
-                TextButton(onClick = { renameOpen = true }) { Text("Rename") }
+                TextButton(onClick = { renameOpen = true }, enabled = !busy) { Text("Rename") }
             }
             Text(
                 "Pick the chats that belong to this folder - Save replaces the membership.",
@@ -817,12 +796,12 @@ private fun FolderMembershipSheet(
             LazyColumn(Modifier.height(320.dp)) {
                 items(conversations, key = { it.id }) { conversation ->
                     Row(
-                        Modifier.fillMaxWidth().clickable {
+                        Modifier.fillMaxWidth().clickable(enabled = !busy) {
                             selected = if (conversation.id in selected) selected - conversation.id else selected + conversation.id
                         },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Checkbox(checked = conversation.id in selected, onCheckedChange = {
+                        Checkbox(checked = conversation.id in selected, enabled = !busy, onCheckedChange = {
                             selected = if (it) selected + conversation.id else selected - conversation.id
                         })
                         PulseAvatar(name = conversation.title, colorHex = null, size = 30.dp, isGroup = conversation.kind == app.pulse.domain.model.Conversation.Kind.GROUP)
@@ -833,7 +812,7 @@ private fun FolderMembershipSheet(
             }
             Spacer(Modifier.height(10.dp))
             Button(
-                onClick = { onSave(conversations.map { it.id }.filter { it in selected }) },
+                onClick = { onSave((conversations.map { it.id }.filter { it in selected } + selected.filter { id -> conversations.none { it.id == id } }.sorted()).distinct()) },
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Save") }
@@ -849,14 +828,14 @@ private fun FolderMembershipSheet(
             title = { Text("Rename folder") },
             text = {
                 Column {
-                    OutlinedTextField(value = name, onValueChange = { if (it.length <= 24) name = it }, singleLine = true)
+                    OutlinedTextField(value = name, onValueChange = { if (!busy && it.length <= 24) name = it }, singleLine = true)
                     Spacer(Modifier.height(8.dp))
                     Row(Modifier.horizontalScroll(rememberScrollState())) {
                         FOLDER_ICON_PRESETS.forEach { id ->
                             Surface(
                                 shape = RoundedCornerShape(999.dp),
                                 color = if (newEmoji == id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                modifier = Modifier.padding(end = 6.dp).clickable { newEmoji = id },
+                                modifier = Modifier.padding(end = 6.dp).clickable(enabled = !busy) { newEmoji = id },
                             ) {
                                 Icon(
                                     pulseFolderGlyph(id),
@@ -872,8 +851,7 @@ private fun FolderMembershipSheet(
             confirmButton = {
                 TextButton(onClick = {
                     onRename(name.trim(), newEmoji.ifBlank { FOLDER_ICON_DEFAULT })
-                    renameOpen = false
-                }) { Text("Save") }
+                }, enabled = !busy && name.isNotBlank()) { Text("Save") }
             },
             dismissButton = { TextButton(onClick = { renameOpen = false }) { Text("Cancel") } },
         )

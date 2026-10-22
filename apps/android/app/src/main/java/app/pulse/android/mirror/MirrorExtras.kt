@@ -45,6 +45,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import app.pulse.feature.stories.StoryViewerInput
 import app.pulse.feature.stories.StoryViewerStateMachine
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -1160,6 +1161,20 @@ internal fun MirrorFoldersSheet(
     onChanged: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    androidx.compose.runtime.key(repository, repository.viewerId) {
+        MirrorOwnedFoldersSheet(repository, conversations, activeFolderId, onPick, onChanged, onDismiss)
+    }
+}
+
+@Composable
+private fun MirrorOwnedFoldersSheet(
+    repository: PulseRepository,
+    conversations: List<Conversation>,
+    activeFolderId: String?,
+    onPick: (String?) -> Unit,
+    onChanged: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     // R72 - the web FoldersSheet parity (folders-sheet.tsx): create with the
     // 8-icon registry, rename, delete (2-tap, chats stay), membership editor
     // (FULL ordered PUT replace) - every action on the real /api/folders wire.
@@ -1169,20 +1184,42 @@ internal fun MirrorFoldersSheet(
     var createOpen by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var newIcon by remember { mutableStateOf("folder") }
+    var notice by remember { mutableStateOf("") }
     var createBusy by remember { mutableStateOf(false) }
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    val owner = repository.viewerId
+    var readRevision by remember { mutableStateOf(0) }
+    fun mutate(action: suspend () -> Unit, confirmed: () -> Unit) {
+        if (createBusy || owner.isNullOrBlank() || repository.viewerId != owner) return
+        createBusy = true; readRevision++
+        actionScope.launch {
+            try {
+                if (repository.viewerId != owner) return@launch
+                action()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repository.viewerId != owner) return@launch
+                confirmed(); reloadKey++; onChanged()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { if (repository.viewerId == owner) notice = error.message ?: "Could not save the folder" }
+            finally { if (repository.viewerId == owner) createBusy = false }
+        }
+    }
     var renamingId by remember { mutableStateOf<String?>(null) }
     var renameDraft by remember { mutableStateOf("") }
     var confirmDeleteId by remember { mutableStateOf<String?>(null) }
     var editingFolder by remember { mutableStateOf<FolderSummary?>(null) }
-    var notice by remember { mutableStateOf("") }
 
-    LaunchedEffect(reloadKey) {
+    LaunchedEffect(repository, owner, reloadKey) {
+        val ticket = readRevision
         loadFailed = false
-        val page = runCatching { repository.folders().getOrThrow() }.getOrNull()
-        if (page == null) {
-            loadFailed = true
-        } else {
-            folders = page
+        try {
+            val page = repository.folders().getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (repository.viewerId == owner && ticket == readRevision) folders = page
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+            if (repository.viewerId == owner && ticket == readRevision) {
+                loadFailed = true
+                notice = "Could not refresh folders - tap to retry"
+            }
         }
     }
 
@@ -1192,7 +1229,7 @@ internal fun MirrorFoldersSheet(
                 // membership editor - checkbox list of every conversation,
                 // Save runs the FULL replace PUT the web uses
                 val folder = editingFolder!!
-                val selected = remember(folder.id) { folder.conversationIds.toMutableSet() }
+                var selected by remember(folder.id) { mutableStateOf(folder.conversationIds.toSet()) }
                 Text(
                     "Chats in \u201C${folder.name}\u201D",
                     color = MirrorArt.Text, fontSize = 13.sp, fontWeight = FontWeight.Bold,
@@ -1205,8 +1242,8 @@ internal fun MirrorFoldersSheet(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .background(if (checked) MirrorArt.ChipActive else Color.Transparent)
-                            .clickable {
-                                if (checked) selected.remove(convo.id) else selected.add(convo.id)
+                            .clickable(enabled = !createBusy) {
+                                selected = if (checked) selected - convo.id else selected + convo.id
                             }
                             .padding(horizontal = 8.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1223,7 +1260,7 @@ internal fun MirrorFoldersSheet(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
                             .background(MirrorArt.White7)
-                            .clickable { editingFolder = null }
+                            .clickable(enabled = !createBusy) { editingFolder = null }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                     )
                     Text(
@@ -1232,21 +1269,11 @@ internal fun MirrorFoldersSheet(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
                             .background(MirrorArt.Accent)
-                            .clickable {
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    val ok = runCatching {
-                                        repository.setFolderConversations(folder.id, selected.toList()).getOrThrow()
-                                    }.isSuccess
-                                    kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                        if (ok) {
-                                            editingFolder = null
-                                            notice = "Folder chats saved"
-                                            reloadKey++
-                                            onChanged()
-                                        } else {
-                                            notice = "Could not save the folder chats"
-                                        }
-                                    }
+                            .clickable(enabled = !createBusy) {
+                                val payload = selected.toList()
+                                mutate({ repository.setFolderConversations(folder.id, payload).getOrThrow() }) {
+                                    folders = folders?.map { if (it.id == folder.id) it.copy(conversationIds = payload) else it }
+                                    editingFolder = null; notice = "Folder chats saved"
                                 }
                             }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -1258,7 +1285,7 @@ internal fun MirrorFoldersSheet(
                     Text(
                         "Could not load folders - tap to retry",
                         color = MirrorArt.Red, fontSize = 12.sp,
-                        modifier = Modifier.fillMaxWidth().clickable { reloadKey++ }.padding(vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !createBusy) { reloadKey++ }.padding(vertical = 12.dp),
                         textAlign = TextAlign.Center,
                     )
                 } else {
@@ -1282,7 +1309,7 @@ internal fun MirrorFoldersSheet(
                     ) {
                         BasicTextField(
                             value = renameDraft,
-                            onValueChange = { if (it.length <= 24) renameDraft = it },
+                            onValueChange = { if (!createBusy && it.length <= 24) renameDraft = it },
                             singleLine = true,
                             textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
                             cursorBrush = SolidColor(MirrorArt.Accent2),
@@ -1297,21 +1324,11 @@ internal fun MirrorFoldersSheet(
                             color = MirrorArt.Accent2, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable(enabled = renameDraft.isNotBlank()) {
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        val ok = runCatching {
-                                            repository.updateFolder(folder.id, renameDraft.trim(), null, null).getOrThrow()
-                                        }.isSuccess
-                                        kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                            if (ok) {
-                                                renamingId = null
-                                                notice = "Renamed to \u201C${renameDraft.trim()}\u201D"
-                                                reloadKey++
-                                                onChanged()
-                                            } else {
-                                                notice = "Could not rename the folder"
-                                            }
-                                        }
+                                .clickable(enabled = renameDraft.isNotBlank() && !createBusy) {
+                                    val name = renameDraft.trim()
+                                    mutate({ repository.updateFolder(folder.id, name, null, null).getOrThrow() }) {
+                                        folders = folders?.map { if (it.id == folder.id) it.copy(name = name) else it }
+                                        renamingId = null; notice = "Folder renamed"
                                     }
                                 }
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -1323,7 +1340,7 @@ internal fun MirrorFoldersSheet(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (active) MirrorArt.ChipActive else Color.Transparent)
-                            .clickable { onPick(if (active) null else folder.id) }
+                            .clickable(enabled = !createBusy) { onPick(if (active) null else folder.id) }
                             .padding(horizontal = 8.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1336,7 +1353,7 @@ internal fun MirrorFoldersSheet(
                             Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .clickable { renamingId = folder.id; renameDraft = folder.name },
+                                .clickable(enabled = !createBusy) { renamingId = folder.id; renameDraft = folder.name },
                             contentAlignment = Alignment.Center,
                         ) {
                             MirrorLucideIcon("LPenLine", tint = MirrorArt.Faint, modifier = Modifier.size(14.dp))
@@ -1345,7 +1362,7 @@ internal fun MirrorFoldersSheet(
                             Modifier
                                 .size(28.dp)
                                 .clip(CircleShape)
-                                .clickable { editingFolder = folder },
+                                .clickable(enabled = !createBusy) { editingFolder = folder },
                             contentAlignment = Alignment.Center,
                         ) {
                             MirrorLucideIcon("LUsers", tint = MirrorArt.Faint, modifier = Modifier.size(14.dp))
@@ -1355,20 +1372,12 @@ internal fun MirrorFoldersSheet(
                                 .size(28.dp)
                                 .clip(CircleShape)
                                 .background(if (confirmDeleteId == folder.id) MirrorArt.Red else Color.Transparent)
-                                .clickable {
+                                .clickable(enabled = !createBusy) {
                                     if (confirmDeleteId == folder.id) {
                                         confirmDeleteId = null
-                                        CoroutineScope(Dispatchers.IO).launch {
-                                            val ok = runCatching { repository.deleteFolder(folder.id).getOrThrow() }.isSuccess
-                                            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                                if (ok) {
-                                                    notice = "Folder deleted - chats stay in your list"
-                                                    reloadKey++
-                                                    onChanged()
-                                                } else {
-                                                    notice = "Could not delete the folder"
-                                                }
-                                            }
+                                        mutate({ repository.deleteFolder(folder.id).getOrThrow() }) {
+                                            folders = folders?.filterNot { it.id == folder.id }
+                                            notice = "Folder deleted - chats stay in your list"
                                         }
                                     } else {
                                         confirmDeleteId = folder.id
@@ -1389,7 +1398,7 @@ internal fun MirrorFoldersSheet(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(MirrorArt.White7)
-                        .clickable { createOpen = true }
+                        .clickable(enabled = !createBusy) { createOpen = true }
                         .padding(horizontal = 8.dp, vertical = 10.dp),
                     textAlign = TextAlign.Center,
                 )
@@ -1403,7 +1412,7 @@ internal fun MirrorFoldersSheet(
                 ) {
                     BasicTextField(
                         value = newName,
-                        onValueChange = { if (it.length <= 24) newName = it },
+                        onValueChange = { if (!createBusy && it.length <= 24) newName = it },
                         singleLine = true,
                         textStyle = TextStyle(color = MirrorArt.Text, fontSize = 13.sp),
                         cursorBrush = SolidColor(MirrorArt.Accent2),
@@ -1436,7 +1445,7 @@ internal fun MirrorFoldersSheet(
                                     .size(30.dp)
                                     .clip(CircleShape)
                                     .background(if (active) MirrorArt.Accent else MirrorArt.White10)
-                                    .clickable { newIcon = icon },
+                                    .clickable(enabled = !createBusy) { newIcon = icon },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 MirrorLucideIcon(folderGlyphName(icon) ?: "LFolder", tint = if (active) Color.White else MirrorArt.TextSoft, modifier = Modifier.size(15.dp))
@@ -1449,7 +1458,7 @@ internal fun MirrorFoldersSheet(
                             color = MirrorArt.Dim, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { createOpen = false; newName = "" }
+                                .clickable(enabled = !createBusy) { createOpen = false; newName = "" }
                                 .padding(horizontal = 14.dp, vertical = 8.dp),
                         )
                         Text(
@@ -1460,24 +1469,11 @@ internal fun MirrorFoldersSheet(
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(if (newName.isNotBlank() && !createBusy) MirrorArt.Accent else MirrorArt.White10)
                                 .clickable(enabled = newName.isNotBlank() && !createBusy) {
-                                    createBusy = true
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        val created = runCatching {
-                                            repository.createFolder(newName.trim(), newIcon).getOrThrow()
-                                        }.getOrNull()
-                                        kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                            createBusy = false
-                                            if (created != null) {
-                                                notice = "Folder \u201C${created.name}\u201D created"
-                                                newName = ""
-                                                newIcon = "folder"
-                                                createOpen = false
-                                                reloadKey++
-                                                onChanged()
-                                            } else {
-                                                notice = "Could not create the folder"
-                                            }
-                                        }
+                                    val name = newName.trim(); val icon = newIcon
+                                    var created: FolderSummary? = null
+                                    mutate({ created = repository.createFolder(name, icon).getOrThrow() }) {
+                                        folders = (folders ?: emptyList()) + requireNotNull(created)
+                                        notice = "Folder created"; newName = ""; newIcon = "folder"; createOpen = false
                                     }
                                 }
                                 .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -1486,7 +1482,7 @@ internal fun MirrorFoldersSheet(
                 }
             }
             if (notice.isNotEmpty()) {
-                Text(notice, color = MirrorArt.Dim, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+                Text(notice, color = MirrorArt.Dim, fontSize = 12.sp, modifier = Modifier.clickable(enabled = loadFailed && !createBusy) { reloadKey++ }.padding(8.dp))
             }
             }
         }
