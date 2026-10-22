@@ -15,6 +15,6 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (denied) return denied
   try {
     const wallet = await buyMarketListing(db, userId, id)
-    return NextResponse.json({ ok: true, wallet })
+    return NextResponse.json({ marketVersion: 1, userId, listingId: id, ok: true, wallet })
   } catch (error) { return walletErrorResponse(error) }
 }

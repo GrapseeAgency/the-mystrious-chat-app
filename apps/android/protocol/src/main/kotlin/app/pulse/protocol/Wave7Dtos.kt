@@ -538,26 +538,31 @@ data class MarketSellerDto(
 
 @Serializable
 data class MarketListingDto(
-    val id: String = "",
-    val title: String = "",
+    val id: String,
+    val title: String,
     val description: String? = null,
-    val price: Long = 0,
-    val asset: String = "PC",
-    /** open | sold */
-    val status: String = "open",
-    val createdAt: String? = null,
-    val seller: MarketSellerDto = MarketSellerDto(),
+    val price: Long,
+    val asset: String,
+    val status: String,
+    val createdAt: String,
+    val seller: MarketSellerDto,
     val buyer: MarketSellerDto? = null,
-    val mine: Boolean = false,
+    val mine: Boolean,
 )
 
 @Serializable
-data class MarketPageDto(val listings: List<MarketListingDto> = emptyList())
+data class MarketPageDto(val marketVersion: Int, val userId: String, val listings: List<MarketListingDto>)
+
+@Serializable
+data class MarketListingEnvelopeDto(val marketVersion: Int, val userId: String, val listing: MarketListingDto)
 
 @Serializable
 data class MarketBuyResultDto(
-    val ok: Boolean = false,
-    val wallet: WalletDto = WalletDto(),
+    val marketVersion: Int,
+    val userId: String,
+    val listingId: String,
+    val ok: Boolean,
+    val wallet: WalletDto,
 )
 
 @Serializable

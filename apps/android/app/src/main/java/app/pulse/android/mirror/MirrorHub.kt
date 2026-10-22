@@ -89,8 +89,8 @@ internal fun MirrorHub(
     viewerId: String,
     onOpenConversation: (String) -> Unit,
 ) {
-    var walletCoins by remember { mutableStateOf<Long?>(null) }
-    var walletGems by remember { mutableStateOf<Long?>(null) }
+    var walletCoins by remember(viewerId) { mutableStateOf<Long?>(null) }
+    var walletGems by remember(viewerId) { mutableStateOf<Long?>(null) }
     var panel by remember { mutableStateOf("wallet") }
     // R75 - the full-page category surface (web #/hub/c/<slug>, MINE_SLUG = "mine")
     var categoryPage by remember { mutableStateOf<String?>(null) }
@@ -99,13 +99,19 @@ internal fun MirrorHub(
     // backHash('/hub') behavior, app-detail-sheet.tsx:1077)
     var appPage by remember { mutableStateOf<Int?>(null) }
 
+    val hubScope = rememberCoroutineScope()
+    val hubOwner = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val hubEpoch = remember(repository, viewerId) { repository.attachmentSessionKey() }
     suspend fun loadWallet() {
-        repository.wallet().onSuccess { page ->
-            walletCoins = page.wallet.coins
-            walletGems = page.wallet.gems
+        if (repository.attachmentSessionKey() != hubEpoch) return
+        hubOwner.wallet().onSuccess { page ->
+            if (repository.attachmentSessionKey() == hubEpoch && page.wallet.userId == viewerId) {
+                walletCoins = page.wallet.coins
+                walletGems = page.wallet.gems
+            }
         }
     }
-    LaunchedEffect(Unit) { loadWallet() }
+    LaunchedEffect(hubOwner) { loadWallet() }
 
     Box(
         Modifier
@@ -230,8 +236,8 @@ internal fun MirrorHub(
         ) {
             when (panel) {
                 "tasks" -> androidx.compose.runtime.key(viewerId) { HubTasksPanel(repository, viewerId) }
-                "market" -> HubMarketPanel(repository, viewerId, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
-                "swap" -> HubSwapPanel(repository, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
+                "market" -> androidx.compose.runtime.key(viewerId, repository.attachmentSessionKey()) { HubMarketPanel(repository, viewerId, onCoinsChanged = { hubScope.launch { loadWallet() } }) }
+                "swap" -> HubSwapPanel(repository, onCoinsChanged = { hubScope.launch { loadWallet() } })
                 "logs" -> androidx.compose.runtime.key(viewerId) { HubLogsPanel(repository, viewerId) }
                 "apps" -> HubAppsPanel(repository, viewerId, onOpenCategory = { categoryPage = it }, onOpenApp = { appPage = it })
                 else -> HubWalletPanel(repository, onCoinsChanged = { walletCoins = it.first; walletGems = it.second })
@@ -304,7 +310,7 @@ private val HUB_FIELD_BG = Color(0x12FFFFFF) // white/[0.07] field fill
 private val HUB_CARD_BG = SubPageInk.Panel // glass-deep dark
 
 @Composable
-private fun HubField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, numeric: Boolean = false) {
+private fun HubField(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, numeric: Boolean = false, enabled: Boolean = true) {
     Box(
         modifier
             .heightIn(min = 36.dp)
@@ -315,6 +321,7 @@ private fun HubField(value: String, onValueChange: (String) -> Unit, placeholder
     ) {
         if (value.isBlank()) Text(placeholder, color = SubPageInk.Zinc500, fontSize = 13.sp)
         BasicTextField(
+            enabled = enabled,
             value = value,
             onValueChange = { next ->
                 onValueChange(if (numeric) next.filter { it.isDigit() } else next)
@@ -757,9 +764,42 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
     var busy by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        listings = repository.market().getOrNull()?.listings ?: emptyList()
-        coins = repository.wallet().getOrNull()?.wallet?.coins
+    var loaded by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val owned = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val epoch = remember(repository, viewerId) { repository.attachmentSessionKey() }
+    val gate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    fun current() = repository.viewerId == viewerId && repository.attachmentSessionKey() == epoch
+    suspend fun refresh() {
+        val ticket = gate.beginRead() ?: return
+        loading = true
+        try {
+            if (!current()) return
+            val page = owned.market().getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (current() && gate.accepts(ticket)) { listings = page.listings; loaded = true }
+            val wallet = owned.wallet().getOrThrow()
+            if (current() && gate.accepts(ticket)) coins = wallet.wallet.coins
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) { if (current() && gate.accepts(ticket)) notice = error.message ?: "Could not refresh the market."
+        } finally { if (current() && gate.accepts(ticket)) loading = false }
+    }
+    LaunchedEffect(owned) { refresh() }
+    fun <T> mutate(operation: suspend () -> Result<T>, accepted: (T) -> Unit) {
+        if (busy || !current()) return
+        busy = true; notice = null; gate.beginWrite(); loading = false
+        scope.launch {
+            try {
+                if (!current()) return@launch
+                val result = operation().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) accepted(result)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { if (current()) notice = error.message ?: "Market action was not confirmed; your input is kept."
+            } finally { busy = false; gate.endWrite() }
+            if (current()) refresh()
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -779,28 +819,23 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
                 Spacer(Modifier.weight(1f))
                 coins?.let { Text("you: $it PC", color = SubPageInk.Zinc500, fontSize = 12.sp, fontWeight = FontWeight.Medium) }
             }
-            HubField(title, { title = it }, "Title (what are you selling?)")
-            HubField(description, { description = it }, "Description (optional)")
+            HubField(title, { title = it.take(80) }, "Title (what are you selling?)", enabled = !busy)
+            HubField(description, { description = it.take(200) }, "Description (optional)", enabled = !busy)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HubField(price, { price = it }, "Price PC", modifier = Modifier.weight(1f), numeric = true)
+                HubField(price, { price = it.take(6) }, "Price PC", modifier = Modifier.weight(1f), numeric = true, enabled = !busy)
                 HubPrimaryButton(
                     label = "List",
                     enabled = !busy && title.isNotBlank() && price.isNotBlank(),
                     onClick = {
-                        busy = true
-                        CoroutineScope(Dispatchers.IO).launch {
-                            repository.createListing(title.trim(), description.takeIf { it.isNotBlank() }, price.toLongOrNull() ?: 0).fold(
-                                onSuccess = { fresh ->
-                                    listings = listOf(fresh) + listings
-                                    notice = "Listing posted to the market"
-                                    title = ""
-                                    description = ""
-                                    price = ""
-                                },
-                                onFailure = { notice = it.message },
-                            )
-                            coins = repository.wallet().getOrNull()?.wallet?.coins
-                            busy = false
+                        val sentTitle = title; val sentDescription = description; val sentPrice = price
+                        val amount = price.toLongOrNull() ?: 0
+                        if (amount !in 1..100_000) { notice = "Price must be 1–100,000 PC." }
+                        else mutate({ owned.createListing(sentTitle.trim(), sentDescription.takeIf { it.isNotBlank() }, amount) }) { fresh ->
+                            listings = listOf(fresh) + listings.filterNot { it.id == fresh.id }
+                            loaded = true; notice = "Listing posted to the market"
+                            if (title == sentTitle && description == sentDescription && price == sentPrice) {
+                                title = ""; description = ""; price = ""
+                            }
                         }
                     },
                 )
@@ -853,15 +888,11 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
                                     .clip(CircleShape)
                                     .border(1.dp, SubPageInk.PanelBorder, CircleShape)
                                     .clickable(enabled = !busy) {
-                                        busy = true
-                                        CoroutineScope(Dispatchers.IO).launch {
-                                            repository.buyListing(listing.id).fold(
-                                                onSuccess = { onCoinsChanged() },
-                                                onFailure = { notice = it.message },
-                                            )
-                                            listings = repository.market().getOrNull()?.listings ?: emptyList()
-                                            coins = repository.wallet().getOrNull()?.wallet?.coins
-                                            busy = false
+                                        mutate({ owned.buyListing(listing.id) }) { receipt ->
+                                            listings = listings.filterNot { it.id == listing.id }
+                                            coins = receipt.wallet.coins
+                                            notice = "Purchase confirmed"
+                                            onCoinsChanged()
                                         }
                                     }
                                     .padding(horizontal = 10.dp, vertical = 5.dp),
@@ -878,7 +909,9 @@ private fun HubMarketPanel(repository: PulseRepository, viewerId: String, onCoin
             }
         }
 
-        if (listings.isEmpty()) {
+        if (loading) Text("Refreshing market…", color = SubPageInk.Zinc500, fontSize = 12.sp)
+        if (notice != null) HubPrimaryButton(label = "Refresh", enabled = !busy && !loading, onClick = { scope.launch { refresh() } })
+        if (loaded && listings.isEmpty()) {
             Text(
                 "The board is empty - be the first seller.",
                 color = SubPageInk.Zinc500,

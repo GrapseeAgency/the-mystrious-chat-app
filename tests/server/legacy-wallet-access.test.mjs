@@ -83,7 +83,13 @@ test('authenticated direct swap and purchase preserve exact wallet effects and p
   const swapped = await db.userWallet.findUnique({ where: { userId: 'a' } })
   assert.equal(swapped.gems, 1)
   const beforePurchase = swapped.coins
-  for (let i = 0; i < 2; i++) assert.equal((await routes.buy.POST(request(instructions.buy, 'synthetic-a'), context)).status, 200)
+  for (let i = 0; i < 2; i++) {
+    const response = await routes.buy.POST(request(instructions.buy, 'synthetic-a'), context)
+    assert.equal(response.status, 200)
+    const receipt = await response.json()
+    assert.equal(receipt.marketVersion, 1); assert.equal(receipt.userId, 'a'); assert.equal(receipt.listingId, 'item')
+    assert.equal(receipt.wallet.userId, 'a')
+  }
   assert.equal((await db.userWallet.findUnique({ where: { userId: 'a' } })).coins, beforePurchase - 100)
   assert.equal((await db.userWallet.findUnique({ where: { userId: 'b' } })).coins, 110)
   assert.equal((await db.marketListing.findUnique({ where: { id: 'item' } })).buyerId, 'a')
@@ -93,20 +99,27 @@ test('market public board stays public but sold history requires the actual sell
   // Even an inconsistent open row must not disclose a buyer on the public board.
   await db.marketListing.update({ where: { id: 'item' }, data: { buyerId: 'a' } })
   const publicPage = await (await routes.market.GET(request())).json()
+  assert.equal(publicPage.marketVersion, 1); assert.equal(publicPage.userId, null)
   assert.deepEqual(publicPage.listings.map(l => l.id), ['item'])
   assert.equal(publicPage.listings[0].buyer, null)
   assert.equal(publicPage.listings[0].mine, false)
   for (const token of [undefined, 'forged', 'synthetic-b']) assert.equal((await routes.market.GET(request(null, token, '?userId=a'))).status, token ? 403 : 401)
   const result = await routes.market.GET(request(null, 'synthetic-a', '?userId=a'))
   assert.match(result.headers.get('cache-control'), /private.*no-store/)
-  const own = (await result.json()).listings.find(l => l.id === 'sold')
+  const page = await result.json()
+  assert.equal(page.marketVersion, 1); assert.equal(page.userId, 'a')
+  const own = page.listings.find(l => l.id === 'sold')
   assert.equal(own.mine, true); assert.equal(own.buyer.id, 'b')
   assert.equal((await routes.swap.GET()).status, 200)
 }))
 test('listing and activity log commit together, and a log failure leaves no listing to duplicate', () => fixture(async (db, routes) => {
   const accepted = await routes.market.POST(request(instructions.market, 'synthetic-a'))
   assert.equal(accepted.status, 201)
-  const listing = (await accepted.json()).listing
+  const receipt = await accepted.json()
+  assert.equal(receipt.marketVersion, 1); assert.equal(receipt.userId, 'a')
+  const listing = receipt.listing
+  assert.equal(listing.seller.id, 'a'); assert.equal(listing.mine, true); assert.equal(listing.price, 10)
+  assert.equal(listing.buyer, null); assert.equal(listing.status, 'open')
   assert.equal((await db.marketListing.findUnique({ where: { id: listing.id } })).sellerId, 'a')
   assert.equal(await db.logEvent.count(), 1)
   await db.$executeRawUnsafe('CREATE TRIGGER reject_log BEFORE INSERT ON LogEvent BEGIN SELECT RAISE(ABORT, "journal unavailable"); END')

@@ -375,32 +375,83 @@ class HubViewModel @Inject constructor(
     private val _market = MutableStateFlow<List<MarketListingDto>>(emptyList())
     val market: StateFlow<List<MarketListingDto>> = _market.asStateFlow()
 
+    private val _marketBusy = MutableStateFlow(false)
+    val marketBusy = _marketBusy.asStateFlow()
+    private val _marketLoaded = MutableStateFlow(false)
+    val marketLoaded = _marketLoaded.asStateFlow()
+    private val _marketLoading = MutableStateFlow(false)
+    val marketLoading = _marketLoading.asStateFlow()
+    private val _marketError = MutableStateFlow<String?>(null)
+    val marketError = _marketError.asStateFlow()
+    private val _marketActionError = MutableStateFlow<String?>(null)
+    val marketActionError = _marketActionError.asStateFlow()
+    private var marketReads = 0L
+    private var marketOwner: String? = null
+
     fun loadMarket() {
+        val epoch = repo.attachmentSessionKey()
+        if (marketOwner != epoch) {
+            _market.value = emptyList(); _marketLoaded.value = false; marketOwner = epoch
+            _marketError.value = "Account changed. Refresh the market."; _marketActionError.value = null; marketReads++
+        }
+        if (_marketBusy.value) return
+        val ticket = ++marketReads
+        _marketLoading.value = true; _marketError.value = null
+        val owned = repo.boundToCurrentAccount()
         viewModelScope.launch {
-            repo.market().fold(
-                onSuccess = { v -> _market.value = v.listings },
-                onFailure = { t -> notify(t.message ?: "Could not load the market", isError = true) },
-            )
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val page = owned.market().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (ticket == marketReads && repo.attachmentSessionKey() == epoch) { _market.value = page.listings; _marketLoaded.value = true }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (ticket == marketReads && repo.attachmentSessionKey() == epoch) _marketError.value = error.message ?: "Could not load the market"
+            } finally {
+                if (ticket == marketReads && repo.attachmentSessionKey() == epoch) _marketLoading.value = false
+            }
         }
     }
 
-    fun createListing(title: String, price: Long, description: String?) {
+    internal fun <T> marketAction(spendsMoney: Boolean = false, operation: suspend (PulseRepository) -> T,
+        accepted: (T) -> Unit, completed: (Boolean) -> Unit = {}) {
+        if (_marketBusy.value || _walletMutationBusy.value) { completed(false); return }
+        val epoch = repo.attachmentSessionKey() ?: run { completed(false); return }
+        val owned = repo.boundToCurrentAccount()
+        _marketBusy.value = true; marketReads++; _marketLoading.value = false; _marketActionError.value = null
+        if (spendsMoney) { _walletMutationBusy.value = true; walletReadRevision++ }
         viewModelScope.launch {
-            repo.createListing(title, description, price).fold(
-                onSuccess = { v -> loadMarket(); notify("Listed \"${v.title}\" for $price PC") },
-                onFailure = { t -> notify(t.message ?: "Could not list", isError = true) },
-            )
+            var confirmed = false
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val value = operation(owned)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (repo.attachmentSessionKey() == epoch) { accepted(value); confirmed = true }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) {
+                    _marketActionError.value = error.message ?: "Market action was not confirmed; refresh before retrying."
+                    notify(_marketActionError.value!!, isError = true)
+                }
+            } finally {
+                _marketBusy.value = false; marketReads++
+                if (spendsMoney) _walletMutationBusy.value = false
+            }
+            if (repo.attachmentSessionKey() == epoch) { completed(confirmed); loadMarket(); if (spendsMoney) loadWallet() }
         }
     }
 
-    fun buy(listing: MarketListingDto) {
-        mutateWallet(send = { repo.buyListing(listing.id) }) { result ->
-            result.fold(
-                onSuccess = { _ -> notify("Bought \"${listing.title}\""); loadWallet(); loadMarket() },
-                onFailure = { t -> loadWallet(); notify(t.message ?: "Purchase failed", isError = true) },
-            )
-        }
-    }
+    fun createListing(title: String, price: Long, description: String?, completed: (Boolean) -> Unit) =
+        marketAction(operation = { it.createListing(title, description, price).getOrThrow() }, accepted = { row ->
+            _market.value = listOf(row) + _market.value.filterNot { it.id == row.id }; _marketLoaded.value = true
+            notify("Listed \"${row.title}\" for $price PC")
+        }, completed = completed)
+
+    fun buy(listing: MarketListingDto) = marketAction(spendsMoney = true,
+        operation = { it.buyListing(listing.id).getOrThrow() }, accepted = {
+            _market.value = _market.value.filterNot { it.id == listing.id }
+            notify("Bought \"${listing.title}\"")
+        })
 
     // ── F-HB-07 logs ──
     private val _logs = MutableStateFlow<List<HubLogDto>>(emptyList())
@@ -979,42 +1030,62 @@ private fun nextStatus(s: String) = when (s) { "todo" -> "doing"; else -> "done"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MarketSheet(vm: HubViewModel, onDismiss: () -> Unit) {
-    var title by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf("") }
-    var creating by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var confirmBuy by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { vm.loadMarket() }
+    var title by remember(vm.viewerId) { mutableStateOf("") }
+    var price by remember(vm.viewerId) { mutableStateOf("") }
+    var creating by remember(vm.viewerId) { mutableStateOf(false) }
+    var error by remember(vm.viewerId) { mutableStateOf<String?>(null) }
+    var confirmBuy by remember(vm.viewerId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(vm.viewerId) { vm.loadMarket() }
     val listings by vm.market.collectAsStateWithLifecycle()
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    val marketBusy by vm.marketBusy.collectAsStateWithLifecycle()
+    val walletBusy by vm.walletMutationBusy.collectAsStateWithLifecycle()
+    val busy = marketBusy || walletBusy
+    val loaded by vm.marketLoaded.collectAsStateWithLifecycle()
+    val loading by vm.marketLoading.collectAsStateWithLifecycle()
+    val loadError by vm.marketError.collectAsStateWithLifecycle()
+    val actionError by vm.marketActionError.collectAsStateWithLifecycle()
+    ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(confirmValueChange = { !busy || it != androidx.compose.material3.SheetValue.Hidden })) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Market", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
-                TextButton(onClick = { creating = !creating }) { Text(if (creating) "Close" else "+ List") }
+                TextButton(enabled = !busy, onClick = { creating = !creating }) { Text(if (creating) "Close" else "+ List") }
             }
             if (creating) {
-                OutlinedTextField(value = title, onValueChange = { title = it.take(80) }, label = { Text("Title (1–80)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(enabled = !busy, value = title, onValueChange = { title = it.take(80) }, label = { Text("Title (1–80)") }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
-                OutlinedTextField(value = price, onValueChange = { price = it.filter(Char::isDigit).take(6) }, label = { Text("Price PC") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(enabled = !busy, value = price, onValueChange = { price = it.filter(Char::isDigit).take(6) }, label = { Text("Price PC") }, modifier = Modifier.fillMaxWidth())
                 error?.let {
                     Spacer(Modifier.height(6.dp))
                     Text(it, color = EmberPalette.Signal, fontSize = 13.sp)
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(
+                    enabled = !busy,
                     onClick = {
                         val p = price.toLongOrNull() ?: 0
                         when {
                             title.isBlank() -> error = "Title must be 1–80 characters."
                             p !in 1..100_000 -> error = "Price must be a positive whole number (max 100,000 PC)."
-                            else -> { vm.createListing(title.trim(), p, null); title = ""; price = ""; creating = false }
+                            else -> {
+                                error = null
+                                val sentTitle = title; val sentPrice = price
+                                vm.createListing(title.trim(), p, null) { accepted ->
+                                    if (accepted && title == sentTitle && price == sentPrice) { title = ""; price = ""; creating = false }
+                                }
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Post listing") }
                 Spacer(Modifier.height(10.dp))
             }
-            if (listings.isEmpty()) Text("Nothing on the market yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            actionError?.let { Text(it, color = EmberPalette.Signal) }
+            if (loading) Text("Refreshing market…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            loadError?.let { message ->
+                Text(message, color = EmberPalette.Signal)
+                TextButton(enabled = !busy && !loading, onClick = { vm.loadMarket() }) { Text("Retry") }
+            }
+            if (loaded && listings.isEmpty()) Text("Nothing on the market yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             listings.forEach { l ->
                 Row(
                     Modifier
@@ -1034,9 +1105,9 @@ private fun MarketSheet(vm: HubViewModel, onDismiss: () -> Unit) {
                         l.mine -> Text("Yours", color = EmberPalette.Online, fontSize = 12.sp)
                         confirmBuy == l.id -> Row {
                             TextButton(onClick = { confirmBuy = null }) { Text("No") }
-                            Button(onClick = { vm.buy(l); confirmBuy = null }) { Text("Buy") }
+                            Button(enabled = !busy, onClick = { vm.buy(l); confirmBuy = null }) { Text("Buy") }
                         }
-                        else -> OutlinedButton(onClick = { confirmBuy = l.id }) { Text("Buy") }
+                        else -> OutlinedButton(enabled = !busy, onClick = { confirmBuy = l.id }) { Text("Buy") }
                     }
                 }
             }

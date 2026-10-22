@@ -443,14 +443,21 @@ public struct WireMarketListing: Codable, Hashable, Sendable {
 }
 
 public struct WireMarketPage: Codable, Sendable {
+    public let marketVersion: Int
+    public let userId: String
     public let listings: [WireMarketListing]
 }
 
 public struct WireMarketListingEnvelope: Codable, Sendable {
+    public let marketVersion: Int
+    public let userId: String
     public let listing: WireMarketListing?
 }
 
 public struct WireMarketBuyResult: Codable, Sendable {
+    public let marketVersion: Int
+    public let userId: String
+    public let listingId: String
     public let ok: Bool?
     public let wallet: WireWallet?
 }

@@ -1433,11 +1433,17 @@ class PulseApi(
         java.time.Instant.parse(requireNotNull(task.createdAt)); java.time.Instant.parse(requireNotNull(task.updatedAt))
     }
 
-    private fun listingOf(json: String): MarketListingDto =
-        PulseJson.decodeFromString(
-            MarketListingDto.serializer(),
-            PulseJson.parseToJsonElement(json).unwrapOrRoot("listing").toString(),
-        )
+    private fun requireMarketListing(listing: MarketListingDto, owner: String) {
+        require(listing.id.isNotBlank() && listing.title.isNotBlank() && listing.title.length <= 80 &&
+            listing.price in 1..100_000 && listing.asset == "PC" && listing.seller.id.isNotBlank() &&
+            listing.mine == (listing.seller.id == owner)) { "Market listing could not be verified." }
+        java.time.Instant.parse(listing.createdAt)
+        val buyer = listing.buyer // local capture permits safe cross-module null checking
+        require(if (listing.status == "open") buyer == null else listing.status == "sold" &&
+            listing.mine && (buyer == null || (buyer.id.isNotBlank() && buyer.id != listing.seller.id))) {
+            "Market listing state could not be verified."
+        }
+    }
 
     private fun matchOf(json: String, id: String): GameDetailDto {
         val fields = (PulseJson.parseToJsonElement(json) as? JsonObject)?.get("match") as? JsonObject
@@ -1996,7 +2002,12 @@ class PulseApi(
     /** GET /api/hub/market?userId= - open listings + viewer's own (any status), ≤60. */
     suspend fun market(userId: String): PulseResult<MarketPageDto> =
         get("/api/hub/market?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(MarketPageDto.serializer(), it)
+            PulseJson.decodeFromString(MarketPageDto.serializer(), it).also { page ->
+                require(page.marketVersion == 1 && page.userId == userId && page.listings.map { row -> row.id }.distinct().size == page.listings.size) {
+                    "Market ownership could not be verified. Update the gateway before retrying."
+                }
+                page.listings.forEach { row -> requireMarketListing(row, userId) }
+            }
         }
 
     /** POST /api/hub/market { userId, title 1..80, description?, price 1..100000 } → { listing }. */
@@ -2009,14 +2020,21 @@ class PulseApi(
                 if (!description.isNullOrBlank()) put("description", description)
                 put("price", price)
             },
-        ) { listingOf(it) }
+        ) {
+            val receipt = PulseJson.decodeFromString(app.pulse.protocol.MarketListingEnvelopeDto.serializer(), it)
+            require(receipt.marketVersion == 1 && receipt.userId == userId) { "Listing ownership was not confirmed." }
+            receipt.listing.also { row ->
+                requireMarketListing(row, userId)
+                require(row.mine && row.status == "open" && row.title == title.trim() && row.price == price) { "Listing details were not confirmed." }
+            }
+        }
 
     /** POST /api/hub/market/{id}/buy { userId } → { ok, wallet } (atomic escrow-less debit/credit). */
     suspend fun buyListing(listingId: String, userId: String): PulseResult<MarketBuyResultDto> =
         post("/api/hub/market/" + java.net.URLEncoder.encode(listingId, "UTF-8") + "/buy", jsonOf("userId" to userId)) {
             requireWalletAck(it, userId)
             val result = PulseJson.decodeFromString(MarketBuyResultDto.serializer(), it)
-            if (!result.ok) throw kotlinx.serialization.SerializationException("Purchase was not confirmed; refresh the market before retrying")
+            if (result.marketVersion != 1 || result.userId != userId || result.listingId != listingId || !result.ok) throw kotlinx.serialization.SerializationException("Purchase was not confirmed; refresh the market before retrying")
             result
         }
 

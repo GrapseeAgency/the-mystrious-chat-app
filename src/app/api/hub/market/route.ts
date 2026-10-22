@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
   const listings = await db.marketListing.findMany({
     where: { OR: [{ status: 'open' }, ...(userId ? [{ sellerId: userId }] : [])] },
-    orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+    orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
     take: 60,
     include: {
       seller: { select: { id: true, name: true, username: true, color: true } },
@@ -30,6 +30,7 @@ export async function GET(req: Request) {
   })
 
   return NextResponse.json({
+    marketVersion: 1, userId: userId || null,
     listings: listings.map((l) => ({
       id: l.id,
       title: l.title,
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Price must be a positive whole number (max 100,000 PC).' }, { status: 400 })
   }
 
-  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
+  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true, name: true, username: true, color: true } })
   if (!user) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
   }
@@ -81,6 +82,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(
       {
+        marketVersion: 1, userId,
         listing: {
           id: listing.id,
           title: listing.title,
@@ -89,7 +91,7 @@ export async function POST(req: Request) {
           asset: listing.asset,
           status: listing.status,
           createdAt: listing.createdAt.toISOString(),
-          mine: true,
+          seller: user, buyer: null, mine: true,
         },
       },
       { status: 201 },

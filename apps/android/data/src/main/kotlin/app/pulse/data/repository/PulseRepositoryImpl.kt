@@ -3583,7 +3583,7 @@ class PulseRepositoryImpl constructor(
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         val result = operation(owner)
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Board account changed")
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Account changed")
         return when (result) {
             is PulseResult.Success -> Result.success(result.value)
             is PulseResult.Failure -> Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
@@ -3926,23 +3926,13 @@ class PulseRepositoryImpl constructor(
     override suspend fun deleteHubTask(taskId: String): Result<Unit> =
         personalTaskMutation { api.deleteHubTask(taskId, it) }.map { Unit }
 
-    override suspend fun market(): Result<MarketPageDto> =
-        when (val r = api.market(viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    override suspend fun market(): Result<MarketPageDto> = ownedAccountRequest { api.market(it) }
 
     override suspend fun createListing(title: String, description: String?, price: Long): Result<MarketListingDto> =
-        when (val r = api.createListing(viewerId ?: "", title, description, price)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.createListing(it, title, description, price) }
 
     override suspend fun buyListing(listingId: String): Result<MarketBuyResultDto> =
-        when (val r = api.buyListing(listingId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.buyListing(listingId, it) }
 
     override suspend fun hubLogs(limit: Int, kind: String?): Result<HubLogsPageDto> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))

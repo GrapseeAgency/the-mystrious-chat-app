@@ -251,46 +251,76 @@ final class HubViewModel: ObservableObject {
 
     // MARK: market
 
+    @Published private(set) var marketBusy = false
+    @Published private(set) var marketLoaded = false
+    @Published private(set) var marketLoading = false
+    @Published private(set) var marketError: String?
+    @Published private(set) var marketActionError: String?
+    private var marketOwner: String?
+
     func loadMarket() {
+        if marketOwner != viewerId {
+            listings = []; marketLoaded = false; marketOwner = viewerId
+            marketError = "Account changed. Refresh the market."; marketActionError = nil; marketRequest = UUID()
+        }
+        guard !marketBusy else { return }
+        guard let client = api else { marketError = "No gateway configured."; return }
         let ticket = UUID()
         marketRequest = ticket
+        marketLoading = true; marketError = nil
         let epoch = session.sessionGeneration
         Task { @MainActor in
-            guard let api = api else { return }
+            guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
+            defer { if marketRequest == ticket, session.sessionGeneration == epoch { marketLoading = false } }
             do {
-                let fresh = try await api.market().listings
-                guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
-                listings = fresh
+                let fresh = try await client.market().listings
+                guard !Task.isCancelled, marketRequest == ticket, session.sessionGeneration == epoch else { return }
+                listings = fresh; marketLoaded = true
             } catch {
-                guard marketRequest == ticket, session.sessionGeneration == epoch else { return }
-                toast(describe(error), isError: true) // keep the last real list
+                guard !Task.isCancelled, marketRequest == ticket, session.sessionGeneration == epoch else { return }
+                marketError = describe(error)
             }
         }
     }
 
-    func createListing(_ title: String, price: Int) {
+    private func marketAction<T: Sendable>(spendsMoney: Bool = false, operation: @escaping (PulseAPIClient) async throws -> T,
+                                 accepted: @escaping (T) -> Void, completion: @escaping (Bool) -> Void = { _ in }) {
+        guard !marketBusy, !walletMutationBusy, let client = api else { completion(false); return }
+        let epoch = session.sessionGeneration
+        marketBusy = true; marketRequest = UUID(); marketLoading = false; marketActionError = nil
+        if spendsMoney { walletMutationBusy = true; walletRequest = UUID() }
         Task { @MainActor in
-            guard let api = api else { return }
+            var confirmed = false
             do {
-                let listing = try await api.createListing(title: title, description: nil, price: price)
-                loadMarket()
-                toast("Listed \"\(listing.title ?? title)\" for \(price) PC")
+                defer { marketBusy = false; marketRequest = UUID(); if spendsMoney { walletMutationBusy = false } }
+                guard session.sessionGeneration == epoch else { return }
+                try Task.checkCancellation()
+                let value = try await operation(client)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                accepted(value); confirmed = true
             } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                marketActionError = describe(error)
                 toast(describe(error), isError: true)
             }
+            guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+            completion(confirmed); loadMarket(); if spendsMoney { loadWallet() }
         }
+    }
+
+    func createListing(_ title: String, price: Int, completion: @escaping (Bool) -> Void) {
+        marketAction(operation: { client in
+            try await client.createListing(title: title, description: nil, price: price)
+        }, accepted: { row in
+            self.listings = [row] + self.listings.filter { $0.id != row.id }; self.marketLoaded = true
+            self.toast("Listed \"\(row.title ?? title)\" for \(price) PC")
+        }, completion: completion)
     }
 
     func buy(_ listing: WireMarketListing) {
-        guard let api else { return }
-        performWalletMutation(operation: {
-            _ = try await api.buyListing(listing.id)
-            return "Bought \"\(listing.title ?? "")\""
-        }, completion: { result in
-            switch result {
-            case .success(let message): self.toast(message); self.loadWallet(); self.loadMarket()
-            case .failure(let error): self.toast(self.describe(error), isError: true)
-            }
+        marketAction(spendsMoney: true, operation: { client in try await client.buyListing(listing.id) }, accepted: { _ in
+            self.listings.removeAll { $0.id == listing.id }
+            self.toast("Bought \"\(listing.title ?? "")\"")
         })
     }
 
@@ -800,27 +830,38 @@ private struct HubMarketSheet: View {
     @State private var price = ""
     @State private var creating = false
     @State private var confirmBuy: String?
+    @State private var validationError: String?
 
     var body: some View {
         List {
             Section {
                 Button(creating ? "Close" : "+ List") { creating.toggle() }
                 if creating {
+                    if let error = validationError { Text(error).foregroundStyle(.red) }
                     TextField("Title (1–80)", text: $title)
                     TextField("Price PC", text: $price)
                         .keyboardType(.numberPad)
                     Button("Post listing") {
                         let t = title.trimmingCharacters(in: .whitespaces)
                         let p = Int(price) ?? 0
-                        guard !t.isEmpty else { vm.toast("Title must be 1–80 characters.", isError: true); return }
-                        guard p >= 1, p <= 100_000 else { vm.toast("Price must be a positive whole number (max 100,000 PC).", isError: true); return }
-                        vm.createListing(t, price: p)
-                        title = ""; price = ""; creating = false
+                        guard !t.isEmpty, t.utf16.count <= 80 else { validationError = "Title must be 1–80 characters."; return }
+                        guard p >= 1, p <= 100_000 else { validationError = "Price must be a positive whole number (max 100,000 PC)."; return }
+                        validationError = nil
+                        let sentTitle = title, sentPrice = price
+                        vm.createListing(t, price: p) { accepted in
+                            if accepted, title == sentTitle, price == sentPrice { title = ""; price = ""; creating = false }
+                        }
                     }
                 }
             }
             Section("Listings") {
-                if vm.listings.isEmpty {
+                if let error = vm.marketActionError { Text(error).foregroundStyle(.red) }
+                if vm.marketLoading { Text("Refreshing market…").foregroundStyle(.secondary) }
+                if let error = vm.marketError {
+                    Text(error).foregroundStyle(.secondary)
+                    Button("Retry") { vm.loadMarket() }.disabled(vm.marketLoading)
+                }
+                if vm.marketLoaded && vm.listings.isEmpty {
                     Text("Nothing on the market yet.").foregroundStyle(.secondary)
                 }
                 ForEach(vm.listings, id: \.id) { listing in
@@ -854,9 +895,11 @@ private struct HubMarketSheet: View {
                 }
             }
         }
+        .disabled(vm.marketBusy || vm.walletMutationBusy)
+        .interactiveDismissDisabled(vm.marketBusy)
         .navigationTitle("Market")
         .navigationBarTitleDisplayMode(.inline)
-        .task { vm.loadMarket() }
+        .task(id: vm.viewerId) { vm.loadMarket() }
     }
 }
 

@@ -1562,9 +1562,27 @@ public struct PulseAPIClient: Sendable {
         return task
     }
 
+    private func requireMarketListing(_ row: WireMarketListing) throws {
+        guard !row.id.isEmpty, let title = row.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              title.utf16.count <= 80, let price = row.price, (1...100_000).contains(price), row.asset == "PC",
+              let seller = row.seller?.id, !seller.isEmpty, row.mine == (seller == userId),
+              row.createdAt.flatMap(PulseFormat.date) != nil else {
+            throw Failure(kind: .validation, message: "Market listing could not be verified.")
+        }
+        guard (row.status == "open" && row.buyer == nil) || (row.status == "sold" && row.mine == true &&
+            (row.buyer == nil || (row.buyer?.id?.isEmpty == false && row.buyer?.id != seller))) else {
+            throw Failure(kind: .validation, message: "Market listing state could not be verified.")
+        }
+    }
+
     /// GET /api/hub/market?userId= → { listings }.
     public func market() async throws -> WireMarketPage {
-        try await get("/api/hub/market?userId=\(q(userId))")
+        let page: WireMarketPage = try await get("/api/hub/market?userId=\(q(userId))")
+        guard page.marketVersion == 1, page.userId == userId, Set(page.listings.map(\.id)).count == page.listings.count else {
+            throw Failure(kind: .validation, message: "Market ownership could not be verified. Update the gateway before retrying.")
+        }
+        for row in page.listings { try requireMarketListing(row) }
+        return page
     }
 
     /// POST /api/hub/market { userId, title, description?, price } → { listing }.
@@ -1572,15 +1590,21 @@ public struct PulseAPIClient: Sendable {
         var body: [String: Any] = ["userId": userId, "title": title, "price": price]
         if let description { body["description"] = description }
         let data = try await postRaw("/api/hub/market", body: body)
-        if let page = try? envelope(WireMarketListingEnvelope.self, from: data), let l = page.listing { return l }
-        return try envelope(WireMarketListing.self, from: data)
+        let receipt = try envelope(WireMarketListingEnvelope.self, from: data)
+        guard receipt.marketVersion == 1, receipt.userId == userId, let row = receipt.listing else {
+            throw Failure(kind: .validation, message: "Listing ownership was not confirmed.")
+        }
+        try requireMarketListing(row)
+        guard row.mine == true, row.status == "open", row.title == title.trimmingCharacters(in: .whitespacesAndNewlines), row.price == price else {
+            throw Failure(kind: .validation, message: "Listing details were not confirmed.")
+        }
+        return row
     }
 
     /// POST /api/hub/market/{id}/buy { userId } → { ok, wallet }.
     public func buyListing(_ listingId: String) async throws -> WireMarketBuyResult {
         let data = try await postRaw("/api/hub/market/\(q(listingId))/buy", body: ["userId": userId])
-        let result = try envelope(WireMarketBuyResult.self, from: data)
-        guard result.ok == true else { throw Failure(kind: .server, message: "Purchase was not confirmed; refresh the market before retrying.") }
+        guard let result = try? envelope(WireMarketBuyResult.self, from: data), result.marketVersion == 1, result.userId == userId, result.listingId == listingId, result.ok == true else { throw Failure(kind: .server, message: "Purchase was not confirmed; refresh the market before retrying.") }
         try requireWalletAck(result.wallet)
         return result
     }

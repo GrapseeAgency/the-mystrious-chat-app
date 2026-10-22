@@ -193,10 +193,10 @@ final class Wave7WireTests: XCTestCase {
         XCTAssertEqual(swapResult.wallet?.gems, 2)
         let market = try decode(
             WireMarketPage.self,
-            #"{"listings":[{"id":"l1","title":"Ship","price":25,"asset":"PC","status":"open","seller":{"id":"u1","name":"A"},"mine":false}]}"#,
+            #"{"marketVersion":1,"userId":"u2","listings":[{"id":"l1","title":"Ship","price":25,"asset":"PC","status":"open","seller":{"id":"u1","name":"A"},"mine":false}]}"#,
         )
         XCTAssertEqual(market.listings.first?.price, 25)
-        let buy = try decode(WireMarketBuyResult.self, #"{"ok":true,"wallet":{"userId":"u2","coins":40}}"#)
+        let buy = try decode(WireMarketBuyResult.self, #"{"marketVersion":1,"userId":"u2","listingId":"l1","ok":true,"wallet":{"userId":"u2","coins":40}}"#)
         XCTAssertEqual(buy.ok, true)
     }
 

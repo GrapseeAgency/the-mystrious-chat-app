@@ -360,7 +360,7 @@ class Wave7ApiTest {
     @Test
     fun `market buy posts and returns ok plus wallet`() = runTest {
         configured()
-        response = """{"ok":true,"wallet":{"userId":"u2","coins":40,"gems":0}}"""
+        response = """{"marketVersion":1,"userId":"u2","listingId":"l1","ok":true,"wallet":{"userId":"u2","coins":40,"gems":0}}"""
         val r = api().buyListing("l1", "u2")
         assertTrue(r is PulseResult.Success)
         assertTrue(lastUrl.endsWith("/api/hub/market/l1/buy"))
