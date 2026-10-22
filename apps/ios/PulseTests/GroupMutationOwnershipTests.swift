@@ -56,6 +56,19 @@ final class GroupMutationOwnershipTests: XCTestCase {
         gate.cancel()
         XCTAssertFalse(gate.isCurrent(request, owner: owner, resource: "group"))
     }
+    func testDepartureRetiresOldEntriesWithoutPoppingANewerDestination() throws {
+        let group = try JSONDecoder().decode(WireConversationSummary.self, from: Data(#"{"id":"group","isGroup":true,"members":[]}"#.utf8))
+        let other = try JSONDecoder().decode(WireConversationSummary.self, from: Data(#"{"id":"other","isGroup":true,"members":[]}"#.utf8))
+        let earlier = RoomRoute(conversation: group)
+        let leaving = RoomRoute(conversation: group)
+        let newer = RoomRoute(conversation: other)
+        let reentry = RoomRoute(conversation: group)
+        XCTAssertNotEqual(leaving, reentry)
+        XCTAssertEqual(RoomRoute.retiring(leaving, from: [earlier, leaving, newer, reentry]), [newer, reentry])
+        XCTAssertEqual(RoomRoute.retiring(leaving, from: [newer, reentry]), [newer, reentry])
+        XCTAssertTrue(RoomRoute.retiring(leaving, from: [leaving]).isEmpty)
+    }
+
     func testMissingOrMismatchedSettingsAndMemberAcknowledgementsAreRejected() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [GroupReplyProtocol.self]

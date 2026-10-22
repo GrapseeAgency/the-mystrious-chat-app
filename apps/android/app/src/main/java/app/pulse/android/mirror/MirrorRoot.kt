@@ -135,12 +135,13 @@ internal fun MirrorRoot(
     val lifecycleOwner = LocalLifecycleOwner.current
     var tab by rememberSaveable { mutableStateOf(MirrorTab.Chats) }
     var openRoom by remember { mutableStateOf<Conversation?>(null) }
+    var closingRoomId by remember(viewerId) { mutableStateOf<String?>(null) }
     var roomOpenRequest by remember(viewerId) { mutableStateOf<MirrorRoomOpenRequest?>(null) }
     var roomOpenSequence by remember(viewerId) { mutableStateOf(0L) }
     val navigationContext = androidx.compose.ui.platform.LocalContext.current
     val currentCallRoomCallback by androidx.compose.runtime.rememberUpdatedState(onActiveCallRoomChanged)
-    androidx.compose.runtime.DisposableEffect(openRoom?.id) {
-        currentCallRoomCallback(openRoom)
+    androidx.compose.runtime.DisposableEffect(openRoom?.id, closingRoomId) {
+        currentCallRoomCallback(openRoom?.takeUnless { it.id == closingRoomId })
         onDispose { currentCallRoomCallback(null) }
     }
     // R73 - keeps the room composed while the close slide-out plays
@@ -385,6 +386,14 @@ internal fun MirrorRoot(
         onConsumePendingRoom()
         onConsumePendingJumpMessage()
     }
+    LaunchedEffect(roomOpenRequest, closingRoomId) {
+        val closing = closingRoomId ?: return@LaunchedEffect
+        if (roomOpenRequest == null) {
+            if (openRoom?.id == closing) openRoom = null
+            closingRoomId = null
+        }
+    }
+
     val openingRequest = roomOpenRequest
     LaunchedEffect(openingRequest, repository, viewerId, tab, openRoom?.id) {
         val request = openingRequest ?: return@LaunchedEffect
@@ -790,7 +799,7 @@ internal fun MirrorRoot(
         // the exit so the slide-down is visible.
         LaunchedEffect(openRoom) { if (openRoom != null) roomShown = openRoom }
         AnimatedVisibility(
-            visible = viewingStory == null && openRoom != null,
+            visible = viewingStory == null && openRoom != null && openRoom?.id != closingRoomId,
             enter = slideInVertically(MirrorMotion.soft()) { it } + fadeIn(tween(90)),
             exit = slideOutVertically(tween(210, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(150)),
         ) {
@@ -802,7 +811,8 @@ internal fun MirrorRoot(
                 androidx.compose.runtime.key(viewerId, convo.id) {
                     MirrorRoomScaffold(
                         convo = convo,
-                        readingEnabled = readingEnabled && openRoom != null && viewingStory == null &&
+                        readingEnabled = readingEnabled && openRoom?.id == convo.id && closingRoomId != convo.id &&
+                            roomOpenRequest == null && viewingStory == null &&
                             roomInfoFor == null && managerFor == null && userPageFor == null &&
                             !settingsOpen && !callsOpen && !spotlightOpen,
                         accountRouter = repository,
@@ -821,6 +831,21 @@ internal fun MirrorRoot(
                         onJumpConsumed = { pendingJumpId = null },
                     )
                 }
+            }
+        }
+
+        // A confirmed departure closes only the matching room and pending open, not a newer destination.
+        fun closeDepartedRoom(id: String) {
+            if (roomInfoFor?.id == id) roomInfoFor = null
+            if (managerFor?.id == id) managerFor = null
+            if (pipFor?.id == id) pipFor = null
+            if (roomOpenRequest?.let { !it.personal && it.id == id } == true) roomOpenRequest = null
+            if (openRoom?.id == id) {
+                // Do not cancel/re-dispatch a newer DM/open request just because
+                // this older departure finished. Hide the departed room while
+                // preserving that request's original navigation context.
+                if (roomOpenRequest != null) closingRoomId = id else openRoom = null
+                pendingJumpId = null
             }
         }
 
@@ -847,6 +872,7 @@ internal fun MirrorRoot(
                         }
                     },
                     onDismiss = { roomInfoFor = null },
+                    onLeft = { closeDepartedRoom(convo.id) },
                     onOpenManager = { managerFor = roomInfoFor; roomInfoFor = null },
                     onOpenUser = { roomInfoFor = null; userPageFor = it },
                 )
@@ -854,23 +880,31 @@ internal fun MirrorRoot(
         }
         if (managerFor != null) {
             val convo = managerFor!!
-            // R70 - the web GroupInfoSheet parity (webhooks, leaderboard,
-            // tournaments, role actions, rename/leave).
-            MirrorGroupManagerSheet(
-                conversationId = convo.id,
-                viewerId = viewerId.orEmpty(),
-                viewerName = viewerName.orEmpty(),
-                repository = repository,
-                presence = presence,
-                onChanged = {
-                    CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
-                },
-                onDismiss = { managerFor = null },
-                onOpenUser = {
-                    managerFor = null
-                    userPageFor = it
-                },
-            )
+            androidx.compose.runtime.key(viewerId, convo.id) {
+                val managerRepository = remember(repository, viewerId, convo.id) { repository.boundToCurrentAccount() }
+                val managerScope = androidx.compose.runtime.rememberCoroutineScope()
+                MirrorGroupManagerSheet(
+                    conversationId = convo.id,
+                    viewerId = viewerId.orEmpty(),
+                    viewerName = viewerName.orEmpty(),
+                    repository = managerRepository,
+                    presence = presence,
+                    onChanged = {
+                        managerScope.launch {
+                            try {
+                                withContext(Dispatchers.IO) { managerRepository.refreshConversations() }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                // Repository reconciliation remains independent.
+                            }
+                        }
+                    },
+                    onDismiss = { managerFor = null },
+                    onLeft = { closeDepartedRoom(convo.id) },
+                    onOpenUser = { managerFor = null; userPageFor = it },
+                )
+            }
         }
         // R72 - the web #/user/:id full-screen profile page (topmost overlay)
         if (userPageFor != null) {

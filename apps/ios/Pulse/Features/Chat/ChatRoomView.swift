@@ -18,6 +18,7 @@ struct ChatRoomView: View {
     /// Global-search jump - the room scrolls to + flashes this message after
     /// its initial load (bounded history expansion if it sits out of window).
     var jumpMessageId: String? = nil
+    var onLeft: () -> Void
 
     @State private var viewModel: RoomViewModel?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -30,6 +31,7 @@ struct ChatRoomView: View {
                     session: session,
                     prefs: prefs,
                     viewModel: viewModel,
+                    onLeft: onLeft,
                 )
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -323,6 +325,7 @@ private struct RoomContent: View {
     @ObservedObject var session: PulseSession
     @ObservedObject var prefs: PulsePrefs
     @ObservedObject var viewModel: RoomViewModel
+    var onLeft: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -363,6 +366,7 @@ private struct RoomContent: View {
 
     // ── REM-B - group admin / scheduled / reactions / stickers / who-reacted ──
     @State private var groupInfoOpen = false
+    @State private var departureEpoch: UUID?
     @State private var scheduleOpen = false
     @State private var scheduledManagerOpen = false
     @State private var reactionTarget: WireChatMessage?
@@ -398,7 +402,7 @@ private struct RoomContent: View {
         let messageSurface = threadRoot != nil || forwardSource != nil || infoTarget != nil ||
             lightbox != nil || quicklook != nil || reactionTarget != nil || whoReactedOpen
         let roomSurface = pinsOpen || searchOpen || showFileImporter || showPhotoPicker || showCamera || pollBuilderOpen ||
-            safetyOpen || dmInfoOpen || groupInfoOpen || scheduleOpen || scheduledManagerOpen ||
+            safetyOpen || dmInfoOpen || groupInfoOpen || departureEpoch != nil || scheduleOpen || scheduledManagerOpen ||
             stickerOpen || locationOpen || themeOpen || phrasesOpen || leaderboardOpen
         let collaboration = wave7.redPacketCreateOpen || wave7.gameCreateOpen || wave7.tournamentCreateOpen ||
             wave7.kanbanOpen || wave7.whiteboardOpen || wave7.eventsOpen || wave7.remindersOpen
@@ -494,6 +498,7 @@ private struct RoomContent: View {
 
     var body: some View {
         chatBodyStyled14
+            .disabled(departureEpoch != nil)
     }
 
     // ChatRoomView.body - R12 type-check decomposition: the original single builder
@@ -994,7 +999,16 @@ private struct RoomContent: View {
             PollBuilderSheet(viewModel: viewModel, session: session)
         }
         // ── REM-B sheet hosts ──
-        .sheet(isPresented: $groupInfoOpen) {
+        .sheet(isPresented: $groupInfoOpen, onDismiss: {
+            guard let epoch = departureEpoch else { return }
+            guard session.sessionGeneration == epoch else {
+                departureEpoch = nil
+                return
+            }
+            // Wait for the sheet to close before retiring its exact route.
+            // Retain the read fence through the navigation transition.
+            onLeft()
+        }) {
             GroupInfoView(
                 conversation: conversation,
                 session: session,
@@ -1003,6 +1017,11 @@ private struct RoomContent: View {
                     // R38/R47 - one mutator adopts both flags from the
                     // info-sheet's fresh detail (dmBlocked is private(set)).
                     viewModel.applyFreshDetail(detail)
+                },
+                onLeft: {
+                    departureEpoch = session.sessionGeneration
+                    viewModel.updateReadViewport(visibleIDs: [], tailVisible: false)
+                    groupInfoOpen = false
                 },
             )
             .id("\(session.sessionGeneration.uuidString)|\(conversation.id)")

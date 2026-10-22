@@ -19,6 +19,7 @@ struct GroupInfoView: View {
     /// sheet push fresh detail (veil flag, photo) back into the room.
     @ObservedObject var prefs: PulsePrefs
     var onDetailUpdated: ((WireConversationSummary) -> Void)? = nil
+    var onLeft: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -783,7 +784,7 @@ struct GroupInfoView: View {
             guard result.ok == true else { throw PulseAPIClient.Failure(kind: .server, message: "Leaving was not confirmed. Refresh Chats before retrying.") }
             let promoted = result.promotedUserId.flatMap { id in members.first(where: { $0.id == id })?.name }
             session.toasts.show(promoted.map { "You left the group - \($0) is now an admin" } ?? "You left the group")
-            dismiss()
+            onLeft()
         })
     }
 

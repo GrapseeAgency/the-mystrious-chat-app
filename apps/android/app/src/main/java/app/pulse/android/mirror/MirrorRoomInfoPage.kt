@@ -599,6 +599,7 @@ internal fun MirrorRoomInfoPage(
     presence: Set<String>,
     onChanged: () -> Unit,
     onDismiss: () -> Unit,
+    onLeft: () -> Unit,
     onOpenManager: () -> Unit,
     // R72 - the web #/user/:id page (member row tap = openProfileForUser)
     onOpenUser: (String) -> Unit = {},
@@ -924,7 +925,7 @@ internal fun MirrorRoomInfoPage(
             res.onSuccess {
                 withContext(Dispatchers.Main) {
                     onChanged()
-                    onDismiss()
+                    onLeft()
                 }
             }.onFailure {
                 showNote(it.message ?: "Could not leave the channel", true)

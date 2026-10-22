@@ -3015,3 +3015,33 @@ at inspection. Server code is unchanged from the 163/163 run at 8b8e8af. Invento
 Limits remain: no cross-device server metadata revision/operation receipts, no claim of full
 HTTP+Room race-injection or device coverage, and broader navigation/media/directory policies
 remain under review. Autumn palette unchanged.
+
+## 2026-10-22 — confirmed departure and the alternate group manager
+
+Tracing beyond storage found a second broken boundary: successful leave dismissed the info
+surface, but left its sending room open. Android room-info/channel leave and the classic
+manager now tell the host about a confirmed departure separately from ordinary Back. The host
+closes the matching chat/PiP and same-room pending open. A newer destination still resolving
+retains its navigation context instead of being cancelled/re-dispatched by the older ACK;
+the departed room is hidden and its read/call-room visibility retired during that wait.
+Exit-animation reading additionally requires the exact active room, not just any open room.
+
+Swift closes the info sheet first, holds the composer/read gate through dismissal, then
+retires the departed navigation entry. Chats now owns typed room routes with entry identity;
+cleanup removes matching older entries without popping a newer destination or later re-entry,
+and does not invent a new navigation intent that would cancel an in-flight open. A regression
+covers route identity, older duplicates, newer destinations/re-entry and already-retired routes.
+
+The classic Android manager bypassed the earlier room-info repairs: promote/demote/kick
+returned Result values to a Unit callback and silently discarded failures; pending was always
+false, and refresh failures retained stale authority. Its host is now keyed/account-bound,
+refresh is composition-owned, and mutations have one synchronous pending gate, real Result
+handling, cancellation propagation, metadata-ticket retirement and failure reconciliation.
+Add-members participates in that gate, snapshots selection, disables pending edits, and reports
+zero actual additions honestly. Failed metadata clears authority. Existing child loaders also
+convert unexpected thrown failures without swallowing cancellation. This does not establish
+ordering/idempotency of every webhook/tournament operation in those child sections.
+
+Seven changed native source/test files pass syntax parsing; native execution/device navigation
+coverage of these changes is not yet established. Palette is unchanged. Server source is
+unchanged; no new server pass-count claim is made for native-only changes.

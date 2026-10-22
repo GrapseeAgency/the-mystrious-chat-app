@@ -3,17 +3,28 @@ import Combine
 
 /// Navigation payload pushed onto any tab's NavigationStack.
 struct RoomRoute: Hashable {
+    let entryID = UUID()
     let conversation: WireConversationSummary
     /// Wave 1 - global-search jump target (scroll + flash after load).
     var jumpMessageId: String? = nil
 
     static func == (lhs: RoomRoute, rhs: RoomRoute) -> Bool {
-        lhs.conversation.id == rhs.conversation.id && lhs.jumpMessageId == rhs.jumpMessageId
+        lhs.entryID == rhs.entryID && lhs.conversation.id == rhs.conversation.id && lhs.jumpMessageId == rhs.jumpMessageId
     }
     func hash(into hasher: inout Hasher) {
+        hasher.combine(entryID)
         hasher.combine(conversation.id)
         hasher.combine(jumpMessageId)
     }
+    /// Remove departed entries up to this acknowledged route, preserving newer
+    /// navigation (including a later explicit re-entry to the same room).
+    static func retiring(_ departed: RoomRoute, from path: [RoomRoute]) -> [RoomRoute] {
+        guard let boundary = path.firstIndex(where: { $0.entryID == departed.entryID }) else { return path }
+        return path.enumerated().compactMap { index, entry in
+            index <= boundary && entry.conversation.id == departed.conversation.id ? nil : entry
+        }
+    }
+
 }
 
 /// Identifiable wrapper so `.sheet(item:)` can drive the row action sheet.
@@ -83,7 +94,7 @@ struct ChatsView: View {
     var isActive: Bool = true
 
     @StateObject private var viewModel = ChatsViewModel()
-    @State private var path = NavigationPath()
+    @State private var path: [RoomRoute] = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     // Wave 4 - full-screen stories surfaces (rail is the entry point).
@@ -119,7 +130,12 @@ struct ChatsView: View {
             .safeAreaInset(edge: .top, spacing: 0) { topChrome }
             .navigationBarHidden(true)
             .navigationDestination(for: RoomRoute.self) { route in
-                ChatRoomView(conversation: route.conversation, session: session, prefs: prefs, jumpMessageId: route.jumpMessageId)
+                ChatRoomView(conversation: route.conversation, session: session, prefs: prefs,
+                    jumpMessageId: route.jumpMessageId, onLeft: {
+                        // A completed departure isn't a new navigation intent:
+                        // don't invalidate another destination still resolving.
+                        path = RoomRoute.retiring(route, from: path)
+                    })
             }
             .sheet(item: $viewModel.sheet) { target in
                 ChatActionSheet(
