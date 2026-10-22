@@ -402,18 +402,15 @@ public struct PulseAPIClient: Sendable {
         }
     }
 
-    /// POST /api/messages/{id}/save {userId} - save/star toggle → {saved}.
-    public func toggleMessageSave(id: String, userId: String) async throws -> Bool {
-        let data = try await postRaw("/api/messages/\(id)/save", body: ["userId": userId])
-        return try decoder.decode(WireSavedToggle.self, from: data).saved
-    }
-
-    /// Explicit removal; a retry must never invoke the save toggle.
-    public func unsaveMessage(id: String, userId: String) async throws {
-        let data = try await deleteRaw("/api/messages/\(id)/save", body: ["userId": userId])
-        guard try decoder.decode(WireSavedToggle.self, from: data).saved == false else {
-            throw Failure(kind: .server, message: "The saved message was not removed. Try again.")
+    /// Explicit save/remove only; no fallback to a legacy toggle.
+    public func setMessageSaved(id: String, userId: String, saved: Bool) async throws -> WireSavedStateReceipt {
+        let data = try await postRaw("/api/messages/\(id)/save-state", body: ["userId": userId, "saved": saved])
+        let receipt = try decoder.decode(WireSavedStateReceipt.self, from: data)
+        guard receipt.savedReceiptVersion == 1, receipt.messageId == id, receipt.userId == userId, receipt.saved == saved,
+              saved ? receipt.savedAt.flatMap(PulseFormat.date) != nil : receipt.savedAt == nil else {
+            throw Failure(kind: .validation, message: "Saved state was not confirmed.")
         }
+        return receipt
     }
 
     /// GET /api/conversations/{id}/pinned?userId= - pins list, pinnedAt asc.

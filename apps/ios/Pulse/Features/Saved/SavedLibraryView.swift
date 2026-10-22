@@ -115,23 +115,23 @@ struct SavedLibraryView: View {
     }
 
     private func unsave(_ item: WireSavedItem) {
-        guard let viewer = session.viewer, !removingIds.contains(item.message.id) else { return }
+        guard session.viewer != nil, !removingIds.contains(item.message.id) else { return }
         removingIds.insert(item.message.id)
         loadGeneration = UUID()
         let epoch = session.sessionGeneration
-        let api = session.api
-        let store = session.store
         Task {
             defer { removingIds.remove(item.message.id) }
             do {
-                try await api.unsaveMessage(id: item.message.id, userId: viewer.id)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                try await session.setMessageSaved(item.message, saved: false)
                 guard session.sessionGeneration == epoch else { return }
                 loadGeneration = UUID()
-                session.noteSavedMutation()
-                try store?.deleteSaved(messageId: item.message.id)
                 items.removeAll { $0.message.id == item.message.id }
                 await load()
+            } catch is CancellationError {
             } catch {
+                guard session.sessionGeneration == epoch else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }

@@ -860,11 +860,14 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    fun toggleMessageSave(messageId: String) {
+    fun saveMessage(messageId: String) {
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
         viewModelScope.launch {
-            repo.toggleMessageSave(messageId)
-                .onSuccess { saved -> notify(if (saved) "Saved to library" else "Removed from library") }
-                .onFailure { notify("Couldn't save the message", isError = true) }
+            if (repo.attachmentSessionKey() != epoch) return@launch
+            owned.setMessageSaved(messageId, true)
+                .onSuccess { if (repo.attachmentSessionKey() == epoch) notify("Saved to library") }
+                .onFailure { if (repo.attachmentSessionKey() == epoch) notify(it.message ?: "Couldn't save the message", isError = true) }
         }
     }
 

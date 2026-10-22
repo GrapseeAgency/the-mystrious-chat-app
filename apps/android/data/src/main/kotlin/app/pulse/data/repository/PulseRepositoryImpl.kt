@@ -1656,17 +1656,38 @@ class PulseRepositoryImpl constructor(
 
     private val savedOperations = Mutex()
 
-    override suspend fun toggleMessageSave(messageId: String): Result<Boolean> = savedOperations.withLock {
-        when (val r = api.toggleMessageSave(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                if (!r.value.saved) savedDao.deleteById(messageId)
-                else messageDao.byId(messageId)?.let { row ->
-                    savedDao.upsertAll(listOf(SavedMessageEntity(messageId, row.conversationId, java.time.OffsetDateTime.now().toString())))
+    override suspend fun setMessageSaved(messageId: String, saved: Boolean): Result<Boolean> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return try {
+            savedOperations.withLock {
+                requireConversationOwner(owner, epoch)
+                kotlin.coroutines.coroutineContext.ensureActive()
+                if (saved) {
+                    val current = messageDao.byId(messageId)?.toDomain()
+                    check(current != null && savedMessageVisible(current) && !messageId.startsWith(app.pulse.domain.model.TEMP_MESSAGE_PREFIX)) {
+                        "Refresh this message before saving it."
+                    }
                 }
-                Result.success(r.value.saved)
+                val response = api.setMessageSaved(messageId, owner, saved)
+                requireConversationOwner(owner, epoch)
+                when (response) {
+                    is PulseResult.Failure -> Result.failure(apiExceptionOf(response))
+                    is PulseResult.Success -> database.withTransaction {
+                        requireConversationOwner(owner, epoch)
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        if (!saved) savedDao.deleteById(messageId)
+                        else {
+                            val current = checkNotNull(messageDao.byId(messageId)) { "Saved message is no longer cached. Refresh the library." }
+                            // Do not rewrite message content from the tapped snapshot.
+                            savedDao.upsertAll(listOf(SavedMessageEntity(messageId, current.conversationId, checkNotNull(response.value.savedAt))))
+                        }
+                        requireConversationOwner(owner, epoch)
+                        Result.success(saved)
+                    }
+                }
             }
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { Result.failure(error) }
     }
 
     private val pinRefreshLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
@@ -3192,18 +3213,7 @@ class PulseRepositoryImpl constructor(
     ) { rows, denied -> rows.map { it.toDomain() }.filter { it.message.threadRootId?.let(denied::contains) != true } }
         .withSavedMessageExpiry()
 
-    override suspend fun unsaveMessage(messageId: String): Result<Boolean> = savedOperations.withLock {
-        when (val r = api.unsaveMessage(messageId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                if (r.value.saved) Result.failure(IllegalStateException("Message was not removed from saved"))
-                else {
-                    savedDao.deleteById(messageId)
-                    Result.success(false)
-                }
-            }
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
-    }
+    override suspend fun unsaveMessage(messageId: String): Result<Boolean> = setMessageSaved(messageId, false)
 
     override suspend fun refreshTopics(conversationId: String): Result<Unit> =
         when (val r = api.topics(conversationId, viewerId ?: "")) {

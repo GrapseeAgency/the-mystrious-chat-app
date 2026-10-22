@@ -232,6 +232,46 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    private var savedActions: [String: UUID] = [:]
+
+    /// Shared by room Save and library Unsave. A receipt is not UI success until
+    /// the original account's marker has committed; never rewrite a tapped body.
+    public func setMessageSaved(_ requested: WireChatMessage, saved: Bool) async throws {
+        try Task.checkCancellation()
+        guard ready, let viewer, let store, savedActions[requested.id] == nil else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Saved messages are unavailable or still updating.")
+        }
+        if saved {
+            guard let cached = try store.message(id: requested.id), cached.conversationId == requested.conversationId,
+                  !cached.id.hasPrefix("local_"), cached.deletedAt == nil, cached.viewOnce != true,
+                  PulseRemediationLogic.isAlive(cached.expiresAt) else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Refresh this message before saving it.")
+            }
+            if let root = cached.parentId, threadAccessDenied(rootId: root) {
+                throw PulseAPIClient.Failure(kind: .forbidden, message: "Reopen this thread to check access before saving.")
+            }
+        }
+        let epoch = sessionGeneration, client = api, ticket = UUID()
+        savedActions[requested.id] = ticket
+        noteSavedMutation()
+        defer {
+            if savedActions[requested.id] == ticket { savedActions.removeValue(forKey: requested.id) }
+            if sessionGeneration == epoch { noteSavedMutation() }
+        }
+        let receipt = try await client.setMessageSaved(id: requested.id, userId: viewer.id, saved: saved)
+        try Task.checkCancellation()
+        guard sessionGeneration == epoch, self.viewer?.id == viewer.id else { throw CancellationError() }
+        if saved {
+            guard let savedAt = receipt.savedAt, let current = try store.message(id: requested.id),
+                  current.conversationId == requested.conversationId else {
+                throw PulseAPIClient.Failure(kind: .validation, message: "Saved message is no longer cached. Refresh the library.")
+            }
+            let item = WireSavedItem(savedAt: savedAt,
+                conversation: WireSavedConversation(id: current.conversationId, isGroup: nil, name: nil), message: current)
+            try store.upsert(savedItems: [item], preservingMessageIds: [current.id])
+        } else { try store.deleteSaved(messageId: requested.id) }
+    }
+
     public enum MessageAction { case edit(String), pin, unpin, delete }
     private var messageActions: [String: UUID] = [:]
 
@@ -581,6 +621,7 @@ public final class PulseSession: ObservableObject {
         reactionActions.removeAll()
         pollActions.removeAll()
         messageActions.removeAll()
+        savedActions.removeAll()
         threadValidationFence = PulseThreadValidationFence()
         deniedThreadRoots.removeAll()
         pendingOpenRoom = nil

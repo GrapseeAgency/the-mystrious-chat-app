@@ -189,7 +189,7 @@ class FlushOutboxUseCaseTest {
             Result.failure<Message>(UnsupportedOperationException())
         override suspend fun pinMessage(messageId: String) =
             Result.failure<Message>(UnsupportedOperationException())
-        override suspend fun toggleMessageSave(messageId: String) =
+        override suspend fun setMessageSaved(messageId: String, saved: Boolean) =
             Result.failure<Boolean>(UnsupportedOperationException())
         override suspend fun pinnedMessages(conversationId: String) = emptyList<Message>()
         override suspend fun loadThread(rootId: String) =

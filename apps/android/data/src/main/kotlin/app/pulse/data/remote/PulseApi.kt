@@ -585,16 +585,17 @@ class PulseApi(
             Unit
         }
 
-    /** POST /api/messages/{id}/save { userId } → { saved } (per-user toggle). */
-    suspend fun toggleMessageSave(messageId: String, userId: String): PulseResult<SavedToggleDto> =
-        post("/api/messages/$messageId/save", jsonOf("userId" to userId)) {
-            PulseJson.decodeFromString(SavedToggleDto.serializer(), it)
-        }
-
-    /** Explicit Unsave: retrying a lost response cannot recreate the bookmark. */
-    suspend fun unsaveMessage(messageId: String, userId: String): PulseResult<SavedToggleDto> =
-        deleteWithBody("/api/messages/$messageId/save", userId) {
-            PulseJson.decodeFromString(SavedToggleDto.serializer(), it)
+    /** Explicit state only; never fall back to a toggle after response loss. */
+    suspend fun setMessageSaved(messageId: String, userId: String, saved: Boolean): PulseResult<app.pulse.protocol.SavedStateReceiptDto> =
+        post("/api/messages/$messageId/save-state", jsonOf("userId" to userId, "saved" to saved)) { raw ->
+            PulseJson.decodeFromString(app.pulse.protocol.SavedStateReceiptDto.serializer(), raw).also { receipt ->
+                require(receipt.savedReceiptVersion == 1 && receipt.userId == userId && receipt.messageId == messageId && receipt.saved == saved) {
+                    "Saved state was not confirmed."
+                }
+                val stamp = receipt.savedAt
+                if (saved) java.time.Instant.parse(requireNotNull(stamp) { "Saved timestamp was not confirmed." })
+                else require(stamp == null) { "Removal returned a saved timestamp." }
+            }
         }
 
     /** GET /api/conversations/{id}/pinned?userId= → { messages } (pinnedAt asc). */

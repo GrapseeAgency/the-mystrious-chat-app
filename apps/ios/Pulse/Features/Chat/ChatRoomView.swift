@@ -269,7 +269,7 @@ private struct RoomMessageRow: View {
             Label(message.pinnedAt == nil ? "Pin" : "Unpin", systemImage: "pin")
         }
         Button {
-            viewModel.toggleSave(message, session: session)
+            viewModel.saveMessage(message, session: session)
         } label: {
             Label("Save", systemImage: "bookmark")
         }
@@ -5263,28 +5263,18 @@ final class RoomViewModel: ObservableObject {
         }
     }
 
-    private var savingMessageIds: Set<String> = []
-    func toggleSave(_ message: WireChatMessage, session: PulseSession) {
-        guard let viewer = session.viewer, !savingMessageIds.contains(message.id),
-              message.deletedAt == nil, PulseRemediationLogic.isAlive(message.expiresAt) else { return }
-        savingMessageIds.insert(message.id)
-        let epoch = session.sessionGeneration, watermark = session.messageRevision
-        let api = session.api, store = session.store
+    func saveMessage(_ message: WireChatMessage, session: PulseSession) {
+        let epoch = session.sessionGeneration
         PulseHaptics.tap()
         Task { [weak self] in
             guard let self else { return }
-            defer { savingMessageIds.remove(message.id) }
             do {
-                let saved = try await api.toggleMessageSave(id: message.id, userId: viewer.id)
+                try Task.checkCancellation()
                 guard session.sessionGeneration == epoch else { return }
-                session.noteSavedMutation()
-                if saved {
-                    let item = WireSavedItem(savedAt: PulseOutboxClock.now(),
-                        conversation: WireSavedConversation(id: message.conversationId, isGroup: nil, name: nil), message: message)
-                    let preserve: Set<String> = session.acceptsSyncMessage(message.id, startedAt: watermark) ? [] : [message.id]
-                    try store?.upsert(savedItems: [item], preservingMessageIds: preserve)
-                } else { try store?.deleteSaved(messageId: message.id) }
-                session.toasts.show(saved ? "Saved to your library" : "Removed from your library")
+                try await session.setMessageSaved(message, saved: true)
+                guard session.sessionGeneration == epoch else { return }
+                session.toasts.show("Saved to your library")
+            } catch is CancellationError {
             } catch {
                 guard session.sessionGeneration == epoch else { return }
                 self.errorText = Self.describe(error)

@@ -129,6 +129,16 @@ data class SavedToggleDto(
     val saved: Boolean,
 )
 
+/** Versioned explicit saved-state receipt; add preserves the server's first savedAt. */
+@Serializable
+data class SavedStateReceiptDto(
+    val savedReceiptVersion: Int,
+    val userId: String,
+    val messageId: String,
+    val saved: Boolean,
+    val savedAt: String? = null,
+)
+
 // R5-B: POST /api/conversations/[id]/messages response envelope
 // Server truth (messages/route.ts:704-708): { message, streak?, xpAwarded } -
 // streak rides ONLY when THIS send bumped the ConversationStreak row

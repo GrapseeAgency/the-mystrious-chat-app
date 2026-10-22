@@ -484,8 +484,8 @@ interface PulseRepository {
     /** POST /api/messages/{id}/pin-state {userId, pinned:true} - replay-safe addition, never a toggle. */
     suspend fun pinMessage(messageId: String): Result<Message>
 
-    /** POST /api/messages/{id}/save {userId} - toggle → the new saved state. */
-    suspend fun toggleMessageSave(messageId: String): Result<Boolean>
+    /** Explicit desired bookmark state; retrying Save must never remove it. */
+    suspend fun setMessageSaved(messageId: String, saved: Boolean): Result<Boolean>
 
     /** GET /api/conversations/{id}/pinned?userId= - pinned rows, pinnedAt asc (also upserts Room). */
     suspend fun pinnedMessages(conversationId: String): List<Message>

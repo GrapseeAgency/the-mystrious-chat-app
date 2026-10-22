@@ -2185,7 +2185,7 @@ fun ChatRoomScreen(
                 actionTarget = null
             },
             onToggleSave = {
-                viewModel.toggleMessageSave(target.id)
+                viewModel.saveMessage(target.id)
                 actionTarget = null
             },
             onForward = {

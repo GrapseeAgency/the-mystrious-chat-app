@@ -122,11 +122,17 @@ class SavedLibraryViewModel @Inject constructor(
     }
 
     fun unsave(messageId: String) {
+        val epoch = repo.attachmentSessionKey() ?: return
+        val owned = repo.boundToCurrentAccount()
         viewModelScope.launch {
-            runCatching { repo.unsaveMessage(messageId).getOrThrow() }
-                .onFailure {
-                    _state.value = _state.value.copy(error = "Couldn't remove from saved")
-                }
+            if (repo.attachmentSessionKey() != epoch) return@launch
+            try {
+                owned.unsaveMessage(messageId).getOrThrow()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) _state.value = _state.value.copy(error = error.message ?: "Couldn't remove from saved")
+            }
         }
     }
 

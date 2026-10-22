@@ -3475,3 +3475,36 @@ expiry enforcement uses known cached parent metadata: an unknown parent's deadli
 not invented. Legacy save-add remains a toggle with pre-write permission checks, not a
 new atomic/replay-safe save protocol. Media URLs are not revoked. Autumn theme unchanged;
 no full-app clearance.
+
+### 2026-10-22 — explicit saved-state writes and truthful native acceptance
+
+Primary Android/iOS menus labelled **Save** invoked a toggle: tapping Save again or
+retrying a lost response could silently remove the bookmark. Save checks and creation
+also used separate reads/writes, and native timestamps came from the phone rather than
+the committed first-save time.
+
+- New serializable saved-operation helper owns add authorization, message/root lifetime,
+  one-time refusal, desired-state write and final receipt. Retried adds preserve the
+  first timestamp; removal touches only this owner's marker and stays available after
+  departure/deletion. Snapshot failure rolls writes back; contention returns 409.
+- Native `/save-state` requires explicit boolean state and owner credentials. Both
+  decoders validate owner, message, state, version and server timestamp; no legacy toggle
+  fallback. Legacy web toggle/removal now share the atomic helper without changing their
+  established response compatibility.
+- Primary Save always adds. Mounted Android's labelled Save/Unsave sends that exact
+  desired state. Android serializes marker acceptance with library refresh and checks
+  owner/cancellation before dispatch/commit. Swift shares a session action gate and
+  saved-revision fence between room/library; marker storage must succeed before toast.
+  Neither path rewrites current content from a stale tapped snapshot.
+- Native removal remains recoverable on failure and no longer swallows cancellation or
+  updates another session's UI. Corrected three Swift test `.isEmpty()` calls to Boolean
+  property access in b672d83 after the preceding runner exposed that compile error.
+
+Verification: 206/206 server contracts pass, including six new SQLite/route cases for
+replay, original timestamps, privacy/ancestry, owner isolation, departure, contention and
+receipt rollback. Scoped strict TypeScript, 17 native syntax parses and diff checks pass.
+Kotlin/Swift mocked saved-state receipts and old-route refusal coverage were added; native
+compiler/device verification for this tranche remains separate. No schema change; deploy
+the state route before clients. Saved pagination/cap, durable offline intent and global
+cross-device saved ordering/refresh remain open. No deployment, merge or full-app claim.
+Autumn styling unchanged.

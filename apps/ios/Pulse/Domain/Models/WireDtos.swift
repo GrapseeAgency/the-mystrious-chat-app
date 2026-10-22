@@ -284,6 +284,15 @@ public struct WireSavedToggle: Codable, Sendable {
     public let saved: Bool
 }
 
+/// Exact explicit-state bookmark receipt, including the stable server timestamp.
+public struct WireSavedStateReceipt: Codable, Sendable {
+    public let savedReceiptVersion: Int
+    public let userId: String
+    public let messageId: String
+    public let saved: Bool
+    public let savedAt: String?
+}
+
 /// POST /api/uploads {dataUrl} - media upload verdict (JSON, NOT multipart).
 public struct WireUploadResult: Codable, Sendable {
     public let filePath: String?

@@ -240,7 +240,7 @@ internal fun MirrorMessageActionPanel(
                     enabled = pendingOp == null,
                 ) {
                     op("save") {
-                        val next = repository.toggleMessageSave(message.id).getOrThrow()
+                        val next = repository.setMessageSaved(message.id, !savedLocal).getOrThrow()
                         requireActionOwner()
                         savedLocal = next
                         null
