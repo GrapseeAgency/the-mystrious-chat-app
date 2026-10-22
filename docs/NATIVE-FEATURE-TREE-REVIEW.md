@@ -2858,3 +2858,42 @@ Three actual-handler regressions pass with injected storage/transport boundaries
 nonmember read without serialization, authorized viewer projection, and mismatched supplied
 credential rejection before DB access. Full server rerun for this tiny follow-up is pending;
 previous invite tranche was 148/148. No native appearance changes.
+
+## 2026-10-22 — group settings and member picker own their mutations
+
+Swift GroupInfo now claims one write synchronously, captures its API/viewer, and retires
+writes and detail reads on disappearance/account change. Rename, posting mode, TTL, slow
+mode, personal/room privacy, role changes, removal, leaving and photo changes use the same
+ticket gate. An old completion cannot release a successor or publish into a retired sheet.
+The sheet host is keyed by account generation and room. Photo ownership begins before
+image decoding, and cancellation/owner checks separate decoding, upload and metadata PATCH.
+An uploaded file may remain orphaned after cancellation; no upload rollback is claimed.
+
+Member-picker directory reads and additions now have their own lifetime, captured selection,
+current-account callbacks, retryable loading and canceled-task fences. Selection is locked
+while adding. Confirmed removal is separate from subsequent roster loading; permission or
+uncertain transport failures refresh settings rather than retaining stale editable controls.
+Personal screen privacy still writes the device-local comfort preference immediately.
+Missing/mismatched member, slow-mode and personal-privacy acknowledgements no longer invent
+success from request values. Empty explicitly acknowledged additions remain valid duplicates.
+The rename prompt/validation now agrees with the server's 48 UTF-16-unit cap.
+
+Conversation metadata PATCH validates every supplied field before changing anything:
+malformed photo objects no longer mean remove-photo, and invalid booleans cannot silently
+ride along with valid fields. Current participant/admin permission and the write share a
+Serializable transaction; contention returns 409 rather than overwriting with stale authority.
+Participant-level room privacy remains allowed, including DMs. Supplied bearer ownership is
+checked; legacy tokenless claimed-user compatibility remains, not complete authentication.
+The response uses a fresh member-filtered requester snapshot, never an unrestricted detail.
+Native helpers reuse the photo contract; TypeScript allows explicit .ts imports for the
+no-emit build and directly executed server contracts.
+
+Evidence: 156/156 full server tests pass (/home/user/group-settings-server.log), including
+SQLite metadata authorization and actual GET/PATCH adapter regressions; strict helper
+TypeScript and five Swift syntax checks pass. New mutation-gate/URLProtocol acknowledgement
+tests are added, but their native compilation/execution is pending. a25c1bb iOS build/archive
+and web/server checks succeeded; Android jobs were still pending at inspection. None of
+those historical results validate these new native changes. Autumn styling is unchanged.
+Remaining: TTL/slow-mode/personal-privacy endpoints still need their own transactional
+permission work; durable operation receipts and broader channel-directory semantics remain
+open. This is not a whole-feature-tree or physical-device correctness claim.

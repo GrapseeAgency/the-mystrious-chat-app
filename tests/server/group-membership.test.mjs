@@ -14,6 +14,10 @@ import {
   removeGroupMember,
   setGroupRole,
 } from '../../src/lib/group-membership.ts'
+import {
+  conversationMetadataPatch,
+  patchConversationMetadata,
+} from '../../src/lib/conversation-metadata.ts'
 const { PrismaClient } = createRequire(import.meta.url)('../../prisma/generated-client')
 async function fixture(run) {
   const dir = await mkdtemp(join(tmpdir(), 'pulse-membership-'))
@@ -21,7 +25,7 @@ async function fixture(run) {
   try {
     for (const sql of [
       'CREATE TABLE User(id TEXT PRIMARY KEY)',
-      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, isGroup BOOLEAN, broadcastMode BOOLEAN, updatedAt DATETIME, inviteCode TEXT UNIQUE)',
+      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, isGroup BOOLEAN, broadcastMode BOOLEAN, updatedAt DATETIME, inviteCode TEXT UNIQUE, name TEXT, photo TEXT, screenPrivacy BOOLEAN DEFAULT false)',
       `CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT,
         role TEXT DEFAULT 'member', joinedAt DATETIME DEFAULT CURRENT_TIMESTAMP, lastReadAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME, handRaisedAt DATETIME,
@@ -327,3 +331,54 @@ test('redemption list-update failure rolls back membership and a revoked invite 
     await groupInvite(db, 'group', 'a', true, () => 'INVITE03')
     await assert.rejects(joinGroupInvite(db, 'INVITE01', 'd'), { status: 404 })
   }))
+
+test('metadata changes respect current membership and retain participant-level privacy controls', () =>
+  fixture(async (db) => {
+    await assert.rejects(
+      patchConversationMetadata(db, 'group', 'b', { name: 'Forbidden rename' }),
+      { status: 403 },
+    )
+    await patchConversationMetadata(db, 'group', 'b', { screenPrivacy: true })
+    assert.equal(
+      (
+        await db.conversation.findUnique({
+          where: { id: 'group' },
+          select: { screenPrivacy: true },
+        })
+      ).screenPrivacy,
+      true,
+    )
+    await patchConversationMetadata(db, 'group', 'a', {
+      name: 'Confirmed',
+      photo: '/api/uploads/photo.jpg',
+    })
+    await setGroupRole(db, 'group', 'a', 'b', 'admin')
+    await setGroupRole(db, 'group', 'b', 'a', 'member')
+    await assert.rejects(patchConversationMetadata(db, 'group', 'a', { name: 'Late rename' }), {
+      status: 403,
+    })
+    await assert.rejects(patchConversationMetadata(db, 'group', 'd', { screenPrivacy: false }), {
+      status: 403,
+    })
+    assert.equal(
+      (await db.conversation.findUnique({ where: { id: 'group' }, select: { name: true } })).name,
+      'Confirmed',
+    )
+  }))
+test('malformed mixed metadata fields cannot silently clear a photo or partially apply a rename', () => {
+  for (const body of [
+    { name: 'Valid', photo: {} },
+    { name: 'Valid', photo: false },
+    { name: 'Valid', broadcast: 'false' },
+    { photo: null, screenPrivacy: 1 },
+    { photo: '/api/uploads/../secret.jpg' },
+    {},
+  ]) {
+    assert.throws(() => conversationMetadataPatch(body, 48), { status: 400 })
+  }
+  assert.deepEqual(
+    conversationMetadataPatch({ name: ' New ', photo: null, screenPrivacy: false }, 48),
+    { name: 'New', photo: null, screenPrivacy: false },
+  )
+  assert.deepEqual(conversationMetadataPatch({ broadcast: false }, 48), { broadcastMode: false })
+})

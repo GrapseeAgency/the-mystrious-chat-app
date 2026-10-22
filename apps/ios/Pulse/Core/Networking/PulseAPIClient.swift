@@ -1453,7 +1453,11 @@ public struct PulseAPIClient: Sendable {
             "/api/conversations/\(q(conversationId))/members",
             body: ["requesterId": requesterId, "userIds": userIds],
         )
-        return try envelope(WireMembersAdded.self, from: data).added ?? []
+        guard let added = try envelope(WireMembersAdded.self, from: data).added,
+              Set(added).count == added.count, Set(added).isSubset(of: Set(userIds)) else {
+            throw Failure(kind: .server, message: "Member additions couldn't be confirmed. Refresh group info before retrying.")
+        }
+        return added
     }
 
     /// PATCH /api/conversations/{id}/members { requesterId, userId, role } -
@@ -1520,7 +1524,11 @@ public struct PulseAPIClient: Sendable {
             "/api/conversations/\(q(conversationId))/slow-mode",
             body: ["userId": userId, "seconds": seconds],
         )
-        return try envelope(WireSlowModeResult.self, from: data).slowModeSeconds ?? seconds
+        let result = try envelope(WireSlowModeResult.self, from: data)
+        guard result.ok == true, result.slowModeSeconds == seconds else {
+            throw Failure(kind: .server, message: "Slow-mode change couldn't be confirmed. Refresh group info.")
+        }
+        return seconds
     }
 
     // REM-B F-MS-18 - scheduled sends
@@ -1677,7 +1685,10 @@ public struct PulseAPIClient: Sendable {
             body: ["userId": userId, "on": on],
         )
         let result = try envelope(WireScreenPrivacyResult.self, from: data)
-        return result.screenPrivacy ?? on
+        guard result.screenPrivacy == on else {
+            throw Failure(kind: .server, message: "Screen privacy couldn't be confirmed on the server. Your local preference is kept.")
+        }
+        return on
     }
 
     // plumbing

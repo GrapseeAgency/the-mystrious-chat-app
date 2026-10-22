@@ -1005,6 +1005,7 @@ private struct RoomContent: View {
                     viewModel.applyFreshDetail(detail)
                 },
             )
+            .id("\(session.sessionGeneration.uuidString)|\(conversation.id)")
         }
         .sheet(isPresented: $scheduleOpen) {
             ScheduleSheet { date in
