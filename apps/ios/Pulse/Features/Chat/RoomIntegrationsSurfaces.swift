@@ -442,71 +442,78 @@ struct WebhooksSection: View {
 
     var body: some View {
         Section {
-            switch phase {
-            case .loading:
-                HStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading webhooks…")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            case .failed(let message):
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Could not load webhooks.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Button("Try again") { Task { await load() } }
-                        .font(.footnote.weight(.semibold))
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(2)
-                }
-            case .ready:
-                if rows.isEmpty {
-                    VStack(spacing: 6) {
-                        Image(systemName: "number.circle")
-                            .font(.system(size: 22, weight: .light))
+            if !isAdmin {
+                Text("Webhook credentials are available to admins only.").font(.footnote).foregroundStyle(.secondary)
+            } else {
+                switch phase {
+                case .loading:
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading webhooks…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                case .failed(let message):
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Could not load webhooks.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Button("Try again") { Task { await load() } }
+                            .font(.footnote.weight(.semibold))
+                        Text(message)
+                            .font(.caption2)
                             .foregroundStyle(.tertiary)
-                        Text("No webhooks yet")
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Text(isAdmin
-                            ? "Create one to let outside services post into this chat."
-                            : "Admins can add Discord-style integrations here.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                } else {
-                    ForEach(rows) { webhook in
-                        webhookRow(webhook)
+                case .ready:
+                    if rows.isEmpty {
+                        VStack(spacing: 6) {
+                            Image(systemName: "number.circle")
+                                .font(.system(size: 22, weight: .light))
+                                .foregroundStyle(.tertiary)
+                            Text("No webhooks yet")
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(.secondary)
+                            Text(isAdmin
+                                ? "Create one to let outside services post into this chat."
+                                : "Admins can add Discord-style integrations here.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                    } else {
+                        ForEach(rows) { webhook in
+                            webhookRow(webhook)
+                        }
                     }
-                }
-                if isAdmin {
-                    Button {
-                        PulseHaptics.tap()
-                        createOpen = true
-                    } label: {
-                        Label("Create webhook", systemImage: "plus")
-                            .font(.subheadline.weight(.semibold))
+                    if isAdmin {
+                        Button {
+                            PulseHaptics.tap()
+                            createOpen = true
+                        } label: {
+                            Label("Create webhook", systemImage: "plus")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .tint(PulseTheme.emerald)
                     }
-                    .tint(PulseTheme.emerald)
                 }
             }
         } header: {
-            Text(phase == .ready && !rows.isEmpty ? "Webhooks · \(rows.count)" : "Webhooks")
+            Text(isAdmin && phase == .ready && !rows.isEmpty ? "Webhooks · \(rows.count)" : "Webhooks")
         } footer: {
             Text("Outside services POST to its URL and drop messages into this chat as a named sender.")
         }
-        .sheet(isPresented: $createOpen) {
+        .sheet(isPresented: Binding(get: { createOpen && isAdmin }, set: { createOpen = $0 })) {
             WebhookCreateSheet(conversationId: conversationId, session: session) { created in
                 rows.append(created)
             }
         }
-        .task { await load() }
+        .task(id: "\(session.sessionGeneration)|\(conversationId)|\(isAdmin)") {
+            rows = []; createOpen = false
+            if isAdmin { await load() }
+        }
     }
 
     private func webhookRow(_ webhook: WireWebhook) -> some View {
@@ -564,25 +571,36 @@ struct WebhooksSection: View {
     }
 
     private func load() async {
+        guard isAdmin else { rows = []; return }
+        let epoch = session.sessionGeneration
+        let api = session.api
+        phase = .loading
         do {
-            rows = try await session.api.webhooks(conversationId: conversationId)
+            let fresh = try await api.webhooks(conversationId: conversationId)
+            guard !Task.isCancelled, epoch == session.sessionGeneration, isAdmin else { return }
+            rows = fresh
             phase = .ready
         } catch {
-            if rows.isEmpty {
-                phase = .failed(RoomViewModel.describe(error))
-            }
+            guard !Task.isCancelled, epoch == session.sessionGeneration else { return }
+            rows = []
+            phase = .failed(RoomViewModel.describe(error))
         }
     }
 
     private func delete(_ webhook: WireWebhook) {
+        guard isAdmin else { return }
+        let epoch = session.sessionGeneration
+        let api = session.api
         deletingIds.insert(webhook.token)
         Task {
             defer { deletingIds.remove(webhook.token) }
             do {
-                try await session.api.deleteWebhook(token: webhook.token)
+                try await api.deleteWebhook(token: webhook.token)
+                guard !Task.isCancelled, epoch == session.sessionGeneration, isAdmin else { return }
                 rows.removeAll { $0.id == webhook.id }
                 session.toasts.show("Webhook deleted")
             } catch {
+                guard !Task.isCancelled, epoch == session.sessionGeneration else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }
@@ -648,16 +666,20 @@ private struct WebhookCreateSheet: View {
     private func create() {
         let trimmedName = trimmed
         guard valid, !creating else { return }
+        let epoch = session.sessionGeneration
+        let api = session.api
         creating = true
         Task {
             defer { creating = false }
             do {
-                let fresh = try await session.api.createWebhook(conversationId: conversationId, name: trimmedName)
+                let fresh = try await api.createWebhook(conversationId: conversationId, name: trimmedName)
+                guard !Task.isCancelled, epoch == session.sessionGeneration else { return }
                 onCreated(fresh)
                 PulseHaptics.success()
                 session.toasts.show("Webhook “\(fresh.name)” created")
                 dismiss()
             } catch {
+                guard !Task.isCancelled, epoch == session.sessionGeneration else { return }
                 session.toasts.show(RoomViewModel.describe(error))
             }
         }

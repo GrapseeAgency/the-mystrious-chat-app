@@ -2080,52 +2080,28 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun automations(conversationId: String): Result<List<Automation>> =
-        when (val r = api.automations(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.automations.map { it.toDomain() })
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.automations(conversationId, it) }.map { page -> page.automations.map { it.toDomain() } }
 
     override suspend fun createAutomation(conversationId: String, trigger: String, reply: String): Result<Automation> =
-        when (val r = api.createAutomation(conversationId, viewerId ?: "", trigger, reply)) {
-            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.createAutomation(conversationId, it, trigger, reply) }.map { it.automation.toDomain() }
 
     override suspend fun setAutomationEnabled(automationId: String, enabled: Boolean): Result<Automation> =
-        when (val r = api.patchAutomation(automationId, viewerId ?: "", enabled = enabled, trigger = null)) {
-            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.patchAutomation(automationId, it, enabled = enabled, trigger = null) }.map { it.automation.toDomain() }
 
     override suspend fun setAutomationTrigger(automationId: String, trigger: String): Result<Automation> =
-        when (val r = api.patchAutomation(automationId, viewerId ?: "", enabled = null, trigger = trigger)) {
-            is PulseResult.Success -> Result.success(r.value.automation.toDomain())
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.patchAutomation(automationId, it, enabled = null, trigger = trigger) }.map { it.automation.toDomain() }
 
     override suspend fun deleteAutomation(automationId: String): Result<Unit> =
-        when (val r = api.deleteAutomation(automationId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.deleteAutomation(automationId, it) }.map { Unit }
 
     override suspend fun webhooks(conversationId: String): Result<List<Webhook>> =
-        when (val r = api.webhooks(conversationId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.webhooks.map { it.toDomain() })
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.webhooks(conversationId, it) }.map { page -> page.webhooks.map { it.toDomain() } }
 
     override suspend fun createWebhook(conversationId: String, name: String): Result<Webhook> =
-        when (val r = api.createWebhook(conversationId, name, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value.toDomain())
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.createWebhook(conversationId, name, it) }.map { it.toDomain() }
 
     override suspend fun deleteWebhook(token: String): Result<Unit> =
-        when (val r = api.deleteWebhook(token, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
-        }
+        ownedAccountRequest { api.deleteWebhook(token, it) }.map { Unit }
 
     override suspend fun aiRecap(conversationId: String): Result<AiRecapDto> =
         when (val r = api.aiRecap(viewerId ?: "", conversationId)) {

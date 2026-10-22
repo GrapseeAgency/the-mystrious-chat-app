@@ -2011,7 +2011,9 @@ public struct PulseAPIClient: Sendable {
         let page: WireAutomationsPage = try await get(
             "/api/conversations/\(q(conversationId))/automations?userId=\(q(userId))",
         )
-        return page.automations ?? []
+        guard let rows = page.automations, Set(rows.map(\.id)).count == rows.count else { throw Failure(kind: .server, message: "Automation list was not confirmed.") }
+        for row in rows { try validateAutomation(row); guard row.conversationId == conversationId else { throw Failure(kind: .server, message: "Wrong automation room.") } }
+        return rows
     }
 
     /// POST /api/conversations/{id}/automations { userId, trigger, reply }
@@ -2021,8 +2023,12 @@ public struct PulseAPIClient: Sendable {
             "/api/conversations/\(q(conversationId))/automations",
             body: ["userId": userId, "trigger": trigger, "reply": reply],
         )
-        return try envelope(WireAutomationEnvelope.self, from: data).automation
-            ?? envelope(WireAutomation.self, from: data)
+        let row = try confirmedAutomation(data)
+        guard row.conversationId == conversationId, row.trigger == trigger.trimmingCharacters(in: .whitespacesAndNewlines),
+              row.reply == reply.trimmingCharacters(in: .whitespacesAndNewlines), row.enabled == true else {
+            throw Failure(kind: .server, message: "Automation creation was not confirmed.")
+        }
+        return row
     }
 
     /// PATCH /api/automations/{id} { userId, enabled?/trigger?/reply? }
@@ -2038,40 +2044,76 @@ public struct PulseAPIClient: Sendable {
         if let trigger { body["trigger"] = trigger }
         if let reply { body["reply"] = reply }
         let data = try await patchRaw("/api/automations/\(q(id))", body: body)
-        return try envelope(WireAutomationEnvelope.self, from: data).automation
-            ?? envelope(WireAutomation.self, from: data)
+        let row = try confirmedAutomation(data)
+        guard row.id == id, enabled == nil || row.enabled == enabled,
+              trigger == nil || row.trigger == trigger?.trimmingCharacters(in: .whitespacesAndNewlines),
+              reply == nil || row.reply == reply?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            throw Failure(kind: .server, message: "Automation changes were not confirmed.")
+        }
+        return row
     }
 
     /// DELETE /api/automations/{id} { userId } → { ok } (admin-only).
     public func deleteAutomation(_ id: String) async throws {
-        try await deleteEmpty("/api/automations/\(q(id))", body: ["userId": userId])
+        let data = try await deleteRaw("/api/automations/\(q(id))", body: ["userId": userId])
+        try confirmedControlDeletion(data, target: id, automation: true)
     }
 
     /// GET /api/webhooks?conversationId=&requesterId= → { webhooks }
-    /// (participant-only; rows createdAt asc).
+    /// (admin-only; rows include posting credentials).
     public func webhooks(conversationId: String) async throws -> [WireWebhook] {
         let page: WireWebhooksPage = try await get(
             "/api/webhooks?conversationId=\(q(conversationId))&requesterId=\(q(userId))",
         )
-        return page.webhooks ?? []
+        guard let rows = page.webhooks, Set(rows.map(\.id)).count == rows.count else { throw Failure(kind: .server, message: "Webhook list was not confirmed.") }
+        try rows.forEach { try validateWebhook($0) }
+        return rows
     }
 
     /// POST /api/webhooks { conversationId, name, requesterId } → 201
-    /// bare WebhookDTO (participant-only create; token is server-generated).
+    /// bare WebhookDTO (admin-only create; token is server-generated).
     public func createWebhook(conversationId: String, name: String) async throws -> WireWebhook {
         let data = try await postRaw(
             "/api/webhooks",
             body: ["conversationId": conversationId, "name": name, "requesterId": userId],
         )
-        return try envelope(WireWebhook.self, from: data)
+        let row = try decoder.decode(WireWebhook.self, from: data)
+        try validateWebhook(row)
+        guard row.name == name.trimmingCharacters(in: .whitespacesAndNewlines), row.createdBy == userId else {
+            throw Failure(kind: .server, message: "Webhook creation was not confirmed.")
+        }
+        return row
     }
 
     /// DELETE /api/webhooks/{token}?requesterId= → { ok } (admin-only).
     public func deleteWebhook(token: String) async throws {
-        try await deleteEmpty(
-            "/api/webhooks/\(q(token))?requesterId=\(q(userId))",
-            body: ["requesterId": userId],
-        )
+        let data = try await deleteRaw("/api/webhooks/\(q(token))?requesterId=\(q(userId))", body: ["requesterId": userId])
+        try confirmedControlDeletion(data, target: token, automation: false)
+    }
+
+    private func validateAutomation(_ row: WireAutomation) throws {
+        guard !row.id.isEmpty, row.conversationId?.isEmpty == false, (2...40).contains(row.trigger.utf16.count),
+              let reply = row.reply, (1...500).contains(reply.utf16.count), row.enabled != nil, (row.hits ?? -1) >= 0 else {
+            throw Failure(kind: .server, message: "Invalid automation response.")
+        }
+    }
+    private func confirmedAutomation(_ data: Data) throws -> WireAutomation {
+        guard let row = try decoder.decode(WireAutomationEnvelope.self, from: data).automation else {
+            throw Failure(kind: .server, message: "Automation was not confirmed.")
+        }
+        try validateAutomation(row)
+        return row
+    }
+    private func validateWebhook(_ row: WireWebhook) throws {
+        guard !row.id.isEmpty, !row.name.isEmpty, !row.token.isEmpty, row.createdBy?.isEmpty == false,
+              row.url == "/api/webhooks/\(row.token)" else { throw Failure(kind: .server, message: "Invalid webhook response.") }
+    }
+    private func confirmedControlDeletion(_ data: Data, target: String, automation: Bool) throws {
+        struct Receipt: Decodable { let ok: Bool; let deleted: Bool; let userId: String; let automationId: String?; let token: String? }
+        let value = try decoder.decode(Receipt.self, from: data)
+        guard value.ok, value.deleted, value.userId == userId, (automation ? value.automationId : value.token) == target else {
+            throw Failure(kind: .server, message: "Deletion was not confirmed.")
+        }
     }
 
     /// PATCH /api/conversations/{id}/screen-privacy { userId, on }

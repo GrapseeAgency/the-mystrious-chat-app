@@ -5,6 +5,8 @@
 // DELETE ?requesterId= (or JSON body) - participant-admin only.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { roomControl } from '@/lib/room-control'
 import {
   mapMessage,
   memberIdsOf,
@@ -28,7 +30,7 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
-// In-memory rate limit: 20 posts / minute / token 
+// In-memory rate limit: 20 posts / minute / token
 
 const RATE_LIMIT = 20
 const RATE_WINDOW_MS = 60_000
@@ -52,7 +54,7 @@ function rateLimited(token: string): boolean {
   return false
 }
 
-// POST - public ingest 
+// POST - public ingest
 
 /**
  * POST /api/webhooks/[token] { content, username? }
@@ -114,14 +116,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   })
 
   const now = new Date()
-  const conv = await db.conversation.findUnique({
-    where: { id: webhook.conversationId },
-    select: { ttlSeconds: true },
-  })
-  const expiresAt =
-    conv && conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
-
   const created = await db.$transaction(async (tx) => {
+    // A token revoked while the request was preparing must not authorize a
+    // later write. Recheck the capability and chosen author in the write snapshot.
+    const [liveHook, liveSender, conv] = await Promise.all([
+      tx.webhook.findUnique({ where: { token }, select: { id: true } }),
+      tx.conversationParticipant.findUnique({ where: { userId_conversationId: { userId: senderId, conversationId: webhook.conversationId } }, select: { id: true } }),
+      tx.conversation.findUnique({ where: { id: webhook.conversationId }, select: { ttlSeconds: true } }),
+    ])
+    if (!liveHook || !liveSender || !conv) return null
+    const expiresAt = conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
     const msg = await tx.message.create({
       data: {
         conversationId: webhook.conversationId,
@@ -146,9 +150,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       data: { archivedAt: null },
     })
     return msg
-  })
+  }, { isolationLevel: 'Serializable' })
+  if (!created) return NextResponse.json({ error: 'Webhook or its author is no longer available.' }, { status: 404, headers: CORS_HEADERS })
 
-  const recipients = (await memberIdsOf(webhook.conversationId)).filter((id) => id !== senderId)
+  // The represented sender receives no synchronous native send response here.
+  const recipients = await memberIdsOf(webhook.conversationId)
   await notifySocket('message:new', recipients, {
     type: 'message:new',
     message: mapMessage(created),
@@ -159,7 +165,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
   return NextResponse.json({ success: true }, { headers: CORS_HEADERS })
 }
 
-// DELETE - participant-admin only 
+// DELETE - participant-admin only
 
 /**
  * DELETE /api/webhooks/[token]?requesterId=X (also accepts JSON body)
@@ -173,34 +179,38 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ token
     const body = await safeJson(req)
     requesterId = strField(body.requesterId)
   }
+  const refusal = await requireActionOwner(req, requesterId, 'webhook-control')
+  if (refusal) return refusal
   if (!requesterId) {
     return NextResponse.json({ error: 'requesterId is required.' }, { status: 400 })
   }
 
-  const webhook = await db.webhook.findUnique({ where: { token } })
-  if (!webhook) {
-    return NextResponse.json({ error: 'Webhook not found.' }, { status: 404 })
-  }
+  return roomControl(db, async tx => {
+    const webhook = await tx.webhook.findUnique({ where: { token } })
+    if (!webhook) {
+      return NextResponse.json({ error: 'Webhook not found.' }, { status: 404 })
+    }
 
-  const participant = await db.conversationParticipant.findUnique({
-    where: {
-      userId_conversationId: { userId: requesterId, conversationId: webhook.conversationId },
-    },
-    select: { role: true },
+    const participant = await tx.conversationParticipant.findUnique({
+      where: {
+        userId_conversationId: { userId: requesterId, conversationId: webhook.conversationId },
+      },
+      select: { role: true },
+    })
+    if (!participant) {
+      return NextResponse.json(
+        { error: 'You are not a participant of this conversation.' },
+        { status: 403 },
+      )
+    }
+    if (participant.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Only admins can delete webhooks.' },
+        { status: 403 },
+      )
+    }
+
+    await tx.webhook.delete({ where: { token } })
+    return NextResponse.json({ ok: true, deleted: true, token, userId: requesterId }, { headers: CORS_HEADERS })
   })
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-  if (participant.role !== 'admin') {
-    return NextResponse.json(
-      { error: 'Only admins can delete webhooks.' },
-      { status: 403 },
-    )
-  }
-
-  await db.webhook.delete({ where: { token } })
-  return NextResponse.json({ ok: true }, { headers: CORS_HEADERS })
 }

@@ -705,6 +705,10 @@ private fun MgrWebhooksSection(
     clipboard: androidx.compose.ui.platform.ClipboardManager,
     onNote: (String) -> Unit,
 ) {
+    if (!isAdmin) {
+        Text("Webhook credentials are available to admins only.", color = MirrorArt.TextSoft, fontSize = 12.sp)
+        return
+    }
     var webhooks by remember { mutableStateOf<List<Webhook>?>(null) }
     var loadError by remember { mutableStateOf(false) }
     var createOpen by remember { mutableStateOf(false) }

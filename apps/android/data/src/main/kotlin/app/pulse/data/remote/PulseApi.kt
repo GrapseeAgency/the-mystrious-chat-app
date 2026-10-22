@@ -2429,14 +2429,29 @@ class PulseApi(
         get(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
                 "/automations?userId=" + java.net.URLEncoder.encode(userId, "UTF-8"),
-        ) { PulseJson.decodeFromString(AutomationsPageDto.serializer(), it) }
+        ) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject ?: error("Automation list is missing.")
+            require(root["automations"] is JsonArray) { "Automation list was not confirmed." }
+            (root["automations"] as JsonArray).forEach { row ->
+                require((row as? JsonObject)?.get("enabled")?.toString() in setOf("true", "false")) { "Automation state was not confirmed." }
+            }
+            PulseJson.decodeFromString(AutomationsPageDto.serializer(), it).also { page ->
+                require(page.automations.map { it.id }.distinct().size == page.automations.size)
+                page.automations.forEach { row -> requireAutomation(row); require(row.conversationId == conversationId) }
+            }
+        }
 
     /** POST /api/conversations/{id}/automations { userId, trigger, reply } - admin-only → 201 { automation }. */
     suspend fun createAutomation(conversationId: String, userId: String, trigger: String, reply: String): PulseResult<AutomationEnvelopeDto> =
         post(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/automations",
             jsonOf("userId" to userId, "trigger" to trigger, "reply" to reply),
-        ) { PulseJson.decodeFromString(AutomationEnvelopeDto.serializer(), it) }
+        ) {
+            confirmedAutomation(it).also { receipt ->
+                val row = receipt.automation
+                require(row.conversationId == conversationId && row.trigger == trigger.trim() && row.reply == reply.trim() && row.enabled) { "Automation creation was not confirmed." }
+            }
+        }
 
     /** PATCH /api/automations/{id} { userId, enabled?/trigger? } - admin-only → { automation }. */
     suspend fun patchAutomation(automationId: String, userId: String, enabled: Boolean?, trigger: String?): PulseResult<AutomationEnvelopeDto> =
@@ -2447,35 +2462,74 @@ class PulseApi(
                 if (enabled != null) put("enabled", enabled)
                 if (trigger != null) put("trigger", trigger)
             },
-        ) { PulseJson.decodeFromString(AutomationEnvelopeDto.serializer(), it) }
+        ) {
+            confirmedAutomation(it).also { receipt ->
+                val row = receipt.automation
+                require(row.id == automationId && (enabled == null || row.enabled == enabled) && (trigger == null || row.trigger == trigger.trim())) { "Automation changes were not confirmed." }
+            }
+        }
 
     /** DELETE /api/automations/{id} { userId } - admin-only → { ok: true }. */
     suspend fun deleteAutomation(automationId: String, userId: String): PulseResult<OkDto> =
         deleteWithJson(
             "/api/automations/" + java.net.URLEncoder.encode(automationId, "UTF-8"),
             jsonOf("userId" to userId),
-        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+        ) { confirmedControlDeletion(it, userId, "automationId", automationId) }
 
-    /** GET /api/webhooks?conversationId=&requesterId= → { webhooks[] } - everyone may read. */
+    /** GET /api/webhooks?conversationId=&requesterId= → { webhooks[] } - admins only; contains posting credentials. */
     suspend fun webhooks(conversationId: String, requesterId: String): PulseResult<WebhooksPageDto> =
         get(
             "/api/webhooks?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
                 "&requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
-        ) { PulseJson.decodeFromString(WebhooksPageDto.serializer(), it) }
+        ) {
+            val root = PulseJson.parseToJsonElement(it) as? JsonObject
+            require(root?.get("webhooks") is JsonArray) { "Webhook list was not confirmed." }
+            PulseJson.decodeFromString(WebhooksPageDto.serializer(), it).also { page ->
+                page.webhooks.forEach { row -> requireWebhook(row) }
+                require(page.webhooks.map { it.id }.distinct().size == page.webhooks.size)
+            }
+        }
 
     /** POST /api/webhooks { conversationId, name, requesterId } - admin-only → 201 WebhookDTO. */
     suspend fun createWebhook(conversationId: String, name: String, requesterId: String): PulseResult<WebhookDto> =
         post(
             "/api/webhooks",
             jsonOf("conversationId" to conversationId, "name" to name, "requesterId" to requesterId),
-        ) { PulseJson.decodeFromString(WebhookDto.serializer(), it) }
+        ) {
+            PulseJson.decodeFromString(WebhookDto.serializer(), it).also { row ->
+                requireWebhook(row)
+                require(row.name == name.trim() && row.createdBy == requesterId) { "Webhook creation was not confirmed." }
+            }
+        }
 
     /** DELETE /api/webhooks/{token}?requesterId= - admin-only → { ok: true }. */
     suspend fun deleteWebhook(token: String, requesterId: String): PulseResult<OkDto> =
         deleteAt(
             "/api/webhooks/" + java.net.URLEncoder.encode(token, "UTF-8") +
                 "?requesterId=" + java.net.URLEncoder.encode(requesterId, "UTF-8"),
-        ) { PulseJson.decodeFromString(OkDto.serializer(), it) }
+        ) { confirmedControlDeletion(it, requesterId, "token", token) }
+
+    private fun requireAutomation(row: app.pulse.protocol.AutomationDto) {
+        require(row.id.isNotBlank() && row.conversationId.isNotBlank() && row.trigger.length in 2..40 && row.reply.length in 1..500 && row.hits >= 0) {
+            "Invalid automation response."
+        }
+    }
+    private fun confirmedAutomation(text: String): AutomationEnvelopeDto {
+        val row = (PulseJson.parseToJsonElement(text) as? JsonObject)?.get("automation") as? JsonObject
+        require(row != null && row["enabled"]?.toString() in setOf("true", "false")) { "Automation state was not confirmed." }
+        return PulseJson.decodeFromString(AutomationEnvelopeDto.serializer(), text).also { requireAutomation(it.automation) }
+    }
+    private fun requireWebhook(row: WebhookDto) {
+        require(row.id.isNotBlank() && row.name.isNotBlank() && row.token.isNotBlank() && row.createdBy.isNotBlank() && row.url == "/api/webhooks/${row.token}") {
+            "Invalid webhook response."
+        }
+    }
+    private fun confirmedControlDeletion(text: String, owner: String, field: String, target: String): OkDto {
+        val root = PulseJson.parseToJsonElement(text) as? JsonObject ?: error("Deletion receipt is missing.")
+        require(root["ok"]?.toString() == "true" && root["deleted"]?.toString() == "true" &&
+            root["userId"] == JsonPrimitive(owner) && root[field] == JsonPrimitive(target)) { "Deletion was not confirmed." }
+        return OkDto(ok = true)
+    }
 
     /** POST /api/ai/recap { userId, conversationId } - LLM summary of the last ~30 messages. */
     suspend fun aiRecap(userId: String, conversationId: String): PulseResult<AiRecapDto> =

@@ -291,6 +291,7 @@ class GroupInfoViewModel @Inject constructor(
     data class AutomationsUi(
         val rows: List<Automation> = emptyList(),
         val loading: Boolean = false,
+        val loadError: String? = null,
         val creating: Boolean = false,
         /** id → busy row (toggle/rename/delete in flight). */
         val busyIds: Set<String> = emptySet(),
@@ -300,32 +301,43 @@ class GroupInfoViewModel @Inject constructor(
     val automations: StateFlow<AutomationsUi> = _automations.asStateFlow()
 
     fun loadAutomations() {
+        if (_automations.value.loading) return
         viewModelScope.launch {
-            _automations.value = _automations.value.copy(loading = true)
-            val result: kotlin.Result<List<Automation>> = repo.automations(conversationId)
-            _automations.value = _automations.value.copy(
-                rows = result.getOrElse { emptyList() },
-                loading = false,
-            )
+            try {
+                _automations.value = _automations.value.copy(loading = true, loadError = null)
+                val result: kotlin.Result<List<Automation>> = repo.automations(conversationId)
+                _automations.value = _automations.value.copy(
+                    rows = result.getOrElse { emptyList() },
+                    loading = false,
+                    loadError = result.exceptionOrNull()?.message,
+                )
+            } finally {
+                _automations.value = _automations.value.copy(loading = false)
+            }
         }
     }
 
-    fun createAutomation(trigger: String, reply: String) {
+    fun createAutomation(trigger: String, reply: String, confirmed: () -> Unit) {
         if (_automations.value.creating) return
         _automations.value = _automations.value.copy(creating = true)
         viewModelScope.launch {
-            repo.createAutomation(conversationId, trigger, reply)
-                .onSuccess { created ->
-                    _automations.value = _automations.value.copy(
-                        rows = _automations.value.rows + created,
-                        creating = false,
-                    )
-                    notify("Automation created")
-                }
-                .onFailure { failure ->
-                    _automations.value = _automations.value.copy(creating = false)
-                    notify(failure.message ?: "Could not create the automation", isError = true)
-                }
+            try {
+                repo.createAutomation(conversationId, trigger, reply)
+                    .onSuccess { created ->
+                        _automations.value = _automations.value.copy(
+                            rows = _automations.value.rows + created,
+                            creating = false,
+                        )
+                        confirmed()
+                        notify("Automation created")
+                    }
+                    .onFailure { failure ->
+                        _automations.value = _automations.value.copy(creating = false)
+                        notify(failure.message ?: "Could not create the automation", isError = true)
+                    }
+            } finally {
+                _automations.value = _automations.value.copy(creating = false)
+            }
         }
     }
 
@@ -355,7 +367,7 @@ class GroupInfoViewModel @Inject constructor(
     }
 
     /** R41 - trigger rename-in-place (PATCH gains `trigger`). */
-    fun renameAutomationTrigger(automationId: String, trigger: String) {
+    fun renameAutomationTrigger(automationId: String, trigger: String, confirmed: () -> Unit) {
         if (automationId in _automations.value.busyIds) return
         _automations.value = _automations.value.copy(busyIds = _automations.value.busyIds + automationId)
         viewModelScope.launch {
@@ -364,6 +376,7 @@ class GroupInfoViewModel @Inject constructor(
                     _automations.value = _automations.value.copy(
                         rows = _automations.value.rows.map { if (it.id == automationId) fresh else it },
                     )
+                    confirmed()
                     notify("Trigger updated")
                 }
                 .onFailure { notify(it.message ?: "Could not rename the trigger", isError = true) }
@@ -392,6 +405,7 @@ class GroupInfoViewModel @Inject constructor(
     data class WebhooksUi(
         val rows: List<Webhook> = emptyList(),
         val loading: Boolean = false,
+        val loadError: String? = null,
         val creating: Boolean = false,
     )
 
@@ -399,29 +413,39 @@ class GroupInfoViewModel @Inject constructor(
     val webhooks: StateFlow<WebhooksUi> = _webhooks.asStateFlow()
 
     fun loadWebhooks() {
+        if (_webhooks.value.loading) return
         viewModelScope.launch {
-            _webhooks.value = _webhooks.value.copy(loading = true)
-            val result: kotlin.Result<List<Webhook>> = repo.webhooks(conversationId)
-            _webhooks.value = _webhooks.value.copy(rows = result.getOrElse { emptyList() }, loading = false)
+            try {
+                _webhooks.value = _webhooks.value.copy(loading = true, loadError = null)
+                val result: kotlin.Result<List<Webhook>> = repo.webhooks(conversationId)
+                _webhooks.value = _webhooks.value.copy(rows = result.getOrElse { emptyList() }, loading = false, loadError = result.exceptionOrNull()?.message)
+            } finally {
+                _webhooks.value = _webhooks.value.copy(loading = false)
+            }
         }
     }
 
-    fun createWebhook(name: String) {
+    fun createWebhook(name: String, confirmed: () -> Unit) {
         if (_webhooks.value.creating) return
         _webhooks.value = _webhooks.value.copy(creating = true)
         viewModelScope.launch {
-            repo.createWebhook(conversationId, name)
-                .onSuccess { created ->
-                    _webhooks.value = _webhooks.value.copy(
-                        rows = _webhooks.value.rows + created,
-                        creating = false,
-                    )
-                    notify("Webhook “${created.name}” created")
-                }
-                .onFailure { failure ->
-                    _webhooks.value = _webhooks.value.copy(creating = false)
-                    notify(failure.message ?: "Could not create the webhook", isError = true)
-                }
+            try {
+                repo.createWebhook(conversationId, name)
+                    .onSuccess { created ->
+                        _webhooks.value = _webhooks.value.copy(
+                            rows = _webhooks.value.rows + created,
+                            creating = false,
+                        )
+                        confirmed()
+                        notify("Webhook “${created.name}” created")
+                    }
+                    .onFailure { failure ->
+                        _webhooks.value = _webhooks.value.copy(creating = false)
+                        notify(failure.message ?: "Could not create the webhook", isError = true)
+                    }
+            } finally {
+                _webhooks.value = _webhooks.value.copy(creating = false)
+            }
         }
     }
 
@@ -954,7 +978,7 @@ fun GroupInfoScreen(
                 )
             }
 
-            // R2-A item 7 - WEBHOOKS (everyone reads/copies; admin creates)
+            // R2-A item 7 - WEBHOOKS (admin-only posting credentials)
             item {
                 WebhooksSection(
                     isAdmin = isAdmin,

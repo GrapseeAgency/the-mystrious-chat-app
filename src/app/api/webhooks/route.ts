@@ -1,15 +1,17 @@
 // /api/webhooks - manage Discord-style incoming webhooks.
 // POST   { conversationId, name, requesterId } → 201 WebhookDTO
 // GET    ?conversationId=&requesterId=         → { webhooks: WebhookDTO[] }
-// Both require the requester to be a conversation participant
+// Management requires a credential-bound conversation admin
 // (deletion is admin-only and lives on /api/webhooks/[token]).
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireActionOwner } from '@/lib/wallet-authorization'
+import { roomControl } from '@/lib/room-control'
 import { AVATAR_COLORS, safeJson, strField } from '@/lib/serializers'
 
 export const dynamic = 'force-dynamic'
 
-export const WEBHOOK_NAME_MAX = 32
+const WEBHOOK_NAME_MAX = 32
 
 /** Shape consumed by the group-info webhooks card. */
 export interface WebhookDTO {
@@ -32,7 +34,7 @@ interface WebhookRow {
   createdBy: string
 }
 
-export function toWebhookDTO(row: WebhookRow): WebhookDTO {
+function toWebhookDTO(row: WebhookRow): WebhookDTO {
   return {
     id: row.id,
     name: row.name,
@@ -46,12 +48,14 @@ export function toWebhookDTO(row: WebhookRow): WebhookDTO {
 
 /**
  * GET /api/webhooks?conversationId=X&requesterId=Y
- * → { webhooks: WebhookDTO[] } (createdAt asc) - Y must be a participant.
+ * → { webhooks: WebhookDTO[] } (createdAt asc) - Y must be an authenticated admin.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const conversationId = url.searchParams.get('conversationId')?.trim() ?? ''
   const requesterId = url.searchParams.get('requesterId')?.trim() ?? ''
+  const refusal = await requireActionOwner(req, requesterId, 'webhook-control')
+  if (refusal) return refusal
   if (!conversationId || !requesterId) {
     return NextResponse.json(
       { error: 'conversationId and requesterId are required.' },
@@ -59,39 +63,45 @@ export async function GET(req: Request) {
     )
   }
 
-  const [conv, participant] = await Promise.all([
-    db.conversation.findUnique({ where: { id: conversationId }, select: { id: true } }),
-    db.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId: requesterId, conversationId } },
-      select: { id: true },
-    }),
-  ])
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-  }
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
+  return roomControl(db, async tx => {
+    const [conv, participant] = await Promise.all([
+      tx.conversation.findUnique({ where: { id: conversationId }, select: { id: true } }),
+      tx.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId: requesterId, conversationId } },
+        select: { id: true, role: true },
+      }),
+    ])
+    if (!conv) {
+      return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+    }
+    if (!participant) {
+      return NextResponse.json(
+        { error: 'You are not a participant of this conversation.' },
+        { status: 403 },
+      )
+    }
 
-  const rows = await db.webhook.findMany({
-    where: { conversationId },
-    orderBy: { createdAt: 'asc' },
+    if (participant.role !== 'admin') return NextResponse.json({ error: 'Only admins can access webhook credentials or create webhooks.' }, { status: 403 })
+
+    const rows = await tx.webhook.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'asc' },
+    })
+    return NextResponse.json({ webhooks: rows.map(toWebhookDTO) })
   })
-  return NextResponse.json({ webhooks: rows.map(toWebhookDTO) })
 }
 
 /**
  * POST /api/webhooks { conversationId, name, requesterId }
  * → 201 WebhookDTO (token = cuid via @default(cuid()), unique).
- * Requester must be a conversation participant.
+ * Requester must be an authenticated conversation admin.
  */
 export async function POST(req: Request) {
   const body = await safeJson(req)
   const conversationId = strField(body.conversationId)
   const requesterId = strField(body.requesterId)
+  const refusal = await requireActionOwner(req, requesterId, 'webhook-control')
+  if (refusal) return refusal
   const name = strField(body.name)
   if (!conversationId || !requesterId) {
     return NextResponse.json(
@@ -106,27 +116,31 @@ export async function POST(req: Request) {
     )
   }
 
-  const [conv, participant] = await Promise.all([
-    db.conversation.findUnique({ where: { id: conversationId }, select: { id: true } }),
-    db.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId: requesterId, conversationId } },
-      select: { id: true },
-    }),
-  ])
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
-  }
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
+  return roomControl(db, async tx => {
+    const [conv, participant] = await Promise.all([
+      tx.conversation.findUnique({ where: { id: conversationId }, select: { id: true } }),
+      tx.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId: requesterId, conversationId } },
+        select: { id: true, role: true },
+      }),
+    ])
+    if (!conv) {
+      return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+    }
+    if (!participant) {
+      return NextResponse.json(
+        { error: 'You are not a participant of this conversation.' },
+        { status: 403 },
+      )
+    }
 
-  // Colorful dots in the management card - picked from the avatar palette.
-  const avatarColor = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)]
-  const created = await db.webhook.create({
-    data: { conversationId, name, avatarColor, createdBy: requesterId },
+    if (participant.role !== 'admin') return NextResponse.json({ error: 'Only admins can access webhook credentials or create webhooks.' }, { status: 403 })
+
+    // Colorful dots in the management card - picked from the avatar palette.
+    const avatarColor = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)]
+    const created = await tx.webhook.create({
+      data: { conversationId, name, avatarColor, createdBy: requesterId },
+    })
+    return NextResponse.json(toWebhookDTO(created), { status: 201 })
   })
-  return NextResponse.json(toWebhookDTO(created), { status: 201 })
 }
