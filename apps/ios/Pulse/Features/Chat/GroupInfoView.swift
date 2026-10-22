@@ -771,7 +771,7 @@ struct GroupInfoView: View {
         mutate(request: { api, owner in
             try await api.patchConversation(conversation.id, requesterId: owner, broadcast: next)
         }, apply: { fresh in
-            try acceptDetail(fresh, notice: next ? "Announcement mode on - only admins can post" : "Announcement mode off")
+            try acceptDetail(fresh, notice: fresh.broadcastMode == true ? "Announcement mode on - only admins can post" : "Announcement mode off")
         })
     }
 
@@ -846,7 +846,10 @@ struct GroupInfoView: View {
         mutate(request: { api, owner in
             try await api.setDisappearingTtl(conversation.id, userId: owner, ttlSeconds: seconds)
         }, apply: { fresh in
-            try acceptDetail(fresh, notice: seconds == 0 ? "Disappearing messages off" : "New messages disappear after \(Self.ttlLabel(seconds).lowercased())")
+            guard let applied = fresh.ttlSeconds else {
+                throw PulseAPIClient.Failure(kind: .server, message: "Disappearing-message setting couldn't be confirmed")
+            }
+            try acceptDetail(fresh, notice: applied == 0 ? "Disappearing messages off" : "New messages disappear after \(Self.ttlLabel(applied).lowercased())")
         })
     }
 

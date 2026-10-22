@@ -2916,3 +2916,45 @@ pass. This resolves the three endpoint items above, not operation-receipt, authe
 directory-visibility or native-device coverage gaps. Android's mounted room kebab and room
 information actions are the next runtime path being inspected; fake-success TTL fallback
 and detached menu actions have been found there but are not fixed by this server tranche.
+
+## 2026-10-22 — Android room-menu truth, owned actions and cache projection
+
+The mounted room kebab previously used getOrDefault(requestedTTL) after a rejected timer
+change, ignored mute Result failures, and initialized the timer to Off without adopting the
+fetched detail. It now shows unknown metadata as Not loaded, adopts confirmed server values,
+serializes settings changes before dispatch, exposes pending state, reports errors and
+refreshes when the room becomes visible again. A pre-write detail read cannot overwrite
+its acknowledgement. Room state is keyed by viewer/room and uses current cached conversation
+rows rather than a permanently frozen open-room snapshot.
+
+Mute, TTL, quick-phrase edits and typing no longer launch detached scopes in this scaffold.
+They use composition-owned jobs and the captured account repository. Quick phrases adopt
+the acknowledged row/deletion instead of turning a later list-refresh failure into an edit
+failure. Room-info's host now has the same keyed/bound lifetime and an owned refresh callback.
+This does not yet repair every mutation/read-order race inside the larger room-info page.
+
+Android PATCH decoding now treats an invalid acknowledgement as an unconfirmed server
+outcome, not an input-validation failure. Metadata responses must belong to the requested
+room; requested boolean settings must be present. Slow-mode/personal-privacy ACKs must
+explicitly carry the requested value, including zero/false. TTL replies require a supported
+explicit value for the right room; neither platform invents the request as a fallback.
+Swift and Android TTL notices use the actual returned policy, which can have been superseded
+by another participant before the server's detail read. Swift metadata ACKs likewise reject
+wrong-room/missing-setting echoes. Incomplete Android metadata reads no longer synthesize
+Off privacy/throttle states.
+
+An additional storage race was found: cacheConversation read mutable viewerId AFTER a
+suspending Room lookup. Eight conversation-cache entry points now capture the request owner
+and repository epoch before network work. The storage transaction maps with that captured
+viewer, rejects retired epochs around suspended reads/writes, and rolls back rather than
+adopting a response under a changed account. DM/group/notebook creation also returns the
+actual cached projection. This is not a durable creation receipt or permission-revocation
+solution for already cached media.
+
+Nine changed native files pass syntax parsing; new Android MockEngine regressions cover
+missing/false/zero/wrong-room ACKs and authoritative TTL adoption, and Swift URLProtocol
+coverage is extended. Native execution for this tranche is pending. Historical 1829490
+Android build-test and iOS archive succeeded; iOS build/test was still running at inspection.
+The last full server run remains 163/163 at 8b8e8af (no server changes in this tranche).
+Autumn styles and colors are retained. Still open: room-info mutation ordering/refresh
+races, transport-loss operation receipts, directory visibility and broader device coverage.

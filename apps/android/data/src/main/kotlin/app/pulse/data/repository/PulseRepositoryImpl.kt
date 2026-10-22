@@ -726,10 +726,22 @@ class PulseRepositoryImpl constructor(
 
     private val inboxRefreshVersion = java.util.concurrent.atomic.AtomicLong()
 
-    private suspend fun cacheConversation(dto: ConversationSummaryDto): Conversation = database.withTransaction {
-        inboxRefreshVersion.incrementAndGet() // pre-mutation list responses cannot erase a created/updated room
+    private suspend fun cacheConversation(dto: ConversationSummaryDto, owner: String, epoch: String): Conversation = database.withTransaction {
+        fun requireOwner() {
+            if (viewerId != owner || attachmentSession != epoch) {
+                throw kotlinx.coroutines.CancellationException("Conversation response belongs to a retired account session")
+            }
+        }
+        requireOwner()
+        kotlin.coroutines.coroutineContext.ensureActive()
+        inboxRefreshVersion.incrementAndGet() // older list responses cannot erase this acknowledgement
         val previous = conversationDao.byId(dto.id)?.toDomain()
-        dto.toDomain(viewerId, previous).also { conversationDao.upsertAll(listOf(ConversationEntity.from(it))) }
+        requireOwner()
+        val mapped = dto.toDomain(owner, previous)
+        conversationDao.upsertAll(listOf(ConversationEntity.from(mapped)))
+        requireOwner() // retire during the storage suspension => roll back, don't adopt another viewer's projection
+        kotlin.coroutines.coroutineContext.ensureActive()
+        mapped
     }
 
     override suspend fun refreshConversations(): Result<Unit> {
@@ -1017,14 +1029,16 @@ class PulseRepositoryImpl constructor(
     override suspend fun createDm(otherUserId: String): Result<Conversation> = createConversation(listOf(otherUserId), isGroup = false, name = null)
     override suspend fun createGroup(name: String, memberIds: List<String>): Result<Conversation> = createConversation(memberIds, isGroup = true, name = name)
 
-    private suspend fun createConversation(memberIds: List<String>, isGroup: Boolean, name: String?): Result<Conversation> =
-        when (val r = api.createConversation(viewerId ?: "", memberIds, isGroup, name)) {
+    private suspend fun createConversation(memberIds: List<String>, isGroup: Boolean, name: String?): Result<Conversation> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return when (val r = api.createConversation(owner, memberIds, isGroup, name)) {
             is PulseResult.Success -> {
-                cacheConversation(r.value)
-                Result.success(r.value.toDomain(viewerId))
+                Result.success(cacheConversation(r.value, owner, epoch))
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
 
     override suspend fun me(): User? = null // no /me route on the wire yet - viewer lives in prefs
 
@@ -1826,50 +1840,67 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun conversationDetail(conversationId: String): Result<Conversation> =
-        when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
+    override suspend fun conversationDetail(conversationId: String): Result<Conversation> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return when (val r = api.conversationDetail(conversationId, owner)) {
             is PulseResult.Success -> {
-                val conversation = cacheConversation(r.value)
+                val conversation = cacheConversation(r.value, owner, epoch)
                 Result.success(conversation)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
     // REM-A group governance + scheduling (web group-info-sheet parity)
 
     /** Live group meta - ALSO upserts the Room conversation cache (rename TTL etc. flow into the list). */
-    override suspend fun groupMeta(conversationId: String): Result<GroupMeta> =
-        when (val r = api.conversationDetail(conversationId, viewerId ?: "")) {
+    override suspend fun groupMeta(conversationId: String): Result<GroupMeta> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return when (val r = api.conversationDetail(conversationId, owner)) {
             is PulseResult.Success -> {
                 val dto = r.value
-                cacheConversation(dto)
-                Result.success(
-                    GroupMeta(
-                        myRole = dto.members.firstOrNull { it.id == viewerId }?.role,
-                        isGroup = dto.isGroup,
-                        ttlSeconds = dto.ttlSeconds ?: 0,
-                        broadcastMode = dto.broadcastMode == true,
-                        slowModeSeconds = dto.slowModeSeconds ?: 0,
-                        screenPrivacy = dto.screenPrivacy == true,
-                        myScreenPrivacy = dto.myScreenPrivacy == true,
-                        inviteCode = dto.inviteCode,
-                        // R6 - M5: the server computes dmBlocked for DM details
-                        // only (src/lib/serializers.ts buildConversationDetail).
-                        dmBlocked = dto.dmBlocked == true,
-                        // R70 - the web room-info page's live detail fields.
-                        description = dto.description,
-                        photo = dto.photo,
-                        myMutedUntilIso = dto.mutedUntil,
-                        myStreakCount = streakCountOf(dto.myStreak),
-                        myStreakBest = streakBestOf(dto.myStreak),
-                        deadStreakCount = streakCountOf(dto.deadStreak),
-                        lostStreakCount = streakCountOf(dto.lostStreak),
-                        lostStreakBest = streakBestOf(dto.lostStreak),
-                    ),
-                )
+                val ttl = dto.ttlSeconds
+                val slow = dto.slowModeSeconds
+                val broadcast = dto.broadcastMode
+                val roomPrivacy = dto.screenPrivacy
+                val personalPrivacy = dto.myScreenPrivacy
+                if (dto.id != conversationId || dto.members.none { it.id == owner } ||
+                    ttl == null || slow == null || broadcast == null || roomPrivacy == null || personalPrivacy == null ||
+                    ttl !in listOf(0, 86_400, 604_800, 2_592_000) || slow !in listOf(0, 5, 10, 30, 60, 300)) {
+                    Result.failure(PulseApiException("SERVER", "Room settings were incomplete. Refresh before changing them."))
+                } else {
+                    cacheConversation(dto, owner, epoch)
+                    Result.success(
+                        GroupMeta(
+                            myRole = dto.members.firstOrNull { it.id == owner }?.role,
+                            isGroup = dto.isGroup,
+                            ttlSeconds = ttl,
+                            broadcastMode = broadcast,
+                            slowModeSeconds = slow,
+                            screenPrivacy = roomPrivacy,
+                            myScreenPrivacy = personalPrivacy,
+                            inviteCode = dto.inviteCode,
+                            // R6 - M5: the server computes dmBlocked for DM details
+                            // only (src/lib/serializers.ts buildConversationDetail).
+                            dmBlocked = dto.dmBlocked == true,
+                            // R70 - the web room-info page's live detail fields.
+                            description = dto.description,
+                            photo = dto.photo,
+                            myMutedUntilIso = dto.mutedUntil,
+                            myStreakCount = streakCountOf(dto.myStreak),
+                            myStreakBest = streakBestOf(dto.myStreak),
+                            deadStreakCount = streakCountOf(dto.deadStreak),
+                            lostStreakCount = streakCountOf(dto.lostStreak),
+                            lostStreakBest = streakBestOf(dto.lostStreak),
+                        ),
+                    )
+                }
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
     /** PATCH /api/conversations/{id} - every success carries the updated detail; refresh the cache. */
     private suspend fun patchGroupMeta(
@@ -1877,14 +1908,17 @@ class PulseRepositoryImpl constructor(
         name: String? = null,
         broadcast: Boolean? = null,
         screenPrivacy: Boolean? = null,
-    ): Result<Unit> =
-        when (val r = api.patchConversation(conversationId, viewerId ?: "", name = name, broadcast = broadcast, screenPrivacy = screenPrivacy)) {
+    ): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return when (val r = api.patchConversation(conversationId, owner, name = name, broadcast = broadcast, screenPrivacy = screenPrivacy)) {
             is PulseResult.Success -> {
-                cacheConversation(r.value)
+                cacheConversation(r.value, owner, epoch)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
     override suspend fun renameGroup(conversationId: String, name: String): Result<Unit> =
         patchGroupMeta(conversationId, name = name)
@@ -1903,14 +1937,17 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
-    override suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit> =
-        when (val r = api.patchConversation(conversationId, viewerId ?: "", photo = normalizeUploadPath(photoPath))) {
+    override suspend fun setGroupPhoto(conversationId: String, photoPath: String): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return when (val r = api.patchConversation(conversationId, owner, photo = normalizeUploadPath(photoPath))) {
             is PulseResult.Success -> {
-                cacheConversation(r.value)
+                cacheConversation(r.value, owner, epoch)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
     override suspend fun automations(conversationId: String): Result<List<Automation>> =
         when (val r = api.automations(conversationId, viewerId ?: "")) {
@@ -1996,14 +2033,17 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
-    override suspend fun setMemberRole(conversationId: String, userId: String, promote: Boolean): Result<Unit> =
-        when (val r = api.promoteDemote(conversationId, viewerId ?: "", userId, promote)) {
+    override suspend fun setMemberRole(conversationId: String, userId: String, promote: Boolean): Result<Unit> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return when (val r = api.promoteDemote(conversationId, owner, userId, promote)) {
             is PulseResult.Success -> {
-                cacheConversation(r.value)
+                cacheConversation(r.value, owner, epoch)
                 Result.success(Unit)
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
     override suspend fun kickMember(conversationId: String, userId: String): Result<Unit> =
         when (val r = api.kickMember(conversationId, viewerId ?: "", userId)) {
@@ -2027,14 +2067,22 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
-    override suspend fun setDisappearingTtl(conversationId: String, ttlSeconds: Int): Result<Int> =
-        when (val r = api.setDisappearingTtl(conversationId, viewerId ?: "", ttlSeconds)) {
+    override suspend fun setDisappearingTtl(conversationId: String, ttlSeconds: Int): Result<Int> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return when (val r = api.setDisappearingTtl(conversationId, owner, ttlSeconds)) {
             is PulseResult.Success -> {
-                cacheConversation(r.value)
-                Result.success(r.value.ttlSeconds ?: ttlSeconds)
+                val applied = r.value.ttlSeconds
+                if (r.value.id != conversationId || applied == null) {
+                    Result.failure(IllegalStateException("Disappearing-message setting was not confirmed"))
+                } else {
+                    cacheConversation(r.value, owner, epoch)
+                    Result.success(applied)
+                }
             }
             is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
+    }
 
     override suspend fun setSlowMode(conversationId: String, seconds: Int): Result<Int> =
         when (val r = api.setSlowMode(conversationId, viewerId ?: "", seconds)) {
@@ -2482,14 +2530,17 @@ class PulseRepositoryImpl constructor(
 
     // N10 home-page era
 
-    override suspend fun createSelfChat(): Result<Conversation> =
-        when (val r = api.createSelfChat(viewerId ?: "")) {
+    override suspend fun createSelfChat(): Result<Conversation> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return when (val r = api.createSelfChat(owner)) {
             is PulseResult.Success -> {
-                val conversation = cacheConversation(r.value)
+                val conversation = cacheConversation(r.value, owner, epoch)
                 Result.success(conversation)
             }
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
+    }
 
     private fun isoToEpochMs(iso: String?): Long? = iso?.takeIf { it.isNotBlank() }?.let {
         runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()

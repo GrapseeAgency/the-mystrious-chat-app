@@ -1,6 +1,10 @@
 package app.pulse.android.mirror
 
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -790,58 +794,63 @@ internal fun MirrorRoot(
             enter = slideInVertically(MirrorMotion.soft()) { it } + fadeIn(tween(90)),
             exit = slideOutVertically(tween(210, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(150)),
         ) {
-            roomShown?.let { convo ->
+            roomShown?.let { shown ->
+                val convo = conversations.firstOrNull { it.id == shown.id } ?: shown
                 val roomTypers = typers
                     .filter { it.conversationId == convo.id }
                     .map { it.userName }
-                MirrorRoomScaffold(
-                    convo = convo,
-                    readingEnabled = readingEnabled && openRoom != null && viewingStory == null &&
-                        roomInfoFor == null && managerFor == null && userPageFor == null &&
-                        !settingsOpen && !callsOpen && !spotlightOpen,
-                    accountRouter = repository,
-                    viewerId = viewerId.orEmpty(),
-                    presence = presence,
-                    typers = roomTypers,
-                    pipActive = pipFor?.id == convo.id,
-                    onTogglePip = {
-                        pipFor = if (pipFor?.id == convo.id) null else convo
-                    },
-                    onClose = { openRoom = null },
-                    onRoomInfo = { roomInfoFor = convo },
-                    onManageGroup = { managerFor = convo },
-                    onStartCall = onStartCall,
-                    onOpenLiveRoom = onOpenLiveRoom,
-                    reducedMotion = reducedMotion,
-                    jumpMessageId = pendingJumpId,
-                    onJumpConsumed = { pendingJumpId = null },
-                )
+                androidx.compose.runtime.key(viewerId, convo.id) {
+                    MirrorRoomScaffold(
+                        convo = convo,
+                        readingEnabled = readingEnabled && openRoom != null && viewingStory == null &&
+                            roomInfoFor == null && managerFor == null && userPageFor == null &&
+                            !settingsOpen && !callsOpen && !spotlightOpen,
+                        accountRouter = repository,
+                        viewerId = viewerId.orEmpty(),
+                        presence = presence,
+                        typers = roomTypers,
+                        pipActive = pipFor?.id == convo.id,
+                        onTogglePip = { pipFor = if (pipFor?.id == convo.id) null else convo },
+                        onClose = { openRoom = null },
+                        onRoomInfo = { roomInfoFor = convo },
+                        onManageGroup = { managerFor = convo },
+                        onStartCall = onStartCall,
+                        onOpenLiveRoom = onOpenLiveRoom,
+                        reducedMotion = reducedMotion,
+                        jumpMessageId = pendingJumpId,
+                        onJumpConsumed = { pendingJumpId = null },
+                    )
+                }
             }
         }
 
         if (roomInfoFor != null) {
             val convo = roomInfoFor!!
-            // R70 - the web RoomInfoPage parity (hero, stats, actions,
-            // automations, encryption, members) over the real repository.
-            MirrorRoomInfoPage(
-                conversationId = convo.id,
-                viewerId = viewerId.orEmpty(),
-                viewerName = viewerName.orEmpty(),
-                repository = repository,
-                presence = presence,
-                onChanged = {
-                    CoroutineScope(Dispatchers.IO).launch { runCatching { repository.refreshConversations() } }
-                },
-                onDismiss = { roomInfoFor = null },
-                onOpenManager = {
-                    managerFor = roomInfoFor
-                    roomInfoFor = null
-                },
-                onOpenUser = {
-                    roomInfoFor = null
-                    userPageFor = it
-                },
-            )
+            androidx.compose.runtime.key(viewerId, convo.id) {
+                val infoRepository = remember(repository, viewerId, convo.id) { repository.boundToCurrentAccount() }
+                val infoScope = androidx.compose.runtime.rememberCoroutineScope()
+                MirrorRoomInfoPage(
+                    conversationId = convo.id,
+                    viewerId = viewerId.orEmpty(),
+                    viewerName = viewerName.orEmpty(),
+                    repository = infoRepository,
+                    presence = presence,
+                    onChanged = {
+                        infoScope.launch {
+                            try {
+                                withContext(Dispatchers.IO) { infoRepository.refreshConversations() }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                // The confirmed mutation is independent of this refresh.
+                            }
+                        }
+                    },
+                    onDismiss = { roomInfoFor = null },
+                    onOpenManager = { managerFor = roomInfoFor; roomInfoFor = null },
+                    onOpenUser = { roomInfoFor = null; userPageFor = it },
+                )
+            }
         }
         if (managerFor != null) {
             val convo = managerFor!!
@@ -1063,16 +1072,95 @@ private fun MirrorRoomScaffold(
     jumpMessageId: String? = null,
     onJumpConsumed: () -> Unit = {},
 ) {
-    val repository = remember(viewerId, convo.id) { accountRouter.boundToCurrentAccount() }
+    val repository = remember(accountRouter, viewerId, convo.id) { accountRouter.boundToCurrentAccount() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val visible by androidx.compose.runtime.rememberUpdatedState(readingEnabled)
     val messages by repository.observeMessages(convo.id).collectAsStateWithLifecycle(initialValue = emptyList<Message>())
     var phrases by remember { mutableStateOf<List<QuickPhrase>>(emptyList()) }
     var muted by remember { mutableStateOf(convo.isMuted) }
-    var ttlSeconds by remember { mutableStateOf(0) }
+    var ttlSeconds by remember { mutableStateOf<Int?>(null) }
+    var settingsBusy by remember { mutableStateOf(false) }
+    var settingsRevision by remember { mutableStateOf(0L) }
+    var phraseBusy by remember { mutableStateOf(false) }
+    var phraseRevision by remember { mutableStateOf(0L) }
+    var typingJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
-    LaunchedEffect(convo.id) {
-        phrases = repository.phrases().getOrDefault(emptyList())
-        // live room truth for the kebab controls (mute + disappearing TTL)
-        runCatching { repository.conversationDetail(convo.id) }
+    fun notice(message: String) {
+        if (visible) android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    suspend fun refreshSettings() {
+        val revision = settingsRevision
+        try {
+            val meta = withContext(Dispatchers.IO) { repository.groupMeta(convo.id).getOrThrow() }
+            currentCoroutineContext().ensureActive()
+            if (visible && settingsRevision == revision && !settingsBusy) ttlSeconds = meta.ttlSeconds
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Retain last known truth; unknown is not Off.
+        }
+    }
+
+    fun <T> updateSetting(request: suspend () -> Result<T>, apply: (T) -> Unit) {
+        if (!visible || settingsBusy) return
+        settingsBusy = true
+        settingsRevision++ // invalidate detail fetched before this write
+        scope.launch {
+            try {
+                val applied = withContext(Dispatchers.IO) { request().getOrThrow() }
+                currentCoroutineContext().ensureActive()
+                settingsRevision++
+                if (visible) apply(applied)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                settingsRevision++
+                notice(error.message ?: "Couldn't confirm the change. Check room info before retrying.")
+            } finally { settingsBusy = false }
+            if (visible) refreshSettings()
+        }
+    }
+
+    fun updatePhrase(text: String? = null, removeId: String? = null) {
+        if (!visible || phraseBusy) return
+        phraseBusy = true; phraseRevision++
+        scope.launch {
+            try {
+                if (text != null) {
+                    val added = withContext(Dispatchers.IO) { repository.addPhrase(text).getOrThrow() }
+                    currentCoroutineContext().ensureActive()
+                    phraseRevision++
+                    if (visible) phrases = phrases.filterNot { it.id == added.id } + added
+                } else if (removeId != null) {
+                    withContext(Dispatchers.IO) { repository.deletePhrase(removeId).getOrThrow() }
+                    currentCoroutineContext().ensureActive()
+                    phraseRevision++
+                    if (visible) phrases = phrases.filterNot { it.id == removeId }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                notice(error.message ?: "Couldn't confirm the quick-phrase change")
+            } finally { phraseBusy = false }
+        }
+    }
+
+    LaunchedEffect(convo.isMuted) { muted = convo.isMuted }
+    LaunchedEffect(repository, convo.id, readingEnabled) {
+        if (!readingEnabled) return@LaunchedEffect
+        refreshSettings()
+        val revision = phraseRevision
+        try {
+            val loaded = withContext(Dispatchers.IO) { repository.phrases().getOrThrow() }
+            currentCoroutineContext().ensureActive()
+            if (visible && phraseRevision == revision && !phraseBusy) phrases = loaded
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // A failed refresh must not erase known phrases.
+        }
     }
 
     val other = convo.members.firstOrNull { it.id != viewerId }
@@ -1111,20 +1199,14 @@ private fun MirrorRoomScaffold(
         isBroadcast = convo.kind == Conversation.Kind.CHANNEL,
         avatarPath = convo.avatar,
         onBack = onClose,
-        onAddPhrase = { text ->
-            CoroutineScope(Dispatchers.IO).launch {
-                repository.addPhrase(text).onSuccess { phrases = repository.phrases().getOrDefault(emptyList()) }
-            }
-        },
-        onDeletePhrase = { phraseId ->
-            CoroutineScope(Dispatchers.IO).launch {
-                repository.deletePhrase(phraseId).onSuccess { phrases = repository.phrases().getOrDefault(emptyList()) }
-            }
-        },
+        onAddPhrase = { text -> updatePhrase(text = text) },
+        onDeletePhrase = { phraseId -> updatePhrase(removeId = phraseId) },
         onTyping = { typing ->
-            // web signalTyping/cancelTyping - the relay fans out to members
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching { repository.setTyping(convo.id, convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(), typing) }
+            typingJob?.cancel()
+            typingJob = scope.launch {
+                try {
+                    repository.setTyping(convo.id, convo.members.firstOrNull { it.id == viewerId }?.name.orEmpty(), typing)
+                } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { /* ephemeral typing expires on the relay */ }
             }
         },
         onCall = { video ->
@@ -1133,26 +1215,12 @@ private fun MirrorRoomScaffold(
         },
         onRoomInfo = onRoomInfo,
         onManageGroup = onManageGroup,
+        roomSettingsBusy = settingsBusy,
         onMuteChoice = { until ->
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    // R70 fix: the wire /mute route ONLY accepts the preset
-                    // strings ("8h" | "1w" | "always" | null) - the old ISO
-                    // stamp body was rejected 400 and mute silently failed.
-                    repository.setMutedUntil(convo.id, until)
-                    kotlinx.coroutines.withContext(Dispatchers.Main) {
-                        muted = until != null
-                    }
-                }
-            }
+            updateSetting(request = { repository.setMutedUntil(convo.id, until) }, apply = { muted = until != null })
         },
         onTtlChoice = { ttl ->
-            CoroutineScope(Dispatchers.IO).launch {
-                runCatching {
-                    val applied = repository.setDisappearingTtl(convo.id, ttl).getOrDefault(ttl)
-                    kotlinx.coroutines.withContext(Dispatchers.Main) { ttlSeconds = applied }
-                }
-            }
+            updateSetting(request = { repository.setDisappearingTtl(convo.id, ttl) }, apply = { ttlSeconds = it })
         },
         onUnpinMessage = { messageId -> repository.unpinMessage(messageId) },
         fetchPinned = { repository.pinnedMessages(convo.id) },

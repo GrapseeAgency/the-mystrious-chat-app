@@ -402,7 +402,7 @@ internal fun MirrorRoom(
     members: List<ConversationMember>,
     phrases: List<QuickPhrase>,
     muted: Boolean,
-    ttlSeconds: Int,
+    ttlSeconds: Int?,
     isBroadcast: Boolean,
     /** stored group/channel photo (web renders it in the header avatar) */
     avatarPath: String? = null,
@@ -418,6 +418,7 @@ internal fun MirrorRoom(
     onManageGroup: () -> Unit,
     onMuteChoice: (String?) -> Unit,
     onTtlChoice: (Int) -> Unit,
+    roomSettingsBusy: Boolean = false,
     onUnpinMessage: suspend (String) -> Result<Unit>,
     fetchPinned: suspend () -> List<Message>,
     pipActive: Boolean,
@@ -2505,6 +2506,8 @@ internal fun MirrorRoom(
                     MirrorRoomMenuItem(
                         if (muted) "LVolumeX" else "LBellOff",
                         if (muted) "Unmute notifications" else "Mute notifications",
+                        enabled = !roomSettingsBusy,
+                        pillText = if (roomSettingsBusy) "Updating…" else "",
                     ) {
                         if (muted) {
                             menuOpen = false
@@ -2529,11 +2532,15 @@ internal fun MirrorRoom(
                     MirrorRoomMenuItem(
                         "LTimer",
                         "Disappearing messages",
-                        iconColor = if (ttlSeconds > 0) MirrorArt.Accent2 else MirrorArt.Dim,
-                        pillText = if (ttlSeconds > 0) {
-                            when (ttlSeconds) { 86_400 -> "24h"; 604_800 -> "7d"; else -> "30d" }
-                        } else "",
-                        pillStyle = "accentUp",
+                        enabled = !roomSettingsBusy,
+                        iconColor = if ((ttlSeconds ?: 0) > 0) MirrorArt.Accent2 else MirrorArt.Dim,
+                        pillText = when {
+                            roomSettingsBusy -> "Updating…"
+                            ttlSeconds == null -> "Not loaded"
+                            ttlSeconds > 0 -> when (ttlSeconds) { 86_400 -> "24h"; 604_800 -> "7d"; else -> "30d" }
+                            else -> ""
+                        },
+                        pillStyle = if (ttlSeconds == null) "neutral" else "accentUp",
                     ) {
                         ttlStripOpen = true
                     }

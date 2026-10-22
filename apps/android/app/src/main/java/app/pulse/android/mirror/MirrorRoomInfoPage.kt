@@ -771,9 +771,9 @@ internal fun MirrorRoomInfoPage(
                 runCatching { repository.setDisappearingTtl(conversationId, ttlSeconds) }.getOrElse { Result.failure(it) }
             }
             ttlPending = false
-            res.onSuccess {
+            res.onSuccess { applied ->
                 showNote(
-                    if (ttlSeconds == 0) "Disappearing messages off" else "New messages vanish after ${infoTtlLong(ttlSeconds)}",
+                    if (applied == 0) "Disappearing messages off" else "New messages vanish after ${infoTtlLong(applied)}",
                     false,
                 )
             }.onFailure {

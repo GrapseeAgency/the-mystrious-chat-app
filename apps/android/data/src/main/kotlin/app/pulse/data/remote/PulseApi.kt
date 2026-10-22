@@ -241,7 +241,7 @@ class PulseApi(
                 failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
-            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+            PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "The gateway did not confirm the change; refresh before retrying")
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
@@ -1918,7 +1918,12 @@ class PulseApi(
             PulseJson.decodeFromString(
                 ConversationSummaryDto.serializer(),
                 PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
-            )
+            ).also { result ->
+                if (result.id != conversationId || (broadcast != null && result.broadcastMode == null) ||
+                    (screenPrivacy != null && result.screenPrivacy == null)) {
+                    throw kotlinx.serialization.SerializationException("Room settings were not confirmed")
+                }
+            }
         }
 
     /** POST /api/conversations/{id}/members { requesterId, userIds[] } - admin-only add. */
@@ -1952,7 +1957,9 @@ class PulseApi(
             PulseJson.decodeFromString(
                 ConversationSummaryDto.serializer(),
                 PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
-            )
+            ).also { result ->
+                if (result.id != conversationId) throw kotlinx.serialization.SerializationException("Role response belongs to another room")
+            }
         }
 
     /** DELETE /api/conversations/{id}/members/{userId} { requesterId } - kick a NON-admin member. */
@@ -1990,7 +1997,12 @@ class PulseApi(
             PulseJson.decodeFromString(
                 ConversationSummaryDto.serializer(),
                 PulseJson.parseToJsonElement(it).unwrapOrRoot("conversation").toString(),
-            )
+            ).also { result ->
+                val applied = result.ttlSeconds
+                if (result.id != conversationId || applied == null || applied !in listOf(0, 86_400, 604_800, 2_592_000)) {
+                    throw kotlinx.serialization.SerializationException("Disappearing-message setting was not confirmed")
+                }
+            }
         }
 
     /** PATCH /api/conversations/{id}/slow-mode { userId, seconds } - admin-only; presets 0/5/10/30/60/300. */
@@ -1998,7 +2010,14 @@ class PulseApi(
         patch(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/slow-mode",
             jsonOf("userId" to userId, "seconds" to seconds),
-        ) { PulseJson.decodeFromString(SlowModeAckDto.serializer(), it) }
+        ) {
+            val body = PulseJson.parseToJsonElement(it) as? JsonObject
+            val result = PulseJson.decodeFromString(SlowModeAckDto.serializer(), it)
+            if (!result.ok || body?.get("slowModeSeconds") != JsonPrimitive(seconds)) {
+                throw kotlinx.serialization.SerializationException("Slow-mode setting was not confirmed")
+            }
+            result
+        }
 
     // REM-A scheduled sends (F-MS-18)
 
@@ -2094,7 +2113,14 @@ class PulseApi(
         patch(
             "/api/conversations/" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "/screen-privacy",
             jsonOf("userId" to userId, "on" to on),
-        ) { PulseJson.decodeFromString(ScreenPrivacyAckDto.serializer(), it) }
+        ) {
+            val body = PulseJson.parseToJsonElement(it) as? JsonObject
+            val result = PulseJson.decodeFromString(ScreenPrivacyAckDto.serializer(), it)
+            if (!result.ok || body?.get("screenPrivacy") != JsonPrimitive(on)) {
+                throw kotlinx.serialization.SerializationException("Personal screen privacy was not confirmed")
+            }
+            result
+        }
 
     companion object {
         /** Per-request cap for the slow voice-caption ASR round-trip. */

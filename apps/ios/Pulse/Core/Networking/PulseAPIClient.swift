@@ -1443,7 +1443,13 @@ public struct PulseAPIClient: Sendable {
         if let broadcast { body["broadcast"] = broadcast }
         if let screenPrivacy { body["screenPrivacy"] = screenPrivacy }
         let data = try await patchRaw("/api/conversations/\(q(conversationId))", body: body)
-        return try WireConversationEnvelope.extract(from: data)
+        let result = try WireConversationEnvelope.extract(from: data)
+        guard result.id == conversationId,
+              broadcast == nil || result.broadcastMode != nil,
+              screenPrivacy == nil || result.screenPrivacy != nil else {
+            throw Failure(kind: .server, message: "Room settings couldn't be confirmed. Refresh group info.")
+        }
+        return result
     }
 
     /// POST /api/conversations/{id}/members { requesterId, userIds } -
@@ -1514,7 +1520,12 @@ public struct PulseAPIClient: Sendable {
             "/api/conversations/\(q(conversationId))/disappearing",
             body: ["userId": userId, "ttlSeconds": ttlSeconds],
         )
-        return try WireConversationEnvelope.extract(from: data)
+        let result = try WireConversationEnvelope.extract(from: data)
+        guard result.id == conversationId, let applied = result.ttlSeconds,
+              [0, 86_400, 604_800, 2_592_000].contains(applied) else {
+            throw Failure(kind: .server, message: "Disappearing-message setting couldn't be confirmed. Refresh group info.")
+        }
+        return result
     }
 
     /// PATCH /api/conversations/{id}/slow-mode { userId, seconds } -
