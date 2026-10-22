@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
 import { roomControl } from '../../src/lib/room-control.ts'
+import { messageDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
+import { threadRootAvailable } from '../../src/lib/message-visibility.ts'
 const {PrismaClient,Prisma}=createRequire(import.meta.url)('../../prisma/generated-client')
 async function load(path, bindings, expression) {
  const text=(await readFile(new URL(`../../${path}`,import.meta.url),'utf8')).replace(/^import[\s\S]*?from ['"][^'"]+['"];?\s*$/gm,'').replace(/^export /gm,'')
@@ -14,7 +16,7 @@ async function load(path, bindings, expression) {
 async function fixture(run) {
  const dir=await mkdtemp(join(tmpdir(),'room-controls-'));const db=new PrismaClient({datasourceUrl:`file:${join(dir,'test.sqlite')}`})
  try {
-  for(const name of ['User','Conversation','ConversationParticipant','Automation','Webhook','Message']) {
+  for(const name of ['User','Conversation','ConversationParticipant','Automation','Webhook','Message','UserBlock']) {
    const columns=Prisma.dmmf.datamodel.models.find(m=>m.name===name).fields.filter(f=>f.kind!=='object'&&!f.isList).map(f=>{
     const type=['Int','Boolean','BigInt'].includes(f.type)?'INTEGER':f.type==='Float'?'REAL':f.type==='DateTime'?'DATETIME':'TEXT'
     let def=''
@@ -33,11 +35,12 @@ async function fixture(run) {
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
   const events=[],bindings={db,roomControl,requireActionOwner,NextResponse:Response,safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',mapAutomation:r=>r,
    AVATAR_COLORS:['#F2A65A'],MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},mapMessage:r=>r,memberIdsOf:async()=>['me','member'],notifySocket:async(...args)=>events.push(args)}
+  const {createAutomationReply,triggerMatches}=await load('src/lib/automation-delivery.ts',{...bindings,messageDeliveryDecision,threadRootAvailable},'({createAutomationReply,triggerMatches})')
   const a=await load('src/app/api/conversations/[id]/automations/route.ts',bindings,'({GET,POST})')
   const single=await load('src/app/api/automations/[id]/route.ts',bindings,'({PATCH,DELETE})')
   const w=await load('src/app/api/webhooks/route.ts',bindings,'({GET,POST})')
   const token=await load('src/app/api/webhooks/[token]/route.ts',bindings,'({POST,DELETE})')
-  await run(db,{a,single,w,token,events,makeIngest:d=>load('src/app/api/webhooks/[token]/route.ts',{...bindings,db:d},'POST')})
+  await run(db,{a,single,w,token,events,triggerMatches,fire:(content='Hello',now=new Date())=>db.$transaction(tx=>createAutomationReply(tx,'room','source',content,now),{isolationLevel:'Serializable'}), makeReply:(overrides={})=>load('src/app/api/conversations/[id]/messages/route.ts',{...bindings,createAutomationReply,nativeBlockFromPayload:()=>null,console:{error:()=>{}},...overrides},'maybeAutomationReply'),makeIngest:d=>load('src/app/api/webhooks/[token]/route.ts',{...bindings,db:d},'POST')})
  }finally{await db.$disconnect();await rm(dir,{recursive:true,force:true})}
 }
 const ctx=(id='room')=>({params:Promise.resolve({id,token:'synthetic-hook'})})
@@ -88,4 +91,76 @@ test('public capability ingest rechecks revocation before writing and notifies i
  const racing=new Proxy(db,{get(target,key){if(key==='$transaction')return async(action,options)=>{await db.webhook.delete({where:{id:'hook'}});return db.$transaction(action,options)};const value=target[key];return typeof value==='function'?value.bind(target):value}})
  const ingest=await h.makeIngest(racing)
  assert.equal((await ingest(req('POST','',null),ctx())).status,404);assert.equal(await db.message.count(),1);assert.equal(h.events.length,1)
+}))
+async function source(db,extra={}) {
+ return db.message.create({data:{id:'source',conversationId:'room',senderId:'member',content:'Hello',kind:'text',...extra}})
+}
+test('automation execution rechecks disabled/deleted rules and departed creators against the write snapshot',()=>fixture(async(db,h)=>{
+ await source(db)
+ await db.automation.update({where:{id:'rule'},data:{enabled:false}})
+ assert.equal(await h.fire(),null)
+ await db.automation.update({where:{id:'rule'},data:{enabled:true}})
+ await db.conversationParticipant.deleteMany({where:{userId:'me'}})
+ assert.equal(await h.fire(),null)
+ await db.conversationParticipant.create({data:{userId:'me',conversationId:'room',role:'admin'}})
+ await db.automation.delete({where:{id:'rule'}})
+ assert.equal(await h.fire(),null)
+ assert.equal(await db.message.count(),1)
+}))
+test('automations respect current broadcast, block and slow-mode posting restrictions',()=>fixture(async(db,h)=>{
+ await source(db)
+ await db.conversationParticipant.updateMany({where:{userId:'me'},data:{role:'member'}})
+ await db.conversation.update({where:{id:'room'},data:{broadcastMode:true}})
+ assert.equal(await h.fire(),null)
+ await db.conversation.update({where:{id:'room'},data:{isGroup:false,broadcastMode:false}})
+ await db.userBlock.create({data:{blockerId:'member',blockedId:'me'}})
+ assert.equal(await h.fire(),null)
+ await db.userBlock.deleteMany()
+ await db.conversation.update({where:{id:'room'},data:{isGroup:true,slowModeSeconds:60}})
+ const now=new Date();await db.message.create({data:{id:'recent',conversationId:'room',senderId:'me',content:'Recent',createdAt:now}})
+ assert.equal(await h.fire('Hello',now),null)
+ assert.equal((await db.automation.findUnique({where:{id:'rule'}})).hits,0)
+}))
+test('deleted, expired, edited, machine-authored or inaccessible thread sources never trigger replies',()=>fixture(async(db,h)=>{
+ await source(db)
+ for(const patch of [{deletedAt:new Date()},{expiresAt:new Date(0)},{content:'Edited'},{viaAutomation:true},{parentId:'missing'}]) {
+  await db.message.update({where:{id:'source'},data:patch});assert.equal(await h.fire(),null)
+  await db.message.update({where:{id:'source'},data:{deletedAt:null,expiresAt:null,content:'Hello',viaAutomation:false,parentId:null}})
+ }
+ await db.conversationParticipant.deleteMany({where:{userId:'member'}})
+ assert.equal(await h.fire(),null)
+ assert.equal(await db.message.count(),1)
+}))
+test('reply, hit count and unarchive roll back together; committed counters survive notification failure',()=>fixture(async(db,h)=>{
+ await source(db)
+ await db.conversationParticipant.updateMany({where:{userId:'member'},data:{archivedAt:new Date(0)}})
+ await db.$executeRawUnsafe("CREATE TRIGGER refuse_hit BEFORE UPDATE ON Automation BEGIN SELECT RAISE(ABORT,'synthetic failure'); END")
+ await assert.rejects(h.fire());assert.equal(await db.message.count(),1)
+ assert.equal((await db.automation.findUnique({where:{id:'rule'}})).hits,0)
+ assert.notEqual((await db.conversationParticipant.findFirst({where:{userId:'member'}})).archivedAt,null)
+ await db.$executeRawUnsafe('DROP TRIGGER refuse_hit')
+ const reply=await h.makeReply({notifySocket:async()=>{throw Error('Notification unavailable')}})
+ await reply('room','source','Hello')
+ assert.equal(await db.message.count(),2)
+ assert.equal((await db.automation.findUnique({where:{id:'rule'}})).hits,1)
+ assert.equal((await db.conversationParticipant.findFirst({where:{userId:'member'}})).archivedAt,null)
+ assert.equal((await db.conversationParticipant.findFirst({where:{userId:'member'}})).lastReadAt.toISOString(),'2026-01-01T00:00:00.000Z')
+}))
+test('thread automations remain in their thread and expire no later than its root',()=>fixture(async(db,h)=>{
+ const now=new Date(),deadline=new Date(now.getTime()+10_000)
+ await db.message.create({data:{id:'root',conversationId:'room',senderId:'member',content:'Topic root',expiresAt:deadline}})
+ await source(db,{parentId:'root',topicId:'topic'})
+ await db.conversation.update({where:{id:'room'},data:{ttlSeconds:60}})
+ const message=await h.fire('Hello',now)
+ assert.equal(message.parentId,'root');assert.equal(message.topicId,'topic');assert.equal(message.expiresAt.toISOString(),deadline.toISOString())
+ const reply=await h.makeReply();await reply('room','source','Hello')
+ assert.deepEqual(h.events[0][1],['me','member'])
+}))
+test('Unicode keyword boundaries do not fire inside Bengali or combining-mark words',()=>fixture(async(db,h)=>{
+ for(const [trigger,body,expected] of [
+  ['দাম','দাম কত?',true],['দাম','বদাম',false],['দাম','দামগুলো',false],
+  ['price','price_list',false],['price','what is the PRICE?',true],['price','prices',false],
+  ['café','cafe\u0301!',true],['cafe','cafe\u0301',false],['C++','C++?',true],['a.b','axb',false],
+  ['দাম','দাম\u200d',false],['','anything',false],
+ ]) assert.equal(h.triggerMatches(trigger,body),expected,`${trigger}:${body}`)
 }))

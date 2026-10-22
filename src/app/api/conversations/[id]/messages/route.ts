@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { db } from '@/lib/db'
 import { messageDeliveryDecision } from '@/lib/scheduled-delivery'
+import { createAutomationReply } from '@/lib/automation-delivery'
 import { threadRootAvailable } from '@/lib/message-visibility'
 import { decodeMessageSyncCursor, encodeMessageSyncCursor, messageSyncWhere, messagesBefore, MESSAGE_ORDER_ASC, MESSAGE_ORDER_DESC, type MessageSyncCursor } from '@/lib/message-sync'
 import { messageOperation, replayMessageOperation, commitMessageOperation, MessageOperationError } from '@/lib/message-operation'
@@ -761,7 +762,7 @@ export async function POST(req: Request, { params }: RouteCtx) {
   // and never re-enter this route, so the engine can never chain. A failure
   // here must never fail the human send (same principle as XP accounting).
   if (message.deletedAt === null) {
-    await maybeAutomationReply(id, content)
+    await maybeAutomationReply(id, message.id, content)
   }
 
   // R31-a: gaming-grade daily XP cap - every real send earns XP_PER_MESSAGE
@@ -829,95 +830,21 @@ export async function POST(req: Request, { params }: RouteCtx) {
   )
 }
 
-// R39: keyword-triggered auto-replies (ManyChat/Landbot family) 
-
-/** Escape a trigger for literal regex use (no special-char surprises). */
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/**
- * Match `trigger` as a STANDALONE phrase inside `content`: case-insensitive,
- * with letter/digit lookaround boundaries so "price" never matches inside
- * "pricing" or "compare prices" - but "price" matches in "what's the price?".
- */
-function triggerMatches(trigger: string, content: string): boolean {
-  const escaped = escapeRegex(trigger.trim())
-  if (escaped.length === 0) return false
-  return new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, 'i').test(content)
-}
-
-/**
- * Fire the FIRST enabled automation whose trigger matches the human message.
- * The reply is a real Message row authored by the rule's creator with
- * viaAutomation=true, riding the same pipeline as webhook messages (updatedAt
- * bump, archive unpin, notifySocket to the other members). Best-effort by
- * contract: any failure is logged and swallowed - a broken automation must
- * never fail a human send. Disabled rules, non-matching content and rules in
- * conversations without any rows are all silent no-ops.
- */
-async function maybeAutomationReply(conversationId: string, content: string): Promise<void> {
+/** Best effort after the human send has committed. A notification failure
+ * cannot undo a committed automation or prevent its hit from being counted. */
+async function maybeAutomationReply(conversationId: string, sourceId: string, content: string): Promise<void> {
   try {
-    const rules = await db.automation.findMany({
-      where: { conversationId, enabled: true },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, trigger: true, reply: true, createdById: true },
-    })
-    const rule = rules.find((r) => triggerMatches(r.trigger, content))
-    if (!rule) return
-
-    const now = new Date()
-    const conv = await db.conversation.findUnique({
-      where: { id: conversationId },
-      select: { ttlSeconds: true },
-    })
-    const expiresAt =
-      conv && conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
-
-    const created = await db.$transaction(async (tx) => {
-      const msg = await tx.message.create({
-        data: {
-          conversationId,
-          senderId: rule.createdById,
-          content: rule.reply,
-          kind: 'text',
-          viaAutomation: true,
-          ...(expiresAt ? { expiresAt } : {}),
-        },
-        include: MESSAGE_FULL_INCLUDE,
-      })
-      await tx.conversation.update({ where: { id: conversationId }, data: { updatedAt: now } })
-      await tx.conversationParticipant.updateMany({
-        where: {
-          conversationId,
-          userId: { not: rule.createdById },
-          archivedAt: { not: null },
-        },
-        data: { archivedAt: null },
-      })
-      return msg
-    })
-
-    // Unlike an interactive send (sender handles self via the POST response),
-    // an automation reply is machine-sent on the creator's behalf - NO member
-    // has a response carrying it, so EVERY participant (author included)
-    // receives the realtime event. Same notify/emit shape as the webhook path.
+    const created = await db.$transaction(
+      tx => createAutomationReply(tx, conversationId, sourceId, content),
+      { isolationLevel: 'Serializable' },
+    )
+    if (!created) return
     const recipients = await memberIdsOf(conversationId)
     await notifySocket('message:new', recipients, {
-      type: 'message:new',
-      message: mapMessage(created),
-      recipientIds: recipients,
-      conversationId,
-      native: nativeBlockFromPayload(created.payload),
-    })
-
-    // Atomic counters - updateMany keeps the bump single-statement.
-    await db.automation.updateMany({
-      where: { id: rule.id },
-      data: { hits: { increment: 1 }, lastFiredAt: now },
+      type: 'message:new', message: mapMessage(created), recipientIds: recipients,
+      conversationId, native: nativeBlockFromPayload(created.payload),
     })
   } catch (error) {
-    // Automation accounting must never fail a send.
     console.error('[automations] auto-reply failed:', error)
   }
 }
