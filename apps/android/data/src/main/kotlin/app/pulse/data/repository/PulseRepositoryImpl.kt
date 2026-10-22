@@ -3039,23 +3039,52 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun votePoll(pollId: String, optionId: String): Result<Message> =
-        when (val r = api.votePoll(pollId, viewerId ?: "", optionId)) {
-            is PulseResult.Success -> {
-                val message = upsertMessage(r.value.toDomain())
-                Result.success(message)
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+    private val pollActions = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    override suspend fun closePoll(pollId: String): Result<Message> =
-        when (val r = api.closePoll(pollId, viewerId ?: "")) {
-            is PulseResult.Success -> {
-                val message = upsertMessage(r.value.toDomain())
-                Result.success(message)
+    override suspend fun votePoll(pollId: String, optionId: String): Result<Message> = mutateOwnedPoll(pollId, optionId)
+    override suspend fun closePoll(pollId: String): Result<Message> = mutateOwnedPoll(pollId, null)
+
+    private suspend fun mutateOwnedPoll(pollId: String, optionId: String?): Result<Message> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        if (!pollActions.add(pollId)) return Result.failure(IllegalStateException("This poll is still updating."))
+        try {
+            kotlin.coroutines.coroutineContext.ensureActive()
+            requireConversationOwner(owner, epoch)
+            val watermark = messageEventClock.get()
+            val response = if (optionId == null) api.closePoll(pollId, owner) else api.votePoll(pollId, owner, optionId)
+            requireConversationOwner(owner, epoch)
+            val incoming = when (response) {
+                is PulseResult.Failure -> return Result.failure(apiExceptionOf(response))
+                is PulseResult.Success -> response.value.toDomain()
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+            val poll = checkNotNull(incoming.poll) { "Poll response is missing." }
+            check(!incoming.isDeleted && poll.id == pollId &&
+                (if (optionId == null) poll.closed && incoming.authorId == owner else poll.pickFor(owner) == optionId)) {
+                "The poll update was not confirmed."
+            }
+            val retained = messageCacheMutex.withLock {
+                database.withTransaction {
+                    requireConversationOwner(owner, epoch)
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    val current = messageDao.byId(incoming.id)?.toDomain()
+                    check(current == null || current.conversationId == incoming.conversationId) { "Poll returned an unrelated message." }
+                    val newer = (messageEventRevisions[incoming.id] ?: 0L) > watermark
+                    val accepted = if (newer && current != null) {
+                        // A confirmed close may freeze only the poll field without
+                        // rolling a newer edit/reaction back to this HTTP snapshot.
+                        if (incoming.poll?.closed == true && !current.isDeleted) current.copy(poll = incoming.poll) else current
+                    } else incoming
+                    messageDao.upsertAll(listOf(MessageEntity.from(accepted, reactionsJsonOf(accepted))))
+                    messageEventRevisions[incoming.id] = messageEventClock.incrementAndGet()
+                    requireConversationOwner(owner, epoch)
+                    checkNotNull(messageDao.byId(incoming.id)).toDomain()
+                }.also { messageCacheChanges.value = messageEventClock.get() }
+            }
+            requireConversationOwner(owner, epoch)
+            return Result.success(retained)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) { return Result.failure(error) } finally { pollActions.remove(pollId) }
+    }
 
     override suspend fun unfurlMessage(messageId: String) {
         // Fire-and-forget (spec §1 row 8): absent preview / failures are

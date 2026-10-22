@@ -66,4 +66,17 @@ final class MessageMergeTests: XCTestCase {
         XCTAssertEqual(try store.message(id: "m")?.viewedAt, consumed.viewedAt)
         XCTAssertEqual(try store.message(id: "m")?.viewedBy, "first")
     }
+    func testClosedPollKeepsFrozenTallyAcrossLateOpenRowsInMemoryAndStorage() throws {
+        let closed = try row(["kind": "poll", "poll": ["id": "poll", "question": "Question", "closed": true, "totalVotes": 2]])
+        let open = try row(["kind": "poll", "content": "new unrelated text", "poll": ["id": "poll", "question": "Question", "closed": false, "totalVotes": 1]])
+        let merged = PulseMessageMerge.merge(closed, incoming: open)
+        XCTAssertEqual(merged.poll, closed.poll)
+        XCTAssertEqual(merged.content, open.content)
+        let store = try PulseStore()
+        try store.upsert(messages: [closed, open])
+        XCTAssertEqual(try store.message(id: closed.id)?.poll, closed.poll)
+        try store.upsert(messages: [open.deletedCopy()])
+        XCTAssertNil(try store.message(id: closed.id)?.poll)
+    }
+
 }

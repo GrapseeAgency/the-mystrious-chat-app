@@ -880,15 +880,24 @@ public struct PulseAPIClient: Sendable {
     /// (server moves the vote on revote; closed polls answer 400).
     /// → { message } with the fresh tally.
     public func votePoll(pollId: String, userId: String, optionId: String) async throws -> WireChatMessage {
+        guard userId == self.userId else { throw Failure(kind: .forbidden, message: "The poll account changed.") }
         let data = try await postRaw("/api/polls/\(pollId)/vote", body: ["userId": userId, "optionId": optionId])
-        return try WireMessageEnvelope.extract(from: data)
+        let message = try WireMessageEnvelope.extract(from: data)
+        guard message.deletedAt == nil, message.poll?.id == pollId, message.poll?.pickFor(userId) == optionId else {
+            throw Failure(kind: .validation, message: "Your vote was not confirmed.")
+        }
+        return message
     }
 
-    /// POST /api/polls/{id}/close {userId} - end voting (creator only).
-    /// → { message } with the frozen tally.
+    /// Close acknowledgement must actually freeze this poll, not merely return HTTP 200.
     public func closePoll(pollId: String, userId: String) async throws -> WireChatMessage {
+        guard userId == self.userId else { throw Failure(kind: .forbidden, message: "The poll account changed.") }
         let data = try await postRaw("/api/polls/\(pollId)/close", body: ["userId": userId])
-        return try WireMessageEnvelope.extract(from: data)
+        let message = try WireMessageEnvelope.extract(from: data)
+        guard message.deletedAt == nil, message.senderId == userId, message.poll?.id == pollId, message.poll?.closed == true else {
+            throw Failure(kind: .validation, message: "Poll closure was not confirmed.")
+        }
+        return message
     }
 
     /// POST /api/messages/{id}/unfurl {userId} - attach an Open-Graph

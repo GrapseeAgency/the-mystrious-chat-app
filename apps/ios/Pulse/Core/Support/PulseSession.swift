@@ -232,6 +232,40 @@ public final class PulseSession: ObservableObject {
         }
     }
 
+    private var pollActions: [String: UUID] = [:]
+
+    public func updatePoll(conversationId: String, pollId: String, optionId: String?) async throws -> WireChatMessage {
+        try Task.checkCancellation()
+        guard ready, let viewer, let store, !pollId.isEmpty, pollActions[pollId] == nil else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "This poll is unavailable or still updating.")
+        }
+        let ticket = UUID(), epoch = sessionGeneration, client = api, revision = messageRevision
+        pollActions[pollId] = ticket
+        defer { if pollActions[pollId] == ticket { pollActions.removeValue(forKey: pollId) } }
+        let incoming: WireChatMessage
+        if let optionId { incoming = try await client.votePoll(pollId: pollId, userId: viewer.id, optionId: optionId) }
+        else { incoming = try await client.closePoll(pollId: pollId, userId: viewer.id) }
+        try Task.checkCancellation()
+        guard sessionGeneration == epoch, self.viewer?.id == viewer.id else { throw CancellationError() }
+        guard incoming.conversationId == conversationId else {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Poll returned another conversation.")
+        }
+        if let current = try store.message(id: incoming.id), current.conversationId != incoming.conversationId {
+            throw PulseAPIClient.Failure(kind: .validation, message: "Poll returned another conversation.")
+        }
+        if acceptsSyncMessage(incoming.id, startedAt: revision) {
+            try recordMessageMutation(incoming)
+        } else if incoming.poll?.closed == true, var current = try store.message(id: incoming.id), current.deletedAt == nil {
+            // Closure is monotonic, but do not rewind other fields from a newer event.
+            current.poll = incoming.poll
+            try recordMessageMutation(current)
+        }
+        guard let retained = try store.message(id: incoming.id) else {
+            throw PulseAPIClient.Failure(kind: .notFound, message: "This poll is no longer available.")
+        }
+        return retained
+    }
+
     private var reactionActions: [String: UUID] = [:]
 
     /// Shared by the river, reaction drawer and alternate room. Persist before UI acceptance;
@@ -491,6 +525,7 @@ public final class PulseSession: ObservableObject {
         store = nil
         messageRevisions.removeAll()
         reactionActions.removeAll()
+        pollActions.removeAll()
         threadValidationFence = PulseThreadValidationFence()
         deniedThreadRoots.removeAll()
         pendingOpenRoom = nil

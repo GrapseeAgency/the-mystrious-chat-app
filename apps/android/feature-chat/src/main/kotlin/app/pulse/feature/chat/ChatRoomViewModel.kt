@@ -1438,19 +1438,25 @@ class ChatRoomViewModel @Inject constructor(
         }
     }
 
-    /** Single-choice, NO revote once picked (web parity, spec §1 row 3). */
+    /** Explicit single-choice selection; server owns open/closed availability. */
     fun votePoll(pollId: String, optionId: String) {
+        val owner = repo.viewerId
+        val epoch = repo.attachmentSessionKey()
         viewModelScope.launch {
+            if (owner == null || repo.viewerId != owner || repo.attachmentSessionKey() != epoch) return@launch
             repo.votePoll(pollId, optionId)
-                .onFailure { notify("Couldn't record your vote", isError = true) }
+                .onFailure { notify(it.message ?: "Couldn't record your vote", isError = true) }
         }
     }
 
     fun closePoll(pollId: String) {
+        val owner = repo.viewerId
+        val epoch = repo.attachmentSessionKey()
         viewModelScope.launch {
+            if (owner == null || repo.viewerId != owner || repo.attachmentSessionKey() != epoch) return@launch
             repo.closePoll(pollId)
                 .onSuccess { notify("Voting closed - results are final") }
-                .onFailure { notify("Couldn't close the poll", isError = true) }
+                .onFailure { notify(it.message ?: "Couldn't close the poll", isError = true) }
         }
     }
 

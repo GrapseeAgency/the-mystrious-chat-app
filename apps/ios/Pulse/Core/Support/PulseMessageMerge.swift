@@ -20,6 +20,9 @@ enum PulseMessageMerge {
         }
         if result.viewedAt != nil { result.viewOnce = true }
         if result.deletedAt != nil { return result.deletedCopy() }
+        if let poll = prior?.poll, poll.closed == true {
+            result.poll = poll
+        }
         if let prior, let oldStamp = prior.editedAt.flatMap(PulseFormat.date),
            oldStamp > (result.editedAt.flatMap(PulseFormat.date) ?? .distantPast) {
             result.content = prior.content

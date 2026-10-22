@@ -719,6 +719,19 @@ internal fun MirrorRoom(
     viewOnceGrant?.let { granted ->
         app.pulse.feature.chat.ImageLightbox(message = granted, onDismiss = { viewOnceGrant = null })
     }
+    fun voteOnPoll(pollId: String, optionId: String) {
+        val owner = repository.viewerId
+        val epoch = repository.attachmentSessionKey()
+        historyScope.launch {
+            if (!roomActionsLive.get() || owner == null || repository.viewerId != owner || repository.attachmentSessionKey() != epoch) return@launch
+            try {
+                repository.votePoll(pollId, optionId).getOrThrow()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (roomActionsLive.get()) sendError = error.message ?: "Your vote was not confirmed."
+            }
+        }
+    }
+
     fun toggleReaction(message: Message, emoji: String) {
         val owner = repository.viewerId ?: return
         val epoch = repository.attachmentSessionKey()
@@ -1700,9 +1713,7 @@ internal fun MirrorRoom(
                             onViewOnce = { openViewOnce(entry.message) },
                             onVote = { optionId ->
                                 entry.message.poll?.let { poll ->
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        runCatching { repository.votePoll(poll.id, optionId) }
-                                    }
+                                    voteOnPoll(poll.id, optionId)
                                 }
                             },
                             onToggleReaction = { messageId, emoji ->

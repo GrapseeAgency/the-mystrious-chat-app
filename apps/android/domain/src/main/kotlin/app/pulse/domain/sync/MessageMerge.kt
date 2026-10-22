@@ -18,6 +18,12 @@ fun mergeMessageState(current: Message?, incoming: Message): Message {
         replyToAuthor = null, imagePath = null, audioPath = null, durationMs = null, filePath = null,
         fileName = null, fileSize = null, transcript = null, transcribedAt = null, poll = null,
         linkPreview = null, pinnedAt = null, reactions = emptyList())
+    // Closure freezes the tally. A late open snapshot must never reopen voting
+    // or replace final results, even if it arrived through a different action.
+    val priorPoll = prior?.poll
+    if (priorPoll?.closed == true) {
+        result = result.copy(poll = priorPoll)
+    }
     fun stamp(value: String?): Long = value?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() } ?: Long.MIN_VALUE
     if (prior != null && stamp(prior.editedAt) > stamp(result.editedAt)) {
         result = result.copy(body = prior.body, editedAt = prior.editedAt)

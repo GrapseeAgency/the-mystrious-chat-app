@@ -3238,3 +3238,45 @@ intent is not revoked if its original changes after enqueue, and already-shared 
 URLs are not revoked. Failed delivery is exposed through the existing outbox recovery.
 No schema rollout is required for this tranche; no production deployment or merge.
 Autumn palette and styling remain unchanged.
+
+### 2026-10-22 — poll vote/close transaction, frozen cache and owned native actions
+
+Followed poll cards through native actions and both routes. Vote checked open state and
+membership outside its write transaction; close did not check current membership at all.
+A vote could pass the precheck, then write after closure. Native cached full rows could
+reopen a closed card; Swift applied responses to UI before silently ignored store failures,
+and mounted Android launched detached vote jobs with swallowed failures.
+
+- New serializable `mutatePoll` helper owns membership, creator authorization for close,
+  message/thread lifetime, option ownership, vote movement/close, and returned snapshot.
+  Same-choice retries do not rewrite a vote. Closure and vote cannot cross the open-state
+  check; failed snapshot reads roll writes back. Repeated close still requires current
+  membership and source availability. Contention is an explicit 409, not silent success.
+- Routes bind credential-bearing requests to the actor and fan out neutral poll metadata
+  to all current recipients, including the actor's other devices. No schema change.
+- Native merge policies retain a known closed poll and its final tally across late open
+  snapshots or unrelated message updates. Tombstones still remove poll content. This
+  protects both local storage and the Swift in-memory river/thread merges.
+- Android gates one mutation per poll, captures owner/session, checks returned poll ID,
+  selected option/creator closure and writes under the message event/cache fence. A
+  confirmed close may freeze only the poll field without undoing newer unrelated fields.
+  Mounted Mirror now uses owned coroutine work and visible errors; primary actions also
+  surface the server reason and fence enqueue-time ownership.
+- Swift uses a shared per-poll session gate, captured client/owner, strict acknowledgement,
+  checked storage and canonical UI re-read. Rejected storage or stale-account responses
+  cannot become a success toast. Close acknowledgements must actually contain a closed
+  poll owned by the closing creator.
+
+Verification: 180/180 server contracts passed, including five actual SQLite transaction,
+replay, rollback, lifetime and close/vote concurrency cases plus route validation/fanout
+contracts. Strict helper/routes TypeScript check passed (minimal Next type declaration).
+Added Kotlin/Swift frozen-state merge cases, Swift GRDB acceptance coverage and mocked
+poll acknowledgement tests; native syntax checks passed, native tests/device acceptance
+for this tranche remain pending. Forwarding commit 4a3c31c's iOS archive passed when
+checked; that is not proof of this newer work.
+
+Rollout requires deploying the changed poll routes/helper. Native freezing does not
+retroactively repair votes that an older server already accepted after closure. There
+is still no total revision for open poll tallies or a durable offline vote queue. Poll
+creation's lost-ack identity is separate and not covered here. Autumn styling unchanged;
+no production deployment, merge, or whole-app clearance.

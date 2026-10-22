@@ -5685,30 +5685,30 @@ final class RoomViewModel: ObservableObject {
     }
 
     func votePoll(pollID: String, optionID: String, session: PulseSession) {
-        guard !pollID.isEmpty, !optionID.isEmpty, let viewer = session.viewer else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let message = try await session.api.votePoll(pollId: pollID, userId: viewer.id, optionId: optionID)
-                withAnimation { self.upsert(message) }
-                try? session.store?.upsert(messages: [message])
-            } catch {
-                session.toasts.show(Self.describe(error))
-            }
-        }
+        guard !optionID.isEmpty else { return }
+        updatePoll(pollID: pollID, optionID: optionID, session: session)
     }
 
     func closePoll(pollID: String, session: PulseSession) {
-        guard !pollID.isEmpty, let viewer = session.viewer else { return }
+        updatePoll(pollID: pollID, optionID: nil, session: session)
+    }
+
+    private func updatePoll(pollID: String, optionID: String?, session: PulseSession) {
+        guard !pollID.isEmpty, session.sessionGeneration == readSessionGeneration else { return }
+        let epoch = session.sessionGeneration
         Task { [weak self] in
-            guard let self else { return }
+            guard let self, !Task.isCancelled, session.sessionGeneration == epoch else { return }
             do {
-                let message = try await session.api.closePoll(pollId: pollID, userId: viewer.id)
-                withAnimation { self.upsert(message) }
-                try? session.store?.upsert(messages: [message])
-                session.toasts.show("Voting closed - results are final")
-            } catch {
-                session.toasts.show(Self.describe(error))
+                let message = try await session.updatePoll(conversationId: conversationId, pollId: pollID, optionId: optionID)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                guard message.conversationId == conversationId else {
+                    throw PulseAPIClient.Failure(kind: .validation, message: "Poll returned another conversation.")
+                }
+                if let retained = try session.store?.message(id: message.id) { withAnimation { self.upsert(retained) } }
+                if optionID == nil { session.toasts.show("Voting closed - results are final") }
+            } catch is CancellationError { return } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
+                errorText = Self.describe(error)
             }
         }
     }

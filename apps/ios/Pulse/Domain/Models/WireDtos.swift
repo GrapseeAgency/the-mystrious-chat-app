@@ -213,7 +213,7 @@ public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     /// First link inside the content once the unfurl pipeline consumed it.
     public let linkUrl: String?
     public let linkPreview: WireLinkPreview?
-    public let poll: WirePoll?
+    public var poll: WirePoll?
     // W7 - rich-object carrier payload (red packet / game / tournament).
     // The wire value is a RAW JSON STRING ({packetId..}/{matchId..}/…);
     // cards decode it tolerantly via PulseWave7Logic. Defaulted var keeps
