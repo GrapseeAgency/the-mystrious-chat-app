@@ -97,4 +97,22 @@ class GroupSettingsAcknowledgementTest {
             } finally { http.close() }
         }
     }
+    @Test fun channelDefaultsCannotInventMembershipOrDeparture() = runTest {
+        for (body in listOf("{}", """{"ok":false,"memberCount":0}""")) {
+            val http = HttpClient(MockEngine { respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json")) })
+            try {
+                val api = PulseApi(http, gateway = { "https://groups.test" })
+                assertTrue(api.subscribeChannel("room", "me") is PulseResult.Failure)
+                assertTrue(api.unsubscribeChannel("room", "me") is PulseResult.Failure)
+            } finally { http.close() }
+        }
+        val http = HttpClient(MockEngine {
+            respond("""{"already":false,"ok":true,"memberCount":2}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+        })
+        try {
+            val api = PulseApi(http, gateway = { "https://groups.test" })
+            assertTrue(api.subscribeChannel("room", "me") is PulseResult.Success)
+            assertTrue(api.unsubscribeChannel("room", "me") is PulseResult.Success)
+        } finally { http.close() }
+    }
 }

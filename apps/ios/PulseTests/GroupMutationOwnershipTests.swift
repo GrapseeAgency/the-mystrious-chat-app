@@ -7,7 +7,13 @@ private final class GroupReplyProtocol: URLProtocol {
     override func startLoading() {
         let path = request.url!.path
         let body: String
-        if path.hasSuffix("/disappearing") {
+        if path.contains("/channels/") {
+            if path.contains("/confirmed/") {
+                body = request.httpMethod == "DELETE" ? #"{"ok":true,"memberCount":0}"# : #"{"already":false,"memberCount":2}"#
+            } else if path.contains("/wrong/") {
+                body = request.httpMethod == "DELETE" ? #"{"ok":false,"memberCount":1}"# : #"{"already":false,"memberCount":0}"#
+            } else { body = "{}" }
+        } else if path.hasSuffix("/disappearing") {
             if path.contains("/confirmed/") { body = #"{"conversation":{"id":"confirmed","isGroup":true,"members":[],"ttlSeconds":604800}}"# }
             else if path.contains("/wrong/") { body = #"{"conversation":{"id":"other","isGroup":true,"members":[],"ttlSeconds":86400}}"# }
             else { body = #"{"conversation":{"id":"missing","isGroup":true,"members":[]}}"# }
@@ -56,6 +62,10 @@ final class GroupMutationOwnershipTests: XCTestCase {
         let session = URLSession(configuration: config); defer { session.invalidateAndCancel() }
         let api = PulseAPIClient(baseURL: URL(string: "https://groups.test")!, userId: "me", session: session)
         for room in ["missing", "wrong"] {
+            do { _ = try await api.subscribeChannel(room); XCTFail("Unconfirmed channel join accepted") }
+            catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
+            do { _ = try await api.unsubscribeChannel(room); XCTFail("Unconfirmed channel leave accepted") }
+            catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
             do { _ = try await api.setDisappearingTtl(room, userId: "me", ttlSeconds: 86400); XCTFail("Unconfirmed TTL accepted") }
             catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
             do { _ = try await api.addMembers(room, requesterId: "me", userIds: ["friend"]); XCTFail("Unconfirmed addition accepted") }
@@ -65,6 +75,10 @@ final class GroupMutationOwnershipTests: XCTestCase {
             do { _ = try await api.setMyScreenPrivacy(room, on: true); XCTFail("Unconfirmed preference accepted") }
             catch { XCTAssertEqual((error as? PulseAPIClient.Failure)?.kind, .server) }
         }
+        let joined = try await api.subscribeChannel("confirmed")
+        XCTAssertEqual(joined.already, false)
+        let left = try await api.unsubscribeChannel("confirmed")
+        XCTAssertEqual(left.ok, true)
         let current = try await api.setDisappearingTtl("confirmed", userId: "me", ttlSeconds: 86400)
         XCTAssertEqual(current.ttlSeconds, 604800) // newer authoritative settings may supersede the request
         let added = try await api.addMembers("confirmed", requesterId: "me", userIds: ["friend"])

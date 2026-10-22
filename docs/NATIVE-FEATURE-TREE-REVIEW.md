@@ -2980,3 +2980,38 @@ Important next storage issue: page-level tickets cannot stop an older detail req
 writing into the shared conversation cache before its UI result is discarded. The current
 account-epoch fence protects identity, not same-account read/write ordering. Tracing that
 cache ordering and post-leave room resurrection is the next repair; not claimed fixed here.
+
+## 2026-10-22 — retire stale detail snapshots at the shared storage boundary
+
+Android now has a per-room mutation-generation fence, separate from account identity and
+page request tickets. Concurrent readers do not cancel each other. Group/settings/membership
+writes invalidate snapshots at dispatch and completion, including uncertain outcomes;
+conversation-update/read relay events also retire older detail reads. Detail and group-meta
+loads validate the viewer/room, check their token inside the Room storage transaction around
+suspensions, and re-read once if superseded. Old pre-join denials and pre-leave successes
+therefore aren't simply promoted into the current cache. Continued contention surfaces a
+retryable error; this is not an unbounded retry or a server revision protocol.
+
+Known-room writes share a per-room mutex with confirmed pin/mute/archive/unread actions.
+Captured owner/epoch checks surround queued dispatch and storage. Confirmed kick projects a
+removal onto the execution-time cached roster; group/channel departure removes the cached
+room transactionally. Inbox snapshot versions are invalidated at write boundaries and inside
+those deletes, preventing a pre-departure list response from restoring the row. Bulk inbox
+refresh also rechecks owner/version after suspended writes and rolls back a superseded
+snapshot. Post-mutation reconciliation lives in the repository scope, independent of whether
+the initiating sheet remains visible. Channel joins no longer await an unrelated list refresh.
+
+The native channel subscription adapters also needed explicit ACK validation: Android's
+unsubscribe DTO defaults ok to true, and Swift accepted absent optional fields. Both now
+require actual membership/leave evidence and plausible counts before claiming success;
+Swift path IDs are encoded. Empty/error-shaped 200 bodies cannot delete a cached channel
+or mark a directory card joined. The optional DTOs remain decoding models, not proof of ACK.
+
+Added four pure fence regressions (parallel readers, both write boundaries, room isolation,
+retirement) and channel-ACK cases in Android/Swift transport tests. Seven native source/test
+files pass syntax parsing; execution of this tranche's native tests remains pending.
+Historical cb75e70 iOS build/test and archive succeeded; Android build-test was still running
+at inspection. Server code is unchanged from the 163/163 run at 8b8e8af. Inventory is 343.
+Limits remain: no cross-device server metadata revision/operation receipts, no claim of full
+HTTP+Room race-injection or device coverage, and broader navigation/media/directory policies
+remain under review. Autumn palette unchanged.

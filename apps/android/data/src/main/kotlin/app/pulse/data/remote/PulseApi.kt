@@ -1073,7 +1073,7 @@ class PulseApi(
                 failureOf(res.status.value, text, res.headers[HttpHeaders.RetryAfter], res.headers[HttpHeaders.Date])
             }
         } catch (e: kotlinx.serialization.SerializationException) {
-            PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "bad payload: ${e.message}")
+            PulseResult.Failure(PulseResult.Failure.Kind.SERVER, "The gateway did not confirm the change; refresh before retrying")
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             PulseResult.Failure(PulseResult.Failure.Kind.NETWORK, e.message)
@@ -1239,14 +1239,30 @@ class PulseApi(
         post(
             "/api/channels/" + java.net.URLEncoder.encode(channelId, "UTF-8") + "/subscribe",
             jsonOf("userId" to userId),
-        ) { PulseJson.decodeFromString(SubscribeAckDto.serializer(), it) }
+        ) {
+            val body = PulseJson.parseToJsonElement(it) as? JsonObject
+            val result = PulseJson.decodeFromString(SubscribeAckDto.serializer(), it)
+            if (body == null || body["already"] != JsonPrimitive(result.already) ||
+                body["memberCount"] != JsonPrimitive(result.memberCount) || result.memberCount < 1) {
+                throw kotlinx.serialization.SerializationException("Channel membership was not confirmed")
+            }
+            result
+        }
 
     /** DELETE /api/channels/[id]/subscribe { userId } → last-admin leave is a 403. */
     suspend fun unsubscribeChannel(channelId: String, userId: String): PulseResult<UnsubscribeAckDto> =
         deleteWithBody(
             "/api/channels/" + java.net.URLEncoder.encode(channelId, "UTF-8") + "/subscribe",
             userId,
-        ) { PulseJson.decodeFromString(UnsubscribeAckDto.serializer(), it) }
+        ) {
+            val body = PulseJson.parseToJsonElement(it) as? JsonObject
+            val result = PulseJson.decodeFromString(UnsubscribeAckDto.serializer(), it)
+            if (body == null || body["ok"] != JsonPrimitive(true) ||
+                body["memberCount"] != JsonPrimitive(result.memberCount) || result.memberCount < 0) {
+                throw kotlinx.serialization.SerializationException("Leaving the channel was not confirmed")
+            }
+            result
+        }
 
     /** POST /api/folders { userId, name, emoji? } → 201 { folder }. */
     suspend fun createFolder(userId: String, name: String, emoji: String): PulseResult<FolderDto> =

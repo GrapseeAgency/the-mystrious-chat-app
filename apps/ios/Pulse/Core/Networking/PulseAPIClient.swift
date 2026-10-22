@@ -593,15 +593,23 @@ public struct PulseAPIClient: Sendable {
 
     /// POST /api/channels/{id}/subscribe { userId } → { already, memberCount }.
     public func subscribeChannel(_ id: String) async throws -> WireSubscribeResult {
-        let data = try await postRaw("/api/channels/\(id)/subscribe", body: ["userId": userId])
-        return try decoder.decode(WireSubscribeResult.self, from: data)
+        let data = try await postRaw("/api/channels/\(q(id))/subscribe", body: ["userId": userId])
+        let result = try decoder.decode(WireSubscribeResult.self, from: data)
+        guard result.already != nil, let count = result.memberCount, count > 0 else {
+            throw Failure(kind: .server, message: "Channel membership couldn't be confirmed. Refresh before retrying.")
+        }
+        return result
     }
 
     /// DELETE /api/channels/{id}/subscribe { userId } → { ok, memberCount }.
     /// Last-admin leave is blocked server-side with the honest 403 copy.
     public func unsubscribeChannel(_ id: String) async throws -> WireUnsubscribeResult {
-        let data = try await deleteRaw("/api/channels/\(id)/subscribe", body: ["userId": userId])
-        return try decoder.decode(WireUnsubscribeResult.self, from: data)
+        let data = try await deleteRaw("/api/channels/\(q(id))/subscribe", body: ["userId": userId])
+        let result = try decoder.decode(WireUnsubscribeResult.self, from: data)
+        guard result.ok == true, let count = result.memberCount, count >= 0 else {
+            throw Failure(kind: .server, message: "Leaving the channel couldn't be confirmed. Refresh before retrying.")
+        }
+        return result
     }
 
     /// GET /api/invite/{code}?userId= → { invite } (404 = no longer valid).
