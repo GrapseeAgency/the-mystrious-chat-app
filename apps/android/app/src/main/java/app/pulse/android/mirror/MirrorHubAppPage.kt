@@ -72,6 +72,7 @@ import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 
 /**
  * R76 - the app detail FULL PAGE (web #/hub/app/<n>, app-detail-sheet.tsx
