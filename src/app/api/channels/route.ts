@@ -4,8 +4,9 @@
 // POST = create a channel (creator becomes the admin) + first post.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { memberIdsOf, notifySocket, safeJson, strField } from '@/lib/serializers'
+import { notifySocket, safeJson, strField } from '@/lib/serializers'
 import type { ChannelSummary } from '@/lib/types'
+import { channelIdentity, normalizeChannelPhoto } from '@/lib/channel-contract'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,17 +15,6 @@ const NAME_MAX = 40
 const DESCRIPTION_MAX = 200
 const PREVIEW_MAX = 60
 const FIRST_MESSAGE = 'Channel created - say it loud.'
-
-/** R33-b - accepted stored photo paths: "/api/uploads/<uuid>.<image-ext>". */
-const PHOTO_PATH_RE = /^\/api\/uploads\/([A-Za-z0-9-]+\.(?:jpg|jpeg|png|webp))$/
-
-/** Validated upload path or null - '' clears (stored as null). */
-function normalizePhotoPath(value: unknown): string | null | undefined {
-  if (value === undefined) return undefined
-  const raw = typeof value === 'string' ? value.trim() : ''
-  if (raw === '') return null
-  return PHOTO_PATH_RE.test(raw) ? raw : undefined
-}
 
 /** Clip the last message into a one-line directory snippet. */
 function snippet(content: string): string | null {
@@ -79,7 +69,7 @@ export async function GET(req: Request) {
       last.senderId !== userId &&
       last.createdAt > mine.lastReadAt
     return {
-      id: conv.id,
+      ...channelIdentity(conv.id),
       name: conv.name ?? 'Channel',
       description: conv.description,
       createdAt: conv.createdAt.toISOString(),
@@ -133,7 +123,7 @@ export async function POST(req: Request) {
   }
 
   // R33-b - optional channel photo at creation (same upload chain as profiles)
-  const photo = normalizePhotoPath(body.photo)
+  const photo = normalizeChannelPhoto(body.photo)
   if (photo === undefined) {
     return NextResponse.json(
       { error: 'photo must be an uploaded image path ("/api/uploads/<file>").' },
@@ -151,6 +141,8 @@ export async function POST(req: Request) {
     data: {
       isGroup: true,
       broadcastMode: true,
+      createdAt: now,
+      updatedAt: now,
       name,
       description,
       ...(photo ? { photo } : {}),
@@ -158,15 +150,14 @@ export async function POST(req: Request) {
         create: { userId, role: 'admin', lastReadAt: now },
       },
       messages: {
-        create: { senderId: userId, content: FIRST_MESSAGE, kind: 'text' },
+        create: { senderId: userId, content: FIRST_MESSAGE, kind: 'text', createdAt: now },
       },
     },
     select: { id: true },
   })
-  // Bump list ordering for the creator (mirrors the messages route).
-  await db.conversation.update({ where: { id: created.id }, data: { updatedAt: now } })
-
-  const recipients = await memberIdsOf(created.id)
+  // All creation writes commit together; a redundant post-commit DB read/write
+  // must not turn an already-created channel into an apparent creation failure.
+  const recipients = [userId]
   await notifySocket('conversation:updated', recipients, {
     type: 'conversation:updated',
     conversationId: created.id,
@@ -174,8 +165,7 @@ export async function POST(req: Request) {
   })
 
   const channel: ChannelSummary & { conversationId: string } = {
-    id: created.id,
-    conversationId: created.id,
+    ...channelIdentity(created.id),
     name,
     description,
     createdAt: now.toISOString(),

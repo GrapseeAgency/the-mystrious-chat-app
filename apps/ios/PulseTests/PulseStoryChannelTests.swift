@@ -111,6 +111,17 @@ final class PulseStoryChannelTests: XCTestCase {
         )
     }
 
+    func testRealDirectoryRowsOpenWithoutCreationOnlyAlias() throws {
+        let decoder = JSONDecoder()
+        func decode(_ json: String) throws -> WireChannelSummary {
+            try decoder.decode(WireChannelSummary.self, from: Data(json.utf8))
+        }
+        XCTAssertEqual(PulseChannelDirectory.roomId(try decode(#"{"id":"room","isSubscribed":true}"#)), "room")
+        XCTAssertEqual(PulseChannelDirectory.roomId(try decode(#"{"id":"room","conversationId":"room"}"#)), "room")
+        XCTAssertNil(PulseChannelDirectory.roomId(try decode(#"{"id":"room","conversationId":"other"}"#)))
+        XCTAssertNil(PulseChannelDirectory.roomId(try decode(#"{"id":""}"#)))
+    }
+
     func testChannelPartitionPutsNilMembershipInDiscover() {
         let feed = [
             channel(id: "a", isSubscribed: true),

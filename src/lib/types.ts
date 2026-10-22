@@ -167,6 +167,7 @@ export type GroupRole = 'admin' | 'member'
 /** One row of the broadcast-channel directory (GET /api/channels, R30-c). */
 export interface ChannelSummary {
   id: string // conversation id
+  conversationId?: string // additive alias for native clients; identical to id
   name: string
   description: string
   createdAt: string

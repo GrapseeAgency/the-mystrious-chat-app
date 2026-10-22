@@ -2739,3 +2739,30 @@ parse and diff checks pass; native Room/instrumented execution of this tranche i
 The Android retained echo is intentionally NOT deleted on rejection: it remains the owner
 proof and retry envelope, hidden from normal timelines. That existing behavior was traced
 and preserved, not incorrectly replaced by a Swift-style echo deletion.
+
+
+## 2026-10-22 — photo-less channels and directory navigation
+
+Traced both native create adapters: they correctly omit an absent optional photo, but
+POST /channels used undefined for both omission and invalid input and rejected every such
+request. Omitted/null/blank photos now mean no photo, malformed types/paths still reject.
+Directory responses now provide the same conversationId alias as creation. Swift also
+accepts legacy id-only directory rows (id is the room identity), rejecting conflicting IDs.
+Creation timestamps, participant and first message now share the one nested create; removed
+redundant post-commit DB reads/writes that could report failure after successful creation.
+
+Swift Channels previously dismissed before resolving a room, reused mutable session API
+state after suspension, treated failed directory loads as empty, and allowed old photo
+uploads to overwrite newer selection. Actions now retain their originating API/session and
+navigation intent, cancel/invalidate on dismissal or form cancellation, gate late loads,
+serialize row actions, and version photo selection from the start of decoding. Opening
+keeps the directory until the exact room resolves. Acknowledged creation is immediately
+retained in the list; a subsequent opening failure says created-but-not-opened rather than
+encouraging duplicate creation. Unconfirmed/cancelled creation explicitly warns to check
+the directory: group/channel lost-ACK idempotency remains unresolved, not papered over.
+
+Added actual directory JSON identity tests and optional-photo/identity server contracts.
+Full server suite 132/132 passes (/home/user/channel-recovery-server.log); strict pure-helper
+TypeScript and three modified Swift syntax checks pass. Native UI/device execution of this
+tranche remains unverified. Channel leave/admin concurrency and directory message-lifetime
+semantics are still under review. Autumn styling unchanged.
