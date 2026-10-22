@@ -3577,7 +3577,7 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    private suspend fun <T> ownedAccountRequest(operation: suspend (String) -> PulseResult<T>): Result<T> {
+    private suspend fun <T> ownedAccountRequest(denyGameRead: Boolean = false, operation: suspend (String) -> PulseResult<T>): Result<T> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
@@ -3586,7 +3586,10 @@ class PulseRepositoryImpl constructor(
         if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Account changed")
         return when (result) {
             is PulseResult.Success -> Result.success(result.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
+            is PulseResult.Failure -> Result.failure(
+                if (denyGameRead && result.kind in setOf(PulseResult.Failure.Kind.AUTH, PulseResult.Failure.Kind.FORBIDDEN, PulseResult.Failure.Kind.NOT_FOUND))
+                    app.pulse.domain.sync.PrivateGameUnavailableException(result.message ?: "Private game is no longer available.")
+                else IllegalStateException("${result.kind}: ${result.message}"))
         }
     }
 
@@ -3757,28 +3760,16 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun games(conversationId: String): Result<GamesPageDto> =
-        when (val r = api.games(conversationId)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest(denyGameRead = true) { api.games(conversationId, it) }
 
     override suspend fun game(matchId: String): Result<GameDetailDto> =
-        when (val r = api.game(matchId)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest(denyGameRead = true) { api.game(matchId, it) }
 
     override suspend fun gameMove(matchId: String, cell: Int): Result<GameDetailDto> =
-        when (val r = api.gameMove(matchId, viewerId ?: "", cell)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.gameMove(matchId, it, cell) }
 
     override suspend fun joinGame(matchId: String): Result<GameDetailDto> =
-        when (val r = api.joinGame(matchId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.joinGame(matchId, it) }
 
     override suspend fun createTournament(conversationId: String, name: String): Result<TournamentCreateResultDto> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No room owner"))
@@ -3788,28 +3779,16 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun tournaments(conversationId: String): Result<TournamentsPageDto> =
-        when (val r = api.tournaments(conversationId, viewerId)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest(denyGameRead = true) { api.tournaments(conversationId, it) }
 
     override suspend fun tournament(tournamentId: String): Result<TournamentSummaryDto> =
-        when (val r = api.tournament(tournamentId)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest(denyGameRead = true) { api.tournament(tournamentId, it) }
 
     override suspend fun finishTournament(tournamentId: String): Result<TournamentSummaryDto> =
-        when (val r = api.finishTournament(tournamentId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.finishTournament(tournamentId, it) }
 
     override suspend fun joinTournament(tournamentId: String): Result<TournamentJoinResultDto> =
-        when (val r = api.joinTournament(tournamentId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        ownedAccountRequest { api.joinTournament(tournamentId, it) }
 
     override suspend fun leaderboard(conversationId: String?): Result<LeaderboardPageDto> =
         when (val r = api.leaderboard(conversationId, viewerId)) {

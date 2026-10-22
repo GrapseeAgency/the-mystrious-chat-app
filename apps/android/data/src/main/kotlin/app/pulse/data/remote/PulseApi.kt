@@ -1445,6 +1445,17 @@ class PulseApi(
         }
     }
 
+    private fun requireGameRead(json: String, owner: String, expectedRoom: String? = null): String {
+        val fields = PulseJson.parseToJsonElement(json) as? JsonObject
+        val roomField = fields?.get("conversationId") as? JsonPrimitive
+        val ownerField = fields?.get("userId") as? JsonPrimitive
+        val room = roomField?.content
+        require(fields?.get("gameReadVersion")?.toString() == "1" && ownerField?.isString == true &&
+            ownerField.content == owner && roomField?.isString == true && !room.isNullOrBlank() &&
+            (expectedRoom == null || room == expectedRoom)) { "Private game state could not be verified. Update the gateway before retrying." }
+        return requireNotNull(room)
+    }
+
     private fun matchOf(json: String, id: String): GameDetailDto {
         val fields = (PulseJson.parseToJsonElement(json) as? JsonObject)?.get("match") as? JsonObject
         val result = PulseJson.decodeFromString(GameDetailDto.serializer(), json)
@@ -1814,14 +1825,22 @@ class PulseApi(
         }
 
     /** GET /api/games?conversationId= → { matches } newest 25 (list page for the room games view). */
-    suspend fun games(conversationId: String): PulseResult<GamesPageDto> =
-        get("/api/games?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8")) {
-            PulseJson.decodeFromString(GamesPageDto.serializer(), it)
+    suspend fun games(conversationId: String, userId: String): PulseResult<GamesPageDto> =
+        get("/api/games?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") + "&userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            requireGameRead(it, userId, conversationId)
+            require(PulseJson.parseToJsonElement(it).jsonObject["matches"] is JsonArray)
+            PulseJson.decodeFromString(GamesPageDto.serializer(), it).also { page ->
+                require(page.matches.map { row -> row.id }.distinct().size == page.matches.size)
+                page.matches.forEach { row -> require(row.id.isNotBlank() && row.conversationId == conversationId) }
+            }
         }
 
     /** GET /api/games/{id} → { match, playerX, playerO }. */
-    suspend fun game(matchId: String): PulseResult<GameDetailDto> =
-        get("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8")) { matchOf(it, matchId) }
+    suspend fun game(matchId: String, userId: String): PulseResult<GameDetailDto> =
+        get("/api/games/" + java.net.URLEncoder.encode(matchId, "UTF-8") + "?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            val room = requireGameRead(it, userId)
+            matchOf(it, matchId).also { row -> require(row.match.conversationId == room) }
+        }
 
     /** POST /api/games/{id}/move { userId, cell 0..8 } - 409s for turn/occupied/race surface verbatim. */
     suspend fun gameMove(matchId: String, userId: String, cell: Int): PulseResult<GameDetailDto> =
@@ -1856,22 +1875,30 @@ class PulseApi(
         }
 
     /** GET /api/tournaments?conversationId= → { tournaments } newest 5 with playerCount. */
-    suspend fun tournaments(conversationId: String, userId: String? = null): PulseResult<TournamentsPageDto> =
+    suspend fun tournaments(conversationId: String, userId: String): PulseResult<TournamentsPageDto> =
         get("/api/tournaments?conversationId=" + java.net.URLEncoder.encode(conversationId, "UTF-8") +
-            (userId?.let { "&userId=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")) {
+            "&userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            requireGameRead(it, userId, conversationId)
             if ((PulseJson.parseToJsonElement(it) as? JsonObject)?.get("tournaments") !is kotlinx.serialization.json.JsonArray) {
                 throw kotlinx.serialization.SerializationException("Tournament list was not returned")
             }
             val result = PulseJson.decodeFromString(TournamentsPageDto.serializer(), it)
-            if (result.tournaments.any { season -> season.id.isBlank() || season.status !in listOf("running", "finished") }) {
+            if (result.tournaments.map { row -> row.id }.distinct().size != result.tournaments.size || result.tournaments.any { season -> season.id.isBlank() || season.conversationId != conversationId || season.joined == null || season.status !in listOf("running", "finished") }) {
                 throw kotlinx.serialization.SerializationException("Invalid tournament list")
             }
             result
         }
 
     /** GET /api/tournaments/{id} → { tournament } standings (points → wins → joinedAt). */
-    suspend fun tournament(tournamentId: String): PulseResult<TournamentSummaryDto> =
-        get("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8")) { tournamentOf(it) }
+    suspend fun tournament(tournamentId: String, userId: String): PulseResult<TournamentSummaryDto> =
+        get("/api/tournaments/" + java.net.URLEncoder.encode(tournamentId, "UTF-8") + "?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
+            val room = requireGameRead(it, userId)
+            val season = PulseJson.parseToJsonElement(it).jsonObject["tournament"] as? JsonObject
+            require(season?.get("entries") is JsonArray)
+            tournamentOf(it).also { row ->
+                require(row.id == tournamentId && row.conversationId == room && row.status in listOf("running", "finished"))
+            }
+        }
 
     /** PATCH /api/tournaments/{id} { userId, status:'finished' } - creator/admin, idempotent. */
     suspend fun finishTournament(tournamentId: String, userId: String): PulseResult<TournamentSummaryDto> =

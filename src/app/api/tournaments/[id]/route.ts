@@ -1,3 +1,4 @@
+import { readRoomGame, gameReadErrorResponse, gameReadHeaders } from '@/lib/game-read'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 // /api/tournaments/[id] - season detail + lifecycle (Task R24-d)
 //
@@ -78,8 +79,8 @@ function serializeTournament(row: {
  * route runnable even against a dev server holding a pre-relation Prisma
  * client (no :3000 restart needed).
  */
-async function loadTournament(id: string) {
-  const row = await db.tournament.findUnique({
+async function loadTournament(id: string, client: Pick<typeof db, 'tournament' | 'user'> = db) {
+  const row = await client.tournament.findUnique({
     where: { id },
     include: { entries: true },
   })
@@ -87,7 +88,7 @@ async function loadTournament(id: string) {
 
   const userIds = Array.from(new Set(row.entries.map((e) => e.userId)))
   const users = userIds.length
-    ? await db.user.findMany({
+    ? await client.user.findMany({
         where: { id: { in: userIds } },
         select: { id: true, name: true, color: true },
       })
@@ -106,18 +107,23 @@ async function loadTournament(id: string) {
 /**
  * GET /api/tournaments/[id] → 200 { tournament: TournamentSummary }
  */
-export async function GET(_req: Request, { params }: RouteCtx) {
+export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params
+  const userId = new URL(req.url).searchParams.get('userId')?.trim() ?? ''
+  if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  const denied = await requireActionOwner(req, userId, 'game read')
+  if (denied) return denied
+  try { return await readRoomGame(db, userId, { tournamentId: id }, async (tx, conversationId) => {
+    const row = await loadTournament(id, tx)
+    if (!row) {
+      return NextResponse.json({ error: 'Tournament not found.' }, { status: 404 })
+    }
 
-  const row = await loadTournament(id)
-  if (!row) {
-    return NextResponse.json({ error: 'Tournament not found.' }, { status: 404 })
-  }
-
-  return NextResponse.json(
-    { tournament: serializeTournament(row) },
-    { headers: { 'Cache-Control': 'no-store' } },
-  )
+    return NextResponse.json(
+      { gameReadVersion: 1, userId, conversationId, tournament: serializeTournament(row) },
+      { headers: gameReadHeaders },
+    )
+  }) } catch (error) { return gameReadErrorResponse(error) }
 }
 
 /**

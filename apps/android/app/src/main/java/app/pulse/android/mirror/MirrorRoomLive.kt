@@ -1984,7 +1984,10 @@ private fun MirrorTournamentContent(
         val ticket = refreshGate.beginRead() ?: return
         val outcome = roomRequest { repository.tournaments(conversationId) }
         if (!refreshGate.accepts(ticket)) return
-        outcome.onSuccess { seasons = it.tournaments; loadError = false }.onFailure { loadError = true }
+        outcome.onSuccess { seasons = it.tournaments; loadError = false }.onFailure {
+            loadError = true
+            if (it is app.pulse.domain.sync.PrivateGameUnavailableException) { seasons = emptyList(); confirmedJoins = emptySet() }
+        }
     }
     LaunchedEffect(conversationId, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {

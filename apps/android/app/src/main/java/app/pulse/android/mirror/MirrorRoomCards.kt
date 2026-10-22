@@ -684,6 +684,7 @@ private fun MirrorTicTacToeContent(
     repository: PulseRepository,
     onRematch: () -> Unit,
 ) {
+    val owned = remember(repository) { repository.boundToCurrentAccount() }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val refreshGate = remember { app.pulse.domain.sync.RoomRefreshGate() }
@@ -700,9 +701,12 @@ private fun MirrorTicTacToeContent(
     // Keep the last confirmed board during failures and retry the initial load.
     suspend fun load() {
         val ticket = refreshGate.beginRead() ?: return
-        val result = roomRequest { repository.game(matchId) }
+        val result = roomRequest { owned.game(matchId) }
         if (!refreshGate.accepts(ticket)) return
-        result.onSuccess { data = it; failed = false }.onFailure { failed = true }
+        result.onSuccess { data = it; failed = false }.onFailure {
+            failed = true
+            if (it is app.pulse.domain.sync.PrivateGameUnavailableException) { data = null; observedActive = false }
+        }
     }
     LaunchedEffect(matchId, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
@@ -909,7 +913,7 @@ private fun MirrorTicTacToeContent(
                                     refreshGate.beginWrite()
                                     scope.launch {
                                         try {
-                                            roomRequest { repository.gameMove(matchId, i) }
+                                            roomRequest { owned.gameMove(matchId, i) }
                                                 .onSuccess { data = it; failed = false }
                                                 .onFailure { errorNote = it.message ?: "Move was not confirmed. Refreshing the board." }
                                         } finally { pendingCell = -1; refreshGate.endWrite() }
@@ -977,7 +981,7 @@ private fun MirrorTicTacToeContent(
                             refreshGate.beginWrite()
                             scope.launch {
                                 try {
-                                    roomRequest { repository.joinGame(matchId) }
+                                    roomRequest { owned.joinGame(matchId) }
                                         .onSuccess { data = it; failed = false }
                                         .onFailure { errorNote = it.message ?: "Could not join this match." }
                                 } finally { joining = false; refreshGate.endWrite() }

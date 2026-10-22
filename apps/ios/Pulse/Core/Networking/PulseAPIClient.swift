@@ -11,6 +11,7 @@ public struct PulseAPIClient: Sendable {
         public enum Kind: Equatable { case network, auth, forbidden, rateLimited, notFound, validation, server, unknown }
         public let kind: Kind
         public let message: String?
+        var invalidatesPrivateGameSnapshot: Bool { [.auth, .forbidden, .notFound].contains(kind) }
         /// N3-b - machine code from the body (e.g. "username_taken").
         public var code: String?
         /// N3-b - server-suggested alternative (username_taken flow).
@@ -1338,10 +1339,28 @@ public struct PulseAPIClient: Sendable {
         try await creationOperations.finish(intent, id: id)
     }
 
+    private struct GameReadScope: Decodable {
+        let gameReadVersion: Int
+        let userId: String
+        let conversationId: String
+    }
+    private func gameReadData(_ path: String) async throws -> (Data, String) {
+        var request = URLRequest(url: url(path + "?userId=\(q(userId))"))
+        request.httpMethod = "GET"
+        let data = try await send(request)
+        guard let scope = try? envelope(GameReadScope.self, from: data), scope.gameReadVersion == 1,
+              scope.userId == userId, !scope.conversationId.isEmpty else {
+            throw Failure(kind: .server, message: "Private game state could not be verified. Update the gateway before retrying.")
+        }
+        return (data, scope.conversationId)
+    }
+
     /// GET /api/games/{id} → { match, playerX, playerO }.
     public func gameDetail(_ matchId: String) async throws -> WireGameDetail {
-        let result: WireGameDetail = try await get("/api/games/\(q(matchId))")
-        return try confirmedGame(result, id: matchId)
+        let (data, room) = try await gameReadData("/api/games/\(q(matchId))")
+        let result = try confirmedGame(envelope(WireGameDetail.self, from: data), id: matchId)
+        guard result.match?.conversationId == room else { throw Failure(kind: .validation, message: "Game room was not confirmed.") }
+        return result
     }
 
     /// POST /api/games/{id}/move { userId, cell 0..8 } → { match, playerX, playerO }.
@@ -1399,15 +1418,13 @@ public struct PulseAPIClient: Sendable {
         try await creationOperations.finish(intent, id: id)
     }
 
-    /// GET /api/tournaments/{id} → { tournament } standings (tolerant envelope OR bare).
+    /// GET private standings; only a scoped envelope may be accepted.
     public func tournamentDetail(_ tournamentId: String) async throws -> WireTournamentSummary {
-        var request = URLRequest(url: url("/api/tournaments/\(q(tournamentId))"))
-        request.httpMethod = "GET"
-        let data = try await send(request)
-        let nested = (try? envelope(WireTournamentEnvelope.self, from: data))?.tournament
-        let season = try nested ?? envelope(WireTournamentSummary.self, from: data)
-        guard season.id == tournamentId, let status = season.status, ["running", "finished"].contains(status) else {
-            throw Failure(kind: .server, message: "Invalid tournament state.")
+        let (data, room) = try await gameReadData("/api/tournaments/\(q(tournamentId))")
+        guard let season = try envelope(WireTournamentEnvelope.self, from: data).tournament,
+              season.id == tournamentId, season.conversationId == room,
+              let status = season.status, ["running", "finished"].contains(status), season.entries != nil else {
+            throw Failure(kind: .validation, message: "Invalid private tournament state.")
         }
         return season
     }

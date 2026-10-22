@@ -246,7 +246,7 @@ class Wave7ApiTest {
         response = """{"match":{"id":"m","playerXId":"u1","playerOId":"u2","board":"XXXOO    ","turn":"X","status":"x_won","moveCount":5}}"""
         assertTrue(api().gameMove("m", "u1", 2) is PulseResult.Success)
         assertTrue(api().gameMove("m", "u1", 8) is PulseResult.Failure)
-        assertTrue(api().game("other-match") is PulseResult.Failure)
+        assertTrue(api().game("other-match", "u1") is PulseResult.Failure)
     }
 
     @Test
@@ -254,7 +254,7 @@ class Wave7ApiTest {
         configured()
         for (body in listOf("{}", """{"match":{"id":"m"}}""", """{"match":{"id":"m","playerXId":"u1","board":"short","turn":"X","status":"active","moveCount":0}}""")) {
             response = body
-            assertTrue(api().game("m") is PulseResult.Failure)
+            assertTrue(api().game("m", "u1") is PulseResult.Failure)
             assertTrue(api().createGame("u1", "room", null) is PulseResult.Failure)
         }
     }
@@ -275,7 +275,7 @@ class Wave7ApiTest {
         configured()
         response = "{}"
         assertTrue(api().tournaments("room", "u1") is PulseResult.Failure)
-        response = """{"tournaments":[{"id":"season","joined":true,"status":"running"}]}"""
+        response = """{"gameReadVersion":1,"userId":"u1","conversationId":"room","tournaments":[{"id":"season","conversationId":"room","joined":true,"status":"running"}]}"""
         val result = api().tournaments("room", "u1")
         assertTrue(result is PulseResult.Success)
         assertTrue(lastUrl.contains("userId=u1"))

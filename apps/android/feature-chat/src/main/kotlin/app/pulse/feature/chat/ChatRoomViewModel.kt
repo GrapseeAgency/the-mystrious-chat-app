@@ -1659,7 +1659,7 @@ class ChatRoomViewModel @Inject constructor(
     // suspend fetchers used by the in-bubble cards (polling parity)
 
     suspend fun gameDetail(matchId: String): GameDetailDto? =
-        gameRequest { repo.game(matchId).getOrThrow() }.getOrNull()
+        repo.boundToCurrentAccount().game(matchId).getOrThrow()
 
     suspend fun gameMove(matchId: String, cell: Int): GameDetailDto? =
         gameRequest { repo.gameMove(matchId, cell).getOrThrow() }
@@ -1682,7 +1682,7 @@ class ChatRoomViewModel @Inject constructor(
     }
 
     suspend fun tournamentDetail(tournamentId: String): TournamentSummaryDto? =
-        gameRequest { repo.tournament(tournamentId).getOrThrow() }.getOrNull()
+        repo.boundToCurrentAccount().tournament(tournamentId).getOrThrow()
 
     suspend fun joinTournament(tournamentId: String): Boolean =
         gameRequest { repo.joinTournament(tournamentId).getOrThrow() }

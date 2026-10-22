@@ -1269,8 +1269,8 @@ private struct RoomContent: View {
                 viewModel.injectCarrier(carrier)
             }
             wave7.cardRedPacketLoad = { id in try? await cardAPI.redPacketDetail(id) }
-            wave7.cardGameLoad = { id in try? await cardAPI.gameDetail(id) }
-            wave7.cardTournamentLoad = { id in try? await cardAPI.tournamentDetail(id) }
+            wave7.cardGameLoad = { id in try await cardAPI.gameDetail(id) }
+            wave7.cardTournamentLoad = { id in try await cardAPI.tournamentDetail(id) }
             wave7.cardGrab = { id in wave7.grabRedPacket(api: cardAPI, packetId: id) }
             wave7.cardMove = { matchId, cell in await wave7.moveGame(api: cardAPI, matchId: matchId, cell: cell) }
             wave7.cardJoinGame = { matchId in await wave7.joinGame(api: cardAPI, matchId: matchId) }
@@ -3154,7 +3154,7 @@ struct BubbleView: View {
             Wave7TicTacToeCard(
                 matchId: gp.matchId,
                 viewerId: viewerId ?? "",
-                load: { id in await wave7.cardGameLoad(id) },
+                load: { id in try await wave7.cardGameLoad(id) },
                 onMove: { cell in await wave7.cardMove(gp.matchId, cell) },
                 onJoin: { await wave7.cardJoinGame(gp.matchId) },
                 // R7 - rematch POSTs /api/games against the finished match's
@@ -3174,7 +3174,7 @@ struct BubbleView: View {
                 name: tp.name ?? "",
                 viewerId: viewerId ?? "",
                 isAdmin: message.senderId == viewerId,
-                load: { id in await wave7.cardTournamentLoad(id) },
+                load: { id in try await wave7.cardTournamentLoad(id) },
                 onJoin: { await wave7.cardJoinTournament(tp.tournamentId) },
                 onFinish: { await wave7.cardFinishTournament(tp.tournamentId) },
             )

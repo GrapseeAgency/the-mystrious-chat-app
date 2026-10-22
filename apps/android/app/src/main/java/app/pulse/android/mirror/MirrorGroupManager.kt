@@ -1272,7 +1272,7 @@ private fun MgrTournamentSection(
                         seasons = it.tournaments
                         loadError = false
                     },
-                    onFailure = { loadError = true },
+                    onFailure = { loadError = true; if (it is app.pulse.domain.sync.PrivateGameUnavailableException) seasons = null },
                 )
             }
         }
