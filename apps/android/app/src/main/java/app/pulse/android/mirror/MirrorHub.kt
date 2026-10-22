@@ -229,7 +229,7 @@ internal fun MirrorHub(
                 .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
         ) {
             when (panel) {
-                "tasks" -> HubTasksPanel(repository)
+                "tasks" -> androidx.compose.runtime.key(viewerId) { HubTasksPanel(repository, viewerId) }
                 "market" -> HubMarketPanel(repository, viewerId, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
                 "swap" -> HubSwapPanel(repository, onCoinsChanged = { CoroutineScope(Dispatchers.IO).launch { loadWallet() } })
                 "logs" -> androidx.compose.runtime.key(viewerId) { HubLogsPanel(repository, viewerId) }
@@ -605,36 +605,51 @@ private fun hubTimestamp(iso: String?, withDate: Boolean): String {
 // ── Tasks panel (3-column kanban) ────────────────────────────────────────────
 
 @Composable
-private fun HubTasksPanel(repository: PulseRepository) {
+private fun HubTasksPanel(repository: PulseRepository, viewerId: String) {
     var tasks by remember { mutableStateOf<List<HubTaskDto>>(emptyList()) }
     var title by remember { mutableStateOf("") }
-
-    LaunchedEffect(Unit) {
-        tasks = repository.hubTasks().getOrNull()?.tasks ?: emptyList()
+    var busy by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val owned = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val epoch = remember(repository, viewerId) { repository.attachmentSessionKey() }
+    val gate = remember { app.pulse.domain.sync.RoomRefreshGate() }
+    fun current() = repository.viewerId == viewerId && repository.attachmentSessionKey() == epoch
+    suspend fun refresh() {
+        val ticket = gate.beginRead() ?: return
+        try {
+            if (!current()) return
+            val page = owned.hubTasks().getOrThrow()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (current() && gate.accepts(ticket)) tasks = page.tasks
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+        } catch (error: Exception) { if (current() && gate.accepts(ticket)) notice = error.message ?: "Could not refresh tasks." }
     }
-
+    LaunchedEffect(owned) { refresh() }
+    fun <T> mutate(operation: suspend () -> Result<T>, accepted: (T) -> Unit) {
+        if (busy || !current()) return
+        busy = true; notice = null; gate.beginWrite()
+        scope.launch {
+            try {
+                val result = operation().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (current()) accepted(result)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { if (current()) notice = error.message ?: "Task update failed; your input is kept."
+            } finally { busy = false; gate.endWrite() }
+            if (current()) refresh()
+        }
+    }
     fun move(task: HubTaskDto) {
-        val next = when (task.status) {
-            "todo" -> "doing"
-            "doing" -> "done"
-            else -> "todo"
-        }
-        tasks = tasks.map { if (it.id == task.id) it.copy(status = next) else it }
-        CoroutineScope(Dispatchers.IO).launch {
-            repository.updateHubTask(task.id, null, next).onSuccess { fresh ->
-                tasks = tasks.map { if (it.id == fresh.id) fresh else it }
-            }
-        }
+        val next = when (task.status) { "todo" -> "doing"; "doing" -> "done"; else -> "todo" }
+        mutate({ owned.updateHubTask(task.id, null, next) }) { fresh -> tasks = tasks.map { if (it.id == fresh.id) fresh else it } }
     }
-
     fun remove(task: HubTaskDto) {
-        tasks = tasks.filterNot { it.id == task.id }
-        CoroutineScope(Dispatchers.IO).launch {
-            repository.deleteHubTask(task.id)
-        }
+        mutate({ owned.deleteHubTask(task.id) }) { tasks = tasks.filterNot { it.id == task.id } }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        notice?.let { Text(it, color = SubPageInk.Amber400, fontSize = 12.sp) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             HubField(title, { title = it }, "New task…", modifier = Modifier.weight(1f))
             Box(
@@ -642,13 +657,11 @@ private fun HubTasksPanel(repository: PulseRepository) {
                     .size(36.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(if (title.isNotBlank()) SubPageInk.Amber600 else Color(0x1AF59E0B))
-                    .clickable(enabled = title.isNotBlank()) {
-                        val t = title.trim()
-                        title = ""
-                        CoroutineScope(Dispatchers.IO).launch {
-                            repository.createHubTask(t, null).onSuccess { fresh ->
-                                tasks = tasks + fresh
-                            }
+                    .clickable(enabled = !busy && title.isNotBlank()) {
+                        val submitted = title
+                        mutate({ owned.createHubTask(submitted.trim(), null) }) { fresh ->
+                            tasks = tasks + fresh
+                            if (title == submitted) title = ""
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -701,14 +714,14 @@ private fun HubTasksPanel(repository: PulseRepository) {
                                     color = SubPageInk.Amber400,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.clickable { move(task) },
+                                    modifier = Modifier.clickable(enabled = !busy) { move(task) },
                                 )
                                 MirrorLucideIcon(
                                     "LX",
                                     tint = SubPageInk.Zinc400,
                                     modifier = Modifier
                                         .size(14.dp)
-                                        .clickable { remove(task) },
+                                        .clickable(enabled = !busy) { remove(task) },
                                 )
                             }
                         }

@@ -131,6 +131,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -1422,11 +1423,15 @@ class PulseApi(
             PulseJson.parseToJsonElement(json).unwrapOrRoot("event").toString(),
         )
 
-    private fun taskOf(json: String): HubTaskDto =
-        PulseJson.decodeFromString(
-            HubTaskDto.serializer(),
-            PulseJson.parseToJsonElement(json).unwrapOrRoot("task").toString(),
-        )
+    private fun taskOf(json: String, userId: String): HubTaskDto =
+        PulseJson.decodeFromString(HubTaskDto.serializer(), PulseJson.parseToJsonElement(json).unwrapOrRoot("task").toString())
+            .also { requireHubTask(it, userId) }
+
+    private fun requireHubTask(task: HubTaskDto, userId: String) {
+        require(task.ownerId == userId && task.id.isNotBlank() && task.title.isNotBlank() && task.title.length <= 120 &&
+            task.status in listOf("todo", "doing", "done")) { "Personal task was not confirmed." }
+        java.time.Instant.parse(requireNotNull(task.createdAt)); java.time.Instant.parse(requireNotNull(task.updatedAt))
+    }
 
     private fun listingOf(json: String): MarketListingDto =
         PulseJson.decodeFromString(
@@ -1893,6 +1898,8 @@ class PulseApi(
     /** GET /api/hub/wallet?userId=[&ledger=30] - upserts a zero wallet; ledger desc. */
     suspend fun wallet(userId: String, ledger: Int = 30): PulseResult<WalletPageDto> =
         get("/api/hub/wallet?userId=" + java.net.URLEncoder.encode(userId, "UTF-8") + "&ledger=$ledger") {
+            requireWalletAck(it, userId)
+            require((PulseJson.parseToJsonElement(it) as? JsonObject)?.get("ledger") is kotlinx.serialization.json.JsonArray) { "Wallet history was not confirmed." }
             PulseJson.decodeFromString(WalletPageDto.serializer(), it)
         }
 
@@ -1955,13 +1962,16 @@ class PulseApi(
     /** GET /api/hub/tasks?userId= → { tasks } ordered doing → todo → done. */
     suspend fun hubTasks(userId: String): PulseResult<HubTasksPageDto> =
         get("/api/hub/tasks?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(HubTasksPageDto.serializer(), it)
+            PulseJson.decodeFromString(HubTasksPageDto.serializer(), it).also { page ->
+                require(page.userId == userId && page.tasks.map { task -> task.id }.distinct().size == page.tasks.size) { "Task history owner was not confirmed." }
+                page.tasks.forEach { task -> requireHubTask(task, userId) }
+            }
         }
 
     /** POST /api/hub/tasks { userId, title 1..120, status? } → { task }. */
     suspend fun createHubTask(userId: String, title: String, status: String? = null): PulseResult<HubTaskDto> =
         post("/api/hub/tasks", jsonOf("userId" to userId, "title" to title, "status" to (status ?: "todo"))) {
-            taskOf(it)
+            taskOf(it, userId).also { task -> require(task.title == title.trim() && task.status == (status ?: "todo")) { "Task creation was not confirmed." } }
         }
 
     /** PATCH /api/hub/tasks/{id} { userId, title?, status? } - owner-only. */
@@ -1973,12 +1983,14 @@ class PulseApi(
                 if (title != null) put("title", title)
                 if (status != null) put("status", status)
             },
-        ) { taskOf(it) }
+        ) { taskOf(it, userId).also { task -> require(task.id == taskId && (title == null || task.title == title.trim()) && (status == null || task.status == status)) { "Task update was not confirmed." } } }
 
     /** DELETE /api/hub/tasks/{id}?userId= - owner-only. */
     suspend fun deleteHubTask(taskId: String, userId: String): PulseResult<OkDto> =
         deleteWithQuery("/api/hub/tasks/" + java.net.URLEncoder.encode(taskId, "UTF-8"), userId) {
-            PulseJson.decodeFromString(OkDto.serializer(), it)
+            val row = PulseJson.parseToJsonElement(it).jsonObject
+            require(row["ok"] == JsonPrimitive(true) && row["taskId"] == JsonPrimitive(taskId) && row["userId"] == JsonPrimitive(userId)) { "Task deletion was not confirmed." }
+            OkDto(ok = true)
         }
 
     /** GET /api/hub/market?userId= - open listings + viewer's own (any status), ≤60. */

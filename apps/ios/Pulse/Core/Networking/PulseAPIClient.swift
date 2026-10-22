@@ -1447,7 +1447,10 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/hub/wallet?userId=[&ledger=30] - upserts a zero wallet; ledger desc.
     public func walletPage(ledger: Int = 30) async throws -> WireWalletPage {
-        try await get("/api/hub/wallet?userId=\(q(userId))&ledger=\(ledger)")
+        let page: WireWalletPage = try await get("/api/hub/wallet?userId=\(q(userId))&ledger=\(ledger)")
+        try requireWalletAck(page.wallet)
+        guard page.ledger != nil else { throw Failure(kind: .validation, message: "Wallet history was not confirmed.") }
+        return page
     }
 
     /// POST /api/hub/wallet/checkin { userId } - 409 body carries { error, wallet }.
@@ -1509,14 +1512,20 @@ public struct PulseAPIClient: Sendable {
 
     /// GET /api/hub/tasks?userId= → { tasks } ordered doing → todo → done.
     public func hubTasks() async throws -> WireHubTasksPage {
-        try await get("/api/hub/tasks?userId=\(q(userId))")
+        let page: WireHubTasksPage = try await get("/api/hub/tasks?userId=\(q(userId))")
+        guard page.userId == userId, Set(page.tasks.map(\.id)).count == page.tasks.count else { throw Failure(kind: .validation, message: "Task history owner was not confirmed.") }
+        for task in page.tasks { try requireHubTask(task) }
+        return page
     }
 
     /// POST /api/hub/tasks { userId, title, status? } → { task }.
     public func createHubTask(title: String, status: String?) async throws -> WireHubTask {
         let data = try await postRaw("/api/hub/tasks", body: ["userId": userId, "title": title, "status": status ?? "todo"])
-        if let page = try? envelope(WireHubTaskEnvelope.self, from: data), let t = page.task { return t }
-        return try envelope(WireHubTask.self, from: data)
+        let task = try acceptedHubTask(data)
+        guard task.title == title.trimmingCharacters(in: .whitespacesAndNewlines), task.status == (status ?? "todo") else {
+            throw Failure(kind: .validation, message: "Task creation was not confirmed.")
+        }
+        return task
     }
 
     /// PATCH /api/hub/tasks/{id} { userId, title?, status? } - owner-only.
@@ -1525,15 +1534,32 @@ public struct PulseAPIClient: Sendable {
         if let title { body["title"] = title }
         if let status { body["status"] = status }
         let data = try await patchRaw("/api/hub/tasks/\(q(taskId))", body: body)
-        if let page = try? envelope(WireHubTaskEnvelope.self, from: data), let t = page.task { return t }
-        return try envelope(WireHubTask.self, from: data)
+        let task = try acceptedHubTask(data)
+        guard task.id == taskId, title == nil || task.title == title?.trimmingCharacters(in: .whitespacesAndNewlines), status == nil || task.status == status else {
+            throw Failure(kind: .validation, message: "Task update was not confirmed.")
+        }
+        return task
     }
 
     /// DELETE /api/hub/tasks/{id}?userId= - owner-only.
     public func deleteHubTask(_ taskId: String) async throws {
         var request = URLRequest(url: url("/api/hub/tasks/\(q(taskId))?userId=\(q(userId))"))
         request.httpMethod = "DELETE"
-        _ = try await send(request)
+        let data = try await send(request)
+        struct Receipt: Decodable { let ok: Bool; let userId: String; let taskId: String }
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.userId == userId, receipt.taskId == taskId else { throw Failure(kind: .validation, message: "Task deletion was not confirmed.") }
+    }
+
+    private func requireHubTask(_ task: WireHubTask) throws {
+        guard task.ownerId == userId, !task.id.isEmpty, let title = task.title, !title.isEmpty, title.utf16.count <= 120,
+              ["todo", "doing", "done"].contains(task.status ?? ""), task.createdAt.flatMap(PulseFormat.date) != nil,
+              task.updatedAt.flatMap(PulseFormat.date) != nil else { throw Failure(kind: .validation, message: "Personal task was not confirmed.") }
+    }
+    private func acceptedHubTask(_ data: Data) throws -> WireHubTask {
+        guard let task = try envelope(WireHubTaskEnvelope.self, from: data).task else { throw Failure(kind: .validation, message: "Personal task was not confirmed.") }
+        try requireHubTask(task)
+        return task
     }
 
     /// GET /api/hub/market?userId= → { listings }.

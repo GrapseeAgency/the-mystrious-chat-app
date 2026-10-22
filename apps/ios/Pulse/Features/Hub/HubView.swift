@@ -185,77 +185,68 @@ final class HubViewModel: ObservableObject {
 
     // MARK: tasks
 
-    /// R1-W2B D39 - read-through snapshot cache (Android cachedHubTasks
-    /// parity, PulseRepositoryImpl.kt:2340 + HubScreen.kt:240): the hub
-    /// renders INSTANTLY from the wave7Cache blob ("hub:tasks:<viewerId>")
-    /// before the network refresh; a successful fetch overwrites the blob
-    /// (server truth wins), a failure keeps the cached page visible.
+    @Published private(set) var taskBusy = false
+    private var taskRevision = 0
+
     func loadTasks() {
+        guard !taskBusy, let owner = session.viewer?.id, let client = api else { return }
+        taskRevision += 1
+        let ticket = taskRevision, epoch = session.sessionGeneration, store = session.store
+        let key = "hub:tasks:v2:\(owner)"
         Task { @MainActor in
-            let cacheKey = "hub:tasks:\(session.viewer?.id ?? "anon")"
-            if tasks.isEmpty, let store = session.store,
-               let blob = try? store.loadWave7Cache(key: cacheKey),
-               let data = blob.json.data(using: .utf8),
-               let cached = try? JSONDecoder().decode(WireHubTasksPage.self, from: data),
-               !cached.tasks.isEmpty {
-                tasks = cached.tasks
-            }
-            guard let api = api else { return }
+            guard session.sessionGeneration == epoch, taskRevision == ticket, !taskBusy else { return }
+            if tasks.isEmpty, let blob = try? store?.loadWave7Cache(key: key), let data = blob.json.data(using: .utf8),
+               let cached = try? JSONDecoder().decode(WireHubTasksPage.self, from: data), cached.userId == owner,
+               cached.tasks.allSatisfy({ $0.ownerId == owner }) { tasks = cached.tasks }
             do {
-                let page = try await api.hubTasks()
+                let page = try await client.hubTasks()
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch, taskRevision == ticket, !taskBusy else { return }
                 tasks = page.tasks
-                if let store = session.store,
-                   let data = try? JSONEncoder().encode(page),
-                   let json = String(data: data, encoding: .utf8) {
-                    try? store.saveWave7Cache(
-                        key: cacheKey,
-                        json: json,
-                        updatedAt: Int64(Date().timeIntervalSince1970 * 1000),
-                    )
+                if let data = try? JSONEncoder().encode(page), let json = String(data: data, encoding: .utf8) {
+                    try? store?.saveWave7Cache(key: key, json: json, updatedAt: Int64(Date().timeIntervalSince1970 * 1000))
                 }
-            } catch {
-                // Offline - the cached rail stays; a cold empty start gets
-                // the honest note instead of a silent blank column.
-                if tasks.isEmpty { toast(describe(error), isError: true) }
+            } catch is CancellationError { }
+            catch {
+                if session.sessionGeneration == epoch, taskRevision == ticket { toast(describe(error), isError: true) }
             }
         }
     }
 
-    func createTask(_ title: String) {
+    private func taskAction(_ operation: @escaping (PulseAPIClient) async throws -> Void, completed: @escaping (Bool) -> Void = { _ in }) {
+        guard !taskBusy, session.ready, let owner = session.viewer?.id, let store = session.store, let client = api else { completed(false); return }
+        let epoch = session.sessionGeneration
+        taskBusy = true; taskRevision += 1
         Task { @MainActor in
-            guard let api = api else { return }
+            var accepted = false
             do {
-                _ = try await api.createHubTask(title: title, status: "todo")
-                loadTasks()
-                toast("Task added")
-            } catch {
-                toast(describe(error), isError: true)
-            }
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                try store.deleteWave7Cache(key: "hub:tasks:v2:\(owner)")
+                try await operation(client)
+                try Task.checkCancellation()
+                guard session.sessionGeneration == epoch else { return }
+                accepted = true
+            } catch is CancellationError { }
+            catch { if session.sessionGeneration == epoch { toast(describe(error), isError: true) } }
+            guard session.sessionGeneration == epoch else { return }
+            taskBusy = false; taskRevision += 1
+            completed(accepted)
+            loadTasks()
         }
     }
 
+    func createTask(_ title: String, completed: @escaping (Bool) -> Void) {
+        taskAction({ api in _ = try await api.createHubTask(title: title, status: "todo") }, completed: { accepted in
+            if accepted { self.toast("Task added") }
+            completed(accepted)
+        })
+    }
     func moveTask(_ task: WireHubTask, to status: String) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                _ = try await api.updateHubTask(task.id, title: nil, status: status)
-                loadTasks()
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+        taskAction({ api in _ = try await api.updateHubTask(task.id, title: nil, status: status) })
     }
-
     func deleteTask(_ task: WireHubTask) {
-        Task { @MainActor in
-            guard let api = api else { return }
-            do {
-                try await api.deleteHubTask(task.id)
-                loadTasks()
-            } catch {
-                toast(describe(error), isError: true)
-            }
-        }
+        taskAction({ api in try await api.deleteHubTask(task.id) })
     }
 
     // MARK: market
@@ -754,7 +745,10 @@ private struct HubTasksSheet: View {
                 TextField("Task (1–120)", text: $title)
                 Button("Add task") {
                     let trimmed = title.trimmingCharacters(in: .whitespaces)
-                    if !trimmed.isEmpty { vm.createTask(trimmed); title = "" }
+                    if !trimmed.isEmpty {
+                        let submitted = title
+                        vm.createTask(trimmed) { accepted in if accepted && title == submitted { title = "" } }
+                    }
                 }
             }
             ForEach(["doing", "todo", "done"], id: \.self) { col in
@@ -784,6 +778,7 @@ private struct HubTasksSheet: View {
                 }
             }
         }
+        .disabled(vm.taskBusy)
         .navigationTitle("Tasks")
         .navigationBarTitleDisplayMode(.inline)
         .task { vm.loadTasks() }

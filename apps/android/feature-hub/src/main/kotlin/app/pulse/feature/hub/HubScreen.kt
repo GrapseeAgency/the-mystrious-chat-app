@@ -315,42 +315,61 @@ class HubViewModel @Inject constructor(
     private val _tasks = MutableStateFlow<HubTasksPageDto?>(null)
     val tasks: StateFlow<HubTasksPageDto?> = _tasks.asStateFlow()
 
+    private val _taskMutationBusy = MutableStateFlow(false)
+    val taskMutationBusy = _taskMutationBusy.asStateFlow()
+    private var taskReads = 0L
+
     fun loadTasks() {
+        if (_taskMutationBusy.value) return
+        val ticket = ++taskReads
+        val epoch = repo.attachmentSessionKey()
+        val owned = repo.boundToCurrentAccount()
+        if (_tasks.value?.userId != owned.viewerId) _tasks.value = null
         viewModelScope.launch {
-            if (_tasks.value == null) repo.cachedHubTasks()?.let { cached -> _tasks.value = cached }
-            repo.hubTasks().fold(
-                onSuccess = { v -> _tasks.value = v },
-                onFailure = { t -> if (_tasks.value == null) notify(t.message ?: "Could not load tasks", isError = true) },
-            )
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                val cached = if (_tasks.value == null) owned.cachedHubTasks() else null
+                if (taskReads != ticket || repo.attachmentSessionKey() != epoch) return@launch
+                if (cached != null) _tasks.value = cached
+                val page = owned.hubTasks().getOrThrow()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (taskReads == ticket && repo.attachmentSessionKey() == epoch) _tasks.value = page
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (taskReads == ticket && repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not load tasks", isError = true)
+            }
         }
     }
 
-    fun createTask(title: String) {
+    private fun taskAction(operation: suspend (PulseRepository) -> Unit, completed: (Boolean) -> Unit = {}) {
+        if (_taskMutationBusy.value) { completed(false); return }
+        val epoch = repo.attachmentSessionKey() ?: run { completed(false); return }
+        val owned = repo.boundToCurrentAccount()
+        _taskMutationBusy.value = true; taskReads++
         viewModelScope.launch {
-            repo.createHubTask(title, "todo").fold(
-                onSuccess = { _ -> loadTasks(); notify("Task added") },
-                onFailure = { t -> notify(t.message ?: "Could not add the task", isError = true) },
-            )
+            var accepted = false
+            try {
+                if (repo.attachmentSessionKey() != epoch) return@launch
+                operation(owned)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                accepted = repo.attachmentSessionKey() == epoch
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) {
+                if (repo.attachmentSessionKey() == epoch) notify(error.message ?: "Could not update this task", isError = true)
+            } finally { _taskMutationBusy.value = false; taskReads++ }
+            if (repo.attachmentSessionKey() == epoch) { completed(accepted); loadTasks() }
         }
     }
 
-    fun moveTask(task: HubTaskDto, status: String) {
-        viewModelScope.launch {
-            repo.updateHubTask(task.id, null, status).fold(
-                onSuccess = { _ -> loadTasks() },
-                onFailure = { t -> notify(t.message ?: "Could not move the task", isError = true) },
-            )
-        }
-    }
+    fun createTask(title: String, completed: (Boolean) -> Unit) = taskAction({ owned ->
+        owned.createHubTask(title, "todo").getOrThrow()
+    }, { accepted -> if (accepted) notify("Task added"); completed(accepted) })
 
-    fun deleteTask(taskId: String) {
-        viewModelScope.launch {
-            repo.deleteHubTask(taskId).fold(
-                onSuccess = { _ -> loadTasks() },
-                onFailure = { t -> notify(t.message ?: "Could not delete the task", isError = true) },
-            )
-        }
-    }
+    fun moveTask(task: HubTaskDto, status: String) = taskAction({ owned ->
+        owned.updateHubTask(task.id, null, status).getOrThrow()
+    })
+
+    fun deleteTask(taskId: String) = taskAction({ owned -> owned.deleteHubTask(taskId).getOrThrow() })
 
     // ── F-HB-06 market ──
     private val _market = MutableStateFlow<List<MarketListingDto>>(emptyList())
@@ -892,6 +911,7 @@ private fun TasksSheet(vm: HubViewModel, onDismiss: () -> Unit) {
     var title by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { vm.loadTasks() }
     val tasks by vm.tasks.collectAsStateWithLifecycle()
+    val pending by vm.taskMutationBusy.collectAsStateWithLifecycle()
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Text("Tasks", fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -902,7 +922,13 @@ private fun TasksSheet(vm: HubViewModel, onDismiss: () -> Unit) {
             )
             Spacer(Modifier.height(6.dp))
             Button(
-                onClick = { if (title.isNotBlank()) { vm.createTask(title.trim()); title = "" } },
+                enabled = !pending,
+                onClick = {
+                    if (title.isNotBlank()) {
+                        val submitted = title
+                        vm.createTask(title.trim()) { accepted -> if (accepted && title == submitted) title = "" }
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Add task") }
             Spacer(Modifier.height(10.dp))
@@ -922,10 +948,11 @@ private fun TasksSheet(vm: HubViewModel, onDismiss: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(t.title, Modifier.weight(1f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (col != "todo") Text("‹", Modifier.clickable { vm.moveTask(t, prevStatus(col)) }.padding(6.dp))
-                        if (col != "done") Text("›", Modifier.clickable { vm.moveTask(t, nextStatus(col)) }.padding(6.dp))
+                        if (col != "todo") Text("‹", Modifier.clickable(enabled = !pending) { vm.moveTask(t, prevStatus(col)) }.padding(6.dp))
+                        if (col != "done") Text("›", Modifier.clickable(enabled = !pending) { vm.moveTask(t, nextStatus(col)) }.padding(6.dp))
                         // R35 Neo - icon affordance instead of the old glyph button.
                         IconButton(
+                            enabled = !pending,
                             onClick = { vm.deleteTask(t.id) },
                             modifier = Modifier.size(28.dp),
                         ) {

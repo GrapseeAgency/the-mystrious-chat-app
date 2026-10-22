@@ -522,10 +522,11 @@ data class HubTaskDto(
     val status: String = "todo",
     val createdAt: String? = null,
     val updatedAt: String? = null,
+    val ownerId: String? = null,
 )
 
 @Serializable
-data class HubTasksPageDto(val tasks: List<HubTaskDto> = emptyList())
+data class HubTasksPageDto(val userId: String, val tasks: List<HubTaskDto>)
 
 @Serializable
 data class MarketSellerDto(

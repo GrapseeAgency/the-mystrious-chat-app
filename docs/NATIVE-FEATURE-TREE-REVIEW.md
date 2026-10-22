@@ -3634,3 +3634,45 @@ Boundaries: backend rollout required; legacy credential-free browser board acces
 fails closed (no sign-in redesign). Creation lost-ACK identity, cross-device revisions,
 durable offline board work, retroactive removal of previously copied titles and large-board
 pagination remain unsolved. No schema/deployment/whole-app correctness claim. Autumn unchanged.
+
+### 2026-10-22 — personal Hub ownership, task acceptance and cache races
+
+Wallet history and all personal-task CRUD routes trusted a supplied userId rather than
+binding it to the requester. Mounted Android moved/deleted tasks optimistically in
+unstructured IO scopes, and creation cleared input before any verdict. Shared cache
+read-through code recomputed the active viewer after HTTP completion, allowing a delayed
+page to be labelled with another session's cache key. Swift task reads/writes had analogous
+late API/store capture and refresh races.
+
+- Wallet GET and personal-task GET/POST/PATCH/DELETE require the existing actor credential
+  before data access. Task writes include immutable ownerId in their final DB predicate.
+  Wallet initialization/balance/ledger serialization is one Serializable snapshot with
+  deterministic ledger ordering and private/no-store headers; failed history lookup rolls
+  initialization back. Public aggregate swap rates were not made account-private.
+- Personal-task responses identify their owner. Both native APIs reject incomplete/foreign
+  tasks, invalid timestamps/status/title, ignored mutation intent and unconfirmed deletion.
+  Wallet reads verify wallet ownership and require an actual ledger array rather than
+  accepting an empty/default success. No bare Swift mutation-object fallback remains.
+- Native task controls now wait for acceptance, retain failed/newer drafts, gate conflicting
+  actions and refuse pre-write/superseded refresh results. Mounted Android no longer launches
+  unstructured IO scopes that optimistically move/delete rows; its task surface is owner keyed.
+- Android snapshot reads capture owner/key and check account/session before cache persistence
+  and UI return. Task reads and mutations serialize; the previous task snapshot is invalidated
+  before dispatch so an uncertain outcome cannot resurrect old task state from disk. A local
+  invalidation failure prevents dispatch. Verified read caching remains best-effort, cancellation
+  is rethrown, and legacy unlabelled task caches are ignored via the v2 owner key.
+- Swift captures task API/store/epoch before task launch, validates cached owner, invalidates
+  cache before mutation and fences late reads. Targeted cache deletion retains other owners'
+  data and private thread-denial journals. Hub state remains reset by session generation.
+
+Validation: four real SQLite/evaluated-route contracts cover missing/wrong owner denial
+before data access, financial/task isolation, valid intent and exact deletion, and wallet
+snapshot rollback. Full server suite 230/230; strict scoped TS and 11 native syntax parses
+pass. Added Kotlin/Swift wallet/task receipt matrices and Swift targeted cache invalidation
+coverage. Native compilation/device validation for this tranche remains separate.
+
+Boundaries: deployment required; legacy credential-free browser personal data actions now
+fail closed, without changing sign-in/recovery. Creation lost-ACK deduplication, task history
+pagination, durable offline task writes and cross-device action revisions remain open.
+Legacy wallet mutation endpoints still require a separate bypass review; these read guards
+are NOT a claim that all financial endpoints are safe. Autumn preserved; no full-app claim.

@@ -3577,7 +3577,7 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    private suspend fun <T> ownedBoardRequest(operation: suspend (String) -> PulseResult<T>): Result<T> {
+    private suspend fun <T> ownedAccountRequest(operation: suspend (String) -> PulseResult<T>): Result<T> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
         val epoch = attachmentSession
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
@@ -3591,16 +3591,16 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun kanbanBoard(conversationId: String): Result<KanbanPageDto> =
-        ownedBoardRequest { api.kanbanBoard(conversationId, it) }
+        ownedAccountRequest { api.kanbanBoard(conversationId, it) }
 
     override suspend fun createKanbanCard(conversationId: String, title: String?, column: String?, assigneeId: String?, messageId: String?): Result<KanbanCardDto> =
-        ownedBoardRequest { api.createKanbanCard(conversationId, it, title, column, assigneeId, messageId) }
+        ownedAccountRequest { api.createKanbanCard(conversationId, it, title, column, assigneeId, messageId) }
 
     override suspend fun updateKanbanCard(cardId: String, title: String?, column: String?, assigneeId: String?, clearAssignee: Boolean, position: Long?): Result<KanbanCardDto> =
-        ownedBoardRequest { api.updateKanbanCard(cardId, it, title, column, assigneeId, clearAssignee, position) }
+        ownedAccountRequest { api.updateKanbanCard(cardId, it, title, column, assigneeId, clearAssignee, position) }
 
     override suspend fun deleteKanbanCard(cardId: String): Result<Unit> =
-        ownedBoardRequest { api.deleteKanbanCard(cardId, it) }.map { Unit }
+        ownedAccountRequest { api.deleteKanbanCard(cardId, it) }.map { Unit }
 
     override suspend fun events(conversationId: String): Result<EventsPageDto> =
         when (val r = api.events(conversationId, viewerId ?: "")) {
@@ -3817,16 +3817,40 @@ class PulseRepositoryImpl constructor(
             is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
         }
 
-    override suspend fun wallet(): Result<WalletPageDto> =
-        when (val r = api.wallet(viewerId ?: "")) {
+    private val walletSnapshotRequests = kotlinx.coroutines.sync.Mutex()
+    private val personalTaskRequests = kotlinx.coroutines.sync.Mutex()
+
+    private suspend fun <T> ownedHubSnapshot(prefix: String, serializer: kotlinx.serialization.KSerializer<T>,
+        fetch: suspend (String) -> PulseResult<T>): Result<T> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        val result = fetch(owner)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Hub account changed")
+        return when (result) {
             is PulseResult.Success -> {
-                runCatching {
-                    cachePut(walletKey(), PulseJson.encodeToString(WalletPageDto.serializer(), r.value))
-                }
-                Result.success(r.value)
+                try {
+                    database.withTransaction {
+                        if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Hub account changed")
+                        wave7Dao.upsert(Wave7CacheEntity("$prefix:$owner", PulseJson.encodeToString(serializer, result.value), System.currentTimeMillis()))
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                } catch (_: Exception) { /* A verified read can still be shown without offline caching. */ }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Hub account changed")
+                Result.success(result.value)
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> Result.failure(IllegalStateException("${result.kind}: ${result.message}"))
         }
+    }
+
+    override suspend fun wallet(): Result<WalletPageDto> {
+        val epoch = attachmentSession
+        return walletSnapshotRequests.withLock {
+            if (attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Wallet account changed")
+            ownedHubSnapshot("hub:wallet", WalletPageDto.serializer()) { api.wallet(it) }
+        }
+    }
 
     override suspend fun checkinWallet(): Result<CheckinWalletResultDto> =
         when (val r = api.checkinWallet(viewerId ?: "")) {
@@ -3870,34 +3894,37 @@ class PulseRepositoryImpl constructor(
         return walletMutation(intent) { id -> api.swap(owner, direction, amount, id) }
     }
 
-    override suspend fun hubTasks(): Result<HubTasksPageDto> =
-        when (val r = api.hubTasks(viewerId ?: "")) {
-            is PulseResult.Success -> {
-                runCatching {
-                    cachePut("hub:tasks:${viewerId ?: "anon"}", PulseJson.encodeToString(HubTasksPageDto.serializer(), r.value))
-                }
-                Result.success(r.value)
-            }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+    override suspend fun hubTasks(): Result<HubTasksPageDto> {
+        val epoch = attachmentSession
+        return personalTaskRequests.withLock {
+            if (attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Tasks account changed")
+            ownedHubSnapshot("hub:tasks:v2", HubTasksPageDto.serializer()) { api.hubTasks(it) }
         }
+    }
+
+    private suspend fun <T> personalTaskMutation(send: suspend (String) -> PulseResult<T>): Result<T> {
+        val owner = viewerId ?: return Result.failure(IllegalStateException("No active account"))
+        val epoch = attachmentSession
+        return personalTaskRequests.withLock {
+            try {
+                if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Tasks account changed")
+                // Retire the old snapshot BEFORE an uncertain network outcome;
+                // no stale completed/deleted task may reappear from it on restart.
+                wave7Dao.delete("hub:tasks:v2:$owner")
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (viewerId != owner || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Tasks account changed")
+                ownedAccountRequest { send(owner) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (error: Exception) { Result.failure(error) }
+        }
+    }
 
     override suspend fun createHubTask(title: String, status: String?): Result<HubTaskDto> =
-        when (val r = api.createHubTask(viewerId ?: "", title, status)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
+        personalTaskMutation { api.createHubTask(it, title, status) }
     override suspend fun updateHubTask(taskId: String, title: String?, status: String?): Result<HubTaskDto> =
-        when (val r = api.updateHubTask(taskId, viewerId ?: "", title, status)) {
-            is PulseResult.Success -> Result.success(r.value)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
-
+        personalTaskMutation { api.updateHubTask(taskId, it, title, status) }
     override suspend fun deleteHubTask(taskId: String): Result<Unit> =
-        when (val r = api.deleteHubTask(taskId, viewerId ?: "")) {
-            is PulseResult.Success -> Result.success(Unit)
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
-        }
+        personalTaskMutation { api.deleteHubTask(taskId, it) }.map { Unit }
 
     override suspend fun market(): Result<MarketPageDto> =
         when (val r = api.market(viewerId ?: "")) {
@@ -3970,20 +3997,24 @@ class PulseRepositoryImpl constructor(
     private suspend fun cacheGet(key: String): String? =
         runCatching { wave7Dao.get(key)?.json }.getOrNull()
 
-    /** Snapshot key for the hub wallet (per viewer). */
-    private fun walletKey() = "hub:wallet:${viewerId ?: "anon"}"
-
     /** Read the cached wallet page without hitting the network. */
-    override suspend fun cachedWallet(): WalletPageDto? =
-        cacheGet(walletKey())?.let { blob ->
-            runCatching { PulseJson.decodeFromString(WalletPageDto.serializer(), blob) }.getOrNull()
-        }
+    override suspend fun cachedWallet(): WalletPageDto? {
+        val owner = viewerId ?: return null
+        val epoch = attachmentSession
+        val page = cacheGet("hub:wallet:$owner")?.let { runCatching { PulseJson.decodeFromString(WalletPageDto.serializer(), it) }.getOrNull() }
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        return page?.takeIf { viewerId == owner && attachmentSession == epoch && it.wallet.userId == owner }
+    }
 
-    /** Read cached hub tasks without hitting the network. */
-    override suspend fun cachedHubTasks(): HubTasksPageDto? =
-        cacheGet("hub:tasks:${viewerId ?: "anon"}")?.let { blob ->
-            runCatching { PulseJson.decodeFromString(HubTasksPageDto.serializer(), blob) }.getOrNull()
+    override suspend fun cachedHubTasks(): HubTasksPageDto? {
+        val owner = viewerId ?: return null
+        val epoch = attachmentSession
+        return personalTaskRequests.withLock {
+            val page = cacheGet("hub:tasks:v2:$owner")?.let { runCatching { PulseJson.decodeFromString(HubTasksPageDto.serializer(), it) }.getOrNull() }
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            page?.takeIf { viewerId == owner && attachmentSession == epoch && it.userId == owner && it.tasks.all { row -> row.ownerId == owner } }
         }
+    }
 
     /** Read cached reminders (due badge survives cold start). */
     override suspend fun cachedReminders(): RemindersPageDto? =

@@ -405,6 +405,7 @@ public struct WireSwapResult: Codable, Sendable {
 }
 
 public struct WireHubTask: Codable, Hashable, Sendable {
+    public let ownerId: String?
     public let id: String
     public let title: String?
     public let status: String?
@@ -413,6 +414,7 @@ public struct WireHubTask: Codable, Hashable, Sendable {
 }
 
 public struct WireHubTasksPage: Codable, Sendable {
+    public let userId: String
     public let tasks: [WireHubTask]
 }
 

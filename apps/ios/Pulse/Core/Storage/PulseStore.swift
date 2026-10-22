@@ -281,6 +281,10 @@ public final class PulseStore: Sendable {
         }
     }
 
+    public func deleteWave7Cache(key: String) throws {
+        try dbQueue.write { db in try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [key]) }
+    }
+
     public func loadWave7Cache(key: String) throws -> (json: String, updatedAt: Int64)? {
         try dbQueue.read { db in
             let row = try Row.fetchOne(
