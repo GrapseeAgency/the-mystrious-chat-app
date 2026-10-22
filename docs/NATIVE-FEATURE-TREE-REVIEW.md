@@ -2804,3 +2804,41 @@ no production error was suppressed to pass them. Targeted 13/13 and full server 
 (/home/user/group-governance-server.log); strict helper TypeScript and diff checks pass.
 No native appearance changes. Invite joins, broader metadata permission races, durable
 creation receipts and native runtime confirmation remain open rather than implied complete.
+
+
+## 2026-10-22 — invite redemption, rotation and sheet ownership
+
+Invite creation/rotation and redemption now use the same serializable membership boundary.
+Concurrent lazy link creation converges (or explicitly returns a retryable conflict); joins
+recheck the code inside the membership write transaction, preserve existing role/read state,
+and roll back if the list timestamp write fails. Supplied credentials bind to the requester.
+Invite characters now use node:crypto randomInt rather than Math.random; the official Node
+v22 documentation confirms bounded selection avoids modulo bias:
+https://github.com/nodejs/node/blob/v22.x/doc/api/crypto.md#cryptorandomintmin-max-callback .
+This is not a durable idempotency receipt for explicit link regeneration.
+
+Mounted Android paste-to-join now recognizes raw codes, native invite URIs and web ?join=
+links without contacting the pasted host. It captures input/repository before dispatch,
+uses a composition-owned coroutine and respects cancellation. The deep-link sheet ViewModel
+has a surface lease, cancelable preview/join work, immutable account ownership, single-flight
+join and one-shot result consumption. A previous sheet's result/disposal cannot navigate or
+clear its successor. Preview transport/permission errors offer Retry rather than falsely
+claiming the invite was reset. Typed API failures survive the repository adapter. Confirmed
+join results no longer wait for an inbox refresh; background refresh exceptions are contained
+and their debounce slot is cancellation-safe without erasing a successor's slot.
+
+Swift invite previews distinguish definitive invalid links from transient failures, retain
+account/navigation ownership across both join and opening, and keep confirmed membership
+when only opening fails. Channel actions now also bind ownership before task enqueue. Group
+info's invite controls fence duplicate/late rotations, cancel on dismissal, reject stale
+detail reloads, disable copying during rotation, and hide the old code after an unknown
+rotation result; Get invite link lazily retrieves the current code without forcing another
+rotation. Other GroupInfo metadata actions remain under review, not implicitly fixed.
+
+Added native parser, lease/cancellation/retry/outcome and invalid-preview regressions, plus
+three real SQLite invite lifecycle contracts. Full server 148/148 and targeted membership/
+invite 16/16 pass (/home/user/invite-recovery-server.log); strict helper TypeScript and eleven
+native syntax checks pass. New native test execution is pending. Historical native evidence:
+94c7404 iOS succeeded after the async fixture fix; 04b33a9 iOS build/tests/archive and Android
+build succeeded (Android instrumented jobs were still pending when inspected). Those runs
+do not validate these newer invite edits. Autumn palette unchanged.

@@ -88,4 +88,15 @@ class PulseDeepLinkTest {
         assertEquals(PulseDeepLink.Room("c1", "m1"), PulseDeepLink.parse("pulse://room/c1?x=1&jump=m1"))
         assertEquals(PulseDeepLink.User("u1"), PulseDeepLink.parse("pulse://user/u1?jump=m1"))
     }
+    @Test fun `pasted invite links extract only a valid invite code`() {
+        for (raw in listOf(" abcd1234 ", "pulse://invite/abcd1234?from=share", "pulse:join/ABCD1234",
+            "https://pulse.test/?join=abcd1234&other=1", "https://pulse.test/invite/ABCD1234/")) {
+            assertEquals("ABCD1234", PulseDeepLink.inviteCode(raw))
+        }
+        for (raw in listOf(null, "", "abc", "pulse://room/ABCD1234", "javascript:ABCD1234",
+            "https://pulse.test/user/ABCD1234", "https://pulse.test/?join=%ZZ")) {
+            assertNull(PulseDeepLink.inviteCode(raw))
+        }
+    }
+
 }

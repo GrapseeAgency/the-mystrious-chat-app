@@ -8,6 +8,8 @@ import {
   addGroupMembers,
   GroupMembershipError,
   joinChannel,
+  groupInvite,
+  joinGroupInvite,
   leaveGroup,
   removeGroupMember,
   setGroupRole,
@@ -19,14 +21,14 @@ async function fixture(run) {
   try {
     for (const sql of [
       'CREATE TABLE User(id TEXT PRIMARY KEY)',
-      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, isGroup BOOLEAN, broadcastMode BOOLEAN, updatedAt DATETIME)',
+      'CREATE TABLE Conversation(id TEXT PRIMARY KEY, isGroup BOOLEAN, broadcastMode BOOLEAN, updatedAt DATETIME, inviteCode TEXT UNIQUE)',
       `CREATE TABLE ConversationParticipant(id TEXT PRIMARY KEY, userId TEXT, conversationId TEXT,
         role TEXT DEFAULT 'member', joinedAt DATETIME DEFAULT CURRENT_TIMESTAMP, lastReadAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         pinnedAt DATETIME, mutedUntil DATETIME, archivedAt DATETIME, handRaisedAt DATETIME,
         screenPrivacy BOOLEAN DEFAULT false, manualUnread BOOLEAN DEFAULT false, draft TEXT,
         UNIQUE(userId,conversationId))`,
       "INSERT INTO User VALUES ('a'),('b'),('c'),('d')",
-      "INSERT INTO Conversation VALUES ('group',true,false,CURRENT_TIMESTAMP),('channel',true,true,CURRENT_TIMESTAMP),('dm',false,false,CURRENT_TIMESTAMP)",
+      "INSERT INTO Conversation(id,isGroup,broadcastMode,updatedAt) VALUES ('group',true,false,CURRENT_TIMESTAMP),('channel',true,true,CURRENT_TIMESTAMP),('dm',false,false,CURRENT_TIMESTAMP)",
       `INSERT INTO ConversationParticipant(id,userId,conversationId,role,joinedAt,lastReadAt) VALUES
         ('ga','a','group','admin',1577836800000,1577836800000),('gb','b','group','member',1577923200000,1577836800000),
         ('gc','c','group','member',1578009600000,1577836800000),
@@ -266,3 +268,62 @@ test('actual targeted PATCH handler projects private fields for the requesting a
   assert.equal(denied.status, 403)
   assert.equal(calls.length, 1)
 })
+
+test('lazy invite creation converges and only a current admin may rotate it', () =>
+  fixture(async (db) => {
+    let sequence = 0
+    const mint = () => `CODE${++sequence}`
+    const results = await Promise.allSettled([
+      groupInvite(db, 'group', 'a', false, mint),
+      groupInvite(db, 'group', 'a', false, mint),
+    ])
+    validRace(results)
+    const current = await groupInvite(db, 'group', 'a', false, mint)
+    for (const result of results)
+      if (result.status === 'fulfilled') assert.equal(result.value.inviteCode, current.inviteCode)
+    assert.equal((await groupInvite(db, 'group', 'a', false, mint)).changed, false)
+    await assert.rejects(groupInvite(db, 'group', 'b', true, mint), { status: 403 })
+    await assert.rejects(
+      groupInvite(db, 'group', 'a', true, () => current.inviteCode),
+      { status: 503 },
+    )
+    const next = await groupInvite(db, 'group', 'a', true, mint)
+    assert.notEqual(next.inviteCode, current.inviteCode)
+    await assert.rejects(joinGroupInvite(db, current.inviteCode, 'd'), { status: 404 })
+  }))
+test('duplicate invite redemption keeps one membership and preserves admin/read state', () =>
+  fixture(async (db) => {
+    const { inviteCode } = await groupInvite(db, 'group', 'a', false, () => 'INVITE01')
+    const before = await member(db, 'group', 'a')
+    assert.equal((await joinGroupInvite(db, inviteCode, 'a')).alreadyMember, true)
+    assert.deepEqual(await member(db, 'group', 'a'), before)
+    validRace(
+      await Promise.allSettled([
+        joinGroupInvite(db, inviteCode, 'd'),
+        joinGroupInvite(db, inviteCode, 'd'),
+      ]),
+    )
+    assert.equal((await joinGroupInvite(db, inviteCode.toLowerCase(), 'd')).alreadyMember, true)
+    assert.equal(
+      await db.conversationParticipant.count({ where: { conversationId: 'group', userId: 'd' } }),
+      1,
+    )
+  }))
+test('redemption list-update failure rolls back membership and a revoked invite stays revoked', () =>
+  fixture(async (db) => {
+    await groupInvite(db, 'group', 'a', false, () => 'INVITE01')
+    await db.$executeRawUnsafe(
+      "CREATE TRIGGER no_bump BEFORE UPDATE ON Conversation BEGIN SELECT RAISE(ABORT,'storage failed'); END",
+    )
+    await assert.rejects(joinGroupInvite(db, 'INVITE01', 'd'))
+    assert.equal(await member(db, 'group', 'd'), null)
+    await db.$executeRawUnsafe('DROP TRIGGER no_bump')
+    const results = await Promise.allSettled([
+      joinGroupInvite(db, 'INVITE01', 'd'),
+      groupInvite(db, 'group', 'a', true, () => 'INVITE02'),
+    ])
+    for (const result of results)
+      if (result.status === 'rejected') assert.ok([404, 409].includes(result.reason.status))
+    await groupInvite(db, 'group', 'a', true, () => 'INVITE03')
+    await assert.rejects(joinGroupInvite(db, 'INVITE01', 'd'), { status: 404 })
+  }))

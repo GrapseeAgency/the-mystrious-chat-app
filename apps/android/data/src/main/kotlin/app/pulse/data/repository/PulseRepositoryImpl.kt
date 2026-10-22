@@ -673,16 +673,28 @@ class PulseRepositoryImpl constructor(
         return rows.mapNotNull { stored[it.id]?.toDomain() }
     }
 
-    private var refreshScheduled = false
+    private val refreshScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    /** Debounced inbox refetch - keeps previews/unreads honest after live hits. */
+    /** A background cache failure must not crash the app after an acknowledged action. */
     private fun scheduleConversationsRefresh() {
-        if (refreshScheduled) return
-        refreshScheduled = true
-        scope.launch {
-            delay(500)
-            refreshScheduled = false
-            if (isActive) refreshConversations()
+        if (!refreshScheduled.compareAndSet(false, true)) return
+        val awaitingDelay = java.util.concurrent.atomic.AtomicBoolean(true)
+        val job = scope.launch {
+            try {
+                delay(500)
+                awaitingDelay.set(false)
+                refreshScheduled.set(false)
+                if (isActive) refreshConversations()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(TAG, "Inbox refresh remains unconfirmed", error)
+            }
+        }
+        job.invokeOnCompletion {
+            // Also runs when cancellation prevents the coroutine body from starting.
+            // A completed old request must not clear a newer debounce slot.
+            if (awaitingDelay.compareAndSet(true, false)) refreshScheduled.set(false)
         }
     }
 
@@ -3776,17 +3788,18 @@ class PulseRepositoryImpl constructor(
                     alreadyMember = r.value.alreadyMember,
                 ),
             )
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
     override suspend fun joinInvite(code: String): Result<InviteJoinOutcome> =
         when (val r = api.inviteJoin(code, viewerId ?: "")) {
             is PulseResult.Success -> {
-                // The relay bumps every participant's list - refresh ours now.
-                runCatching { refreshConversations() }
-                Result.success(InviteJoinOutcome(r.value.conversationId, r.value.alreadyMember))
+                // Joining is acknowledged independently of a slower/failing inbox refresh.
+                scheduleConversationsRefresh()
+                if (r.value.conversationId.isBlank()) Result.failure(IllegalStateException("Couldn't identify the joined chat. Check Chats before retrying."))
+                else Result.success(InviteJoinOutcome(r.value.conversationId, r.value.alreadyMember))
             }
-            is PulseResult.Failure -> Result.failure(IllegalStateException("${r.kind}: ${r.message}"))
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(r))
         }
 
     override suspend fun channels(mineOnly: Boolean): Result<List<Channel>> =

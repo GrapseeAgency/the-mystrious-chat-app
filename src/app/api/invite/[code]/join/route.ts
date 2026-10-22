@@ -1,65 +1,38 @@
-// /api/invite/[code]/join - redeem an invite code (join group)
+// Invite redemption rechecks the code and membership in the write transaction.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { joinGroupInvite, GroupMembershipError } from '@/lib/group-membership'
+import { bearerToken } from '@/lib/session-token'
+import { requireActionOwner } from '@/lib/wallet-authorization'
 import { notifySocket, safeJson, strField } from '@/lib/serializers'
-
 export const dynamic = 'force-dynamic'
-
 interface RouteCtx {
   params: Promise<{ code: string }>
 }
-
-const CODE_RE = /^[A-Z0-9]{4,16}$/
-
-/**
- * POST /api/invite/[code]/join  body { userId }
- * → 200 { conversationId, alreadyMember } | 404 unknown/invalid code
- * Idempotent: joining twice returns the conversation with alreadyMember:true.
- * New joiner lands as role:"member" with lastReadAt=now (fresh unread state).
- * Relays conversation:updated to ALL participants (incl. the joiner) so every
- * open client refreshes its lists immediately.
- */
 export async function POST(req: Request, { params }: RouteCtx) {
-  const { code: raw } = await params
-  const code = raw.toUpperCase()
-  if (!CODE_RE.test(code)) {
-    return NextResponse.json({ error: 'Invalid invite code.' }, { status: 400 })
+  const { code } = await params
+  const body = await safeJson(req),
+    userId = strField(body.userId)
+  if (!userId) return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
+  if (bearerToken(req)) {
+    const denied = await requireActionOwner(req, userId, 'group invite')
+    if (denied) return denied
   }
-
-  const body = await safeJson(req)
-  const userId = strField(body.userId)
-  if (!userId) {
-    return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
-  }
-
-  const conv = await db.conversation.findUnique({
-    where: { inviteCode: code },
-    include: { participants: { select: { userId: true } } },
-  })
-  if (!conv || !conv.isGroup) {
-    return NextResponse.json({ error: 'This invite link is no longer valid.' }, { status: 404 })
-  }
-
-  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } })
-  if (!user) {
-    return NextResponse.json({ error: 'Unknown user.' }, { status: 404 })
-  }
-
-  const alreadyMember = conv.participants.some((p) => p.userId === userId)
-  if (!alreadyMember) {
-    await db.conversationParticipant.create({
-      data: { userId, conversationId: conv.id, role: 'member', lastReadAt: new Date() },
+  try {
+    const result = await joinGroupInvite(db, code, userId)
+    if (!result.alreadyMember)
+      await notifySocket('conversation:updated', result.recipients, {
+        type: 'conversation:updated',
+        conversationId: result.conversationId,
+        recipientIds: result.recipients,
+      })
+    return NextResponse.json({
+      conversationId: result.conversationId,
+      alreadyMember: result.alreadyMember,
     })
-    // bump the group so it sorts to the top of everyone's list
-    await db.conversation.update({ where: { id: conv.id }, data: { updatedAt: new Date() } })
+  } catch (error) {
+    if (error instanceof GroupMembershipError)
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
-
-  const recipients = Array.from(new Set([...conv.participants.map((p) => p.userId), userId]))
-  await notifySocket('conversation:updated', recipients, {
-    type: 'conversation:updated',
-    conversationId: conv.id,
-    recipientIds: recipients,
-  })
-
-  return NextResponse.json({ conversationId: conv.id, alreadyMember })
 }

@@ -70,6 +70,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -882,10 +883,9 @@ private fun FolderMembershipSheet(
 // Invite join sheet (F-DL / web ?join= parity)
 
 @HiltViewModel
-class JoinInviteViewModel @Inject constructor(
-    private val repo: PulseRepository,
-) : ViewModel() {
+class JoinInviteViewModel @Inject constructor(private val repo: PulseRepository) : ViewModel() {
     data class State(
+        val code: String? = null,
         val loading: Boolean = true,
         val preview: InvitePreview? = null,
         val invalid: Boolean = false,
@@ -893,26 +893,100 @@ class JoinInviteViewModel @Inject constructor(
         val joined: InviteJoinOutcome? = null,
         val error: String? = null,
     )
-
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
+    private var lease = 0L
+    private var loadRevision = 0L
+    private var boundCode: String? = null
+    private var bound: PulseRepository? = null
+    private var owner: String? = null
+    private var loadJob: kotlinx.coroutines.Job? = null
+    private var joinJob: kotlinx.coroutines.Job? = null
+
+    fun bind(code: String): Long {
+        loadJob?.cancel(); joinJob?.cancel()
+        lease++
+        boundCode = code
+        bound = repo.boundToCurrentAccount()
+        owner = bound?.viewerId
+        load(code)
+        return lease
+    }
+
+    fun release(ticket: Long) {
+        if (ticket != lease) return
+        lease++
+        loadJob?.cancel(); joinJob?.cancel()
+        boundCode = null; bound = null; owner = null
+        _state.value = State()
+    }
+
+    private fun owns(ticket: Long, code: String, target: PulseRepository): Boolean =
+        ticket == lease && boundCode == code && bound === target && target.viewerId == owner
 
     fun load(code: String) {
-        viewModelScope.launch {
-            _state.value = State(loading = true)
-            repo.invitePreview(code)
-                .onSuccess { preview -> _state.value = State(loading = false, preview = preview) }
-                .onFailure { _state.value = State(loading = false, invalid = true) }
+        val target = bound ?: return
+        if (boundCode != code || _state.value.joining) return
+        loadJob?.cancel()
+        val ticket = lease
+        val revision = ++loadRevision
+        _state.value = State(code = code)
+        loadJob = viewModelScope.launch {
+            try {
+                if (!owns(ticket, code, target)) return@launch
+                val result = target.invitePreview(code)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!owns(ticket, code, target) || revision != loadRevision) return@launch
+                result.fold(
+                    onSuccess = { preview ->
+                        _state.value = if (preview.conversationId.isBlank()) State(code = code, loading = false,
+                            error = "The server didn't identify this invite's group. Retry loading it.")
+                        else State(code = code, loading = false, preview = preview)
+                    },
+                    onFailure = { error ->
+                        val status = (error as? app.pulse.domain.model.PulseApiException)?.status
+                        _state.value = State(code = code, loading = false, invalid = status in listOf(400, 404, 410),
+                            error = error.message ?: "Couldn't load this invite. Check the connection and retry.")
+                    },
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (owns(ticket, code, target) && revision == loadRevision) _state.value = State(code = code, loading = false,
+                    error = "Couldn't load this invite. Check the connection and retry.")
+            }
         }
     }
 
     fun join(code: String) {
-        viewModelScope.launch {
-            _state.value = _state.value.copy(joining = true, error = null)
-            repo.joinInvite(code)
-                .onSuccess { outcome -> _state.value = _state.value.copy(joining = false, joined = outcome) }
-                .onFailure { e -> _state.value = _state.value.copy(joining = false, error = e.message ?: "Could not join - try again") }
+        val target = bound ?: return
+        if (boundCode != code || _state.value.joining || _state.value.loading || owner.isNullOrBlank() || target.viewerId != owner) return
+        val ticket = lease
+        val preview = _state.value.preview ?: return
+        _state.value = _state.value.copy(joining = true, joined = null, error = null)
+        joinJob = viewModelScope.launch {
+            try {
+                if (!owns(ticket, code, target)) return@launch
+                val result = if (preview.alreadyMember) Result.success(InviteJoinOutcome(preview.conversationId, true)) else target.joinInvite(code)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!owns(ticket, code, target)) return@launch
+                result.fold(
+                    onSuccess = { outcome ->
+                        _state.value = if (outcome.conversationId.isNotBlank() && outcome.conversationId == preview.conversationId)
+                            _state.value.copy(joining = false, joined = outcome)
+                        else _state.value.copy(joining = false, error = "The joined chat didn't match the preview. Refresh Chats before trying again.")
+                    },
+                    onFailure = { error -> _state.value = _state.value.copy(joining = false, error = error.message ?: "Could not join - try again") },
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
+                if (owns(ticket, code, target)) _state.value = _state.value.copy(joining = false, error = "Couldn't confirm joining. Refresh Chats before retrying.")
+            }
         }
+    }
+
+    fun consumeJoined(code: String, expected: InviteJoinOutcome): Boolean {
+        val target = bound ?: return false
+        if (!owns(lease, code, target) || _state.value.joined !== expected) return false
+        _state.value = _state.value.copy(joined = null)
+        return true
     }
 }
 
@@ -926,11 +1000,16 @@ fun JoinInviteSheet(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    LaunchedEffect(code) { viewModel.load(code) }
-    LaunchedEffect(state.joined) {
+    androidx.compose.runtime.DisposableEffect(viewModel, code) {
+        val lease = viewModel.bind(code)
+        onDispose { viewModel.release(lease) }
+    }
+    LaunchedEffect(code, state.joined) {
         state.joined?.let {
-            onDismiss()
-            onOpenRoom(it.conversationId)
+            if (viewModel.consumeJoined(code, it)) {
+                onDismiss()
+                onOpenRoom(it.conversationId)
+            }
         }
     }
 
@@ -938,7 +1017,7 @@ fun JoinInviteSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 30.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             when {
-                state.loading -> CircularProgressIndicator(Modifier.size(24.dp))
+                state.code != code || state.loading -> CircularProgressIndicator(Modifier.size(24.dp))
                 state.invalid -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Link not valid", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                     Spacer(Modifier.height(6.dp))
@@ -948,6 +1027,11 @@ fun JoinInviteSheet(
                         fontSize = 13.sp,
                     )
                     Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = onDismiss) { Text("Not now") }
+                }
+                state.preview == null -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(state.error ?: "Couldn't load this invite", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { viewModel.load(code) }) { Text("Retry") }
                     TextButton(onClick = onDismiss) { Text("Not now") }
                 }
                 else -> {
@@ -973,11 +1057,7 @@ fun JoinInviteSheet(
                     Spacer(Modifier.height(12.dp))
                     Button(
                         onClick = {
-                            if (preview?.alreadyMember == true) {
-                                preview.conversationId.let { id -> onDismiss(); onOpenRoom(id) }
-                            } else {
-                                viewModel.join(code)
-                            }
+                            viewModel.join(code)
                         },
                         enabled = !state.joining,
                         modifier = Modifier.fillMaxWidth(),

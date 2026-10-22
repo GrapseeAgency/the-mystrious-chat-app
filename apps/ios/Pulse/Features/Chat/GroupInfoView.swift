@@ -37,6 +37,10 @@ struct GroupInfoView: View {
     @State private var broadcastOpen = false
     @State private var inviteCode: String?
     @State private var inviteBusy = false
+    @State private var surfaceEpoch: UUID?
+    @State private var loadTicket = UUID()
+    @State private var inviteTask: Task<Void, Never>?
+    @State private var inviteTicket = UUID()
     // R2-B - group photo edit (web R33-b "Edit photo" overlay parity)
     @State private var photoItem: PhotosPickerItem?
     @State private var photoBusy = false
@@ -103,18 +107,29 @@ struct GroupInfoView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task { await load() }
+        .onAppear {
+            surfaceEpoch = session.sessionGeneration
+            Task { await load() }
+        }
+        .onDisappear { retireInviteWork() }
+        .onChange(of: session.sessionGeneration) { _, _ in retireInviteWork(); dismiss() }
     }
 
     // data
 
     private func load() async {
+        let epoch = session.sessionGeneration, api = session.api, owner = viewerId, ticket = UUID()
+        guard surfaceEpoch == epoch, !Task.isCancelled else { return }
+        loadTicket = ticket
         phase = detail == nil ? .loading : phase
         do {
-            detail = try await session.api.conversationDetail(id: conversation.id, userId: viewerId)
+            let fresh = try await api.conversationDetail(id: conversation.id, userId: owner)
+            guard surfaceEpoch == epoch, session.sessionGeneration == epoch, loadTicket == ticket, !Task.isCancelled else { return }
+            detail = fresh
             phase = .loaded
-            if let code = detail?.inviteCode { inviteCode = code }
+            inviteCode = fresh.inviteCode
         } catch {
+            guard surfaceEpoch == epoch, session.sessionGeneration == epoch, loadTicket == ticket, !Task.isCancelled else { return }
             if detail == nil { phase = .failed(RoomViewModel.describe(error)) }
         }
     }
@@ -328,6 +343,7 @@ struct GroupInfoView: View {
                         } label: {
                             Label("Copy pulse://invite/\(code)", systemImage: "doc.on.doc")
                         }
+                        .disabled(inviteBusy)
                         Button {
                             rotateInvite(regenerate: true)
                         } label: {
@@ -345,7 +361,7 @@ struct GroupInfoView: View {
                             if inviteBusy {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Label("Create invite link", systemImage: "link.badge.plus")
+                                Label("Get invite link", systemImage: "link.badge.plus")
                             }
                         }
                         .disabled(inviteBusy)
@@ -751,16 +767,32 @@ struct GroupInfoView: View {
         }
     }
 
+    private func retireInviteWork() {
+        surfaceEpoch = nil; loadTicket = UUID(); inviteTicket = UUID()
+        inviteTask?.cancel(); inviteTask = nil; inviteBusy = false
+    }
+
     private func rotateInvite(regenerate: Bool) {
-        Task {
-            inviteBusy = true
-            defer { inviteBusy = false }
+        let epoch = session.sessionGeneration, api = session.api, owner = viewerId, ticket = UUID()
+        guard surfaceEpoch == epoch, !inviteBusy, isAdmin else { return }
+        inviteTicket = ticket
+        inviteBusy = true // claim before launching; two taps cannot enqueue two rotations
+        loadTicket = UUID()
+        inviteTask = Task { @MainActor in
+            defer { if inviteTicket == ticket { inviteBusy = false; inviteTask = nil } }
             do {
-                inviteCode = try await session.api.inviteCreate(conversation.id, requesterId: viewerId, regenerate: regenerate)
+                guard surfaceEpoch == epoch, session.sessionGeneration == epoch, inviteTicket == ticket, !Task.isCancelled else { return }
+                let next = try await api.inviteCreate(conversation.id, requesterId: owner, regenerate: regenerate)
+                guard surfaceEpoch == epoch, session.sessionGeneration == epoch, inviteTicket == ticket, !Task.isCancelled else { return }
+                loadTicket = UUID() // a pre-rotation detail load cannot restore the retired code
+                inviteCode = next
                 PulseHaptics.success()
                 session.toasts.show(regenerate ? "Invite link regenerated" : "Invite link created")
             } catch {
-                session.toasts.show(RoomViewModel.describe(error))
+                guard surfaceEpoch == epoch, session.sessionGeneration == epoch, inviteTicket == ticket, !Task.isCancelled else { return }
+                loadTicket = UUID()
+                inviteCode = nil // an unconfirmed rotation may already have retired the displayed code
+                session.toasts.show("Couldn't confirm the invite link. Get the current link again before sharing it.")
             }
         }
     }

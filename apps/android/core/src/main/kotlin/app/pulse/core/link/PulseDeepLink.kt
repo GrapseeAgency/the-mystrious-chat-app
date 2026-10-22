@@ -41,6 +41,23 @@ sealed interface PulseDeepLink {
                 }
             }
 
+        /** User-pasted raw codes, native links and web ?join= links; never fetch the pasted host. */
+        fun inviteCode(raw: String?): String? {
+            fun valid(value: String?): String? = value?.trim()?.uppercase(java.util.Locale.ROOT)
+                ?.takeIf { Regex("[A-Z0-9]{4,16}").matches(it) }
+            valid(raw)?.let { return it }
+            (parse(raw) as? Invite)?.let { return valid(it.code) }
+            val uri = runCatching { java.net.URI(raw?.trim().orEmpty()) }.getOrNull() ?: return null
+            if (uri.scheme?.lowercase() !in listOf("https", "http")) return null
+            fun decode(value: String) = runCatching { java.net.URLDecoder.decode(value, "UTF-8") }.getOrNull()
+            uri.rawQuery?.split('&')?.forEach { item ->
+                if (decode(item.substringBefore('=')) == "join") return valid(decode(item.substringAfter('=', "")))
+            }
+            val parts = uri.rawPath.orEmpty().trim('/').split('/')
+            if (parts.size == 2 && parts[0].lowercase() in listOf("invite", "join", "group")) return valid(decode(parts[1]))
+            return null
+        }
+
         /** Parse a URI handed over by the system (onCreate/onNewIntent). */
         fun parse(rawUri: String?): PulseDeepLink? {
             if (rawUri.isNullOrBlank()) return null

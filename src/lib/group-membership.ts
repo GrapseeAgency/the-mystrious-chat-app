@@ -235,3 +235,78 @@ export function leaveGroup(db: PrismaClient, room: string, actor: string, channe
     return { promotedUserId, recipients: await recipients(tx, room) }
   })
 }
+
+/** Lazy creation must converge; a preflight read must not mint several dead links. */
+export function groupInvite(
+  db: PrismaClient,
+  room: string,
+  actor: string,
+  regenerate: boolean,
+  mint: () => string,
+) {
+  return transaction(db, async (tx) => {
+    await group(tx, room)
+    await admin(tx, room, actor)
+    const current = await tx.conversation.findUniqueOrThrow({
+      where: { id: room },
+      select: { inviteCode: true },
+    })
+    let code = current.inviteCode
+    if (regenerate || !code) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const candidate = mint()
+        if (/^[A-Z0-9]{4,16}$/.test(candidate) && candidate !== current.inviteCode) {
+          code = candidate
+          break
+        }
+      }
+      if (!code || code === current.inviteCode)
+        throw new GroupMembershipError(503, 'Could not generate a new invite link. Try again.')
+      await tx.conversation.update({
+        where: { id: room },
+        data: { inviteCode: code },
+        select: { id: true },
+      })
+    }
+    return {
+      inviteCode: code,
+      changed: code !== current.inviteCode,
+      recipients: await recipients(tx, room),
+    }
+  })
+}
+
+/** Redemption and rotation both participate in SQLite's serializable write ordering. */
+export function joinGroupInvite(db: PrismaClient, rawCode: string, actor: string) {
+  const code = rawCode.trim().toUpperCase()
+  if (!/^[A-Z0-9]{4,16}$/.test(code))
+    return Promise.reject(new GroupMembershipError(400, 'Invalid invite code.'))
+  return transaction(db, async (tx) => {
+    const conversation = await tx.conversation.findUnique({
+      where: { inviteCode: code },
+      select: { id: true, isGroup: true },
+    })
+    if (!conversation?.isGroup)
+      throw new GroupMembershipError(404, 'This invite link is no longer valid.')
+    if (!(await tx.user.findUnique({ where: { id: actor }, select: { id: true } })))
+      throw new GroupMembershipError(404, 'Unknown user.')
+    const existing = await participant(tx, conversation.id, actor)
+    if (!existing) {
+      const now = new Date()
+      await tx.conversationParticipant.create({
+        data: { userId: actor, conversationId: conversation.id, role: 'member', lastReadAt: now },
+        select: { id: true },
+      })
+      await tx.conversation.update({
+        where: { id: conversation.id },
+        data: { updatedAt: now },
+        select: { id: true },
+      })
+    }
+    return {
+      conversationId: conversation.id,
+      alreadyMember: existing !== null,
+      recipients: await recipients(tx, conversation.id),
+    }
+  })
+}

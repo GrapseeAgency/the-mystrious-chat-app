@@ -3,6 +3,7 @@
 // input normalization, safe JSON parsing, socket relay.
 // Server-only - never import from client components.
 import path from 'node:path'
+import { randomInt } from 'node:crypto'
 import { redactDeletedMessage, quoteDisclosure } from '@/lib/message-disclosure'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
@@ -605,11 +606,11 @@ export const DOC_MAX_BYTES = 10_485_760
 const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 export const INVITE_CODE_LENGTH = 8
 
-/** Random invite code, e.g. "K7MQX2AB" (crypto-free is fine at this scale). */
+/** Invite codes authorize membership; select characters with the platform CSPRNG. */
 export function generateInviteCode(): string {
   let code = ''
   for (let i = 0; i < INVITE_CODE_LENGTH; i += 1) {
-    code += INVITE_ALPHABET[Math.floor(Math.random() * INVITE_ALPHABET.length)]
+    code += INVITE_ALPHABET[randomInt(INVITE_ALPHABET.length)]
   }
   return code
 }

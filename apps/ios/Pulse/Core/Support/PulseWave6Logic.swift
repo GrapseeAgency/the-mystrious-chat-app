@@ -170,3 +170,13 @@ public enum PulseChannelDirectory {
         return channel.preview ?? "No description yet"
     }
 }
+
+
+/// A network/permission/server failure is not proof that an invite was revoked.
+public enum PulseInviteRules {
+    public static func isInvalidPreview(_ error: Error) -> Bool {
+        guard let failure = error as? PulseAPIClient.Failure else { return false }
+        if let status = failure.status { return [400, 404, 410].contains(status) }
+        return failure.kind == .notFound
+    }
+}

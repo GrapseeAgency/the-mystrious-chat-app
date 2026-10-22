@@ -31,6 +31,8 @@ struct ChannelsView: View {
     @State private var photoPath: String?
     @State private var photoBusy = false
     @State private var mounted = false
+    @State private var ownerEpoch: UUID?
+    @State private var initialLoad: Task<Void, Never>?
     @State private var loadError: String?
     @State private var loadTicket = UUID()
     @State private var actionTicket = UUID()
@@ -89,7 +91,14 @@ struct ChannelsView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .task { mounted = true; await reload() }
+        .onAppear {
+            mounted = true
+            if ownerEpoch != session.sessionGeneration {
+                channels = []; optimistic = [:]; name = ""; descriptionText = ""; photoPath = nil; mode = .directory
+            }
+            ownerEpoch = session.sessionGeneration
+            initialLoad = Task { await reload() }
+        }
         .onDisappear { mounted = false; cancelWork() }
         .onChange(of: session.sessionGeneration) { _, _ in mounted = false; cancelWork(); dismiss() }
         .onChange(of: photoItem) { _, item in
@@ -384,11 +393,12 @@ struct ChannelsView: View {
     // actions
 
     private func owns(_ epoch: UUID) -> Bool {
-        mounted && !Task.isCancelled && session.sessionGeneration == epoch
+        mounted && ownerEpoch == epoch && !Task.isCancelled && session.sessionGeneration == epoch
     }
 
     private func beginAction(_ action: @escaping @MainActor () async -> Void) {
-        guard mounted, actionTask == nil else { return }
+        let epoch = session.sessionGeneration
+        guard owns(epoch), actionTask == nil else { return }
         let ticket = UUID()
         actionTicket = ticket
         loadTicket = UUID() // an older list response cannot undo this action
@@ -397,13 +407,14 @@ struct ChannelsView: View {
             defer {
                 if actionTicket == ticket { actionTask = nil; busyId = nil }
             }
-            guard !Task.isCancelled, mounted else { return }
+            guard owns(epoch) else { return }
             await action()
         }
     }
 
     private func cancelWork() {
         actionTicket = UUID(); loadTicket = UUID(); photoTicket = UUID()
+        initialLoad?.cancel(); initialLoad = nil
         actionTask?.cancel(); actionTask = nil
         photoTask?.cancel(); photoTask = nil
         busyId = nil; photoBusy = false
@@ -418,7 +429,7 @@ struct ChannelsView: View {
     }
 
     private func reload() async {
-        guard mounted, !Task.isCancelled else { return }
+        guard owns(session.sessionGeneration) else { return }
         let api = session.api, epoch = session.sessionGeneration, ticket = UUID()
         loadTicket = ticket
         loading = true
@@ -436,7 +447,7 @@ struct ChannelsView: View {
     }
 
     private func subscribe(_ channel: WireChannelSummary) async {
-        guard busyId == nil, mounted, !Task.isCancelled else { return }
+        guard busyId == nil, owns(session.sessionGeneration) else { return }
         let api = session.api, epoch = session.sessionGeneration
         busyId = channel.id
         let snapshot = optimistic[channel.id] ?? channel
@@ -458,7 +469,7 @@ struct ChannelsView: View {
     }
 
     private func leave(_ channel: WireChannelSummary) async {
-        guard busyId == nil, mounted, !Task.isCancelled else { return }
+        guard busyId == nil, owns(session.sessionGeneration) else { return }
         let api = session.api, epoch = session.sessionGeneration
         busyId = channel.id
         do {
@@ -502,7 +513,7 @@ struct ChannelsView: View {
     private func create() async {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         if let error = PulseChannelDraft.nameError(trimmedName) { nameError = error; return }
-        guard busyId == nil, !photoBusy, mounted, !Task.isCancelled else { return }
+        guard busyId == nil, !photoBusy, owns(session.sessionGeneration) else { return }
         nameError = nil
         session.noteRoomNavigationIntent()
         let api = session.api, epoch = session.sessionGeneration, navigation = session.roomNavigationGeneration

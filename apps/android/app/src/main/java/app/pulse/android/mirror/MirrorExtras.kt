@@ -1042,6 +1042,8 @@ internal fun MirrorJoinSheet(
     onOpened: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    val actionRepository = remember(repository) { repository.boundToCurrentAccount() }
     var code by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
@@ -1058,6 +1060,7 @@ internal fun MirrorJoinSheet(
         ) {
             BasicTextField(
                 value = code,
+                enabled = !busy,
                 onValueChange = { code = it },
                 singleLine = true,
                 textStyle = TextStyle(color = MirrorArt.Text, fontSize = 15.sp),
@@ -1081,20 +1084,26 @@ internal fun MirrorJoinSheet(
                 .clip(CircleShape)
                 .background(if (code.isNotBlank() && !busy) MirrorArt.Accent else MirrorArt.White7)
                 .clickable(enabled = code.isNotBlank() && !busy) {
-                    busy = true
-                    error = ""
-                    CoroutineScope(Dispatchers.IO).launch {
-                        val clean = code.trim().substringAfterLast('/').trim()
-                        repository.joinInvite(clean)
-                            .onSuccess { outcome ->
-                                kotlinx.coroutines.withContext(Dispatchers.Main) { onOpened(outcome.conversationId) }
-                            }
-                            .onFailure {
-                                kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                    error = it.message ?: "That code did not work"
-                                    busy = false
+                    val clean = app.pulse.core.link.PulseDeepLink.inviteCode(code)
+                    if (clean == null) {
+                        error = "Paste a valid invite code or invite link"
+                    } else {
+                        val target = actionRepository
+                        val owner = target.viewerId
+                        busy = true
+                        error = ""
+                        actionScope.launch {
+                            try {
+                                if (owner.isNullOrBlank() || target.viewerId != owner) return@launch
+                                app.pulse.domain.sync.confirmedAction({ target.joinInvite(clean) }) { outcome ->
+                                    if (target.viewerId == owner) onOpened(outcome.conversationId)
                                 }
-                            }
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                error = failure.message ?: "Couldn't join. Check the connection and try again."
+                            } finally { busy = false }
+                        }
                     }
                 },
             contentAlignment = Alignment.Center,
