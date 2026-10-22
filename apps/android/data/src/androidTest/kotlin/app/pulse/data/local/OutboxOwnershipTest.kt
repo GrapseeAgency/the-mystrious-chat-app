@@ -48,6 +48,29 @@ class OutboxOwnershipTest {
             assertEquals(55, db.outboxDao().allOwned("a").size)
         } finally { db.close() }
     }
+    @Test fun snapshotDiscardRejectsStaleRetryAndPreservesOtherOwnersAndNewRows() = runBlocking {
+        val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
+        try {
+            suspend fun enqueue(id: String) {
+                db.outboxDao().insert(OutboxEntity(conversationId = "room", clientId = id, content = id, createdAt = "stamp"))
+                db.messageDao().upsertAll(listOf(MessageEntity.from(Message(id = "local_$id", conversationId = "room",
+                    authorId = "owner", authorName = "Owner", kind = Message.Kind.TEXT, body = id, createdAt = "stamp"))))
+            }
+            enqueue("first")
+            enqueue("later")
+            val dao = db.outboxDao()
+            assertEquals(0, dao.discardOwnedSnapshot("foreign", "room", "first", "stamp", null))
+            assertEquals(0, dao.discardOwnedSnapshot("owner", "wrong-room", "first", "stamp", null))
+            assertEquals(0, dao.discardOwnedSnapshot("owner", "room", "first", "wrong-stamp", null))
+            dao.markFailed("first", "refused")
+            assertEquals(0, dao.discardOwnedSnapshot("owner", "room", "first", "stamp", null))
+            assertEquals(1, dao.retryFailed("first", "owner"))
+            assertEquals(0, dao.discardOwnedSnapshot("owner", "room", "first", "stamp", "refused"))
+            assertEquals(1, dao.discardOwnedSnapshot("owner", "room", "first", "stamp", null))
+            assertEquals(listOf("later"), dao.allOwned("owner").map { it.clientId })
+        } finally { db.close() }
+    }
+
     @Test fun heldRoomExclusionPrecedesLimitAndCountsKeepAllOwnedPendingIntent() = runBlocking {
         val db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(), PulseDatabase::class.java).build()
         try {

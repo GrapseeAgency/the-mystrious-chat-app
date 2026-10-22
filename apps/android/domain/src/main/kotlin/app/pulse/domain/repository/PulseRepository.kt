@@ -294,6 +294,9 @@ interface PulseRepository {
     /** Data & Storage manager - drop ONE held outbox row (+ its temp bubble). */
     suspend fun discardOutboxEntry(clientId: String)
 
+    /** Compare the manager's displayed operation state; never discard a newly retried send. */
+    suspend fun discardOutboxEntryIfUnchanged(entry: OutboxEntry): Boolean = false
+
     /** Explicit retry of this owner's rejected intent; preserves its original ID/envelope. */
     suspend fun retryOutboxEntry(clientId: String): Result<Unit> =
         Result.failure(UnsupportedOperationException("Outbox retry is unavailable"))

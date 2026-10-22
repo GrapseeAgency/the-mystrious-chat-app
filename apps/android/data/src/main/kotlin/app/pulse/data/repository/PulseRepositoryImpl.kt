@@ -370,6 +370,16 @@ class PulseRepositoryImpl constructor(
         }
     }
 
+    override suspend fun discardOutboxEntryIfUnchanged(entry: OutboxEntry): Boolean {
+        val owner = viewerId ?: return false
+        return database.withTransaction {
+            val removed = outboxDao.discardOwnedSnapshot(owner, entry.conversationId, entry.clientId, entry.createdAt, entry.failureReason)
+            if (removed == 0) return@withTransaction false
+            messageDao.deleteById(app.pulse.domain.model.TEMP_MESSAGE_PREFIX + entry.clientId)
+            true
+        }
+    }
+
     override suspend fun retryOutboxEntry(clientId: String): Result<Unit> {
         val owner = viewerId ?: return Result.failure(IllegalStateException("Sign in to the original account"))
         return try {

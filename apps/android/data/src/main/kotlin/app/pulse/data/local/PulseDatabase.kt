@@ -760,6 +760,11 @@ interface OutboxDao {
         "EXISTS (SELECT 1 FROM messages m WHERE m.id = 'local_' || outbox.clientId AND m.conversationId = :room AND m.authorId = :owner AND m.threadRootId = :rootId)")
     suspend fun discardFailedThread(owner: String, room: String, rootId: String, clientId: String): Int
 
+    @Query("DELETE FROM outbox WHERE clientId = :clientId AND conversationId = :room AND createdAt = :createdAt " +
+        "AND failureReason IS :expectedFailure AND EXISTS (SELECT 1 FROM messages m " +
+        "WHERE m.id = 'local_' || outbox.clientId AND m.authorId = :owner AND m.conversationId = outbox.conversationId)")
+    suspend fun discardOwnedSnapshot(owner: String, room: String, clientId: String, createdAt: String, expectedFailure: String?): Int
+
     @Query("SELECT * FROM outbox WHERE clientId = :clientId AND failureReason IS NULL")
     suspend fun pendingByClientId(clientId: String): OutboxEntity?
 

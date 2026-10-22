@@ -2720,3 +2720,22 @@ async overload inside async tests. Those calls now explicitly await the write; t
 synchronous sender callback retains its synchronous write. Test execution is not yet
 confirmed. GitHub check annotations supplied the compiler diagnostics (full log download
 redirected to a host unavailable in this environment).
+
+
+## 2026-10-22 — mounted Android outbox recovery controls
+
+The mounted MirrorSettings Chat section exposed only Copy and Discard, despite the
+repository already supporting explicit retry under the original operation ID. It now
+wires Retry original through the captured account repository, fences repeated row actions,
+and displays outcomes/errors. Discard requires confirmation and a transactional comparison
+of owner, room, creation identity and displayed rejection state; a stale failed-send row
+cannot discard an operation that has since been retried. Copy and destructive/retry actions
+use separate rows so their labels fit small devices. Existing autumn palette is unchanged.
+
+Added Room instrumented coverage for owner/room/identity mismatches, refusal/retry changes
+and preservation of later enqueues. The exact production DAO DELETE query was also executed
+against local SQLite: seven guard/state checks passed. Five modified Kotlin files syntax-
+parse and diff checks pass; native Room/instrumented execution of this tranche is pending.
+The Android retained echo is intentionally NOT deleted on rejection: it remains the owner
+proof and retry envelope, hidden from normal timelines. That existing behavior was traced
+and preserved, not incorrectly replaced by a Swift-style echo deletion.
