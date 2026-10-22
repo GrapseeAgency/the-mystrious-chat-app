@@ -587,11 +587,30 @@ class PulseApi(
             PulseJson.decodeFromString(PinnedPageDto.serializer(), it)
         }
 
-    /** GET /api/messages/{id}/thread?userId= → { parent, replies } (replies asc). */
-    suspend fun thread(rootId: String, userId: String): PulseResult<ThreadPageDto> =
-        get("/api/messages/$rootId/thread?userId=" + java.net.URLEncoder.encode(userId, "UTF-8")) {
-            PulseJson.decodeFromString(ThreadPageDto.serializer(), it)
-        }
+    private class ThreadPageFailure(val failure: PulseResult.Failure) : Exception(failure.message)
+
+    /** Complete native thread assembled from bounded, reauthorized server pages. */
+    suspend fun thread(rootId: String, userId: String): PulseResult<ThreadPageDto> = try {
+        PulseResult.Success(CompleteThread.load(rootId) { cursor ->
+            val path = "/api/messages/$rootId/thread-page?limit=100&userId=" + java.net.URLEncoder.encode(userId, "UTF-8") +
+                (cursor?.let { "&cursor=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")
+            when (val result = get(path) { PulseJson.decodeFromString(app.pulse.protocol.ThreadSliceDto.serializer(), it) }) {
+                is PulseResult.Success -> result.value
+                is PulseResult.Failure -> {
+                    // A missing route or credential/proxy refusal is NOT proof
+                    // of revoked thread access; do not poison the denial ledger.
+                    val expected = when (result.status) { 403 -> "thread_access"; 404 -> "thread_missing"; 410 -> "thread_gone"; else -> null }
+                    throw ThreadPageFailure(if (expected != null && result.code != expected)
+                        result.copy(kind = PulseResult.Failure.Kind.VALIDATION, status = 409,
+                            message = "The gateway could not verify this thread. Update it and try again.") else result)
+                }
+            }
+        })
+    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: ThreadPageFailure) {
+        error.failure
+    } catch (error: Exception) {
+        PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, error.message ?: "Complete thread history was not confirmed.")
+    }
 
     /** GET /api/conversations/{id}/messages?limit=100&q= - in-conversation search
      *  (case-insensitive substring on content + fileName, asc, hasMore:false). */

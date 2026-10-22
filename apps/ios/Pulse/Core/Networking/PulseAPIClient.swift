@@ -406,9 +406,22 @@ public struct PulseAPIClient: Sendable {
         return page.messages
     }
 
-    /// GET /api/messages/{id}/thread?userId= - thread root + replies (asc).
+    /// Complete native history; never accept a truncated legacy thread response.
     public func thread(rootId: String, userId: String) async throws -> WireThreadPage {
-        try await get("/api/messages/\(rootId)/thread?userId=\(userId)")
+        try await PulseCompleteThread.load(rootId: rootId) { cursor in
+            var query = URLComponents()
+            query.queryItems = [URLQueryItem(name: "limit", value: "100"), URLQueryItem(name: "userId", value: userId)] +
+                (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
+            do { return try await self.get("/api/messages/\(rootId)/thread-page?\(query.percentEncodedQuery ?? "")") }
+            catch let failure as Failure {
+                let expected: String?
+                switch failure.status { case 403: expected = "thread_access"; case 404: expected = "thread_missing"; case 410: expected = "thread_gone"; default: expected = nil }
+                if let expected, failure.code != expected {
+                    throw Failure(kind: .validation, message: "The gateway could not verify this thread. Update it and try again.", status: 409)
+                }
+                throw failure
+            }
+        }
     }
 
     /// POST /api/uploads {dataUrl} - JSON body (NOT multipart); returns the

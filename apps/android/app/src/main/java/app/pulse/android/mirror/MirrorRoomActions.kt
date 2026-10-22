@@ -542,7 +542,7 @@ internal fun MirrorThreadSheet(
             throw cancelled
         } catch (failure: Exception) {
             denied = denied || threadAccessDenied((failure as? PulseApiException)?.status)
-            error = "Couldn't load this thread. Tap to retry."
+            error = failure.message ?: "Couldn't load this thread. Tap to retry."
         } finally { loading = false }
     }
     val available = !denied && threadRootAvailable(currentRoot, root.conversationId, root.id, now)

@@ -265,6 +265,15 @@ public struct WireThreadPage: Codable, Sendable {
     public let replies: [WireChatMessage]
 }
 
+/// Versioned bounded transport, distinct from the complete accepted thread.
+struct WireThreadSlice: Codable, Sendable {
+    let parent: WireChatMessage
+    let replies: [WireChatMessage]
+    let threadPageVersion: Int
+    let hasMore: Bool
+    let nextCursor: String?
+}
+
 /// GET /api/conversations/{id}/pinned?userId= - pinned list (pinnedAt asc).
 public struct WirePinnedPage: Codable, Sendable {
     public let messages: [WireChatMessage]

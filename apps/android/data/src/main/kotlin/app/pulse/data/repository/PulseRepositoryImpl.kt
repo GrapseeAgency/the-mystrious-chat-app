@@ -1798,21 +1798,27 @@ class PulseRepositoryImpl constructor(
         }
 
     override suspend fun loadThread(rootId: String): Pair<Message, List<Message>> {
-        val ticket = messageCacheMutex.withLock { threadValidationFence.begin(rootId) }
+        val owner = viewerId ?: throw kotlinx.coroutines.CancellationException("No active account")
+        val epoch = attachmentSession
+        val ticket = messageCacheMutex.withLock { requireConversationOwner(owner, epoch); threadValidationFence.begin(rootId) }
         val watermark = messageEventClock.get()
         try {
-            val page = when (val r = api.thread(rootId, viewerId ?: "")) {
+            requireConversationOwner(owner, epoch)
+            val page = when (val r = api.thread(rootId, owner)) {
                 is PulseResult.Success -> r.value
                 is PulseResult.Failure -> throw apiExceptionOf(r)
             }
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            requireConversationOwner(owner, epoch)
             return messageCacheMutex.withLock {
+                requireConversationOwner(owner, epoch)
                 if (!threadValidationFence.isCurrent(rootId, ticket)) throw PulseApiException("CONFLICT", "A newer thread check superseded this one. Try again.", 409)
                 val parent = page.parent?.toDomain() ?: throw IllegalStateException("Thread parent missing")
                 if (parent.id != rootId || parent.threadRootId != null) throw IllegalStateException("Unexpected thread parent")
                 val known = messageDao.byId(rootId)
                 check(known == null || known.conversationId == parent.conversationId) { "Unexpected thread room" }
                 val accepted = database.withTransaction {
+                    requireConversationOwner(owner, epoch)
                     val raw = listOf(parent) + page.replies.map { it.toDomain() }.filter {
                         it.threadRootId == rootId && it.conversationId == parent.conversationId
                     }
@@ -1822,6 +1828,7 @@ class PulseRepositoryImpl constructor(
                         throw PulseApiException("NOT_FOUND", "This thread is no longer available", 410)
                     }
                     wave7Dao.delete(app.pulse.domain.sync.threadDenialKey(rootId))
+                    requireConversationOwner(owner, epoch)
                     checkNotNull(currentParent) to merged.filter { it.threadRootId == rootId }
                 }
                 deniedThreads.value = deniedThreads.value - rootId
@@ -1834,7 +1841,7 @@ class PulseRepositoryImpl constructor(
                 // Navigation cancellation must not forget an explicit refusal already received.
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     messageCacheMutex.withLock {
-                        if (threadValidationFence.isCurrent(rootId, ticket)) {
+                        if (viewerId == owner && attachmentSession == epoch && threadValidationFence.isCurrent(rootId, ticket)) {
                             deniedThreads.value = deniedThreads.value + rootId
                             try {
                                 wave7Dao.upsert(Wave7CacheEntity(app.pulse.domain.sync.threadDenialKey(rootId), "denied", System.currentTimeMillis()))

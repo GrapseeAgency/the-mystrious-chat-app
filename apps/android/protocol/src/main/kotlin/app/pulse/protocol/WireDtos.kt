@@ -92,6 +92,16 @@ data class ThreadPageDto(
     val replies: List<ChatMessageDto> = emptyList(),
 )
 
+/** Versioned bounded thread transport; all metadata is mandatory. */
+@Serializable
+data class ThreadSliceDto(
+    val parent: ChatMessageDto,
+    val replies: List<ChatMessageDto>,
+    val threadPageVersion: Int,
+    val hasMore: Boolean,
+    val nextCursor: String? = null,
+)
+
 /** GET /api/conversations/{id}/pinned?userId= → { messages } (pinnedAt ascending). */
 @Serializable
 data class PinnedPageDto(

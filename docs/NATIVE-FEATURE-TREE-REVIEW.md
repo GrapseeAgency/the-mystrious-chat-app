@@ -3368,3 +3368,38 @@ native tests have not run locally. No DB migration; deploy the new backend route
 clients if Pin must remain available throughout rollout. No total pin revision, durable
 offline pin queue or exactly-once ordering across another person's intervening action is
 claimed. No production deployment/merge; autumn styling unchanged.
+
+### 2026-10-22 — bounded native thread transport and complete acceptance
+
+The native thread GET returned every reply in one unbounded body. Replaced native use
+of that endpoint with `/messages/{id}/thread-page`: 1..200 replies per request, stable
+createdAt/id ordering, root/room-bound cursors and an initial upper tuple. Each page
+rechecks membership, root lifetime and replies inside the existing serializable read.
+Raw page positions advance even if the entire batch expires before delivery. Removed
+cursor rows do not stall continuation; new ordinary tail arrivals do not extend it.
+
+Kotlin and Swift now assemble validated pages before accepting any as complete thread
+history. Missing versions/metadata, wrong roots/rooms/reply ancestry, reordered rows,
+repeated cursors, cancellation and later-page errors cannot become a successful prefix.
+There are explicit 10,000-reply / 16 MiB encoded-data / 512-page safety ceilings, not
+silent truncation. Exceeding them retains existing cache and surfaces a failure; a fully
+incremental, virtually rendered server-paged thread beyond these ceilings remains open.
+
+Known thread refusal codes retain 403/404/410 semantics. A missing new route or an
+unrelated proxy/credential denial is converted to retryable validation failure, not a
+persistent "this thread was revoked" ledger entry. No legacy unbounded fallback. Android
+thread acceptance/denial writes also capture and recheck owner/session. Swift no longer
+silently drops individual cached replies when a storage read throws. Mounted Android
+shows the actual thread-load failure reason. Autumn presentation is unchanged.
+
+Verification: 194/194 server contracts pass, including five new actual SQLite paging,
+tie ordering, cursor deletion, membership/lifetime, expiry-only-page and input cases.
+Scoped strict TypeScript and 13 native syntax parses pass. Added Kotlin/Swift page-loader
+and mocked API cases for continuation, refusal classification and rejection of partial
+results; native tests/device verification are not run locally. Prior 27ed91d iOS archive
+passed when checked, not validation of these new files. No schema change; deploy the new
+route before native rollout. Legacy web thread GET is unchanged. Pages are separately
+authorized snapshots, not one database snapshot across the whole load; same-time
+backfills and edits still require later synchronization. The independent 14-page main
+river jump limitation and durable offline read receipts are not fixed by this tranche.
+No deployment, merge or whole-app clearance.

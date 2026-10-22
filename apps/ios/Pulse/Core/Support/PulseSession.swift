@@ -171,9 +171,9 @@ public final class PulseSession: ObservableObject {
             deniedThreadRoots.remove(rootId)
             messageVisibilityClock.send(Date())
             // Rows rejected by the revision fence may still be live in newer storage.
-            let replies = page.replies.compactMap { incoming -> WireChatMessage? in
+            let replies = try page.replies.compactMap { incoming -> WireChatMessage? in
                 guard incoming.parentId == rootId, incoming.conversationId == roomId else { return nil }
-                return try? store.message(id: incoming.id)
+                return try store.message(id: incoming.id)
             }
             return WireThreadPage(parent: saved.parent, replies: replies)
         } catch {
