@@ -1,3 +1,4 @@
+import { requireWalletOwner } from '@/lib/wallet-authorization'
 // /api/hub/market - open listings board (Hub → Market panel)
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
@@ -13,6 +14,10 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const userId = url.searchParams.get('userId')?.trim() ?? ''
+  if (userId) {
+    const denied = await requireWalletOwner(req, userId)
+    if (denied) return denied
+  }
 
   const listings = await db.marketListing.findMany({
     where: { OR: [{ status: 'open' }, ...(userId ? [{ sellerId: userId }] : [])] },
@@ -34,10 +39,10 @@ export async function GET(req: Request) {
       status: l.status,
       createdAt: l.createdAt.toISOString(),
       seller: l.seller,
-      buyer: l.buyer,
+      buyer: userId === l.sellerId ? l.buyer : null,
       mine: userId === l.sellerId,
     })),
-  })
+  }, { headers: { 'Cache-Control': 'private, no-store', Vary: 'Authorization' } })
 }
 
 /** POST /api/hub/market { userId, title, description?, price } → 201 { listing } */
@@ -46,11 +51,13 @@ export async function POST(req: Request) {
   const userId = strField(body.userId)
   const title = strField(body.title)
   const description = strField(body.description).slice(0, 200)
-  const price = Number(body.price)
+  const price = typeof body.price === 'number' ? body.price : NaN
 
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireWalletOwner(req, userId)
+  if (denied) return denied
   if (!title || title.length > 80) {
     return NextResponse.json({ error: 'Title must be 1–80 characters.' }, { status: 400 })
   }
@@ -63,27 +70,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'User not found.' }, { status: 404 })
   }
 
-  const listing = await db.marketListing.create({
-    data: { sellerId: userId, title, description, price },
-  })
+  return db.$transaction(async tx => {
+    const listing = await tx.marketListing.create({
+      data: { sellerId: userId, title, description, price },
+    })
 
-  await db.logEvent.create({
-    data: { userId, kind: 'market', message: `listed "${title}" for ${price} PC` },
-  })
+    await tx.logEvent.create({
+      data: { userId, kind: 'market', message: `listed "${title}" for ${price} PC` },
+    })
 
-  return NextResponse.json(
-    {
-      listing: {
-        id: listing.id,
-        title: listing.title,
-        description: listing.description,
-        price: listing.price,
-        asset: listing.asset,
-        status: listing.status,
-        createdAt: listing.createdAt.toISOString(),
-        mine: true,
+    return NextResponse.json(
+      {
+        listing: {
+          id: listing.id,
+          title: listing.title,
+          description: listing.description,
+          price: listing.price,
+          asset: listing.asset,
+          status: listing.status,
+          createdAt: listing.createdAt.toISOString(),
+          mine: true,
+        },
       },
-    },
-    { status: 201 },
-  )
+      { status: 201 },
+    )
+  }, { isolationLevel: 'Serializable' })
 }

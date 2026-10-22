@@ -1,3 +1,4 @@
+import { requireWalletOwner } from '@/lib/wallet-authorization'
 // /api/hub/swap - currency exchange (PC ⇄ GEM)
 // GET  → rates + live market stats (volume from the real ledger)
 // POST → atomic exchange with ledger rows on both legs
@@ -45,11 +46,13 @@ export async function POST(req: Request) {
   const body = await safeJson(req)
   const userId = strField(body.userId)
   const direction = strField(body.direction)
-  const amount = Number(body.amount)
+  const amount = typeof body.amount === 'number' ? body.amount : NaN
 
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireWalletOwner(req, userId)
+  if (denied) return denied
   if (direction !== 'pc2gem' && direction !== 'gem2pc') {
     return NextResponse.json({ error: "Direction must be 'pc2gem' or 'gem2pc'." }, { status: 400 })
   }

@@ -1,3 +1,4 @@
+import { requireWalletOwner } from '@/lib/wallet-authorization'
 // /api/hub/wallet/transfer - PC transfer by @handle (real ledger rows
 // on both sides + log event). Atomic via interactive transaction.
 import { NextResponse } from 'next/server'
@@ -13,11 +14,13 @@ export async function POST(req: Request) {
   const userId = strField(body.userId)
   const toUsername = strField(body.toUsername).toLowerCase().replace(/^@/, '')
   const note = strField(body.note).slice(0, 140)
-  const amount = Number(body.amount)
+  const amount = typeof body.amount === 'number' ? body.amount : NaN
 
   if (!userId) {
     return NextResponse.json({ error: 'userId is required.' }, { status: 400 })
   }
+  const denied = await requireWalletOwner(req, userId)
+  if (denied) return denied
   if (!Number.isInteger(amount) || amount <= 0 || amount > 100_000) {
     return NextResponse.json({ error: 'Amount must be a positive whole number (max 100,000 PC).' }, { status: 400 })
   }

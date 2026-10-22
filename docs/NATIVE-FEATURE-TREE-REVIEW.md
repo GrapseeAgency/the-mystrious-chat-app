@@ -3676,3 +3676,11 @@ fail closed, without changing sign-in/recovery. Creation lost-ACK deduplication,
 pagination, durable offline task writes and cross-device action revisions remain open.
 Legacy wallet mutation endpoints still require a separate bypass review; these read guards
 are NOT a claim that all financial endpoints are safe. Autumn preserved; no full-app claim.
+
+### Legacy monetary entry points — ownership bypass repair
+
+- Closed direct HTTP bypasses around the protected v2 transfer/swap routes: legacy transfer, daily check-in, swap, market purchase and listing creation now require the existing credential to belong to the supplied actor before business-data access. No sign-in/recovery redesign.
+- Market history can no longer be obtained by supplying another seller's ID. Anonymous open listings and aggregate exchange rates remain public; public/other-seller listings never expose buyer details. Market snapshots are private/no-store with Authorization variance.
+- Listing creation and its activity event now commit in one Serializable transaction; a journal failure cannot leave an apparently failed but published listing. Transfer/swap/listing prices reject boolean/string coercion instead of silently charging a coerced amount.
+- Added six evaluated-route/real SQLite regressions using the actual session-token and ownership helpers: missing/forged/other-owner credentials, authorized direct mutations, purchase replay, sold-history privacy, transaction rollback and malformed monetary input. Full server suite: 236 tests passed; scoped TypeScript and diff checks passed. These are not native UI/device verification.
+- Still open: native marketplace read/mutation lifecycle and draft acceptance, listing-creation lost-ACK identity, market pagination, legacy transfer/swap clients without operation IDs. Existing native v2 transfer/swap idempotency remains intact. Requires backend rollout; credential-free private web actions intentionally fail closed. Autumn theme unchanged.
