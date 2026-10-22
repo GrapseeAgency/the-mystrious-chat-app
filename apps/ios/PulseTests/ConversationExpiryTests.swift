@@ -87,7 +87,7 @@ final class ConversationExpiryTests: XCTestCase {
         try reopened.upsert(conversations: [], replacingSnapshot: true)
         XCTAssertTrue(try reopened.cachedConversations().isEmpty)
         XCTAssertEqual(reopened.draft(conversationId: "room"), "keep")
-        XCTAssertEqual(reopened.countOutbox(), 1)
+        XCTAssertEqual(try reopened.countOutbox(), 1)
     }
 
     func testLegacyCacheNeverFabricatesAPermanentMessageFromAnUnversionedSnippet() {
@@ -122,6 +122,6 @@ final class ConversationExpiryTests: XCTestCase {
         XCTAssertEqual(row.unreadCount, 0)
         XCTAssertEqual(row.title, "Peer")
         XCTAssertEqual(reopened.draft(conversationId: "room"), "keep")
-        XCTAssertEqual(reopened.countOutbox(), 1)
+        XCTAssertEqual(try reopened.countOutbox(), 1)
     }
 }

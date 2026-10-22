@@ -50,7 +50,7 @@ final class ThreadReplyCountTests: XCTestCase {
         try store.rejectOutbox(clientId: "failed", reason: "forbidden")
         try store.upsert(messages: [echo]) // legacy retained echo, still rejected
         XCTAssertTrue(try store.threadReplyCountSnapshot(conversationId: "room").counts.isEmpty)
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
         let other = try PulseStore()
         XCTAssertTrue(try other.threadReplyCountSnapshot(conversationId: "room").counts.isEmpty)
     }
@@ -179,7 +179,7 @@ final class ThreadReplyCountTests: XCTestCase {
         XCTAssertEqual(second.messages.map(\.id), ["local_pending"])
         XCTAssertEqual(second.cursor?.id, "local_pending")
         XCTAssertFalse(second.hasMore)
-        XCTAssertEqual(store.countOutbox(), 1) // recovery intent is not deleted to repair history
+        XCTAssertEqual(try store.countOutbox(), 1) // recovery intent is not deleted to repair history
         XCTAssertThrowsError(try store.cachedThreadPage(roomId: "other", rootId: "root", before: first.cursor))
         XCTAssertThrowsError(try store.cachedThreadPage(roomId: "room", rootId: "other", before: first.cursor))
     }

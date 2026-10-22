@@ -2686,3 +2686,29 @@ syntax-parse and diff checks pass; native execution is pending. Server behavior 
 from c815be6 (129/129 passed). No autumn styling changes. This is recovery from transient
 storage failures, not repair of a corrupt database or a promise that lost storage can be
 reconstructed. Offline receipt persistence and broader feature trees remain open.
+
+
+## 2026-10-22 — cleanup must not erase newer composer intent
+
+The Swift manager used unconditional room-key draft deletion and swallowed load/delete
+errors. A displayed draft could therefore clear newer text, including a journal revision
+reserved but not yet committed. The shared write fence now tracks settled revisions;
+manager deletion compares both that revision and the exact persisted row under the fence
+and SQLite transaction. Confirmed clears still leave tombstones and fence late writers.
+Failed-send deletion compares displayed state so a stale refusal cannot discard a retried
+send. Manager actions are account/session-owned, refresh the canonical outbox event path,
+and expose changed/failed operations instead of claiming empty or complete on errors.
+
+Settings' duplicate one-tap Swift destructive actions now open the review/confirmation
+manager. Counts propagate storage errors instead of calling an unavailable queue empty;
+footprint uses the active isolated database plus sidecars, not obsolete Documents/pulse.sqlite.
+Mounted Android Data & Storage bulk actions now require confirmation, bind the selected
+repository before dispatch, use composition-owned jobs, prevent repeat dispatch, and show
+storage errors instead of swallowing them in detached IO scopes. This does not yet add
+revision-matched bulk deletion to Android or durable deletion of already-in-flight sends.
+
+Added regressions for reserved/committed/late draft writes, stale refusal/retry transitions,
+newly enqueued messages surviving snapshot discard, actual account footprint paths, and
+throwing total-outbox counts. Fourteen modified native files syntax-parse; diff checks pass.
+Native builds/tests for these new edits have not been confirmed. Autumn palette unchanged;
+this is not a whole-app completion claim.

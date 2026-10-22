@@ -16,6 +16,10 @@ struct DraftsOutboxManagerView: View {
     /// Two-tap confirm for the destructive clear-all actions (house pattern).
     @State private var clearDraftsArmed = false
     @State private var discardQueueArmed = false
+    @State private var loadedOwner: UUID?
+    @State private var draftRevisions: [String: UInt64] = [:]
+    @State private var loadError: String?
+    @State private var actionNotice: String?
 
     var body: some View {
         NavigationStack {
@@ -24,6 +28,11 @@ struct DraftsOutboxManagerView: View {
                     .ignoresSafeArea()
                 ScrollView {
                     VStack(spacing: 14) {
+                        if let loadError {
+                            Text(loadError).font(.footnote).foregroundStyle(PulseTheme.titleOnPanel)
+                            Button("Retry loading saved messages") { reload() }
+                        }
+                        if let actionNotice { Text(actionNotice).font(.footnote).foregroundStyle(PulseTheme.titleOnPanel) }
                         draftsCard
                         outboxCard
                     }
@@ -47,13 +56,15 @@ struct DraftsOutboxManagerView: View {
         .presentationDragIndicator(.visible)
         .onAppear { reload() }
         .onReceive(session.outboxEvents) { _ in reload() }
+        .onChange(of: session.sessionGeneration) { _, _ in dismiss() }
     }
 
     // drafts
 
     private var draftsCard: some View {
         settingsCard(title: "Saved drafts", icon: "doc.text", count: drafts.count) {
-            if drafts.isEmpty {
+            if loadError != nil { emptyNote("Drafts could not be verified. Nothing has been cleared.") }
+            else if drafts.isEmpty {
                 emptyNote("No drafts - composer text saves per conversation on this device.")
             } else {
                 ForEach(drafts, id: \.conversationId) { row in
@@ -112,13 +123,14 @@ struct DraftsOutboxManagerView: View {
 
     private var outboxCard: some View {
         settingsCard(title: "Outbox & failed sends", icon: "cloud.slash", count: queued.count) {
-            if queued.isEmpty {
+            if loadError != nil { emptyNote("The outgoing queue could not be verified.") }
+            else if queued.isEmpty {
                 emptyNote("No retained outgoing messages.")
             } else {
                 ForEach(queued, id: \.clientId) { row in
                     outboxRow(row)
                 }
-                Text("Pending messages retry online. Failed messages are kept for copying or discarding; they do not retry automatically.")
+                Text("Pending messages retry online. Failed messages are kept for recovery. Discarding stops pending retries, but a send already in flight may still arrive.")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                 clearAllButton(
@@ -162,7 +174,11 @@ struct DraftsOutboxManagerView: View {
             }
             if let reason = row.failureReason {
                 Text("Not sent: " + reason).font(.system(size: 12)).foregroundStyle(.red)
-                Button("Retry original message") { session.retryOutbox(clientId: row.clientId); reload() }
+                Button("Retry original message") {
+                    guard ownedStore() != nil else { return }
+                    session.retryOutbox(clientId: row.clientId, conversationId: row.conversationId)
+                    reload()
+                }
                     .font(.system(size: 12, weight: .semibold))
             }
             if let envelope = PulseOutboxForward.decode(row.payloadJson), ["image", "file", "audio"].contains(envelope.kind ?? "") {
@@ -271,54 +287,79 @@ struct DraftsOutboxManagerView: View {
 
     // actions (real GRDB rows)
 
-    private func reload() {
-        guard let store = session.store else { return }
-        drafts = (try? store.allDraftRows()) ?? []
-        queued = (try? store.outboxAll()) ?? []
-        var names: [String: String] = [:]
-        for conversation in (try? store.cachedConversations()) ?? [] {
-            names[conversation.id] = conversation.title
+    private func ownedStore() -> PulseStore? {
+        guard loadedOwner == session.sessionGeneration, let store = session.store else {
+            actionNotice = "This account changed or its storage is unavailable. Reopen the manager."
+            return nil
         }
-        conversationNames = names
+        return store
+    }
+
+    private func reload() {
+        let epoch = session.sessionGeneration
+        if loadedOwner != epoch { drafts = []; queued = []; conversationNames = [:]; draftRevisions = [:] }
+        loadedOwner = epoch
         clearDraftsArmed = false
         discardQueueArmed = false
+        guard let store = session.store else { loadError = "Saved messages are unavailable on this session."; return }
+        do {
+            let loadedDrafts = try store.allDraftRows()
+            let loadedQueue = try store.outboxAll()
+            draftRevisions = Dictionary(uniqueKeysWithValues: loadedDrafts.map {
+                ($0.conversationId, store.captureDraftConsumption(conversationId: $0.conversationId).revision)
+            })
+            drafts = loadedDrafts
+            queued = loadedQueue
+            if let conversations = try? store.cachedConversations() {
+                conversationNames = Dictionary(conversations.map { ($0.id, $0.title) }, uniquingKeysWith: { _, last in last })
+            }
+            loadError = nil
+        } catch { loadError = "Couldn't read saved messages. Your drafts and outgoing queue have not been discarded." }
     }
 
     private func deleteDraft(_ row: DraftRow) {
-        PulseHaptics.tap()
-        try? session.store?.deleteDraft(conversationId: row.conversationId)
+        clearDrafts([row])
+    }
+
+    private func clearDrafts(_ rows: [DraftRow]) {
+        guard loadError == nil, let store = ownedStore() else { return }
+        var changed = 0, failed = 0
+        for row in rows {
+            do {
+                guard let revision = draftRevisions[row.conversationId] else { failed += 1; continue }
+                if try store.deleteDraftIfUnchanged(row, revision: revision) { changed += 1 } else { failed += 1 }
+            } catch { failed += 1 }
+        }
+        actionNotice = failed == 0 ? "Cleared \(changed) draft(s)." : "Cleared \(changed). \(failed) changed or couldn't be cleared; review the remaining drafts."
         reload()
     }
 
     private func clearAllDrafts() {
-        guard let store = session.store else { return }
-        if !clearDraftsArmed {
-            clearDraftsArmed = true
-            return
-        }
-        PulseHaptics.warning()
-        for row in drafts {
-            try? store.deleteDraft(conversationId: row.conversationId)
-        }
-        reload()
+        guard loadError == nil, ownedStore() != nil else { return }
+        if !clearDraftsArmed { clearDraftsArmed = true; return }
+        clearDrafts(drafts)
     }
 
-    private func deleteQueued(_ row: OutboxRow) {
-        PulseHaptics.tap()
-        session.discardOutbox(clientId: row.clientId, conversationId: row.conversationId)
+    private func deleteQueued(_ row: OutboxRow) { discard([row]) }
+
+    private func discard(_ rows: [OutboxRow]) {
+        guard loadError == nil, let store = ownedStore() else { return }
+        let epoch = session.sessionGeneration
+        var changed = 0, failed = 0
+        for row in rows {
+            guard session.sessionGeneration == epoch, session.store === store else { dismiss(); return }
+            do {
+                if try session.discardOutbox(row) { changed += 1 } else { failed += 1 }
+            } catch { failed += 1 }
+        }
+        guard session.sessionGeneration == epoch else { dismiss(); return }
+        actionNotice = failed == 0 ? "Discarded \(changed) recovery copy/copies." : "Discarded \(changed). \(failed) changed or couldn't be discarded; review the remaining queue."
         reload()
     }
 
     private func discardAll() {
-        guard let store = session.store else { return }
-        if !discardQueueArmed {
-            discardQueueArmed = true
-            return
-        }
-        PulseHaptics.warning()
-        for row in queued {
-            session.discardOutbox(clientId: row.clientId, conversationId: row.conversationId)
-        }
-        reload()
+        guard loadError == nil, ownedStore() != nil else { return }
+        if !discardQueueArmed { discardQueueArmed = true; return }
+        discard(queued)
     }
 }

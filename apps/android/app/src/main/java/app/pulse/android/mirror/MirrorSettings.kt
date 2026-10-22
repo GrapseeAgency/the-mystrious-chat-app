@@ -69,6 +69,8 @@ import app.pulse.android.SessionViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
 
 /**
  * R71 - the web SettingsScreen (settings-screen.tsx, R26-c) as a native
@@ -1816,6 +1818,31 @@ private fun DataSection(
     var failed by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
+    val actionRepository = remember(repository, viewerId) { repository.boundToCurrentAccount() }
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    var armed by remember(actionRepository, viewerId) { mutableStateOf<String?>(null) }
+    var busy by remember(actionRepository, viewerId) { mutableStateOf(false) }
+    var actionError by remember(actionRepository, viewerId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(armed, actionRepository) {
+        if (armed != null) { delay(5_000); armed = null }
+    }
+    fun confirmLocal(action: String) {
+        if (busy || actionRepository.viewerId != viewerId) return
+        if (armed != action) { armed = action; actionError = null; return }
+        armed = null
+        busy = true
+        actionScope.launch {
+            try {
+                if (action == "drafts") actionRepository.clearAllDrafts() else actionRepository.clearOutbox()
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                actionError = "Couldn't complete the cleanup. Review your saved messages and try again."
+            } finally { busy = false }
+        }
+    }
+
     suspend fun loadStats() {
         loading = true
         failed = false
@@ -1926,17 +1953,16 @@ private fun DataSection(
     }
 
     SettingsGroup("Local data") {
+        if (armed != null) Text("Tap Confirm to permanently remove the selected local data. An in-flight send may still arrive.",
+            color = SubPageInk.Zinc500, fontSize = 12.sp)
+        actionError?.let { Text(it, color = SubPageInk.Zinc500, fontSize = 12.sp) }
         SettingsActionRow(
             glyph = "LFileText",
             title = "Composer drafts",
             caption = "$drafts saved on this device - clearing frees their storage.",
-            actionLabel = "Clear",
-            enabled = drafts > 0,
-            onAction = {
-                CoroutineScope(Dispatchers.IO).launch {
-                    runCatching { repository.clearAllDrafts() }
-                }
-            },
+            actionLabel = if (busy) "…" else if (armed == "drafts") "Confirm" else "Clear",
+            enabled = drafts > 0 && !busy,
+            onAction = { confirmLocal("drafts") },
         )
         SettingsActionRow(
             glyph = "LCloudOff",
@@ -1946,13 +1972,9 @@ private fun DataSection(
             } else {
                 "Empty - nothing queued right now."
             },
-            actionLabel = "Discard",
-            enabled = outbox > 0,
-            onAction = {
-                CoroutineScope(Dispatchers.IO).launch {
-                    runCatching { repository.clearOutbox() }
-                }
-            },
+            actionLabel = if (busy) "…" else if (armed == "queue") "Confirm" else "Discard",
+            enabled = outbox > 0 && !busy,
+            onAction = { confirmLocal("queue") },
         )
     }
 

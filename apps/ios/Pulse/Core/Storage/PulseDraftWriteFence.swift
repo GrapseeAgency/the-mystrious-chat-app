@@ -19,6 +19,7 @@ final class PulseDraftWriteFence: @unchecked Sendable {
 
     private let lock = NSLock()
     private var revisions: [String: UInt64] = [:]
+    private var settled: [String: UInt64] = [:]
 
     func reserve(_ room: String) -> UInt64 {
         lock.lock(); defer { lock.unlock() }
@@ -37,6 +38,18 @@ final class PulseDraftWriteFence: @unchecked Sendable {
         if let expected, expected != revisions[room, default: 0] { return false }
         try action()
         if expected == nil { revisions[room, default: 0] &+= 1 }
+        settled[room] = revisions[room, default: 0]
+        return true
+    }
+
+    /// A manager may delete only the displayed, fully persisted revision.
+    /// A reserved journal write is newer intent even before SQLite contains it.
+    func removeIfCurrent(_ room: String, expected: UInt64, action: () throws -> Bool) throws -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard revisions[room, default: 0] == expected, settled[room, default: 0] == expected else { return false }
+        guard try action() else { return false }
+        revisions[room, default: 0] &+= 1
+        settled[room] = revisions[room, default: 0]
         return true
     }
 
@@ -45,7 +58,10 @@ final class PulseDraftWriteFence: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         let consume = expected == revisions[room, default: 0]
         try action(consume)
-        if consume { revisions[room, default: 0] &+= 1 }
+        if consume {
+            revisions[room, default: 0] &+= 1
+            settled[room] = revisions[room, default: 0]
+        }
         return consume
     }
 }

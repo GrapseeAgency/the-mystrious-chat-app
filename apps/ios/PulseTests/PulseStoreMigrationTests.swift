@@ -186,7 +186,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         try store.bumpOutboxAttempts(id: try XCTUnwrap(rows.first?.id))
         XCTAssertEqual(try store.outboxAll().first?.attempts, 1)
         try store.deleteOutbox(id: try XCTUnwrap(rows.first?.id))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
 
         // Draft round-trip.
         XCTAssertEqual(store.draft(conversationId: "c1"), "hello draft")
@@ -211,7 +211,7 @@ final class PulseStoreMigrationTests: XCTestCase {
         let store = try PulseStore()
         try store.appendOutbox(conversationId: "c1", clientId: "same", content: "one", kind: "text")
         XCTAssertThrowsError(try store.appendOutbox(conversationId: "c1", clientId: "same", content: "two", kind: "text"))
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
     }
 
     // migration ordering / reopen survival

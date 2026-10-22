@@ -25,7 +25,7 @@ final class ThreadDraftHandoffTests: XCTestCase {
         XCTAssertEqual(disk.draftSnapshot(conversationId: PulseThreadDraft.key("room", parentId: "root-a")), "")
         XCTAssertEqual(disk.draftSnapshot(conversationId: PulseThreadDraft.key("room", parentId: "root-b")), "other thread")
         XCTAssertEqual(disk.draftSnapshot(conversationId: "room"), "main composer")
-        XCTAssertEqual(disk.countOutbox(), 1)
+        XCTAssertEqual(try disk.countOutbox(), 1)
     }
 
     func testWrongThreadOrMainRoomCannotConsumeThreadToken() async throws {
@@ -36,7 +36,7 @@ final class ThreadDraftHandoffTests: XCTestCase {
             content: "keep", parentId: "other", draftJournal: journal))
         XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room",
             content: "keep", draftJournal: journal))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
         XCTAssertEqual(journal.snapshot, "keep")
     }
 
@@ -50,7 +50,7 @@ final class ThreadDraftHandoffTests: XCTestCase {
         try await connection.write { try $0.execute(sql: "CREATE TRIGGER fail_draft BEFORE INSERT ON draft BEGIN SELECT RAISE(ABORT, 'disk full'); END") }
         XCTAssertThrowsError(try PulseTextDelivery.enqueue(store: store, viewer: viewer, conversationId: "room",
             content: "keep", parentId: "root", draftJournal: journal))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
         XCTAssertEqual(journal.snapshot, "keep")
     }
 

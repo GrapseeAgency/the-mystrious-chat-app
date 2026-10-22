@@ -778,6 +778,17 @@ public final class PulseSession: ObservableObject {
         return false
     }
 
+    /// Discard the manager's displayed state, never a send retried since display.
+    @discardableResult
+    func discardOutbox(_ expected: OutboxRow) throws -> Bool {
+        guard let store else { throw CocoaError(.fileReadUnknown) }
+        let epoch = generation, engine = outbox
+        guard try store.discardOutboxIfUnchanged(expected) else { return false }
+        engine?.reloadPending()
+        if generation == epoch { outboxEvents.send(.dropped(clientId: expected.clientId, conversationId: expected.conversationId)) }
+        return true
+    }
+
     public func discardOutbox(clientId: String, conversationId: String) {
         guard let store else { return }
         do {

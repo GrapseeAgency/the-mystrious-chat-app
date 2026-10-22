@@ -1037,6 +1037,18 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// A stale failed-send row must not discard an operation retried since display.
+    func discardOutboxIfUnchanged(_ expected: OutboxRow) throws -> Bool {
+        try dbQueue.write { db in
+            guard let current = try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE clientId = ?", arguments: [expected.clientId]),
+                  current.conversationId == expected.conversationId, current.createdAt == expected.createdAt,
+                  current.failureReason == expected.failureReason else { return false }
+            try db.execute(sql: "DELETE FROM message WHERE id = ?", arguments: ["local_" + expected.clientId])
+            try db.execute(sql: "DELETE FROM outbox WHERE clientId = ?", arguments: [expected.clientId])
+            return true
+        }
+    }
+
     public func deleteOutbox(id: Int64) throws {
         try dbQueue.write { db in
             if let clientId = try String.fetchOne(db, sql: "SELECT clientId FROM outbox WHERE id = ?", arguments: [id]) {
@@ -1059,10 +1071,10 @@ public final class PulseStore: Sendable {
         }
     }
 
-    public func countOutbox() -> Int {
-        (try? dbQueue.read { db in
-            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox")
-        }) ?? 0
+    public func countOutbox() throws -> Int {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM outbox") ?? 0
+        }
     }
 
     // drafts (Wave 0 - composer persistence, web pulse-drafts parity)
@@ -1135,6 +1147,18 @@ public final class PulseStore: Sendable {
             try DraftRow
                 .fetchAll(db, sql: "SELECT * FROM draft ORDER BY updatedAt ASC")
                 .filter { !$0.text.isEmpty }
+        }
+    }
+
+    /// Clear only the exact draft the manager displayed, not a newer composer write.
+    func deleteDraftIfUnchanged(_ row: DraftRow, revision: UInt64) throws -> Bool {
+        try draftFence.removeIfCurrent(row.conversationId, expected: revision) {
+            try dbQueue.write { db in
+                let current = try DraftRow.fetchOne(db, sql: "SELECT * FROM draft WHERE conversationId = ?", arguments: [row.conversationId])
+                guard current == row else { return false }
+                try Self.writeDraftSnapshot(db, room: row.conversationId, text: "")
+                return true
+            }
         }
     }
 

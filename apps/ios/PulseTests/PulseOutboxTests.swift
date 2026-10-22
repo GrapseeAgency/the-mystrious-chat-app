@@ -135,6 +135,7 @@ final class PulseOutboxTests: XCTestCase {
                 try database.write { try $0.execute(sql: "ALTER TABLE outbox RENAME TO unavailable_outbox") }
             }
             XCTAssertThrowsError(try store.countPendingOutbox())
+            XCTAssertThrowsError(try store.countOutbox())
             let unknown = await engine.flush()
             XCTAssertFalse(unknown)
             XCTAssertTrue(engine.storageUnavailable)
@@ -224,7 +225,7 @@ final class PulseOutboxTests: XCTestCase {
         let messages = try store.messages(conversationId: "c1")
         XCTAssertTrue(messages.contains { $0.id == "srv-queued one" })
         XCTAssertFalse(messages.contains { $0.id == PulseOutboxEngine.tempMessageId(clientId: clientId) })
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
         XCTAssertEqual(events.count, 1)
         guard let recorded = events.first,
               case .delivered(let message, let conversationId, let deliveredClientId) = recorded else {
@@ -286,7 +287,7 @@ final class PulseOutboxTests: XCTestCase {
         // CONTINUED - the next entry was still delivered.
         XCTAssertEqual(sender.attempts(of: "bad"), 1)
         XCTAssertEqual(sender.attempts(of: "good"), 1)
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
         XCTAssertEqual(try store.countPendingOutbox(), 0)
         XCTAssertEqual(try store.outboxAll().first?.content, "bad")
         XCTAssertNotNil(try store.outboxAll().first?.failureReason)
@@ -335,7 +336,7 @@ final class PulseOutboxTests: XCTestCase {
         let complete = await engine.flush()
         XCTAssertFalse(complete)
         XCTAssertEqual(sender.attempts(of: "keep"), 0)
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
     }
 
     // R1-W2B D28 - queued forwards flush with their stored body
@@ -363,7 +364,7 @@ final class PulseOutboxTests: XCTestCase {
         let engine = makeEngine(store, sender)
         await engine.flush()
 
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
         XCTAssertEqual(sender.attempts(of: "look at this"), 1)
         XCTAssertEqual(
             sender.recordedBody(at: 0),
@@ -379,7 +380,7 @@ final class PulseOutboxTests: XCTestCase {
         let engine = makeEngine(store, sender)
         await engine.flush()
 
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
         XCTAssertEqual(
             sender.recordedBody(at: 0),
             "text|nil|nil|nil|nil|nil|nil",
@@ -396,7 +397,7 @@ final class PulseOutboxTests: XCTestCase {
         await engine.flush()
         XCTAssertEqual(sender.operationIds, ["operation-stable-id", "operation-stable-id"])
         XCTAssertEqual(sender.metadata, ["quote|topic|true", "quote|topic|true"])
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
         engine.stop()
     }
 
@@ -410,7 +411,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(try store.outboxAll().map(\.clientId), ["operation-b"])
         // Replay the same acknowledgement: still no effect on operation B.
         try store.resolveDelivery(clientId: "operation-a", message: OutboxFixtures.makeMessage(id: "real-a", conversationId: "c1", content: "same"))
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
     }
 
     func testConflictingLocalKeyIsReportedNotPretendedQueued() throws {
@@ -430,7 +431,7 @@ final class PulseOutboxTests: XCTestCase {
         let engine = makeEngine(store, sender)
         await engine.flush()
         XCTAssertEqual(sender.attempts(of: "private"), 0)
-        XCTAssertEqual(store.countOutbox(), 1)
+        XCTAssertEqual(try store.countOutbox(), 1)
         XCTAssertEqual(try store.countPendingOutbox(), 0)
         XCTAssertNotNil(try store.outboxAll().first?.failureReason)
         engine.stop()
@@ -478,7 +479,7 @@ final class PulseOutboxTests: XCTestCase {
         await engine.flush()
         XCTAssertEqual(sender.attempts(of: "bad"), 0)
         XCTAssertEqual(sender.attempts(of: "good"), 1)
-        XCTAssertEqual(store.countOutbox(), 55)
+        XCTAssertEqual(try store.countOutbox(), 55)
         XCTAssertEqual(try store.countPendingOutbox(), 0)
     }
 
@@ -551,7 +552,7 @@ final class PulseOutboxTests: XCTestCase {
         XCTAssertEqual(retry.metadata, ["nil|topic|true"])
         XCTAssertEqual(retry.recordedBody(at: 0), "file|nil|nil|nil|uploaded-file.pdf|notes.pdf|4")
         XCTAssertNil(try store.message(id: message.id))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
     }
 
     func testKnownThreadRefusalStopsUploadAndPostWithoutBlockingOtherMessages() async throws {
@@ -613,7 +614,7 @@ final class PulseOutboxTests: XCTestCase {
         await engine.flush()
         XCTAssertEqual(sender.uploadCount, 1)
         XCTAssertEqual(sender.operationIds, ["held"])
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
     }
 
     func testUnknownUploadKeepsBytesAndDiscardDuringUploadDoesNotSend() async throws {
@@ -634,7 +635,7 @@ final class PulseOutboxTests: XCTestCase {
         defer { second.stop() }
         await second.flush()
         XCTAssertTrue(discarded.operationIds.isEmpty)
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
     }
 
     func testRejectedAttachmentIsManuallyRetryableWithOriginalBytesAndIdentity() throws {
@@ -771,7 +772,7 @@ final class PulseOutboxTests: XCTestCase {
         let otherAccount = try PulseStore()
         XCTAssertFalse(try otherAccount.discardFailedThreadReply(clientId: "recover", conversationId: "room", rootId: "root"))
         XCTAssertTrue(try store.discardFailedThreadReply(clientId: "recover", conversationId: "room", rootId: "root"))
-        XCTAssertEqual(store.countOutbox(), 0)
+        XCTAssertEqual(try store.countOutbox(), 0)
     }
 
     func testFailedThreadObservationFiltersRoomRootPendingAndMalformedEnvelope() async throws {
