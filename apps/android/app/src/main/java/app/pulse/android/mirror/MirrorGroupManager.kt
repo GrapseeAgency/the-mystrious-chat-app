@@ -714,20 +714,22 @@ private fun MgrWebhooksSection(
     var createOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<Webhook?>(null) }
     var pending by remember { mutableStateOf(false) }
+    var revision by remember { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
 
     fun load() {
-        scope.launch(Dispatchers.IO) {
+        if (pending) return
+        revision += 1
+        val ticket = revision
+        val epoch = repository.attachmentSessionKey()
+        loadError = false
+        scope.launch {
             val result = mgrRepositoryResult { repository.webhooks(conversationId) }
-            withContext(Dispatchers.Main) {
-                result.fold(
-                    onSuccess = {
-                        webhooks = it
-                        loadError = false
-                    },
-                    onFailure = { loadError = true },
-                )
-            }
+            if (ticket != revision || epoch != repository.attachmentSessionKey()) return@launch
+            result.fold(
+                onSuccess = { webhooks = it; loadError = false },
+                onFailure = { webhooks = null; loadError = true },
+            )
         }
     }
     LaunchedEffect(conversationId) { load() }
@@ -822,7 +824,7 @@ private fun MgrWebhooksSection(
                 }
             }
         }
-        if (isAdmin) {
+        if (isAdmin && webhooks != null && !loadError) {
             Spacer(Modifier.height(8.dp))
             MgrWideButton(label = "Create webhook", leading = "LPlus", onClick = { createOpen = true })
         }
@@ -831,22 +833,27 @@ private fun MgrWebhooksSection(
     if (createOpen) {
         MgrCreateWebhookModal(
             pending = pending,
-            onClose = { createOpen = false },
-            onConfirm = { name ->
+            onClose = { if (!pending) createOpen = false },
+            onConfirm = create@ { name ->
+                if (pending) return@create
+                revision += 1
+                val epoch = repository.attachmentSessionKey()
                 pending = true
-                scope.launch(Dispatchers.IO) {
-                    val result = mgrRepositoryResult { repository.createWebhook(conversationId, name) }
-                    withContext(Dispatchers.Main) {
-                        pending = false
+                scope.launch {
+                    try {
+                        val result = mgrRepositoryResult { repository.createWebhook(conversationId, name) }
+                        if (epoch != repository.attachmentSessionKey()) return@launch
                         result.fold(
                             onSuccess = { created ->
+                                revision += 1
+                                webhooks = (webhooks.orEmpty().filterNot { it.id == created.id }) + created
+                                loadError = false
                                 onNote("Webhook \"${created.name}\" created")
                                 createOpen = false
                             },
                             onFailure = { e -> onNote(e.message ?: "Could not create the webhook") },
                         )
-                    }
-                    load()
+                    } finally { pending = false }
                 }
             },
         )
@@ -858,22 +865,27 @@ private fun MgrWebhooksSection(
             confirmLabel = "Delete",
             destructive = true,
             pending = pending,
-            onClose = { deleteTarget = null },
-            onConfirm = {
+            onClose = { if (!pending) deleteTarget = null },
+            onConfirm = remove@ {
+                if (pending) return@remove
+                revision += 1
+                val epoch = repository.attachmentSessionKey()
                 pending = true
-                scope.launch(Dispatchers.IO) {
-                    val result = mgrRepositoryResult { repository.deleteWebhook(target.token) }
-                    withContext(Dispatchers.Main) {
-                        pending = false
+                scope.launch {
+                    try {
+                        val result = mgrRepositoryResult { repository.deleteWebhook(target.token) }
+                        if (epoch != repository.attachmentSessionKey()) return@launch
                         result.fold(
                             onSuccess = {
+                                revision += 1
+                                webhooks = webhooks.orEmpty().filterNot { it.id == target.id }
+                                loadError = false
                                 onNote("Webhook deleted")
                                 deleteTarget = null
                             },
                             onFailure = { e -> onNote(e.message ?: "Could not delete the webhook") },
                         )
-                    }
-                    load()
+                    } finally { pending = false }
                 }
             },
         )
@@ -901,7 +913,7 @@ private fun MgrCreateWebhookModal(
         Spacer(Modifier.height(12.dp))
         MgrTextField(
             value = name,
-            onValue = { if (it.length <= WEBHOOK_NAME_MAX) name = it },
+            onValue = { if (!pending && it.length <= WEBHOOK_NAME_MAX) name = it },
             placeholder = "e.g. Deploys · CI · Weather",
         )
         Text(
@@ -915,7 +927,7 @@ private fun MgrCreateWebhookModal(
         )
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MgrModalButton(label = "Cancel", destructive = false, enabled = true, pending = false, onClick = onClose, modifier = Modifier.weight(1f))
+            MgrModalButton(label = "Cancel", destructive = false, enabled = !pending, pending = false, onClick = onClose, modifier = Modifier.weight(1f))
             MgrModalButton(
                 label = "Create",
                 destructive = false,
