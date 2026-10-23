@@ -180,14 +180,22 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
                 let text = textResponse.userText
                 Task { @MainActor in
                     PulseQuickReplyCoordinator.shared.handle(text: text, conversationId: conversationId)
+                    completionHandler() // after the durable commit/failure, never before it
                 }
-                completionHandler()
                 return
             }
         }
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else {
+            completionHandler()
+            return
+        }
         let userInfo = response.notification.request.content.userInfo
         if let link = Self.deepLink(from: userInfo) {
-            Task { @MainActor [weak self] in self?.route(link) }
+            Task { @MainActor [weak self] in
+                self?.route(link)
+                completionHandler()
+            }
+            return
         }
         completionHandler()
     }

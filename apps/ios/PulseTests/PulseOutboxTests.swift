@@ -109,6 +109,67 @@ final class PulseOutboxTests: XCTestCase {
         }
     }
 
+    func testQuickReplyCommitsBeforeDispatchAndReplaysTheSameOperationWithoutTouchingDraft() async throws {
+        let store = try PulseStore()
+        try store.saveDraft(conversationId:"c1",text:"composer work")
+        XCTAssertEqual(try PulseQuickReply.persist(text:" notification reply ",conversationId:"c1",clientId:"reply-op",locked:false,store:store), .queued)
+        let sender = StubSender(behaviors:["notification reply":.networkError])
+        sender.beforeSend = { _ in
+            XCTAssertTrue(try store.isPendingOutbox(clientId:"reply-op"))
+            XCTAssertEqual(store.draft(conversationId:"c1"),"composer work")
+        }
+        let engine = makeEngine(store,sender)
+        defer { engine.stop() }
+        _ = await engine.flush()
+        XCTAssertEqual(try store.outboxPending().map(\.clientId),["reply-op"])
+        sender.setBehavior(.success,for:"notification reply")
+        _ = await engine.flush()
+        XCTAssertEqual(sender.operationIds,["reply-op","reply-op"])
+        XCTAssertTrue(try store.outboxPending().isEmpty)
+        XCTAssertEqual(store.draft(conversationId:"c1"),"composer work")
+    }
+
+    func testLockedAndOversizedNotificationRepliesAreRetainedButNeverAutomaticallySent() async throws {
+        let store = try PulseStore()
+        let otherAccount = try PulseStore()
+        try store.saveDraft(conversationId:"c1",text:"do not replace")
+        let long = String(repeating:"x",count:1999) + "😀"
+        for (id,text,locked) in [("locked","private reply",true),("oversize",long,false)] {
+            guard case .held = try PulseQuickReply.persist(text:text,conversationId:"c1",clientId:id,locked:locked,store:store) else {
+                XCTFail("Must retain for review, not queue");return
+            }
+        }
+        let sender = StubSender(behaviors:[:])
+        let engine = makeEngine(store,sender)
+        defer { engine.stop() }
+        _ = await engine.flush()
+        XCTAssertTrue(sender.operationIds.isEmpty)
+        XCTAssertTrue(try store.outboxPending().isEmpty)
+        XCTAssertEqual(try store.outboxAll().map(\.content),["private reply",long])
+        XCTAssertTrue(try otherAccount.outboxAll().isEmpty)
+        XCTAssertEqual(store.draft(conversationId:"c1"),"do not replace")
+    }
+
+    func testNotificationReplySurvivesReopenAndWriteFailureDoesNotClaimAcceptance() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let path = directory.appendingPathComponent("quick-reply.sqlite").path
+        do {
+            let store = try PulseStore(path:path)
+            XCTAssertEqual(try PulseQuickReply.persist(text:"durable",conversationId:"c1",clientId:"operation",locked:false,store:store),.queued)
+        }
+        let store = try PulseStore(path:path)
+        XCTAssertEqual(try store.outboxPending().map(\.content),["durable"])
+        let database = try DatabaseQueue(path:path)
+        try await database.write { db in
+            try db.execute(sql:"CREATE TRIGGER refuse_reply BEFORE INSERT ON outbox BEGIN SELECT RAISE(ABORT, 'synthetic write failure'); END")
+        }
+        XCTAssertThrowsError(try PulseQuickReply.persist(text:"not saved",conversationId:"c1",clientId:"failed",locked:false,store:store))
+        XCTAssertThrowsError(try PulseQuickReply.persist(text:"not held",conversationId:"c1",clientId:"held-failed",locked:true,store:store))
+        XCTAssertEqual(try store.outboxAll().map(\.clientId),["operation"])
+    }
+
     // engine helper
 
     private func makeEngine(_ store: PulseStore, _ sender: StubSender?) -> PulseOutboxEngine {

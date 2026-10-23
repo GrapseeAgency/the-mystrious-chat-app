@@ -140,7 +140,9 @@ object PulseReplyPayload {
         if (conv.isEmpty()) return null
         val body = text?.toString()?.trim().orEmpty()
         if (body.isEmpty()) return null
-        return Parsed(conversationId = conv, text = body.take(MAX_CHARS))
+        // Keep the exact text. SendMessageUseCase rejects overlong input;
+        // silently cutting it can send a different message or half a surrogate.
+        return Parsed(conversationId = conv, text = body)
     }
 
     /** `local_<clientId>` temp rows are queued in the outbox, not delivered. */

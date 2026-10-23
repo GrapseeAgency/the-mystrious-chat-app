@@ -1043,6 +1043,26 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Commit a notification reply as pending or held in ONE transaction. A
+    /// held reply never exposes an intermediate pending row to the flusher.
+    /// Return the committed pending state; no fallible post-commit read should
+    /// tell the OS a saved reply failed. Never overwrite the composer draft.
+    func persistNotificationReply(conversationId: String, clientId: String, content: String, reason: String?) throws -> Bool {
+        let row = OutboxRow(id: nil, conversationId: conversationId, clientId: clientId,
+            content: content, kind: "text", createdAt: PulseOutboxClock.now(), attempts: 0, failureReason: reason)
+        return try dbQueue.write { db in
+            if let existing = try OutboxRow.fetchOne(db, sql: "SELECT * FROM outbox WHERE clientId = ?", arguments: [clientId]) {
+                guard existing.conversationId == conversationId, existing.content == content,
+                      existing.kind == "text", existing.payloadJson == nil else {
+                    throw CocoaError(.coderInvalidValue)
+                }
+                return existing.failureReason == nil
+            }
+            try row.insert(db)
+            return reason == nil
+        }
+    }
+
     /// Observe this account's rejected intents, scoped by both room and retained routing envelope.
     public func observeFailedThreadReplies(conversationId: String, rootId: String) -> DatabasePublishers.Value<[OutboxRow]> {
         ValueObservation.tracking { db in
