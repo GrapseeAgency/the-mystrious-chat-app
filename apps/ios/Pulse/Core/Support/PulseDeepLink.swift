@@ -16,7 +16,7 @@ import Foundation
 public enum PulseDeepLink: Equatable {
     case invite(code: String)
     case user(userId: String)
-    case room(conversationId: String)
+    case room(conversationId: String, jumpMessageId: String? = nil)
     /// R10-b - the argument-less compose route (pulse://new).
     case compose
     /// R14 5-b - the login prefill route (pulse://login/<name>); the web
@@ -33,12 +33,17 @@ public enum PulseDeepLink: Equatable {
         // pulse://invite/abc → host "invite", path "/abc".
         // pulse:invite/abc   → host empty, first path segment "invite"
         // (both forms arrive depending on how the link was built).
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         var parts: [String] = []
-        if let host = url.host, !host.isEmpty { parts.append(host.lowercased()) }
-        let pathSegments = url.pathComponents.filter { $0 != "/" }
-        parts.append(contentsOf: pathSegments.compactMap { segment in
-            segment.removingPercentEncoding
-        })
+        if let host = components.host, !host.isEmpty { parts.append(host.lowercased()) }
+        // Decode exactly once, after splitting: URL.pathComponents is already
+        // decoded and would corrupt literal percent escapes or encoded slashes.
+        for segment in components.percentEncodedPath.split(separator: "/", omittingEmptySubsequences: true) {
+            guard let decoded = String(segment).removingPercentEncoding else { return nil }
+            parts.append(decoded)
+        }
+        let jump = components.queryItems?.first(where: { $0.name.lowercased() == "jump" })?.value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !parts.isEmpty else { return nil }
         let kind = parts[0].lowercased()
         // R10-b - the argument-less compose route: pulse://new (and the
@@ -54,7 +59,7 @@ public enum PulseDeepLink: Equatable {
         case "user", "u":
             return .user(userId: key)
         case "room", "chat", "conversation":
-            return .room(conversationId: key)
+            return .room(conversationId: key, jumpMessageId: jump?.isEmpty == false ? jump : nil)
         case "login":
             // R14 5-b - the /?login=Name parity: the display name is the
             // key (percent-decoded above, capped at the onboarding limit).

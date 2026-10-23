@@ -711,7 +711,7 @@ public final class PulseSession: ObservableObject {
                         let deliveryOwner = PulseReminderDelivery.ownerKey(api)
                         let queued = await PulseReminderDelivery.queueOnce(ownerId: deliveryOwner, reminderId: item.id,
                             retract: { PulseReminderNotifications.cancel(reminderId: item.id, ownerId: deliveryOwner) }) {
-                            let accepted = await PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body, conversationId: item.conversationId, ownerId: deliveryOwner)
+                            let accepted = await PulseReminderNotifications.showNow(reminderId: item.id, note: note, body: body, conversationId: item.conversationId, ownerId: deliveryOwner, messageId: item.messageId)
                             guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == viewer.id else {
                                 if accepted { PulseReminderNotifications.cancel(reminderId: item.id, ownerId: deliveryOwner) }
                                 return false

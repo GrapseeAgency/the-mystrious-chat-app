@@ -57,4 +57,23 @@ final class NavigationHandoffTests: XCTestCase {
         await superseded.value
         XCTAssertEqual(session.pendingUserRoute?.userId, "newer")
     }
+    func testRoomAndJumpRemainAvailableUntilThePreviouslyUnmountedChatsSubscriberAttaches() async throws {
+        let session = PulseSession()
+        session.requestOpenRoom(try room("saved-original"), jumpMessageId:"saved-message")
+        var delivered: (String, String?)?
+        var cleanup: Task<Void, Never>?
+        let listener = session.$pendingOpenRoom.sink { value in
+            guard let value else { return }
+            delivered = (value.id, session.pendingJumpMessageId)
+            cleanup = session.consumePendingOpenRoom()
+            session.consumePendingJumpMessageId()
+        }
+        defer { listener.cancel() }
+        XCTAssertEqual(delivered?.0, "saved-original")
+        XCTAssertEqual(delivered?.1, "saved-message")
+        await cleanup?.value
+        XCTAssertNil(session.pendingOpenRoom)
+        XCTAssertNil(session.pendingJumpMessageId)
+    }
+
 }

@@ -99,4 +99,23 @@ class PulseDeepLinkTest {
         }
     }
 
+    @Test fun `OS rendered FCM taps preserve the room and message without requiring a URI`() {
+        assertEquals(PulseDeepLink.Room("room", "message"), PulseDeepLink.notificationRoom("message", " room ", " message "))
+        assertEquals(PulseDeepLink.Room("room"), PulseDeepLink.notificationRoom("message", "room", "  "))
+        for (kind in listOf("call", "gcall")) {
+            assertEquals(PulseDeepLink.Room("room"), PulseDeepLink.notificationRoom(kind, "room", "not-a-message"))
+        }
+        for (kind in listOf(null, "unknown", "")) assertNull(PulseDeepLink.notificationRoom(kind, "room", "message"))
+        assertNull(PulseDeepLink.notificationRoom("message", "  ", "message"))
+        assertNull(PulseDeepLink.notificationRoom("message", null, "message"))
+    }
+
+    @Test fun `room URI round trips reserved delimiters and percent escapes exactly once`() {
+        val room = "room/a+b%2F?&é"
+        val message = "message/one+two%2F?&é"
+        assertEquals(PulseDeepLink.Room(room, message), PulseDeepLink.parse(PulseDeepLink.roomUri(room, message)))
+        assertEquals(PulseDeepLink.Room("a+b"), PulseDeepLink.parse("pulse://room/a+b"))
+        assertEquals(PulseDeepLink.Room("a%2Fb", "m%2F1"), PulseDeepLink.parse("pulse://room/a%252Fb?jump=m%252F1"))
+    }
+
 }

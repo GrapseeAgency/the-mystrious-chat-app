@@ -150,12 +150,13 @@ struct RootView: View {
             // Cold-start taps that landed before this closure existed are
             // replayed from the delegate's handoff slot.
             PulseReminderNotificationDelegate.shared.onDeepLink = { link in
-                if case .room(let conversationId) = link {
-                    session.pendingLinkedRoomId = conversationId
+                if case .room(let conversationId, let messageId) = link {
+                    openLinkedRoom(conversationId, jumpMessageId: messageId)
                 }
             }
-            if let tapped = PulseReminderNotificationDelegate.shared.consumeLastTappedRoomId() {
-                session.pendingLinkedRoomId = tapped
+            if let tapped = PulseReminderNotificationDelegate.shared.consumeLastTappedLink(),
+               case .room(let conversationId, let messageId) = tapped {
+                openLinkedRoom(conversationId, jumpMessageId: messageId)
             }
         }
         .onChange(of: session.ready) { _, ready in
@@ -205,6 +206,14 @@ struct RootView: View {
         .onChange(of: session.sessionGeneration) { _, _ in cancelLinkedRoom() }
         .onChange(of: newChatOpen || settingsOpen || storiesOpen || callsOpen || savedLibraryOpen || pendingInvite != nil) { _, presented in
             if presented { session.noteRoomNavigationIntent(); cancelLinkedRoom() }
+        }
+        // Profile's saved library can resolve a room while Chats is unmounted.
+        // Activate its stack, but leave the envelope/jump for that stack to consume.
+        .onReceive(session.$pendingOpenRoom) { pending in
+            guard pending != nil, tab != .chats else { return }
+            newChatOpen = false; settingsOpen = false; storiesOpen = false
+            callsOpen = false; savedLibraryOpen = false; pendingInvite = nil
+            switchTab(.chats)
         }
         .onReceive(session.$pendingLinkedRoomId) { pending in
             guard let conversationId = pending else { return }
@@ -621,9 +630,9 @@ struct RootView: View {
             PulseHaptics.tap()
             switchTab(.contacts)
             session.requestOpenUser(userId, name: nil)
-        case .room(let conversationId):
+        case .room(let conversationId, let messageId):
             guard prefs.viewer != nil else { return }
-            openLinkedRoom(conversationId)
+            openLinkedRoom(conversationId, jumpMessageId: messageId)
         case .compose:
             // R10-b - pulse://new (the quick-action destination parity).
             guard prefs.viewer != nil else { return }
@@ -638,7 +647,7 @@ struct RootView: View {
         linkedRoomTask = nil
     }
 
-    private func openLinkedRoom(_ conversationId: String) {
+    private func openLinkedRoom(_ conversationId: String, jumpMessageId: String? = nil) {
         guard session.viewer != nil, !conversationId.isEmpty else { return }
         cancelLinkedRoom()
         session.noteRoomNavigationIntent()
@@ -662,7 +671,7 @@ struct RootView: View {
                 linkedRoomTicket = nil
                 linkedRoomTask = nil
                 switchTab(.chats)
-                session.requestOpenRoom(conversation)
+                session.requestOpenRoom(conversation, jumpMessageId: jumpMessageId)
             } catch {
                 guard !Task.isCancelled, linkedRoomTicket == ticket, session.sessionGeneration == epoch,
                       tab == originTab, session.roomNavigationGeneration == navigation else { return }

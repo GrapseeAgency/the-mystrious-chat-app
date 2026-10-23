@@ -382,6 +382,13 @@ class MainActivity : FragmentActivity() {
      */
     private fun handleIntent(intent: android.content.Intent?) {
         deepLinks.value = app.pulse.core.link.PulseDeepLink.parse(intent?.dataString)
+            ?: runCatching {
+                app.pulse.core.link.PulseDeepLink.notificationRoom(
+                    intent?.getStringExtra("kind"),
+                    intent?.getStringExtra("conversationId"),
+                    intent?.getStringExtra("messageId"),
+                )
+            }.getOrNull()
         when (intent?.action) {
             ShareInActivity.ACTION_SHARE_IN -> {
                 val text = intent.getStringExtra(ShareInActivity.EXTRA_SHARE_TEXT)

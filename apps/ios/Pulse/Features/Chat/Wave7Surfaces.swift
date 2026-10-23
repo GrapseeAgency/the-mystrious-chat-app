@@ -323,7 +323,7 @@ final class Wave7RoomActions: ObservableObject {
                     let ms = Self.epochMs(from: iso)
                     if let ms {
                         PulseReminderNotifications.requestAuthorization()
-                        PulseReminderNotifications.schedule(reminderId: item.id, note: item.note ?? note, remindAtEpochMs: ms, conversationId: conversationId, ownerId: PulseReminderDelivery.ownerKey(api))
+                        PulseReminderNotifications.schedule(reminderId: item.id, note: item.note ?? note, remindAtEpochMs: ms, conversationId: conversationId, ownerId: PulseReminderDelivery.ownerKey(api), messageId: item.messageId)
                     }
                 }
                 toast("Reminder set")
