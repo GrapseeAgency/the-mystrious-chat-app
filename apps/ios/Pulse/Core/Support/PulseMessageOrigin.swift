@@ -45,7 +45,7 @@ extension WireChatMessage {
         guard let viewerId, !viewerId.isEmpty, conversationId == roomId, !isOutgoingFor(viewerId),
               !id.hasPrefix("local_"), deletedAt == nil, parentId == nil else { return nil }
         if let expiresAt, PulseFormat.date(expiresAt).map({ $0 > now }) != true { return nil }
-        return (displayAuthorName, viewOnce == true ? "View-once message" : content.isEmpty ? "Sent an attachment" : content)
+        return (displayAuthorName, viewOnce == true ? "View-once message" : expiresAt != nil ? "Disappearing message" : content.isEmpty ? "Sent an attachment" : content)
     }
 
     var displayAuthorName: String {

@@ -25,6 +25,10 @@ final class IncomingMessagePreviewTests: XCTestCase {
         arrivals.receive([machine],roomId:"room",viewerId:"me",topicId:nil)
         XCTAssertEqual(arrivals.count,1)
     }
+    func testLiveDisappearingAlertsDoNotRetainSecretTextInNotificationHistory() throws {
+        XCTAssertEqual(try row(["expiresAt":"2090-01-01T00:00:00Z"]).incomingPreview(viewerId:"me",roomId:"room")?.body, "Disappearing message")
+        XCTAssertEqual(try row().incomingPreview(viewerId:"me",roomId:"room")?.body, "secret")
+    }
     func testUnavailableAndForeignArrivalsAreSilent() throws {
         XCTAssertNil(try row().incomingPreview(viewerId:nil,roomId:"room"))
         XCTAssertNil(try row().incomingPreview(viewerId:"me",roomId:"foreign"))

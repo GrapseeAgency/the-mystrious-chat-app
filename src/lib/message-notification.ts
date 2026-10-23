@@ -4,7 +4,7 @@ import { clipUtf16 } from './text-limits.ts'
 
 /** Only the delivery capability is required; no provider SDK is loaded here. */
 type NotificationFanout = (recipients: string[], payload: {
-  kind: 'message'; title: string; body: string; conversationId: string; messageId: string;
+  kind: 'message'; title: string; body: string; conversationId: string; messageId: string; expiresAt?: string;
 }, options: { bodyFor: (userId: string) => string }) => Promise<unknown>
 
 /** Re-read the committed message and CURRENT room recipients before a push.
@@ -39,7 +39,10 @@ export async function deliverMessageNotification(
     const sender = messageDisplayName(message)
     // No rich-payload text is copied into notifications. Single-use captions
     // are private even when a legacy record's kind is text instead of image.
-    const body = message.viewOnce ? 'View-once message' : message.kind === 'text'
+    const deadlines = [message.expiresAt, message.parentId ? root?.expiresAt : null].filter((d): d is Date => d != null)
+    const deadline = deadlines.length ? Math.min(...deadlines.map(d => d.getTime())) : null
+    // Provider TTL cannot erase a notification already in the OS tray.
+    const body = message.viewOnce ? 'View-once message' : deadline !== null ? 'Disappearing message' : message.kind === 'text'
       ? clipUtf16(message.content.trim(), 140) || 'New message'
       : ({ image: 'Photo', audio: 'Voice message', voice: 'Voice message', video: 'Video',
         sticker: 'Sticker', file: 'Document', location: 'Location', poll: 'Poll' } as Record<string, string>)[message.kind] ?? 'New message'
@@ -51,10 +54,10 @@ export async function deliverMessageNotification(
       } catch { enabled = false } // corrupt preferences must not reveal content
       return [row.userId, enabled] as const
     }))
-    const deadlines = [message.expiresAt, message.parentId ? root?.expiresAt : null].filter((d): d is Date => d != null)
     return { targets: targets.map(row => row.userId), previews,
-      deadline: deadlines.length ? Math.min(...deadlines.map(d => d.getTime())) : null,
+      deadline,
       payload: { kind: 'message' as const, conversationId: message.conversationId, messageId: message.id,
+        ...(deadline !== null ? { expiresAt: new Date(deadline).toISOString() } : {}),
         title: message.conversation.isGroup && message.conversation.name ? `${sender} · ${message.conversation.name}` : sender,
         body: message.conversation.isGroup ? `${sender}: ${body}` : body } }
   }, { isolationLevel: 'Serializable' })

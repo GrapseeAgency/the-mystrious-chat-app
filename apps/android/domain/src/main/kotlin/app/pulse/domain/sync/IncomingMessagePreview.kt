@@ -10,5 +10,5 @@ fun Message.incomingPreview(viewerId: String?, roomId: String, nowMillis: Long =
     if (viewerId.isNullOrBlank() || conversationId != roomId || isOutgoingFor(viewerId) ||
         id.startsWith("local_") || isDeleted || threadRootId != null || expiresAtEpochMs?.let { it <= nowMillis } == true) return null
     return IncomingMessagePreview(displayAuthorName,
-        if (viewOnce) "View-once message" else body.ifBlank { "Sent an attachment" })
+        if (viewOnce) "View-once message" else if (expiresAtEpochMs != null) "Disappearing message" else body.ifBlank { "Sent an attachment" })
 }

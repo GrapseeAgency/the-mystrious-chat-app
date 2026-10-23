@@ -20,6 +20,11 @@ class IncomingMessagePreviewTest {
         assertEquals("Webhook · Builds", machine.incomingPreview("me", "room", 0)?.senderName)
         assertEquals("me", machine.authorId) // ownership is not rewritten
     }
+    @Test fun `live disappearing previews do not retain secret text in notification history`() {
+        assertEquals("Disappearing message", row().copy(expiresAtEpochMs = 2000).incomingPreview("me", "room", 1000)?.body)
+        assertEquals("secret", row().incomingPreview("me", "room", 1000)?.body)
+        assertNull(row().copy(expiresAtEpochMs = Long.MIN_VALUE).incomingPreview("me", "room", 1000))
+    }
     @Test fun `expired deleted foreign thread and optimistic rows are silent`() {
         assertNull(row().incomingPreview(null, "room", 0))
         assertNull(row().incomingPreview("me", "foreign", 0))

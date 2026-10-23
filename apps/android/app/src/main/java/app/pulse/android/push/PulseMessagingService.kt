@@ -51,6 +51,9 @@ class PulseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
+        data["expiresAt"]?.let { expiry ->
+            if ((app.pulse.domain.sync.messageExpiryEpochMs(expiry) ?: Long.MIN_VALUE) <= System.currentTimeMillis()) return
+        }
         val kind = data["kind"] ?: "message"
         val conversationId = data["conversationId"]
         val notification = message.notification

@@ -151,6 +151,13 @@ public final class PulseReminderNotificationDelegate: NSObject, UNUserNotificati
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void,
     ) {
+        let info = notification.request.content.userInfo
+        if let expiry = info["expiresAt"] {
+            guard let raw = expiry as? String, PulseRemediationLogic.isAlive(raw) else {
+                completionHandler([])
+                return
+            }
+        }
         completionHandler([.banner, .list, .sound])
     }
 

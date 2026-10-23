@@ -81,3 +81,13 @@ test('deadline is checked again after planning and a push outage does not erase 
   await assert.rejects(deliverMessageNotification(db,async()=>{throw Error('provider offline')},'message',()=>now))
   assert.equal(await db.message.count(),1)
 }))
+
+test('disappearing pushes inherit root deadline without leaving original text in the OS tray',()=>fixture(async(db,notify,calls)=>{
+ const deadline=new Date(now.getTime()+30000)
+ await db.message.create({data:{id:'root',conversationId:'room',senderId:'author',content:'root',expiresAt:deadline}})
+ await db.message.update({where:{id:'message'},data:{parentId:'root',expiresAt:new Date(now.getTime()+60000)}})
+ await notify()
+ assert.equal(calls[0].payload.expiresAt,deadline.toISOString())
+ assert.equal(calls[0].payload.body,'Quiet Raven: Disappearing message')
+ assert.equal(JSON.stringify(calls).includes('Secret caption'),false)
+}))
