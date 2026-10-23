@@ -1,3 +1,4 @@
+import { clipUtf16 } from '../../src/lib/text-limits.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp,rm,readFile } from 'node:fs/promises'
@@ -29,7 +30,7 @@ async function fixture(run) {
   const trigger={id:'source',senderId:'human',content:'Hello'}
   await db.message.create({data:{...trigger,conversationId:'room',createdAt:new Date('2026-10-23T10:00:00Z')}})
   const events=[],typing=[]
-  const bindings={db,MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},createHash,messageDeliveryDecision,threadRootAvailable,mapMessage:r=>r,
+  const bindings={db,clipUtf16,MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},createHash,messageDeliveryDecision,threadRootAvailable,mapMessage:r=>r,
    memberIdsOf:async room=>(await db.conversationParticipant.findMany({where:{conversationId:room},orderBy:{userId:'asc'},select:{userId:true}})).map(r=>r.userId),
    notifySocket:async(...args)=>events.push(args),fetch:async(_,options)=>{typing.push(JSON.parse(options.body));return new Response('{}')},console:{error:()=>{}}}
   const delivery=await load('src/lib/bot-delivery.ts',bindings,'({botReplyContext,createBotReply,prepareAiContext})')
@@ -109,4 +110,16 @@ test('real command entry creates renderable polls and wallet read does not creat
  assert.equal(await db.userWallet.count(),0)
  assert.equal(h.events.length,2)
  assert.ok(h.events.every(e=>e[1].includes('bot')))
+}))
+test('generated AI and poll text cannot acquire unpaired surrogates at server size limits',()=>fixture(async(db,h)=>{
+ const ai=await h.ai({ZAI:{create:async()=>({chat:{completions:{create:async()=>({choices:[{message:{content:'a'.repeat(1998)+'😀end'}}]})}}})}})
+ await ai.runReply('room',h.trigger)
+ const answer=await db.message.findFirst({where:{senderId:'bot'}})
+ assert.ok(answer.content.isWellFormed());assert.ok(answer.content.length<=2000);assert.ok(answer.content.endsWith('…'))
+ const command='/poll '+'a'.repeat(139)+'😀 | '+'b'.repeat(79)+'😀 | Yes'
+ await db.message.create({data:{id:'poll-source',conversationId:'room',senderId:'human',content:command}})
+ const commands=await h.commands();await commands('room',{id:'poll-source',senderId:'human',content:command})
+ const poll=await db.poll.findFirst({include:{options:true}})
+ assert.ok(poll.question.isWellFormed());assert.ok(poll.question.length<=140)
+ assert.ok(poll.options.every(row=>row.text.isWellFormed()&&row.text.length<=80))
 }))

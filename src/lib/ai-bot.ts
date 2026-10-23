@@ -1,3 +1,4 @@
+import { clipUtf16 } from '@/lib/text-limits'
 // Pulse AI bot - server-only LLM companion (Discord-bot parity).
 // A REAL user row in the DB ("Pulse AI"), invitable to DMs and
 // groups like anyone else. Replies when mentioned in groups, or
@@ -121,7 +122,7 @@ async function runReply(conversationId: string, trigger: ChatMessage): Promise<v
       await typing(false)
     }
     if (!answer) return
-    if (answer.length > MESSAGE_MAX) answer = `${answer.slice(0, MESSAGE_MAX - 1)}…`
+    if (answer.length > MESSAGE_MAX) answer = `${clipUtf16(answer, MESSAGE_MAX - 1)}…`
     const created = await db.$transaction(async tx => {
       const current = await prepareAiContext(tx, conversationId, botId, trigger)
       if (!current || current.fingerprint !== prepared.fingerprint) return null

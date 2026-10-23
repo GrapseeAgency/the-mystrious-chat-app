@@ -1,3 +1,4 @@
+import { clipUtf16 } from '../../src/lib/text-limits.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
@@ -33,7 +34,7 @@ async function fixture(run) {
   await db.automation.create({data:{id:'rule',conversationId:'room',trigger:'Hello',reply:'Welcome',createdById:'me'}})
   await db.webhook.create({data:{id:'hook',conversationId:'room',name:'Build bot',token:'synthetic-hook',createdBy:'me'}})
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
-  const events=[],bindings={db,messageDeliveryDecision,roomControl,requireActionOwner,NextResponse:Response,safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',mapAutomation:r=>r,
+  const events=[],bindings={db,clipUtf16,messageDeliveryDecision,roomControl,requireActionOwner,NextResponse:Response,safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',mapAutomation:r=>r,
    AVATAR_COLORS:['#F2A65A'],MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},mapMessage:r=>r,memberIdsOf:async()=>['me','member'],notifySocket:async(...args)=>events.push(args)}
   const {createAutomationReply,triggerMatches}=await load('src/lib/automation-delivery.ts',{...bindings,messageDeliveryDecision,threadRootAvailable},'({createAutomationReply,triggerMatches})')
   const a=await load('src/app/api/conversations/[id]/automations/route.ts',bindings,'({GET,POST})')
@@ -196,4 +197,11 @@ test('webhook committed acceptance survives notification outage without encourag
  const receipt=await response.json();assert.equal(receipt.success,true)
  assert.ok(await db.message.findUnique({where:{id:receipt.messageId}}))
  assert.equal(await db.message.count(),1)
+}))
+test('webhook override name remains valid Unicode when its display limit splits an emoji',()=>fixture(async(db,h)=>{
+ const response=await h.token.POST(req('POST','',null,{username:'X'+'😀'.repeat(20)}),ctx())
+ assert.equal(response.status,200)
+ const {webhookName}=JSON.parse((await db.message.findFirst()).payload)
+ assert.ok(webhookName.isWellFormed());assert.ok(webhookName.length<=40)
+ assert.equal(webhookName,'X'+'😀'.repeat(19))
 }))

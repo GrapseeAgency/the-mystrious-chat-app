@@ -1,3 +1,4 @@
+import { clipUtf16 } from '@/lib/text-limits'
 // Pulse bot engine - REAL deterministic command bot (server-only).
 // The bot is a genuine User row (username "pulseai" - the same row
 // the LLM companion uses) that joins conversations like anyone else.
@@ -463,8 +464,8 @@ export async function maybeBotReply(
           .split('|')
           .map((p) => p.trim())
           .filter((p) => p.length > 0)
-        const question = (parts[0] ?? '').slice(0, POLL_QUESTION_MAX)
-        const options = parts.slice(1, 7).map((p) => p.slice(0, POLL_OPTION_MAX))
+        const question = clipUtf16(parts[0] ?? '', POLL_QUESTION_MAX)
+        const options = parts.slice(1, 7).map((p) => clipUtf16(p, POLL_OPTION_MAX))
         if (question.length === 0 || options.length < 2) {
           await send(POLL_USAGE)
           return

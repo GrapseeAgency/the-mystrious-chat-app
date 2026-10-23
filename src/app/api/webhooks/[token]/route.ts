@@ -1,3 +1,4 @@
+import { clipUtf16 } from '@/lib/text-limits'
 // /api/webhooks/[token] - Discord-style webhook ingest + cleanup.
 // POST   (PUBLIC) { content, username? } → lands a real Message row
 //        into the webhook's conversation, authored by the bot user
@@ -96,7 +97,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     if (decision.state === 'wait') return { status: 429, error: 'Room slow mode is active.', retryAfter: decision.retryAfter }
     const message = await tx.message.create({ data: {
       conversationId: webhook.conversationId, senderId, content, kind: 'text', viaAutomation: true,
-      payload: JSON.stringify({ webhook: true, webhookName: strField(body.username).slice(0, 40) || webhook.name, webhookColor: webhook.avatarColor }),
+      payload: JSON.stringify({ webhook: true, webhookName: clipUtf16(strField(body.username), 40) || webhook.name, webhookColor: webhook.avatarColor }),
       expiresAt: decision.expiresAt, createdAt: now,
     }, include: MESSAGE_FULL_INCLUDE })
     await tx.conversation.update({ where: { id: webhook.conversationId }, data: { updatedAt: now } })

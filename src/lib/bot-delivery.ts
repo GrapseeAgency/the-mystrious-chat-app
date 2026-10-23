@@ -1,3 +1,4 @@
+import { clipUtf16 } from '@/lib/text-limits'
 import { createHash } from 'node:crypto'
 import type { Prisma } from '../../prisma/generated-client'
 import { MESSAGE_FULL_INCLUDE, MESSAGE_MAX } from '@/lib/serializers'
@@ -37,7 +38,7 @@ export async function createBotReply(tx: Prisma.TransactionClient, room: string,
   const context = await botReplyContext(tx, room, botId, trigger, now)
   if (!context || (!data.poll && !data.content.trim())) return null
   const message = await tx.message.create({ data: {
-    conversationId: room, senderId: botId, content: data.content.slice(0, MESSAGE_MAX),
+    conversationId: room, senderId: botId, content: clipUtf16(data.content, MESSAGE_MAX),
     kind: data.poll ? 'poll' : 'text', viaAutomation: true, payload: data.payload ?? JSON.stringify({ bot: true }),
     parentId: context.source.parentId, topicId: context.source.topicId,
     createdAt: now, expiresAt: context.expiresAt,
@@ -77,7 +78,7 @@ export async function prepareAiContext(tx: Prisma.TransactionClient, room: strin
   const rows = recent.reverse().map(row => ({ ...row,
     sender: { name: row.anon ? row.anonAlias || 'Anonymous' : row.sender.name },
   }))
-  const transcript = rows.map(row => `${row.sender.name}: ${row.content.trim() ? row.content.slice(0, 500) : row.imagePath ? '[sent a photo]' : '[attachment]'}`).join('\n')
+  const transcript = rows.map(row => `${row.sender.name}: ${row.content.trim() ? clipUtf16(row.content, 500) : row.imagePath ? '[sent a photo]' : '[attachment]'}`).join('\n')
   return { isGroup: conversation.isGroup, transcript,
     fingerprint: createHash('sha256').update(JSON.stringify({ rows, roster, conversation })).digest('hex') }
 }
