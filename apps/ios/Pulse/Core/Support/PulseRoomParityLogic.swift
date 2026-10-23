@@ -33,7 +33,7 @@ public enum PulseRoomParityLogic {
     ) -> Int? {
         guard let anchorMs, let viewerId else { return nil }
         for (index, message) in messages.enumerated() {
-            guard message.senderId != viewerId else { continue }
+            guard !message.isOutgoingFor(viewerId) else { continue }
             guard message.deletedAt == nil else { continue }
             guard let created = PulseFormat.date(message.createdAt) else { continue }
             if created.timeIntervalSince1970 * 1000 > anchorMs { return index }

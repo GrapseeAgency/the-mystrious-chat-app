@@ -122,15 +122,17 @@ final class MirrorViewModel: ObservableObject {
         let raw: String
         if deleted {
             raw = "Message deleted"
+        } else if last?.viewOnce == true {
+            raw = "View-once message"
         } else if last?.imagePath != nil {
             raw = "Photo"
         } else {
             raw = last?.content ?? "No messages yet"
         }
-        let mine = last?.senderId == viewerId
+        let mine = last?.isOutgoingFor(viewerId) == true
         let authorPrefix: String
-        if let origin = last?.integrationLabel {
-            authorPrefix = origin + ": "
+        if let last, last.integrationLabel != nil || last.anon == true {
+            authorPrefix = last.displayAuthorName + ": "
         } else if mine {
             authorPrefix = "You: "
         } else if summary.isGroup && last != nil {
@@ -148,7 +150,7 @@ final class MirrorViewModel: ObservableObject {
             unread: summary.unreadCount ?? 0,
             online: false,
             pinned: summary.pinnedAt != nil,
-            muted: summary.mutedUntil != nil,
+            muted: summary.isMutedNow,
             subtitle: summary.isGroup
                 ? summary.members.map { $0.name }.filter { !$0.isEmpty }.joined(separator: ", ")
                 : "",

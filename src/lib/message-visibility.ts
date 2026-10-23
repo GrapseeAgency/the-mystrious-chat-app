@@ -13,7 +13,10 @@ export function inboxMessagesWhere(room: string, at: Date): Prisma.MessageWhereI
   }
 }
 export function unreadMessages(room: string, viewer: string, readAt: Date, at: Date): Prisma.MessageWhereInput {
-  return { ...inboxMessagesWhere(room, at), senderId: { not: viewer }, deletedAt: null, createdAt: { gt: readAt } }
+  // An integration may use a member's senderId without being that member's
+  // outgoing action. Only the persisted server flag changes unread semantics.
+  return { AND: [inboxMessagesWhere(room, at), { OR: [{ senderId: { not: viewer } }, { viaAutomation: true }] }],
+    deletedAt: null, createdAt: { gt: readAt } }
 }
 export function isExpiredMessage(message: { expiresAt: Date | null }, at: Date): boolean {
   return message.expiresAt !== null && message.expiresAt <= at
@@ -70,7 +73,7 @@ export async function unreadSnapshot(
         ELSE m.expiresAt END AS deadline
       FROM Message m
       LEFT JOIN Message p ON p.id = m.parentId
-      WHERE m.conversationId = ${room} AND m.senderId <> ${viewer}
+      WHERE m.conversationId = ${room} AND (m.senderId <> ${viewer} OR m.viaAutomation = 1)
         AND m.deletedAt IS NULL AND m.createdAt > ${readAt}
         AND (m.expiresAt IS NULL OR m.expiresAt > ${at})
         AND (m.parentId IS NULL OR (

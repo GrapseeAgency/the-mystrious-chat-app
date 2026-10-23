@@ -842,13 +842,15 @@ extension WireConversationSummary {
             lastActivityAt: updatedAt ?? lastMessage?.createdAt,
             unreadCount: unreadCount ?? 0,
             isPinned: !(pinnedAt ?? "").isEmpty,
-            isMuted: !(mutedUntil ?? "").isEmpty,
+            isMuted: isMutedNow,
             isArchived: !(archivedAt ?? "").isEmpty,
             wireJson: (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) },
         )
     }
 
     static func preview(of m: WireChatMessage) -> String {
+        if m.deletedAt != nil { return "Message deleted" }
+        if m.viewOnce == true { return "View-once message" }
         switch m.kind {
         case "image": return "Photo"
         case "voice": return "Voice message"

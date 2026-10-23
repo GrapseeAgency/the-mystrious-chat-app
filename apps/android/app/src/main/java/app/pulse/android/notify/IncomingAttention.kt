@@ -1,5 +1,6 @@
 package app.pulse.android.notify
 
+import app.pulse.domain.sync.incomingPreview
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.RingtoneManager
@@ -18,9 +19,8 @@ import java.util.concurrent.ConcurrentHashMap
  * stay silent until a real push channel exists (honest limitation, same as
  * the reminder loop). Gates, in order:
  *  1. app foregrounded (MainActivity onStart/onStop flips the flag)
- *  2. NOT the viewer's own row (sender filter; optimistic echoes never ride
- *     PulseEvent.MessageReceived - the outbox swap handles those - but the
- *     viewer's own automation replies do arrive and must stay silent)
+ *  2. live main-room arrivals, not the viewer's outgoing action; server-marked
+ *     automation is incoming even if it represents that member's senderId
  *  3. LOCAL quiet hours (ReminderAlertPolicy.quietNow - the same window the
  *     reminder notifier honors)
  *  4. per-room mute (the conversation's mutedUntil window is in the future)
@@ -80,8 +80,7 @@ object IncomingAttention {
     /** One PulseEvent.MessageReceived - evaluates the gate chain live. */
     fun onMessageReceived(context: Context, conversationId: String, message: Message, viewerId: String?) {
         if (!foreground || activeReadingRoom == conversationId) return
-        if (viewerId == null || message.authorId == viewerId) return
-        if (message.isDeleted) return
+        val preview = message.incomingPreview(viewerId, conversationId) ?: return
         if (ReminderAlertPolicy.quietNow()) return
         if ((mutedUntilMs[conversationId] ?: 0L) > System.currentTimeMillis()) return
         // R7 item 7 - the preview line the settings row promises ("Message
@@ -92,7 +91,7 @@ object IncomingAttention {
         runCatching {
             android.widget.Toast.makeText(
                 context,
-                app.pulse.protocol.PulseWave8Logic.incomingPreviewText(previewsOn, message.authorName, message.body),
+                app.pulse.protocol.PulseWave8Logic.incomingPreviewText(previewsOn, preview.senderName, preview.body),
                 android.widget.Toast.LENGTH_SHORT,
             ).show()
         }

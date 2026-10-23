@@ -36,6 +36,18 @@ enum PulseMessageOrigin {
     }
 }
 extension WireChatMessage {
+    /// Display/attention semantics only; ownership still uses the real sender ID.
+    func isOutgoingFor(_ viewerId: String?) -> Bool {
+        guard let viewerId, !viewerId.isEmpty else { return false }
+        return senderId == viewerId && viaAutomation != true
+    }
+    func incomingPreview(viewerId: String?, roomId: String, now: Date = Date()) -> (senderName: String, body: String)? {
+        guard let viewerId, !viewerId.isEmpty, conversationId == roomId, !isOutgoingFor(viewerId),
+              !id.hasPrefix("local_"), deletedAt == nil, parentId == nil else { return nil }
+        if let expiresAt, PulseFormat.date(expiresAt).map({ $0 > now }) != true { return nil }
+        return (displayAuthorName, viewOnce == true ? "View-once message" : content.isEmpty ? "Sent an attachment" : content)
+    }
+
     var displayAuthorName: String {
         if anon == true {
             let alias = anonAlias?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

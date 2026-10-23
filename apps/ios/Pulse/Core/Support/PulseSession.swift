@@ -1153,11 +1153,13 @@ public final class PulseSession: ObservableObject {
     /// NOT reading → soft ping + buzz + preview toast, each behind its own
     /// toggle, all behind the LOCAL quiet-hours window.
     private func noteIncomingAttention(conversationId: String, raw: [String: Any]) {
-        guard let message = Self.decodeMessage(from: raw), let viewer else { return }
-        guard message.senderId != viewer.id,
-              message.deletedAt == nil,
-              message.parentId == nil,
+        guard ready, isForeground, let store, let viewer,
+              let message = Self.decodeMessage(from: raw),
+              let preview = message.incomingPreview(viewerId: viewer.id, roomId: conversationId),
               activeRoomId != conversationId else { return }
+        do {
+            if try store.cachedConversation(id: conversationId)?.isMuted == true { return }
+        } catch { return } // A cache failure is not permission to ignore mute policy.
         guard !(prefs?.isQuietHoursNow ?? false) else { return } // quiet - stay silent
         // R14 5-b - the web gate chain (pulse-realtime-provider.tsx :602-605):
         // device soundOn AND quiet hours AND the per-account notifSound all
@@ -1169,9 +1171,7 @@ public final class PulseSession: ObservableObject {
             PulseHaptics.incoming()
         }
         if prefs?.notifPreviews == true {
-            let sender = message.sender?.name ?? "Message"
-            let body = message.content.isEmpty ? "Sent an attachment" : message.content
-            toasts.show("\(sender): \(body)")
+            toasts.show("\(preview.senderName): \(preview.body)")
         }
     }
 

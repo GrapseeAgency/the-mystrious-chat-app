@@ -709,8 +709,15 @@ interface MessageDao {
             val old = current[incoming.id]
             val candidate = incoming.toDomain()
             val safe = app.pulse.domain.sync.mergeMessageState(old?.toDomain(), candidate)
-            val row = MessageEntity.from(safe,
+            val sanitized = MessageEntity.from(safe,
                 if (safe.isDeleted) null else if (safe.reactions == candidate.reactions) incoming.reactionsJson else old?.reactionsJson)
+            // Preserve raw timestamps and unknown JSON fields when no domain merge
+            // changed them. Quote redaction still applies even if toDomain sanitized
+            // the candidate before comparison (legacy snippets must not bypass it).
+            val row = if (safe == candidate && !safe.isDeleted) incoming.copy(
+                viewOnce = safe.viewOnce, replyToBody = safe.replyToBody,
+                replyToAuthor = safe.replyToAuthor, quoteBoundsJson = sanitized.quoteBoundsJson,
+            ) else sanitized
             current[row.id] = row
             row
         }
@@ -1068,7 +1075,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1208,6 +1215,14 @@ abstract class PulseDatabase : RoomDatabase() {
                 // Wave 7 rich-object carriers (red packet / game / tournament) -
                 // the raw payload JSON must survive offline restarts.
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
+            }
+        }
+
+        /** Old inbox projections did not retain anonymous/view-once provenance.
+         * Retire only the derived preview; preserve unread, drafts and outbox. */
+        val MIGRATION_14_15: Migration = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE conversations SET lastMessagePreview = NULL, lastMessageAuthorName = NULL, lastMessageKind = NULL, lastMessageMine = 0, lastMessageDeleted = 0, lastMessageIsReply = 0, lastMessageIsImage = 0, lastMessageIsAudio = 0, lastMessageIsFile = 0, lastMessageFileName = NULL")
             }
         }
 

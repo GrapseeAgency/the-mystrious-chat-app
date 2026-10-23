@@ -554,6 +554,8 @@ data class Message(
     enum class Kind { TEXT, IMAGE, VOICE, VIDEO, FILE, POLL, RED_PACKET, GAME, TOURNAMENT, STICKER, LOCATION, SYSTEM }
 
     val isDeleted: Boolean get() = deletedAt != null
+    /** Attention/unread classification, never an ownership/permission check. */
+    fun isOutgoingFor(viewerId: String?): Boolean = !viewerId.isNullOrBlank() && authorId == viewerId && !viaAutomation
     val displayAuthorName: String get() = if (anon) anonAlias?.takeIf { it.isNotBlank() } ?: "Anonymous" else integrationLabel ?: authorName
     val integrationLabel: String? get() = app.pulse.domain.sync.MessageOrigin.label(payload, viaAutomation, isDeleted)
 }

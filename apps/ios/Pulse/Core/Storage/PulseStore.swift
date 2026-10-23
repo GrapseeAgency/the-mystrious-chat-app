@@ -376,6 +376,13 @@ public final class PulseStore: Sendable {
         }
     }
 
+    /// Indexed lookup for the active account's notification mute policy.
+    public func cachedConversation(id: String) throws -> PulseConversation? {
+        try dbQueue.read { db in
+            try PulseConversationRow.fetchOne(db, key: id)?.toDomain()
+        }
+    }
+
     // message cache (N3-b - room offline-first seed; v3/v4 full fidelity)
     public func upsert(messages: [WireChatMessage]) throws {
         _ = try mergeMessages(messages)

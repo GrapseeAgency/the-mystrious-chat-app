@@ -348,3 +348,19 @@ test('read transaction contention is retryable, not an access refusal', async ()
   const failure = new Error('unexpected persistence failure')
   await assert.rejects(advanceReadReceipt({ $transaction: async () => { throw failure } }, 'room', 'reader', 'displayed'), error => error === failure)
 })
+
+test('represented integration sends are incoming for unread without counting human echoes', () => fixture(async db => {
+  await db.$executeRaw`INSERT INTO Message(id,conversationId,senderId,createdAt,viaAutomation,expiresAt)
+    VALUES ('human','room','reader',${t(10)},false,NULL),
+           ('machine','room','reader',${t(11)},true,${t(30)}),
+           ('other','room','peer',${t(12)},false,NULL),
+           ('dead-machine','room','reader',${t(13)},true,${t(19)})`
+  assert.equal(await db.message.count({ where: unreadMessages('room','reader',t(0),t(20)) }), 2)
+  assert.deepEqual(await unreadSnapshot(db,'room','reader',t(0),t(20)), {
+    unreadCount: 2, unreadExpirations: [{ expiresAt: t(30).toISOString(), count: 1 }],
+  })
+  assert.deepEqual(await unreadSnapshot(db,'room','reader',t(11),t(20)), { unreadCount: 1, unreadExpirations: [] })
+  assert.equal(await db.message.count({ where: unreadMessages('room','reader',t(0),t(30)) }), 1)
+  await db.$executeRaw`UPDATE Message SET deletedAt = ${t(20)} WHERE id = 'machine'`
+  assert.deepEqual(await unreadSnapshot(db,'room','reader',t(0),t(20)), { unreadCount: 1, unreadExpirations: [] })
+}))

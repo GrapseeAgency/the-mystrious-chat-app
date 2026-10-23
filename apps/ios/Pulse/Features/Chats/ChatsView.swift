@@ -2720,10 +2720,13 @@ final class ChatsViewModel: ObservableObject {
                         : isFile
                             ? "Document - \(last.fileName ?? "file")"
                             : collapsed
-                let mine = last.senderId == viewerId
+                if last.viewOnce == true { previewText = "View-once message" }
+                let mine = last.isOutgoingFor(viewerId)
                 let replyArrow = last.replyTo != nil ? "↩ " : ""
                 if !previewText.isEmpty {
-                    if mine {
+                    if last.integrationLabel != nil || last.anon == true {
+                        previewPrefix = "\(replyArrow)\(last.displayAuthorName): "
+                    } else if mine {
                         previewPrefix = "\(replyArrow)You: "
                     } else if conv.isGroup {
                         previewPrefix = "\(replyArrow)\(last.sender?.name ?? ""): "

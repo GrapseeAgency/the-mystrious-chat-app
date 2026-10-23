@@ -30,9 +30,17 @@ export function quoteSnippet(parent: {
   const deadlines = [parent.expiresAt, parent.parentId ? root?.expiresAt : null].filter((d): d is Date => d != null)
   const expiresAt = deadlines.length ? new Date(Math.min(...deadlines.map(d => d.getTime()))) : null
   const disclosure = quoteDisclosure({ ...parent, expiresAt, deletedAt: invalid ? now : parent.deletedAt }, now)
+  const senderName = disclosure.deleted ? 'Unavailable message' : messageDisplayName(parent)
+  return { id: parent.id, ...disclosure, senderName, quoteVersion: 1,
+    expiresAt: expiresAt?.toISOString() ?? null, viewOnce: parent.viewOnce }
+}
+
+/** A display caption, not a guarantee that the wire sender account is anonymous. */
+export function messageDisplayName(parent: {
+  sender: { name: string }; anon: boolean; anonAlias: string | null; viaAutomation: boolean; payload: string | null;
+}): string {
   let senderName = parent.sender.name
-  if (disclosure.deleted) senderName = 'Unavailable message'
-  else if (parent.anon) senderName = parent.anonAlias?.trim() || 'Anonymous'
+  if (parent.anon) senderName = parent.anonAlias?.trim() || 'Anonymous'
   else {
     let metadata: Record<string, unknown> = {}
     try {
@@ -49,6 +57,5 @@ export function quoteSnippet(parent: {
       } else senderName = metadata.bot === true ? 'Bot' : 'Automation'
     } else if (metadata.webhook === true || metadata.bot === true) senderName = 'Unverified integration'
   }
-  return { id: parent.id, ...disclosure, senderName, quoteVersion: 1,
-    expiresAt: expiresAt?.toISOString() ?? null, viewOnce: parent.viewOnce }
+  return senderName
 }

@@ -2393,7 +2393,7 @@ internal fun buildTimelineRows(
             lastIso = iso
         }
         if (!dividerPlaced &&
-            message.authorId != viewerId &&
+            !message.isOutgoingFor(viewerId) &&
             !message.isDeleted &&
             unreadAnchorMs != null &&
             (PulseTime.parse(message.createdAt)?.toInstant()?.toEpochMilli() ?: 0L) > unreadAnchorMs
