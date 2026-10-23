@@ -93,6 +93,8 @@ import kotlinx.coroutines.flow.Flow
 /** Live events pushed by the relay - the UDF event side of the repository. */
 sealed interface PulseEvent {
     data class MessageReceived(val conversationId: String, val message: Message) : PulseEvent
+    /** Existing row changed; never an arrival, sound, effect or unread increment. */
+    data class MessageUpdated(val conversationId: String, val message: Message) : PulseEvent
     data class MessageDeleted(val conversationId: String, val messageId: String) : PulseEvent
     data class MessageRead(val conversationId: String, val userId: String, val at: String?) : PulseEvent
     data class Typing(

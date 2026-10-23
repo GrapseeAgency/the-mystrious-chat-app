@@ -650,6 +650,7 @@ class PulseRepositoryImpl constructor(
 
     private suspend fun onMessageEnvelope(signal: PulseSocketClient.Signal.MessageEnvelope) {
         val dto = signal.dto ?: return
+        if (dto.conversationId != signal.conversationId) return
         val message = messageCacheMutex.withLock {
             val message = dto.toDomain()
             messageEventRevisions[message.id] = messageEventClock.incrementAndGet()
@@ -658,12 +659,8 @@ class PulseRepositoryImpl constructor(
             messageCacheChanges.value = messageEventClock.get()
             checkNotNull(messageDao.byId(message.id)).toDomain()
         }
-        if (signal.event == app.pulse.protocol.SocketEvents.MESSAGE_DELETED) {
-            eventsBus.tryEmit(
-                PulseEvent.MessageDeleted(signal.conversationId, message.id),
-            )
-        } else {
-            eventsBus.tryEmit(PulseEvent.MessageReceived(signal.conversationId, message))
+        app.pulse.domain.sync.messageEnvelopeEvent(signal.event, signal.conversationId, message)?.let {
+            eventsBus.tryEmit(it)
         }
         scheduleConversationsRefresh()
     }

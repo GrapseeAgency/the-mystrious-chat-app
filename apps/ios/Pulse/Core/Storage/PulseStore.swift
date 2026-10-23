@@ -244,6 +244,11 @@ public final class PulseStore: Sendable {
             try db.alter(table: "conversation") { t in t.add(column: "wireJson", .text) }
             try db.execute(sql: "UPDATE conversation SET lastMessagePreview = NULL, unreadCount = 0")
         }
+        m.registerMigration("v12") { db in
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS message_quote_source ON message(replyToId)")
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS message_thread_parent ON message(parentId)")
+            try Self.repairCachedQuotes(db: db, changedId: nil)
+        }
         return m
     }
 
@@ -332,7 +337,7 @@ public final class PulseStore: Sendable {
                 throw ThreadAccessError()
             }
             try db.execute(sql: "DELETE FROM wave7Cache WHERE key = ?", arguments: [Self.threadDenialKey(rootId)])
-            return WireThreadPage(parent: parent, replies: replies)
+            return WireThreadPage(parent: parent, replies: try Self.projectCachedQuotes(replies, db: db))
         }
     }
 
@@ -391,7 +396,53 @@ public final class PulseStore: Sendable {
     /// Return the same privacy-preserving rows that committed, not stale HTTP inputs.
     public func mergeMessages(_ messages: [WireChatMessage]) throws -> [WireChatMessage] {
         try dbQueue.write { db in
-            try messages.map { try Self.writeMessage($0, db: db) }
+            for message in messages { try Self.writeMessage(message, db: db) }
+            // A later source in the same page may have revoked an earlier quote.
+            return try Self.projectCachedQuotes(messages, db: db)
+        }
+    }
+
+    /// Re-project only existing rows; never replace a paged river with a truncated cache window.
+    public func projectCachedQuotes(_ messages: [WireChatMessage]) throws -> [WireChatMessage] {
+        try dbQueue.read { db in try Self.projectCachedQuotes(messages, db: db) }
+    }
+
+    private static func projectCachedQuotes(_ messages: [WireChatMessage], db: Database) throws -> [WireChatMessage] {
+        var known: [String: WireChatMessage] = [:]
+        func load(_ ids: Set<String>) throws {
+            let values = Array(ids.subtracting(Set(known.keys)))
+            for start in stride(from: 0, to: values.count, by: 400) {
+                let part = Array(values[start..<min(start + 400, values.count)])
+                let placeholders = Array(repeating: "?", count: part.count).joined(separator: ",")
+                let rows = try Row.fetchAll(db, sql: "SELECT * FROM message WHERE id IN (\(placeholders))", arguments: StatementArguments(part))
+                for row in rows { if let message = Self.messageRow(from: row) { known[message.id] = message } }
+            }
+        }
+        try load(Set(messages.flatMap { [$0.id] + [$0.replyTo?.id].compactMap { $0 } }))
+        try load(Set(known.values.compactMap { $0.replyTo?.id }))
+        try load(Set(known.values.compactMap { $0.parentId }))
+        return PulseQuotePrivacy.project(messages, known: Array(known.values))
+    }
+
+    /// Bounded reverse dependency walk, in the SAME write transaction as the source.
+    private static func repairCachedQuotes(db: Database, changedId: String?) throws {
+        var after = ""
+        while true {
+            var arguments: StatementArguments = ["after": after]
+            let affected: String
+            if let changedId {
+                affected = "AND (id = :changed OR replyToId = :changed OR replyToId IN (SELECT id FROM message WHERE parentId = :changed))"
+                arguments += ["changed": changedId]
+            } else { affected = "" }
+            let rows = try Row.fetchAll(db, sql: "SELECT * FROM message WHERE replyToId IS NOT NULL AND id > :after \(affected) ORDER BY id LIMIT 200", arguments: arguments)
+            guard let last = rows.last, let lastID: String = last["id"] else { break }
+            let before = rows.compactMap(Self.messageRow(from:))
+            let projected = try Self.projectCachedQuotes(before, db: db)
+            for (old, safe) in zip(before, projected) where old.replyTo != safe.replyTo {
+                try db.execute(sql: "UPDATE message SET wireJson = ? WHERE id = ?",
+                    arguments: [String(decoding: try JSONEncoder().encode(safe), as: UTF8.self), safe.id])
+            }
+            after = lastID
         }
     }
 
@@ -406,6 +457,7 @@ public final class PulseStore: Sendable {
         var m = PulseMessageMerge.merge(current, incoming: incoming)
         if let deleted: String = row?["deletedAt"], !deleted.isEmpty { m = m.deletedCopy() }
         if let viewed: String = row?["viewedAt"] { m.viewedAt = viewed; m.viewOnce = true }
+        m = try Self.projectCachedQuotes([m], db: db).first ?? m
         try db.execute(
             sql: """
             INSERT INTO message (id, conversationId, authorId, authorName, kind, body,
@@ -421,7 +473,7 @@ public final class PulseStore: Sendable {
                     :viewedAt, :transcript, :transcribedAt, :pollJson,
                     :linkPreviewJson, :topicId, :payloadJson, :translationsJson, :wireJson, :expiresAtEpoch)
             ON CONFLICT(id) DO UPDATE SET
-              authorName=:authorName, kind=:kind, body=:body, pinnedAt=:pinnedAt,
+              authorName=:authorName, kind=:kind, body=:body, pinnedAt=:pinnedAt, replyToId=:replyToId,
               parentId=:parentId, imagePath=:imagePath, audioPath=:audioPath,
               durationMs=:durationMs, filePath=:filePath, fileName=:fileName,
               fileSize=:fileSize, editedAt=:editedAt, deletedAt=:deletedAt,
@@ -453,7 +505,8 @@ public final class PulseStore: Sendable {
                 "expiresAtEpoch": m.expiresAt.flatMap { PulseFormat.date($0)?.timeIntervalSince1970 },
             ],
         )
-        return m
+        try Self.repairCachedQuotes(db: db, changedId: m.id)
+        return try Self.projectCachedQuotes([m], db: db).first ?? m
     }
 
     /// Persist operation and optimistic bubble before any network I/O.
@@ -672,7 +725,14 @@ public final class PulseStore: Sendable {
         if let wire: String = row["wireJson"] {
             // Corrupt full envelopes must not fall back to missing privacy flags.
             return (try? JSONDecoder().decode(WireChatMessage.self, from: Data(wire.utf8)))
-                .map { PulseMessageMerge.merge(nil, incoming: $0) }
+                .map { incoming in
+                    var safe = PulseMessageMerge.merge(nil, incoming: incoming)
+                    // Legacy column-only terminal writes must also constrain
+                    // dependent quotes, not just the next write of this source.
+                    if let deleted: String = row["deletedAt"], !deleted.isEmpty { safe = safe.deletedCopy() }
+                    if let viewed: String = row["viewedAt"] { safe.viewOnce = true; safe.viewedAt = viewed }
+                    return safe
+                }
         }
         guard let id: String = row["id"],
               let conversationId: String = row["conversationId"],

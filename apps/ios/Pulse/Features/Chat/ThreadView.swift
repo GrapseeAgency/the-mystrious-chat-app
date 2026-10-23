@@ -451,11 +451,16 @@ struct ThreadView: View {
             room = id; message = decoded.deletedCopy()
         default: return
         }
-        guard room == conversation.id, message.id == root.id || message.parentId == root.id else { return }
-        let committed = try? session.store?.mergeMessages([message])
-        let canonical = committed?.first ?? message
+        guard room == conversation.id else { return }
+        let cached = try? session.store?.message(id: message.id, now: .distantPast)
+        let canonical = PulseMessageMerge.merge(cached, incoming: message)
         if canonical.id == root.id { parent = PulseMessageMerge.merge(parent, incoming: canonical) }
-        else { appendReply(canonical) }
+        else if canonical.parentId == root.id { appendReply(canonical) }
+        // An unrelated source can still be quoted INSIDE this thread.
+        let local = PulseQuotePrivacy.project([parent ?? root] + replies, known: [canonical])
+        let projected = (try? session.store?.projectCachedQuotes(local)) ?? local
+        parent = projected.first
+        replies = Array(projected.dropFirst())
         pruneExpired()
     }
 

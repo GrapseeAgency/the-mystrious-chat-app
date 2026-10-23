@@ -12,6 +12,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import app.pulse.domain.sync.restrictQuote
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.pulse.domain.model.Conversation
@@ -173,7 +174,7 @@ private fun membersOf(json: String): List<ConversationMember> = runCatching {
     )
 }.getOrDefault(emptyList())
 
-@Entity(tableName = "messages")
+@Entity(tableName = "messages", indices = [Index(value = ["replyToId"]), Index(value = ["threadRootId"])])
 data class MessageEntity(
     @PrimaryKey val id: String,
     val conversationId: String,
@@ -722,7 +723,32 @@ interface MessageDao {
             row
         }
         replaceMerged(merged)
+        // Resolve after ALL source rows commit to this transaction, so a page
+        // containing a quote before its tombstone cannot resurrect that quote.
+        for (changed in merged.map { it.id }.distinct().chunked(200)) {
+            var after = ""
+            while (true) {
+                val owners = quoteDependents(changed, after)
+                if (owners.isEmpty()) break
+                val sources = byIds(owners.mapNotNull { it.replyToId }.distinct()).associateBy { it.id }
+                val roots = byIds(sources.values.mapNotNull { it.threadRootId }.distinct()).associateBy { it.id }
+                for (owner in owners) {
+                    val source = sources[owner.replyToId]?.toDomain()
+                    val safe = owner.toDomain().restrictQuote(source, roots[source?.threadRootId]?.toDomain())
+                    val bounds = safe.quoteBounds?.let { app.pulse.protocol.PulseJson.encodeToString(app.pulse.domain.model.QuoteBounds.serializer(), it) }
+                    if (owner.replyToBody != safe.replyToBody || owner.replyToAuthor != safe.replyToAuthor || owner.quoteBoundsJson != bounds)
+                        updateQuote(owner.id, safe.replyToBody, safe.replyToAuthor, bounds)
+                }
+                after = owners.last().id
+            }
+        }
     }
+
+    @Query("SELECT * FROM messages WHERE replyToId IS NOT NULL AND id > :after AND (id IN (:changed) OR replyToId IN (:changed) OR replyToId IN (SELECT id FROM messages WHERE threadRootId IN (:changed))) ORDER BY id LIMIT 200")
+    suspend fun quoteDependents(changed: List<String>, after: String): List<MessageEntity>
+
+    @Query("UPDATE messages SET replyToBody = :body, replyToAuthor = :author, quoteBoundsJson = :bounds WHERE id = :id")
+    suspend fun updateQuote(id: String, body: String?, author: String?, bounds: String?)
 
     /** Implementation primitive. Call upsertAll so terminal state is never bypassed. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -1075,7 +1101,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1215,6 +1241,16 @@ abstract class PulseDatabase : RoomDatabase() {
                 // Wave 7 rich-object carriers (red packet / game / tournament) -
                 // the raw payload JSON must survive offline restarts.
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
+            }
+        }
+
+        /** Index reverse quote dependencies; retire previously cached quotes
+         * whose source/root is already known deleted, without deleting replies. */
+        val MIGRATION_15_16: Migration = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_replyToId ON messages(replyToId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_messages_threadRootId ON messages(threadRootId)")
+                db.execSQL("UPDATE messages SET replyToBody = '', replyToAuthor = 'Unavailable message', quoteBoundsJson = '{\"version\":1,\"deleted\":true}' WHERE replyToId IN (SELECT id FROM messages WHERE deletedAt IS NOT NULL) OR replyToId IN (SELECT child.id FROM messages child JOIN messages root ON root.id = child.threadRootId WHERE root.deletedAt IS NOT NULL OR root.threadRootId IS NOT NULL OR root.conversationId <> child.conversationId) OR EXISTS (SELECT 1 FROM messages source WHERE source.id = messages.replyToId AND source.conversationId <> messages.conversationId)")
             }
         }
 

@@ -4160,7 +4160,6 @@ final class RoomViewModel: ObservableObject {
                           let message = PulseSession.decodeMessage(from: raw) else { return }
                     try? session.store?.upsert(messages: [message])
                     upsert(message)
-                    fireIncomingEffectIfAny(message, viewerId: session.viewer?.id, session: session)
                 default:
                     break
                 }
@@ -4758,7 +4757,14 @@ final class RoomViewModel: ObservableObject {
         }
         let cached = try? session?.store?.message(id: message.id, now: .distantPast)
         let canonical = PulseMessageMerge.merge(cached, incoming: message)
-        messages = PulseTimelineMerge.merge(messages, incoming: [canonical], topicId: activeTopicId)
+        let river = PulseTimelineMerge.merge(messages, incoming: [canonical], topicId: activeTopicId)
+        func project(_ rows: [WireChatMessage]) -> [WireChatMessage] {
+            let local = PulseQuotePrivacy.project(rows, known: [canonical])
+            return (try? session?.store?.projectCachedQuotes(local)) ?? local
+        }
+        messages = project(river)
+        pins = project(pins)
+        searchResults = project(searchResults)
     }
 
     func draftChanged(session: PulseSession) {

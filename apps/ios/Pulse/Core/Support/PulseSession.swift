@@ -1110,6 +1110,7 @@ public final class PulseSession: ObservableObject {
         case .messageDeleted(_, let raw), .messageReact(_, let raw):
             cacheMessage(from: raw)
         case .messageEnvelope(_, _, let raw):
+            cacheMessage(from: raw)
             // message:edited/pinned/viewed, poll:voted, link:preview,
             // translation:added - live surfaces re-fetch on this tick.
             realtimeRefreshTick += 1

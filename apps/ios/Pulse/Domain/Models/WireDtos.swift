@@ -74,6 +74,23 @@ public struct WireReplySnippet: Codable, Hashable, Sendable {
             viewOnce: viewOnce == true || prior.viewOnce == true)
     }
 
+    /// Known cached privacy can only tighten a versioned server quote. Do not
+    /// replace its body with an older cached edit or certify a legacy snippet.
+    func restricting(source: WireChatMessage, root: WireChatMessage?, roomId: String, ownerId: String, now: Date = Date()) -> WireReplySnippet {
+        guard quoteVersion == 1, source.id == id else { return self }
+        let root = root.flatMap { source.parentId == $0.id ? $0 : nil }
+        let invalid = source.id == ownerId || source.conversationId != roomId || source.deletedAt != nil ||
+            (root.map { $0.conversationId != roomId || $0.parentId != nil || $0.deletedAt != nil } ?? false)
+        let deadlines = [expiresAt, source.expiresAt, root?.expiresAt].compactMap { $0 }
+        let malformed = deadlines.contains { PulseFormat.date($0) == nil }
+        let expiry = deadlines.min { (PulseFormat.date($0) ?? .distantPast) < (PulseFormat.date($1) ?? .distantPast) }
+        let expired = expiry.flatMap(PulseFormat.date).map { $0 <= now } ?? false
+        return WireReplySnippet(id: id, content: rawContent,
+            senderName: source.anon == true ? source.displayAuthorName : rawSenderName,
+            deleted: deleted == true || invalid || malformed || expired, quoteVersion: 1,
+            expiresAt: malformed ? nil : expiry, viewOnce: viewOnce == true || source.viewOnce == true || source.viewedAt != nil)
+    }
+
     private enum CodingKeys: String, CodingKey { case id, content, senderName, deleted, quoteVersion, expiresAt, viewOnce }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)

@@ -314,7 +314,7 @@ internal fun MirrorRoot(
                         } else {
                             typers.filter { !(it.userId == event.userId && it.conversationId == event.conversationId) }
                         }
-                    } else if (event is PulseEvent.MessageReceived) {
+                    } else if (event is PulseEvent.MessageReceived || event is PulseEvent.MessageUpdated) {
                         // Realtime snappiness: refetch the list when a message lands.
                         runCatching { repository.refreshConversations() }
                     }

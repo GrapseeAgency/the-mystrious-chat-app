@@ -1878,7 +1878,10 @@ struct MirrorRoomView: View {
     private func acceptCarrier(_ message: WireChatMessage) {
         guard message.conversationId == row.id else { return }
         roomOperations.invalidateReads()
-        messages = PulseTextDelivery.timeline(messages, pending: [message])
+        let committed = (try? session.store?.mergeMessages([message]))?.first ?? message
+        let next = PulseTextDelivery.timeline(messages, pending: [committed])
+        let local = PulseQuotePrivacy.project(next, known: [committed])
+        messages = (try? session.store?.projectCachedQuotes(local)) ?? local
     }
 
     @discardableResult
@@ -1891,8 +1894,9 @@ struct MirrorRoomView: View {
             let page = try await api.messages(conversationId: row.id)
             guard roomOperations.accepts(ticket), generation == session.sessionGeneration else { return false }
             let pending = try session.store.map { try PulseTextDelivery.pendingMessages(store: $0, conversationId: row.id) } ?? []
-            try session.store?.upsert(messages: page.messages)
-            messages = PulseTextDelivery.timeline(page.messages, pending: pending)
+            let committed = try session.store?.mergeMessages(page.messages) ?? page.messages
+            let next = PulseTextDelivery.timeline(committed, pending: pending)
+            messages = try session.store?.projectCachedQuotes(next) ?? next
             loadError = nil
         } catch {
             if roomOperations.accepts(ticket), generation == session.sessionGeneration {
