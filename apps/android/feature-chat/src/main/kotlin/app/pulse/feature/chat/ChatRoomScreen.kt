@@ -78,7 +78,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -380,25 +379,11 @@ fun ChatRoomScreen(
         }
     }
 
-    // R2-A item 4 - jump-to-latest tracking (web chat-room.tsx:1575-1612):
-    // near-tail detection clears the missed counter; off-screen arrivals
-    // accumulate into the pill badge.
+    // The pill counts real incoming IDs, not day separators/history rows.
     val nearTail by remember { derivedStateOf { listState.firstVisibleItemIndex <= 1 } }
-    val missedCount = remember { mutableIntStateOf(0) }
-    var lastSeenLen by remember { mutableStateOf(0) }
-    LaunchedEffect(rows.size, nearTail) {
-        val len = rows.size
-        if (nearTail) {
-            lastSeenLen = len
-            missedCount.intValue = 0
-        } else if (len > lastSeenLen) {
-            missedCount.intValue += len - lastSeenLen
-            lastSeenLen = len
-        } else if (len < lastSeenLen) {
-            // room switch / cache reset
-            lastSeenLen = len
-            missedCount.intValue = 0
-        }
+    val missedCount by viewModel.missedCount.collectAsStateWithLifecycle()
+    LaunchedEffect(viewModel, nearTail, activeTopicId) {
+        viewModel.setReadingTail(nearTail)
     }
 
     // R2-A item 8 - screen security: while EITHER flag is on, FLAG_SECURE
@@ -1050,8 +1035,8 @@ fun ChatRoomScreen(
                     color = Color.Transparent,
                     shadowElevation = 6.dp,
                     modifier = Modifier.semantics {
-                        contentDescription = if (missedCount.intValue > 0) {
-                            "Jump to newest messages - ${missedCount.intValue} new"
+                        contentDescription = if (missedCount > 0) {
+                            "Jump to newest messages - ${missedCount} new"
                         } else {
                             "Jump to newest messages"
                         }
@@ -1063,7 +1048,6 @@ fun ChatRoomScreen(
                             .clip(RoundedCornerShape(999.dp))
                             .background(Brush.linearGradient(EmberPalette.Gradient))
                             .clickable {
-                                missedCount.intValue = 0
                                 listScope.launch { listState.animateScrollToItem(0) }
                             }
                             .padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
@@ -1077,7 +1061,7 @@ fun ChatRoomScreen(
                             tint = Color(0xFF1C1410),
                             modifier = Modifier.size(14.dp),
                         )
-                        if (missedCount.intValue > 0) {
+                        if (missedCount > 0) {
                             Spacer(Modifier.width(4.dp))
                             Box(
                                 Modifier
@@ -1087,7 +1071,7 @@ fun ChatRoomScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    if (missedCount.intValue > 99) "99+" else "${missedCount.intValue}",
+                                    if (missedCount > 99) "99+" else "${missedCount}",
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF7A4E33),

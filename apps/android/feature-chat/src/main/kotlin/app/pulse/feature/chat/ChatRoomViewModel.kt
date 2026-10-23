@@ -179,6 +179,17 @@ class ChatRoomViewModel @Inject constructor(
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
+    private val missedArrivals = app.pulse.domain.sync.MissedMessageArrivals()
+    private val _missedCount = MutableStateFlow(0)
+    val missedCount: StateFlow<Int> = _missedCount.asStateFlow()
+
+    fun setReadingTail(value: Boolean) {
+        missedArrivals.configure(conversationId, repo.viewerId, _activeTopicId.value)
+        missedArrivals.setReadingTail(value)
+        _missedCount.value = missedArrivals.count
+    }
+
+
     /** Composer restore seed - local draft table first, server myDraft fallback. */
     private val _initialDraft = MutableStateFlow<String?>(null)
     val initialDraft: StateFlow<String?> = _initialDraft.asStateFlow()
@@ -483,6 +494,9 @@ class ChatRoomViewModel @Inject constructor(
             // and emits at TTL deadlines even without any network activity.
             roomRows.collect { current ->
                 val now = System.currentTimeMillis()
+                missedArrivals.configure(conversationId, repo.viewerId, _activeTopicId.value)
+                missedArrivals.observe(current, now)
+                _missedCount.value = missedArrivals.count
                 _state.value = _state.value.copy(
                     pins = app.pulse.domain.sync.reconcileMessageSelection(_state.value.pins, current, now) { it.pinnedAt != null },
                     searchResults = app.pulse.domain.sync.reconcileMessageSelection(_state.value.searchResults, current, now) {
@@ -558,6 +572,9 @@ class ChatRoomViewModel @Inject constructor(
                         }
                     }
                     is PulseEvent.MessageReceived -> if (event.conversationId == conversationId) {
+                        missedArrivals.configure(conversationId, repo.viewerId, _activeTopicId.value)
+                        missedArrivals.receive(event.message, System.currentTimeMillis())
+                        _missedCount.value = missedArrivals.count
                         // D29/F-MS-23 - incoming effect payloads fire the
                         // app-wide burst (web triggerEffectFor parity:
                         // confetti→confetti · sparkles→stars · lasers/echo→burst).
