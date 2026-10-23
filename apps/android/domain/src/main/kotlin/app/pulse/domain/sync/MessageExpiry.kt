@@ -40,3 +40,9 @@ fun Flow<List<app.pulse.domain.model.SavedItem>>.withSavedMessageExpiry(
         delay((next - now).coerceIn(1L, 30_000L))
     }
 }.distinctUntilChanged()
+
+/** Only absent expiry means permanent. Preserve epoch-zero/negative instants;
+ * an explicitly malformed deadline is unavailable, not an unlimited lease. */
+fun messageExpiryEpochMs(raw: String?): Long? = raw?.let {
+    runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrDefault(Long.MIN_VALUE)
+}

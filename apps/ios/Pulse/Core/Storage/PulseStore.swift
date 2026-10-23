@@ -249,6 +249,25 @@ public final class PulseStore: Sendable {
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS message_thread_parent ON message(parentId)")
             try Self.repairCachedQuotes(db: db, changedId: nil)
         }
+        m.registerMigration("v13") { db in
+            // Old decoding stored malformed non-null expiry as SQL NULL.
+            // Rebuild only those ambiguous rows from their retained envelope.
+            var after = ""
+            while true {
+                let rows = try Row.fetchAll(db, sql: "SELECT id, wireJson FROM message WHERE expiresAtEpoch IS NULL AND wireJson IS NOT NULL AND id > ? ORDER BY id LIMIT 200", arguments: [after])
+                guard let last = rows.last, let lastID: String = last["id"] else { break }
+                for row in rows {
+                    guard let id: String = row["id"], let wire: String = row["wireJson"] else { continue }
+                    let decoded = try? JSONDecoder().decode(WireChatMessage.self, from: Data(wire.utf8))
+                    let expiry: TimeInterval?
+                    if let decoded { expiry = PulseRemediationLogic.expiryEpoch(decoded.expiresAt) }
+                    else { expiry = -Double.greatestFiniteMagnitude }
+                    if let expiry { try db.execute(sql: "UPDATE message SET expiresAtEpoch = ? WHERE id = ?", arguments: [expiry, id]) }
+                }
+                after = lastID
+            }
+            try Self.repairCachedQuotes(db: db, changedId: nil)
+        }
         return m
     }
 
@@ -502,7 +521,7 @@ public final class PulseStore: Sendable {
                 "payloadJson": m.payload,
                 "translationsJson": Self.translationsJsonData(m.translations),
                 "wireJson": String(decoding: try JSONEncoder().encode(m), as: UTF8.self),
-                "expiresAtEpoch": m.expiresAt.flatMap { PulseFormat.date($0)?.timeIntervalSince1970 },
+                "expiresAtEpoch": PulseRemediationLogic.expiryEpoch(m.expiresAt),
             ],
         )
         try Self.repairCachedQuotes(db: db, changedId: m.id)

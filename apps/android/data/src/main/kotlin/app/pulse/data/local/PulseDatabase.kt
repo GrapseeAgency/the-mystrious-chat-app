@@ -280,10 +280,12 @@ data class MessageEntity(
             if (obj == null) return@run Tuple4(raw, false, null, null)
             val anon = (obj[KEY_ANON] as? kotlinx.serialization.json.JsonPrimitive)?.booleanOrNull ?: false
             val alias = (obj[KEY_ALIAS] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
-            val expires = (obj[KEY_EXPIRES] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull
+            val expires = if (KEY_EXPIRES in obj)
+                (obj[KEY_EXPIRES] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull ?: Long.MIN_VALUE
+            else null
             val clean = kotlinx.serialization.json.JsonObject(obj - KEY_ANON - KEY_ALIAS - KEY_EXPIRES)
                 .let { if (it.isEmpty()) null else it.toString() }
-            Tuple4(clean, anon, alias, expires?.takeIf { it > 0L })
+            Tuple4(clean, anon, alias, expires)
         }
 
         private data class Tuple4(
@@ -306,7 +308,7 @@ data class MessageEntity(
                 }
                 if (m.anon) put(KEY_ANON, kotlinx.serialization.json.JsonPrimitive(true))
                 if (!m.anonAlias.isNullOrBlank()) put(KEY_ALIAS, kotlinx.serialization.json.JsonPrimitive(m.anonAlias))
-                m.expiresAtEpochMs?.takeIf { it > 0L }?.let {
+                m.expiresAtEpochMs?.let {
                     put(KEY_EXPIRES, kotlinx.serialization.json.JsonPrimitive(it))
                 }
             }

@@ -2,6 +2,7 @@ package app.pulse.data.repository
 
 import app.pulse.domain.sync.withConversationExpiry
 import app.pulse.domain.sync.withSavedMessageExpiry
+import app.pulse.domain.sync.messageExpiryEpochMs
 import app.pulse.domain.sync.withMessageExpiry
 
 import app.pulse.protocol.objectPayloadText
@@ -2844,7 +2845,7 @@ class PulseRepositoryImpl constructor(
                         imageOnly = hit.imagePath != null && hit.content.isBlank(),
                         isFile = hit.filePath != null,
                         fileName = hit.fileName,
-                        expiresAtEpochMs = hit.expiresAt?.let { PulseTime.epochMs(it) },
+                        expiresAtEpochMs = messageExpiryEpochMs(hit.expiresAt),
                         viewOnce = hit.viewOnce,
                     )
                 },
@@ -4179,10 +4180,10 @@ fun ConversationSummaryDto.toDomain(viewerId: String?, previous: Conversation? =
         // Web row stamp prefers the last message's time, falling back to updatedAt.
         lastActivityAt = last?.createdAt ?: updatedAt,
         unreadCount = unreadCount ?: 0,
-        lastMessageExpiresAtEpochMs = PulseTime.epochMs(last?.expiresAt).takeIf { it > 0 },
+        lastMessageExpiresAtEpochMs = messageExpiryEpochMs(last?.expiresAt),
         unreadExpirations = unreadExpirations.mapNotNull {
-            val deadline = PulseTime.epochMs(it.expiresAt)
-            if (deadline > 0 && it.count > 0) app.pulse.domain.model.UnreadExpiration(deadline, it.count) else null
+            val deadline = messageExpiryEpochMs(it.expiresAt) ?: Long.MIN_VALUE
+            if (it.count > 0) app.pulse.domain.model.UnreadExpiration(deadline, it.count) else null
         },
         isPinned = !pinnedAt.isNullOrBlank(),
         // Mute truth = the window is in the future, not merely non-null (spec §7.4).
@@ -4352,7 +4353,7 @@ fun ChatMessageDto.toDomain(): Message = Message(
     // the deterministic alias, and the purge deadline (ISO → epoch ms).
     anon = anon == true,
     anonAlias = anonAlias,
-    expiresAtEpochMs = PulseTime.epochMs(expiresAt).takeIf { it > 0L },
+    expiresAtEpochMs = messageExpiryEpochMs(expiresAt),
 )
 
 // Wave 2 wire → domain mappers (saved library + topics)
