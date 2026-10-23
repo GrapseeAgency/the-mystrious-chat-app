@@ -4328,7 +4328,8 @@ fun ChatMessageDto.toDomain(): Message = Message(
         ids.map { Reaction(emoji = e, userId = it) }
     }.flatten(),
     replyToBody = replyTo?.content,
-    replyToAuthor = replyTo?.sender?.name,
+    replyToAuthor = replyTo?.senderName,
+    quoteBounds = replyTo?.privacyBounds(),
     senderColor = sender?.color,
     viaAutomation = viaAutomation == true,
     durationMs = durationMs,
@@ -4459,3 +4460,12 @@ private fun CallLogItemDto.toDomain(): CallLogEntry = CallLogEntry(
     outgoing = outgoing,
     peer = peer?.let { CallPeer(id = it.id, name = it.name, color = it.color, avatar = it.avatar) },
 )
+
+internal fun app.pulse.protocol.ReplySnippetDto.privacyBounds(): app.pulse.domain.model.QuoteBounds {
+    val raw = expiresAt
+    val expiry = (raw as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+        ?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+    val complete = quoteVersion == 1 && deleted != null && viewOnce != null &&
+        (raw == kotlinx.serialization.json.JsonNull || expiry != null)
+    return app.pulse.domain.model.QuoteBounds(if (complete) 1 else 0, expiry, deleted == true, viewOnce == true)
+}

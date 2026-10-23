@@ -5,7 +5,7 @@
 import path from 'node:path'
 import { randomInt } from 'node:crypto'
 import { normalizedReactionGroups } from '@/lib/reaction-contract'
-import { redactDeletedMessage, quoteDisclosure } from '@/lib/message-disclosure'
+import { redactDeletedMessage, quoteSnippet } from '@/lib/message-disclosure'
 import type { Prisma } from '../../prisma/generated-client'
 import { db } from '@/lib/db'
 import { unreadSnapshot, inboxMessagesWhere, visibleInboxPreview } from '@/lib/message-visibility'
@@ -210,7 +210,13 @@ export function groupReactions(reactions: ReactionRow[]): MessageReactionGroup[]
 export const MESSAGE_FULL_INCLUDE = {
   sender: true,
   reactions: { select: { emoji: true, userId: true } },
-  replyTo: { select: { id: true, content: true, deletedAt: true, expiresAt: true, viewOnce: true, sender: { select: { name: true } } } },
+  replyTo: { select: {
+    id: true, content: true, deletedAt: true, expiresAt: true, viewOnce: true,
+    anon: true, anonAlias: true, viaAutomation: true, payload: true,
+    conversationId: true, parentId: true,
+    parent: { select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true } },
+    sender: { select: { name: true } },
+  } },
   poll: {
     include: {
       options: {
@@ -227,13 +233,7 @@ export type MessageRowWithRelations = Prisma.MessageGetPayload<{ include: typeof
 
 export function mapMessage(message: MessageRowWithRelations, viewerId?: string): ChatMessage {
   const parent = message.replyTo
-  const replyTo = parent
-    ? {
-        id: parent.id,
-        ...quoteDisclosure(parent),
-        senderName: parent.sender.name,
-      }
-    : null
+  const replyTo = parent ? quoteSnippet(parent, message.conversationId) : null
 
   // Poll tally (viewer-aware my vote)
   let poll: ChatMessage['poll'] = null

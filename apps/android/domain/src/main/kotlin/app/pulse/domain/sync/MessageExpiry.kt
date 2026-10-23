@@ -11,11 +11,13 @@ import kotlinx.coroutines.flow.transformLatest
 @OptIn(ExperimentalCoroutinesApi::class)
 fun Flow<List<Message>>.withMessageExpiry(nowMillis: () -> Long = System::currentTimeMillis): Flow<List<Message>> =
     transformLatest { rows ->
+        var current = rows
         while (true) {
             val now = nowMillis()
-            val visible = rows.filter { it.expiresAtEpochMs == null || it.expiresAtEpochMs > now }
+            val visible = current.filter { it.expiresAtEpochMs == null || it.expiresAtEpochMs > now }.map { it.redactQuote(now) }
+            current = visible
             emit(visible)
-            val next = visible.mapNotNull { it.expiresAtEpochMs }.minOrNull() ?: break
+            val next = visible.flatMap { listOfNotNull(it.expiresAtEpochMs, it.quoteBounds?.expiresAtEpochMs) }.filter { it > now }.minOrNull() ?: break
             // Re-evaluate boundedly after a wall-clock adjustment; coroutine
             // cancellation/new Room emissions replace the pending deadline.
             delay((next - now).coerceIn(1L, 30_000L))
@@ -32,8 +34,9 @@ fun Flow<List<app.pulse.domain.model.SavedItem>>.withSavedMessageExpiry(
     while (true) {
         val now = nowMillis()
         current = current.filter { !it.message.isDeleted && !it.message.viewOnce && (it.message.expiresAtEpochMs?.let { expiry -> expiry > now } != false) }
+        current = current.map { it.copy(message = it.message.redactQuote(now)) }
         emit(current)
-        val next = current.mapNotNull { it.message.expiresAtEpochMs }.minOrNull() ?: break
+        val next = current.flatMap { listOfNotNull(it.message.expiresAtEpochMs, it.message.quoteBounds?.expiresAtEpochMs) }.filter { it > now }.minOrNull() ?: break
         delay((next - now).coerceIn(1L, 30_000L))
     }
 }.distinctUntilChanged()

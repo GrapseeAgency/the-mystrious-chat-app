@@ -279,6 +279,17 @@ export interface WireUsersPage {
   users: WireUser[]
 }
 
+/** Inline quote, NOT a nested message. Legacy snippets lack privacy bounds. */
+export interface WireReplySnippet {
+  id: string
+  content: string
+  senderName: string
+  deleted?: boolean | null
+  quoteVersion?: number | null
+  expiresAt?: string | null
+  viewOnce?: boolean | null
+}
+
 /** GET /api/conversations/{id}/messages row — lowercase wire kinds. */
 export interface WireChatMessage {
   id: string
@@ -292,7 +303,7 @@ export interface WireChatMessage {
   deletedAt?: string | null
   sender?: WireSender | null
   reactions?: WireReactionGroup[] | WireReaction[]
-  replyTo?: WireChatMessage | null
+  replyTo?: WireReplySnippet | null
   parentId?: string | null
   imagePath?: string | null
   audioPath?: string | null

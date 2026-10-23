@@ -33,9 +33,69 @@ public struct WireReactionGroup: Codable, Hashable, Sendable {
 /// placeholder) failed for every message that actually had a reply.
 public struct WireReplySnippet: Codable, Hashable, Sendable {
     public let id: String
-    public let content: String
-    public let senderName: String
+    private let rawContent: String
+    private let rawSenderName: String
     public let deleted: Bool?
+    public let quoteVersion: Int?
+    public let expiresAt: String?
+    public let viewOnce: Bool?
+
+    public var content: String { presentation().content }
+    public var senderName: String { presentation().senderName }
+
+    public init(id: String, content: String, senderName: String, deleted: Bool?,
+                quoteVersion: Int? = nil, expiresAt: String? = nil, viewOnce: Bool? = nil) {
+        self.id = id
+        let valid = quoteVersion == 1 && deleted != nil && viewOnce != nil &&
+            (expiresAt == nil || expiresAt.flatMap(PulseFormat.date) != nil)
+        self.quoteVersion = valid ? 1 : nil
+        self.expiresAt = expiresAt
+        self.viewOnce = viewOnce
+        self.deleted = deleted
+        self.rawContent = !valid || deleted == true ? "" : viewOnce == true ? "View-once message" : content
+        self.rawSenderName = !valid ? "Reply" : deleted == true ? "Unavailable message" : senderName
+    }
+
+    public func presentation(at now: Date = Date()) -> (senderName: String, content: String) {
+        guard quoteVersion == 1 else { return ("Reply", "Quoted message unavailable") }
+        if deleted == true || expiresAt.flatMap(PulseFormat.date).map({ $0 <= now }) == true {
+            return ("Unavailable message", "Quoted message unavailable")
+        }
+        return (rawSenderName, viewOnce == true ? "View-once message" : rawContent)
+    }
+
+    func mergingBounds(from prior: WireReplySnippet) -> WireReplySnippet {
+        guard id == prior.id, quoteVersion == 1, prior.quoteVersion == 1 else { return self }
+        let expiry = [expiresAt, prior.expiresAt].compactMap { $0 }.min {
+            (PulseFormat.date($0) ?? .distantPast) < (PulseFormat.date($1) ?? .distantPast)
+        }
+        return WireReplySnippet(id: id, content: rawContent, senderName: rawSenderName,
+            deleted: deleted == true || prior.deleted == true, quoteVersion: 1, expiresAt: expiry,
+            viewOnce: viewOnce == true || prior.viewOnce == true)
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, content, senderName, deleted, quoteVersion, expiresAt, viewOnce }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(String.self, forKey: .id),
+                  content: try c.decode(String.self, forKey: .content),
+                  senderName: try c.decode(String.self, forKey: .senderName),
+                  deleted: try c.decodeIfPresent(Bool.self, forKey: .deleted),
+                  quoteVersion: c.contains(.expiresAt) ? try c.decodeIfPresent(Int.self, forKey: .quoteVersion) : nil,
+                  expiresAt: try c.decodeIfPresent(String.self, forKey: .expiresAt),
+                  viewOnce: try c.decodeIfPresent(Bool.self, forKey: .viewOnce))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(rawContent, forKey: .content)
+        try c.encode(rawSenderName, forKey: .senderName)
+        try c.encodeIfPresent(deleted, forKey: .deleted)
+        try c.encodeIfPresent(quoteVersion, forKey: .quoteVersion)
+        // Explicit null is the permanent-quote witness; preserve across cache restarts.
+        try c.encode(expiresAt, forKey: .expiresAt)
+        try c.encodeIfPresent(viewOnce, forKey: .viewOnce)
+    }
 }
 
 /// N3-b - AppUser mirror (GET/POST /api/users), tolerant decode: unknown
@@ -185,7 +245,7 @@ public struct WireChatMessage: Codable, Hashable, Sendable, Identifiable {
     public let deletedAt: String?
     public let sender: WireSender?
     public let reactions: [WireReactionGroup]?
-    public let replyTo: WireReplySnippet?
+    public var replyTo: WireReplySnippet?
     public let parentId: String?
     public let imagePath: String?
     public let audioPath: String?

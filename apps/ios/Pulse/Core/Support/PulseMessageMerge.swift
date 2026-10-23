@@ -37,6 +37,9 @@ enum PulseMessageMerge {
             result.content = prior.content
             result.editedAt = prior.editedAt
         }
+        if let oldQuote = prior?.replyTo, let quote = result.replyTo {
+            result.replyTo = quote.mergingBounds(from: oldQuote)
+        }
         return result
     }
 }

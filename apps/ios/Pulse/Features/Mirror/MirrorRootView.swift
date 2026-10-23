@@ -2406,22 +2406,25 @@ struct MirrorBubble: View {
                                 .padding(.bottom, 2)
                         }
                         if let reply = message.replyTo {
-                            HStack(alignment: .top, spacing: 0) {
-                                Rectangle().fill(mine ? Color.black.opacity(0.15) : MirrorArt.accent).frame(width: 3)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(reply.deleted == true ? "Deleted message" : reply.senderName)
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(mine ? MirrorArt.onBubbleOut : MirrorArt.accent2)
-                                    Text(reply.deleted == true ? "This message was deleted" : reply.content)
-                                        .font(.system(size: 12)).foregroundColor(mine ? MirrorArt.inkSoft : MirrorArt.dim)
-                                        .lineLimit(1)
-                                }
-                                .padding(.horizontal, 8).padding(.vertical, 4)
-                                Spacer(minLength: 0)
+                            TimelineView(.periodic(from: .now, by: 1)) { clock in
+                                let visible = reply.presentation(at: clock.date)
+                                HStack(alignment: .top, spacing: 0) {
+                                    Rectangle().fill(mine ? Color.black.opacity(0.15) : MirrorArt.accent).frame(width: 3)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(visible.senderName)
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundColor(mine ? MirrorArt.onBubbleOut : MirrorArt.accent2)
+                                        Text(visible.content)
+                                            .font(.system(size: 12)).foregroundColor(mine ? MirrorArt.inkSoft : MirrorArt.dim)
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    Spacer(minLength: 0)
                             }
                             .background(mine ? Color.black.opacity(0.05) : Color.white.opacity(0.06))
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .padding(.bottom, 4)
+                            }
                         }
                         if message.deletedAt != nil {
                             Label("Message deleted", systemImage: "trash")

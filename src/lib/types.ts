@@ -41,6 +41,10 @@ export interface ReplySnippet {
   content: string
   senderName: string
   deleted: boolean
+  /** Versioned privacy bounds, optional only for legacy/local constructions. */
+  quoteVersion?: 1
+  expiresAt?: string | null
+  viewOnce?: boolean
 }
 
 /** Cached Open-Graph metadata attached to a message containing a link. */

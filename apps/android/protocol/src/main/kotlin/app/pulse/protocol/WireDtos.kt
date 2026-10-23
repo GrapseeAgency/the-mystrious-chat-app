@@ -32,6 +32,19 @@ data class ReactionDto(
     val createdAt: String? = null,
 )
 
+/** The server sends a snippet, not a recursive ChatMessageDto. JsonNull for
+ * expiresAt means explicitly permanent; a non-date sentinel means missing bounds. */
+@Serializable
+data class ReplySnippetDto(
+    val id: String,
+    val content: String,
+    val senderName: String = "Reply",
+    val deleted: Boolean? = null,
+    val quoteVersion: Int? = null,
+    val expiresAt: JsonElement = kotlinx.serialization.json.JsonPrimitive("__missing__"),
+    val viewOnce: Boolean? = null,
+)
+
 @Serializable
 data class ChatMessageDto(
     val id: String,
@@ -47,7 +60,7 @@ data class ChatMessageDto(
     val deletedAt: String? = null,
     val sender: SenderDto? = null,
     val reactions: List<ReactionDto> = emptyList(),
-    val replyTo: ChatMessageDto? = null,
+    val replyTo: ReplySnippetDto? = null,
     val parentId: String? = null,
     val imagePath: String? = null,
     val audioPath: String? = null,

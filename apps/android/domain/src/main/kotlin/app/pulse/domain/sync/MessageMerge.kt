@@ -15,7 +15,7 @@ fun mergeMessageState(current: Message?, incoming: Message): Message {
     if (expiry != null && (result.expiresAtEpochMs?.let { it > expiry } != false)) result = result.copy(expiresAtEpochMs = expiry)
     if (result.viewedAt != null) result = result.copy(viewOnce = true)
     if (result.isDeleted) return result.copy(body = "", payload = null, replyToId = null, replyToBody = null,
-        replyToAuthor = null, imagePath = null, audioPath = null, durationMs = null, filePath = null,
+        replyToAuthor = null, quoteBounds = null, imagePath = null, audioPath = null, durationMs = null, filePath = null,
         fileName = null, fileSize = null, transcript = null, transcribedAt = null, poll = null,
         linkPreview = null, pinnedAt = null, reactions = emptyList())
     // Closure freezes the tally. A late open snapshot must never reopen voting
@@ -28,5 +28,16 @@ fun mergeMessageState(current: Message?, incoming: Message): Message {
     if (prior != null && stamp(prior.editedAt) > stamp(result.editedAt)) {
         result = result.copy(body = prior.body, editedAt = prior.editedAt)
     }
-    return result
+    if (prior?.replyToId != null && prior.replyToId == result.replyToId) {
+        val oldBounds = prior.quoteBounds
+        val bounds = result.quoteBounds
+        if (oldBounds?.version == 1 && bounds?.version == 1) {
+            result = result.copy(quoteBounds = bounds.copy(
+                deleted = bounds.deleted || oldBounds.deleted,
+                viewOnce = bounds.viewOnce || oldBounds.viewOnce,
+                expiresAtEpochMs = listOfNotNull(bounds.expiresAtEpochMs, oldBounds.expiresAtEpochMs).minOrNull(),
+            ))
+        }
+    }
+    return result.redactQuote()
 }

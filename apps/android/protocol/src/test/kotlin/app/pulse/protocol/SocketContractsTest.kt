@@ -101,7 +101,7 @@ class SocketContractsTest {
             "kind": "text", "createdAt": "2026-02-14T10:00:00.000Z",
             "sender": {"id": "u1", "name": "Alice", "color": "emerald"},
             "reactions": [{"emoji": "heart", "userIds": ["u2"], "count": 1}],
-            "replyTo": {"id": "m0", "conversationId": "c1", "senderId": "u2", "content": "hi", "createdAt": "2026-02-14T09:59:00.000Z"},
+            "replyTo": {"id": "m0", "content": "hi", "senderName": "Peer", "deleted": false},
             "someFutureFlag": {"deep": [1, 2, 3]}
           },
           "recipientIds": ["u2"],

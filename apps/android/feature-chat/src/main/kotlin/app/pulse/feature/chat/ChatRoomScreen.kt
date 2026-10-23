@@ -1,5 +1,6 @@
 package app.pulse.feature.chat
 
+import app.pulse.domain.sync.visibleQuote
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -1228,7 +1229,7 @@ fun ChatRoomScreen(
                         Icon(PulseIcons.Reply, contentDescription = null, tint = EmberPalette.SenderName, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(reply.integrationLabel ?: reply.authorName, style = MaterialTheme.typography.labelMedium, color = EmberPalette.SenderName, fontWeight = FontWeight.SemiBold)
+                            Text(reply.displayAuthorName, style = MaterialTheme.typography.labelMedium, color = EmberPalette.SenderName, fontWeight = FontWeight.SemiBold)
                             Text(reply.body, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.55f))
                         }
                         IconButton(onClick = { viewModel.setReplyTo(null) }) {
@@ -2474,7 +2475,7 @@ private fun PinnedBanner(pin: Message, onJump: () -> Unit, onOpenAll: () -> Unit
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    pin.integrationLabel ?: pin.authorName,
+                    pin.displayAuthorName,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = EmberPalette.Amber,
@@ -2570,11 +2571,11 @@ private fun RoomSearchBar(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            PulseAvatar(name = hit.integrationLabel ?: hit.authorName, colorHex = hit.senderColor, size = 32.dp)
+                            PulseAvatar(name = hit.displayAuthorName, colorHex = hit.senderColor, size = 32.dp)
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        hit.integrationLabel ?: hit.authorName,
+                                        hit.displayAuthorName,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color.White,
@@ -3627,8 +3628,8 @@ private fun MessageRow(
                 // Wave 7 - red packet carrier (payload {packetId,total,count,note}).
                 message.kind == Message.Kind.RED_PACKET -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3649,8 +3650,8 @@ private fun MessageRow(
                 // Wave 7 - tic-tac-toe carrier (payload {matchId, game}).
                 message.kind == Message.Kind.GAME -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3670,8 +3671,8 @@ private fun MessageRow(
                 // Wave 7 - tournament carrier (payload {tournamentId, name, game}).
                 message.kind == Message.Kind.TOURNAMENT -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3690,8 +3691,8 @@ private fun MessageRow(
                 // Live poll - PollCard replaces the body text entirely.
                 message.poll != null || message.kind == Message.Kind.POLL -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3707,8 +3708,8 @@ private fun MessageRow(
                 // Burned (viewed) - NO image render path at all (anti-replay).
                 burned -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = { BurnedPhotoBubble() },
@@ -3716,8 +3717,8 @@ private fun MessageRow(
                 // Gated (unopened) - blurred + overlay; tap consumes + reveals.
                 gated -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -3738,8 +3739,8 @@ private fun MessageRow(
                 }
                 message.imagePath != null -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = { ImageBubble(message = message, mine = mine, onOpen = onOpenImage) },
@@ -3749,16 +3750,16 @@ private fun MessageRow(
                 // gates so a pin never falls into their paths.
                 message.kind == Message.Kind.LOCATION -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = { LocationPinBubble(message = message, mine = mine) },
                 )
                 message.filePath != null || message.kind == Message.Kind.FILE -> MediaWithQuote(
                     quoteId = message.replyToId,
-                    quoteBody = message.replyToBody,
-                    quoteAuthor = message.replyToAuthor,
+                    quoteBody = message.visibleQuote()?.content,
+                    quoteAuthor = message.visibleQuote()?.senderName,
                     mine = mine,
                     onQuoteClick = onQuoteClick,
                     content = {
@@ -4067,7 +4068,7 @@ internal fun Bubble(
             }
             // reply quote - tap jumps to the quoted message (when a jump
             // surface exists; thread bubbles render it read-only).
-            val replyBody = message.replyToBody
+            val replyBody = message.visibleQuote()?.content
             val quoteId = message.replyToId
             if (quoteId != null && replyBody != null) {
                 Row(
@@ -4079,7 +4080,7 @@ internal fun Bubble(
                 ) {
                     Column {
                         Text(
-                            message.replyToAuthor ?: "Reply",
+                            message.visibleQuote()?.senderName ?: "Reply",
                             style = MaterialTheme.typography.labelSmall,
                             color = EmberPalette.SenderName,
                             fontWeight = FontWeight.SemiBold,

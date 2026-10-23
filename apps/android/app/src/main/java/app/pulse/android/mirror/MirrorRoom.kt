@@ -1,5 +1,6 @@
 package app.pulse.android.mirror
 
+import app.pulse.domain.sync.visibleQuote
 import app.pulse.domain.sync.MessageHistoryCursor
 import kotlinx.coroutines.isActive
 
@@ -1865,7 +1866,7 @@ internal fun MirrorRoom(
                     MirrorComposerBar(
                         glyph = "LCornerDownRight",
                         tint = MirrorArt.Accent2,
-                        text = "Replying to ${target.integrationLabel ?: target.authorName} - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
+                        text = "Replying to ${target.displayAuthorName} - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
                         onCancel = { replyTo = null },
                     )
                 }
@@ -3542,7 +3543,7 @@ private fun MirrorBubbleRow(
             if (head) {
                 Box(Modifier.padding(start = 0.dp, end = 6.dp, bottom = 20.dp)) {
                     MirrorAvatar(
-                        name = message.integrationLabel ?: message.authorName,
+                        name = message.displayAuthorName,
                         color = message.senderColor,
                         isGroup = false,
                         groupId = "",
@@ -3726,10 +3727,10 @@ private fun MirrorBubbleRow(
                                 modifier = Modifier.padding(bottom = 2.dp),
                             )
                         }
-                        if (message.replyToBody != null || message.replyToAuthor != null) {
+                        if (message.visibleQuote()?.content != null || message.visibleQuote()?.senderName != null) {
                             MirrorReplyQuote(
-                                author = message.replyToAuthor.orEmpty().ifBlank { "Unknown" },
-                                body = message.replyToBody.orEmpty().replace(Regex("\\s+"), " ").take(120),
+                                author = message.visibleQuote()?.senderName.orEmpty().ifBlank { "Unknown" },
+                                body = message.visibleQuote()?.content.orEmpty().replace(Regex("\\s+"), " ").take(120),
                                 mine = mine,
                                 modifier = Modifier.padding(bottom = 4.dp),
                             )

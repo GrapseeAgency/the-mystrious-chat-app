@@ -209,6 +209,7 @@ data class MessageEntity(
     val topicId: String? = null,
     // Wave 7 (v9) - raw rich-object payload JSON (red packet / game / tournament).
     val payloadJson: String? = null,
+    val quoteBoundsJson: String? = null,
 ) {
     fun toDomain(): Message {
         val reactionDtos = reactionsJson?.let { json ->
@@ -230,6 +231,9 @@ data class MessageEntity(
             createdAt = createdAt, editedAt = editedAt, deletedAt = deletedAt,
             replyToId = replyToId, threadRootId = threadRootId, pinnedAt = pinnedAt,
             reactions = reactions, replyToBody = replyToBody, replyToAuthor = replyToAuthor,
+            quoteBounds = quoteBoundsJson?.let { raw -> runCatching {
+                app.pulse.protocol.PulseJson.decodeFromString(app.pulse.domain.model.QuoteBounds.serializer(), raw)
+            }.getOrNull() },
             senderColor = senderColor, viaAutomation = viaAutomation, durationMs = durationMs,
             imagePath = imagePath, audioPath = audioPath, filePath = filePath,
             fileName = fileName, fileSize = fileSize, viewOnce = viewOnce,
@@ -315,6 +319,9 @@ data class MessageEntity(
             replyToId = m.replyToId, threadRootId = m.threadRootId, pinnedAt = m.pinnedAt,
             reactionsJson = reactionsJson, replyToBody = m.replyToBody,
             replyToAuthor = m.replyToAuthor, senderColor = m.senderColor,
+            quoteBoundsJson = m.quoteBounds?.let {
+                app.pulse.protocol.PulseJson.encodeToString(app.pulse.domain.model.QuoteBounds.serializer(), it)
+            },
             viaAutomation = m.viaAutomation, durationMs = m.durationMs,
             imagePath = m.imagePath, audioPath = m.audioPath, filePath = m.filePath,
             fileName = m.fileName, fileSize = m.fileSize, viewOnce = m.viewOnce,
@@ -702,7 +709,7 @@ interface MessageDao {
             val old = current[incoming.id]
             val candidate = incoming.toDomain()
             val safe = app.pulse.domain.sync.mergeMessageState(old?.toDomain(), candidate)
-            val row = if (safe == candidate && !safe.isDeleted) incoming.copy(viewOnce = safe.viewOnce) else MessageEntity.from(safe,
+            val row = MessageEntity.from(safe,
                 if (safe.isDeleted) null else if (safe.reactions == candidate.reactions) incoming.reactionsJson else old?.reactionsJson)
             current[row.id] = row
             row
@@ -1061,7 +1068,7 @@ interface Wave7Dao {
         StoryCacheEntity::class,
         Wave7CacheEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 abstract class PulseDatabase : RoomDatabase() {
@@ -1201,6 +1208,15 @@ abstract class PulseDatabase : RoomDatabase() {
                 // Wave 7 rich-object carriers (red packet / game / tournament) -
                 // the raw payload JSON must survive offline restarts.
                 db.execSQL("ALTER TABLE `messages` ADD COLUMN `payloadJson` TEXT")
+            }
+        }
+
+        /** v13 → v14: no trust in legacy cached quote authors/content. Keep the
+         * source id for navigation and keep all messages, drafts and queued sends. */
+        val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN quoteBoundsJson TEXT")
+                db.execSQL("UPDATE messages SET replyToBody = NULL, replyToAuthor = NULL WHERE replyToId IS NOT NULL")
             }
         }
 

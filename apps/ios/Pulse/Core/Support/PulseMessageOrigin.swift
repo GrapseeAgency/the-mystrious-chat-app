@@ -36,5 +36,12 @@ enum PulseMessageOrigin {
     }
 }
 extension WireChatMessage {
+    var displayAuthorName: String {
+        if anon == true {
+            let alias = anonAlias?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return alias.isEmpty ? "Anonymous" : alias
+        }
+        return integrationLabel ?? sender?.name ?? "Unknown"
+    }
     var integrationLabel: String? { PulseMessageOrigin.label(payload: payload, automated: viaAutomation == true, deleted: deletedAt != nil) }
 }

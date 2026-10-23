@@ -2657,7 +2657,7 @@ private struct RoomContent: View {
                 .font(.footnote)
                 .foregroundStyle(PulseTheme.emberGlowTop)
             VStack(alignment: .leading, spacing: 1) {
-                Text(reply.integrationLabel ?? reply.sender?.name ?? "Reply")
+                Text(reply.displayAuthorName)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(PulseTheme.emberGlowTop)
                 Text(reply.content)
@@ -3480,19 +3480,22 @@ struct BubbleView: View {
 
     @ViewBuilder
     private func replyQuote(_ reply: WireReplySnippet) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(reply.senderName)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(mine ? Color.white : PulseTheme.emberGlowTop)
-            Text(reply.deleted == true ? "Deleted message" : reply.content)
-                .font(.caption)
-                .foregroundStyle(Color.white.opacity(0.70))
-                .lineLimit(2)
+        TimelineView(.periodic(from: .now, by: 1)) { clock in
+            let visible = reply.presentation(at: clock.date)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(visible.senderName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(mine ? Color.white : PulseTheme.emberGlowTop)
+                Text(visible.content)
+                    .font(.caption)
+                    .foregroundStyle(Color.white.opacity(0.70))
+                    .lineLimit(2)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.08)))
+        }
     }
 
     private var reactions: [WireReactionGroup] { PulseReactionId.groups(message.reactions) }
