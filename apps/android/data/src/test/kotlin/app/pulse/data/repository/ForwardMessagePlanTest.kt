@@ -34,4 +34,10 @@ class ForwardMessagePlanTest {
             try { plan(bad); fail("Expected an explicit refusal for $bad") } catch (_: IllegalArgumentException) {}
         }
     }
+    @Test fun forwardedIntegrationBecomesAnOrdinaryOwnedMessage() {
+        val result = plan(source.copy(viaAutomation = true, payload = """{"webhook":true,"webhookName":"Deploys","effect":"sparkles"}""")).message
+        assertFalse(result.viaAutomation)
+        assertNull(result.integrationLabel)
+        assertEquals("""{"effect":"sparkles"}""", result.payload)
+    }
 }

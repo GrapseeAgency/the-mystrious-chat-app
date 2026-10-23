@@ -5,6 +5,7 @@
 // DELETE ?requesterId= (or JSON body) - participant-admin only.
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { messageDeliveryDecision } from '@/lib/scheduled-delivery'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { roomControl } from '@/lib/room-control'
 import {
@@ -77,92 +78,46 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       { status: 400, headers: CORS_HEADERS },
     )
   }
-  if (rateLimited(token)) {
-    return NextResponse.json(
-      { error: 'Rate limit exceeded - max 20 posts per minute.' },
-      { status: 429, headers: CORS_HEADERS },
-    )
-  }
-
-  const webhook = await db.webhook.findUnique({ where: { token } })
-  if (!webhook) {
-    return NextResponse.json({ error: 'Webhook not found.' }, { status: 404, headers: CORS_HEADERS })
-  }
-
-  // Author: the bot user when it participates, else the first participant
-  // (deterministic: joinedAt asc, then userId asc).
-  const participants = await db.conversationParticipant.findMany({
-    where: { conversationId: webhook.conversationId },
-    select: { userId: true },
-    orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }],
-  })
-  if (participants.length === 0) {
-    return NextResponse.json(
-      { error: 'No participant available to author webhook messages.' },
-      { status: 500, headers: CORS_HEADERS },
-    )
-  }
-  let senderId = participants[0].userId
-  const botUser = await db.user.findUnique({ where: { username: 'pulseai' }, select: { id: true } })
-  if (botUser && participants.some((p) => p.userId === botUser.id)) {
-    senderId = botUser.id
-  }
-
-  const displayName = strField(body.username).slice(0, 40) || webhook.name
-  const payload = JSON.stringify({
-    webhookName: displayName,
-    webhookColor: webhook.avatarColor,
-    webhook: true,
-  })
-
-  const now = new Date()
-  const created = await db.$transaction(async (tx) => {
-    // A token revoked while the request was preparing must not authorize a
-    // later write. Recheck the capability and chosen author in the write snapshot.
-    const [liveHook, liveSender, conv] = await Promise.all([
-      tx.webhook.findUnique({ where: { token }, select: { id: true } }),
-      tx.conversationParticipant.findUnique({ where: { userId_conversationId: { userId: senderId, conversationId: webhook.conversationId } }, select: { id: true } }),
-      tx.conversation.findUnique({ where: { id: webhook.conversationId }, select: { ttlSeconds: true } }),
-    ])
-    if (!liveHook || !liveSender || !conv) return null
-    const expiresAt = conv.ttlSeconds > 0 ? new Date(now.getTime() + conv.ttlSeconds * 1000) : null
-    const msg = await tx.message.create({
-      data: {
-        conversationId: webhook.conversationId,
-        senderId,
-        content,
-        kind: 'text',
-        payload,
-        ...(expiresAt ? { expiresAt } : {}),
-      },
-      include: MESSAGE_FULL_INCLUDE,
+  const result = await db.$transaction(async tx => {
+    const webhook = await tx.webhook.findUnique({ where: { token } })
+    if (!webhook) return { status: 404, error: 'Webhook not found.' }
+    // Unknown tokens must not allocate permanent rate-limit buckets.
+    if (rateLimited(token)) return { status: 429, error: 'Rate limit exceeded - max 20 posts per minute.', retryAfter: 60 }
+    const participants = await tx.conversationParticipant.findMany({
+      where: { conversationId: webhook.conversationId }, select: { userId: true },
+      orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }],
     })
-    await tx.conversation.update({
-      where: { id: webhook.conversationId },
-      data: { updatedAt: now },
-    })
-    await tx.conversationParticipant.updateMany({
-      where: {
-        conversationId: webhook.conversationId,
-        userId: { not: senderId },
-        archivedAt: { not: null },
-      },
-      data: { archivedAt: null },
-    })
-    return msg
+    if (!participants.length) return { status: 404, error: 'Webhook author is no longer available.' }
+    const botUser = await tx.user.findUnique({ where: { username: 'pulseai' }, select: { id: true } })
+    const senderId = botUser && participants.some(row => row.userId === botUser.id) ? botUser.id : participants[0].userId
+    const now = new Date()
+    const decision = await messageDeliveryDecision(tx, webhook.conversationId, senderId, now, true)
+    if (decision.state === 'cancel') return { status: 403, error: 'Webhook posting is not permitted by the current room policy.' }
+    if (decision.state === 'wait') return { status: 429, error: 'Room slow mode is active.', retryAfter: decision.retryAfter }
+    const message = await tx.message.create({ data: {
+      conversationId: webhook.conversationId, senderId, content, kind: 'text', viaAutomation: true,
+      payload: JSON.stringify({ webhook: true, webhookName: strField(body.username).slice(0, 40) || webhook.name, webhookColor: webhook.avatarColor }),
+      expiresAt: decision.expiresAt, createdAt: now,
+    }, include: MESSAGE_FULL_INCLUDE })
+    await tx.conversation.update({ where: { id: webhook.conversationId }, data: { updatedAt: now } })
+    await tx.conversationParticipant.updateMany({ where: {
+      conversationId: webhook.conversationId, userId: { not: senderId }, archivedAt: { not: null },
+    }, data: { archivedAt: null } })
+    return { message, conversationId: webhook.conversationId }
   }, { isolationLevel: 'Serializable' })
-  if (!created) return NextResponse.json({ error: 'Webhook or its author is no longer available.' }, { status: 404, headers: CORS_HEADERS })
-
-  // The represented sender receives no synchronous native send response here.
-  const recipients = await memberIdsOf(webhook.conversationId)
-  await notifySocket('message:new', recipients, {
-    type: 'message:new',
-    message: mapMessage(created),
-    recipientIds: recipients,
-    conversationId: webhook.conversationId,
-  })
-
-  return NextResponse.json({ success: true }, { headers: CORS_HEADERS })
+  if (!result.message) return NextResponse.json({ error: result.error }, { status: result.status, headers: {
+    ...CORS_HEADERS, ...(result.retryAfter ? { 'Retry-After': String(result.retryAfter) } : {}),
+  } })
+  // A committed post must not turn into a send failure merely because the
+  // realtime relay is unavailable; external services would retry and duplicate it.
+  try {
+    const recipients = await memberIdsOf(result.conversationId)
+    await notifySocket('message:new', recipients, {
+      type: 'message:new', message: mapMessage(result.message), recipientIds: recipients,
+      conversationId: result.conversationId,
+    })
+  } catch { console.error('[webhooks] committed post notification unavailable') }
+  return NextResponse.json({ success: true, messageId: result.message.id }, { headers: CORS_HEADERS })
 }
 
 // DELETE - participant-admin only

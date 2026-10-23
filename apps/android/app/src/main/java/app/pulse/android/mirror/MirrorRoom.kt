@@ -1865,7 +1865,7 @@ internal fun MirrorRoom(
                     MirrorComposerBar(
                         glyph = "LCornerDownRight",
                         tint = MirrorArt.Accent2,
-                        text = "Replying to ${target.authorName} - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
+                        text = "Replying to ${target.integrationLabel ?: target.authorName} - ${target.body.replace(Regex("\\s+"), " ").take(72)}",
                         onCancel = { replyTo = null },
                     )
                 }
@@ -3542,7 +3542,7 @@ private fun MirrorBubbleRow(
             if (head) {
                 Box(Modifier.padding(start = 0.dp, end = 6.dp, bottom = 20.dp)) {
                     MirrorAvatar(
-                        name = message.authorName,
+                        name = message.integrationLabel ?: message.authorName,
                         color = message.senderColor,
                         isGroup = false,
                         groupId = "",
@@ -3713,7 +3713,10 @@ private fun MirrorBubbleRow(
                     } else {
                         // R54-c: sender name is the FIRST LINE INSIDE the
                         // incoming group bubble
-                        if (!mine && isGroup && head) {
+                        if (message.integrationLabel != null) {
+                            Text(message.integrationLabel.orEmpty(), color = MirrorArt.Accent2, fontSize = 10.sp, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(bottom = 2.dp))
+                        } else if (!mine && isGroup && head) {
                             Text(
                                 message.authorName,
                                 color = MirrorArt.TextSoft,

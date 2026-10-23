@@ -129,7 +129,9 @@ final class MirrorViewModel: ObservableObject {
         }
         let mine = last?.senderId == viewerId
         let authorPrefix: String
-        if mine {
+        if let origin = last?.integrationLabel {
+            authorPrefix = origin + ": "
+        } else if mine {
             authorPrefix = "You: "
         } else if summary.isGroup && last != nil {
             authorPrefix = (last?.sender?.name ?? "") + ": "
@@ -2381,7 +2383,7 @@ struct MirrorBubble: View {
         HStack(alignment: .bottom, spacing: 0) {
             if !mine && isGroup {
                 if head {
-                    MirrorAvatarTile(name: message.sender?.name ?? "?", color: message.sender?.color, isGroup: false, id: message.senderId, online: false, showPresence: false, size: 24, corner: 12)
+                    MirrorAvatarTile(name: message.integrationLabel ?? message.sender?.name ?? "?", color: message.sender?.color, isGroup: false, id: message.senderId, online: false, showPresence: false, size: 24, corner: 12)
                         .padding(.trailing, 6).padding(.bottom, 20)
                 } else {
                     Color.clear.frame(width: 30, height: 1)
@@ -2396,7 +2398,9 @@ struct MirrorBubble: View {
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
                         // R54-c: sender name INSIDE the incoming group bubble
-                        if !mine && isGroup && head {
+                        if let origin = message.integrationLabel {
+                            Text(origin).font(.system(size: 10, weight: .semibold)).foregroundColor(MirrorArt.accent2).padding(.bottom, 2)
+                        } else if !mine && isGroup && head {
                             Text(message.sender?.name ?? "")
                                 .font(.system(size: 12, weight: .semibold)).foregroundColor(MirrorArt.textSoft)
                                 .padding(.bottom, 2)

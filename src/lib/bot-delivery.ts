@@ -22,7 +22,7 @@ export async function botReplyContext(tx: Prisma.TransactionClient, room: string
   const root = source.parentId ? await tx.message.findUnique({ where: { id: source.parentId },
     select: { conversationId: true, parentId: true, deletedAt: true, expiresAt: true, viewOnce: true } }) : null
   if (source.parentId && (!threadRootAvailable(root, room, now) || root?.viewOnce)) return null
-  const decision = await messageDeliveryDecision(tx, room, botId, now)
+  const decision = await messageDeliveryDecision(tx, room, botId, now, true)
   if (decision.state !== 'send') return null
   let expiresAt = decision.expiresAt
   for (const deadline of [source.expiresAt, root?.expiresAt]) {
@@ -38,7 +38,7 @@ export async function createBotReply(tx: Prisma.TransactionClient, room: string,
   if (!context || (!data.poll && !data.content.trim())) return null
   const message = await tx.message.create({ data: {
     conversationId: room, senderId: botId, content: data.content.slice(0, MESSAGE_MAX),
-    kind: data.poll ? 'poll' : 'text', payload: data.payload ?? JSON.stringify({ bot: true }),
+    kind: data.poll ? 'poll' : 'text', viaAutomation: true, payload: data.payload ?? JSON.stringify({ bot: true }),
     parentId: context.source.parentId, topicId: context.source.topicId,
     createdAt: now, expiresAt: context.expiresAt,
     ...(data.poll ? { poll: { create: { question: data.poll.question, options: {

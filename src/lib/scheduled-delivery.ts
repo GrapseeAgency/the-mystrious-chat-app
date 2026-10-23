@@ -4,7 +4,7 @@ type Decision = { state: 'send'; expiresAt: Date | null } | { state: 'wait'; ret
   { state: 'cancel'; reason: 'not_member' | 'announcement_only' | 'blocked' | 'conversation_missing' }
 
 /** Re-evaluate inside the write transaction for both immediate and scheduled sends. */
-export async function messageDeliveryDecision(tx: Prisma.TransactionClient, room: string, sender: string, now: Date): Promise<Decision> {
+export async function messageDeliveryDecision(tx: Prisma.TransactionClient, room: string, sender: string, now: Date, countAutomated = false): Promise<Decision> {
   const conversation = await tx.conversation.findUnique({ where: { id: room },
     select: { isGroup: true, broadcastMode: true, ttlSeconds: true, slowModeSeconds: true } })
   if (!conversation) return { state: 'cancel', reason: 'conversation_missing' }
@@ -21,7 +21,7 @@ export async function messageDeliveryDecision(tx: Prisma.TransactionClient, room
     ]) }, select: { id: true } })) return { state: 'cancel', reason: 'blocked' }
   }
   if (conversation.slowModeSeconds > 0 && participant.role !== 'admin') {
-    const last = await tx.message.findFirst({ where: { conversationId: room, senderId: sender, viaAutomation: false },
+    const last = await tx.message.findFirst({ where: { conversationId: room, senderId: sender, ...(countAutomated ? {} : { viaAutomation: false }) },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], select: { createdAt: true } })
     if (last) {
       const remaining = conversation.slowModeSeconds * 1000 - (now.getTime() - last.createdAt.getTime())

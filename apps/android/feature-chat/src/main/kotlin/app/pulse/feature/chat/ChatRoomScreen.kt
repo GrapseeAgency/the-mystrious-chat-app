@@ -1228,7 +1228,7 @@ fun ChatRoomScreen(
                         Icon(PulseIcons.Reply, contentDescription = null, tint = EmberPalette.SenderName, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(reply.authorName, style = MaterialTheme.typography.labelMedium, color = EmberPalette.SenderName, fontWeight = FontWeight.SemiBold)
+                            Text(reply.integrationLabel ?: reply.authorName, style = MaterialTheme.typography.labelMedium, color = EmberPalette.SenderName, fontWeight = FontWeight.SemiBold)
                             Text(reply.body, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Color.White.copy(alpha = 0.55f))
                         }
                         IconButton(onClick = { viewModel.setReplyTo(null) }) {
@@ -2474,7 +2474,7 @@ private fun PinnedBanner(pin: Message, onJump: () -> Unit, onOpenAll: () -> Unit
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    pin.authorName,
+                    pin.integrationLabel ?: pin.authorName,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = EmberPalette.Amber,
@@ -2570,11 +2570,11 @@ private fun RoomSearchBar(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            PulseAvatar(name = hit.authorName, colorHex = hit.senderColor, size = 32.dp)
+                            PulseAvatar(name = hit.integrationLabel ?: hit.authorName, colorHex = hit.senderColor, size = 32.dp)
                             Column(Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        hit.authorName,
+                                        hit.integrationLabel ?: hit.authorName,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color.White,
@@ -3509,11 +3509,16 @@ private fun MessageRow(
             return@Column
         }
 
+        val integrationLabel = message.integrationLabel
+        if (integrationLabel != null) {
+            Text(integrationLabel, fontSize = 10.sp, color = EmberPalette.SenderName, fontWeight = FontWeight.SemiBold)
+        }
+
         // R53 reference rebuild - the group sender label moved INSIDE the
         // bubble (the artboard shows the name as the bubble's first line);
         // incognito rows (R3-B item 4) keep the server alias mask.
         val anonMasked = message.anon && message.anonAlias != null
-        val inBubbleSender = if (!mine && head && conversation?.isGroupish == true && !message.isDeleted) {
+        val inBubbleSender = if (integrationLabel == null && !mine && head && conversation?.isGroupish == true && !message.isDeleted) {
             if (anonMasked) message.anonAlias.orEmpty() else message.authorName
         } else {
             null
@@ -3602,7 +3607,7 @@ private fun MessageRow(
             if (!mine) {
                 if (head && !message.isDeleted) {
                     PulseAvatar(
-                        name = if (anonMasked) message.anonAlias.orEmpty() else message.authorName,
+                        name = integrationLabel ?: if (anonMasked) message.anonAlias.orEmpty() else message.authorName,
                         colorHex = message.senderColor,
                         size = 24.dp,
                         modifier = Modifier.align(Alignment.Bottom),
@@ -4200,15 +4205,6 @@ internal fun Bubble(
                         "edited",
                         fontSize = 10.sp,
                         color = Color.White.copy(alpha = 0.40f),
-                    )
-                }
-                if (message.viaAutomation) {
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        "Automation",
-                        fontSize = 10.sp,
-                        color = EmberPalette.SenderName,
-                        fontWeight = FontWeight.SemiBold,
                     )
                 }
                 if (message.pinnedAt != null) {

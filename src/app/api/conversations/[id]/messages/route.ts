@@ -318,6 +318,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
       return NextResponse.json({ error: 'payload must be an object.' }, { status: 400 })
     }
     const p = body.payload as Record<string, unknown>
+    if (['bot', 'webhook', 'webhookName', 'webhookColor'].some(key => Object.hasOwn(p, key))) {
+      return NextResponse.json({ error: 'Integration origin metadata is reserved for server-generated messages.' }, { status: 400 })
+    }
     if (kind === 'sticker') {
       const emoji = strField(p.emoji)
       if (!emoji || emoji.length > 12) {

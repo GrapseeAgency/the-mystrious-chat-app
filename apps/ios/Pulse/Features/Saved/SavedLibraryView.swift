@@ -275,9 +275,9 @@ struct SavedLibraryView: View {
     }
 
     private func rowTitle(_ item: WireSavedItem) -> String {
-        let sender = item.message.senderId == session.viewer?.id
+        let sender = item.message.integrationLabel ?? (item.message.senderId == session.viewer?.id
             ? "You"
-            : (item.message.sender?.name ?? "Someone")
+            : (item.message.sender?.name ?? "Someone"))
         let place = item.conversation.name ?? "chat"
         return "\(sender) in \(place)"
     }

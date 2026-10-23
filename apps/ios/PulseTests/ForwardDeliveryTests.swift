@@ -49,4 +49,9 @@ final class ForwardDeliveryTests: XCTestCase {
         let payload = #"{"emoji":"spark","pack":"Signal"}"#
         XCTAssertEqual(try PulseForwardDelivery.envelope(for: row(["kind": "sticker", "payload": payload])).payload, payload)
     }
+    func testForwardedIntegrationLosesServiceOriginButKeepsContentEffects() throws {
+        let source = try row(["viaAutomation": true, "payload": #"{"webhook":true,"webhookName":"Deploys","effect":"sparkles"}"#])
+        XCTAssertEqual(source.integrationLabel, "Webhook · Deploys")
+        XCTAssertEqual(try PulseForwardDelivery.envelope(for: source).payload, #"{"effect":"sparkles"}"#)
+    }
 }

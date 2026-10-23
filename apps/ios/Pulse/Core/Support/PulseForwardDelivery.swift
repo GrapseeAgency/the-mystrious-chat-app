@@ -33,7 +33,7 @@ enum PulseForwardDelivery {
         }
         return PulseOutboxForward(kind: source.kind, imagePath: source.imagePath, audioPath: source.audioPath,
             durationMs: source.durationMs, filePath: source.filePath, fileName: source.fileName, fileSize: source.fileSize,
-            payload: source.payload)
+            payload: try PulseMessageOrigin.forwardPayload(source.payload))
     }
 
     static func enqueue(source: WireChatMessage, targetId: String, viewer: PulseViewer, store: PulseStore) throws -> WireChatMessage {

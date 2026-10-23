@@ -1428,7 +1428,7 @@ private struct RoomContent: View {
                         viewModel.jumpTo(hit.id)
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(hit.sender?.name ?? "Message")
+                            Text(hit.integrationLabel ?? hit.sender?.name ?? "Message")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(PulseTheme.emberGlowTop)
                             HighlightedSnippet(content: hit.content, query: searchQuery)
@@ -1495,7 +1495,7 @@ private struct RoomContent: View {
                     viewModel.jumpTo(pin.id)
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(pin.sender?.name ?? "Pinned")
+                        Text(pin.integrationLabel ?? pin.sender?.name ?? "Pinned")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(PulseTheme.emberGlowTop)
                         Text(pin.content.isEmpty ? "Media message" : pin.content)
@@ -2657,7 +2657,7 @@ private struct RoomContent: View {
                 .font(.footnote)
                 .foregroundStyle(PulseTheme.emberGlowTop)
             VStack(alignment: .leading, spacing: 1) {
-                Text(reply.sender?.name ?? "Reply")
+                Text(reply.integrationLabel ?? reply.sender?.name ?? "Reply")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(PulseTheme.emberGlowTop)
                 Text(reply.content)
@@ -2961,7 +2961,7 @@ struct BubbleView: View {
                 // messages only (web chat-room.tsx:7289 head gate; the little
                 // color dot is the row's avatar stand-in - gated with it).
                 // EMB-I - sender name 12pt ember glow (#FFB86B).
-                if groupChat && !mine, isClusterHead, let sender = message.sender {
+                if message.integrationLabel == nil && groupChat && !mine, isClusterHead, let sender = message.sender {
                     HStack(spacing: 5) {
                         Circle().fill(PulseTheme.color(named: sender.color)).frame(width: 6, height: 6)
                         Text(sender.name)
@@ -3033,6 +3033,9 @@ struct BubbleView: View {
                     .font(.footnote)
                     .foregroundStyle(Color.white.opacity(0.50))
             } else {
+                if let origin = message.integrationLabel {
+                    Text(origin).font(.caption2.weight(.semibold)).foregroundStyle(PulseTheme.emberGlowTop)
+                }
                 if let label = PulseAttachmentDelivery.pendingLabel(message) {
                     Label(label, systemImage: "arrow.up.doc").font(.subheadline)
                     if !message.content.isEmpty { Text(message.content) }

@@ -33,14 +33,14 @@ async function fixture(run) {
   await db.automation.create({data:{id:'rule',conversationId:'room',trigger:'Hello',reply:'Welcome',createdById:'me'}})
   await db.webhook.create({data:{id:'hook',conversationId:'room',name:'Build bot',token:'synthetic-hook',createdBy:'me'}})
   const requireActionOwner=await load('src/lib/wallet-authorization.ts',{db,bearerToken,tokenAccepted},'requireActionOwner')
-  const events=[],bindings={db,roomControl,requireActionOwner,NextResponse:Response,safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',mapAutomation:r=>r,
+  const events=[],bindings={db,messageDeliveryDecision,roomControl,requireActionOwner,NextResponse:Response,safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',mapAutomation:r=>r,
    AVATAR_COLORS:['#F2A65A'],MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},mapMessage:r=>r,memberIdsOf:async()=>['me','member'],notifySocket:async(...args)=>events.push(args)}
   const {createAutomationReply,triggerMatches}=await load('src/lib/automation-delivery.ts',{...bindings,messageDeliveryDecision,threadRootAvailable},'({createAutomationReply,triggerMatches})')
   const a=await load('src/app/api/conversations/[id]/automations/route.ts',bindings,'({GET,POST})')
   const single=await load('src/app/api/automations/[id]/route.ts',bindings,'({PATCH,DELETE})')
   const w=await load('src/app/api/webhooks/route.ts',bindings,'({GET,POST})')
   const token=await load('src/app/api/webhooks/[token]/route.ts',bindings,'({POST,DELETE})')
-  await run(db,{a,single,w,token,events,triggerMatches,fire:(content='Hello',now=new Date())=>db.$transaction(tx=>createAutomationReply(tx,'room','source',content,now),{isolationLevel:'Serializable'}), makeReply:(overrides={})=>load('src/app/api/conversations/[id]/messages/route.ts',{...bindings,createAutomationReply,nativeBlockFromPayload:()=>null,console:{error:()=>{}},...overrides},'maybeAutomationReply'),makeIngest:d=>load('src/app/api/webhooks/[token]/route.ts',{...bindings,db:d},'POST')})
+  await run(db,{a,single,w,token,events,triggerMatches,fire:(content='Hello',now=new Date())=>db.$transaction(tx=>createAutomationReply(tx,'room','source',content,now),{isolationLevel:'Serializable'}), makeReply:(overrides={})=>load('src/app/api/conversations/[id]/messages/route.ts',{...bindings,createAutomationReply,nativeBlockFromPayload:()=>null,console:{error:()=>{}},...overrides},'maybeAutomationReply'),makeIngest:(d,overrides={})=>load('src/app/api/webhooks/[token]/route.ts',{...bindings,db:d,...overrides},'POST')})
  }finally{await db.$disconnect();await rm(dir,{recursive:true,force:true})}
 }
 const ctx=(id='room')=>({params:Promise.resolve({id,token:'synthetic-hook'})})
@@ -163,4 +163,37 @@ test('Unicode keyword boundaries do not fire inside Bengali or combining-mark wo
   ['café','cafe\u0301!',true],['cafe','cafe\u0301',false],['C++','C++?',true],['a.b','axb',false],
   ['দাম','দাম\u200d',false],['','anything',false],
  ]) assert.equal(h.triggerMatches(trigger,body),expected,`${trigger}:${body}`)
+}))
+test('webhook capability cannot bypass block, announcement or machine slow-mode policies',()=>fixture(async(db,h)=>{
+ await db.conversation.update({where:{id:'room'},data:{isGroup:false}})
+ await db.userBlock.create({data:{blockerId:'member',blockedId:'me'}})
+ assert.equal((await h.token.POST(req('POST','',null),ctx())).status,403)
+ await db.userBlock.deleteMany()
+ await db.conversationParticipant.updateMany({where:{userId:'me'},data:{role:'member'}})
+ await db.conversation.update({where:{id:'room'},data:{isGroup:true,broadcastMode:true}})
+ assert.equal((await h.token.POST(req('POST','',null),ctx())).status,403)
+ await db.conversation.update({where:{id:'room'},data:{broadcastMode:false,slowModeSeconds:60}})
+ assert.equal((await h.token.POST(req('POST','',null),ctx())).status,200)
+ const message=await db.message.findFirst();assert.equal(message.viaAutomation,true)
+ const wait=await h.token.POST(req('POST','',null),ctx());assert.equal(wait.status,429);assert.ok(Number(wait.headers.get('retry-after'))>0)
+ assert.equal(await db.message.count(),1)
+}))
+test('normal sends reject reserved origin flags instead of minting integration metadata',()=>fixture(async(db,h)=>{
+ const POST=await load('src/app/api/conversations/[id]/messages/route.ts',{
+  db,NextResponse:Response,safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},
+  messageOperation:()=>null,replayMessageOperation:async()=>null,MessageOperationError:class extends Error {},
+ },'POST')
+ for(const key of ['bot','webhook','webhookName','webhookColor']) {
+  const request=new Request('https://controls.test',{method:'POST',body:JSON.stringify({senderId:'me',content:'Hello',payload:{[key]:true}})})
+  assert.equal((await POST(request,ctx())).status,400)
+ }
+ assert.equal(await db.message.count(),0)
+}))
+test('webhook committed acceptance survives notification outage without encouraging a transport retry',()=>fixture(async(db,h)=>{
+ const ingest=await h.makeIngest(db,{notifySocket:async()=>{throw Error('Synthetic outage')},console:{error:()=>{}}})
+ const response=await ingest(req('POST','',null),ctx())
+ assert.equal(response.status,200)
+ const receipt=await response.json();assert.equal(receipt.success,true)
+ assert.ok(await db.message.findUnique({where:{id:receipt.messageId}}))
+ assert.equal(await db.message.count(),1)
 }))

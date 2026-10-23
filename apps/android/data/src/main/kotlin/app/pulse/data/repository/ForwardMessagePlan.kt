@@ -43,7 +43,7 @@ internal data class ForwardMessagePlan(val message: Message, val kind: String) {
                 id = TEMP_MESSAGE_PREFIX + clientId, conversationId = target, authorId = owner, authorName = owner,
                 kind = source.kind, body = source.body, createdAt = java.time.Instant.ofEpochMilli(now).toString(),
                 imagePath = source.imagePath, audioPath = source.audioPath, durationMs = source.durationMs,
-                filePath = source.filePath, fileName = source.fileName, fileSize = source.fileSize, payload = source.payload,
+                filePath = source.filePath, fileName = source.fileName, fileSize = source.fileSize, payload = app.pulse.domain.sync.MessageOrigin.forwardPayload(source.payload),
             ), kind)
         }
     }

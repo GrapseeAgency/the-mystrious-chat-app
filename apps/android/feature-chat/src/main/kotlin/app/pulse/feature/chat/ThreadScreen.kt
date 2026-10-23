@@ -519,7 +519,7 @@ fun ThreadScreen(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        parent?.authorName?.let { "Replies to $it" } ?: "…",
+                        (parent?.integrationLabel ?: parent?.authorName)?.let { "Replies to $it" } ?: "…",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -731,6 +731,9 @@ private fun ThreadContentBubble(
     onOpenFile: () -> Unit,
 ) {
     val mine = message.authorId == viewerId
+    message.integrationLabel?.let { origin ->
+        Text(origin, style = MaterialTheme.typography.labelSmall, color = PulsePalette.Emerald, fontWeight = FontWeight.SemiBold)
+    }
     // Wave 2 view-once gating - same state machine as the room river.
     val viewOncePhoto = message.viewOnce && message.imagePath != null
     val burned = viewOncePhoto && !mine && message.viewedAt != null
