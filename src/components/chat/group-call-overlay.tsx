@@ -618,6 +618,13 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
       }
 
       if (event === 'gcall:ended') {
+        if (stateRef.current === 'joining' && joinAttemptRef.current && payload.joinAttemptId === joinAttemptRef.current &&
+            payload.conversationId === joinedConvRef.current) {
+          teardownMedia()
+          setStateBoth('ended')
+          setSummary('This call is not available to join')
+          return
+        }
         if (stateRef.current === 'joining' && expectedJoinRef.current?.roomId === payload.conversationId &&
             expectedJoinRef.current?.callId === payload.callId) {
           teardownMedia()
@@ -642,7 +649,8 @@ export function useGroupCallSession(options: GroupCallSessionOptions): GroupCall
       }
 
       if (event === 'gcall:full') {
-        if (joinIntentRef.current) {
+        if (joinIntentRef.current && joinAttemptRef.current && payload.joinAttemptId === joinAttemptRef.current &&
+            payload.conversationId === joinedConvRef.current) {
           teardownMedia()
           setStateBoth('idle')
           toast.error('That call is full (8 max)')

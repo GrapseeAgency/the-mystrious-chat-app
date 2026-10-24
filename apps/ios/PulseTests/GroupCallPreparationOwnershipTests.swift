@@ -322,4 +322,23 @@ final class GroupCallPreparationOwnershipTests: XCTestCase {
         XCTAssertEqual(left["callId"] as? String, "current")
         XCTAssertEqual(cancelled["joinAttemptId"] as? String, first)
     }
+    func testAdmissionRefusalAndFullRepliesCannotCancelAnotherAttempt() async throws {
+        let media = Media(), signals = Signals()
+        media.lendAudio = true
+        let e = engine(media, signals)
+        defer { e.stop() }
+        try await join(e, media)
+        let attempt = try XCTUnwrap(signals.payloads.last { $0.0 == "gcall:join" }?.1["joinAttemptId"] as? String)
+        e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "joinAttemptId": "old", "reason": "access-unavailable"])
+        e.handleGroupCallSignal(event: "gcall:full", raw: ["conversationId": "room", "joinAttemptId": "old"])
+        XCTAssertEqual(e.uiState, .joining)
+        e.handleGroupCallSignal(event: "gcall:ended", raw: ["conversationId": "room", "joinAttemptId": attempt, "reason": "access-unavailable"])
+        XCTAssertEqual(e.uiState, .ended)
+        XCTAssertFalse(media.audioEnabled.last ?? true)
+        e.dismissSummary()
+        try await join(e, media)
+        let current = try XCTUnwrap(signals.payloads.last { $0.0 == "gcall:join" }?.1["joinAttemptId"] as? String)
+        e.handleGroupCallSignal(event: "gcall:full", raw: ["conversationId": "room", "joinAttemptId": current])
+        XCTAssertEqual(e.uiState, .idle)
+    }
 }

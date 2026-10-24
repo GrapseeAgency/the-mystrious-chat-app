@@ -109,6 +109,7 @@ data class GroupCallRingPayload(
 /** S→C gcall:ended - the call was torn down (host/last member left, or kicked). */
 @Serializable
 data class GroupCallEndedPayload(
+    val joinAttemptId: String? = null,
     val conversationId: String = "",
     val callId: String = "",
     val reason: String = "",
@@ -117,6 +118,7 @@ data class GroupCallEndedPayload(
 /** S→C gcall:full - join rejected (8 max). */
 @Serializable
 data class GroupCallFullPayload(
+    val joinAttemptId: String? = null,
     val conversationId: String = "",
     val callId: String = "",
     val max: Int = GroupCallEvents.MAX_PARTICIPANTS,

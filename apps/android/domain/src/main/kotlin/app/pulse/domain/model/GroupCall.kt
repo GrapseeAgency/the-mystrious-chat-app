@@ -33,6 +33,7 @@ data class GroupCallMember(
 data class GroupCallSignalData(
     /** The wire event name: gcall:state | offer | answer | ice | ring | ended | full. */
     val event: String,
+    val joinAttemptId: String? = null,
     val callId: String = "",
     val conversationId: String = "",
     val from: String = "",

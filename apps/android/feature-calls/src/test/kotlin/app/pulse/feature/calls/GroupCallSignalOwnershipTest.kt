@@ -37,4 +37,13 @@ class GroupCallSignalOwnershipTest {
             ring.copy(expiresAt = null), ring.copy(expiresAt = "bad"))) assertNull(groupRingDeadline(invalid, now))
         assertEquals(now + 45_000, groupRingDeadline(ring.copy(expiresAt = java.time.Instant.ofEpochMilli(now + 90_000).toString()), now))
     }
+    @Test fun `a delayed admission refusal belongs only to its original attempt`() {
+        val refusal = signal.copy(event = "gcall:ended", callId = "", joinAttemptId = "attempt-A")
+        assertTrue(matchesPendingGroupAttempt(refusal, "room", "attempt-A"))
+        assertFalse(matchesPendingGroupAttempt(refusal, "room", "attempt-B"))
+        assertFalse(matchesPendingGroupAttempt(refusal, "other", "attempt-A"))
+        assertFalse(matchesPendingGroupAttempt(refusal.copy(joinAttemptId = null), "room", "attempt-A"))
+        assertFalse(matchesPendingGroupAttempt(refusal, null, "attempt-A"))
+        assertFalse(matchesPendingGroupAttempt(refusal, "room", null))
+    }
 }

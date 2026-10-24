@@ -167,6 +167,19 @@ async function verifySessionToken(userId: string, token: string): Promise<boolea
   return verdict
 }
 
+/** Do not cache positive room access: every admission needs current membership. */
+async function groupCallAccessAllowed(conversationId: string, userId: string, signal: AbortSignal): Promise<boolean> {
+  if (!PRIVACY_KEY || signal.aborted) return false
+  try {
+    const response = await fetch(`${NEXT_API_BASE}/api/internal/call-access?conversationId=${encodeURIComponent(conversationId)}&userId=${encodeURIComponent(userId)}`, {
+      headers: { 'x-pulse-key': PRIVACY_KEY }, signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]),
+    })
+    if (!response.ok) return false
+    const receipt = await response.json()
+    return !signal.aborted && receipt?.callAccessVersion === 1 && receipt.conversationId === conversationId && receipt.userId === userId && receipt.allowed === true
+  } catch { return false }
+}
+
 type PrivacyFlags = { typingVisible: boolean; presenceVisible: boolean }
 const PRIVATE_FLAGS: PrivacyFlags = { typingVisible: false, presenceVisible: false }
 const privacyCache = new Map<string, { flags: PrivacyFlags; validUntil: number }>()
@@ -1037,6 +1050,11 @@ httpServer.on('upgrade', (req, socket, head) => {
 // Socket lifecycle & realtime events
 // ---------------------------------------------------------------------------
 io.on('connection', (socket: Socket) => {
+  let pendingGroupJoin: { userId: string; conversationId: string; joinAttemptId?: string; controller: AbortController } | null = null
+  function cancelPendingGroupJoin() {
+    pendingGroupJoin?.controller.abort()
+    pendingGroupJoin = null
+  }
   console.log(`[ws] connect sock=${socket.id} clients=${io.engine.clientsCount}`)
 
   /** join { userId } — register presence, enter personal room, ack + snapshot broadcast */
@@ -1061,6 +1079,10 @@ io.on('connection', (socket: Socket) => {
       }
     }
 
+    if (socketUser.get(socket.id) && socketUser.get(socket.id) !== userId) {
+      cancelPendingGroupJoin()
+      leaveGroupCall(socketUser.get(socket.id)!, 'identity-changed', socket.id)
+    }
     // Defensive re-join: forget previous mapping of THIS socket first.
     if (socketUser.has(socket.id)) dropPresence(socket.id)
 
@@ -1758,7 +1780,7 @@ io.on('connection', (socket: Socket) => {
    * The caller POSTs /api/conversations/[id]/calls/ring separately so rings
    * (and pushes) reach members outside this socket room.
    */
-  socket.on('gcall:join', (raw: unknown) => {
+  socket.on('gcall:join', async (raw: unknown) => {
     const data = (raw ?? {}) as Record<string, unknown>
     const conversationId = asTrimmedString(data.conversationId).slice(0, 128)
     const kind = callKindOf(data.kind)
@@ -1768,6 +1790,20 @@ io.on('connection', (socket: Socket) => {
 
     const joinAttemptId = data.joinAttemptId === undefined ? undefined : asTrimmedString(data.joinAttemptId)
     if (joinAttemptId !== undefined && (!joinAttemptId || joinAttemptId.length > 128)) return
+    const currentMember = groupCalls.get(conversationId)?.members.get(me.userId)
+    if (!joinAttemptId && (pendingGroupJoin?.joinAttemptId ||
+        (currentMember?.socketId === socket.id && currentMember.joinAttemptId))) return
+    cancelPendingGroupJoin()
+    const intent = { userId: me.userId, conversationId, joinAttemptId, controller: new AbortController() }
+    pendingGroupJoin = intent
+    const allowed = await groupCallAccessAllowed(conversationId, me.userId, intent.controller.signal)
+    // A cancelled/older permission request cannot create a call or evict any member.
+    if (pendingGroupJoin !== intent || !socket.connected || socketUser.get(socket.id) !== me.userId) return
+    pendingGroupJoin = null
+    if (!allowed) {
+      socket.emit('gcall:ended', { conversationId, callId: asTrimmedString(data.expectedCallId), joinAttemptId, reason: 'access-unavailable' })
+      return
+    }
     let call = groupCalls.get(conversationId)
     const priorMember = call?.members.get(me.userId)
     // A legacy/unbound replay cannot remove a modern admission's leave fence.
@@ -1778,13 +1814,13 @@ io.on('connection', (socket: Socket) => {
       const expected = asTrimmedString(data.expectedCallId)
       const existingDevice = call?.members.get(me.userId)?.socketId
       if (!expected || call?.callId !== expected || (existingDevice && existingDevice !== socket.id)) {
-        socket.emit('gcall:ended', { conversationId, callId: expected, reason: 'unavailable' })
+        socket.emit('gcall:ended', { conversationId, callId: expected, joinAttemptId, reason: 'unavailable' })
         return
       }
     }
     // Capacity refusal must not evict an existing call on the user's other device.
     if (call && !call.members.has(me.userId) && call.members.size >= MAX_GROUP_CALL_PARTICIPANTS) {
-      socket.emit('gcall:full', { conversationId, callId: call.callId, max: MAX_GROUP_CALL_PARTICIPANTS })
+      socket.emit('gcall:full', { conversationId, callId: call.callId, joinAttemptId, max: MAX_GROUP_CALL_PARTICIPANTS })
       return
     }
     const currentConv = groupCallByUser.get(me.userId)
@@ -1811,7 +1847,7 @@ io.on('connection', (socket: Socket) => {
     }
     if (!call.members.has(me.userId)) {
       if (call.members.size >= MAX_GROUP_CALL_PARTICIPANTS) {
-        socket.emit('gcall:full', { conversationId, callId: call.callId, max: MAX_GROUP_CALL_PARTICIPANTS })
+        socket.emit('gcall:full', { conversationId, callId: call.callId, joinAttemptId, max: MAX_GROUP_CALL_PARTICIPANTS })
         console.log(`[gcall] join rejected (full) conv=${conversationId} user=${me.userId}`)
         return
       }
@@ -1834,6 +1870,10 @@ io.on('connection', (socket: Socket) => {
     const me = asTrimmedString(data.from).slice(0, 64)
     if (!conversationId || !me) return
     if (socketUser.get(socket.id) !== me) return
+    if (pendingGroupJoin?.userId === me && pendingGroupJoin.conversationId === conversationId &&
+        (pendingGroupJoin.joinAttemptId ? asTrimmedString(data.joinAttemptId) === pendingGroupJoin.joinAttemptId : data.joinAttemptId === undefined)) {
+      cancelPendingGroupJoin()
+    }
     if (groupCallByUser.get(me) !== conversationId) return
     const call = groupCalls.get(conversationId)
     const member = call?.members.get(me)
@@ -1921,6 +1961,7 @@ io.on('connection', (socket: Socket) => {
   })
 
   socket.on('disconnect', (reason: string) => {
+    cancelPendingGroupJoin()
     // Voice rooms clean up FIRST: the departed mic must never keep the stage.
     leaveVoiceRoom(socket.id, `disconnect:${reason}`)
     // Stage + spatial presence rosters follow (mirror cleanup).

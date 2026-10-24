@@ -29,3 +29,7 @@ The backend sender is `src/lib/push/transport.ts`. Credentials are supplied by t
 User-wide online suppression can still starve another background device. Removing it requires coordinated native/socket attention deduplication, not simply deleting the gate. Android's mixed notification/data FCM messages bypass `onMessageReceived` in the background; the new native expiry guard applies only when that handler runs. iOS expiry suppression applies to foreground presentation, not OS-managed background banners. There is no notification recall or durable push outbox, and non-normal-message producer coverage remains incomplete.
 
 Local tests exercise actual HTTP/2 framing/session cleanup and production fanout against SQLite with simulated provider responses. They do not authenticate against Apple/Firebase or verify physical-device delivery, lockscreen behavior, permissions, signing, or background quick reply.
+
+### Group-call admission dependency
+
+Group-call admission now asks Next's `/api/internal/call-access` for a fresh room-membership verdict. Next and the socket relay must share a nonempty `CRON_SECRET`; `PULSE_ORIGIN` on the relay must reach the Next deployment. Deploy the endpoint together with the relay. Missing credentials, malformed replies or authority outages refuse new group-call joins rather than bypassing membership. This does not revoke already-active calls instantaneously and does not replace the existing session-registration policy.

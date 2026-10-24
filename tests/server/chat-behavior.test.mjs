@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
+import { canJoinConversationCall } from '../../src/lib/group-call-access.ts'
 import { advanceReadReceipt, receiptRecipients, setManualUnread } from '../../src/lib/read-receipt.ts'
 import { inboxMessagesWhere, visibleInboxPreview, threadRepliesWhere, removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
 import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
@@ -395,4 +396,15 @@ test('manual unread commits only the member marker and returns the exact desired
   await db.conversationParticipant.delete({ where: { id: 'p' } })
   await assert.rejects(setManualUnread(db, 'room', 'reader', true), { status: 403 })
   assert.equal(await db.conversationParticipant.count(), 0)
+}))
+
+test('call access requires current conversation membership, not just an existing user or orphaned row', () => fixture(async db => {
+  await seedRead(db)
+  assert.equal(await canJoinConversationCall(db, 'room', 'reader'), false)
+  await db.$executeRaw`INSERT INTO Conversation(id,updatedAt) VALUES ('room',${t(0)})`
+  assert.equal(await canJoinConversationCall(db, 'room', 'reader'), true)
+  assert.equal(await canJoinConversationCall(db, 'room', 'outsider'), false)
+  assert.equal(await canJoinConversationCall(db, 'other', 'reader'), false)
+  await db.conversationParticipant.delete({ where: { id: 'p' } })
+  assert.equal(await canJoinConversationCall(db, 'room', 'reader'), false)
 }))

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
@@ -18,9 +19,29 @@ function event(socket, name, predicate = () => true) {
 }
 
 test('real call relay binds membership, signaling and disconnect to the admitted device', { timeout: 15000 }, async t => {
+  const accessModes = new Map(), heldAccess = []
+  const sendAccess = (res, room, user, allowed = true) => {
+    if (!res.destroyed) { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ callAccessVersion: 1, conversationId: room, userId: user, allowed })) }
+  }
+  const authority = createServer((req, res) => {
+    const url = new URL(req.url, 'http://authority.test')
+    if (req.headers['x-pulse-key'] !== 'synthetic-call-key') { res.writeHead(401); res.end(); return }
+    if (url.pathname === '/api/internal/call-access') {
+      const room = url.searchParams.get('conversationId'), user = url.searchParams.get('userId')
+      const mode = accessModes.get(room)
+      if (mode === 'hold') heldAccess.push(() => sendAccess(res, room, user))
+      else if (mode === 'error') { res.writeHead(503); res.end() }
+      else sendAccess(res, room, user, mode === 'deny' ? false : mode === 'malformed' ? 'true' : true)
+      authority.emit('access-request', { room, user })
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ flags: {}, dispatched: 0 }))
+  })
+  authority.listen(0, '127.0.0.1'); await once(authority, 'listening')
+  const authorityURL = `http://127.0.0.1:${authority.address().port}`
   const server = spawn(process.execPath, ['--experimental-transform-types', 'index.ts'], {
     cwd: fileURLToPath(new URL('../../mini-services/pulse-socket/', import.meta.url)),
-    env: { ...process.env, PULSE_SOCKET_PORT: '0', PULSE_ORIGIN: 'http://127.0.0.1:1' },
+    env: { ...process.env, PULSE_SOCKET_PORT: '0', PULSE_ORIGIN: authorityURL, CRON_SECRET: 'synthetic-call-key' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   const exited = once(server, 'exit')
@@ -170,12 +191,74 @@ test('real call relay binds membership, signaling and disconnect to the admitted
       leave({ joinAttemptId: 'attempt-C' }); await barrier(owner, 'intent-owner')
       assert.equal(await read(), null)
       // Cancel immediately after sending JOIN, before reading its roster/call ID.
-      const ended = event(owner, 'gcall:ended', row => row.conversationId === 'intent-room')
       owner.emit('gcall:join', { conversationId: 'intent-room', kind: 'voice', user: { id: 'intent-owner' }, joinAttemptId: 'attempt-D' })
       leave({ joinAttemptId: 'attempt-D' })
-      await ended; await barrier(owner, 'intent-owner')
+      await barrier(owner, 'intent-owner')
       assert.equal(await read(), null)
       owner.disconnect(); peer.disconnect()
+    })
+
+    await t.test('current membership is required and stale permission results cannot admit or evict', async () => {
+      const owner = await connect('access-owner')
+      const current = await join(owner, 'access-owner', 'access-current', 'current-intent')
+      const read = async room => (await (await fetch(`${base}/gcall?conversationId=${room}`)).json()).state
+      const request = (room, attempt) => owner.emit('gcall:join', { conversationId: room, kind: 'voice',
+        user: { id: 'access-owner' }, joinAttemptId: attempt })
+      for (const mode of ['deny', 'malformed', 'error']) {
+        accessModes.set('access-refused', mode)
+        const refused = event(owner, 'gcall:ended', row => row.joinAttemptId === mode)
+        request('access-refused', mode)
+        assert.equal((await refused).reason, 'access-unavailable')
+        assert.equal(await read('access-refused'), null)
+        assert.equal((await read('access-current')).callId, current.callId)
+      }
+      accessModes.set('access-held', 'hold')
+      let reached = once(authority, 'access-request')
+      request('access-held', 'cancelled')
+      assert.equal((await reached)[0].room, 'access-held')
+      owner.emit('gcall:leave', { conversationId: 'access-held', from: 'access-owner', joinAttemptId: 'cancelled' })
+      await barrier(owner, 'access-owner')
+      heldAccess.shift()()
+      assert.equal(await read('access-held'), null)
+      assert.equal((await read('access-current')).callId, current.callId)
+      reached = once(authority, 'access-request')
+      request('access-held', 'superseded')
+      await reached
+      const latest = await join(owner, 'access-owner', 'access-latest', 'latest')
+      heldAccess.shift()()
+      assert.equal(await read('access-held'), null)
+      assert.equal((await read('access-latest')).callId, latest.callId)
+      // A successful prior admission is never reused as cached permission.
+      accessModes.set('access-latest', 'deny')
+      const deniedAgain = event(owner, 'gcall:ended', row => row.joinAttemptId === 'retry')
+      request('access-latest', 'retry'); await deniedAgain
+      assert.equal((await read('access-latest')).callId, latest.callId)
+      reached = once(authority, 'access-request')
+      request('access-held', 'new-pending')
+      await reached
+      owner.emit('gcall:leave', { conversationId: 'access-held', from: 'access-owner', joinAttemptId: 'cancelled' })
+      await barrier(owner, 'access-owner')
+      const permitted = event(owner, 'gcall:state', row => row.conversationId === 'access-held')
+      heldAccess.shift()()
+      await permitted
+      assert.deepEqual((await read('access-held')).members.map(row => row.id), ['access-owner'])
+      const switching = await connect('switch-old')
+      accessModes.set('identity-held', 'hold')
+      reached = once(authority, 'access-request')
+      switching.emit('gcall:join', { conversationId: 'identity-held', kind: 'voice', user: { id: 'switch-old' }, joinAttemptId: 'switch' })
+      await reached
+      await barrier(switching, 'switch-new')
+      heldAccess.shift()()
+      assert.equal(await read('identity-held'), null)
+      switching.disconnect()
+      reached = once(authority, 'access-request')
+      request('access-held', 'disconnect')
+      await reached
+      const id = owner.id; owner.disconnect()
+      await logged(new RegExp(`disconnect sock=${id} reason=`))
+      heldAccess.shift()()
+      assert.equal(await read('access-held'), null)
+      assert.equal(await read('access-latest'), null)
     })
 
     let activeAlice = alice
@@ -305,5 +388,7 @@ test('real call relay binds membership, signaling and disconnect to the admitted
     for (const socket of sockets) socket.disconnect()
     server.kill('SIGTERM')
     await exited
+    authority.closeAllConnections()
+    await new Promise(resolve => authority.close(resolve))
   }
 })

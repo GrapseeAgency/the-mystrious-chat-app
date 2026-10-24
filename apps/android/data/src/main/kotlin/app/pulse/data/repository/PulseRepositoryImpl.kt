@@ -536,6 +536,7 @@ class PulseRepositoryImpl constructor(
                         PulseEvent.GroupCallSignal(
                             app.pulse.domain.model.GroupCallSignalData(
                                 event = app.pulse.protocol.GroupCallEvents.ENDED,
+                                joinAttemptId = signal.payload.joinAttemptId,
                                 conversationId = signal.payload.conversationId,
                                 callId = signal.payload.callId,
                                 reason = signal.payload.reason,
@@ -546,6 +547,7 @@ class PulseRepositoryImpl constructor(
                         PulseEvent.GroupCallSignal(
                             app.pulse.domain.model.GroupCallSignalData(
                                 event = app.pulse.protocol.GroupCallEvents.FULL,
+                                joinAttemptId = signal.payload.joinAttemptId,
                                 conversationId = signal.payload.conversationId,
                                 callId = signal.payload.callId,
                                 max = signal.payload.max,

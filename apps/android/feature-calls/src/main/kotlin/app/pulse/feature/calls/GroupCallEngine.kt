@@ -598,6 +598,12 @@ class GroupCallEngine @Inject constructor(
             GroupCallEvents.ICE -> handleIce(s)
 
             GroupCallEvents.ENDED -> {
+                if (phase == UiPhase.JOINING && matchesPendingGroupAttempt(s, joinedConvId, joinAttemptId)) {
+                    teardownMedia()
+                    phase = UiPhase.ENDED
+                    _snapshot.value = _snapshot.value.copy(phase = phase, summary = "This call is not available to join")
+                    return
+                }
                 val pending = expectedJoin
                 if (phase == UiPhase.JOINING && pending != null && matchesGroupCall(s, pending.first, pending.second)) {
                     teardownMedia()
@@ -616,7 +622,7 @@ class GroupCallEngine @Inject constructor(
             }
 
             GroupCallEvents.FULL -> {
-                if (joinIntent && phase == UiPhase.JOINING && joinedConvId != null && s.conversationId == joinedConvId) {
+                if (joinIntent && phase == UiPhase.JOINING && matchesPendingGroupAttempt(s, joinedConvId, joinAttemptId)) {
                     teardownMedia()
                     phase = UiPhase.IDLE
                     _snapshot.value = _snapshot.value.copy(phase = UiPhase.IDLE)

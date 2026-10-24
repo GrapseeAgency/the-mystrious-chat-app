@@ -694,6 +694,13 @@ public final class PulseGroupCallEngine: ObservableObject {
             }
 
         case "gcall:ended":
+            if uiState == .joining, let joinAttemptId, raw["conversationId"] as? String == joinedConv,
+               raw["joinAttemptId"] as? String == joinAttemptId {
+                teardownMedia()
+                uiState = .ended
+                summary = "This call is not available to join"
+                return
+            }
             if uiState == .joining, let expectedJoin, raw["conversationId"] as? String == expectedJoin.roomId,
                raw["callId"] as? String == expectedJoin.callId {
                 teardownMedia()
@@ -715,7 +722,8 @@ public final class PulseGroupCallEngine: ObservableObject {
             }
 
         case "gcall:full":
-            if joinIntent, uiState == .joining, let joinedConv, raw["conversationId"] as? String == joinedConv {
+            if joinIntent, uiState == .joining, let joinedConv, raw["conversationId"] as? String == joinedConv,
+               let joinAttemptId, raw["joinAttemptId"] as? String == joinAttemptId {
                 teardownMedia()
                 uiState = .idle
                 toasts.show("That call is full (8 max)")

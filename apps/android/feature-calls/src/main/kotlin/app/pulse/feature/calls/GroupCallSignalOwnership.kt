@@ -18,3 +18,7 @@ internal fun groupRingDeadline(signal: GroupCallSignalData, nowMs: Long): Long? 
     if (deadline <= nowMs) return null
     return minOf(deadline, nowMs + 45_000)
 }
+
+/** Refusal before admission has no call ID; it must identify the pending attempt. */
+internal fun matchesPendingGroupAttempt(signal: GroupCallSignalData, roomId: String?, attemptId: String?): Boolean =
+    !roomId.isNullOrBlank() && !attemptId.isNullOrBlank() && signal.conversationId == roomId && signal.joinAttemptId == attemptId
