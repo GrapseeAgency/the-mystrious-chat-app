@@ -721,10 +721,10 @@ struct MirrorRowOptions: View {
                 }
             } else {
                 MirrorPanelOption(icon: row.pinned ? "pin.slash" : "pin", label: row.pinned ? "Unpin from top" : "Pin to top") {
-                    perform { try await $0.setPinned(conversationId: row.id, pinned: !row.pinned) }
+                    perform { _ = try await $0.setPinned(conversationId: row.id, pinned: !row.pinned) }
                 }
                 MirrorPanelOption(icon: "archivebox", label: "Archive chat") {
-                    perform { try await $0.archive(conversationId: row.id, archived: true) }
+                    perform { _ = try await $0.archive(conversationId: row.id, archived: true) }
                 }
                 MirrorPanelOption(icon: row.manualUnread ? "envelope.open" : "envelope", label: row.manualUnread ? "Mark as read" : "Mark as unread") {
                     perform { try await $0.markUnread(conversationId: row.id, on: !row.manualUnread) }
@@ -763,7 +763,7 @@ struct MirrorRowOptions: View {
     }
 
     private func mute(until: String?) {
-        perform { try await $0.setMuted(conversationId: row.id, until: until) }
+        perform { _ = try await $0.setMuted(conversationId: row.id, until: until) }
     }
 }
 
@@ -1742,9 +1742,7 @@ struct MirrorRoomView: View {
                     onPinned: { menuOpen = false; activeSheet = .pinned },
                     onMute: { preset in
                         menuOpen = false
-                        Task {
-                            try? await session.api.setMuted(conversationId: row.id, until: preset)
-                        }
+                        setRoomMuted(until: preset)
                     }
                 )
             }
@@ -1867,6 +1865,25 @@ struct MirrorRoomView: View {
                 await session.markReadIfVisible(conversationId: row.id)
             }
         }
+    }
+
+    private func setRoomMuted(until: String?) {
+        let client = session.api, epoch = session.sessionGeneration, room = row.id
+        let task = roomOperations.run(key: "mute", operation: {
+            defer { if session.sessionGeneration == epoch { session.noteInboxChanged() } }
+            do {
+                let receipt = try await client.setMuted(conversationId: room, until: until)
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return false }
+                if let date = receipt.date { session.toasts.show("Muted until \(PulseFormat.listStamp(date))") }
+                else { session.toasts.show("Notifications unmuted") }
+                return true
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == epoch else { return false }
+                session.toasts.show("Couldn't confirm the mute. Refresh this chat before retrying.")
+                return false
+            }
+        })
+        if task == nil { session.toasts.show("This chat is still updating. Please wait.") }
     }
 
     private func updateReadBoundary() {

@@ -576,6 +576,46 @@ class PulseApi(
     suspend fun patchAction(path: String, body: JsonObject? = null): PulseResult<Unit> =
         patch(path, body)
 
+    data class ConversationPreferenceAcknowledgement(val timestamp: String?, val epochMillis: Long?)
+
+    private fun preferenceReceipt(text: String, room: String, owner: String, field: String,
+        expected: kotlinx.serialization.json.JsonElement, timestampField: String, enabled: Boolean): ConversationPreferenceAcknowledgement {
+        val body = PulseJson.parseToJsonElement(text) as? JsonObject
+            ?: throw kotlinx.serialization.SerializationException("Conversation setting receipt is missing")
+        if (body["ok"] != JsonPrimitive(true) || body["conversationPreferenceVersion"] != JsonPrimitive(1) ||
+            body["conversationId"] != JsonPrimitive(room) || body["userId"] != JsonPrimitive(owner) || body[field] != expected)
+            throw kotlinx.serialization.SerializationException("Conversation setting owner or value was not confirmed")
+        val raw = body[timestampField]
+        if (!enabled) {
+            if (raw != JsonNull) throw kotlinx.serialization.SerializationException("Cleared setting was not confirmed")
+            return ConversationPreferenceAcknowledgement(null, null)
+        }
+        val stamp = (raw as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?: throw kotlinx.serialization.SerializationException("Setting timestamp was not confirmed")
+        val millis = runCatching { java.time.Instant.parse(stamp).toEpochMilli() }.getOrNull()
+            ?: throw kotlinx.serialization.SerializationException("Setting timestamp is invalid")
+        return ConversationPreferenceAcknowledgement(stamp, millis)
+    }
+    private fun preferencePath(room: String, action: String) = "/api/conversations/" +
+        java.net.URLEncoder.encode(room, "UTF-8").replace("+", "%20") + "/" + action
+
+    suspend fun setConversationPinned(room: String, owner: String, pinned: Boolean): PulseResult<ConversationPreferenceAcknowledgement> =
+        patch(preferencePath(room, "pin"), jsonOf("userId" to owner, "pinned" to pinned)) {
+            preferenceReceipt(it, room, owner, "pinned", JsonPrimitive(pinned), "pinnedAt", pinned)
+        }
+    suspend fun setConversationArchived(room: String, owner: String, archived: Boolean): PulseResult<ConversationPreferenceAcknowledgement> =
+        patch(preferencePath(room, "archive"), jsonOf("userId" to owner, "archived" to archived)) {
+            preferenceReceipt(it, room, owner, "archived", JsonPrimitive(archived), "archivedAt", archived)
+        }
+    suspend fun setConversationMuted(room: String, owner: String, until: String?): PulseResult<ConversationPreferenceAcknowledgement> {
+        if (until !in listOf(null, "8h", "1w", "always"))
+            return PulseResult.Failure(PulseResult.Failure.Kind.VALIDATION, "Unknown mute duration")
+        val preset = until?.let { JsonPrimitive(it) } ?: JsonNull
+        return patch(preferencePath(room, "mute"), buildJsonObject { put("userId", owner); put("until", preset) }) {
+            preferenceReceipt(it, room, owner, "mutePreset", preset, "mutedUntil", until != null)
+        }
+    }
+
     // Wave 1 messaging surface (spec §1.1)
 
     /** `{message: ChatMessage}` unwrap shared by the edit/pin actions. */

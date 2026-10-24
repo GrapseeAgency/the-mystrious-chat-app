@@ -2810,40 +2810,37 @@ class PulseRepositoryImpl constructor(
         }
     }
 
+    private suspend fun confirmedPreferenceChange(
+        id: String,
+        request: suspend (String) -> PulseResult<PulseApi.ConversationPreferenceAcknowledgement>,
+        apply: (Conversation, PulseApi.ConversationPreferenceAcknowledgement) -> Conversation,
+    ): Result<Unit> = withRoomMutation(id) { owner, epoch ->
+        when (val receipt = request(owner)) {
+            is PulseResult.Success -> {
+                requireConversationOwner(owner, epoch)
+                mutateConversation(id, checkOwner = { requireConversationOwner(owner, epoch) }) { apply(it, receipt.value) }
+                Result.success(Unit)
+            }
+            is PulseResult.Failure -> Result.failure(apiExceptionOf(receipt))
+        }
+    }
     override suspend fun togglePin(conversationId: String, pinned: Boolean): Result<Unit> =
-        confirmedConversationChange(conversationId, request = { owner ->
-            api.patchAction("/api/conversations/$conversationId/pin",
-                PulseApi.jsonOf("userId" to owner, "pinned" to pinned)).toResult()
-        }, apply = { it.copy(isPinned = pinned) })
+        confirmedPreferenceChange(conversationId, request = { api.setConversationPinned(conversationId, it, pinned) },
+            apply = { row, receipt -> row.copy(isPinned = receipt.timestamp != null) })
 
     override suspend fun setMuted(conversationId: String, muted: Boolean): Result<Unit> =
         setMutedUntil(conversationId, if (muted) "8h" else null)
 
-    override suspend fun setMutedUntil(conversationId: String, until: String?): Result<Unit> {
-        val duration = when (until) {
-            null -> 0L
-            "8h" -> 8L * 60 * 60 * 1000
-            "1w" -> 7L * 24 * 60 * 60 * 1000
-            "always" -> 50L * 365 * 24 * 60 * 60 * 1000
-            else -> return Result.failure(IllegalArgumentException("Unknown mute duration"))
-        }
-        return confirmedConversationChange(conversationId, request = { owner ->
-            val body = kotlinx.serialization.json.buildJsonObject {
-                put("userId", kotlinx.serialization.json.JsonPrimitive(owner))
-                put("until", until?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull)
-            }
-            api.patchAction("/api/conversations/$conversationId/mute", body).toResult()
-        }, apply = {
-            val deadline = if (duration == 0L) 0L else System.currentTimeMillis() + duration
-            it.copy(mutedUntilEpoch = deadline, isMuted = duration > 0)
-        })
-    }
+    override suspend fun setMutedUntil(conversationId: String, until: String?): Result<Unit> =
+        confirmedPreferenceChange(conversationId, request = { api.setConversationMuted(conversationId, it, until) },
+            apply = { row, receipt ->
+                val deadline = receipt.epochMillis ?: 0L
+                row.copy(mutedUntilEpoch = deadline, isMuted = deadline > System.currentTimeMillis())
+            })
 
     override suspend fun archive(conversationId: String, archived: Boolean): Result<Unit> =
-        confirmedConversationChange(conversationId, request = { owner ->
-            api.patchAction("/api/conversations/$conversationId/archive",
-                PulseApi.jsonOf("userId" to owner, "archived" to archived)).toResult()
-        }, apply = { it.copy(isArchived = archived) })
+        confirmedPreferenceChange(conversationId, request = { api.setConversationArchived(conversationId, it, archived) },
+            apply = { row, receipt -> row.copy(isArchived = receipt.timestamp != null) })
 
     override suspend fun markUnread(conversationId: String, on: Boolean): Result<Unit> =
         confirmedConversationChange(conversationId, request = { owner ->

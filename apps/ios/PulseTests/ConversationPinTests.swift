@@ -22,7 +22,10 @@ private final class ConversationPinProtocol: URLProtocol {
         let status = valid ? Int(request.value(forHTTPHeaderField: "X-Reply-Status") ?? "200")! : 400
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status,
             httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data((status == 200 ? "{\"ok\":true}" : "{\"error\":\"Not confirmed\"}").utf8))
+        let receipt: [String: Any] = ["ok": true, "conversationPreferenceVersion": 1, "conversationId": "room", "userId": "owner",
+            "pinned": expected, "pinnedAt": expected ? "2001-01-01T00:00:00.000Z" as Any : NSNull()]
+        let reply = status == 200 ? try! JSONSerialization.data(withJSONObject: receipt) : Data(#"{"error":"Not confirmed"}"#.utf8)
+        client?.urlProtocol(self, didLoad: reply)
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}

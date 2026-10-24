@@ -1,9 +1,8 @@
 // /api/conversations/[id]/pin - explicit state, with legacy toggle compatibility
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { safeJson, strField } from '@/lib/serializers'
+import { safeJson, strField, notifySocket } from '@/lib/serializers'
 import { ConversationPinError, setConversationPin } from '@/lib/conversation-pin'
-import { bearerToken } from '@/lib/session-token'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 
 export const dynamic = 'force-dynamic'
@@ -29,12 +28,12 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
   if (body.pinned !== undefined && typeof body.pinned !== 'boolean') {
     return NextResponse.json({ error: 'pinned must be a boolean.' }, { status: 400 })
   }
-  if (bearerToken(req)) {
-    const denied = await requireActionOwner(req, userId, 'conversation pin')
-    if (denied) return denied
-  }
+  const denied = await requireActionOwner(req, userId, 'conversation pin')
+  if (denied) return denied
   try {
-    return NextResponse.json(await setConversationPin(db, id, userId, body.pinned as boolean | undefined))
+    const receipt = await setConversationPin(db, id, userId, body.pinned as boolean | undefined)
+    await notifySocket('conversation:updated', [userId], { type: 'conversation:updated', conversationId: id, recipientIds: [userId] })
+    return NextResponse.json({ ...receipt, conversationPreferenceVersion: 1, conversationId: id, userId })
   } catch (error) {
     if (error instanceof ConversationPinError) return NextResponse.json({ error: error.message }, { status: error.status })
     throw error

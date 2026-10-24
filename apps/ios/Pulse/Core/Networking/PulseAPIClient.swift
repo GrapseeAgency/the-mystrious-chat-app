@@ -326,26 +326,75 @@ public struct PulseAPIClient: Sendable {
         }
     }
 
-    /// Explicit desired state makes retrying after a lost response repeat-safe.
-    public func setPinned(conversationId: String, pinned: Bool) async throws {
-        try await patchEmpty("/api/conversations/\(conversationId)/pin", body: ["userId": userId, "pinned": pinned])
+    public struct ConversationPreferenceReceipt: Sendable {
+        public let timestamp: String?
+        public var date: Date? { timestamp.flatMap { PulseFormat.date($0) } }
+    }
+    private struct ConversationPreferenceWire: Decodable {
+        let ok: Bool
+        let conversationPreferenceVersion: Int
+        let conversationId: String
+        let userId: String
+        let pinned: Bool?
+        let pinnedAt: String?
+        let archived: Bool?
+        let archivedAt: String?
+        let mutePreset: String?
+        let mutedUntil: String?
+    }
+    private func preferenceReceipt(_ data: Data, room: String, action: String, enabled: Bool, preset: String? = nil) throws -> ConversationPreferenceReceipt {
+        let receipt = try decoder.decode(ConversationPreferenceWire.self, from: data)
+        let fields = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard receipt.ok, receipt.conversationPreferenceVersion == 1, receipt.conversationId == room, receipt.userId == userId else {
+            throw Failure(kind: .server, message: "The conversation setting was not confirmed for this account.")
+        }
+        let stamp: String?
+        let timestampKey: String
+        switch action {
+        case "pin":
+            guard receipt.pinned == enabled else { throw Failure(kind: .server, message: "The pin was not confirmed.") }
+            stamp = receipt.pinnedAt; timestampKey = "pinnedAt"
+        case "archive":
+            guard receipt.archived == enabled else { throw Failure(kind: .server, message: "The archive was not confirmed.") }
+            stamp = receipt.archivedAt; timestampKey = "archivedAt"
+        default:
+            guard fields?.keys.contains("mutePreset") == true, receipt.mutePreset == preset else {
+                throw Failure(kind: .server, message: "The mute duration was not confirmed.")
+            }
+            stamp = receipt.mutedUntil; timestampKey = "mutedUntil"
+        }
+        guard fields?.keys.contains(timestampKey) == true,
+              enabled ? stamp.flatMap { PulseFormat.date($0) } != nil : stamp == nil else {
+            throw Failure(kind: .server, message: "The conversation setting timestamp was not confirmed.")
+        }
+        return ConversationPreferenceReceipt(timestamp: stamp)
     }
 
-    /// N10-b - per-viewer notification mute with the wire preset until:
-    /// "8h" | "1w" | "always" | null (unmute).
-    public func setMuted(conversationId: String, until preset: String?) async throws {
+    @discardableResult
+    public func setPinned(conversationId: String, pinned: Bool) async throws -> ConversationPreferenceReceipt {
+        let data = try await patchRaw("/api/conversations/\(q(conversationId))/pin", body: ["userId": userId, "pinned": pinned])
+        return try preferenceReceipt(data, room: conversationId, action: "pin", enabled: pinned)
+    }
+
+    /// Server-confirmed absolute timestamp; do not restart the mute on a slow reply.
+    @discardableResult
+    public func setMuted(conversationId: String, until preset: String?) async throws -> ConversationPreferenceReceipt {
+        guard preset.map({ ["8h", "1w", "always"].contains($0) }) ?? true else {
+            throw Failure(kind: .validation, message: "Unknown mute duration.")
+        }
         let body: [String: Any] = ["userId": userId, "until": preset ?? NSNull()]
-        try await patchEmpty("/api/conversations/\(conversationId)/mute", body: body)
+        let data = try await patchRaw("/api/conversations/\(q(conversationId))/mute", body: body)
+        return try preferenceReceipt(data, room: conversationId, action: "mute", enabled: preset != nil, preset: preset)
     }
 
-    /// Boolean overload kept for older callers - true → 8h, false → unmute.
     public func setMuted(conversationId: String, muted: Bool) async throws {
-        try await setMuted(conversationId: conversationId, until: muted ? "8h" : nil)
+        _ = try await setMuted(conversationId: conversationId, until: muted ? "8h" : nil)
     }
 
-    /// N10-b transport fix - PATCH /archive { userId, archived }.
-    public func archive(conversationId: String, archived: Bool) async throws {
-        try await patchEmpty("/api/conversations/\(conversationId)/archive", body: ["userId": userId, "archived": archived])
+    @discardableResult
+    public func archive(conversationId: String, archived: Bool) async throws -> ConversationPreferenceReceipt {
+        let data = try await patchRaw("/api/conversations/\(q(conversationId))/archive", body: ["userId": userId, "archived": archived])
+        return try preferenceReceipt(data, room: conversationId, action: "archive", enabled: archived)
     }
 
     /// N3-b - per-viewer unread dot (PATCH, body { userId, on }).

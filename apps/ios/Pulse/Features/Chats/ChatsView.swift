@@ -2344,15 +2344,14 @@ private struct ChatActionSheet: View {
         PulseHaptics.tap()
         dismiss()
         do {
-            try await client.setMuted(conversationId: conversation.id, until: preset)
+            let receipt = try await client.setMuted(conversationId: conversation.id, until: preset)
             await MainActor.run {
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
                 if let preset {
                     if preset == "always" {
                         session.toasts.show("Muted - always")
                     } else {
-                        let until = Date().addingTimeInterval(preset == "1w" ? 7 * 86_400 : 8 * 3_600)
-                        session.toasts.show("Muted until \(PulseFormat.listStamp(until))")
+                        if let until = receipt.date { session.toasts.show("Muted until \(PulseFormat.listStamp(until))") }
                     }
                 } else {
                     session.toasts.show("Notifications unmuted")
@@ -3228,9 +3227,9 @@ final class ChatsViewModel: ObservableObject {
         }
         let wasPinned = conv.isPinned
         do {
-            try await client.setPinned(conversationId: conv.id, pinned: !wasPinned)
+            let receipt = try await client.setPinned(conversationId: conv.id, pinned: !wasPinned)
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-            updateSummaries({ $0.withPinnedAt(wasPinned ? nil : ISO8601DateFormatter().string(from: Date())) }, ids: [conv.id])
+            updateSummaries({ $0.withPinnedAt(receipt.timestamp) }, ids: [conv.id])
             session.toasts.show(wasPinned ? "Unpinned" : "Pinned to top")
         } catch {
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
@@ -3246,28 +3245,15 @@ final class ChatsViewModel: ObservableObject {
             pendingConversationActions.subtract(ids)
             if session.sessionGeneration == epoch { session.noteInboxChanged() }
         }
-        let offsets: [String: TimeInterval] = [
-            "8h": 8 * 3600,
-            "1w": 7 * 86_400,
-            "always": 50 * 365 * 86_400,
-        ]
-        let optimistic: String?
-        if let until {
-            let offset = offsets[until] ?? 8 * 3600
-            optimistic = ISO8601DateFormatter().string(from: Date().addingTimeInterval(offset))
-        } else {
-            optimistic = nil
-        }
         do {
-            try await client.setMuted(conversationId: conv.id, until: until)
+            let receipt = try await client.setMuted(conversationId: conv.id, until: until)
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-            updateSummaries({ $0.withMutedUntil(optimistic) }, ids: [conv.id])
+            updateSummaries({ $0.withMutedUntil(receipt.timestamp) }, ids: [conv.id])
             if let until {
                 if until == "always" {
                     session.toasts.show("Muted - always")
                 } else {
-                    let stamp = Date().addingTimeInterval(until == "1w" ? 7 * 86_400 : 8 * 3_600)
-                    session.toasts.show("Muted until \(PulseFormat.listStamp(stamp))")
+                    if let stamp = receipt.date { session.toasts.show("Muted until \(PulseFormat.listStamp(stamp))") }
                 }
             } else {
                 session.toasts.show("Notifications unmuted")
@@ -3287,9 +3273,9 @@ final class ChatsViewModel: ObservableObject {
             if session.sessionGeneration == epoch { session.noteInboxChanged() }
         }
         do {
-            try await client.archive(conversationId: conv.id, archived: archived)
+            let receipt = try await client.archive(conversationId: conv.id, archived: archived)
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-            updateSummaries({ $0.withArchived(archived ? ISO8601DateFormatter().string(from: Date()) : nil) }, ids: [conv.id])
+            updateSummaries({ $0.withArchived(receipt.timestamp) }, ids: [conv.id])
             PulseHaptics.success()
             session.toasts.show(archived ? "Chat archived" : "Chat unarchived")
         } catch {
@@ -3336,14 +3322,13 @@ final class ChatsViewModel: ObservableObject {
         }
         batchArchivePending = true
         defer { batchArchivePending = false }
-        let stamp = ISO8601DateFormatter().string(from: Date())
         var archived = 0
         for conv in convs {
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
             // Same PATCH /archive the sheet + swipe chips use.
-            if (try? await client.archive(conversationId: conv.id, archived: true)) != nil {
+            if let receipt = try? await client.archive(conversationId: conv.id, archived: true) {
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                updateSummaries({ $0.withArchived(stamp) }, ids: [conv.id])
+                updateSummaries({ $0.withArchived(receipt.timestamp) }, ids: [conv.id])
                 archived += 1
             }
         }
@@ -3369,13 +3354,12 @@ final class ChatsViewModel: ObservableObject {
         }
         batchMutePending = true
         defer { batchMutePending = false }
-        let stamp = ISO8601DateFormatter().string(from: Date().addingTimeInterval(8 * 3600))
         var muted = 0
         for conv in convs {
             guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-            if (try? await client.setMuted(conversationId: conv.id, until: "8h")) != nil {
+            if let receipt = try? await client.setMuted(conversationId: conv.id, until: "8h") {
                 guard !Task.isCancelled, session.sessionGeneration == epoch else { return }
-                updateSummaries({ $0.withMutedUntil(stamp) }, ids: [conv.id])
+                updateSummaries({ $0.withMutedUntil(receipt.timestamp) }, ids: [conv.id])
                 muted += 1
             }
         }

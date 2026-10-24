@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
+import * as personalSettings from '../../src/lib/conversation-personal-settings.ts'
+import { setConversationPin, ConversationPinError } from '../../src/lib/conversation-pin.ts'
 import * as metadata from '../../src/lib/conversation-metadata.ts'
 import { ConversationMetadataError, patchMyScreenPrivacy } from '../../src/lib/conversation-metadata.ts'
 import { privacyPreferenceSnapshot } from '../../src/lib/privacy-preferences.ts'
@@ -71,7 +73,13 @@ async function fixture(run, database = db => db) {
         ...(read?{}:{body:JSON.stringify({userId:actor,requesterId:actor,...body})}),
       }),{params:Promise.resolve({id:'room'})})
     }
-    await run({db,patch,get,setPrivacy,notices,roomAction})
+    const personalRoutes={}
+    for(const kind of ['mute','archive','pin']) personalRoutes[kind]=await load(`src/app/api/conversations/[id]/${kind}/route.ts`,
+      {...roomDeps,...personalSettings,setConversationPin,ConversationPinError},'PATCH')
+    const setPersonal=(kind,body,token='synthetic-owner',userId='owner')=>personalRoutes[kind](new Request(`https://settings.test/api/conversations/room/${kind}`,{
+      method:'PATCH',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify({userId,...body}),
+    }),{params:Promise.resolve({id:'room'})})
+    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -160,3 +168,47 @@ test('room detail and shared controls require the current participant credential
   assert.equal((await roomAction('detail')).status,404)
   assert.equal((await roomAction('metadata',{screenPrivacy:true})).status,403)
 }))
+
+
+test('personal conversation flags require owner credentials and return owned timestamp receipts',()=>fixture(async({db,setPersonal,notices})=>{
+  for(const [kind,body] of [['mute',{until:'8h'}],['archive',{archived:true}],['pin',{pinned:true}]]) {
+    for(const token of [null,'invalid','synthetic-other']) assert.equal((await setPersonal(kind,body,token)).status,token?403:401)
+  }
+  assert.equal(notices.length,0)
+  const mute=await (await setPersonal('mute',{until:'8h'})).json()
+  assert.equal(mute.conversationPreferenceVersion,1);assert.equal(mute.conversationId,'room');assert.equal(mute.userId,'owner')
+  assert.equal(mute.mutePreset,'8h')
+  const row=await db.conversationParticipant.findFirst({where:{userId:'owner'}})
+  assert.equal(row.mutedUntil.toISOString(),mute.mutedUntil)
+  const archive=await (await setPersonal('archive',{archived:true})).json()
+  assert.deepEqual(await (await setPersonal('archive',{archived:true})).json(),archive)
+  const pin=await (await setPersonal('pin',{pinned:true})).json()
+  assert.deepEqual(await (await setPersonal('pin',{pinned:true})).json(),pin)
+  for(const [kind,body,field] of [['mute',{until:null},'mutedUntil'],['archive',{archived:false},'archivedAt'],['pin',{pinned:false},'pinnedAt']]) {
+    const response=await setPersonal(kind,body);assert.equal(response.status,200)
+    assert.equal((await response.json())[field],null)
+  }
+  assert.ok(notices.every(([,recipients])=>JSON.stringify(recipients)==='["owner"]'))
+  const other=await db.conversationParticipant.findFirst({where:{userId:'other'}})
+  assert.equal(other.mutedUntil,null);assert.equal(other.archivedAt,null);assert.equal(other.pinnedAt,null)
+  await db.conversationParticipant.deleteMany({where:{userId:'owner'}})
+  for(const [kind,body] of [['mute',{until:'8h'}],['archive',{archived:true}],['pin',{pinned:true}]]) {
+    assert.equal((await setPersonal(kind,body)).status,403)
+  }
+}))
+test('missing or inherited mute presets cannot silently unmute or crash the route',()=>fixture(async({db,setPersonal})=>{
+  await setPersonal('mute',{until:'1w'})
+  const before=(await db.conversationParticipant.findFirst({where:{userId:'owner'}})).mutedUntil.toISOString()
+  for(const until of [undefined,true,0,[],{},'constructor','__proto__','bad']) {
+    assert.equal((await setPersonal('mute',{until})).status,400)
+    assert.equal((await db.conversationParticipant.findFirst({where:{userId:'owner'}})).mutedUntil.toISOString(),before)
+  }
+  assert.equal((await setPersonal('archive',{archived:'false'})).status,400)
+  assert.equal((await setPersonal('mute',{until:'off'})).status,200)
+  assert.equal((await db.conversationParticipant.findFirst({where:{userId:'owner'}})).mutedUntil,null)
+}))
+test('personal mute and archive contention are retryable and do not return invented receipts',async()=>{
+  const db={$transaction:async()=>{throw {code:'P2034'}}}
+  await assert.rejects(personalSettings.setConversationMute(db,'room','owner','8h'),{status:409})
+  await assert.rejects(personalSettings.setConversationArchive(db,'room','owner',true),{status:409})
+})
