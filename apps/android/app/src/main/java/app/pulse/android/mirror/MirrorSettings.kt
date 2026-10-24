@@ -283,9 +283,9 @@ internal fun MirrorSettingsScreen(
     }
 
     fun savePrefs(patch: WirePulsePrefs) {
-        CoroutineScope(Dispatchers.IO).launch {
-            runCatching { repository.updatePulsePrefs(patch) }
-        }
+        val target = repository.boundToCurrentAccount()
+        if (target.viewerId != viewerId) return
+        session.updateServerPreferences(viewerId, target.attachmentSessionKey(), patch)
     }
 
     val wallpaperLabel = when (prefs.wallpaper) {

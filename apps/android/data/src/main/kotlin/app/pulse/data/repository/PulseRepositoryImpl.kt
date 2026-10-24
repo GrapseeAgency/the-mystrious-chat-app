@@ -310,7 +310,11 @@ class PulseRepositoryImpl constructor(
      */
     private suspend fun fetchSettings() {
         val id = viewerId ?: return
-        when (val r = api.settings(id)) {
+        val epoch = attachmentSession
+        val response = api.settings(id)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != id || attachmentSession != epoch) return
+        when (val r = response) {
             is PulseResult.Success -> {
                 r.value.preferences?.let { prefsLocalStore.replaceFromServer(it) }
             }
@@ -329,10 +333,16 @@ class PulseRepositoryImpl constructor(
     }
 
     override suspend fun updatePulsePrefs(patch: WirePulsePrefs): Result<Unit> {
-        // Optimistic FIRST - the toggle lands in the UI instantly.
-        prefsLocalStore.applyLocal(patch)
         val id = viewerId ?: return Result.failure(IllegalStateException("No viewer identity"))
-        return when (val r = api.updateSettings(id, patch)) {
+        val epoch = attachmentSession
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        prefsLocalStore.applyLocal(patch)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != id || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Settings session ended")
+        val response = api.updateSettings(id, patch)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (viewerId != id || attachmentSession != epoch) throw kotlinx.coroutines.CancellationException("Settings session ended")
+        return when (val r = response) {
             is PulseResult.Success -> {
                 // the server response is the authoritative clamp - re-anchor
                 r.value.preferences?.let { prefsLocalStore.replaceFromServer(it) }

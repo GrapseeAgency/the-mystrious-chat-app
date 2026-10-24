@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -141,6 +142,24 @@ class SessionViewModel @Inject constructor(
                 throw cancelled
             } catch (_: Exception) {
                 if (current()) _sessionNotice.value = "Profile saved. This device's name/color cache could not be refreshed."
+            }
+        }
+    }
+
+    /** Settings work belongs to the original session, not a detached UI scope.
+     * Inspect the repository Result; local persistence is not a server receipt. */
+    fun updateServerPreferences(ownerId: String, expectedSession: String?, patch: app.pulse.protocol.WirePulsePrefs) {
+        if (expectedSession == null) return
+        val target = repo.boundToCurrentAccount()
+        fun current() = target.viewerId == ownerId && target.attachmentSessionKey() == expectedSession
+        if (!current()) return
+        viewModelScope.launch {
+            try {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!current()) return@launch
+                target.updatePulsePrefs(patch).getOrThrow()
+            } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) {
+                if (current()) _sessionNotice.value = "The server did not confirm the settings update. Reopen Settings and retry; no automatic retry was queued."
             }
         }
     }

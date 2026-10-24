@@ -591,15 +591,24 @@ public final class PulseSession: ObservableObject {
     /// back (server wins on the response). Failure → local value STAYS +
     /// an honest offline note for the settings surface.
     private func sendPrefsPatch(_ patch: WirePulsePrefs) {
+        guard let owner = viewer?.id, prefs?.viewer?.id == owner, api.userId == owner else { return }
+        let client = api, epoch = generation
         Task { [weak self] in
-            guard let self else { return }
+            guard let self, !Task.isCancelled, self.generation == epoch,
+                  self.viewer?.id == owner, self.prefs?.viewer?.id == owner else { return }
             do {
-                let server = try await self.api.updateSettings(patch: patch)
+                let server = try await client.updateSettings(patch: patch)
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
+                      self.prefs?.viewer?.id == owner else { return }
                 self.prefs?.applyServer(server)
                 self.prefs?.notePatchSettled(successful: true, note: nil)
             } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
+                      self.prefs?.viewer?.id == owner else { return }
                 self.noteAuthFailure(failure.message)
             } catch {
+                guard !Task.isCancelled, self.generation == epoch, self.viewer?.id == owner,
+                      self.prefs?.viewer?.id == owner else { return }
                 self.prefs?.notePatchSettled(successful: false, note: "Saved on this device - the server didn't answer.")
             }
         }
@@ -793,7 +802,7 @@ public final class PulseSession: ObservableObject {
 
         // 4. Wave 8 - pull the server-merged prefs blob (server value wins;
         //    optimistic local values keep working when this fails).
-        await prefs?.syncFromServer(api: api)
+        await prefs?.syncFromServer(api: api, isCurrent: { [weak self] in self?.generation == epoch })
         guard !Task.isCancelled, generation == epoch else { return }
 
         // 5. Realtime only when a relay base is configured (nil → offline-first,

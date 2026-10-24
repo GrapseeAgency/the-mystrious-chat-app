@@ -321,6 +321,8 @@ public final class PulsePrefs: ObservableObject {
     /// write. The session PATCHes { userId, preferences } and reports the
     /// verdict back via `notePatchSettled`.
     public var patchRemote: ((WirePulsePrefs) -> Void)?
+    private var localPreferenceRevision: UInt64 = 0
+    private var settingsReadTicket = UUID()
     /// 401 rotation rejections funnel to the session layer (token clear +
     /// re-login surface).
     public var authRejectionHandler: ((String?) -> Void)?
@@ -693,17 +695,24 @@ public final class PulsePrefs: ObservableObject {
     /// defaults → stored blob). Local values act as the base; every server
     /// field that decoded real value clamps over it. Offline-first: a
     /// failed fetch keeps the local state untouched.
-    public func syncFromServer(api: PulseAPIClient) async {
+    public func syncFromServer(api: PulseAPIClient, isCurrent: () -> Bool) async {
+        guard isCurrent(), viewer?.id == api.userId,
+              PulseWalletOperations.gatewayKey(api.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL) else { return }
+        let ticket = UUID(), revision = localPreferenceRevision
+        settingsReadTicket = ticket
+        func ownsRead() -> Bool {
+            !Task.isCancelled && isCurrent() && settingsReadTicket == ticket && viewer?.id == api.userId &&
+                PulseWalletOperations.gatewayKey(api.baseURL) == PulseWalletOperations.gatewayKey(PulseEndpoints.gatewayURL)
+        }
         do {
             let server = try await api.settings()
+            guard ownsRead(), localPreferenceRevision == revision else { return }
             applyServer(server)
         } catch let failure as PulseAPIClient.Failure where failure.kind == .auth {
-            // Present-but-invalid token - the session layer clears it and
-            // surfaces re-login (server contract, Wave 8).
+            guard ownsRead() else { return }
             authRejectionHandler?(failure.message)
         } catch {
-            // Offline / unknown user (local_ ids) - local values stay
-            // authoritative. Honest, by design.
+            // Offline reads keep the current owner's local values unchanged.
         }
     }
 
@@ -752,6 +761,7 @@ public final class PulsePrefs: ObservableObject {
     /// Optimistic write funnel: the local field is ALREADY updated; this
     /// hands the single-field patch to the session's PATCH sender.
     private func patch(_ configure: (inout WirePulsePrefs) -> Void) {
+        localPreferenceRevision &+= 1
         guard let patchRemote else { return }
         var wire = WirePulsePrefs()
         configure(&wire)

@@ -254,10 +254,20 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun updatePrefs(patch: WirePulsePrefs) {
+        val target = repo.boundToCurrentAccount()
+        val owner = target.viewerId ?: return
+        val epoch = target.attachmentSessionKey() ?: return
+        fun current() = target.viewerId == owner && target.attachmentSessionKey() == epoch
         viewModelScope.launch {
-            repo.updatePulsePrefs(patch)
-                .onSuccess { _prefsOffline.value = false }
-                .onFailure { _prefsOffline.value = true } // local change KEPT
+            try {
+                currentCoroutineContext().ensureActive()
+                if (!current()) return@launch
+                target.updatePulsePrefs(patch).getOrThrow()
+                currentCoroutineContext().ensureActive()
+                if (current()) _prefsOffline.value = false
+            } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) {
+                if (current()) _prefsOffline.value = true
+            }
         }
     }
 
