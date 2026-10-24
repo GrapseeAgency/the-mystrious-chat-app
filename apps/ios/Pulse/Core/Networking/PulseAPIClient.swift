@@ -2207,18 +2207,41 @@ public struct PulseAPIClient: Sendable {
     }
 
     // plumbing
-    /// URL builder that keeps query strings intact (appendingPathComponent
-    /// would percent-encode "?", breaking every ?userId= route).
-    private func url(_ path: String) -> URL {
-        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-            ?? URLComponents(string: PulseEndpoints.gatewayURL.absoluteString)!
-        if let queryStart = path.firstIndex(of: "?") {
-            components.path += String(path[..<queryStart])
-            components.query = String(path[path.index(after: queryStart)...])
-        } else {
-            components.path += path
-        }
+    /// Most callers already escape individual IDs/query values. Using `.path`
+    /// or `.query` here escapes their percent signs again (%26 becomes %2526).
+    private func url(_ path: String) -> URL { Self.requestURL(baseURL: baseURL, path: path) }
+
+    static func requestURL(baseURL: URL, path: String) -> URL {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return baseURL }
+        let pieces = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let route = String(pieces[0])
+        let prefix = components.percentEncodedPath.hasSuffix("/") ? String(components.percentEncodedPath.dropLast()) : components.percentEncodedPath
+        components.percentEncodedPath = prefix + (route.hasPrefix("/") ? "" : "/") + escapedRouteComponent(route, allowed: .urlPathAllowed)
+        components.percentEncodedQuery = pieces.count == 2 ? escapedRouteComponent(String(pieces[1]), allowed: .urlQueryAllowed) : nil
+        components.fragment = nil
         return components.url ?? baseURL
+    }
+
+    /// Preserve valid existing escapes while escaping raw Unicode, spaces and
+    /// malformed '%' sequences. Assigning unchecked text to percentEncodedQuery
+    /// can raise an Objective-C exception; mixed legacy/new callers must be safe.
+    private static func escapedRouteComponent(_ value: String, allowed: CharacterSet) -> String {
+        let allowed = allowed.subtracting(CharacterSet(charactersIn: "%"))
+        let hex = "0123456789abcdefABCDEF"
+        var result = "", index = value.startIndex
+        while index < value.endIndex {
+            let first = value.index(after: index)
+            if value[index] == "%", first < value.endIndex {
+                let second = value.index(after: first)
+                if second < value.endIndex, hex.contains(value[first]), hex.contains(value[second]) {
+                    let end = value.index(after: second)
+                    result.append(contentsOf: value[index..<end]); index = end; continue
+                }
+            }
+            result += String(value[index..<first]).addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+            index = first
+        }
+        return result
     }
 
     private func get<T: Decodable>(_ path: String, as type: T.Type = T.self) async throws -> T {
