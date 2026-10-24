@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
+import { requireActionActor, requireActionOwner } from '@/lib/wallet-authorization'
 import { db } from '@/lib/db'
 import { messageDeliveryDecision } from '@/lib/scheduled-delivery'
 import { createAutomationReply } from '@/lib/automation-delivery'
@@ -77,12 +78,25 @@ function anonAliasFor(userId: string, conversationId: string): string {
  * (max 100) returned ascending with the FULL match count as `total`.
  * Soft-deleted rows are included (client renders tombstones) outside of search.
  */
+function privateHistoryJson(body: unknown, init: ResponseInit = {}) {
+  const headers = new Headers(init.headers)
+  headers.set('Cache-Control', 'private, no-store')
+  return NextResponse.json(body, { ...init, headers })
+}
+
 export async function GET(req: Request, { params }: RouteCtx) {
   const { id } = await params
 
+  const actor = await requireActionActor(req, 'message history')
+  if (actor instanceof Response) return actor
+  const participant = await db.conversationParticipant.findUnique({
+    where: { userId_conversationId: { userId: actor.userId, conversationId: id } }, select: { id: true },
+  })
+  if (!participant) return privateHistoryJson({ error: 'You are not a participant of this conversation.' }, { status: 403 })
+
   const conv = await db.conversation.findUnique({ where: { id }, select: { id: true } })
   if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+    return privateHistoryJson({ error: 'Conversation not found.' }, { status: 404 })
   }
 
   // Disappearing-message purge: hard-delete anything past its deadline before reading.
@@ -97,7 +111,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   if (limitRaw !== null) {
     const parsed = Number.parseInt(limitRaw, 10)
     if (!Number.isFinite(parsed)) {
-      return NextResponse.json({ error: 'limit must be an integer.' }, { status: 400 })
+      return privateHistoryJson({ error: 'limit must be an integer.' }, { status: 400 })
     }
     limit = Math.min(Math.max(parsed, 1), MESSAGES_MAX_LIMIT)
   }
@@ -107,7 +121,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   if (beforeRaw) {
     const parsed = parseIsoDate(beforeRaw)
     if (!parsed) {
-      return NextResponse.json(
+      return privateHistoryJson(
         { error: 'before must be a valid ISO date string.' },
         { status: 400 },
       )
@@ -117,7 +131,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
 
   const afterRaw = url.searchParams.get('after')
   if (afterRaw && !parseIsoDate(afterRaw)) {
-    return NextResponse.json(
+    return privateHistoryJson(
       { error: 'after must be a valid ISO date string.' },
       { status: 400 },
     )
@@ -132,7 +146,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
   // cursor can never rewind the window. (ISO date, matching `before=`/`after=`.)
   const sinceRaw = url.searchParams.get('since')
   if (sinceRaw && !parseIsoDate(sinceRaw)) {
-    return NextResponse.json(
+    return privateHistoryJson(
       { error: 'since must be a valid ISO date string.' },
       { status: 400 },
     )
@@ -157,21 +171,21 @@ export async function GET(req: Request, { params }: RouteCtx) {
   const syncCursor = url.searchParams.get('syncCursor')
   if (syncFrom !== null || syncCursor !== null) {
     if (before || newerThan || url.searchParams.get('q')) {
-      return NextResponse.json({ error: 'Sync cannot be combined with search or legacy cursors.' }, { status: 400 })
+      return privateHistoryJson({ error: 'Sync cannot be combined with search or legacy cursors.' }, { status: 400 })
     }
     let cursor: MessageSyncCursor
     if (syncCursor) {
       try { cursor = decodeMessageSyncCursor(syncCursor, id, topicFilterRaw || null) }
-      catch { return NextResponse.json({ error: 'Invalid or mismatched sync cursor.' }, { status: 400 }) }
+      catch { return privateHistoryJson({ error: 'Invalid or mismatched sync cursor.' }, { status: 400 }) }
     } else {
       const from = syncFrom && parseIsoDate(syncFrom)
-      if (!from) return NextResponse.json({ error: 'Invalid syncFrom.' }, { status: 400 })
+      if (!from) return privateHistoryJson({ error: 'Invalid syncFrom.' }, { status: 400 })
       // Storage failures must remain server failures, not malformed-request errors.
       const upper = await db.message.findFirst({
         where: { conversationId: id, createdAt: { gte: from }, ...(topicFilterRaw ? { topicId: topicFilterRaw } : {}) },
         orderBy: [...MESSAGE_ORDER_DESC], select: { id: true, createdAt: true },
       })
-      if (!upper) return NextResponse.json({ messages: [], hasMore: false, total: 0, syncVersion: 1, nextSyncCursor: null })
+      if (!upper) return privateHistoryJson({ messages: [], hasMore: false, total: 0, syncVersion: 1, nextSyncCursor: null })
       cursor = { v: 1, room: id, topic: topicFilterRaw || null, from: from.toISOString(),
         upper: { at: upper.createdAt.toISOString(), id: upper.id } }
     }
@@ -184,7 +198,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     const last = page.at(-1)
     const nextSyncCursor = hasMore && last ? encodeMessageSyncCursor({ ...cursor,
       after: { at: last.createdAt.toISOString(), id: last.id } }) : null
-    return NextResponse.json({ messages: page.map(m => mapMessage(m)), hasMore,
+    return privateHistoryJson({ messages: page.map(m => mapMessage(m)), hasMore,
       total: page.length, syncVersion: 1, nextSyncCursor })
   }
 
@@ -209,7 +223,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     const total = matched.length
     const window = matched.slice(0, searchLimit)
     window.reverse()
-    return NextResponse.json({ messages: window.map((m) => mapMessage(m)), hasMore: false, total })
+    return privateHistoryJson({ messages: window.map((m) => mapMessage(m)), hasMore: false, total })
   }
 
   if (before) {
@@ -228,7 +242,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
       db.message.count({ where: { conversationId: id, ...(topicFilter ?? {}) } }),
     ])
     rows.reverse()
-    return NextResponse.json({ messages: rows.map((m) => mapMessage(m)), hasMore: rows.length === limit, total })
+    return privateHistoryJson({ messages: rows.map((m) => mapMessage(m)), hasMore: rows.length === limit, total })
   }
 
   // Newest window (also the polling path - `after`/`since` narrow it when
@@ -247,7 +261,7 @@ export async function GET(req: Request, { params }: RouteCtx) {
     db.message.count({ where: { conversationId: id, ...(topicFilter ?? {}) } }),
   ])
   messages.reverse()
-  return NextResponse.json({
+  return privateHistoryJson({
     messages: messages.map((m) => mapMessage(m)),
     hasMore: messages.length === limit,
     total,
@@ -266,6 +280,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (!senderId) {
     return NextResponse.json({ error: 'senderId is required.' }, { status: 400 })
   }
+  const denied = await requireActionOwner(req, senderId, 'message send')
+  if (denied) return denied
   // Existence + membership checks up-front → clean 404 / 403 semantics.
   const [conv, participant] = await Promise.all([
     db.conversation.findUnique({ where: { id } }),

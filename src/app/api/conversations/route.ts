@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { createConversationOnce, ConversationCreationError } from '@/lib/conversation-creation'
 import { DirectConversationError, openDirectConversation } from '@/lib/direct-conversation'
-import { bearerToken } from '@/lib/session-token'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import {
   buildConversationSummary,
@@ -32,6 +31,9 @@ export async function GET(req: Request) {
     )
   }
 
+  const denied = await requireActionOwner(req, userId, 'conversation list')
+  if (denied) return denied
+
   const participations = await db.conversationParticipant.findMany({
     where: { userId },
     select: { conversationId: true },
@@ -56,7 +58,7 @@ export async function GET(req: Request) {
     return Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
   })
 
-  return NextResponse.json({ conversations: summaries })
+  return NextResponse.json({ conversations: summaries }, { headers: { 'Cache-Control': 'private, no-store' } })
 }
 
 /**
@@ -73,10 +75,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'creatorId is required.' }, { status: 400 })
   }
 
-  if (bearerToken(req)) {
-    const denied = await requireActionOwner(req, creatorId, 'conversation creation')
-    if (denied) return denied
-  }
+  const denied = await requireActionOwner(req, creatorId, 'conversation creation')
+  if (denied) return denied
 
   if (!Array.isArray(body.memberIds)) {
     return NextResponse.json({ error: 'memberIds must be an array of user ids.' }, { status: 400 })

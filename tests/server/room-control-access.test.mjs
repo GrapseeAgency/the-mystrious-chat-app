@@ -182,6 +182,7 @@ test('webhook capability cannot bypass block, announcement or machine slow-mode 
 test('normal sends reject reserved origin flags instead of minting integration metadata',()=>fixture(async(db,h)=>{
  const POST=await load('src/app/api/conversations/[id]/messages/route.ts',{
   db,NextResponse:Response,safeJson:r=>r.json(),strField:v=>typeof v==='string'?v.trim():'',MESSAGE_MAX:2000,MESSAGE_FULL_INCLUDE:{},
+  requireActionOwner:async()=>null,
   messageOperation:()=>null,replayMessageOperation:async()=>null,MessageOperationError:class extends Error {},
  },'POST')
  for(const key of ['bot','webhook','webhookName','webhookColor']) {

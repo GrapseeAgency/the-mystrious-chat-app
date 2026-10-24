@@ -7,6 +7,8 @@ import { createRequire, stripTypeScriptTypes } from 'node:module'
 import { bearerToken, tokenAccepted, hashSessionToken } from '../../src/lib/session-token.ts'
 import { DirectConversationError, openSelfConversation } from '../../src/lib/direct-conversation.ts'
 import * as reminders from '../../src/lib/reminder-contract.ts'
+import * as reads from '../../src/lib/read-receipt.ts'
+import * as sync from '../../src/lib/message-sync.ts'
 import { clipUtf16 } from '../../src/lib/text-limits.ts'
 import { deriveSafetyNumber } from '../../src/lib/safety.ts'
 import { peerBlock, PeerBlockError } from '../../src/lib/peer-block.ts'
@@ -44,7 +46,7 @@ async function fixture(run, database = db => db) {
       id, name:id, color:'amber', preferences: '{"readReceipts":true,"density":"cozy"}',
       sessionTokenHash:hashSessionToken(`synthetic-${id}`), legacyTokenHashes:'[]',
     } })
-    const requireActionOwner = await load('src/lib/wallet-authorization.ts', {db,bearerToken,tokenAccepted}, 'requireActionOwner')
+    const {requireActionOwner,requireActionActor} = await load('src/lib/wallet-authorization.ts', {db,bearerToken,tokenAccepted,hashSessionToken}, '({requireActionOwner,requireActionActor})')
     const mergePrefs = await load('src/lib/prefs-defaults.ts', {sanitizeConvThemeMap:()=>{throw Error('Unexpected theme branch')}}, 'mergePrefs')
     const route = await load('src/app/api/settings/route.ts', { db:database(db), requireActionOwner, mergePrefs,
       privacyPreferenceSnapshot, NextResponse:{json:Response.json} }, '({GET,PATCH})')
@@ -119,7 +121,26 @@ async function fixture(run, database = db => db) {
       (reminderList[method]??reminderItem[method])(new Request(`https://settings.test/api/reminders?userId=${userId}`,{
         method,headers:token?{authorization:`Bearer ${token}`}:{},...(method==='GET'?{}:{body:JSON.stringify({userId,...body})}),
       }),{params:Promise.resolve({id})})
-    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder})
+    const conversationList = await load('src/app/api/conversations/route.ts', {
+      ...blockDeps, CONVERSATION_FULL_INCLUDE:{participants:true},
+      buildConversationSummary:async row=>({id:row.id,updatedAt:row.updatedAt.toISOString(),pinnedAt:null}),
+    }, '({GET,POST})')
+    const legacyRead=await load('src/app/api/conversations/[id]/read/route.ts',{
+      ...blockDeps,...reads,memberIdsOf:async()=>['owner','other'],
+    },'POST')
+    const messagesRoute=await load('src/app/api/conversations/[id]/messages/route.ts',{
+      ...blockDeps,...sync,requireActionActor,parseIsoDate:reminderDeps.parseIsoDate,
+      MESSAGES_DEFAULT_LIMIT:200,MESSAGES_MAX_LIMIT:100,MESSAGE_FULL_INCLUDE:{},mapMessage:row=>({id:row.id,content:row.content}),
+    },'({GET,POST})')
+    const chat=(kind,token='synthetic-owner',body={},query='')=>{
+      const reading=kind==='list'||kind==='history'
+      const handler=kind==='list'?conversationList.GET:kind==='create'?conversationList.POST:kind==='read'?legacyRead:reading?messagesRoute.GET:messagesRoute.POST
+      return handler(new Request(`https://settings.test/api?userId=owner${query}`,{
+        method:reading?'GET':'POST',headers:token?{authorization:`Bearer ${token}`}:{},
+        ...(reading?{}:{body:JSON.stringify({userId:'owner',creatorId:'owner',senderId:'owner',...body})}),
+      }),{params:Promise.resolve({id:'room'})})
+    }
+    await run({db,patch,get,setPrivacy,notices,roomAction,setPersonal,peer,blocks,report,safety,notebook,reminder,chat})
   } finally { await db.$disconnect(); await rm(directory,{recursive:true,force:true}) }
 }
 
@@ -416,4 +437,43 @@ test('reminder thread anchors need a live canonical root in the same conversatio
   let list=await (await reminder('GET')).json();assert.equal(list.items[0].snippet,'private reply')
   await db.message.update({where:{id:'root'},data:{deletedAt:new Date()}})
   list=await (await reminder('GET')).json();assert.equal(list.items[0].snippet,null)
+}))
+
+
+test('conversation list creation send and legacy mark-all cannot be impersonated with public IDs',()=>fixture(async({db,chat,notices})=>{
+  await db.conversationParticipant.updateMany({where:{userId:'owner'},data:{manualUnread:true,lastReadAt:new Date(0)}})
+  await db.message.create({data:{id:'visible',conversationId:'room',senderId:'other',content:'private chat content'}})
+  for(const kind of ['list','create','send','read']) for(const token of [null,'invalid','synthetic-other']) {
+    const response=await chat(kind,token,{memberIds:['other'],content:'impersonated'})
+    assert.equal(response.status,token?403:401,kind)
+    assert.equal(JSON.stringify(await response.json()).includes('private chat content'),false)
+  }
+  assert.equal(await db.message.count(),1);assert.equal(await db.conversation.count(),1)
+  assert.equal((await db.conversationParticipant.findFirst({where:{userId:'owner'}})).manualUnread,true)
+  assert.equal(notices.length,0)
+  assert.equal((await chat('list')).status,200)
+  assert.equal((await chat('read')).status,200)
+  assert.equal((await db.conversationParticipant.findFirst({where:{userId:'owner'}})).manualUnread,false)
+}))
+
+test('history search and sync require credential-derived room membership before even the expiry purge',()=>fixture(async({db,chat})=>{
+  await db.message.create({data:{id:'visible',conversationId:'room',senderId:'other',content:'private chat content'}})
+  await db.message.create({data:{id:'expired',conversationId:'room',senderId:'other',content:'expired',expiresAt:new Date(0)}})
+  await db.conversationParticipant.deleteMany({where:{userId:'other'}})
+  for(const query of ['', '&q=private', '&syncFrom=2026-01-01T00:00:00Z']) {
+    for(const token of [null,'invalid','synthetic-other']) {
+      assert.equal((await chat('history',token,{},query)).status,token?403:401)
+      assert.equal(await db.message.count(),2)
+    }
+  }
+  const allowed=await chat('history');assert.equal(allowed.status,200);assert.equal(allowed.headers.get('cache-control'),'private, no-store')
+  assert.deepEqual((await allowed.json()).messages,[{id:'visible',content:'private chat content'}])
+  assert.equal(await db.message.count(),1)
+  await db.user.update({where:{id:'owner'},data:{sessionTokenHash:hashSessionToken('rotated'),legacyTokenHashes:JSON.stringify([hashSessionToken('synthetic-owner')])}})
+  assert.equal((await chat('history')).status,200)
+  await db.user.update({where:{id:'owner'},data:{legacyTokenHashes:'[]'}})
+  assert.equal((await chat('history')).status,403)
+  await db.user.update({where:{id:'owner'},data:{sessionTokenHash:hashSessionToken('synthetic-owner')}})
+  await db.user.update({where:{id:'other'},data:{sessionTokenHash:hashSessionToken('synthetic-owner')}})
+  assert.equal((await chat('history')).status,403,'ambiguous credential must fail closed')
 }))

@@ -2,7 +2,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { memberIdsOf, notifySocket, safeJson, strField } from '@/lib/serializers'
-import { bearerToken } from '@/lib/session-token'
 import { requireActionOwner } from '@/lib/wallet-authorization'
 import { advanceReadReceipt, ReadReceiptError, receiptRecipients } from '@/lib/read-receipt'
 
@@ -17,12 +16,9 @@ export async function POST(req: Request, { params }: RouteCtx) {
   if (body.messageId !== undefined && (typeof body.messageId !== 'string' || !body.messageId.trim())) {
     return NextResponse.json({ error: 'messageId must identify a displayed message.' }, { status: 400 })
   }
-  // Anchored native calls always require ownership. Tokenless legacy web calls
-  // retain their existing compatibility contract until its auth rollout.
-  if (body.messageId !== undefined || bearerToken(req)) {
-    const denied = await requireActionOwner(req, userId, 'read receipt')
-    if (denied) return denied
-  }
+  // A legacy mark-all route must not bypass the native read-state authority.
+  const denied = await requireActionOwner(req, userId, 'read receipt')
+  if (denied) return denied
   try {
     const at = await advanceReadReceipt(db, id, userId, body.messageId as string | undefined)
     const owner = await db.user.findUnique({ where: { id: userId }, select: { preferences: true } })
