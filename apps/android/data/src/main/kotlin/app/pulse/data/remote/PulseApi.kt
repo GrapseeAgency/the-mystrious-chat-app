@@ -417,6 +417,20 @@ class PulseApi(
             row
         }
 
+    /** Exact owner/room/desired-state receipt before changing a cached badge. */
+    suspend fun markUnread(conversationId: String, userId: String, on: Boolean): PulseResult<Unit> =
+        patch("/api/conversations/$conversationId/mark-unread", jsonOf("userId" to userId, "on" to on)) { raw ->
+            // PulseJson is lenient for legacy message payloads. Mutation receipts
+            // must not coerce strings such as "true" into confirmation booleans.
+            val receipt = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                .decodeFromString(app.pulse.protocol.ManualUnreadReceiptDto.serializer(), raw)
+            if (!receipt.ok || receipt.unreadReceiptVersion != 1 || receipt.conversationId != conversationId ||
+                receipt.userId != userId || receipt.manualUnread != on) {
+                throw kotlinx.serialization.SerializationException("Unread state was not confirmed. Refresh before retrying.")
+            }
+            Unit
+        }
+
     /** Visible attention and manual mark-all are separate, versioned intents. */
     suspend fun markRead(conversationId: String, userId: String, messageId: String? = null,
         minimumReadAt: String? = null): PulseResult<Unit> =

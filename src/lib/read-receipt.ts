@@ -41,14 +41,43 @@ export async function advanceReadReceipt(db: PrismaClient, room: string, owner: 
       await tx.conversationParticipant.updateMany({
         where: { id: participant.id, lastReadAt: { lt: boundary } }, data: { lastReadAt: boundary },
       })
+      // An older viewport receipt did not advance progress. It must not
+      // erase a manual marker placed after newer progress was acknowledged.
+      // Equal/newer anchors still need an explicit intent fence for all races.
+      const clearManual = !messageId || boundary >= participant.lastReadAt
       const updated = await tx.conversationParticipant.update({
-        where: { id: participant.id }, data: { manualUnread: false }, select: { lastReadAt: true },
+        where: { id: participant.id }, data: clearManual ? { manualUnread: false } : {}, select: { lastReadAt: true },
       })
       return updated.lastReadAt
     }, { isolationLevel: 'Serializable' })
   } catch (error) {
     if (['P1008', 'P2028', 'P2034'].includes((error as { code?: string })?.code ?? '')) {
       throw new ReadReceiptError(409, 'Read state changed or is busy. Retry the displayed boundary.')
+    }
+    throw error
+  }
+}
+
+/** Membership and the marker write are one snapshot; acknowledge the actual
+ * committed value, not a generic 2xx or an echoed request body. */
+export async function setManualUnread(db: PrismaClient, room: string, owner: string, on: boolean) {
+  try {
+    return await db.$transaction(async tx => {
+      if (!await tx.conversation.findUnique({ where: { id: room }, select: { id: true } })) {
+        throw new ReadReceiptError(404, 'Conversation not found.')
+      }
+      const participant = await tx.conversationParticipant.findUnique({
+        where: { userId_conversationId: { userId: owner, conversationId: room } }, select: { id: true },
+      })
+      if (!participant) throw new ReadReceiptError(403, 'You are not a participant of this conversation.')
+      const updated = await tx.conversationParticipant.update({
+        where: { id: participant.id }, data: { manualUnread: on }, select: { manualUnread: true },
+      })
+      return { ok: true, unreadReceiptVersion: 1, conversationId: room, userId: owner, manualUnread: updated.manualUnread }
+    }, { isolationLevel: 'Serializable' })
+  } catch (error) {
+    if (['P1008', 'P2028', 'P2034'].includes((error as { code?: string })?.code ?? '')) {
+      throw new ReadReceiptError(409, 'Unread state changed or is busy. Refresh before retrying.')
     }
     throw error
   }

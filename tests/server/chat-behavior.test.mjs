@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
-import { advanceReadReceipt, receiptRecipients } from '../../src/lib/read-receipt.ts'
+import { advanceReadReceipt, receiptRecipients, setManualUnread } from '../../src/lib/read-receipt.ts'
 import { inboxMessagesWhere, visibleInboxPreview, threadRepliesWhere, removeSavedMessage, unreadSnapshot, unreadMessages, unexpiredMessages, threadRootAvailable } from '../../src/lib/message-visibility.ts'
 import { scheduledDeliveryDecision } from '../../src/lib/scheduled-delivery.ts'
 import { openDirectConversation, openSelfConversation } from '../../src/lib/direct-conversation.ts'
@@ -363,4 +363,36 @@ test('represented integration sends are incoming for unread without counting hum
   assert.equal(await db.message.count({ where: unreadMessages('room','reader',t(0),t(30)) }), 1)
   await db.$executeRaw`UPDATE Message SET deletedAt = ${t(20)} WHERE id = 'machine'`
   assert.deepEqual(await unreadSnapshot(db,'room','reader',t(0),t(20)), { unreadCount: 1, unreadExpirations: [] })
+}))
+
+test('an older displayed receipt preserves a newer manual marker; deliberate mark-all still clears it', () => fixture(async db => {
+  await seedRead(db)
+  await db.$executeRaw`INSERT INTO Conversation(id,updatedAt) VALUES ('room',${t(0)})`
+  await advanceReadReceipt(db, 'room', 'reader', 'not-displayed')
+  const receipt = await setManualUnread(db, 'room', 'reader', true)
+  assert.deepEqual(receipt, { ok: true, unreadReceiptVersion: 1, conversationId: 'room', userId: 'reader', manualUnread: true })
+  assert.equal((await advanceReadReceipt(db, 'room', 'reader', 'displayed')).toISOString(), t(20).toISOString())
+  let row = await db.conversationParticipant.findUnique({ where: { id: 'p' } })
+  assert.equal(row.manualUnread, true)
+  // Deleting the latest row must not prevent an explicit mark-all from clearing the marker.
+  await db.message.delete({ where: { id: 'not-displayed' }, select: { id: true } })
+  await advanceReadReceipt(db, 'room', 'reader')
+  row = await db.conversationParticipant.findUnique({ where: { id: 'p' } })
+  assert.equal(row.manualUnread, false)
+  assert.equal(row.lastReadAt.toISOString(), t(20).toISOString())
+}))
+test('manual unread commits only the member marker and returns the exact desired state', () => fixture(async db => {
+  await seedRead(db)
+  await db.$executeRaw`INSERT INTO Conversation(id,updatedAt) VALUES ('room',${t(0)})`
+  for (const on of [false, true, true, false]) {
+    assert.equal((await setManualUnread(db, 'room', 'reader', on)).manualUnread, on)
+    const row = await db.conversationParticipant.findUnique({ where: { id: 'p' } })
+    assert.equal(row.manualUnread, on)
+    assert.equal(row.lastReadAt.toISOString(), t(0).toISOString())
+  }
+  await assert.rejects(setManualUnread(db, 'missing', 'reader', true), { status: 404 })
+  await assert.rejects(setManualUnread(db, 'room', 'outsider', true), { status: 403 })
+  await db.conversationParticipant.delete({ where: { id: 'p' } })
+  await assert.rejects(setManualUnread(db, 'room', 'reader', true), { status: 403 })
+  assert.equal(await db.conversationParticipant.count(), 0)
 }))

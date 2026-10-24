@@ -42,3 +42,45 @@ final class ReadStateAcknowledgementTests: XCTestCase {
         }
     }
 }
+
+private final class ManualUnreadProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "manual-unread.test" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let mode = request.value(forHTTPHeaderField: "X-Unread-Test") ?? "valid"
+        let on = request.value(forHTTPHeaderField: "X-Unread-On") == "true"
+        var body: [String: Any] = ["ok": mode != "false", "unreadReceiptVersion": mode == "version" ? 0 : 1,
+            "conversationId": mode == "room" ? "other" : "room", "userId": mode == "owner" ? "other" : "me",
+            "manualUnread": mode == "opposite" ? !on : on]
+        if mode == "missing" { body.removeValue(forKey: "manualUnread") }
+        if mode == "null" { body["manualUnread"] = NSNull() }
+        if mode == "string" { body["manualUnread"] = String(on) }
+        if mode == "legacy" { body = ["ok": true] }
+        XCTAssertEqual(request.httpMethod, "PATCH")
+        XCTAssertEqual(request.url?.path, "/api/conversations/room/mark-unread")
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200,
+            httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: try! JSONSerialization.data(withJSONObject: body))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+extension ReadStateAcknowledgementTests {
+    func testManualUnreadRequiresExactOwnerRoomVersionAndDesiredBoolean() async throws {
+        for on in [true, false] {
+            for mode in ["valid", "legacy", "false", "version", "room", "owner", "opposite", "missing", "null", "string"] {
+                let config = URLSessionConfiguration.ephemeral
+                config.protocolClasses = [ManualUnreadProtocol.self]
+                config.httpAdditionalHeaders = ["X-Unread-Test": mode, "X-Unread-On": String(on)]
+                let transport = URLSession(configuration: config)
+                defer { transport.invalidateAndCancel() }
+                let api = PulseAPIClient(baseURL: URL(string: "https://manual-unread.test")!, userId: "me", session: transport)
+                do {
+                    try await api.markUnread(conversationId: "room", on: on)
+                    XCTAssertEqual(mode, "valid")
+                } catch { XCTAssertNotEqual(mode, "valid", "Valid acknowledgement failed: \(error)") }
+            }
+        }
+    }
+}

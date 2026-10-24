@@ -115,6 +115,15 @@ data class ThreadSliceDto(
     val nextCursor: String? = null,
 )
 
+@Serializable
+data class ManualUnreadReceiptDto(
+    val ok: Boolean,
+    val unreadReceiptVersion: Int,
+    val conversationId: String,
+    val userId: String,
+    val manualUnread: Boolean,
+)
+
 /** Identity-bearing read receipt, not an arbitrary HTTP success. */
 @Serializable
 data class ReadReceiptDto(

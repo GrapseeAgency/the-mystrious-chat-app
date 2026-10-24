@@ -350,7 +350,16 @@ public struct PulseAPIClient: Sendable {
 
     /// N3-b - per-viewer unread dot (PATCH, body { userId, on }).
     public func markUnread(conversationId: String, on: Bool) async throws {
-        try await patchEmpty("/api/conversations/\(conversationId)/mark-unread", body: ["userId": userId, "on": on])
+        struct Receipt: Decodable {
+            let ok: Bool; let unreadReceiptVersion: Int; let conversationId: String; let userId: String
+            let manualUnread: Bool
+        }
+        let data = try await patchRaw("/api/conversations/\(conversationId)/mark-unread", body: ["userId": userId, "on": on])
+        let receipt = try decoder.decode(Receipt.self, from: data)
+        guard receipt.ok, receipt.unreadReceiptVersion == 1, receipt.conversationId == conversationId,
+              receipt.userId == userId, receipt.manualUnread == on else {
+            throw Failure(kind: .validation, message: "Unread state was not confirmed. Refresh before retrying.")
+        }
     }
 
     /// Explicit desired state. An older gateway must refuse, never fall back to a toggle.

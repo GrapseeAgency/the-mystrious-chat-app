@@ -2676,8 +2676,7 @@ class PulseRepositoryImpl constructor(
 
     override suspend fun markUnread(conversationId: String, on: Boolean): Result<Unit> =
         confirmedConversationChange(conversationId, request = { owner ->
-            api.patchAction("/api/conversations/$conversationId/mark-unread",
-                PulseApi.jsonOf("userId" to owner, "on" to on)).toResult()
+            api.markUnread(conversationId, owner, on).toResult()
         }, apply = { it.copy(myManualUnread = on) })
 
     // Wave 6 route fixes (audit A): block carries the ACTOR in the body, and

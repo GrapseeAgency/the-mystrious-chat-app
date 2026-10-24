@@ -5,6 +5,7 @@
 // Self-service comfort setting - never admin-gated (mirrors R42 screenPrivacy).
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { setManualUnread, ReadReceiptError } from '@/lib/read-receipt'
 import { safeJson, strField, notifySocket } from '@/lib/serializers'
 
 import { bearerToken } from '@/lib/session-token'
@@ -21,7 +22,7 @@ interface RouteCtx {
  * on: boolean - true = badge my own row; false = clear it.
  * Participant-only (403 for everyone else). A viewer may only flag their
  * OWN row - userId IS the requester by construction of the call sites.
- * → { ok: true, manualUnread: boolean } | 400 | 403 | 404
+ * → versioned owner/room/desired-state receipt | 400 | 403 | 404 | 409
  */
 export async function PATCH(req: Request, { params }: RouteCtx) {
   const { id } = await params
@@ -39,28 +40,12 @@ export async function PATCH(req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'on must be a boolean.' }, { status: 400 })
   }
 
-  const [conv, participant] = await Promise.all([
-    db.conversation.findUnique({ where: { id }, select: { id: true } }),
-    db.conversationParticipant.findUnique({
-      where: { userId_conversationId: { userId, conversationId: id } },
-      select: { id: true },
-    }),
-  ])
-  if (!conv) {
-    return NextResponse.json({ error: 'Conversation not found.' }, { status: 404 })
+  try {
+    const receipt = await setManualUnread(db, id, userId, body.on)
+    await notifySocket('conversation:updated', [userId], { conversationId: id })
+    return NextResponse.json(receipt)
+  } catch (error) {
+    if (error instanceof ReadReceiptError) return NextResponse.json({ error: error.message }, { status: error.status })
+    throw error
   }
-  if (!participant) {
-    return NextResponse.json(
-      { error: 'You are not a participant of this conversation.' },
-      { status: 403 },
-    )
-  }
-
-  await db.conversationParticipant.update({
-    where: { id: participant.id },
-    data: { manualUnread: body.on },
-  })
-
-  await notifySocket('conversation:updated', [userId], { conversationId: id })
-  return NextResponse.json({ ok: true, manualUnread: body.on })
 }

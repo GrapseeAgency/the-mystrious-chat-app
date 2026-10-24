@@ -40,4 +40,22 @@ class ReadStateApiTest {
             assertEquals(1, calls)
         } finally { http.close() }
     }
+    @Test fun manualUnreadRequiresExactOwnerRoomVersionAndDesiredBoolean() = runTest {
+        for (on in listOf(true, false)) for (mode in listOf("valid", "legacy", "false", "version", "room", "owner", "opposite", "missing", "null", "string")) {
+            val http = HttpClient(MockEngine { request ->
+                assertEquals("PATCH", request.method.value)
+                assertEquals("/api/conversations/room/mark-unread", request.url.encodedPath)
+                assertTrue((request.body as TextContent).text.contains("\"on\":$on"))
+                val state = when (mode) { "opposite" -> (!on).toString(); "null" -> "null"; "string" -> "\"$on\""; else -> on.toString() }
+                val field = if (mode == "missing") "" else ",\"manualUnread\":$state"
+                val body = if (mode == "legacy") """{"ok":true}""" else
+                    """{"ok":${mode != "false"},"unreadReceiptVersion":${if (mode == "version") 0 else 1},"conversationId":"${if (mode == "room") "other" else "room"}","userId":"${if (mode == "owner") "other" else "me"}""" + field + "}"
+                respond(body, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+            })
+            try {
+                val result = PulseApi(http, gateway = { "https://read.test" }).markUnread("room", "me", on)
+                assertEquals(mode, mode == "valid", result is PulseResult.Success)
+            } finally { http.close() }
+        }
+    }
 }
