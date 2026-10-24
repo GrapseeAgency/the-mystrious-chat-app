@@ -27,14 +27,14 @@ data class ComposerState(
 
     /** Post gate: the exact client-side mirror of the server validation. */
     val canPost: Boolean
-        get() = !uploading && !posting && when (mode) {
+        get() = !uploading && !posting && caption.length <= CAPTION_MAX && when (mode) {
             Mode.TEXT -> caption.isNotBlank()
             Mode.PHOTO -> !imagePath.isNullOrBlank()
         }
 
     /** Hard cap: typing past 280 is TRUNCATED (never silently sent and 400'd). */
     fun withCaption(raw: String): ComposerState = copy(
-        caption = raw.take(CAPTION_MAX),
+        caption = boundedCaption(raw),
         error = null,
     )
 
@@ -62,6 +62,13 @@ data class ComposerState(
     companion object {
         const val CAPTION_MAX = 280
         const val DEFAULT_BACKGROUND = "emerald"
+
+        /** Wire uses UTF-16 units, but a boundary must never split a surrogate pair. */
+        fun boundedCaption(raw: String): String {
+            var end = minOf(raw.length, CAPTION_MAX)
+            if (end > 0 && end < raw.length && Character.isHighSurrogate(raw[end - 1]) && Character.isLowSurrogate(raw[end])) end--
+            return raw.substring(0, end)
+        }
 
         /** The 8 gradient keys - AVATAR_COLORS on the wire (route validation). */
         val BACKGROUNDS = listOf(

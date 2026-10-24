@@ -79,4 +79,31 @@ final class RoomOperationOrderingTests: XCTestCase {
         XCTAssertFalse(operations.accepts(newest))
         XCTAssertTrue(operations.accepts(try XCTUnwrap(operations.beginRead())))
     }
+    func testReplacingAStoryPhotoInvalidatesTheOlderUploadAndItsCleanup() async throws {
+        let operations = PulseRoomOperations()
+        let started = expectation(description: "old photo suspended")
+        var reply: CheckedContinuation<Bool, Never>?
+        var preview = "previous confirmed photo"
+        let old = try XCTUnwrap(operations.run(key: "photo", operation: {
+            started.fulfill()
+            let accepted = await withCheckedContinuation { reply = $0 }
+            guard !Task.isCancelled else { return false }
+            preview = "old photo"
+            return accepted
+        }))
+        await fulfillment(of: [started], timeout: 2)
+        operations.stop()
+        let next = try XCTUnwrap(operations.run(key: "photo", operation: { true }, onSuccess: { preview = "new photo" }))
+        await next.value
+        reply?.resume(returning: true); await old.value
+        XCTAssertEqual(preview, "new photo")
+        XCTAssertTrue(operations.pending.isEmpty)
+    }
+    func testRetiredStoryModelCannotPublishThroughAReplacementSession() async {
+        let session = PulseSession()
+        let stories = StoriesSessionModel(session: session)
+        session.stop()
+        let error = await stories.publish(caption: "old draft", background: "emerald", imagePath: nil)
+        XCTAssertEqual(error, "The original story session ended.")
+    }
 }

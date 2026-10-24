@@ -16,6 +16,7 @@ struct StoryComposerView: View {
     @State private var localPreview: UIImage?
     @State private var photoItem: PhotosPickerItem?
     @State private var pickerPresent = false
+    @StateObject private var operations = PulseRoomOperations()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -25,10 +26,10 @@ struct StoryComposerView: View {
 
             VStack(spacing: 12) {
                 header
-                modePills
-                stage
-                captionRow
-                if cs.mode == .text { swatches }
+                modePills.disabled(cs.posting)
+                stage.disabled(cs.posting)
+                captionRow.disabled(cs.posting)
+                if cs.mode == .text { swatches.disabled(cs.posting) }
                 if let error = cs.error { errorBanner(error) }
                 Spacer(minLength: 0)
             }
@@ -36,9 +37,16 @@ struct StoryComposerView: View {
         }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
-            Task { await pickAndUpload(item) }
+            photoItem = nil
+            pickAndUpload(item)
         }
         .photosPicker(isPresented: $pickerPresent, selection: $photoItem, matching: .images)
+        .onDisappear { operations.stop() }
+        .onChange(of: session.sessionGeneration) { _, _ in
+            operations.stop()
+            cs = StoryComposerState(); localPreview = nil; photoItem = nil
+            onClose()
+        }
     }
 
     // header
@@ -46,6 +54,7 @@ struct StoryComposerView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Button {
+                operations.stop()
                 onClose()
             } label: {
                 Image(systemName: "xmark")
@@ -86,6 +95,7 @@ struct StoryComposerView: View {
     private var modePills: some View {
         HStack(spacing: 0) {
             modePill("Text", systemImage: "textformat", active: cs.mode == .text) {
+                cancelImageImport()
                 cs = cs.withMode(.text)
             }
             modePill("Photo", systemImage: "photo", active: cs.mode == .photo) {
@@ -168,6 +178,7 @@ struct StoryComposerView: View {
                 if cs.imagePath != nil || localPreview != nil {
                     Button {
                         PulseHaptics.tap()
+                        cancelImageImport()
                         cs = cs.withImage(nil)
                         localPreview = nil
                     } label: {
@@ -199,7 +210,7 @@ struct StoryComposerView: View {
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.10)))
 
-            let remaining = StoryComposerState.captionMax - cs.caption.count
+            let remaining = StoryComposerState.captionMax - cs.caption.utf16.count
             Text("\(remaining)")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(remaining <= 20 ? StoryPalette.pair(for: "rose").1 : Color.white.opacity(0.4))
@@ -243,38 +254,53 @@ struct StoryComposerView: View {
 
     // actions
 
-    private func post() {
-        guard cs.canPost else { return }
-        let background = cs.mode == .text ? cs.background : nil
-        let imagePath = cs.mode == .photo ? cs.imagePath : nil
-        cs = cs.withPosting(true)
-        Task {
-            let error = await stories.publish(caption: cs.caption, background: background, imagePath: imagePath)
-            if let error {
-                cs = cs.withPosting(false).withError(error)
-            } else {
-                onPublished()
-            }
-        }
+    private func cancelImageImport() {
+        guard !cs.posting else { return }
+        operations.stop()
+        cs = cs.withUploading(false)
     }
 
-    /// Pick → re-encode (≤1280px JPEG q0.82 - the exact wire policy) →
-    /// POST /api/uploads → imagePath. Failures are visible, never silent.
-    private func pickAndUpload(_ item: PhotosPickerItem) async {
-        guard let photo = try? await item.loadTransferable(type: PulsePickedPhoto.self) else {
-            cs = cs.withError("Couldn't read that image - try another one")
-            return
-        }
-        let jpeg = photo.jpeg
-        localPreview = UIImage(data: jpeg)
+    private func post() {
+        guard cs.canPost else { return }
+        let submitted = cs
+        let generation = session.sessionGeneration
+        cs = cs.withPosting(true)
+        operations.run(key: "publish", operation: {
+            guard !Task.isCancelled, session.sessionGeneration == generation else { return false }
+            let error = await stories.publish(caption: submitted.caption,
+                background: submitted.mode == .text ? submitted.background : nil,
+                imagePath: submitted.mode == .photo ? submitted.imagePath : nil)
+            guard !Task.isCancelled, session.sessionGeneration == generation else { return false }
+            if let error { cs = cs.withPosting(false).withError(error); return false }
+            return true
+        }, onSuccess: onPublished)
+    }
+
+    /// The presentation owns both preparation and upload; a new selection invalidates
+    /// the old result. Keep the previous confirmed photo if its replacement fails.
+    private func pickAndUpload(_ item: PhotosPickerItem) {
+        guard !cs.posting else { return }
+        cancelImageImport()
+        let generation = session.sessionGeneration
+        let api = session.api
         cs = cs.withUploading(true)
-        do {
-            let dataUrl = PulseMediaSupport.dataUrl(mime: "image/jpeg", data: jpeg)
-            let imagePath = try await session.api.uploadMedia(dataUrl: dataUrl)
-            cs = cs.withImage(imagePath).withUploading(false)
-        } catch {
-            localPreview = nil
-            cs = cs.withUploading(false).withError("Upload failed - check your connection and retry")
-        }
+        operations.run(key: "photo", operation: {
+            guard !Task.isCancelled, session.sessionGeneration == generation else { return false }
+            do {
+                guard let photo = try await item.loadTransferable(type: PulsePickedPhoto.self) else { throw CocoaError(.fileReadCorruptFile) }
+                try Task.checkCancellation()
+                guard session.sessionGeneration == generation else { return false }
+                let path = try await api.uploadMedia(dataUrl: PulseMediaSupport.dataUrl(mime: "image/jpeg", data: photo.jpeg))
+                try Task.checkCancellation()
+                guard session.sessionGeneration == generation else { return false }
+                localPreview = UIImage(data: photo.jpeg)
+                cs = cs.withImage(path).withUploading(false)
+                return true
+            } catch {
+                guard !Task.isCancelled, session.sessionGeneration == generation else { return false }
+                cs = cs.withUploading(false).withError("Couldn't prepare or upload that photo. Any previous photo is kept; try again.")
+                return false
+            }
+        })
     }
 }

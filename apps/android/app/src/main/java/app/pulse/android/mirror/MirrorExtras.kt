@@ -657,6 +657,18 @@ internal fun MirrorStoryComposer(
     onDismiss: () -> Unit,
     onPosted: () -> Unit,
 ) {
+    val owner = repository.attachmentSessionKey()
+    androidx.compose.runtime.key(owner) {
+        MirrorOwnedStoryComposer(repository, onDismiss, onPosted)
+    }
+}
+
+@Composable
+private fun MirrorOwnedStoryComposer(repository: PulseRepository, onDismiss: () -> Unit, onPosted: () -> Unit) {
+    val actionScope = androidx.compose.runtime.rememberCoroutineScope()
+    val owner = remember { repository.attachmentSessionKey() }
+    val account = remember { repository.boundToCurrentAccount() }
+    var error by remember { mutableStateOf<String?>(null) }
     var caption by remember { mutableStateOf("") }
     var background by remember { mutableStateOf("emerald") }
     var posting by remember { mutableStateOf(false) }
@@ -673,7 +685,8 @@ internal fun MirrorStoryComposer(
         ) {
             BasicTextField(
                 value = caption,
-                onValueChange = { if (it.length <= 160) caption = it },
+                onValueChange = { if (!posting) { caption = app.pulse.feature.stories.ComposerState.boundedCaption(it); error = null } },
+                enabled = !posting,
                 textStyle = TextStyle(
                     color = Color.White,
                     fontSize = 18.sp,
@@ -707,10 +720,11 @@ internal fun MirrorStoryComposer(
                             else Modifier,
                         )
                         .background(Brush.verticalGradient(MirrorArt.avatarGradient(key)))
-                        .clickable { background = key },
+                        .clickable(enabled = !posting) { background = key },
                 )
             }
         }
+        if (error != null) Text(error.orEmpty(), color = MirrorArt.Accent, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
         Spacer(Modifier.height(16.dp))
         Box(
             Modifier
@@ -719,11 +733,19 @@ internal fun MirrorStoryComposer(
                 .clip(RoundedCornerShape(14.dp))
                 .background(if (caption.isBlank() || posting) MirrorArt.Chip else MirrorArt.Accent)
                 .clickable(enabled = caption.isNotBlank() && !posting) {
-                    posting = true
-                    CoroutineScope(Dispatchers.IO).launch {
-                        runCatching { repository.createStory(caption, background, null) }
-                        posting = false
-                        onPosted()
+                    val submittedCaption = caption
+                    val submittedBackground = background
+                    posting = true; error = null
+                    actionScope.launch {
+                        try {
+                            if (owner == null || repository.attachmentSessionKey() != owner) return@launch
+                            account.createStory(submittedCaption, submittedBackground, null).getOrThrow()
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            if (repository.attachmentSessionKey() == owner) onPosted()
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+                        } catch (failure: Exception) {
+                            if (repository.attachmentSessionKey() == owner) error = failure.message ?: "Couldn't share your status. Your text is kept."
+                        } finally { if (repository.attachmentSessionKey() == owner) posting = false }
                     }
                 },
             contentAlignment = Alignment.Center,

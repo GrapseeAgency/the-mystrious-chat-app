@@ -29,10 +29,12 @@ public final class StoriesSessionModel: ObservableObject {
     private var viewersGeneration = UUID()
     private var refreshGeneration = UUID()
     private unowned let session: PulseSession
+    private let ownerEpoch: UUID
     private var cacheKey: String { "stories:\(session.viewer?.id ?? "")" }
 
     public init(session: PulseSession) {
         self.session = session
+        self.ownerEpoch = session.sessionGeneration
         // Cold-start rehydrate - instant tray from the last good snapshot.
         if let store = session.store,
            let cached = try? store.loadStoryCache(key: cacheKey),
@@ -45,7 +47,8 @@ public final class StoriesSessionModel: ObservableObject {
 
     /// Pull the feed. quiet=false flips the loading flag (first load).
     public func refresh(quiet: Bool = false) async {
-        guard session.viewer != nil else { return }
+        guard !Task.isCancelled, session.viewer != nil, session.sessionGeneration == ownerEpoch else { return }
+        groups = Self.liveGroups(groups, nowMs: nowMs())
         let ticket = UUID()
         refreshGeneration = ticket
         let epoch = session.sessionGeneration
@@ -77,7 +80,8 @@ public final class StoriesSessionModel: ObservableObject {
             while !Task.isCancelled {
                 do { try await Task.sleep(nanoseconds: 60_000_000_000) } catch { break }
                 guard !Task.isCancelled else { break }
-                await self?.refresh(quiet: true)
+                guard let self, self.session.sessionGeneration == self.ownerEpoch else { break }
+                await self.refresh(quiet: true)
             }
         }
     }
@@ -91,9 +95,19 @@ public final class StoriesSessionModel: ObservableObject {
     /// POST /api/stories → refresh. Returns the server's error copy on failure.
     @discardableResult
     public func publish(caption: String, background: String?, imagePath: String?) async -> String? {
+        guard session.sessionGeneration == ownerEpoch else { return "The original story session ended." }
+        let epoch = session.sessionGeneration
+        let api = session.api
         do {
-            _ = try await session.api.postStory(caption: caption, background: background, imagePath: imagePath)
-            await refresh(quiet: true)
+            try Task.checkCancellation()
+            _ = try await api.postStory(caption: caption, background: background, imagePath: imagePath)
+            try Task.checkCancellation()
+            guard session.sessionGeneration == epoch else { return "The original story session ended." }
+            // Feed refresh is not part of the publication acknowledgement.
+            Task { [weak self] in
+                guard let self, self.session.sessionGeneration == epoch else { return }
+                await self.refresh(quiet: true)
+            }
             return nil
         } catch let failure as PulseAPIClient.Failure {
             return failure.message ?? "Could not post your status"
@@ -122,9 +136,12 @@ public final class StoriesSessionModel: ObservableObject {
     /// Optimistic removal; the viewer's machine auto-advances (D3) when the
     /// refreshed feed reports the story gone.
     public func deleteStory(id: String) async -> Bool {
+        guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
+        let api = session.api
         removeLocal(id)
         do {
-            try await session.api.deleteStory(id: id)
+            try await api.deleteStory(id: id)
+            guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return false }
             await refresh(quiet: true)
             return true
         } catch {
@@ -137,6 +154,7 @@ public final class StoriesSessionModel: ObservableObject {
 
     /// One fetch - the sheet re-issues it every ≤5s while open.
     public func loadViewers(storyId: String) async {
+        guard !Task.isCancelled, session.sessionGeneration == ownerEpoch else { return }
         let ticket = UUID()
         viewersGeneration = ticket
         let epoch = session.sessionGeneration

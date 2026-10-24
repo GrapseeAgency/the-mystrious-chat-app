@@ -86,4 +86,10 @@ class ComposerStateTest {
         assertEquals("2d", storyRelativeTime(now - 2L * 24 * 60 * 60_000L, now))
         assertEquals("", storyRelativeTime(0L, now))
     }
+    @Test fun `caption limit counts wire units without cutting an emoji in half`() {
+        assertEquals("😀".repeat(140), ComposerState().withCaption("😀".repeat(280)).caption)
+        assertEquals("a".repeat(279), ComposerState().withCaption("a".repeat(279) + "😀").caption)
+        assertEquals("a".repeat(278) + "😀", ComposerState().withCaption("a".repeat(278) + "😀").caption)
+        assertFalse(ComposerState(caption = "😀".repeat(141)).canPost)
+    }
 }

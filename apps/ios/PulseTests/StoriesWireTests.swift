@@ -313,6 +313,13 @@ final class StoryComposerStateTests: XCTestCase {
         XCTAssertEqual(StoryComposerState.captionMax, 280)
     }
 
+    func testCaptionLimitUsesWireUTF16UnitsWithoutSplittingEmoji() {
+        XCTAssertEqual(StoryComposerState().withCaption(String(repeating: "😀", count: 280)).caption, String(repeating: "😀", count: 140))
+        XCTAssertEqual(StoryComposerState().withCaption(String(repeating: "a", count: 279) + "😀").caption, String(repeating: "a", count: 279))
+        XCTAssertEqual(StoryComposerState().withCaption(String(repeating: "a", count: 278) + "😀").caption.utf16.count, 280)
+        XCTAssertFalse(StoryComposerState(caption: String(repeating: "😀", count: 141)).canPost)
+    }
+
     func testPhotoModeCanPostRequiresUploadedImageAndIdleWork() {
         var cs = StoryComposerState(mode: .photo)
         XCTAssertFalse(cs.canPost)

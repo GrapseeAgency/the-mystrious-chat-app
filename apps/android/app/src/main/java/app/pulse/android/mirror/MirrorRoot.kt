@@ -159,8 +159,10 @@ internal fun MirrorRoot(
         tab = request
         onConsumeTabRequest()
     }
-    var stories by remember { mutableStateOf<List<StoryGroup>>(emptyList()) }
-    var folders by remember { mutableStateOf<List<MirrorFolderChip>>(emptyList()) }
+    var stories by remember(viewerId) { mutableStateOf<List<StoryGroup>>(emptyList()) }
+    var folders by remember(viewerId) { mutableStateOf<List<MirrorFolderChip>>(emptyList()) }
+    val storyScope = androidx.compose.runtime.rememberCoroutineScope()
+    val storyReads = remember(viewerId) { app.pulse.domain.sync.RoomControlGate { repository.attachmentSessionKey() } }
 
     // R72 - the settings "Default list filter" row now DRIVES this filter
     // (web chats-tab.tsx:795 applies the persisted listFilter on load).
@@ -332,21 +334,34 @@ internal fun MirrorRoot(
 
     // Refresh rhythm: conversations + stories + folders + mentions on mount and every 5s.
     LaunchedEffect(viewerId, lifecycleOwner) {
+        val account = repository.boundToCurrentAccount()
+        val owner = repository.attachmentSessionKey()
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                if (viewerId != null) {
-                    runCatching { repository.refreshConversations() }
-                    stories = repository.stories().getOrDefault(emptyList())
-                    folders = repository.folders().getOrDefault(emptyList()).map { f ->
-                        MirrorFolderChip(
-                            id = f.id,
-                            name = f.name,
-                            emoji = f.emoji,
-                            count = f.conversationIds.count { cid -> conversations.any { it.id == cid } },
-                            conversationIds = f.conversationIds,
-                        )
+                if (viewerId != null && owner != null) {
+                    val storyTicket = storyReads.beginRead()
+                    account.refreshConversations()
+                    currentCoroutineContext().ensureActive()
+                    if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+                    val feed = account.stories()
+                    currentCoroutineContext().ensureActive()
+                    if (storyTicket != null && storyReads.isCurrent(storyTicket)) feed.getOrNull()?.let { stories = it }
+                    val loadedFolders = account.folders()
+                    currentCoroutineContext().ensureActive()
+                    if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+                    loadedFolders.getOrNull()?.let { loaded ->
+                        folders = loaded.map { f ->
+                            MirrorFolderChip(
+                                id = f.id, name = f.name, emoji = f.emoji,
+                                count = f.conversationIds.count { cid -> conversations.any { it.id == cid } },
+                                conversationIds = f.conversationIds,
+                            )
+                        }
                     }
-                    mentionCount = repository.mentions().getOrDefault(emptyList()).size
+                    val mentions = account.mentions()
+                    currentCoroutineContext().ensureActive()
+                    if (repository.attachmentSessionKey() != owner) return@repeatOnLifecycle
+                    mentions.getOrNull()?.let { mentionCount = it.size }
                 }
                 delay(5_000)
             }
@@ -699,8 +714,12 @@ internal fun MirrorRoot(
                         onDismiss = { composerOpen = false },
                         onPosted = {
                             composerOpen = false
-                            CoroutineScope(Dispatchers.IO).launch {
-                                stories = repository.stories().getOrDefault(emptyList())
+                            val ticket = storyReads.beginRead()
+                            val account = repository.boundToCurrentAccount()
+                            storyScope.launch {
+                                val feed = account.stories()
+                                currentCoroutineContext().ensureActive()
+                                if (ticket != null && storyReads.isCurrent(ticket)) feed.getOrNull()?.let { stories = it }
                             }
                         },
                     )

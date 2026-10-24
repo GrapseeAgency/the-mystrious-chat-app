@@ -10,6 +10,9 @@ import app.pulse.domain.repository.PulseRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -70,12 +73,25 @@ class StoriesViewModel @Inject constructor(
 
     private var pollJob: Job? = null
 
+    private var feedOwner: String? = null
+    private var refreshGeneration = 0L
+    private var refreshJob: Job? = null
+
     /** Pull the feed. quiet=false flips the loading flag (pull-to-refresh / first load). */
     fun refresh(quiet: Boolean = false) {
-        if (repo.viewerId == null) return
-        viewModelScope.launch {
+        val account = repo.boundToCurrentAccount()
+        val owner = account.attachmentSessionKey()
+        val ticket = ++refreshGeneration
+        refreshJob?.cancel()
+        if (feedOwner != owner) {
+            feedOwner = owner; _groups.value = emptyList(); _flags.value = Flags(); resetViewers()
+        }
+        if (owner == null) return
+        refreshJob = viewModelScope.launch {
             if (!quiet) _flags.value = _flags.value.copy(loading = true, error = null)
-            repo.stories().fold(
+            val result = account.stories()
+            if (!isActive || ticket != refreshGeneration || repo.attachmentSessionKey() != owner) return@launch
+            result.fold(
                 onSuccess = { feed ->
                     _groups.value = feed
                     _flags.value = _flags.value.copy(loading = false, loadedOnce = true, error = null)
@@ -115,32 +131,35 @@ class StoriesViewModel @Inject constructor(
 
     // publish (composer)
 
-    fun publishStory(
-        caption: String,
-        background: String?,
-        imagePath: String?,
-        onDone: (success: Boolean, error: String?) -> Unit,
-    ) {
-        viewModelScope.launch {
-            repo.createStory(caption, background, imagePath).fold(
-                onSuccess = {
-                    refresh(quiet = true)
-                    onDone(true, null)
-                },
-                onFailure = { failure ->
-                    // Surface the server's own copy ("A status needs a photo or
-                    // some text." etc.) - honest errors, never silent drops.
-                    onDone(false, failure.message ?: "Could not post your status")
-                },
-            )
-        }
+    class ComposerSession internal constructor(val owner: String, internal val account: PulseRepository)
+
+    fun composerSession(): ComposerSession? {
+        val account = repo.boundToCurrentAccount()
+        val owner = account.attachmentSessionKey() ?: return null
+        return ComposerSession(owner, account).takeIf { acceptsComposer(it) }
+    }
+    fun acceptsComposer(session: ComposerSession): Boolean = repo.attachmentSessionKey() == session.owner &&
+        session.account.attachmentSessionKey() == session.owner
+
+    private suspend fun requireComposer(session: ComposerSession) {
+        currentCoroutineContext().ensureActive()
+        if (!acceptsComposer(session)) throw CancellationException("The original story account ended")
     }
 
-    /** Compressor → data-URL upload leg; returns the gateway imagePath. */
-    fun uploadStoryImage(dataUrl: String, onDone: (imagePath: String?) -> Unit) {
-        viewModelScope.launch {
-            onDone(repo.uploadMedia(dataUrl).getOrNull())
-        }
+    /** The calling presentation owns the coroutine; never detach its upload/post into viewModelScope. */
+    suspend fun publishStory(caption: String, background: String?, imagePath: String?, session: ComposerSession): Result<Unit> {
+        requireComposer(session)
+        val result = session.account.createStory(caption, background, imagePath)
+        requireComposer(session)
+        if (result.isSuccess) refresh(quiet = true)
+        return result.map { Unit }
+    }
+
+    suspend fun uploadStoryImage(dataUrl: String, session: ComposerSession): Result<String> {
+        requireComposer(session)
+        val result = session.account.uploadMedia(dataUrl)
+        requireComposer(session)
+        return result
     }
 
     // viewer actions
