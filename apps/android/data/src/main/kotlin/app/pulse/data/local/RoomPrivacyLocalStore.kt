@@ -8,7 +8,6 @@ import app.pulse.domain.model.PersonalScreenPrivacy
 import app.pulse.protocol.PulseJson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -32,9 +31,12 @@ internal class RoomPrivacyLocalStore(private val storage: DataStore<Preferences>
         }
     }
     private fun id() = java.util.UUID.randomUUID().toString()
-    fun observe(room: String) = storage.data.map { prefs ->
+    fun observe(room: String) = storage.observeResilient(
+        initial = PersonalScreenPrivacy(),
+        unavailable = { PersonalScreenPrivacy(on = true, pending = true, unreadable = true) },
+    ) { prefs ->
         try { read(prefs, room).let { PersonalScreenPrivacy(it?.on, it?.pending != null) } }
-        catch (_: Exception) { PersonalScreenPrivacy(on = true, pending = true) }
+        catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { PersonalScreenPrivacy(on = true, pending = true, unreadable = true) }
     }
     suspend fun readTicket(room: String) = Read(room, read(storage.data.first(), room)?.revision)
     suspend fun pending(room: String): Write? = read(storage.data.first(), room)?.let { entry ->

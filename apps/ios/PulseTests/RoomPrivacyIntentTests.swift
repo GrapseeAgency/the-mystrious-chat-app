@@ -99,4 +99,42 @@ final class RoomPrivacyIntentTests: XCTestCase {
         XCTAssertNotNil(reopened.screenPrivacyNotes["room"])
         XCTAssertEqual(defaults.string(forKey: "pulse.settings.veil.v2." + ticket.owner), "corrupt")
     }
+    func testLiveCorruptionRetiresCachedOffAndReloadDoesNotInventAnotherWrite() throws {
+        let suite = "RoomPrivacyRecovery.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prefs = PulsePrefs(defaults: defaults)
+        prefs.setViewer(PulseViewer(id: "owner", name: "Owner"))
+        var tickets: [PulseScreenPrivacyTicket] = []
+        prefs.patchScreenPrivacy = { tickets.append($0) }
+        prefs.setScreenPrivacy(conversationId: "room", on: false)
+        let key = "pulse.settings.veil.v2." + tickets[0].owner
+        let saved = try XCTUnwrap(defaults.data(forKey: key))
+        XCTAssertEqual(prefs.screenPrivacy["room"], false)
+        defaults.set("unreadable", forKey: key)
+        XCTAssertNil(prefs.screenPrivacyRead(conversationId: "room"))
+        XCTAssertNil(prefs.screenPrivacy["room"]) // unknown is protected, not Off
+        XCTAssertNotNil(prefs.screenPrivacyReadError)
+        XCTAssertEqual(defaults.string(forKey: key), "unreadable")
+        defaults.set(saved, forKey: key)
+        prefs.reloadScreenPrivacy()
+        XCTAssertNil(prefs.screenPrivacyReadError)
+        XCTAssertEqual(prefs.screenPrivacy["room"], false)
+        XCTAssertTrue(prefs.screenPrivacyPending.contains("room"))
+        XCTAssertEqual(tickets.count, 1)
+        prefs.retryScreenPrivacy(conversationId: "room")
+        XCTAssertEqual(tickets.last?.id, tickets.first?.id)
+    }
+    func testLegacyCacheMigrationNeverInventsPendingIntent() throws {
+        let suite = "RoomPrivacyMigration.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(Data(#"{"room":false}"#.utf8), forKey: "pulse.settings.veil.v1.scope")
+        let journal = PulseScreenPrivacyJournal(defaults: defaults)
+        XCTAssertEqual(try journal.entries(owner: "scope")["room"]?.on, false)
+        XCTAssertNil(try journal.pending(owner: "scope", room: "room"))
+        let revision = try journal.entries(owner: "scope")["room"]?.revision
+        XCTAssertEqual(try PulseScreenPrivacyJournal(defaults: defaults).entries(owner: "scope")["room"]?.revision, revision)
+        XCTAssertTrue(try journal.entries(owner: "other").isEmpty)
+    }
 }

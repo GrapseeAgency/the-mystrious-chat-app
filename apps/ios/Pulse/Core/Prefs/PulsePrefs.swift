@@ -587,7 +587,16 @@ public final class PulsePrefs: ObservableObject {
         guard let owner = settingsOwnerKey else { return }
         do {
             if let ticket = try screenPrivacyJournal.pending(owner: owner, room: conversationId) { patchScreenPrivacy?(ticket) }
-        } catch { screenPrivacyNotes[conversationId] = "Saved screen-security choices could not be read. Nothing was discarded." }
+        } catch {
+            refreshScreenPrivacy(owner: owner)
+            screenPrivacyNotes[conversationId] = "Saved screen-security choices could not be read. Nothing was discarded."
+        }
+    }
+    public func reloadScreenPrivacy() {
+        refreshSettingsOwner()
+        guard let owner = settingsOwnerKey else { return }
+        refreshScreenPrivacy(owner: owner)
+        if screenPrivacyReadError == nil { screenPrivacyNotes = [:] }
     }
     func screenPrivacyRead(conversationId: String) -> PulseScreenPrivacyRead? {
         refreshSettingsOwner()
@@ -595,23 +604,31 @@ public final class PulsePrefs: ObservableObject {
         do {
             return PulseScreenPrivacyRead(owner: owner, room: conversationId,
                 revision: try screenPrivacyJournal.entries(owner: owner)[conversationId]?.revision, activation: screenPrivacyActivation)
-        } catch { return nil }
+        } catch {
+            refreshScreenPrivacy(owner: owner)
+            return nil
+        }
     }
     func adoptServerScreenPrivacy(_ read: PulseScreenPrivacyRead, on: Bool) {
         guard settingsOwnerKey == read.owner, loadedSettingsOwner == read.owner, screenPrivacyActivation == read.activation else { return }
         do {
             try screenPrivacyJournal.mergeSnapshot(read, on: on)
             refreshScreenPrivacy(owner: read.owner)
-        } catch { screenPrivacyNotes[read.room] = "Screen security could not be refreshed. Your local choice is kept." }
+        } catch {
+            refreshScreenPrivacy(owner: read.owner)
+            screenPrivacyNotes[read.room] = "Saved screen-security choices could not be refreshed. Nothing was discarded."
+        }
     }
     func currentScreenPrivacy(_ ticket: PulseScreenPrivacyTicket, api: PulseAPIClient) throws -> Bool {
         guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner,
               Self.settingsOwnerKey(for: api.userId, gateway: api.baseURL) == ticket.owner else { throw CancellationError() }
-        return try screenPrivacyJournal.current(ticket)
+        do { return try screenPrivacyJournal.current(ticket) }
+        catch { refreshScreenPrivacy(owner: ticket.owner); throw error }
     }
     func acknowledgeScreenPrivacy(_ ticket: PulseScreenPrivacyTicket, on: Bool) throws {
         guard settingsOwnerKey == ticket.owner, loadedSettingsOwner == ticket.owner else { throw CancellationError() }
-        try screenPrivacyJournal.acknowledge(ticket, on: on)
+        do { try screenPrivacyJournal.acknowledge(ticket, on: on) }
+        catch { refreshScreenPrivacy(owner: ticket.owner); throw error }
         refreshScreenPrivacy(owner: ticket.owner)
         if !screenPrivacyPending.contains(ticket.room) { screenPrivacyNotes[ticket.room] = nil }
     }

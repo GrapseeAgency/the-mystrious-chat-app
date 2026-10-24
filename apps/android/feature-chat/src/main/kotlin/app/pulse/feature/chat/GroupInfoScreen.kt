@@ -739,6 +739,10 @@ fun GroupInfoScreen(
                                 onCheckedChange = { viewModel.setMyPrivacy(it) },
                             )
                         }
+                        if (personalPrivacy.unreadable) {
+                            Text("Saved screen-security choices could not be read. Protection remains on.",
+                                style = MaterialTheme.typography.bodySmall)
+                        }
                         if (personalPrivacy.pending) {
                             TextButton(onClick = viewModel::retryMyPrivacy) { Text("Retry screen-security sync") }
                         }

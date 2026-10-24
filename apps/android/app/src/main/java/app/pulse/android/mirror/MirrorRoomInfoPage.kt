@@ -51,6 +51,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -595,8 +596,10 @@ internal fun MirrorRoomInfoPage(
     val convThemes by repository.convThemes.collectAsState(initial = emptyMap<String, ConvTheme>())
     val prefs by repository.pulsePrefs.collectAsState(initial = WirePulsePrefs())
 
-    val personalPrivacy by repository.observePersonalScreenPrivacy(conversationId).collectAsState(
-        initial = app.pulse.domain.model.PersonalScreenPrivacy())
+    val personalPrivacy by androidx.compose.runtime.key(repository, conversationId, repository.attachmentSessionKey()) {
+        remember { repository.observePersonalScreenPrivacy(conversationId) }.collectAsStateWithLifecycle(
+            initialValue = app.pulse.domain.model.PersonalScreenPrivacy())
+    }
 
     // row/UI state
     var ttlOpen by remember { mutableStateOf(false) }
@@ -1504,6 +1507,10 @@ internal fun MirrorRoomInfoPage(
                                 )
                             }
 
+                            if (personalPrivacy.unreadable) {
+                                Text("Saved screen-security choices could not be read. Protection remains on.",
+                                    color = MirrorArt.Faint, fontSize = 12.sp)
+                            }
                             if (personalPrivacy.pending) {
                                 TextButton(onClick = { changeScreenPrivacy(personalPrivacy.on ?: true, personal = true, retry = true) },
                                     enabled = myPrivacyLocal == null && everyonePrivacyLocal == null) {

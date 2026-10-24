@@ -90,7 +90,10 @@ class PulsePrefsLocalStore internal constructor(
     }
 
     /** Resolved prefs - defaults guaranteed on every emission. */
-    val prefs: Flow<WirePulsePrefs> = storage.data.map { p ->
+    val prefs: Flow<WirePulsePrefs> = storage.observeResilient(
+        initial = PulseWave8Logic.localPrefs(null),
+        unavailable = { it.copy(notifPreviews = false, lastSeenVisible = false, readReceipts = false, typingVisible = false) },
+    ) { p ->
         PulseWave8Logic.localPrefs(p[Keys.PREFS])
     }
 
@@ -100,7 +103,7 @@ class PulsePrefsLocalStore internal constructor(
      * Live design-language id - one of [UI_THEME_IDS] (the web value
      * strings verbatim); anything unreadable falls back to "glass".
      */
-    val uiTheme: Flow<String> = storage.data.map { p ->
+    val uiTheme: Flow<String> = storage.observeResilient(initial = UI_THEME_GLASS) { p ->
         (p[Keys.UI_THEME])?.takeIf { it in UI_THEME_IDS } ?: UI_THEME_GLASS
     }
 
@@ -117,7 +120,7 @@ class PulsePrefsLocalStore internal constructor(
      * capsule default (the same resolve the web's getNavStyleMeta fallback
      * performs).
      */
-    val navStyle: Flow<app.pulse.protocol.PulseNavStyle> = storage.data.map { p ->
+    val navStyle: Flow<app.pulse.protocol.PulseNavStyle> = storage.observeResilient(initial = app.pulse.protocol.PulseNavStyle.CAPSULE) { p ->
         app.pulse.protocol.PulseNavStyle.fromPersisted(p[Keys.NAV_STYLE])
     }
 
@@ -131,7 +134,7 @@ class PulsePrefsLocalStore internal constructor(
      * Last 5 non-blank queries, deduped case-insensitively, newest first
      * (web spotlight.tsx readRecents/pushRecent parity).
      */
-    val spotlightRecents: Flow<List<String>> = storage.data.map { p ->
+    val spotlightRecents: Flow<List<String>> = storage.observeResilient(initial = emptyList<String>()) { p ->
         decodeSpotlightRecents(p[Keys.SPOTLIGHT_RECENTS])
     }
 
@@ -244,7 +247,7 @@ class PulsePrefsLocalStore internal constructor(
      * dropped, the [ConvTheme.MAX_MAP_ENTRIES] budget caps the payload.
      * JSON object key order IS the LRU order (touched entry last).
      */
-    val convThemes: Flow<Map<String, ConvTheme>> = storage.data.map { p ->
+    val convThemes: Flow<Map<String, ConvTheme>> = storage.observeResilient(initial = emptyMap<String, ConvTheme>()) { p ->
         sanitizeConvThemes(p[Keys.CONV_THEMES])
     }
 
@@ -326,7 +329,7 @@ class PulsePrefsLocalStore internal constructor(
         if (pending.isEmpty()) p.remove(settingsPendingKey)
         else p[settingsPendingKey] = JsonObject(pending.mapValues { JsonPrimitive(it.value) }).toString()
     }
-    val hasPendingSettings: Flow<Boolean> = storage.data.map { p ->
+    val hasPendingSettings: Flow<Boolean> = storage.observeResilient(initial = true, unavailable = { true }) { p ->
         // Corruption is not permission to report all settings synchronized.
         runCatching { pendingFields(p).isNotEmpty() }.getOrDefault(true)
     }

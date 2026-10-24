@@ -1177,8 +1177,10 @@ private fun MirrorRoomScaffold(
     // Covering/reopening the room can include a privacy mutation in room info.
     // Do not drop protection until a fresh owned detail confirms both flags off.
     var screenPrivacy by remember(repository, convo.id, readingEnabled) { mutableStateOf<Boolean?>(null) }
-    val personalPrivacy by repository.observePersonalScreenPrivacy(convo.id).collectAsStateWithLifecycle(
-        initialValue = app.pulse.domain.model.PersonalScreenPrivacy())
+    val personalPrivacy by androidx.compose.runtime.key(repository, convo.id, repository.attachmentSessionKey()) {
+        remember { repository.observePersonalScreenPrivacy(convo.id) }.collectAsStateWithLifecycle(
+            initialValue = app.pulse.domain.model.PersonalScreenPrivacy())
+    }
     val windowFocused = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
     var phraseBusy by remember { mutableStateOf(false) }
     var phraseRevision by remember { mutableStateOf(0L) }
