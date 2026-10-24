@@ -57,4 +57,26 @@ final class RoomOperationOrderingTests: XCTestCase {
         XCTAssertEqual(draft, "keep")
         XCTAssertTrue(operations.pending.isEmpty)
     }
+    func testNewestPhraseReadAndRoomClosureRejectCancellationIgnoringOlderResponses() async throws {
+        let operations = PulseRoomOperations()
+        var visible = ["confirmed"]
+        let oldTicket = try XCTUnwrap(operations.beginRead())
+        var reply: CheckedContinuation<[String], Never>?
+        let started = expectation(description: "old read suspended")
+        let oldRead = Task { @MainActor in
+            let rows = await withCheckedContinuation { (continuation: CheckedContinuation<[String], Never>) in
+                reply = continuation; started.fulfill()
+            }
+            if operations.accepts(oldTicket) { visible = rows }
+        }
+        await fulfillment(of: [started], timeout: 1)
+        let newest = try XCTUnwrap(operations.beginRead())
+        if operations.accepts(newest) { visible = ["new confirmed phrase"] }
+        reply?.resume(returning: ["stale phrase"])
+        await oldRead.value
+        XCTAssertEqual(visible, ["new confirmed phrase"])
+        operations.stop()
+        XCTAssertFalse(operations.accepts(newest))
+        XCTAssertTrue(operations.accepts(try XCTUnwrap(operations.beginRead())))
+    }
 }

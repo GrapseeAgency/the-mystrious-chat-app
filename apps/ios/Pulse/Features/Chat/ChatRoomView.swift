@@ -4042,6 +4042,8 @@ final class RoomViewModel: ObservableObject {
     /// from ChatRoomView.onDisappear (roomVisible off); a conversation
     /// change builds a NEW view model, so its deinit covers that path.
     func handleRoomDisappeared() {
+        quickPhraseTask?.cancel()
+        quickPhraseReads.stop()
         cancelPhotoImport()
         journalDraft(draftBeforeEdit ?? draft)
         draftSaveTask?.cancel()
@@ -4057,6 +4059,7 @@ final class RoomViewModel: ObservableObject {
 
     deinit {
         // Plain-class teardown only (no actor-isolated state touched).
+        quickPhraseTask?.cancel()
         voiceRecorder?.cancel()
         voicePermissionTask?.cancel()
         photoImportTask?.cancel()
@@ -5023,11 +5026,28 @@ final class RoomViewModel: ObservableObject {
 
     // ── R1-W2B F-MS-29 - quick phrases ───────────────────
 
+    private let quickPhraseReads = PulseRoomOperations()
+    private var quickPhraseTask: Task<Void, Never>?
+
     func loadQuickPhrases(session: PulseSession) {
-        guard session.viewer != nil else { return }
-        Task { [weak self] in
-            let rows = (try? await session.api.quickPhrases()) ?? []
-            await MainActor.run { self?.quickPhrases = rows }
+        quickPhraseTask?.cancel()
+        let epoch = session.sessionGeneration
+        guard session.viewer != nil, epoch == readSessionGeneration else {
+            quickPhraseReads.stop()
+            quickPhrases = []
+            return
+        }
+        guard let ticket = quickPhraseReads.beginRead() else { return }
+        let client = session.api
+        quickPhraseTask = Task { [weak self] in
+            do {
+                let rows = try await client.quickPhrases()
+                guard let self, session.sessionGeneration == epoch, self.quickPhraseReads.accepts(ticket) else { return }
+                self.quickPhrases = rows
+            } catch {
+                // Failed/cancelled refresh is not an empty private phrase list.
+                // The manager sheet provides explicit retry/error feedback.
+            }
         }
     }
 

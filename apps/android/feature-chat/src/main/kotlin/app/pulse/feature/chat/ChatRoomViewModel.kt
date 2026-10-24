@@ -1951,15 +1951,21 @@ class ChatRoomViewModel @Inject constructor(
     fun closePhrases() { phrasesOpen = false }
 
     private var phraseReadRevision = 0L
+    private var phraseReadJob: kotlinx.coroutines.Job? = null
 
     /** Failed refreshes preserve confirmed chips; pre-mutation reads cannot undo writes. */
     fun loadPhrases() {
         if (_phrasesBusy.value) return
         val epoch = repo.attachmentSessionKey() ?: return
+        val owner = repo.viewerId ?: return
+        val target = repo.boundToCurrentAccount()
+        if (target.viewerId != owner) return
         val ticket = ++phraseReadRevision
-        viewModelScope.launch {
+        phraseReadJob?.cancel()
+        phraseReadJob = viewModelScope.launch {
             try {
-                val fetched = repo.phrases().getOrThrow()
+                if (repo.attachmentSessionKey() != epoch || repo.viewerId != owner) return@launch
+                val fetched = target.phrases().getOrThrow()
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (repo.attachmentSessionKey() == epoch && ticket == phraseReadRevision) _phrases.value = fetched
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled } catch (error: Exception) {
@@ -1972,7 +1978,7 @@ class ChatRoomViewModel @Inject constructor(
         val trimmed = text.trim()
         val epoch = repo.attachmentSessionKey() ?: return
         if (trimmed.isEmpty() || trimmed.length > 120 || _phrasesBusy.value) return
-        _phrasesBusy.value = true; phraseReadRevision++
+        _phrasesBusy.value = true; phraseReadRevision++; phraseReadJob?.cancel()
         viewModelScope.launch {
             try {
                 if (repo.attachmentSessionKey() != epoch) return@launch
@@ -1990,7 +1996,7 @@ class ChatRoomViewModel @Inject constructor(
     fun deletePhrase(phraseId: String) {
         val epoch = repo.attachmentSessionKey() ?: return
         if (_phrasesBusy.value) return
-        _phrasesBusy.value = true; phraseReadRevision++
+        _phrasesBusy.value = true; phraseReadRevision++; phraseReadJob?.cancel()
         viewModelScope.launch {
             try {
                 if (repo.attachmentSessionKey() != epoch) return@launch
