@@ -339,6 +339,10 @@ struct RootView: View {
         } else if prefs.viewer != nil {
             ZStack {
                 tabPanels
+                    // A fast stop/start can coalesce ready=false/true into one
+                    // render. Do not rely on the loading branch to retire the
+                    // previous account's StateObjects, sheets and cache bindings.
+                    .id(session.sessionGeneration)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // Reserve the dock's footprint so lists always clear it
